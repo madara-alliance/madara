@@ -15,7 +15,7 @@ use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
 use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
-use futures::stream::BoxStream;
+use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use mp_convert::{FeltExt, ToFelt};
 use mp_transactions::L1HandlerTransactionWithFee;
@@ -74,6 +74,50 @@ impl EthereumClient {
                 "Core contract not found at given address".into(),
             )))
         }
+    }
+
+    /// Fetches `LogMessageToL2` events from `from_block` to `to_block` in paginated chunks
+    /// using `eth_getLogs`. This ensures historical events are not missed (unlike `eth_newFilter`
+    /// which only returns events after filter creation).
+    async fn query_paginated_events(
+        contract: &StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        /// Max blocks per `eth_getLogs` request. Most RPC providers (Alchemy, Infura)
+        /// limit queries to 2k–10k blocks; 10 000 is a safe upper bound.
+        const QUERY_CHUNK_SIZE: u64 = 10_000;
+
+        let mut all_events = Vec::new();
+        let mut current_from = from_block;
+
+        while current_from <= to_block {
+            let current_to = std::cmp::min(current_from + QUERY_CHUNK_SIZE - 1, to_block);
+
+            tracing::debug!("Fetching historical L1→L2 events: blocks {current_from}..{current_to}");
+
+            let events = contract
+                .event_filter::<LogMessageToL2>()
+                .from_block(current_from)
+                .to_block(current_to)
+                .query()
+                .await
+                .map_err(|e| -> SettlementClientError {
+                    EthereumClientError::ArchiveRequired(format!(
+                        "Could not fetch historical events (blocks {current_from}..{current_to}), \
+                         archive node may be required: {e}"
+                    ))
+                    .into()
+                })?;
+
+            for pair in events {
+                all_events.push(MessageToL2WithMetadata::try_from(pair)?);
+            }
+
+            current_from = current_to + 1;
+        }
+
+        Ok(all_events)
     }
 }
 
@@ -336,19 +380,55 @@ impl SettlementLayerProvider for EthereumClient {
         &self,
         from_l1_block_n: u64,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
-        let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-        let event_stream =
-            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
-                |e| -> SettlementClientError {
-                    EthereumClientError::ArchiveRequired(format!(
-                        "Could not fetch events, archive node may be required: {}",
-                        e
-                    ))
-                    .into()
-                },
-            )?;
+        // Step 1: Create the live event watcher BEFORE querying the finalized block.
+        // This guarantees no gap: the watcher tracks events from its creation time onward.
+        // We then snapshot the finalized block AFTER, so the historical query's upper bound
+        // is guaranteed to be at or before the watcher's start point — ensuring overlap,
+        // never a gap. Duplicates from the overlap are handled by nonce dedup.
+        // EthereumEventStream::new() calls into_stream() which spawns a background polling
+        // task (eth_getFilterChanges every ~7s), keeping the filter alive during the
+        // historical query and buffering any new events.
+        let event_poller = self
+            .l1_core_contract
+            .event_filter::<LogMessageToL2>()
+            .from_block(from_l1_block_n)
+            .to_block(BlockNumberOrTag::Finalized)
+            .watch()
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::ArchiveRequired(format!("Could not create event watcher: {e}")).into()
+            })?;
+        let live_stream = EthereumEventStream::new(event_poller);
 
-        Ok(EthereumEventStream::new(event_stream).boxed())
+        // Step 2: Get finalized block number AFTER creating the watcher.
+        // This is the upper bound for the historical query.
+        let finalized_block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Finalized, alloy::network::primitives::BlockTransactionsKind::Hashes)
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::Rpc(format!("Failed to get finalized block: {e}")).into()
+            })?
+            .ok_or_else(|| -> SettlementClientError {
+                EthereumClientError::Rpc("Finalized block not available".to_string()).into()
+            })?
+            .header
+            .number;
+
+        // Step 3: Fetch historical events via paginated eth_getLogs (.query()).
+        tracing::info!(
+            "⟠ L1→L2 message sync: querying historical events from block #{from_l1_block_n} to #{finalized_block}"
+        );
+        let historical_events =
+            Self::query_paginated_events(&self.l1_core_contract, from_l1_block_n, finalized_block).await?;
+        tracing::info!(
+            "⟠ L1→L2 message sync: historical catchup complete ({} events), switching to live watching",
+            historical_events.len()
+        );
+        let historical_stream = stream::iter(historical_events.into_iter().map(Ok));
+
+        // Chain: historical events first, then live watch stream.
+        Ok(historical_stream.chain(live_stream).boxed())
     }
 }
 
