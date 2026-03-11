@@ -8,11 +8,12 @@ use blockifier::transaction::objects::{HasRelatedFeeType, TransactionInfoCreator
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mc_db::MadaraStorageRead;
-use mp_convert::ToFelt;
+use mp_convert::{Felt, ToFelt};
 use mp_receipt::RevertErrorExt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};
+use std::collections::HashSet;
 use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::{TransactionHash, TransactionVersion};
@@ -75,7 +76,39 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .to_state_diff()
                     .map_err(TransactionExecutionError::StateError)
                     .map_err(make_reexec_error)?;
+
+                // Determine which addresses are new deployments vs class replacements.
+                // If the initial class hash was ClassHash::default() (zero), the contract
+                // didn't exist before this tx, so it's a deployment. Otherwise it's a replacement.
+                let initial_reads = transactional_state
+                    .get_initial_reads()
+                    .map_err(TransactionExecutionError::StateError)
+                    .map_err(make_reexec_error)?;
+                let deployed_contracts: HashSet<Felt> = state_diff
+                    .state_maps
+                    .class_hashes
+                    .keys()
+                    .filter(|addr| {
+                        initial_reads
+                            .class_hashes
+                            .get(addr)
+                            .map_or(true, |ch| *ch == ClassHash::default())
+                    })
+                    .map(|addr| addr.to_felt())
+                    .collect();
+
                 transactional_state.commit();
+
+                // Check if this is a deprecated (Cairo 0) class declaration (DeclareV0/V1).
+                let deprecated_declared_class = match &tx {
+                    Transaction::Account(AccountTransaction {
+                        tx: ApiAccountTransaction::Declare(declare_tx),
+                        ..
+                    }) if declare_tx.version() < TransactionVersion::TWO => {
+                        Some(declare_tx.class_hash().to_felt())
+                    }
+                    _ => None,
+                };
 
                 let gas_vector_computation_mode = match tx {
                     Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
@@ -90,6 +123,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     execution_info,
                     gas_vector_computation_mode,
                     state_diff: state_diff.state_maps.into(),
+                    deployed_contracts,
+                    deprecated_declared_class,
                 })
             })
             .collect::<Result<Vec<_>, _>>()

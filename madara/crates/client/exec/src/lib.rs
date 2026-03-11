@@ -157,6 +157,7 @@ use mp_chain_config::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
+use std::collections::HashSet;
 use starknet_types_core::felt::Felt;
 
 mod block_context;
@@ -239,4 +240,8 @@ pub struct ExecutionResult {
     pub execution_info: TransactionExecutionInfo,
     pub state_diff: CommitmentStateDiff,
     pub gas_vector_computation_mode: GasVectorComputationMode,
+    /// Addresses that were newly deployed by this transaction (vs class replacements).
+    pub deployed_contracts: HashSet<Felt>,
+    /// Class hash declared as deprecated (Cairo 0) by this transaction, if any.
+    pub deprecated_declared_class: Option<Felt>,
 }

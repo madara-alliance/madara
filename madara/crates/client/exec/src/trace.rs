@@ -10,7 +10,7 @@ use mp_rpc::{
 };
 use starknet_api::executable_transaction::TransactionType;
 use starknet_api::transaction::fields::GasVectorComputationMode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -34,13 +34,13 @@ pub struct FunctionInvocation {
 #[derive(thiserror::Error, Debug)]
 pub enum ConvertCallInfoToExecuteInvocationError {
     #[error(transparent)]
-    GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
+    GetFunctionInvocation(#[from] TryFunctionInvocationFromCallInfoError),
     #[error("Missing FunctionInvocation")]
     MissingFunctionInvocation,
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum TryFuntionInvocationFromCallInfoError {
+pub enum TryFunctionInvocationFromCallInfoError {
     #[error(transparent)]
     TransactionExecution(#[from] TransactionExecutionError),
 }
@@ -135,11 +135,12 @@ pub fn execution_result_to_tx_trace_v0_7(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_7_1::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -267,11 +268,12 @@ pub fn execution_result_to_tx_trace_v0_8(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_8_1::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -383,11 +385,12 @@ pub fn execution_result_to_tx_trace_v0_9(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_9_0::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -552,7 +555,38 @@ fn resources_mapping(
     }
 }
 
-fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> mp_rpc::v0_7_1::StateDiff {
+fn to_state_diff(
+    commitment_state_diff: &CommitmentStateDiff,
+    deployed_contracts_set: &HashSet<Felt>,
+    deprecated_declared_class: &Option<Felt>,
+) -> mp_rpc::v0_7_1::StateDiff {
+    let mut deployed_contracts = vec![];
+    let mut replaced_classes = vec![];
+    for (address, class_hash) in &commitment_state_diff.address_to_class_hash {
+        let address_felt = address.to_felt();
+        let class_hash_felt = class_hash.to_felt();
+        if deployed_contracts_set.contains(&address_felt) {
+            deployed_contracts.push(mp_rpc::v0_7_1::DeployedContractItem {
+                address: address_felt,
+                class_hash: class_hash_felt,
+            });
+        } else {
+            replaced_classes.push(mp_rpc::v0_7_1::ReplacedClass {
+                contract_address: address_felt,
+                class_hash: class_hash_felt,
+            });
+        }
+    }
+
+    let declared_classes = commitment_state_diff
+        .class_hash_to_compiled_class_hash
+        .iter()
+        .map(|(class_hash, compiled_class_hash)| mp_rpc::v0_7_1::NewClasses {
+            class_hash: class_hash.to_felt(),
+            compiled_class_hash: compiled_class_hash.to_felt(),
+        })
+        .collect();
+
     mp_rpc::v0_7_1::StateDiff {
         storage_diffs: commitment_state_diff
             .storage_updates
@@ -565,10 +599,10 @@ fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> mp_rpc::v0_7_1:
                 mp_rpc::v0_7_1::ContractStorageDiffItem { address: address.to_felt(), storage_entries }
             })
             .collect(),
-        deprecated_declared_classes: vec![],
-        declared_classes: vec![],
-        deployed_contracts: vec![],
-        replaced_classes: vec![],
+        deprecated_declared_classes: deprecated_declared_class.iter().copied().collect(),
+        declared_classes,
+        deployed_contracts,
+        replaced_classes,
         nonces: commitment_state_diff
             .address_to_nonce
             .iter()
