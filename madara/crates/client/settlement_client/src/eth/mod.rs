@@ -6,6 +6,7 @@ use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
+use alloy::network::primitives::BlockTransactionsKind;
 use alloy::primitives::{keccak256, Address, B256, I256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::Filter;
@@ -406,7 +407,7 @@ impl SettlementLayerProvider for EthereumClient {
         // that are finalized on L1 to avoid issues with chain reorgs.
         let finalized_block = self
             .provider
-            .get_block_by_number(BlockNumberOrTag::Finalized, alloy::network::primitives::BlockTransactionsKind::Hashes)
+            .get_block_by_number(BlockNumberOrTag::Finalized, BlockTransactionsKind::Hashes)
             .await
             .map_err(|e| -> SettlementClientError {
                 EthereumClientError::Rpc(format!("Failed to get finalized block: {e}")).into()
