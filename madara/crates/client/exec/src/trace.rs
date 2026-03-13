@@ -482,6 +482,14 @@ pub fn execution_result_to_tx_trace_v0_9(
     Ok(tx_trace)
 }
 
+pub fn execution_result_to_tx_trace_v0_10(
+    executions_result: &ExecutionResult,
+    versioned_constants: &VersionedConstants,
+) -> Result<mp_rpc::v0_10_0::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
+    let v0_9_trace = execution_result_to_tx_trace_v0_9(executions_result, versioned_constants)?;
+    Ok(v0_9_trace.into())
+}
+
 fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<mp_rpc::v0_7_1::OrderedMessage> {
     call_info
         .execution
