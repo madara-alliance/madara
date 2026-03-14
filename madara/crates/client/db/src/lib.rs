@@ -133,9 +133,13 @@ use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+pub mod metrics;
+use metrics::metrics;
 pub mod migration;
 mod prelude;
 pub mod storage;
@@ -145,15 +149,45 @@ pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
 pub mod sync_status;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_utils;
 pub mod tests;
 pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
+pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
+pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
+
+/// Timing information collected during the close_block DB operations.
+/// All durations are captured for structured logging.
+#[derive(Debug, Clone, Default)]
+pub struct CloseBlockTimings {
+    /// Time to fetch full block with classes
+    pub get_full_block_with_classes: Duration,
+    /// Time to compute block commitments
+    pub block_commitments_compute: Duration,
+    /// Total time for global trie merklization (apply_to_global_trie)
+    pub merklization: Duration,
+    /// Time to compute contract trie root (parallel with class trie)
+    pub contract_trie_root: Duration,
+    /// Time to compute class trie root (parallel with contract trie)
+    pub class_trie_root: Duration,
+    /// Time to commit contract storage trie
+    pub contract_storage_trie_commit: Duration,
+    /// Time to commit contract trie
+    pub contract_trie_commit: Duration,
+    /// Time to commit class trie
+    pub class_trie_commit: Duration,
+    /// Time to compute block hash
+    pub block_hash_compute: Duration,
+    /// Time to write block parts to database
+    pub db_write_block_parts: Duration,
+}
 
 /// Current chain tip.
 #[derive(Default, Clone)]
@@ -290,6 +324,20 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionReadCacheConfig {
+    /// Enable the execution read cache. Default: false.
+    pub enabled: bool,
+    /// Contracts to cache.
+    ///
+    /// - `None`: cache all contracts.
+    /// - `Some(vec)`: cache only those contracts (allowlist mode). `Some([])` is valid and means
+    ///   "cache none".
+    pub contracts: Option<Vec<ContractAddress>>,
+    /// Maximum cache size in bytes.
+    pub max_memory_bytes: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
@@ -300,6 +348,8 @@ pub struct MadaraBackendConfig {
     /// WARNING: Without backup, there's no recovery if migration fails.
     /// Only use if you have external snapshots/backups.
     pub skip_migration_backup: bool,
+    /// Execution-time read cache for hot contract state.
+    pub execution_read_cache: ExecutionReadCacheConfig,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -427,6 +477,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 impl MadaraBackend<RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<Self> {
+        Self::open_for_testing_with_config(chain_config, Default::default())
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing_with_config(chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Arc<Self> {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -441,7 +496,7 @@ impl MadaraBackend<RocksDBStorage> {
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
-        let mut backend = Self::new_and_init(db, chain_config, Default::default(), cairo_native_config).unwrap();
+        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
@@ -543,12 +598,17 @@ impl MadaraBackend<RocksDBStorage> {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+pub use crate::rocksdb::external_outbox::set_external_outbox_write_failpoint;
+
 #[derive(Clone, Debug)]
 pub struct AddFullBlockResult {
     pub new_state_root: Felt,
     pub commitments: BlockCommitments,
     pub block_hash: Felt,
     pub parent_block_hash: Felt,
+    /// Timing information from the close_block DB operations.
+    pub timings: CloseBlockTimings,
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
@@ -577,6 +637,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
+    }
+
+    pub fn execution_read_cache_config(&self) -> &ExecutionReadCacheConfig {
+        &self.config.execution_read_cache
     }
 
     /// Get the runtime execution configuration from the database.
@@ -672,26 +736,30 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
+    ///
+    /// When `state_diff` is provided, this function uses an optimized path that skips the expensive
+    /// `get_normalized_state_diff()` computation (which queries the DB for every storage entry).
+    /// The provided `state_diff` should already contain all necessary fields including
+    /// `old_declared_contracts`, `deployed_contracts`, and `replaced_classes`.
     pub fn close_preconfirmed(
         &self,
         pre_v0_13_2_hash_override: bool,
-        state_diff: Option<StateDiff>,
+        state_diff: StateDiff,
     ) -> Result<AddFullBlockResult> {
-        let (mut block, classes) = self
-            .inner
-            .block_view_on_preconfirmed()
-            .context("There is no current preconfirmed block")?
-            .get_full_block_with_classes()?;
+        let fetch_start = Instant::now();
+        let preconfirmed_view =
+            self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
+        let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
+        let fetch_duration = fetch_start.elapsed();
+        let fetch_secs = fetch_duration.as_secs_f64();
+        metrics().get_full_block_without_state_diff_duration.record(fetch_secs, &[]);
+        metrics().get_full_block_without_state_diff_last.record(fetch_secs, &[]);
 
-        if let Some(mut state_diff) = state_diff {
-            state_diff.old_declared_contracts =
-                std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
-            block.state_diff = state_diff;
-        }
+        block.state_diff = state_diff;
 
         // Write the block & apply to global trie
 
-        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
+        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override, fetch_duration)?;
 
         self.new_confirmed_block(block.header.block_number)?;
 
@@ -723,26 +791,35 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         pre_v0_13_2_hash_override: bool,
     ) -> Result<AddFullBlockResult> {
         let block_n = block.header.block_number;
-        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
+        // For add_full_block_with_classes, no get_full_block_with_classes is needed as block is already provided
+        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override, Duration::ZERO)?;
 
         self.new_confirmed_block(block_n)?;
         Ok(result)
     }
 
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
-    /// all the block parts. Returns the block hash.
+    /// all the block parts. Returns the block hash and timing information.
+    /// Note: The `get_full_block_with_classes` timing must be provided by the caller.
     fn write_new_confirmed_inner(
         &self,
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
+        get_full_block_with_classes_duration: Duration,
     ) -> Result<AddFullBlockResult> {
+        let mut timings = CloseBlockTimings {
+            get_full_block_with_classes: get_full_block_with_classes_duration,
+            ..Default::default()
+        };
+
         let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
             last_block.get_block_info()?.block_hash
         } else {
             Felt::ZERO // genesis
         };
 
+        let commitments_start = Instant::now();
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
@@ -752,13 +829,31 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.state_diff,
             &block.events,
         );
+        timings.block_commitments_compute = commitments_start.elapsed();
+        let commitments_secs = timings.block_commitments_compute.as_secs_f64();
+        metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
+        metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+        let (global_state_root, merklization_timings) =
+            self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+
+        // Copy merklization timings
+        timings.merklization = merklization_timings.total;
+        timings.contract_trie_root = merklization_timings.contract_trie_root;
+        timings.class_trie_root = merklization_timings.class_trie_root;
+        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
+        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
+        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
 
+        let hash_start = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+        timings.block_hash_compute = hash_start.elapsed();
+        let hash_secs = timings.block_hash_compute.as_secs_f64();
+        metrics().block_hash_compute_duration.record(hash_secs, &[]);
+        metrics().block_hash_compute_last.record(hash_secs, &[]);
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
@@ -771,13 +866,24 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Save the block.
 
+        let write_start = Instant::now();
         self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
         self.write_transactions(block.header.block_number, &block.transactions)?;
         self.write_state_diff(block.header.block_number, &block.state_diff)?;
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, classes)?;
+        timings.db_write_block_parts = write_start.elapsed();
+        let write_secs = timings.db_write_block_parts.as_secs_f64();
+        metrics().db_write_block_parts_duration.record(write_secs, &[]);
+        metrics().db_write_block_parts_last.record(write_secs, &[]);
 
-        Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
+        Ok(AddFullBlockResult {
+            new_state_root: global_state_root,
+            commitments,
+            block_hash,
+            parent_block_hash,
+            timings,
+        })
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
@@ -852,7 +958,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt> {
+    ) -> Result<(Felt, rocksdb::global_trie::MerklizationTimings)> {
         self.inner.db.apply_to_global_trie(start_block_n, state_diffs)
     }
 
@@ -902,11 +1008,45 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         self.db.get_next_pending_message_to_l2(start_nonce)
     }
+    /// Returns the L1 transaction hash which emitted the L1->L2 message for the given core contract nonce, if known.
+    ///
+    /// This is written by the settlement client during L1 messaging sync and is later used to answer
+    /// `starknet_getMessagesStatus` without making L1 requests at RPC time.
+    pub fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
+        self.db.get_l1_txn_hash_by_nonce(core_contract_nonce)
+    }
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
+    pub fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        self.db.get_l1_handler_l1_block_by_nonce(core_contract_nonce)
+    }
+    /// Returns all messages sent by a given L1 transaction, as `(nonce, consumed_l2_tx_hash_if_known)`.
+    pub fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+        self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
+    }
+    /// Returns the status entry for a specific `(l1_tx_hash, nonce)` message index key.
+    pub fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+        self.db.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce)
+    }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
+    }
+    pub fn get_external_outbox_transactions(
+        &self,
+        limit: usize,
+    ) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_ {
+        self.db.get_external_outbox_transactions(limit)
+    }
+    pub fn get_external_outbox_size_estimate(&self) -> Result<u64> {
+        self.db.get_external_outbox_size_estimate()
     }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         self.db.get_devnet_predeployed_keys()
@@ -926,11 +1066,41 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)
     }
+    pub fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        self.db.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n)
+    }
     pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         self.db.write_pending_message_to_l2(msg)
     }
     pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    /// Stores the L1 transaction hash which emitted the L1->L2 message identified by `core_contract_nonce`.
+    pub fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()> {
+        self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
+    }
+    /// Inserts a "seen on L1" marker for the `(l1_tx_hash, nonce)` pair, if the key is missing.
+    ///
+    /// This is idempotent and will not overwrite an already-consumed entry.
+    pub fn insert_message_to_l2_seen_marker(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<bool> {
+        self.db.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce)
+    }
+    /// Writes the consumed L2 transaction hash for the `(l1_tx_hash, nonce)` pair.
+    pub fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        self.db.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash)
     }
     pub fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
         self.db.write_devnet_predeployed_keys(devnet_keys)
@@ -940,6 +1110,12 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
+    }
+    pub fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId> {
+        self.db.write_external_outbox(tx)
+    }
+    pub fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()> {
+        self.db.delete_external_outbox(id)
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)

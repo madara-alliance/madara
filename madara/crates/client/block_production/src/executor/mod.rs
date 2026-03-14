@@ -1,3 +1,4 @@
+use crate::metrics::BlockProductionMetrics;
 use crate::util::{BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::{
@@ -79,13 +80,14 @@ impl StopErrorReceiver {
 pub fn start_executor_thread(
     backend: Arc<MadaraBackend>,
     commands: UnboundedReceiver<ExecutorCommand>,
+    metrics: Arc<BlockProductionMetrics>,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
     let (send_batch, incoming_batches) = mpsc::channel(1);
     let (replies_sender, replies_recv) = mpsc::channel(100);
     let (stop_sender, stop_recv) = oneshot::channel();
 
-    let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands)?;
+    let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands, metrics)?;
     // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable
     std::thread::Builder::new()
         .name("executor".into())

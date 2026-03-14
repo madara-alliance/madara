@@ -1,5 +1,4 @@
 use mockall_double::double;
-use opentelemetry::KeyValue;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -10,7 +9,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{JobAction, QueueNameForJobType, QueueType};
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
@@ -248,9 +247,7 @@ impl JobService {
                     block_no = %internal_id,
                     "General handle job failure completed for block"
                 );
-                ORCHESTRATOR_METRICS
-                    .failed_jobs
-                    .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
+                MetricsRecorder::record_failed_job_total(&job.job_type, 1.0);
 
                 // Send SNS alert for job failure with full failure history
                 let history_summary = if previous_reasons_for_alert.is_empty() {

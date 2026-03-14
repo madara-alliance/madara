@@ -86,7 +86,7 @@ impl FeltExt for Felt {
         U256::from_be_bytes(self.to_bytes_be())
     }
 }
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct L1TransactionHash(pub [u8; 32]);
 

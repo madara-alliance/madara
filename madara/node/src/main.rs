@@ -118,6 +118,7 @@ use figment::{
 use http::{HeaderName, HeaderValue};
 use mc_analytics::AnalyticsService;
 use mc_db::MadaraBackend;
+use mc_external_db::ExternalDbService;
 use mc_gateway_client::GatewayProvider;
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
@@ -263,6 +264,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
 
+    run_cmd.backend_params.validate().context("Validating backend configuration")?;
+
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
@@ -364,6 +367,13 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.no_charge_fee,
     )?;
 
+    let service_external_db = run_cmd
+        .external_db_params
+        .to_config()
+        .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
+        .transpose()?;
+    let external_db_configured = service_external_db.is_some();
+
     // Add transaction provider
 
     let mempool_tx_validator = Arc::new(TransactionValidator::new(
@@ -422,7 +432,7 @@ async fn main() -> anyhow::Result<()> {
         service_block_production.setup_devnet().await?;
     }
 
-    let app = ServiceMonitor::default()
+    let mut app = ServiceMonitor::default()
         .with(service_analytics)?
         .with(service_mempool)?
         .with(service_l1_sync)?
@@ -432,6 +442,10 @@ async fn main() -> anyhow::Result<()> {
         .with(service_rpc_admin)?
         .with(service_gateway)?
         .with(service_telemetry)?;
+
+    if let Some(service_external_db) = service_external_db {
+        app = app.with(service_external_db)?;
+    }
 
     // Since the database is not implemented as a proper service, we do not
     // active it, as it would never be marked as stopped by the existing logic
@@ -471,6 +485,13 @@ async fn main() -> anyhow::Result<()> {
 
     if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
         app.activate(MadaraServiceId::Telemetry);
+    }
+
+    if external_db_configured && !warp_update_receiver {
+        // Warp-update receiver mode does not accept txs into the mempool, so running the
+        // outbox worker would be confusing at best and harmful at worst (it is tied to
+        // mempool tx acceptance and retention).
+        app.activate(MadaraServiceId::ExternalDb);
     }
 
     let result = app.start().await;

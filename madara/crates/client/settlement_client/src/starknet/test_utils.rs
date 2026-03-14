@@ -133,18 +133,18 @@ pub async fn get_message_hash_from_cairo(account: &StarknetAccount, appchain_con
     call.result[0]
 }
 
-/// Fires a messaging event in the messaging contract
+/// Fires a messaging event in the messaging contract.
 ///
 /// # Arguments
 /// * `account` - The Starknet account to use for the transaction
 /// * `appchain_contract_address` - The address of the messaging contract
 ///
 /// # Returns
-/// A Result containing the block number where the event was included
+/// The transaction hash of the invoke that fired the event.
 ///
 /// # Errors
 /// Returns an error if the transaction fails
-pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> u64 {
+pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> Felt {
     let call = account
         .execute_v3(vec![Call {
             to: appchain_contract_address,
@@ -154,10 +154,11 @@ pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_a
         .send()
         .await
         .unwrap();
-    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await.unwrap();
+    let tx_hash = call.transaction_hash;
+    let receipt = get_transaction_receipt(account.provider(), tx_hash).await.unwrap();
     assert_eq!(receipt.receipt.execution_result(), &ExecutionResult::Succeeded);
 
-    receipt.block.block_number()
+    tx_hash
 }
 
 /// Cancels a messaging event in the messaging contract
