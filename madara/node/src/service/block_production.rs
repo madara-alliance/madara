@@ -24,10 +24,18 @@ impl BlockProductionService {
         no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
+        let mempool_paused = config.mempool_paused;
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, no_charge_fee)),
+            task: Some(BlockProductionTask::new(
+                backend.clone(),
+                mempool,
+                metrics,
+                l1_client,
+                mempool_paused,
+                no_charge_fee,
+            )),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })

@@ -174,6 +174,11 @@ async fn main() -> anyhow::Result<()> {
     // Extracts the arguments into the struct
     let mut run_cmd: RunCmd = config.extract()?;
     run_cmd.check_mode()?;
+    if run_cmd.block_production_params.mempool_paused
+        && !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe)
+    {
+        bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
+    }
 
     // Setting up analytics
     let mut service_analytics = AnalyticsService::new(run_cmd.analytics_params.as_analytics_config())
