@@ -115,6 +115,24 @@ pub(crate) enum DeclarationInput<'a> {
     LegacyDeclarationInputs(String),
 }
 
+async fn compiled_class_hash_for_network(account: &RpcAccount<'_>, compiled_class: &CompiledClass) -> Felt {
+    let starknet_version = account
+        .provider()
+        .starknet_version(BlockId::Tag(BlockTag::Latest))
+        .await
+        .expect("Failed to query Starknet version for compiled class hash selection");
+    let hash_function = CompiledClass::hash_function_from_starknet_version(&starknet_version).unwrap_or_else(|| {
+        panic!("Unsupported Starknet version '{starknet_version}' for compiled class hash selection")
+    });
+    let compiled_class_hash = compiled_class
+        .class_hash_with_hash_function(hash_function)
+        .expect("Failed to compute compiled class hash for detected Starknet version");
+
+    log::info!("Using compiled class hash for Starknet version {}: {:#x}", starknet_version, compiled_class_hash);
+
+    compiled_class_hash
+}
+
 #[allow(private_interfaces)]
 pub async fn declare_contract(clients: &Clients, input: DeclarationInput<'_>) -> Felt {
     match input {
@@ -131,7 +149,7 @@ pub async fn declare_contract(clients: &Clients, input: DeclarationInput<'_>) ->
                 std::fs::File::open(env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &casm_path).unwrap(),
             )
             .unwrap();
-            let class_hash = contract_artifact_casm.class_hash().unwrap();
+            let class_hash = compiled_class_hash_for_network(&account, &contract_artifact_casm).await;
             let sierra_class_hash = contract_artifact.class_hash().unwrap();
 
             if account.provider().get_class(BlockId::Tag(BlockTag::PreConfirmed), sierra_class_hash).await.is_ok() {
