@@ -391,8 +391,11 @@ pub struct CommonReceiptProperties {
 /// the resources consumed by the transaction, includes both computation and data
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionResources {
+    #[serde(with = "NumAsHex")]
     pub l1_gas: u128,
+    #[serde(with = "NumAsHex")]
     pub l2_gas: u128,
+    #[serde(with = "NumAsHex")]
     pub l1_data_gas: u128,
 }
 

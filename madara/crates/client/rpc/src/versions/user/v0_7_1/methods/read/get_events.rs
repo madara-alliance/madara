@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
@@ -28,7 +30,8 @@ use mp_rpc::v0_7_1::{EventFilterWithPageRequest, EventsChunk};
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
 pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
-    let from_address = filter.address;
+    // Convert single address to HashSet for database filter
+    let from_addresses: HashSet<_> = filter.address.into_iter().collect();
     let keys = filter.keys;
     let chunk_size = filter.chunk_size as usize;
 
@@ -70,7 +73,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
             start_block: from_block,
             start_event_index: from_event_n,
             end_block: to_block_n,
-            from_address,
+            from_addresses,
             keys_pattern: keys,
             max_events: chunk_size + 1,
         })

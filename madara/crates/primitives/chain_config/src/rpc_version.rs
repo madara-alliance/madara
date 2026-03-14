@@ -1,11 +1,12 @@
 use std::hash::Hash;
 use std::str::FromStr;
 
-const SUPPORTED_RPC_VERSIONS: [RpcVersion; 5] = [
+const SUPPORTED_RPC_VERSIONS: [RpcVersion; 6] = [
     RpcVersion::RPC_VERSION_0_7_1,
     RpcVersion::RPC_VERSION_0_8_1,
     RpcVersion::RPC_VERSION_0_9_0,
     RpcVersion::RPC_VERSION_0_10_0,
+    RpcVersion::RPC_VERSION_0_10_1,
     RpcVersion::RPC_VERSION_ADMIN_0_1_0,
 ];
 
@@ -88,7 +89,8 @@ impl RpcVersion {
     pub const RPC_VERSION_0_8_1: RpcVersion = RpcVersion([0, 8, 1]);
     pub const RPC_VERSION_0_9_0: RpcVersion = RpcVersion([0, 9, 0]);
     pub const RPC_VERSION_0_10_0: RpcVersion = RpcVersion([0, 10, 0]);
-    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_10_0;
+    pub const RPC_VERSION_0_10_1: RpcVersion = RpcVersion([0, 10, 1]);
+    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_10_1;
 
     pub const RPC_VERSION_ADMIN_0_1_0: RpcVersion = RpcVersion([0, 1, 0]);
     pub const RPC_VERSION_LATEST_ADMIN: RpcVersion = Self::RPC_VERSION_ADMIN_0_1_0;

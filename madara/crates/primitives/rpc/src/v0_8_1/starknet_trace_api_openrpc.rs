@@ -1,4 +1,5 @@
 use super::starknet_api_openrpc::*;
+use crate::custom_serde::NumAsHex;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
@@ -136,6 +137,8 @@ pub struct TraceTransactionResult {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct InnerCallExecutionResources {
+    #[serde(with = "NumAsHex", default)]
     pub l1_gas: u128,
+    #[serde(with = "NumAsHex", default)]
     pub l2_gas: u128,
 }
