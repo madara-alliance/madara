@@ -1,4 +1,11 @@
-export const RPC_URL = "http://127.0.0.1:9944/rpc/v0.10.0/";
+const RPC_ROOT_URL = (process.env.RPC_ROOT_URL || "http://127.0.0.1:9944").replace(
+  /\/$/,
+  "",
+);
+const RPC_VERSION = (process.env.RPC_VERSION || "0.10.0").replace(/^v/i, "");
+const RPC_VERSION_PATH = `v${RPC_VERSION.replace(/[._]/g, "_")}`;
+
+export const RPC_URL = `${RPC_ROOT_URL}/rpc/${RPC_VERSION_PATH}/`;
 export const SIGNER_CONTRACT_ADDRESS =
   "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
 export const SIGNER_PRIVATE =

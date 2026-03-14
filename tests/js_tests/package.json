@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "tsc --noEmit && jest --config=jest.config.cjs --runInBand"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run test:all",
+    "test:all": "jest --config=jest.config.cjs --runInBand",
+    "test:unit-harness": "npm run typecheck && jest --config=jest.config.cjs --runInBand --runTestsByPath src/suites/unit-harness.spec.ts",
+    "test:conformance": "npm run typecheck && jest --config=jest.config.cjs --runInBand --runTestsByPath src/suites/conformance-read.spec.ts src/suites/conformance-write.spec.ts src/suites/conformance-trace.spec.ts",
+    "test:extension": "npm run typecheck && jest --config=jest.config.cjs --runInBand --runTestsByPath src/suites/extension-madara.spec.ts",
+    "test:e2e": "npm run typecheck && jest --config=jest.config.cjs --runInBand --runTestsByPath src/suites/e2e-live-flow.spec.ts"
   },
   "author": "",
   "license": "MIT",
   "description": "starknet js test for the madara",
   "dependencies": {
+    "ajv": "^8.17.1",
     "starknet": "^9.2.1"
   },
   "devDependencies": {

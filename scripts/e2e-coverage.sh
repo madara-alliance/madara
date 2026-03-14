@@ -1,16 +1,23 @@
 #!/bin/bash
 set -e
 
+if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
+  echo "CARGO_TARGET_DIR is not set. Load your shell profile (e.g. source ~/.zshrc) and retry."
+  exit 1
+fi
+TARGET_DIR="$CARGO_TARGET_DIR"
+export CARGO_TARGET_DIR="$TARGET_DIR"
+
 # Configuration
 export PROPTEST_CASES=5
 export ETH_FORK_URL=https://eth.merkle.io
 
 # Clean up previous coverage data
-rm -f target/madara-* lcov.info
+rm -f "$TARGET_DIR"/madara-* lcov.info
 
 # Build the binary with coverage instrumentation
-CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --profile dev
-export COVERAGE_BIN=$(realpath target/debug/madara)
+cargo build --manifest-path madara/Cargo.toml  --bin madara --profile dev
+export COVERAGE_BIN=$(realpath "$TARGET_DIR/debug/madara")
 
 # Run tests with coverage collection and generate reports in one command
 if cargo llvm-cov nextest --profile dev "${@:-"--workspace"}"; then
