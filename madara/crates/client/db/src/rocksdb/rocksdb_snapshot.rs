@@ -12,13 +12,22 @@ use crate::rocksdb::RocksDBStorageInner;
 /// [rust-rocksdb/rust-rocksdb#936](https://github.com/rust-rocksdb/rust-rocksdb/issues/936).
 pub struct SnapshotWithDBArc {
     // We hold an Arc to the database to ensure the snapshot cannot outlive it.
-    pub db: Arc<RocksDBStorageInner>,
+    pub(crate) db: Arc<RocksDBStorageInner>,
     // The Database needs to outlive the snapshot, and be created by the supplied `db`.
     inner: *const ffi::rocksdb_snapshot_t,
 }
 
 #[allow(dead_code)]
 impl SnapshotWithDBArc {
+    pub(crate) fn read_options_with_snapshot(&self) -> ReadOptions {
+        let mut readopts = ReadOptions::default();
+        // Safety: the snapshot originates from the same DB and is alive for the lifetime of this value.
+        unsafe {
+            readopts.set_raw_snapshot(self.inner);
+        }
+        readopts
+    }
+
     // This function allows us to not repeat the unsafe block a bunch of times. It takes ownership of the
     // readoptions to ensure its lifetime is stictly smaller than self.
     fn readopts_with_raw_snapshot<R>(&self, mut readopts: ReadOptions, f: impl FnOnce(&ReadOptions) -> R) -> R {
@@ -31,7 +40,7 @@ impl SnapshotWithDBArc {
     }
 
     /// Creates a new `SnapshotWithDBArc` of the database `db`.
-    pub fn new(db: Arc<RocksDBStorageInner>) -> Self {
+    pub(crate) fn new(db: Arc<RocksDBStorageInner>) -> Self {
         let snapshot = unsafe { db.db.create_snapshot() };
         Self { db, inner: snapshot }
     }

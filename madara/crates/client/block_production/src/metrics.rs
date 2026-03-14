@@ -28,8 +28,32 @@ pub struct BlockProductionMetrics {
     pub close_block_total_last: Gauge<f64>,
     pub close_preconfirmed_duration: Histogram<f64>,
     pub close_preconfirmed_last: Gauge<f64>,
+    pub executor_batch_execution_duration: Histogram<f64>,
+    pub executor_batch_execution_last: Gauge<f64>,
+    pub executor_to_main_delivery_duration: Histogram<f64>,
+    pub executor_to_main_delivery_last: Gauge<f64>,
     pub executor_finalize_duration: Histogram<f64>,
     pub executor_finalize_last: Gauge<f64>,
+    pub parallel_root_spawn_blocking_queue_duration: Histogram<f64>,
+    pub parallel_root_spawn_blocking_queue_last: Gauge<f64>,
+    pub parallel_root_compute_duration: Histogram<f64>,
+    pub parallel_root_compute_last: Gauge<f64>,
+    pub parallel_root_total_duration: Histogram<f64>,
+    pub parallel_root_total_last: Gauge<f64>,
+    pub parallel_root_await_duration: Histogram<f64>,
+    pub parallel_root_await_last: Gauge<f64>,
+    pub parallel_root_failures_total: Counter<u64>,
+    pub close_queue_enqueue_failures_total: Counter<u64>,
+    pub close_job_failures_total: Counter<u64>,
+    pub close_queue_depth: Gauge<u64>,
+    pub close_queue_enqueued_total: Counter<u64>,
+    pub close_queue_dequeued_total: Counter<u64>,
+    pub close_queue_wait_duration: Histogram<f64>,
+    pub close_queue_in_flight: Gauge<u64>,
+    pub stage_executing_blocks: Gauge<u64>,
+    pub stage_pending_close_completions: Gauge<u64>,
+    pub stage_diffs_since_snapshot: Gauge<u64>,
+    pub stage_tracked_blocks_total: Gauge<u64>,
 
     // Block data gauges
     pub block_event_count: Gauge<u64>,
@@ -169,6 +193,30 @@ impl BlockProductionMetrics {
             "Last block: time to close preconfirmed block with state diff".to_string(),
             "s".to_string(),
         );
+        let executor_batch_execution_duration = register_histogram_metric_instrument(
+            &meter,
+            "executor_batch_execution_duration_seconds".to_string(),
+            "Time spent by executor thread executing a single batch".to_string(),
+            "s".to_string(),
+        );
+        let executor_batch_execution_last = register_gauge_metric_instrument(
+            &meter,
+            "executor_batch_execution_last_seconds".to_string(),
+            "Last batch: time spent by executor thread executing batch".to_string(),
+            "s".to_string(),
+        );
+        let executor_to_main_delivery_duration = register_histogram_metric_instrument(
+            &meter,
+            "executor_to_main_delivery_duration_seconds".to_string(),
+            "Time between executor emitting BatchExecuted and main loop receiving it".to_string(),
+            "s".to_string(),
+        );
+        let executor_to_main_delivery_last = register_gauge_metric_instrument(
+            &meter,
+            "executor_to_main_delivery_last_seconds".to_string(),
+            "Last batch: time between executor emit and main loop receive".to_string(),
+            "s".to_string(),
+        );
         let executor_finalize_duration = register_histogram_metric_instrument(
             &meter,
             "executor_finalize_duration_seconds".to_string(),
@@ -180,6 +228,126 @@ impl BlockProductionMetrics {
             "executor_finalize_last_seconds".to_string(),
             "Last block: time for executor.finalize() to complete".to_string(),
             "s".to_string(),
+        );
+        let parallel_root_spawn_blocking_queue_duration = register_histogram_metric_instrument(
+            &meter,
+            "parallel_root_spawn_blocking_queue_duration_seconds".to_string(),
+            "Time root task waits before spawn_blocking closure starts".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_spawn_blocking_queue_last = register_gauge_metric_instrument(
+            &meter,
+            "parallel_root_spawn_blocking_queue_last_seconds".to_string(),
+            "Last block: root task wait before spawn_blocking starts".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_compute_duration = register_histogram_metric_instrument(
+            &meter,
+            "parallel_root_compute_duration_seconds".to_string(),
+            "Time spent computing parallel merkle root once closure starts".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_compute_last = register_gauge_metric_instrument(
+            &meter,
+            "parallel_root_compute_last_seconds".to_string(),
+            "Last block: time spent computing parallel merkle root".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_total_duration = register_histogram_metric_instrument(
+            &meter,
+            "parallel_root_total_duration_seconds".to_string(),
+            "Total time from dispatch_root to root result availability".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_total_last = register_gauge_metric_instrument(
+            &meter,
+            "parallel_root_total_last_seconds".to_string(),
+            "Last block: total time from dispatch_root to root result".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_await_duration = register_histogram_metric_instrument(
+            &meter,
+            "parallel_root_await_duration_seconds".to_string(),
+            "Time finalizer waits on pre-dispatched root handle".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_await_last = register_gauge_metric_instrument(
+            &meter,
+            "parallel_root_await_last_seconds".to_string(),
+            "Last block: time finalizer waited on root handle".to_string(),
+            "s".to_string(),
+        );
+        let parallel_root_failures_total = register_counter_metric_instrument(
+            &meter,
+            "parallel_root_failures_total".to_string(),
+            "Count of parallel root computation failures".to_string(),
+            "failure".to_string(),
+        );
+        let close_queue_enqueue_failures_total = register_counter_metric_instrument(
+            &meter,
+            "close_queue_enqueue_failures_total".to_string(),
+            "Count of close queue enqueue failures".to_string(),
+            "failure".to_string(),
+        );
+        let close_job_failures_total = register_counter_metric_instrument(
+            &meter,
+            "close_job_failures_total".to_string(),
+            "Count of close jobs that failed in the finalizer pipeline".to_string(),
+            "failure".to_string(),
+        );
+        let close_queue_depth = register_gauge_metric_instrument(
+            &meter,
+            "close_queue_depth".to_string(),
+            "Current number of pending close jobs in the queue".to_string(),
+            "job".to_string(),
+        );
+        let close_queue_enqueued_total = register_counter_metric_instrument(
+            &meter,
+            "close_queue_enqueued_total".to_string(),
+            "Total number of close jobs enqueued".to_string(),
+            "job".to_string(),
+        );
+        let close_queue_dequeued_total = register_counter_metric_instrument(
+            &meter,
+            "close_queue_dequeued_total".to_string(),
+            "Total number of close jobs dequeued/completed".to_string(),
+            "job".to_string(),
+        );
+        let close_queue_wait_duration = register_histogram_metric_instrument(
+            &meter,
+            "close_queue_wait_duration_seconds".to_string(),
+            "Time close jobs wait in queue before processing".to_string(),
+            "s".to_string(),
+        );
+        let close_queue_in_flight = register_gauge_metric_instrument(
+            &meter,
+            "close_queue_in_flight".to_string(),
+            "Number of close jobs currently being processed".to_string(),
+            "job".to_string(),
+        );
+        let stage_executing_blocks = register_gauge_metric_instrument(
+            &meter,
+            "block_stage_executing_blocks".to_string(),
+            "Number of blocks currently in execution stage".to_string(),
+            "block".to_string(),
+        );
+        let stage_pending_close_completions = register_gauge_metric_instrument(
+            &meter,
+            "block_stage_pending_close_completions".to_string(),
+            "Number of blocks waiting for close completion notification".to_string(),
+            "block".to_string(),
+        );
+        let stage_diffs_since_snapshot = register_gauge_metric_instrument(
+            &meter,
+            "block_stage_diffs_since_snapshot".to_string(),
+            "Number of block diffs retained since latest snapshot boundary".to_string(),
+            "diff".to_string(),
+        );
+        let stage_tracked_blocks_total = register_gauge_metric_instrument(
+            &meter,
+            "block_stage_tracked_blocks_total".to_string(),
+            "Total blocks tracked in in-memory block pipeline stages".to_string(),
+            "block".to_string(),
         );
 
         // Block data gauges
@@ -277,8 +445,32 @@ impl BlockProductionMetrics {
             close_block_total_last,
             close_preconfirmed_duration,
             close_preconfirmed_last,
+            executor_batch_execution_duration,
+            executor_batch_execution_last,
+            executor_to_main_delivery_duration,
+            executor_to_main_delivery_last,
             executor_finalize_duration,
             executor_finalize_last,
+            parallel_root_spawn_blocking_queue_duration,
+            parallel_root_spawn_blocking_queue_last,
+            parallel_root_compute_duration,
+            parallel_root_compute_last,
+            parallel_root_total_duration,
+            parallel_root_total_last,
+            parallel_root_await_duration,
+            parallel_root_await_last,
+            parallel_root_failures_total,
+            close_queue_enqueue_failures_total,
+            close_job_failures_total,
+            close_queue_depth,
+            close_queue_enqueued_total,
+            close_queue_dequeued_total,
+            close_queue_wait_duration,
+            close_queue_in_flight,
+            stage_executing_blocks,
+            stage_pending_close_completions,
+            stage_diffs_since_snapshot,
+            stage_tracked_blocks_total,
             block_event_count,
             block_state_diff_length,
             block_declared_classes_count,

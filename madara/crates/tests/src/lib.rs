@@ -27,7 +27,7 @@
 //!
 //! The [`MadaraCmdBuilder`] provides the main interface for configuring test nodes:
 //!
-//! ```no_run
+//! ```ignore
 //! let builder = MadaraCmdBuilder::new()
 //!     .args(["--full", "--network", "sepolia"])
 //!     .env([("MADARA_RPC_PORT", "9944")])
@@ -115,7 +115,7 @@
 //!
 //! The [`wait_for_cond`] utility enables testing asynchronous blockchain operations:
 //!
-//! ```no_run
+//! ```ignore
 //! wait_for_cond(
 //!     || async {
 //!         let receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
@@ -131,7 +131,7 @@
 //!
 //! Devnet mode provides pre-funded accounts with known private keys:
 //!
-//! ```no_run
+//! ```ignore
 //! use mc_e2e_tests::devnet::{ACCOUNTS, ACCOUNT_SECRETS};
 //!
 //! let account_address = ACCOUNTS[0];
@@ -148,7 +148,7 @@
 //! 4. **Assert results**: Use utilities like [`wait_for_cond`] for async assertions
 //! 5. **Cleanup**: Automatic via [`Drop`] implementations
 //!
-//! ```no_run
+//! ```ignore
 //! #[tokio::test]
 //! async fn test_transaction() {
 //!     // Setup
@@ -201,6 +201,8 @@ mod devnet;
 mod gateway;
 #[cfg(test)]
 mod preconfirmed_recovery;
+#[cfg(test)]
+mod replay_boundary;
 #[cfg(test)]
 mod rpc;
 #[cfg(test)]
@@ -377,72 +379,86 @@ impl MadaraCmd {
     pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool, rpc_admin: bool) {
         let stdout =
             self.process.as_mut().unwrap().stdout.take().expect("Could not capture stdout from Madara process");
+        let stderr =
+            self.process.as_mut().unwrap().stderr.take().expect("Could not capture stderr from Madara process");
         let pid = self.process.as_ref().unwrap().id();
 
         let stdout_prefix = if !self.label.is_empty() { format!("[{pid} {}]", self.label) } else { format!("[{pid}]") };
+        let stderr_prefix = format!("{stdout_prefix} [stderr]");
 
-        let reader = BufReader::new(stdout);
-        let (tx, rx) = mpsc::channel();
+        let (line_tx, line_rx) = mpsc::channel::<String>();
 
+        let stdout_tx = line_tx.clone();
         thread::spawn(move || {
-            let mut rpc_port = None;
-            let mut rpc_admin_port = None;
-            let mut gateway_port = None;
-
+            let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
-                // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
-                // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
-                fn get_port(line: &str, prefix: &str) -> Option<u16> {
-                    line.split_once(prefix).map(|(_, rest)| rest.split_once(' ').unwrap_or((rest, ""))).and_then(
-                        |(url, _)| {
-                            Url::parse(url)
-                                .ok()
-                                .and_then(|url| url.port())
-                                .or_else(|| url.split_once(':').and_then(|(_, port)| port.parse().ok()))
-                        },
-                    )
-                }
-
-                rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
-                rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
-                gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
-
-                if (!rpc && rpc_port.is_some())
-                    || (!gateway && gateway_port.is_some())
-                    || (!rpc_admin && rpc_admin_port.is_some())
-                {
-                    panic!(
-                        "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, rpc_admin_enabled={rpc_admin}, \
-                        got rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port:?}, gateway_port={gateway_port:?}"
-                    )
-                }
-
-                if (rpc == rpc_port.is_some())
-                    && (gateway == gateway_port.is_some())
-                    && (rpc_admin == rpc_admin_port.is_some())
-                {
-                    let _ = tx.send((rpc_port, rpc_admin_port, gateway_port));
-                }
                 println!("{stdout_prefix} {line}");
+                if stdout_tx.send(line).is_err() {
+                    break;
+                }
             }
         });
+
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                println!("{stderr_prefix} {line}");
+                if line_tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut rpc_port = None;
+        let mut rpc_admin_port = None;
+        let mut gateway_port = None;
+
+        // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
+        // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
+        fn get_port(line: &str, prefix: &str) -> Option<u16> {
+            line.split_once(prefix).map(|(_, rest)| rest.split_once(' ').unwrap_or((rest, ""))).and_then(|(url, _)| {
+                Url::parse(url)
+                    .ok()
+                    .and_then(|url| url.port())
+                    .or_else(|| url.split_once(':').and_then(|(_, port)| port.parse().ok()))
+            })
+        }
 
         let timeout = Duration::from_secs(90);
         let start = Instant::now();
 
         while start.elapsed() < timeout {
-            match rx.try_recv() {
-                Ok((rpc_port, rpc_admin_port, gateway_port)) => {
-                    let rpc_url = rpc_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
-                    let rpc_admin_url =
-                        rpc_admin_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
-                    let gateway_root_url =
-                        gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+            match line_rx.try_recv() {
+                Ok(line) => {
+                    rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
+                    rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
+                    gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
 
-                    self.rpc_url = rpc_url;
-                    self.rpc_admin_url = rpc_admin_url;
-                    self.gateway_root_url = gateway_root_url;
-                    return;
+                    if (!rpc && rpc_port.is_some())
+                        || (!gateway && gateway_port.is_some())
+                        || (!rpc_admin && rpc_admin_port.is_some())
+                    {
+                        panic!(
+                            "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, rpc_admin_enabled={rpc_admin}, \
+                            got rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port:?}, gateway_port={gateway_port:?}"
+                        )
+                    }
+
+                    if (rpc == rpc_port.is_some())
+                        && (gateway == gateway_port.is_some())
+                        && (rpc_admin == rpc_admin_port.is_some())
+                    {
+                        let rpc_url = rpc_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+                        let rpc_admin_url =
+                            rpc_admin_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+                        let gateway_root_url =
+                            gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+
+                        self.rpc_url = rpc_url;
+                        self.rpc_admin_url = rpc_admin_url;
+                        self.gateway_root_url = gateway_root_url;
+                        return;
+                    }
                 }
                 Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(100)),
                 Err(TryRecvError::Disconnected) => {
@@ -541,7 +557,11 @@ impl MadaraCmdBuilder {
         tracing::info!("Running new madara process with args {:?}", self.args);
 
         let mut cmd = Command::new(target_bin);
-        cmd.envs(self.env)
+        let mut child_env = self.env;
+        // E2E harness extracts dynamic ports from startup INFO logs. Keep it explicit to avoid
+        // environment-dependent timeouts when info logs are filtered out.
+        child_env.entry("RUST_LOG".to_string()).or_insert_with(|| "info".to_string());
+        cmd.envs(child_env)
             .env("CLICOLOR_FORCE", "1")
             .args(self.args)
             .args(["--base-path".into(), self.tempdir.path().display().to_string()])

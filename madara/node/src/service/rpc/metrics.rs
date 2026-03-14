@@ -82,7 +82,7 @@ impl RpcMetrics {
 
     pub(crate) fn ws_connect(&self) {
         if let Some(counter) = self.ws_sessions_opened.as_ref() {
-            counter.add(1, &[]);
+            counter.add(1, &[KeyValue::new("transport", "ws")]);
         }
     }
 
@@ -90,9 +90,9 @@ impl RpcMetrics {
         let millis = now.elapsed().as_millis();
 
         if let Some(counter) = self.ws_sessions_closed.as_ref() {
-            counter.add(1, &[]);
+            counter.add(1, &[KeyValue::new("transport", "ws")]);
         }
-        self.ws_sessions_time.record(millis as f64, &[]);
+        self.ws_sessions_time.record(millis as f64, &[KeyValue::new("transport", "ws")]);
     }
 
     pub(crate) fn on_call(&self, req: &Request, transport_label: &'static str) {
@@ -102,7 +102,10 @@ impl RpcMetrics {
             req.method_name(),
             req.params(),
         );
-        self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
+        self.calls_started.add(
+            1,
+            &[KeyValue::new("method", req.method_name().to_string()), KeyValue::new("transport", transport_label)],
+        );
     }
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
@@ -117,13 +120,17 @@ impl RpcMetrics {
             millis,
         );
 
-        self.calls_time.record(millis as f64, &[KeyValue::new("method", req.method_name().to_string())]);
+        self.calls_time.record(
+            millis as f64,
+            &[KeyValue::new("method", req.method_name().to_string()), KeyValue::new("transport", transport_label)],
+        );
 
         self.calls_finished.add(
             1,
             &[
                 KeyValue::new("method", req.method_name().to_string()),
                 KeyValue::new("success", rp.is_success().to_string()),
+                KeyValue::new("transport", transport_label),
             ],
         );
     }

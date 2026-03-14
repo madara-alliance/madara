@@ -129,11 +129,11 @@ Key services run concurrently:
 **State tries**: Bonsai trie for global Merkle state root
 **Database migrations**: Version-based with automatic migration runner
 
-**Chain Tip Management:**
+**Chain Head Projection Management:**
 
-- `ChainTip` enum: Empty | Confirmed(block_n) | Preconfirmed(Arc<`PreconfirmedBlock`>)
-- Preconfirmed blocks saved to DB (optional) for crash recovery
-- Atomic transitions validated by `MadaraBackendWriter`
+- Canonical state is tracked via `ChainHeadState` + optional in-memory `PreconfirmedBlock`
+- Persisted head projection supports Empty | Confirmed(block_n) | Preconfirmed(header + content)
+- Atomic transitions are validated by `MadaraBackendWriter`
 
 **High-Level vs Low-Level API:**
 
@@ -228,7 +228,7 @@ Key services run concurrently:
 ### Service Communication
 
 - **Direct DB access**: Most services read/write shared database
-- **Watch channels**: L1 head updates, chain tip updates
+- **Watch channels**: L1 head updates, chain head state updates
 - **Broadcast channels**: Transaction notifications, service status
 - **Message queues**: Block production batches, L1→L2 messages
 

@@ -125,11 +125,14 @@
 //! [`process_reply`]: BlockProductionTask::process_reply
 
 use crate::batcher::Batcher;
+use crate::close_queue::{CloseJobCompletion, QueuedClosePayload};
+use crate::finalizer::FinalizerHandle;
 use crate::metrics::BlockProductionMetrics;
 use crate::util::BlockExecutionContext;
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use executor::{BatchExecutionResult, ExecutorMessage};
+use mc_db::close_pipeline_contract::ClosePreconfirmedResult;
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
 use mc_db::{MadaraBackend, MadaraPreconfirmedBlockView, MadaraStateView};
 use mc_exec::execution::TxInfo;
@@ -140,31 +143,86 @@ use mp_block::TransactionWithReceipt;
 use mp_chain_config::RuntimeExecutionConfig;
 use mp_convert::{Felt, ToFelt};
 use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::StateDiff;
 use mp_state_update::{ClassUpdateItem, DeclaredClassCompiledClass, TransactionStateUpdate};
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::TransactionWithHash;
 use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 
 mod batcher;
+mod close_queue;
 mod executor;
+mod finalizer;
 mod handle;
 pub mod metrics;
 mod util;
 
 pub use handle::BlockProductionHandle;
 
+const PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT: usize = 10;
+
+fn validate_parallel_queue_invariant(parallel_merkle_enabled: bool, close_queue_capacity: usize) -> anyhow::Result<()> {
+    if parallel_merkle_enabled && close_queue_capacity < PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT {
+        anyhow::bail!(
+            "QueueInvariantViolated: configured capacity {} is below protocol minimum {}",
+            close_queue_capacity,
+            PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT
+        );
+    }
+    Ok(())
+}
+
+fn prune_diffs_since_snapshot(diffs_since_snapshot: &mut Vec<(u64, StateDiff)>, completed_block_n: u64) {
+    diffs_since_snapshot.retain(|(n, _)| *n > completed_block_n);
+}
+
+fn collect_diffs_for_root_from_base(
+    diffs_since_snapshot: &[(u64, StateDiff)],
+    base_block_n: Option<u64>,
+    target_block_n: u64,
+) -> anyhow::Result<Vec<StateDiff>> {
+    let mut expected_block_n = base_block_n.map_or(0, |block_n| block_n.saturating_add(1));
+    let mut collected = Vec::new();
+
+    for (block_n, state_diff) in diffs_since_snapshot.iter().filter(|(block_n, _)| *block_n <= target_block_n) {
+        if *block_n < expected_block_n {
+            continue;
+        }
+        anyhow::ensure!(
+            *block_n == expected_block_n,
+            "Missing tracked state diff for block #{expected_block_n} while preparing root for block #{target_block_n} from base {base_block_n:?}"
+        );
+        collected.push(state_diff.clone());
+        expected_block_n = expected_block_n.saturating_add(1);
+    }
+
+    anyhow::ensure!(
+        expected_block_n == target_block_n.saturating_add(1),
+        "Incomplete tracked state diffs for root of block #{target_block_n} from base {base_block_n:?}"
+    );
+
+    Ok(collected)
+}
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
-    ClosedBlock,
+    ClosedBlock { block_n: u64 },
     BatchExecuted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MempoolIntakeMode {
+    Running,
+    Paused,
 }
 
 #[derive(Debug)]
@@ -201,7 +259,7 @@ impl CurrentBlockState {
             if let Some(core_contract_nonce) = blockifier_tx.l1_handler_tx_nonce() {
                 // Even when the l1 handler tx is reverted, we mark the nonce as consumed.
                 self.consumed_core_contract_nonces
-                    .insert(core_contract_nonce.to_felt().try_into().expect("Invalid nonce"));
+                    .insert(core_contract_nonce.to_felt().try_into().context("Invalid nonce while appending batch")?);
             }
 
             if let Ok((execution_info, state_diff)) = blockifier_exec_result {
@@ -283,7 +341,7 @@ impl CurrentBlockState {
 
         let stats = mem::take(&mut batch.stats);
         if stats.n_added_to_block > 0 {
-            tracing::info!(
+            tracing::debug!(
                 "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
                 stats.n_added_to_block,
                 self.block_number,
@@ -314,6 +372,7 @@ pub(crate) enum TaskState {
 pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
+    close_queue_capacity: usize,
     current_state: Option<TaskState>,
     metrics: Arc<BlockProductionMetrics>,
     state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
@@ -321,7 +380,14 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     no_charge_fee: bool,
+    replay_mode_enabled: bool,
+    parallel_merkle_enabled: bool,
+    parallel_merkle_flush_interval: u64,
+    parallel_merkle_trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
+    diffs_since_snapshot: Vec<(u64, StateDiff)>,
+    pending_completions: VecDeque<(u64, tokio::sync::oneshot::Receiver<anyhow::Result<CloseJobCompletion>>)>,
 }
 
 impl BlockProductionTask {
@@ -329,6 +395,7 @@ impl BlockProductionTask {
     ///
     /// # Parameters
     ///
+    /// * `mempool_paused`: If true, block production starts with mempool intake paused.
     /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
     ///
     /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
@@ -337,22 +404,68 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
+        mempool_paused: bool,
         no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
-        let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
+        let (bypass_input_sender, bypass_tx_input) = mpsc::channel(1024);
+        let initial_intake = if mempool_paused { MempoolIntakeMode::Paused } else { MempoolIntakeMode::Running };
+        let (mempool_intake_tx, mempool_intake_rx) = watch::channel(initial_intake);
         Self {
             backend: backend.clone(),
             mempool,
+            close_queue_capacity: 1,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
+            handle: BlockProductionHandle::new(
+                backend,
+                sender,
+                bypass_input_sender,
+                mempool_intake_tx.clone(),
+                no_charge_fee,
+            ),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            mempool_intake_rx,
             no_charge_fee,
+            replay_mode_enabled: false,
+            parallel_merkle_enabled: false,
+            parallel_merkle_flush_interval: 3,
+            parallel_merkle_trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
+            diffs_since_snapshot: Vec::new(),
+            pending_completions: VecDeque::new(),
         }
+    }
+
+    pub fn with_close_queue_capacity(mut self, close_queue_capacity: usize) -> Self {
+        self.close_queue_capacity = close_queue_capacity.max(1);
+        self
+    }
+
+    pub fn with_parallel_merkle_enabled(mut self, enabled: bool) -> Self {
+        self.parallel_merkle_enabled = enabled;
+        self
+    }
+
+    pub fn with_replay_mode_enabled(mut self, enabled: bool) -> Self {
+        self.replay_mode_enabled = enabled;
+        self.handle.set_replay_mode_enabled(enabled);
+        self
+    }
+
+    pub fn with_parallel_merkle_flush_interval(mut self, flush_interval: u64) -> Self {
+        self.parallel_merkle_flush_interval = flush_interval.max(1);
+        self
+    }
+
+    pub fn with_parallel_merkle_trie_log_mode(
+        mut self,
+        trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
+    ) -> Self {
+        self.parallel_merkle_trie_log_mode = trie_log_mode;
+        self
     }
 
     pub fn handle(&self) -> BlockProductionHandle {
@@ -370,6 +483,30 @@ impl BlockProductionTask {
         if let Some(sender) = self.state_notifications.as_mut() {
             let _ = sender.send(notification);
         }
+    }
+
+    fn record_block_stage_metrics(&self) {
+        let executing = u64::from(matches!(self.current_state.as_ref(), Some(TaskState::Executing(_))));
+        let pending_close = self.pending_completions.len() as u64;
+        let diffs_since_snapshot = self.diffs_since_snapshot.len() as u64;
+        let tracked_total = executing.saturating_add(pending_close).saturating_add(diffs_since_snapshot);
+
+        self.metrics.stage_executing_blocks.record(executing, &[]);
+        self.metrics.stage_pending_close_completions.record(pending_close, &[]);
+        self.metrics.stage_diffs_since_snapshot.record(diffs_since_snapshot, &[]);
+        self.metrics.stage_tracked_blocks_total.record(tracked_total, &[]);
+    }
+
+    fn close_queue_capacity(&self) -> usize {
+        self.close_queue_capacity.max(1)
+    }
+
+    fn is_boundary_block(&self, block_n: u64) -> bool {
+        let Some(next_block_n) = block_n.checked_add(1) else {
+            return false;
+        };
+        self.parallel_merkle_flush_interval != 0
+            && next_block_n.checked_rem(self.parallel_merkle_flush_interval) == Some(0)
     }
 
     /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
@@ -473,7 +610,7 @@ impl BlockProductionTask {
             // Close the preconfirmed block with state_diff
             let result = backend
                 .write_access()
-                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, state_diff)
+                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, block_number, state_diff)
                 .context("Closing preconfirmed block")?;
 
             anyhow::Ok(result)
@@ -494,8 +631,9 @@ impl BlockProductionTask {
             let block_hash = view.get_block_info().context("Getting block hash of block_n - 10")?.block_hash;
             Ok(Some((block_n_min_10, block_hash)))
         } else {
-            // This should be unreachable - if we're here, something is wrong
-            unreachable!("Block doesn't exist yet - this path should not be reachable")
+            anyhow::bail!(
+                "Cannot fetch block #{block_n_min_10} hash (required for block_n-10 context), block view not found"
+            )
         }
     }
 
@@ -581,17 +719,15 @@ impl BlockProductionTask {
                     let reexecuted_receipt = from_blockifier_execution_info(exec_info, &blockifier_txs[i]);
 
                     // Compare receipts - they should match exactly
-                    assert_eq!(
-                        reexecuted_receipt.transaction_hash(),
-                        preconfirmed_tx.transaction.receipt.transaction_hash(),
-                        "Re-execution produced different receipt for transaction {} (hash: {:#x})",
+                    anyhow::ensure!(
+                        reexecuted_receipt.transaction_hash() == preconfirmed_tx.transaction.receipt.transaction_hash(),
+                        "Re-execution produced different receipt hash for transaction {} (hash: {:#x})",
                         i,
                         preconfirmed_tx.transaction.receipt.transaction_hash()
                     );
 
-                    assert_eq!(
-                        reexecuted_receipt,
-                        preconfirmed_tx.transaction.receipt,
+                    anyhow::ensure!(
+                        reexecuted_receipt == preconfirmed_tx.transaction.receipt,
                         "Re-execution produced different receipt content for transaction {} (hash: {:#x})",
                         i,
                         preconfirmed_tx.transaction.receipt.transaction_hash()
@@ -653,30 +789,28 @@ impl BlockProductionTask {
     /// Note: Re-execution uses saved config values (e.g. `no_charge_fee`) to ensure consistency with original execution.
     /// Runtime config is always saved for persistence.
     async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
-        if !self.backend.has_preconfirmed_block() {
-            // Even if there's no preconfirmed block, save the current runtime exec config
-            // This ensures the config is persisted for future restarts
+        let head = self.backend.chain_head_state();
+        let confirmed_tip = head.confirmed_tip;
+        let Some(internal_preconfirmed_tip) = head.internal_preconfirmed_tip else {
+            self.save_current_runtime_exec_config()?;
+            return Ok(());
+        };
+
+        // Startup recovery scans block-keyed preconfirmed entries in ascending order:
+        // [confirmed + 1, internal_preconfirmed_tip].
+        let start_block_n = confirmed_tip.map(|n| n.saturating_add(1)).unwrap_or(0);
+        if start_block_n > internal_preconfirmed_tip {
             self.save_current_runtime_exec_config()?;
             return Ok(());
         }
 
-        tracing::debug!("Close preconfirmed block on startup.");
-
-        let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
-
-        let block_number = preconfirmed_view.block_number();
-        let n_txs = preconfirmed_view.num_executed_transactions();
-
         tracing::debug!(
-            "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
-            n_txs,
-            block_number
+            "Close preconfirmed blocks on startup from block_n={} to block_n={}",
+            start_block_n,
+            internal_preconfirmed_tip
         );
 
-        // Load saved runtime execution config
         let saved_config = self.backend.get_runtime_exec_config().context("Getting runtime execution config")?;
-
-        // Extract saved values for re-execution without modifying self
         let (saved_chain_config, saved_no_charge_fee) = if let Some(config) = saved_config {
             (Some(Arc::new(config.chain_config)), config.no_charge_fee)
         } else {
@@ -684,73 +818,78 @@ impl BlockProductionTask {
             (None, self.no_charge_fee)
         };
 
-        // Re-execute transactions to get BlockExecutionSummary
-        // Use saved_no_charge_fee for re-execution without modifying self.no_charge_fee
-        let block_exec_summary = self
-            .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config.as_ref(), saved_no_charge_fee)
+        for block_number in start_block_n..=internal_preconfirmed_tip {
+            let preconfirmed_view = self
+                .backend
+                .block_view_on_preconfirmed(block_number)
+                .with_context(|| format!("Getting preconfirmed block view for block #{block_number}"))?;
+
+            let n_txs = preconfirmed_view.num_executed_transactions();
+            tracing::debug!(
+                "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
+                n_txs,
+                block_number
+            );
+
+            let block_exec_summary = self
+                .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config.as_ref(), saved_no_charge_fee)
+                .await
+                .with_context(|| format!("Re-executing preconfirmed block #{block_number} to get execution summary"))?;
+
+            let consumed_core_contract_nonces: HashSet<u64> = preconfirmed_view
+                .borrow_content()
+                .executed_transactions()
+                .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
+                .collect();
+
+            let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
+            let deployed_contracts_set = preconfirmed_view.get_deployed_contracts_set();
+            let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+                .compiled_class_hashes_for_migration
+                .iter()
+                .map(|(v2_hash, _v1_hash)| v2_hash.0)
+                .collect();
+
+            let state_diff = mp_state_update::StateDiff::from_blockifier(
+                block_exec_summary.state_diff,
+                &migration_v2_hashes,
+                &deployed_contracts_set,
+                old_declared_contracts,
+            );
+
+            let _db_result = Self::close_preconfirmed_block_with_state_diff(
+                self.backend.clone(),
+                block_number,
+                consumed_core_contract_nonces,
+                &block_exec_summary.bouncer_weights,
+                state_diff,
+            )
             .await
-            .context("Re-executing preconfirmed block to get execution summary")?;
+            .with_context(|| format!("Closing preconfirmed block #{block_number} on startup"))?;
 
-        // Extract consumed L1 nonces from transactions
-        let consumed_core_contract_nonces: HashSet<u64> = preconfirmed_view
-            .borrow_content()
-            .executed_transactions()
-            .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
-            .collect();
+            tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+        }
 
-        // Get old_declared_contracts (Cairo 0 legacy classes) - lightweight, no DB queries
-        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
-
-        // Get deployed contracts set from per-tx state diffs - lightweight, no DB queries
-        let deployed_contracts_set = preconfirmed_view.get_deployed_contracts_set();
-
-        // Build set of v2 hashes for SNIP-34 migrated classes
-        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
-            .compiled_class_hashes_for_migration
-            .iter()
-            .map(|(v2_hash, _v1_hash)| v2_hash.0)
-            .collect();
-
-        // Convert state_diff with all necessary information
-        let state_diff = mp_state_update::StateDiff::from_blockifier(
-            block_exec_summary.state_diff,
-            &migration_v2_hashes,
-            &deployed_contracts_set,
-            old_declared_contracts,
-        );
-
-        let _db_result = Self::close_preconfirmed_block_with_state_diff(
-            self.backend.clone(),
-            block_number,
-            consumed_core_contract_nonces,
-            &block_exec_summary.bouncer_weights,
-            state_diff,
-        )
-        .await
-        .context("Closing preconfirmed block on startup")?;
-
-        // Update runtime exec config with current configs after re-execution is complete
-        // This ensures that if we restart again before starting the next block, we have the current configs
-        // Note: Use self.no_charge_fee (current value) not saved_no_charge_fee (saved value)
         self.save_current_runtime_exec_config()
-            .context("Updating runtime execution config after restart re-execution")?;
-
-        tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+            .context("Updating runtime execution config after startup preconfirmed recovery")?;
 
         Ok(())
     }
 
     /// Handles the state machine and its transitions.
-    async fn process_reply(&mut self, reply: ExecutorMessage) -> anyhow::Result<()> {
+    async fn process_reply(&mut self, reply: ExecutorMessage, close_queue: &FinalizerHandle) -> anyhow::Result<()> {
         match reply {
             ExecutorMessage::StartNewBlock { exec_ctx } => {
-                tracing::debug!("Received ExecutorMessage::StartNewBlock block_n={}", exec_ctx.block_number);
+                tracing::debug!("received_executor_start_new_block block_n={}", exec_ctx.block_number);
                 let current_state = self.current_state.take().context("No current state")?;
                 let TaskState::NotExecuting { latest_block_n } = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be NotExecuting")
                 };
 
-                let new_block_n = latest_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+                let new_block_n = latest_block_n
+                    .map(|n| n.checked_add(1).context("Block number overflow while starting new block"))
+                    .transpose()?
+                    .unwrap_or(/* genesis */ 0);
                 if new_block_n != exec_ctx.block_number {
                     anyhow::bail!(
                         "Received new block_n={} from executor, expected block_n={}",
@@ -769,17 +908,34 @@ impl BlockProductionTask {
 
                 self.current_state =
                     Some(TaskState::Executing(CurrentBlockState::new(self.backend.clone(), new_block_n)));
+                self.record_block_stage_metrics();
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
-                tracing::debug!(
-                    "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
-                    batch_execution_result.executed_txs
-                );
-
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+                let batch_exec_secs = batch_execution_result.stats.exec_duration.as_secs_f64();
+                let batch_exec_ms = batch_exec_secs * 1000.0;
+                let executor_to_main_delivery_secs = batch_execution_result.emitted_at.elapsed().as_secs_f64();
+                let executor_to_main_delivery_ms = executor_to_main_delivery_secs * 1000.0;
+                self.metrics.executor_batch_execution_duration.record(batch_exec_secs, &[]);
+                self.metrics.executor_batch_execution_last.record(batch_exec_secs, &[]);
+                self.metrics.executor_to_main_delivery_duration.record(executor_to_main_delivery_secs, &[]);
+                self.metrics.executor_to_main_delivery_last.record(executor_to_main_delivery_secs, &[]);
+                tracing::debug!(
+                    "received_executor_batch_executed block_number={} txs_executed_in_batch={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} executor_to_main_delivery_ms={} close_queue_depth={} close_queue_in_flight={} pending_close_completions={}",
+                    state.block_number,
+                    batch_execution_result.stats.n_executed,
+                    batch_execution_result.stats.n_added_to_block,
+                    batch_execution_result.stats.n_reverted,
+                    batch_execution_result.stats.n_rejected,
+                    batch_exec_ms,
+                    executor_to_main_delivery_ms,
+                    close_queue.current_depth(),
+                    close_queue.current_in_flight(),
+                    self.pending_completions.len()
+                );
 
                 // Record batch execution stats metrics
                 self.metrics.record_execution_stats(&batch_execution_result.stats);
@@ -792,14 +948,14 @@ impl BlockProductionTask {
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
             ExecutorMessage::EndBlock(block_exec_summary) => {
-                tracing::debug!("Received ExecutorMessage::EndBlock");
-                self.close_block(block_exec_summary).await?;
+                tracing::debug!("received_executor_end_block");
+                self.close_block(block_exec_summary, close_queue).await?;
             }
             ExecutorMessage::EndFinalBlock(block_exec_summary) => {
-                tracing::debug!("Received ExecutorMessage::EndFinalBlock (shutdown)");
+                tracing::debug!("received_executor_end_final_block");
                 match block_exec_summary {
                     Some(summary) => {
-                        self.close_block(summary).await?;
+                        self.close_block(summary, close_queue).await?;
                     }
                     None => {
                         tracing::debug!("EndFinalBlock(None) received - executor completed without block");
@@ -813,46 +969,167 @@ impl BlockProductionTask {
 
     /// Close and save a block using the execution summary.
     /// Used for both normal block closing (EndBlock) and shutdown (EndFinalBlock).
-    async fn close_block(&mut self, block_exec_summary: Box<BlockExecutionSummary>) -> anyhow::Result<()> {
+    async fn close_block(
+        &mut self,
+        block_exec_summary: Box<BlockExecutionSummary>,
+        close_queue: &FinalizerHandle,
+    ) -> anyhow::Result<()> {
         let current_state = self.current_state.take().context("No current state")?;
         let TaskState::Executing(state) = current_state else {
             anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
         };
+        let block_n = state.block_number;
+        tracing::info!("close_block_received_from_executor block_number={block_n}");
 
+        let preconfirmed_view = state
+            .backend
+            .block_view_on_preconfirmed(block_n)
+            .with_context(|| format!("No pre-confirmed block #{block_n}"))?;
+        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
+        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+            .compiled_class_hashes_for_migration
+            .iter()
+            .map(|(v2_hash, _v1_hash)| v2_hash.0)
+            .collect();
+        let state_diff = mp_state_update::StateDiff::from_blockifier(
+            block_exec_summary.state_diff.clone(),
+            &migration_v2_hashes,
+            &state.deployed_contracts,
+            old_declared_contracts,
+        );
+
+        let is_boundary = self.is_boundary_block(block_n);
+        let (root_base_block_n, root_snapshot, root_state_diffs) = if self.parallel_merkle_enabled {
+            self.diffs_since_snapshot.push((block_n, state_diff.clone()));
+            let generic_floor = self.backend.db.get_latest_snapshot_floor(block_n.checked_sub(1));
+            let (base_block_n, snapshot) =
+                self.backend.db.get_latest_durable_snapshot_floor(block_n.checked_sub(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Missing durable snapshot floor for root computation of block #{block_n}")
+                })?;
+            if let Some((generic_block_n, _)) = generic_floor {
+                if generic_block_n != base_block_n {
+                    tracing::info!(
+                        "parallel_root_non_durable_floor_ignored block_number={} generic_base_snapshot_block={generic_block_n:?} durable_base_snapshot_block={base_block_n:?}",
+                        block_n
+                    );
+                }
+            }
+            let root_state_diffs = collect_diffs_for_root_from_base(&self.diffs_since_snapshot, base_block_n, block_n)?;
+            tracing::info!(
+                "parallel_root_job_enqueued block_number={} base_snapshot_block={base_block_n:?} diff_count={} diff_start_block={} diff_end_block={} include_overlay={} trie_log_mode={:?} durable_base=true",
+                block_n,
+                root_state_diffs.len(),
+                base_block_n.map_or(0, |base| base.saturating_add(1)),
+                block_n,
+                is_boundary,
+                self.parallel_merkle_trie_log_mode
+            );
+            (base_block_n, Some(snapshot), root_state_diffs)
+        } else {
+            (None, None, Vec::new())
+        };
+
+        let payload = QueuedClosePayload {
+            db_payload: mc_db::close_pipeline_contract::CloseJobPayload { block_n },
+            state,
+            block_exec_summary,
+            state_diff,
+            is_boundary,
+            trie_log_mode: self.parallel_merkle_trie_log_mode,
+            root_base_block_n,
+            root_snapshot,
+            root_state_diffs,
+            enqueued_at: Instant::now(),
+        };
+        tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
+        let (queued_result, completion) = close_queue.try_enqueue(payload)?;
+        let ClosePreconfirmedResult::Queued(queued_meta) = queued_result;
+        let queue_depth = close_queue.current_depth();
+        let queue_in_flight = close_queue.current_in_flight();
+        let pending_close_completions = if self.parallel_merkle_enabled {
+            self.pending_completions.len() + 1
+        } else {
+            self.pending_completions.len()
+        };
+        self.metrics.close_queue_enqueued_total.add(1, &[]);
+        self.metrics.close_queue_depth.record(queue_depth as u64, &[]);
+        tracing::debug!(
+            "close_block_queued block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
+            queued_meta.block_n,
+            queue_depth,
+            close_queue.configured_capacity(),
+            queue_in_flight,
+            pending_close_completions,
+            self.parallel_merkle_enabled
+        );
+
+        if self.parallel_merkle_enabled {
+            self.pending_completions.push_back((block_n, completion));
+            self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(block_n) });
+            self.record_block_stage_metrics();
+            tracing::info!(
+                "parallel_merkle_close_deferred block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} root_compute_background=true",
+                block_n,
+                close_queue.current_depth(),
+                close_queue.configured_capacity(),
+                close_queue.current_in_flight(),
+                self.pending_completions.len()
+            );
+            return Ok(());
+        }
+
+        let completion = completion.await.context("Close queue worker dropped completion channel")??;
+        self.metrics.close_queue_dequeued_total.add(1, &[]);
+        self.metrics.close_queue_depth.record(close_queue.current_depth() as u64, &[]);
+        tracing::info!(
+            "close_block_complete block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
+            completion.block_n,
+            close_queue.current_depth(),
+            close_queue.configured_capacity(),
+            close_queue.current_in_flight(),
+            self.pending_completions.len(),
+            self.parallel_merkle_enabled
+        );
+        if let Some(status) = self.backend.replay_boundary_mark_closed(completion.block_n) {
+            if !status.boundary_met {
+                tracing::warn!(
+                    "replay_boundary_closed_without_match block_number={} expected_tx_count={} executed_tx_count={} dispatched_tx_count={} reached_last_tx_hash={} mismatch={:?}",
+                    status.block_n,
+                    status.expected_tx_count,
+                    status.executed_tx_count,
+                    status.dispatched_tx_count,
+                    status.reached_last_tx_hash,
+                    status.mismatch
+                );
+            }
+        }
+
+        self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(completion.block_n) });
+        self.send_state_notification(BlockProductionStateNotification::ClosedBlock { block_n: completion.block_n });
+        self.record_block_stage_metrics();
+
+        Ok(())
+    }
+
+    async fn execute_close_payload(
+        metrics: Arc<BlockProductionMetrics>,
+        payload: QueuedClosePayload,
+    ) -> anyhow::Result<CloseJobCompletion> {
+        let QueuedClosePayload { state, block_exec_summary, state_diff, .. } = payload;
         tracing::debug!("Close and save block block_n={}", state.block_number);
         let start_time = Instant::now();
 
         // Get preconfirmed block view for transaction count and old_declared_contracts
-        let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("No current pre-confirmed block")?;
+        let preconfirmed_view = state
+            .backend
+            .block_view_on_preconfirmed(state.block_number)
+            .with_context(|| format!("No pre-confirmed block #{}", state.block_number))?;
         let n_txs = preconfirmed_view.num_executed_transactions();
         let event_count = preconfirmed_view
             .borrow_content()
             .executed_transactions()
             .map(|tx| tx.transaction.receipt.events().len() as u64)
             .sum::<u64>();
-        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
-
-        // Build set of v2 hashes for SNIP-34 migrated classes.
-        // These are classes that were USED (not declared) in this block and need their
-        // compiled_class_hash updated from Poseidon (v1) to BLAKE (v2).
-        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
-            .compiled_class_hashes_for_migration
-            .iter()
-            .map(|(v2_hash, _v1_hash)| v2_hash.0)
-            .collect();
-
-        // Convert state_diff with all necessary information:
-        // - migration_v2_hashes: to separate declared vs migrated classes
-        // - deployed_contracts: to differentiate deployed vs replaced contracts (computed during batch execution)
-        // - old_declared_contracts: Cairo 0 legacy class declarations
-        let state_diff = mp_state_update::StateDiff::from_blockifier(
-            block_exec_summary.state_diff,
-            &migration_v2_hashes,
-            &state.deployed_contracts,
-            old_declared_contracts,
-        );
-
-        // Capture state diff counts before moving state_diff
         let declared_classes_count = state_diff.declared_classes.len();
         let deployed_contracts_count = state_diff.deployed_contracts.len();
         let storage_diffs_count = state_diff.storage_diffs.len();
@@ -860,34 +1137,29 @@ impl BlockProductionTask {
         let state_diff_len = state_diff.len();
         let consumed_l1_nonces_count = state.consumed_core_contract_nonces.len();
 
-        // Capture bouncer weights before moving
         let bouncer_l1_gas = block_exec_summary.bouncer_weights.l1_gas;
         let bouncer_sierra_gas = block_exec_summary.bouncer_weights.sierra_gas.0;
         let bouncer_n_events = block_exec_summary.bouncer_weights.n_events;
         let bouncer_message_segment_length = block_exec_summary.bouncer_weights.message_segment_length;
         let bouncer_state_diff_size = block_exec_summary.bouncer_weights.state_diff_size;
 
-        // Record state diff data gauges before moving state_diff
-        self.metrics.block_declared_classes_count.record(declared_classes_count as u64, &[]);
-        self.metrics.block_deployed_contracts_count.record(deployed_contracts_count as u64, &[]);
-        self.metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &[]);
-        self.metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &[]);
-        self.metrics.block_state_diff_length.record(state_diff_len as u64, &[]);
-        self.metrics.block_event_count.record(event_count, &[]);
+        metrics.block_declared_classes_count.record(declared_classes_count as u64, &[]);
+        metrics.block_deployed_contracts_count.record(deployed_contracts_count as u64, &[]);
+        metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &[]);
+        metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &[]);
+        metrics.block_state_diff_length.record(state_diff_len as u64, &[]);
+        metrics.block_event_count.record(event_count, &[]);
 
-        // Record bouncer weights gauges
-        self.metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &[]);
-        self.metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &[]);
-        self.metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &[]);
-        self.metrics.block_bouncer_message_segment_length.record(bouncer_message_segment_length as u64, &[]);
-        self.metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &[]);
-
-        // Record consumed L1 nonces count
-        self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
+        metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &[]);
+        metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &[]);
+        metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &[]);
+        metrics.block_bouncer_message_segment_length.record(bouncer_message_segment_length as u64, &[]);
+        metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &[]);
+        metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
 
         let close_preconfirmed_start = Instant::now();
         let db_result = Self::close_preconfirmed_block_with_state_diff(
-            self.backend.clone(),
+            state.backend.clone(),
             state.block_number,
             state.consumed_core_contract_nonces,
             &block_exec_summary.bouncer_weights,
@@ -896,14 +1168,12 @@ impl BlockProductionTask {
         .await
         .context("Closing block")?;
         let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
-        self.metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
-        self.metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
+        metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
+        metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
 
         let time_to_close = start_time.elapsed();
         let block_production_time = state.block_start_time.elapsed();
 
-        // Emit structured log event for Loki querying (close_block_complete)
-        // All timing values converted to milliseconds for human-readability
         let timings = &db_result.timings;
         let exec_stats = &state.accumulated_stats;
         tracing::info!(
@@ -911,12 +1181,10 @@ impl BlockProductionTask {
             block_number = state.block_number,
             tx_count = n_txs,
             event_count = event_count,
-            // High-level timing
             close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
             block_close_ms = time_to_close.as_secs_f64() * 1000.0,
             close_preconfirmed_ms = close_preconfirmed_duration.as_secs_f64() * 1000.0,
             block_production_ms = block_production_time.as_secs_f64() * 1000.0,
-            // Execution stats
             batches_executed = exec_stats.n_batches,
             txs_added_to_block = exec_stats.n_added_to_block,
             txs_executed = exec_stats.n_executed,
@@ -924,20 +1192,17 @@ impl BlockProductionTask {
             txs_rejected = exec_stats.n_rejected,
             classes_declared = exec_stats.declared_classes,
             l2_gas_consumed = exec_stats.l2_gas_consumed,
-            // State diff counts
             state_diff_len = state_diff_len,
             declared_classes = declared_classes_count,
             deployed_contracts = deployed_contracts_count,
             storage_diffs = storage_diffs_count,
             nonce_updates = nonce_updates_count,
             consumed_l1_nonces = consumed_l1_nonces_count,
-            // Bouncer weights
             bouncer_l1_gas = bouncer_l1_gas,
             bouncer_sierra_gas = bouncer_sierra_gas,
             bouncer_n_events = bouncer_n_events,
             bouncer_message_segment_length = bouncer_message_segment_length,
             bouncer_state_diff_size = bouncer_state_diff_size,
-            // DB timing breakdown (all in ms)
             get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
             commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
             merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
@@ -950,26 +1215,430 @@ impl BlockProductionTask {
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
             "close_block_complete"
         );
+        tracing::info!(
+            "Closed block #{} with {n_txs} transactions - {:.6}ms",
+            state.block_number,
+            time_to_close.as_secs_f64() * 1000.0
+        );
 
-        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+        tracing::debug!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
-        // Record timing metrics
-        self.metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
-        self.metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
+        metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
+        metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
+        metrics.block_counter.add(1, &[]);
+        metrics.block_gauge.record(state.block_number, &[]);
+        metrics.transaction_counter.add(n_txs as u64, &[]);
+        metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
+        metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &[]);
+        metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
+        metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &[]);
 
-        // Record metrics
-        self.metrics.block_counter.add(1, &[]);
-        self.metrics.block_gauge.record(state.block_number, &[]);
-        self.metrics.transaction_counter.add(n_txs as u64, &[]);
-        self.metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
-        self.metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &[]);
-        self.metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
-        self.metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &[]);
+        Ok(CloseJobCompletion { block_n: state.block_number })
+    }
 
-        self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
-        self.send_state_notification(BlockProductionStateNotification::ClosedBlock);
+    async fn execute_close_payload_batch_parallel(
+        metrics: Arc<BlockProductionMetrics>,
+        payloads: Vec<QueuedClosePayload>,
+    ) -> Vec<anyhow::Result<CloseJobCompletion>> {
+        let mut results = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            results.push(Self::execute_close_payload_parallel(metrics.clone(), payload).await);
+        }
+        results
+    }
 
-        Ok(())
+    async fn execute_close_payload_batch(
+        metrics: Arc<BlockProductionMetrics>,
+        payloads: Vec<QueuedClosePayload>,
+    ) -> Vec<anyhow::Result<CloseJobCompletion>> {
+        let mut results = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            results.push(Self::execute_close_payload(metrics.clone(), payload).await);
+        }
+        results
+    }
+
+    /// Parallel merkle variant of `execute_close_payload`.
+    ///
+    /// Trie roots are computed one block at a time from the exact base snapshot,
+    /// while the contract/class trie work inside that computation remains parallel.
+    async fn execute_close_payload_parallel(
+        metrics: Arc<BlockProductionMetrics>,
+        payload: QueuedClosePayload,
+    ) -> anyhow::Result<CloseJobCompletion> {
+        let QueuedClosePayload {
+            db_payload,
+            state,
+            block_exec_summary,
+            state_diff,
+            is_boundary,
+            trie_log_mode,
+            root_base_block_n,
+            root_snapshot,
+            root_state_diffs,
+            enqueued_at,
+        } = payload;
+        let block_n = state.block_number;
+        tracing::info!(
+            "parallel_root_single_block_dispatch block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?}",
+            block_n,
+            root_state_diffs.len(),
+            is_boundary,
+            trie_log_mode
+        );
+        let root_wait_started_at = Instant::now();
+        let backend = Arc::clone(&state.backend);
+        let metrics_for_compute = Arc::clone(&metrics);
+        let snapshot = root_snapshot.context("Missing root snapshot for parallel close job")?;
+        let state_diffs_for_compute = root_state_diffs.clone();
+        let dispatched_at = Instant::now();
+        let root_response = tokio::task::spawn_blocking(move || {
+            let closure_started_at = Instant::now();
+            let spawn_blocking_queue_duration = closure_started_at.duration_since(dispatched_at);
+            metrics_for_compute
+                .parallel_root_spawn_blocking_queue_duration
+                .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
+            metrics_for_compute
+                .parallel_root_spawn_blocking_queue_last
+                .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
+            tracing::info!(
+                "parallel_root_single_block_compute_started block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} spawn_blocking_queue_ms={}",
+                block_n,
+                state_diffs_for_compute.len(),
+                is_boundary,
+                trie_log_mode,
+                spawn_blocking_queue_duration.as_secs_f64() * 1000.0
+            );
+
+            let compute_started_at = Instant::now();
+            let cumulative_state_diff = mc_db::rocksdb::global_trie::in_memory::squash_state_diffs(state_diffs_for_compute.iter());
+            let result = backend.db.compute_root_from_selected_snapshot(
+                root_base_block_n,
+                snapshot,
+                block_n,
+                &cumulative_state_diff,
+                is_boundary,
+                trie_log_mode,
+            );
+            let compute_duration = compute_started_at.elapsed();
+            let total_duration = dispatched_at.elapsed();
+            metrics_for_compute.parallel_root_compute_duration.record(compute_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_compute_last.record(compute_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_total_duration.record(total_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
+            tracing::info!(
+                "parallel_root_single_block_compute_finished block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} success={} compute_ms={} total_ms={}",
+                block_n,
+                state_diffs_for_compute.len(),
+                is_boundary,
+                trie_log_mode,
+                result.is_ok(),
+                compute_duration.as_secs_f64() * 1000.0,
+                total_duration.as_secs_f64() * 1000.0
+            );
+            result
+        })
+        .await
+        .map_err(|error| {
+            metrics.parallel_root_failures_total.add(1, &[]);
+            anyhow::anyhow!("Parallel merkle blocking task panicked for block #{block_n}: {error:#}")
+        })?
+        .map_err(|error| {
+            metrics.parallel_root_failures_total.add(1, &[]);
+            error
+        })
+        .context(format!("Parallel merkle root computation for block #{block_n}"))?;
+
+        let root_wait_duration = root_wait_started_at.elapsed();
+        metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
+        metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
+        tracing::info!(
+            "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
+            block_n,
+            root_wait_duration.as_secs_f64() * 1000.0
+        );
+
+        Self::execute_close_payload_parallel_precomputed(
+            metrics,
+            QueuedClosePayload {
+                db_payload,
+                state,
+                block_exec_summary,
+                state_diff,
+                is_boundary,
+                trie_log_mode,
+                root_base_block_n,
+                root_snapshot: None,
+                root_state_diffs: Vec::new(),
+                enqueued_at,
+            },
+            root_response,
+        )
+        .await
+    }
+
+    async fn execute_close_payload_parallel_precomputed(
+        metrics: Arc<BlockProductionMetrics>,
+        payload: QueuedClosePayload,
+        root_response: mc_db::rocksdb::global_trie::in_memory::InMemoryRootComputation,
+    ) -> anyhow::Result<CloseJobCompletion> {
+        let QueuedClosePayload { state, block_exec_summary, state_diff, trie_log_mode, .. } = payload;
+        tracing::debug!("Close and save block block_n={} (parallel merkle)", state.block_number);
+        let start_time = Instant::now();
+
+        // Get preconfirmed block view for transaction count and old_declared_contracts
+        let preconfirmed_view = state
+            .backend
+            .block_view_on_preconfirmed(state.block_number)
+            .with_context(|| format!("No pre-confirmed block #{}", state.block_number))?;
+        let n_txs = preconfirmed_view.num_executed_transactions();
+        let event_count = preconfirmed_view
+            .borrow_content()
+            .executed_transactions()
+            .map(|tx| tx.transaction.receipt.events().len() as u64)
+            .sum::<u64>();
+        let declared_classes_count = state_diff.declared_classes.len();
+        let deployed_contracts_count = state_diff.deployed_contracts.len();
+        let storage_diffs_count = state_diff.storage_diffs.len();
+        let nonce_updates_count = state_diff.nonces.len();
+        let state_diff_len = state_diff.len();
+        let consumed_l1_nonces_count = state.consumed_core_contract_nonces.len();
+
+        let bouncer_l1_gas = block_exec_summary.bouncer_weights.l1_gas;
+        let bouncer_sierra_gas = block_exec_summary.bouncer_weights.sierra_gas.0;
+        let bouncer_n_events = block_exec_summary.bouncer_weights.n_events;
+        let bouncer_message_segment_length = block_exec_summary.bouncer_weights.message_segment_length;
+        let bouncer_state_diff_size = block_exec_summary.bouncer_weights.state_diff_size;
+
+        metrics.block_declared_classes_count.record(declared_classes_count as u64, &[]);
+        metrics.block_deployed_contracts_count.record(deployed_contracts_count as u64, &[]);
+        metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &[]);
+        metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &[]);
+        metrics.block_state_diff_length.record(state_diff_len as u64, &[]);
+        metrics.block_event_count.record(event_count, &[]);
+
+        metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &[]);
+        metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &[]);
+        metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &[]);
+        metrics.block_bouncer_message_segment_length.record(bouncer_message_segment_length as u64, &[]);
+        metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &[]);
+        metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
+
+        let close_preconfirmed_start = Instant::now();
+
+        // Copy bouncer_weights to move into the closure
+        let bouncer_weights = block_exec_summary.bouncer_weights;
+        let block_number = state.block_number;
+        let consumed_nonces = state.consumed_core_contract_nonces;
+        let backend = state.backend.clone();
+        let state_diff_len_for_close_pipeline = state_diff_len;
+        let has_boundary_overlay = root_response.overlay.is_some();
+        tracing::debug!(
+            "parallel_close_db_pipeline_started block_number={} state_diff_len={} has_boundary_overlay={}",
+            block_number,
+            state_diff_len_for_close_pipeline,
+            has_boundary_overlay
+        );
+
+        let db_result = global_spawn_rayon_task(move || {
+            let pipeline_start = Instant::now();
+            // Remove consumed L1 to L2 message nonces
+            let consumed_nonces_count = consumed_nonces.len();
+            let nonce_cleanup_start = Instant::now();
+            for l1_nonce in consumed_nonces {
+                backend
+                    .remove_pending_message_to_l2(l1_nonce)
+                    .context("Removing pending message to l2 from database")?;
+            }
+            tracing::debug!(
+                "parallel_close_phase_nonce_cleanup_done block_number={} consumed_nonces={} duration_ms={}",
+                block_number,
+                consumed_nonces_count,
+                nonce_cleanup_start.elapsed().as_secs_f64() * 1000.0
+            );
+
+            // Save bouncer weights
+            let write_bouncer_start = Instant::now();
+            backend
+                .write_access()
+                .write_bouncer_weights(block_number, &bouncer_weights)
+                .context("Saving Bouncer Weights for SNOS")?;
+            tracing::debug!(
+                "parallel_close_phase_bouncer_write_done block_number={} duration_ms={}",
+                block_number,
+                write_bouncer_start.elapsed().as_secs_f64() * 1000.0
+            );
+
+            let boundary_storage_contracts: Vec<_> = state_diff
+                .storage_diffs
+                .iter()
+                .map(|item| (item.address, item.storage_entries.len()))
+                .collect();
+
+            // Phase 1: write block parts with precomputed root (no head advance yet).
+            let write_parts_start = Instant::now();
+            let result = backend
+                .write_access()
+                .write_preconfirmed_with_precomputed_root(
+                    /* pre_v0_13_2_hash_override */ true,
+                    block_number,
+                    state_diff,
+                    root_response.state_root,
+                    root_response.timings,
+                )
+                .context("Closing preconfirmed block with precomputed root")?;
+            tracing::debug!(
+                "parallel_close_phase_write_parts_done block_number={} duration_ms={} merklization_ms={} commitments_ms={} block_hash_ms={} db_write_ms={}",
+                block_number,
+                write_parts_start.elapsed().as_secs_f64() * 1000.0,
+                result.timings.merklization.as_secs_f64() * 1000.0,
+                result.timings.block_commitments_compute.as_secs_f64() * 1000.0,
+                result.timings.block_hash_compute.as_secs_f64() * 1000.0,
+                result.timings.db_write_block_parts.as_secs_f64() * 1000.0
+            );
+
+            // Phase 2: boundary durability (if any).
+            if let Some(overlay) = root_response.overlay.as_ref() {
+                let boundary_flush_start = Instant::now();
+                backend
+                    .db
+                    .flush_overlay_and_checkpoint(block_number, overlay, trie_log_mode)
+                    .context("Flushing boundary overlay and writing parallel-merkle checkpoint")?;
+                tracing::debug!(
+                    "parallel_close_phase_boundary_flush_done block_number={} duration_ms={} contract_changes={} contract_storage_changes={} class_changes={}",
+                    block_number,
+                    boundary_flush_start.elapsed().as_secs_f64() * 1000.0,
+                    overlay.contract_changed.len(),
+                    overlay.contract_storage_changed.len(),
+                    overlay.class_changed.len()
+                );
+                tracing::info!(
+                    "parallel_boundary_checkpoint_written block_number={} duration_ms={} latest_checkpoint={:?} checkpoint_floor_for_block={:?} trie_log_mode={:?}",
+                    block_number,
+                    boundary_flush_start.elapsed().as_secs_f64() * 1000.0,
+                    backend.db.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                    backend.db.get_parallel_merkle_checkpoint_floor(block_number).ok().flatten(),
+                    trie_log_mode
+                );
+                let persisted_storage_roots_start = Instant::now();
+                let persisted_contract_storage_trie = backend.db.contract_storage_trie();
+                for (contract_address, storage_entries_len) in &boundary_storage_contracts {
+                    let persisted_storage_root = persisted_contract_storage_trie
+                        .root_hash(&contract_address.to_bytes_be())
+                        .map_err(mc_db::rocksdb::trie::WrappedBonsaiError)
+                        .context("Reading persisted contract storage root after boundary flush")?;
+                    tracing::info!(
+                        "parallel_boundary_persisted_storage_root block_number={} contract_address={:#x} storage_entries={} persisted_storage_root={:#x}",
+                        block_number,
+                        contract_address,
+                        storage_entries_len,
+                        persisted_storage_root
+                    );
+                }
+                tracing::info!(
+                    "parallel_boundary_persisted_storage_roots_done block_number={} touched_contracts={} duration_ms={}",
+                    block_number,
+                    boundary_storage_contracts.len(),
+                    persisted_storage_roots_start.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+
+            // Phase 3: only after successful write(+flush), advance confirmed head + GC side effects.
+            let confirm_phase_start = Instant::now();
+            backend
+                .write_access()
+                .new_confirmed_block(block_number)
+                .context("Advancing confirmed head after parallel close write/flush")?;
+            let head_after_confirm = backend.chain_head_state();
+            tracing::debug!(
+                "parallel_close_phase_confirm_done block_number={} duration_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                block_number,
+                confirm_phase_start.elapsed().as_secs_f64() * 1000.0,
+                head_after_confirm.confirmed_tip,
+                head_after_confirm.external_preconfirmed_tip,
+                head_after_confirm.internal_preconfirmed_tip
+            );
+            tracing::debug!(
+                "parallel_close_db_pipeline_finished block_number={} total_duration_ms={}",
+                block_number,
+                pipeline_start.elapsed().as_secs_f64() * 1000.0
+            );
+
+            anyhow::Ok(result)
+        })
+        .await?;
+
+        let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
+        metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
+        metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
+
+        let time_to_close = start_time.elapsed();
+        let block_production_time = state.block_start_time.elapsed();
+
+        let timings = &db_result.timings;
+        let exec_stats = &state.accumulated_stats;
+        tracing::info!(
+            target: "close_block",
+            block_number = state.block_number,
+            tx_count = n_txs,
+            event_count = event_count,
+            close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
+            block_close_ms = time_to_close.as_secs_f64() * 1000.0,
+            close_preconfirmed_ms = close_preconfirmed_duration.as_secs_f64() * 1000.0,
+            block_production_ms = block_production_time.as_secs_f64() * 1000.0,
+            batches_executed = exec_stats.n_batches,
+            txs_added_to_block = exec_stats.n_added_to_block,
+            txs_executed = exec_stats.n_executed,
+            txs_reverted = exec_stats.n_reverted,
+            txs_rejected = exec_stats.n_rejected,
+            classes_declared = exec_stats.declared_classes,
+            l2_gas_consumed = exec_stats.l2_gas_consumed,
+            state_diff_len = state_diff_len,
+            declared_classes = declared_classes_count,
+            deployed_contracts = deployed_contracts_count,
+            storage_diffs = storage_diffs_count,
+            nonce_updates = nonce_updates_count,
+            consumed_l1_nonces = consumed_l1_nonces_count,
+            bouncer_l1_gas = bouncer_l1_gas,
+            bouncer_sierra_gas = bouncer_sierra_gas,
+            bouncer_n_events = bouncer_n_events,
+            bouncer_message_segment_length = bouncer_message_segment_length,
+            bouncer_state_diff_size = bouncer_state_diff_size,
+            get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
+            commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
+            merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
+            contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
+            class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
+            contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
+            contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
+            class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
+            block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
+            db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
+            parallel_merkle = true,
+            "close_block_complete"
+        );
+        tracing::info!(
+            "Closed block #{} with {n_txs} transactions (parallel merkle) - {:.6}ms",
+            state.block_number,
+            time_to_close.as_secs_f64() * 1000.0
+        );
+
+        tracing::debug!(
+            "⛏️  Closed block #{} with {n_txs} transactions (parallel merkle) - {time_to_close:?}",
+            state.block_number
+        );
+
+        metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
+        metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
+        metrics.block_counter.add(1, &[]);
+        metrics.block_gauge.record(state.block_number, &[]);
+        metrics.transaction_counter.add(n_txs as u64, &[]);
+        metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
+        metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &[]);
+        metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
+        metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &[]);
+
+        Ok(CloseJobCompletion { block_n: state.block_number })
     }
 
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
@@ -980,6 +1649,7 @@ impl BlockProductionTask {
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
         self.current_state = Some(TaskState::NotExecuting { latest_block_n });
+        self.record_block_stage_metrics();
 
         Ok(())
     }
@@ -987,13 +1657,49 @@ impl BlockProductionTask {
     #[tracing::instrument(skip(self, ctx), fields(module = "BlockProductionTask"))]
     pub async fn run(mut self, ctx: ServiceContext) -> Result<(), anyhow::Error> {
         self.setup_initial_state().await?;
+        self.metrics.close_queue_depth.record(0, &[]);
+        self.metrics.close_queue_in_flight.record(0, &[]);
+        self.record_block_stage_metrics();
 
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
             self.executor_commands_recv.take().context("Task already started")?,
             self.metrics.clone(),
+            self.replay_mode_enabled,
         )
         .context("Starting executor thread")?;
+
+        let close_queue_capacity = self.close_queue_capacity();
+        validate_parallel_queue_invariant(self.parallel_merkle_enabled, close_queue_capacity)?;
+
+        // Spawn the finalizer pipeline: serial (default) or parallel merkle.
+        // In parallel mode, the finalizer batches contiguous close jobs up to the
+        // next boundary and computes their trie roots together from a shared snapshot.
+        let (close_queue_handle, finalizer_task_handle) = if self.parallel_merkle_enabled {
+            let (close_queue_handle, finalizer_task_handle) = FinalizerHandle::spawn(
+                close_queue_capacity,
+                self.metrics.clone(),
+                Self::execute_close_payload_batch_parallel,
+            );
+            tracing::info!(
+                "initialized_finalizer_runtime mode=parallel_merkle queue_capacity={} configured_max_inflight={} configured_capacity={} parallel_merkle={}",
+                close_queue_capacity,
+                self.close_queue_capacity,
+                close_queue_handle.configured_capacity(),
+                true
+            );
+            (close_queue_handle, finalizer_task_handle)
+        } else {
+            let (close_queue_handle, finalizer_task_handle) =
+                FinalizerHandle::spawn(close_queue_capacity, self.metrics.clone(), Self::execute_close_payload_batch);
+            tracing::info!(
+                "initialized_finalizer_runtime mode=serial queue_capacity={} configured_max_inflight={} configured_capacity={}",
+                close_queue_capacity,
+                self.close_queue_capacity,
+                close_queue_handle.configured_capacity()
+            );
+            (close_queue_handle, finalizer_task_handle)
+        };
 
         // Batcher task is handled in a separate tokio task.
         let batch_sender = executor.send_batch.take().context("Channel sender already taken")?;
@@ -1007,6 +1713,8 @@ impl BlockProductionTask {
                 ctx,
                 batch_sender,
                 bypass_tx_input,
+                self.mempool_intake_rx.clone(),
+                self.replay_mode_enabled,
             )
             .run(),
         );
@@ -1018,8 +1726,9 @@ impl BlockProductionTask {
         let mut executor_stopped = false; // Track if executor.stop has been received (oneshot - can only poll once)
         let mut batcher_error: Option<anyhow::Error> = None; // Store batcher error to return after graceful shutdown
 
-        // Main loop: handles normal operation and graceful shutdown
-        loop {
+        // Main loop: handles normal operation and graceful shutdown.
+        // Captures loop outcome; finalizer drain runs unconditionally after.
+        let loop_result: anyhow::Result<()> = loop {
             tokio::select! {
                 // Path 1: Batcher task completed (cancellation, error, or channel closure)
                 res = &mut batcher_task, if !batcher_completed => {
@@ -1040,12 +1749,62 @@ impl BlockProductionTask {
                 // Path 2: Executor replies (EndBlock for normal operation, EndFinalBlock for shutdown)
                 Some(reply) = executor.replies.recv() => {
                     let is_end_final_block = matches!(reply, ExecutorMessage::EndFinalBlock(_));
-                    self.process_reply(reply).await.context("Processing reply from executor thread")?;
+                    if let Err(e) = self.process_reply(reply, &close_queue_handle)
+                        .await
+                        .context("Processing reply from executor thread")
+                    {
+                        break Err(e);
+                    }
                     // Mark executor as completed only after processing EndFinalBlock
                     if is_end_final_block {
                         end_final_block_received = true;
                         tracing::debug!("EndFinalBlock processed, executor completed");
                     }
+                }
+
+                completion_res = async {
+                    let (_block_n, rx) = self.pending_completions.front_mut().expect("checked non-empty");
+                    rx.await
+                }, if !self.pending_completions.is_empty() => {
+                    let (expected_block_n, _rx) = self.pending_completions.pop_front().expect("pending completion exists");
+                    let completion = completion_res
+                        .context("Close queue worker dropped completion channel")??;
+                    self.metrics.close_queue_dequeued_total.add(1, &[]);
+                    self.metrics.close_queue_depth.record(close_queue_handle.current_depth() as u64, &[]);
+                    tracing::info!(
+                        "close_block_complete block_number={} expected_block_n={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
+                        completion.block_n,
+                        expected_block_n,
+                        close_queue_handle.current_depth(),
+                        close_queue_handle.configured_capacity(),
+                        close_queue_handle.current_in_flight(),
+                        self.pending_completions.len(),
+                        self.parallel_merkle_enabled
+                    );
+                    if completion.block_n != expected_block_n {
+                        break Err(anyhow::anyhow!(
+                            "Out-of-order close completion: expected #{expected_block_n}, got #{}",
+                            completion.block_n
+                        ));
+                    }
+                    if self.parallel_merkle_enabled && self.is_boundary_block(completion.block_n) {
+                        prune_diffs_since_snapshot(&mut self.diffs_since_snapshot, completion.block_n);
+                    }
+                    if let Some(status) = self.backend.replay_boundary_mark_closed(completion.block_n) {
+                        if !status.boundary_met {
+                            tracing::warn!(
+                                "replay_boundary_closed_without_match block_number={} expected_tx_count={} executed_tx_count={} dispatched_tx_count={} reached_last_tx_hash={} mismatch={:?}",
+                                status.block_n,
+                                status.expected_tx_count,
+                                status.executed_tx_count,
+                                status.dispatched_tx_count,
+                                status.reached_last_tx_hash,
+                                status.mismatch
+                            );
+                        }
+                    }
+                    self.send_state_notification(BlockProductionStateNotification::ClosedBlock { block_n: completion.block_n });
+                    self.record_block_stage_metrics();
                 }
 
                 // Path 3: Executor thread stopped (normal completion or panic)
@@ -1054,21 +1813,83 @@ impl BlockProductionTask {
                 // Guard: oneshot channel can only be polled once - polling after completion causes panic.
                 res = executor.stop.recv(), if !executor_stopped => {
                     executor_stopped = true;
-                    res.context("In executor thread")?;
+                    if let Err(e) = res.context("In executor thread") {
+                        break Err(e);
+                    }
                 }
             }
 
             // Exit conditions (checked after each select iteration):
             // Shutdown is complete when batcher completed AND EndFinalBlock was processed.
             // Executor always sends EndFinalBlock during shutdown (Some(summary) if block exists, None if no block).
-            if batcher_completed && end_final_block_received {
+            if batcher_completed && end_final_block_received && self.pending_completions.is_empty() {
                 tracing::debug!("Shutdown complete: batcher completed, EndFinalBlock processed");
-                return batcher_error
+                let shutdown_result = batcher_error
                     .map(|e| {
                         tracing::warn!("Shutdown completed but batcher had error: {e:?}");
                         Err(e)
                     })
                     .unwrap_or(Ok(()));
+                break shutdown_result;
+            }
+        };
+
+        // Unconditional finalizer drain: always drop sender and join worker,
+        // regardless of whether the main loop exited normally or via error.
+        drop(close_queue_handle);
+        let finalizer_result = finalizer_task_handle.join().await;
+
+        // Shutdown drain path: apply the same boundary-prune rule for any queued completions that
+        // may still be present when the main loop exits via an error path.
+        while let Some((expected_block_n, rx)) = self.pending_completions.pop_front() {
+            match rx.await {
+                Ok(Ok(completion)) => {
+                    if completion.block_n == expected_block_n
+                        && self.parallel_merkle_enabled
+                        && self.is_boundary_block(completion.block_n)
+                    {
+                        prune_diffs_since_snapshot(&mut self.diffs_since_snapshot, completion.block_n);
+                    }
+                    if let Some(status) = self.backend.replay_boundary_mark_closed(completion.block_n) {
+                        if !status.boundary_met {
+                            tracing::warn!(
+                                "replay_boundary_closed_without_match block_number={} expected_tx_count={} executed_tx_count={} dispatched_tx_count={} reached_last_tx_hash={} mismatch={:?}",
+                                status.block_n,
+                                status.expected_tx_count,
+                                status.executed_tx_count,
+                                status.dispatched_tx_count,
+                                status.reached_last_tx_hash,
+                                status.mismatch
+                            );
+                        }
+                    }
+                }
+                Ok(Err(err)) => {
+                    tracing::warn!("Shutdown drain: close completion for block #{} failed: {err:#}", expected_block_n);
+                }
+                Err(err) => {
+                    tracing::warn!("Shutdown drain: completion channel dropped for block #{}: {err}", expected_block_n);
+                }
+            }
+            self.record_block_stage_metrics();
+        }
+
+        // Explicitly clear in-memory pipeline state after shutdown drain so reorg/shutdown
+        // paths do not retain stale per-block runtime data.
+        self.pending_completions.clear();
+        self.diffs_since_snapshot.clear();
+        self.current_state = Some(TaskState::NotExecuting { latest_block_n: self.backend.latest_confirmed_block_n() });
+        self.record_block_stage_metrics();
+
+        // Compose errors: if both loop and finalizer failed, attach finalizer
+        // error as context on the primary error so neither is lost.
+        match (loop_result, finalizer_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Ok(()), Err(finalizer_err)) => Err(finalizer_err.context("In finalizer worker")),
+            (Err(primary_err), Ok(())) => Err(primary_err),
+            (Err(primary_err), Err(finalizer_err)) => {
+                tracing::warn!("Finalizer worker also errored during shutdown: {finalizer_err:?}");
+                Err(primary_err.context(format!("Additionally, finalizer worker errored: {finalizer_err:#}")))
             }
         }
     }
@@ -1079,13 +1900,14 @@ pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
-    use mc_db::MadaraBackend;
+    use mc_db::{preconfirmed::PreconfirmedBlock, MadaraBackend, MadaraBackendConfig};
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
     };
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
+    use mp_block::header::PreconfirmedHeader;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
@@ -1093,6 +1915,7 @@ pub(crate) mod tests {
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
+    use mp_state_update::StateDiff;
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::IntoStarknetApiExt;
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee, Transaction};
@@ -1103,6 +1926,90 @@ pub(crate) mod tests {
     use std::{sync::Arc, time::Duration};
 
     type TxFixtureInfo = (Transaction, mp_receipt::TransactionReceipt);
+
+    #[rstest::rstest]
+    #[case::parallel_below_minimum(true, 9, false)]
+    #[case::parallel_minimum(true, 10, true)]
+    #[case::serial_any_capacity(false, 1, true)]
+    fn queue_invariant_matrix(#[case] parallel: bool, #[case] capacity: usize, #[case] expect_ok: bool) {
+        let result = super::validate_parallel_queue_invariant(parallel, capacity);
+        assert_eq!(result.is_ok(), expect_ok);
+        if !expect_ok {
+            let msg = format!("{:#}", result.expect_err("must fail"));
+            assert!(msg.contains("QueueInvariantViolated"));
+        }
+    }
+
+    #[test]
+    fn preconfirmed_runahead_is_accepted_before_previous_close_completes() {
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_devnet()),
+            MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+        );
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
+            .expect("creating preconfirmed block #0 should succeed");
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+            .expect("creating preconfirmed block #1 should succeed while #0 is still externally visible");
+
+        let head = backend.chain_head_state();
+        assert_eq!(head.confirmed_tip, None);
+        assert_eq!(head.external_preconfirmed_tip, Some(0));
+        assert_eq!(head.internal_preconfirmed_tip, Some(1));
+    }
+
+    fn empty_state_diff() -> StateDiff {
+        StateDiff {
+            storage_diffs: vec![],
+            old_declared_contracts: vec![],
+            declared_classes: vec![],
+            deployed_contracts: vec![],
+            replaced_classes: vec![],
+            nonces: vec![],
+            migrated_compiled_classes: vec![],
+        }
+    }
+
+    #[rstest::rstest]
+    #[case::prune_nothing(vec![(11, empty_state_diff()), (12, empty_state_diff())], 10, vec![11, 12])]
+    #[case::prune_prefix(vec![(10, empty_state_diff()), (11, empty_state_diff()), (12, empty_state_diff())], 10, vec![11, 12])]
+    #[case::prune_all(vec![(10, empty_state_diff())], 10, vec![])]
+    fn boundary_prune_matrix(
+        #[case] mut input: Vec<(u64, StateDiff)>,
+        #[case] completed_block_n: u64,
+        #[case] expected_blocks: Vec<u64>,
+    ) {
+        super::prune_diffs_since_snapshot(&mut input, completed_block_n);
+        let remaining_blocks = input.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
+        assert_eq!(remaining_blocks, expected_blocks);
+    }
+
+    #[rstest::rstest]
+    #[case::from_empty_base(vec![(0, empty_state_diff()), (1, empty_state_diff()), (2, empty_state_diff())], None, 2, 3)]
+    #[case::from_snapshot_floor(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(89), 92, 3)]
+    #[case::skip_pruned_prefix(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(90), 92, 2)]
+    fn collect_diffs_for_root_from_base_ok(
+        #[case] input: Vec<(u64, StateDiff)>,
+        #[case] base_block_n: Option<u64>,
+        #[case] target_block_n: u64,
+        #[case] expected_len: usize,
+    ) {
+        let collected = super::collect_diffs_for_root_from_base(&input, base_block_n, target_block_n)
+            .expect("diff span should be contiguous");
+        assert_eq!(collected.len(), expected_len);
+    }
+
+    #[test]
+    fn collect_diffs_for_root_from_base_rejects_gap() {
+        let input = vec![(90, empty_state_diff()), (92, empty_state_diff())];
+        let err = super::collect_diffs_for_root_from_base(&input, Some(89), 92).expect_err("gap must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("Missing tracked state diff for block #91"));
+    }
 
     #[rstest::fixture]
     fn backend() -> Arc<MadaraBackend> {
@@ -1133,6 +2040,7 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                false, /* mempool_paused = false */
                 false, /* no_charge_fee = false */
             )
         }
@@ -1591,7 +2499,10 @@ pub(crate) mod tests {
 
         // Manually close the block
         control.close_block().await.unwrap();
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+        ));
 
         // Step 2: Capture global_state_root, state_diff, and header info from closed block
         let block_number = original_devnet_setup.backend.latest_confirmed_block_n().unwrap();
@@ -1627,7 +2538,7 @@ pub(crate) mod tests {
         assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         // Fetch preconfirmed block view BEFORE dropping the task to avoid race conditions
-        let preconfirmed_view = restart_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        let preconfirmed_view = restart_devnet_setup.backend.block_view_on_current_preconfirmed().unwrap();
         assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
         let restart_preconfirmed_block = preconfirmed_view.block();
 
@@ -1768,14 +2679,20 @@ pub(crate) mod tests {
 
         tracing::debug!("{:?}", devnet_setup.backend.block_view_on_latest().map(|l| l.get_executed_transactions(..)));
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+        ));
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 2 }
+        ));
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         let closed_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
         let closed_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
-        let preconfirmed_3 = devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        let preconfirmed_3 = devnet_setup.backend.block_view_on_current_preconfirmed().unwrap();
         assert_eq!(preconfirmed_3.block_number(), 3);
         assert_eq!(closed_1.get_executed_transactions(..).unwrap().len(), 1);
         // rolled over to next block.
@@ -1809,7 +2726,10 @@ pub(crate) mod tests {
             );
 
         // The block should be closed after 3s.
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+        ));
 
         let view = devnet_setup.backend.block_view_on_last_confirmed().unwrap();
 
@@ -1849,7 +2769,7 @@ pub(crate) mod tests {
         assert_eq!(
             devnet_setup
                 .backend
-                .block_view_on_preconfirmed()
+                .block_view_on_current_preconfirmed()
                 .unwrap()
                 .get_executed_transaction(0)
                 .unwrap()
@@ -1858,7 +2778,10 @@ pub(crate) mod tests {
             ExecutionResult::Succeeded
         );
         control.close_block().await.unwrap();
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+        ));
 
         // Deploy contract through UDC.
 
@@ -1876,7 +2799,7 @@ pub(crate) mod tests {
         assert_eq!(
             devnet_setup
                 .backend
-                .block_view_on_preconfirmed()
+                .block_view_on_current_preconfirmed()
                 .unwrap()
                 .get_executed_transaction(0)
                 .unwrap()
@@ -1886,7 +2809,10 @@ pub(crate) mod tests {
         );
 
         control.close_block().await.unwrap();
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert!(matches!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock { block_n: 2 }
+        ));
 
         // Mock the l1 message, block prod should pick it up.
 
@@ -1908,8 +2834,13 @@ pub(crate) mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
-        let receipt =
-            devnet_setup.backend.block_view_on_preconfirmed().unwrap().get_executed_transaction(0).unwrap().receipt;
+        let receipt = devnet_setup
+            .backend
+            .block_view_on_current_preconfirmed()
+            .unwrap()
+            .get_executed_transaction(0)
+            .unwrap()
+            .receipt;
         assert_eq!(receipt.execution_result(), ExecutionResult::Succeeded);
         tracing::info!("Events = {:?}", receipt.events());
         assert_eq!(receipt.events().len(), 1);
@@ -1973,6 +2904,7 @@ pub(crate) mod tests {
             original_devnet_setup.mempool.clone(),
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
+            false, // mempool_paused
             initial_no_charge_fee,
         );
 
@@ -1987,7 +2919,7 @@ pub(crate) mod tests {
 
         // Verify pre-confirmed block exists with our transaction
         assert!(original_devnet_setup.backend.has_preconfirmed_block());
-        let preconfirmed_view = original_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        let preconfirmed_view = original_devnet_setup.backend.block_view_on_current_preconfirmed().unwrap();
         assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
 
         // Stop the task before it closes the block.
@@ -2003,6 +2935,7 @@ pub(crate) mod tests {
             original_devnet_setup.mempool.clone(),
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
+            false,                 // mempool_paused
             restart_no_charge_fee, // Current config: no_charge_fee = false
         );
 
@@ -2077,7 +3010,7 @@ pub(crate) mod tests {
 
         // Verify preconfirmed block exists with transactions
         assert!(devnet_setup.backend.has_preconfirmed_block());
-        let preconfirmed_view = devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        let preconfirmed_view = devnet_setup.backend.block_view_on_current_preconfirmed().unwrap();
         assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
 
         // Step 3: Trigger graceful shutdown by cancelling ServiceContext
@@ -2088,14 +3021,13 @@ pub(crate) mod tests {
         // - Batcher detects cancellation and exits, closing the send_batch channel
         // - Executor detects channel closure and sends EndFinalBlock message
         // - Main loop processes EndFinalBlock and closes the block (sends ClosedBlock notification)
-        assert_eq!(
-            notifications.recv().await.unwrap(),
-            BlockProductionStateNotification::ClosedBlock,
+        assert!(
+            matches!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 1 }),
             "Expected ClosedBlock notification after EndFinalBlock was processed during graceful shutdown"
         );
 
         // Step 5: Wait for shutdown to complete
-        // All database writes and chain tip updates complete synchronously within the awaited rayon task,
+        // All database writes and head projection updates complete synchronously within the awaited rayon task,
         // so by the time task.await completes, the state is already updated. No delay needed.
         task.await.unwrap();
 

@@ -5,7 +5,7 @@ use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, ReplayBlockBoundary, ReplayBlockBoundaryStatus};
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -92,13 +92,48 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
-        Ok(self
+        let tx_version = invoke_transaction.version();
+        let is_query = invoke_transaction.is_query();
+        let started = Instant::now();
+        let result = self
             .block_prod_handle
             .as_ref()
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .submit_invoke_transaction(invoke_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+            .await;
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+
+        match result {
+            Ok(result) => {
+                tracing::debug!(
+                    target: "rpc::admin",
+                    "bypass_add_invoke_transaction_completed transaction_hash={:?} tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                    result.transaction_hash,
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip
+                );
+                Ok(result)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "rpc::admin",
+                    "bypass_add_invoke_transaction_failed tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?} error={}",
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip,
+                    err
+                );
+                Err(StarknetRpcApiError::from(err).into())
+            }
+        }
     }
 
     /// Force close a block.
@@ -224,7 +259,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
 
-        // 3) Revert DB state, then refresh backend chain tip broadcast.
+        // 3) Revert DB state, then refresh backend head projection broadcast.
         tracing::info!(
             target: "rpc::admin",
             "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
@@ -233,14 +268,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
-        let fresh_chain_tip = self
-            .backend
-            .db
-            .get_chain_tip()
-            .context("Failed to get chain tip after revert")
+        self.backend
+            .refresh_head_projection_from_db()
+            .context("Failed to refresh head projection after revert")
             .map_err(StarknetRpcApiError::from)?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
 
@@ -272,8 +303,73 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
+        let head = self.backend.chain_head_state();
+        tracing::debug!(
+            target: "rpc::admin",
+            "custom_block_header_set block_number={} timestamp={} expected_block_hash={:?} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            custom_block_headers.block_n,
+            custom_block_headers.timestamp,
+            custom_block_headers.expected_block_hash,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
+        );
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
+    }
+
+    async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        if self.block_prod_handle.as_ref().is_some_and(|handle| !handle.replay_mode_enabled()) {
+            tracing::warn!(
+                target: "rpc::admin",
+                block_number = replay_boundary.block_n,
+                expected_tx_count = replay_boundary.expected_tx_count,
+                "setReplayBoundary called while replay mode is disabled; the boundary will be stored but ignored by batcher and executor until Madara is started with --replay-mode"
+            );
+        }
+
+        let started = Instant::now();
+        let status = self.backend.set_replay_boundary(replay_boundary.clone());
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+        tracing::debug!(
+            target: "rpc::admin",
+            "replay_boundary_set_rpc block_number={} expected_tx_count={} last_tx_hash={:?} dispatched_tx_count={} executed_tx_count={} boundary_met={} closed={} mismatch={:?} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            replay_boundary.block_n,
+            replay_boundary.expected_tx_count,
+            replay_boundary.last_tx_hash,
+            status.dispatched_tx_count,
+            status.executed_tx_count,
+            status.boundary_met,
+            status.closed,
+            status.mismatch,
+            elapsed_ms,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
+        );
+
+        Ok(status)
+    }
+
+    async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        Ok(self.backend.get_replay_boundary_status(block_n))
     }
 }
 

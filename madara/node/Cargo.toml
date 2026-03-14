@@ -18,6 +18,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [[bin]]
 name = "madara"
 
+[features]
+default = []
+
 [dependencies]
 
 # Madara
@@ -102,3 +105,4 @@ mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
+rstest = { workspace = true }
