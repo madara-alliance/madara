@@ -16,11 +16,32 @@
 use casm_classes_v2::casm_contract_class::CasmContractClass;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+use std::sync::OnceLock;
 use std::time::Duration;
 
-/// Default RPC endpoints to try when fetching compiled CASM.
-/// These are public endpoints that support the `starknet_getCompiledCasm` method.
-const DEFAULT_RPC_ENDPOINTS: &[&str] = &["https://starknet-mainnet.g.alchemy.com/v2/PT7G1uVnVHGOyFzH8K7OrNdVfQVT1IgC"];
+/// Returns the RPC endpoints to use for CASM fetching.
+/// Reads from the `MADARA_CASM_RPC_URL` environment variable (comma-separated for multiple endpoints).
+/// Falls back to an empty list if not set (disabling remote fetch).
+fn get_rpc_endpoints() -> &'static [String] {
+    static ENDPOINTS: OnceLock<Vec<String>> = OnceLock::new();
+    ENDPOINTS.get_or_init(|| {
+        match std::env::var("MADARA_CASM_RPC_URL") {
+            Ok(val) => {
+                let endpoints: Vec<String> = val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                if endpoints.is_empty() {
+                    tracing::warn!("MADARA_CASM_RPC_URL is set but empty, remote CASM fetch disabled");
+                } else {
+                    tracing::info!("CASM fetch configured with {} endpoint(s)", endpoints.len());
+                }
+                endpoints
+            }
+            Err(_) => {
+                tracing::warn!("MADARA_CASM_RPC_URL not set, remote CASM fetch fallback disabled");
+                Vec::new()
+            }
+        }
+    })
+}
 
 /// Timeout for RPC requests - reduced from 30s to 10s to avoid blocking rayon threads too long
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -81,7 +102,12 @@ struct JsonRpcError {
 /// * `Ok(CasmContractClass)` - The compiled CASM if found
 /// * `Err(CasmFetchError)` - If all endpoints fail or class not found
 pub fn fetch_compiled_casm(class_hash: &Felt) -> Result<CasmContractClass, CasmFetchError> {
-    fetch_compiled_casm_with_endpoints(class_hash, DEFAULT_RPC_ENDPOINTS)
+    let endpoints = get_rpc_endpoints();
+    if endpoints.is_empty() {
+        return Err(CasmFetchError::AllEndpointsFailed);
+    }
+    let endpoint_strs: Vec<&str> = endpoints.iter().map(|s| s.as_str()).collect();
+    fetch_compiled_casm_with_endpoints(class_hash, &endpoint_strs)
 }
 
 /// Fetches compiled CASM using the specified RPC endpoints.
