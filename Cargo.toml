@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "madara",
+  "madara/crates/client/rust_exec",
   "orchestrator",
   "e2e",
   "e2e-tests",
@@ -97,6 +98,7 @@ mc-sync = { path = "madara/crates/client/sync" }
 mc-settlement-client = { path = "madara/crates/client/settlement_client" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
+mc-rust-exec = { path = "madara/crates/client/rust_exec" }
 mc-devnet = { path = "madara/crates/client/devnet" }
 mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 mc-external-db = { path = "madara/crates/client/external_db" }

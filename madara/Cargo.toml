@@ -52,6 +52,7 @@ mc-gateway-client.workspace = true
 mc-gateway-server.workspace = true
 mc-mempool.workspace = true
 mc-rpc.workspace = true
+mc-rust-exec.workspace = true
 mc-settlement-client.workspace = true
 mc-submit-tx.workspace = true
 mc-sync.workspace = true
