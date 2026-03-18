@@ -49,10 +49,8 @@ impl TryFrom<RunCmd> for SettlementConfig {
                 );
 
                 // Resolve secrets: _FILE env vars take precedence over direct values
-                let ethereum_rpc_url = match resolve_secret_from_file(
-                    "MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL",
-                )
-                .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                let ethereum_rpc_url = match resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL")
+                    .map_err(OrchestratorError::SetupCommandError)?
                 {
                     Some(url_str) => Url::parse(&url_str).map_err(|e| {
                         OrchestratorError::SetupCommandError(format!(
@@ -65,13 +63,12 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     })?,
                 };
 
-                let ethereum_private_key =
-                    resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")
-                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
-                        .or(run_cmd.ethereum_settlement_args.ethereum_private_key.clone())
-                        .ok_or_else(|| {
-                            OrchestratorError::SetupCommandError("Ethereum private key is required".to_string())
-                        })?;
+                let ethereum_private_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")
+                    .map_err(OrchestratorError::SetupCommandError)?
+                    .or(run_cmd.ethereum_settlement_args.ethereum_private_key.clone())
+                    .ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Ethereum private key is required".to_string())
+                    })?;
 
                 let ethereum_params = EthereumSettlementValidatedArgs {
                     ethereum_rpc_url,
@@ -91,10 +88,8 @@ impl TryFrom<RunCmd> for SettlementConfig {
             }
             (false, true) => {
                 // Resolve secrets: _FILE env vars take precedence over direct values
-                let starknet_rpc_url = match resolve_secret_from_file(
-                    "MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL",
-                )
-                .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                let starknet_rpc_url = match resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL")
+                    .map_err(OrchestratorError::SetupCommandError)?
                 {
                     Some(url_str) => Url::parse(&url_str).map_err(|e| {
                         OrchestratorError::SetupCommandError(format!(
@@ -107,13 +102,12 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     })?,
                 };
 
-                let starknet_private_key =
-                    resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY")
-                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
-                        .or(run_cmd.starknet_settlement_args.starknet_private_key.clone())
-                        .ok_or_else(|| {
-                            OrchestratorError::SetupCommandError("Starknet private key is required".to_string())
-                        })?;
+                let starknet_private_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY")
+                    .map_err(OrchestratorError::SetupCommandError)?
+                    .or(run_cmd.starknet_settlement_args.starknet_private_key.clone())
+                    .ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Starknet private key is required".to_string())
+                    })?;
 
                 let starknet_params = StarknetSettlementValidatedArgs {
                     starknet_rpc_url,

@@ -15,7 +15,7 @@ impl TryFrom<RunCmd> for DatabaseArgs {
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         // Resolve secret: _FILE env var takes precedence over direct value
         let connection_uri = resolve_secret_from_file("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL")
-            .map_err(|e| OrchestratorError::SetupCommandError(e))?
+            .map_err(OrchestratorError::SetupCommandError)?
             .or(run_cmd.mongodb_args.mongodb_connection_url)
             .ok_or(OrchestratorError::SetupCommandError("Database Connection URL is required".to_string()))?;
 

@@ -62,13 +62,10 @@ impl TryFrom<RunCmd> for ProverConfig {
                     ));
                 }
                 // Resolve secret: _FILE env var takes precedence over direct value
-                let atlantic_api_key =
-                    resolve_secret_from_file("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY")
-                        .map_err(|e| OrchestratorError::RunCommandError(e))?
-                        .or(atlantic_args.atlantic_api_key)
-                        .ok_or_else(|| {
-                            OrchestratorError::RunCommandError("Atlantic API key is required".to_string())
-                        })?;
+                let atlantic_api_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY")
+                    .map_err(OrchestratorError::RunCommandError)?
+                    .or(atlantic_args.atlantic_api_key)
+                    .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic API key is required".to_string()))?;
 
                 Ok(Self::Atlantic(AtlanticValidatedArgs {
                     atlantic_api_key,

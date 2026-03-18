@@ -23,39 +23,37 @@ impl TryFrom<RunCmd> for DAConfig {
             }
             (true, false) => {
                 // Resolve secret: _FILE env var takes precedence over direct value
-                let ethereum_da_rpc_url =
-                    match resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL")
-                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
-                    {
-                        Some(url_str) => Url::parse(&url_str).map_err(|e| {
-                            OrchestratorError::SetupCommandError(format!(
-                                "Invalid Ethereum DA RPC URL from secret file: {}",
-                                e
-                            ))
-                        })?,
-                        None => run_cmd.ethereum_da_args.ethereum_da_rpc_url.ok_or_else(|| {
-                            OrchestratorError::SetupCommandError("Ethereum RPC URL is missing".to_string())
-                        })?,
-                    };
+                let ethereum_da_rpc_url = match resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL")
+                    .map_err(OrchestratorError::SetupCommandError)?
+                {
+                    Some(url_str) => Url::parse(&url_str).map_err(|e| {
+                        OrchestratorError::SetupCommandError(format!(
+                            "Invalid Ethereum DA RPC URL from secret file: {}",
+                            e
+                        ))
+                    })?,
+                    None => run_cmd.ethereum_da_args.ethereum_da_rpc_url.ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Ethereum RPC URL is missing".to_string())
+                    })?,
+                };
 
                 Ok(DAConfig::Ethereum(EthereumDaValidatedArgs { ethereum_da_rpc_url }))
             }
             (false, true) => {
                 // Resolve secret: _FILE env var takes precedence over direct value
-                let starknet_da_rpc_url =
-                    match resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_DA_RPC_URL")
-                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
-                    {
-                        Some(url_str) => Url::parse(&url_str).map_err(|e| {
-                            OrchestratorError::SetupCommandError(format!(
-                                "Invalid Starknet DA RPC URL from secret file: {}",
-                                e
-                            ))
-                        })?,
-                        None => run_cmd.starknet_da_args.starknet_da_rpc_url.ok_or_else(|| {
-                            OrchestratorError::SetupCommandError("Starknet RPC url is missing".to_string())
-                        })?,
-                    };
+                let starknet_da_rpc_url = match resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_DA_RPC_URL")
+                    .map_err(OrchestratorError::SetupCommandError)?
+                {
+                    Some(url_str) => Url::parse(&url_str).map_err(|e| {
+                        OrchestratorError::SetupCommandError(format!(
+                            "Invalid Starknet DA RPC URL from secret file: {}",
+                            e
+                        ))
+                    })?,
+                    None => run_cmd.starknet_da_args.starknet_da_rpc_url.ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Starknet RPC url is missing".to_string())
+                    })?,
+                };
 
                 Ok(DAConfig::Starknet(StarknetDaValidatedArgs { starknet_da_rpc_url }))
             }
