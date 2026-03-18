@@ -16,7 +16,7 @@ struct StateDiffAccumulator {
 
 impl StateDiffAccumulator {
     fn apply_state_diff(&mut self, state_diff: &StateDiff) {
-        tracing::info!(
+        tracing::debug!(
             "parallel_state_diff_apply input storage_diff_contracts={} storage_entries={} deployed_contracts={} replaced_classes={} declared_classes={} migrated_compiled_classes={} nonces={} old_declared_contracts={}",
             state_diff.storage_diffs.len(),
             state_diff.storage_diffs.iter().map(|item| item.storage_entries.len()).sum::<usize>(),
@@ -29,7 +29,7 @@ impl StateDiffAccumulator {
         );
 
         for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_storage contract_address={:#x} storage_entry_count={} storage_entries={:?}",
                 address,
                 storage_entries.len(),
@@ -37,35 +37,35 @@ impl StateDiffAccumulator {
             );
         }
         for DeployedContractItem { address, class_hash } in &state_diff.deployed_contracts {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_deploy contract_address={:#x} class_hash={:#x}",
                 address,
                 class_hash
             );
         }
         for ReplacedClassItem { contract_address, class_hash } in &state_diff.replaced_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_replace contract_address={:#x} class_hash={:#x}",
                 contract_address,
                 class_hash
             );
         }
         for DeclaredClassItem { class_hash, compiled_class_hash } in &state_diff.declared_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_declared class_hash={:#x} compiled_class_hash={:#x}",
                 class_hash,
                 compiled_class_hash
             );
         }
         for MigratedClassItem { class_hash, compiled_class_hash } in &state_diff.migrated_compiled_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_migrated class_hash={:#x} compiled_class_hash={:#x}",
                 class_hash,
                 compiled_class_hash
             );
         }
         for NonceUpdate { contract_address, nonce } in &state_diff.nonces {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_apply_nonce contract_address={:#x} nonce={:#x}",
                 contract_address,
                 nonce
@@ -158,7 +158,7 @@ impl StateDiffAccumulator {
             migrated_compiled_classes,
         };
 
-        tracing::info!(
+        tracing::debug!(
             "parallel_state_diff_squashed output storage_diff_contracts={} storage_entries={} deployed_contracts={} replaced_classes={} declared_classes={} migrated_compiled_classes={} nonces={} old_declared_contracts={}",
             squashed.storage_diffs.len(),
             squashed.storage_diffs.iter().map(|item| item.storage_entries.len()).sum::<usize>(),
@@ -170,7 +170,7 @@ impl StateDiffAccumulator {
             squashed.old_declared_contracts.len()
         );
         for ContractStorageDiffItem { address, storage_entries } in &squashed.storage_diffs {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_storage contract_address={:#x} storage_entry_count={} storage_entries={:?}",
                 address,
                 storage_entries.len(),
@@ -181,35 +181,35 @@ impl StateDiffAccumulator {
             );
         }
         for DeployedContractItem { address, class_hash } in &squashed.deployed_contracts {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_deploy contract_address={:#x} class_hash={:#x}",
                 address,
                 class_hash
             );
         }
         for ReplacedClassItem { contract_address, class_hash } in &squashed.replaced_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_replace contract_address={:#x} class_hash={:#x}",
                 contract_address,
                 class_hash
             );
         }
         for DeclaredClassItem { class_hash, compiled_class_hash } in &squashed.declared_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_declared class_hash={:#x} compiled_class_hash={:#x}",
                 class_hash,
                 compiled_class_hash
             );
         }
         for MigratedClassItem { class_hash, compiled_class_hash } in &squashed.migrated_compiled_classes {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_migrated class_hash={:#x} compiled_class_hash={:#x}",
                 class_hash,
                 compiled_class_hash
             );
         }
         for NonceUpdate { contract_address, nonce } in &squashed.nonces {
-            tracing::info!(
+            tracing::debug!(
                 "parallel_state_diff_squashed_nonce contract_address={:#x} nonce={:#x}",
                 contract_address,
                 nonce
