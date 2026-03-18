@@ -8,7 +8,6 @@ use mc_db::{MadaraBlockView, MadaraPreconfirmedBlockView, MadaraStorageRead, Mad
 use mp_convert::Felt;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use starknet_api::core::Nonce;
 use std::{collections::HashMap, sync::Arc};
 
 fn is_preconfirmed_forward_advance(current_preconfirmed_n: Option<u64>, next_preconfirmed_n: Option<u64>) -> bool {
@@ -273,22 +272,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     }
 
     async fn apply_nonce_updates(&self, nonce_updates: HashMap<Felt, Felt>) -> anyhow::Result<()> {
-        if nonce_updates.is_empty() {
-            return Ok(());
-        }
-
-        let mut guard = self.inner.write().await;
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        for (contract_address, account_nonce) in nonce_updates {
-            guard.update_account_nonce(
-                &contract_address.try_into().context("Invalid contract address")?,
-                &Nonce(account_nonce),
-                &mut removed_txs,
-            );
-        }
-        self.metrics.record_mempool_state(&guard.summary());
-
-        Ok(())
+        self.update_account_nonces(nonce_updates).await
     }
 
     async fn apply_potentially_removed_transactions(

@@ -979,7 +979,7 @@ impl BlockProductionTask {
             anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
         };
         let block_n = state.block_number;
-        tracing::info!("close_block_received_from_executor block_number={block_n}");
+        tracing::debug!("close_block_received_from_executor block_number={block_n}");
 
         let preconfirmed_view = state
             .backend
@@ -1008,14 +1008,14 @@ impl BlockProductionTask {
                 })?;
             if let Some((generic_block_n, _)) = generic_floor {
                 if generic_block_n != base_block_n {
-                    tracing::info!(
+                    tracing::debug!(
                         "parallel_root_non_durable_floor_ignored block_number={} generic_base_snapshot_block={generic_block_n:?} durable_base_snapshot_block={base_block_n:?}",
                         block_n
                     );
                 }
             }
             let root_state_diffs = collect_diffs_for_root_from_base(&self.diffs_since_snapshot, base_block_n, block_n)?;
-            tracing::info!(
+            tracing::debug!(
                 "parallel_root_job_enqueued block_number={} base_snapshot_block={base_block_n:?} diff_count={} diff_start_block={} diff_end_block={} include_overlay={} trie_log_mode={:?} durable_base=true",
                 block_n,
                 root_state_diffs.len(),
@@ -1036,6 +1036,7 @@ impl BlockProductionTask {
             state_diff,
             is_boundary,
             trie_log_mode: self.parallel_merkle_trie_log_mode,
+            compare_parallel_with_sequential: self.replay_mode_enabled,
             root_base_block_n,
             root_snapshot,
             root_state_diffs,
@@ -1067,7 +1068,7 @@ impl BlockProductionTask {
             self.pending_completions.push_back((block_n, completion));
             self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(block_n) });
             self.record_block_stage_metrics();
-            tracing::info!(
+            tracing::debug!(
                 "parallel_merkle_close_deferred block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} root_compute_background=true",
                 block_n,
                 close_queue.current_depth(),
@@ -1081,7 +1082,7 @@ impl BlockProductionTask {
         let completion = completion.await.context("Close queue worker dropped completion channel")??;
         self.metrics.close_queue_dequeued_total.add(1, &[]);
         self.metrics.close_queue_depth.record(close_queue.current_depth() as u64, &[]);
-        tracing::info!(
+        tracing::debug!(
             "close_block_complete block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
             completion.block_n,
             close_queue.current_depth(),
@@ -1215,7 +1216,7 @@ impl BlockProductionTask {
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
             "close_block_complete"
         );
-        tracing::info!(
+        tracing::debug!(
             "Closed block #{} with {n_txs} transactions - {:.6}ms",
             state.block_number,
             time_to_close.as_secs_f64() * 1000.0
@@ -1273,13 +1274,14 @@ impl BlockProductionTask {
             state_diff,
             is_boundary,
             trie_log_mode,
+            compare_parallel_with_sequential,
             root_base_block_n,
             root_snapshot,
             root_state_diffs,
             enqueued_at,
         } = payload;
         let block_n = state.block_number;
-        tracing::info!(
+        tracing::debug!(
             "parallel_root_single_block_dispatch block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?}",
             block_n,
             root_state_diffs.len(),
@@ -1301,7 +1303,7 @@ impl BlockProductionTask {
             metrics_for_compute
                 .parallel_root_spawn_blocking_queue_last
                 .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
-            tracing::info!(
+            tracing::debug!(
                 "parallel_root_single_block_compute_started block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} spawn_blocking_queue_ms={}",
                 block_n,
                 state_diffs_for_compute.len(),
@@ -1319,6 +1321,7 @@ impl BlockProductionTask {
                 &cumulative_state_diff,
                 is_boundary,
                 trie_log_mode,
+                compare_parallel_with_sequential,
             );
             let compute_duration = compute_started_at.elapsed();
             let total_duration = dispatched_at.elapsed();
@@ -1326,7 +1329,7 @@ impl BlockProductionTask {
             metrics_for_compute.parallel_root_compute_last.record(compute_duration.as_secs_f64(), &[]);
             metrics_for_compute.parallel_root_total_duration.record(total_duration.as_secs_f64(), &[]);
             metrics_for_compute.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
-            tracing::info!(
+            tracing::debug!(
                 "parallel_root_single_block_compute_finished block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} success={} compute_ms={} total_ms={}",
                 block_n,
                 state_diffs_for_compute.len(),
@@ -1352,7 +1355,7 @@ impl BlockProductionTask {
         let root_wait_duration = root_wait_started_at.elapsed();
         metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
         metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
-        tracing::info!(
+        tracing::debug!(
             "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
             block_n,
             root_wait_duration.as_secs_f64() * 1000.0
@@ -1367,6 +1370,7 @@ impl BlockProductionTask {
                 state_diff,
                 is_boundary,
                 trie_log_mode,
+                compare_parallel_with_sequential,
                 root_base_block_n,
                 root_snapshot: None,
                 root_state_diffs: Vec::new(),
@@ -1527,7 +1531,7 @@ impl BlockProductionTask {
                         .root_hash(&contract_address.to_bytes_be())
                         .map_err(mc_db::rocksdb::trie::WrappedBonsaiError)
                         .context("Reading persisted contract storage root after boundary flush")?;
-                    tracing::info!(
+                    tracing::debug!(
                         "parallel_boundary_persisted_storage_root block_number={} contract_address={:#x} storage_entries={} persisted_storage_root={:#x}",
                         block_number,
                         contract_address,
@@ -1535,7 +1539,7 @@ impl BlockProductionTask {
                         persisted_storage_root
                     );
                 }
-                tracing::info!(
+                tracing::debug!(
                     "parallel_boundary_persisted_storage_roots_done block_number={} touched_contracts={} duration_ms={}",
                     block_number,
                     boundary_storage_contracts.len(),
@@ -1617,7 +1621,7 @@ impl BlockProductionTask {
             parallel_merkle = true,
             "close_block_complete"
         );
-        tracing::info!(
+        tracing::debug!(
             "Closed block #{} with {n_txs} transactions (parallel merkle) - {:.6}ms",
             state.block_number,
             time_to_close.as_secs_f64() * 1000.0
@@ -1771,7 +1775,7 @@ impl BlockProductionTask {
                         .context("Close queue worker dropped completion channel")??;
                     self.metrics.close_queue_dequeued_total.add(1, &[]);
                     self.metrics.close_queue_depth.record(close_queue_handle.current_depth() as u64, &[]);
-                    tracing::info!(
+                    tracing::debug!(
                         "close_block_complete block_number={} expected_block_n={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
                         completion.block_n,
                         expected_block_n,

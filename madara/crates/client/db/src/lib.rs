@@ -455,6 +455,27 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(matches)
     }
 
+    fn reconcile_confirmed_parallel_merkle_state_for_tip(
+        &self,
+        confirmed_tip: Option<u64>,
+        context: &str,
+    ) -> Result<()> {
+        let Some(confirmed_tip) = confirmed_tip else {
+            return Ok(());
+        };
+
+        self.db
+            .reconcile_confirmed_parallel_merkle_state(confirmed_tip, context)
+            .with_context(|| format!("Reconciling confirmed trie state for block #{confirmed_tip} during {context}"))?;
+
+        ensure!(
+            self.log_confirmed_state_root_consistency(context, confirmed_tip)?,
+            "Confirmed state root mismatch after parallel merkle reconciliation for block #{confirmed_tip} during {context}"
+        );
+
+        Ok(())
+    }
+
     fn new_and_init(
         db: D,
         chain_config: Arc<ChainConfig>,
@@ -514,10 +535,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.db.remove_all_blocks_starting_from(
             chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
+        self.reconcile_confirmed_parallel_merkle_state_for_tip(chain_head_state.confirmed_tip, "startup_init")?;
         self.publish_head_projection(chain_head_state, preconfirmed)?;
-        if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
-            let _ = self.log_confirmed_state_root_consistency("startup_init", confirmed_tip);
-        }
 
         // Init L1 head
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
@@ -732,6 +751,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Must be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
+    }
+
+    pub fn reconcile_confirmed_parallel_merkle_state(&self, context: &str) -> Result<()> {
+        self.reconcile_confirmed_parallel_merkle_state_for_tip(self.chain_head_state().confirmed_tip, context)
     }
 }
 

@@ -130,6 +130,10 @@ impl InnerMempool {
 }
 
 impl InnerMempool {
+    pub fn contract_addresses(&self) -> impl Iterator<Item = ContractAddress> + '_ {
+        self.accounts.contract_addresses().copied()
+    }
+
     pub fn new(config: InnerMempoolConfig) -> Self {
         Self {
             limiter: MempoolLimiter::new(&config),

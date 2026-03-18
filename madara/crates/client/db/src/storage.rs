@@ -252,6 +252,12 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// Called everytime a new block_n is fully saved and marked as confirmed.
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()>;
 
+    /// Ensure the persisted global trie is durably aligned with the confirmed head.
+    ///
+    /// This is used during startup and graceful shutdown in parallel-merkle mode to rebuild or
+    /// checkpoint trie state for a confirmed non-boundary head.
+    fn reconcile_confirmed_parallel_merkle_state(&self, block_n: u64, context: &str) -> Result<()>;
+
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
 

@@ -15,8 +15,8 @@ use mp_state_update::{
     ReplacedClassItem, StateDiff, StorageEntry,
 };
 use rocksdb::IteratorMode;
-use std::fs;
 use starknet_types_core::felt::Felt;
+use std::fs;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -217,10 +217,8 @@ fn in_memory_single_block_root_preserves_existing_contract_storage() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) = backend_expected
-        .write_access()
-        .apply_to_global_trie(1, [&current_diff])
-        .expect("sequential apply");
+    let (expected_root, _timings) =
+        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -317,10 +315,8 @@ fn in_memory_single_block_root_preserves_existing_storage_across_multiple_contra
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) = backend_expected
-        .write_access()
-        .apply_to_global_trie(1, [&current_diff])
-        .expect("sequential apply");
+    let (expected_root, _timings) =
+        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -336,8 +332,7 @@ fn in_memory_single_block_root_preserves_existing_storage_across_multiple_contra
     .expect("actual compute");
 
     assert_eq!(
-        actual.state_root,
-        expected_root,
+        actual.state_root, expected_root,
         "in-memory trie must preserve historical storage when multiple contract storage tries are updated together"
     );
 }
@@ -474,7 +469,9 @@ fn replay_regression_contract_2860_storage_root_matches_sequential_apply() {
                 },
                 StorageEntry {
                     key: Felt::from_hex_unchecked("0x1705a5bf42340e733815ddb6d42eabe16220907418e56599a6de3aed153ff16"),
-                    value: Felt::from_hex_unchecked("0x2f3f4d7c08fce6fe8ff30feb6a9dcbf88d2c787aeca673fca362eb2832dab72"),
+                    value: Felt::from_hex_unchecked(
+                        "0x2f3f4d7c08fce6fe8ff30feb6a9dcbf88d2c787aeca673fca362eb2832dab72",
+                    ),
                 },
                 StorageEntry {
                     key: Felt::from_hex_unchecked("0x2c11b97d01a63fdae176e288c5b93dc76d1274d50a5d570fe99ecdd14da6460"),
@@ -508,10 +505,8 @@ fn replay_regression_contract_2860_storage_root_matches_sequential_apply() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) = backend_expected
-        .write_access()
-        .apply_to_global_trie(1, [&current_diff])
-        .expect("sequential apply");
+    let (expected_root, _timings) =
+        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -661,7 +656,9 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
                 },
                 StorageEntry {
                     key: Felt::from_hex_unchecked("0x1705a5bf42340e733815ddb6d42eabe16220907418e56599a6de3aed153ff16"),
-                    value: Felt::from_hex_unchecked("0x2f3f4d7c08fce6fe8ff30feb6a9dcbf88d2c787aeca673fca362eb2832dab72"),
+                    value: Felt::from_hex_unchecked(
+                        "0x2f3f4d7c08fce6fe8ff30feb6a9dcbf88d2c787aeca673fca362eb2832dab72",
+                    ),
                 },
                 StorageEntry {
                     key: Felt::from_hex_unchecked("0x2c11b97d01a63fdae176e288c5b93dc76d1274d50a5d570fe99ecdd14da6460"),
@@ -695,10 +692,7 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_expected
-        .write_access()
-        .apply_to_global_trie(0, [&base_diff])
-        .expect("build persisted base trie");
+    backend_expected.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
     let (expected_root, _timings) = backend_expected
         .write_access()
         .apply_to_global_trie(1, [&current_diff])
@@ -706,10 +700,7 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_actual
-        .write_access()
-        .apply_to_global_trie(0, [&base_diff])
-        .expect("build persisted base trie");
+    backend_actual.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
     let actual = compute_root_from_snapshot(
         &backend_actual.db,
         Some(0),
@@ -721,7 +712,10 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
     )
     .expect("actual compute from persisted base");
 
-    assert_eq!(actual.state_root, expected_root, "persisted-base replay regression for contract 2860 should match sequential");
+    assert_eq!(
+        actual.state_root, expected_root,
+        "persisted-base replay regression for contract 2860 should match sequential"
+    );
 }
 
 #[test]
@@ -732,27 +726,16 @@ fn debug_replay_regression_669160_full_window_matches_sequential_apply() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_expected
-        .write_access()
-        .apply_to_global_trie(0, [&base_diff])
-        .expect("build persisted base trie");
+    backend_expected.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
     backend_expected.db.inner.state_apply_state_diff(1, &diff_159).expect("seed 669159 history");
-    backend_expected
-        .write_access()
-        .apply_to_global_trie(1, [&diff_159])
-        .expect("sequential 669159 apply");
+    backend_expected.write_access().apply_to_global_trie(1, [&diff_159]).expect("sequential 669159 apply");
     backend_expected.db.inner.state_apply_state_diff(2, &diff_160).expect("seed 669160 history");
-    let (expected_root, _timings) = backend_expected
-        .write_access()
-        .apply_to_global_trie(2, [&diff_160])
-        .expect("sequential 669160 apply");
+    let (expected_root, _timings) =
+        backend_expected.write_access().apply_to_global_trie(2, [&diff_160]).expect("sequential 669160 apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_actual
-        .write_access()
-        .apply_to_global_trie(0, [&base_diff])
-        .expect("build persisted base trie");
+    backend_actual.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
 
     let squashed = cumulative_squashed_state_diffs([&diff_159, &diff_160]);
     let cumulative = squashed.last().expect("cumulative diff for 669160");
@@ -1071,10 +1054,7 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
                 .map(|address| ContractStorageDiffItem {
                     address: *address,
                     storage_entries: (0..8)
-                        .map(|_| StorageEntry {
-                            key: random_felt_251(&mut state),
-                            value: random_felt_251(&mut state),
-                        })
+                        .map(|_| StorageEntry { key: random_felt_251(&mut state), value: random_felt_251(&mut state) })
                         .collect(),
                 })
                 .collect(),
@@ -1087,7 +1067,10 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
             replaced_classes: vec![],
             nonces: contracts
                 .iter()
-                .map(|address| NonceUpdate { contract_address: *address, nonce: Felt::from(next_u64(&mut state) & 0xff) })
+                .map(|address| NonceUpdate {
+                    contract_address: *address,
+                    nonce: Felt::from(next_u64(&mut state) & 0xff),
+                })
                 .collect(),
             migrated_compiled_classes: vec![],
         };
@@ -1097,10 +1080,7 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
                 .map(|address| ContractStorageDiffItem {
                     address: *address,
                     storage_entries: (0..6)
-                        .map(|_| StorageEntry {
-                            key: random_felt_251(&mut state),
-                            value: random_felt_251(&mut state),
-                        })
+                        .map(|_| StorageEntry { key: random_felt_251(&mut state), value: random_felt_251(&mut state) })
                         .collect(),
                 })
                 .collect(),
@@ -1111,17 +1091,18 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
             nonces: contracts
                 .iter()
                 .take(3)
-                .map(|address| NonceUpdate { contract_address: *address, nonce: Felt::from(next_u64(&mut state) & 0xff) })
+                .map(|address| NonceUpdate {
+                    contract_address: *address,
+                    nonce: Felt::from(next_u64(&mut state) & 0xff),
+                })
                 .collect(),
             migrated_compiled_classes: vec![],
         };
 
         let backend_expected = setup_backend();
         backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-        let (expected_root, _timings) = backend_expected
-            .write_access()
-            .apply_to_global_trie(1, [&current_diff])
-            .expect("sequential apply");
+        let (expected_root, _timings) =
+            backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
 
         let backend_actual = setup_backend();
         backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -1137,8 +1118,7 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
         .expect("actual compute");
 
         assert_eq!(
-            actual.state_root,
-            expected_root,
+            actual.state_root, expected_root,
             "seed {seed} produced a mismatch between in-memory and sequential trie computation"
         );
     }

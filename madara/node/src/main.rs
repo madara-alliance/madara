@@ -500,6 +500,14 @@ async fn main() -> anyhow::Result<()> {
 
     let result = app.start().await;
 
+    if result.is_ok() {
+        if let Err(err) = backend.reconcile_confirmed_parallel_merkle_state("shutdown") {
+            let err = err.context("Reconciling confirmed trie state during shutdown");
+            tracing::error!("{err:#}");
+            return Err(err);
+        }
+    }
+
     // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
     if let Err(e) = backend.flush() {
         tracing::error!("Failed to flush database during shutdown: {}", e);

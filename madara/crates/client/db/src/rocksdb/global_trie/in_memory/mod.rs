@@ -6,7 +6,8 @@ mod state_diff;
 mod tests;
 
 pub use compute::{
-    compute_root_from_snapshot, compute_roots_in_parallel_from_snapshot, InMemoryRootComputation, TrieLogMode,
+    compute_root_from_snapshot, compute_root_from_snapshot_sequential, compute_roots_in_parallel_from_snapshot,
+    InMemoryRootComputation, TrieLogMode,
 };
 pub use db::{InMemoryBonsaiDb, InMemoryColumnMapping, OverlayKey, OverlayMap};
 pub use overlay::{flush_overlay_and_checkpoint, BonsaiOverlay};

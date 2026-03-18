@@ -376,7 +376,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
             let trie_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_COLUMN_ID).count();
             let flat_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_FLAT_COLUMN_ID).count();
-            let trie_log_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_LOG_COLUMN_ID).count();
+            let trie_log_entries =
+                self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_LOG_COLUMN_ID).count();
             tracing::info!(
                 "parallel_contract_storage_overlay_write_batch noop=true overlay_entries={} trie_entries={} flat_entries={} trie_log_entries={}",
                 self.changed.len(),
