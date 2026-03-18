@@ -3,7 +3,9 @@ use crate::OrchestratorError;
 use alloy::primitives::Address;
 use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
+use orchestrator_utils::env_utils::resolve_secret_from_file;
 use std::str::FromStr as _;
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub enum SettlementConfig {
@@ -46,13 +48,34 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
                 );
 
-                let ethereum_params = EthereumSettlementValidatedArgs {
-                    ethereum_rpc_url: run_cmd.ethereum_settlement_args.ethereum_rpc_url.clone().ok_or_else(|| {
+                // Resolve secrets: _FILE env vars take precedence over direct values
+                let ethereum_rpc_url = match resolve_secret_from_file(
+                    "MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL",
+                )
+                .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                {
+                    Some(url_str) => Url::parse(&url_str).map_err(|e| {
+                        OrchestratorError::SetupCommandError(format!(
+                            "Invalid Ethereum settlement RPC URL from secret file: {}",
+                            e
+                        ))
+                    })?,
+                    None => run_cmd.ethereum_settlement_args.ethereum_rpc_url.clone().ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Ethereum RPC URL is required".to_string())
                     })?,
-                    ethereum_private_key: run_cmd.ethereum_settlement_args.ethereum_private_key.clone().ok_or_else(
-                        || OrchestratorError::SetupCommandError("Ethereum private key is required".to_string()),
-                    )?,
+                };
+
+                let ethereum_private_key =
+                    resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")
+                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                        .or(run_cmd.ethereum_settlement_args.ethereum_private_key.clone())
+                        .ok_or_else(|| {
+                            OrchestratorError::SetupCommandError("Ethereum private key is required".to_string())
+                        })?;
+
+                let ethereum_params = EthereumSettlementValidatedArgs {
+                    ethereum_rpc_url,
+                    ethereum_private_key,
                     l1_core_contract_address,
                     starknet_operator_address: ethereum_operator_address,
                     ethereum_finality_retry_wait_in_secs: run_cmd
@@ -67,13 +90,34 @@ impl TryFrom<RunCmd> for SettlementConfig {
                 Ok(Self::Ethereum(ethereum_params))
             }
             (false, true) => {
-                let starknet_params = StarknetSettlementValidatedArgs {
-                    starknet_rpc_url: run_cmd.starknet_settlement_args.starknet_rpc_url.clone().ok_or_else(|| {
+                // Resolve secrets: _FILE env vars take precedence over direct values
+                let starknet_rpc_url = match resolve_secret_from_file(
+                    "MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL",
+                )
+                .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                {
+                    Some(url_str) => Url::parse(&url_str).map_err(|e| {
+                        OrchestratorError::SetupCommandError(format!(
+                            "Invalid Starknet settlement RPC URL from secret file: {}",
+                            e
+                        ))
+                    })?,
+                    None => run_cmd.starknet_settlement_args.starknet_rpc_url.clone().ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Starknet RPC URL is required".to_string())
                     })?,
-                    starknet_private_key: run_cmd.starknet_settlement_args.starknet_private_key.clone().ok_or_else(
-                        || OrchestratorError::SetupCommandError("Starknet private key is required".to_string()),
-                    )?,
+                };
+
+                let starknet_private_key =
+                    resolve_secret_from_file("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY")
+                        .map_err(|e| OrchestratorError::SetupCommandError(e))?
+                        .or(run_cmd.starknet_settlement_args.starknet_private_key.clone())
+                        .ok_or_else(|| {
+                            OrchestratorError::SetupCommandError("Starknet private key is required".to_string())
+                        })?;
+
+                let starknet_params = StarknetSettlementValidatedArgs {
+                    starknet_rpc_url,
+                    starknet_private_key,
                     starknet_account_address: run_cmd
                         .starknet_settlement_args
                         .starknet_account_address
