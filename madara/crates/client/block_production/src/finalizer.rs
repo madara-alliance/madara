@@ -101,7 +101,7 @@ impl FinalizerHandle {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
                 }
-                tracing::info!(
+                tracing::debug!(
                     "finalizer_batch_started start_block={} end_block={} batch_size={} blocks={:?} in_flight={} queue_wait_min_ms={} queue_wait_avg_ms={} queue_wait_max_ms={}",
                     first_block_n,
                     last_block_n,
@@ -146,7 +146,7 @@ impl FinalizerHandle {
                 }
 
                 let successful = results.iter().filter(|result| result.is_ok()).count();
-                tracing::info!(
+                tracing::debug!(
                     "finalizer_batch_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
                     first_block_n,
                     last_block_n,
@@ -282,6 +282,7 @@ mod tests {
             },
             is_boundary,
             trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
+            compare_parallel_with_sequential: false,
             root_base_block_n: None,
             root_snapshot: None,
             root_state_diffs: Vec::new(),

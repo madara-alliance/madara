@@ -52,7 +52,7 @@ impl Snapshots {
         snapshot_interval: u64,
     ) -> Self {
         let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
-        tracing::info!(
+        tracing::debug!(
             "initialized_db_snapshots head_block_n={head_block_n:?} max_kept_snapshots={max_kept_snapshots:?} snapshot_interval={snapshot_interval}"
         );
         Self {
@@ -79,7 +79,7 @@ impl Snapshots {
         } else {
             None
         };
-        tracing::info!(
+        tracing::debug!(
             "db_snapshot_saved block_number={} historical_count={} exact_count={} oldest_snapshot={:?} newest_snapshot={:?} oldest_exact={:?} newest_exact={:?} pruned_snapshot={pruned_snapshot_block:?} max_kept_snapshots={:?} snapshot_interval={}",
             block_n,
             inner.historical.len(),
@@ -127,7 +127,7 @@ impl Snapshots {
 
         let head = Arc::clone(&inner.head);
         inner.exact.insert(block_n, head);
-        tracing::info!(
+        tracing::debug!(
             "db_snapshot_pinned block_number={} exact_count={} oldest_exact={:?} newest_exact={:?} historical_count={} oldest_snapshot={:?} newest_snapshot={:?}",
             block_n,
             inner.exact.len(),
@@ -147,7 +147,7 @@ impl Snapshots {
         inner.historical.retain(|saved_block_n, _| *saved_block_n <= block_n);
         inner.head = snapshot;
         inner.head_block_n = Some(block_n);
-        tracing::info!(
+        tracing::debug!(
             "db_snapshots_rewound target_block={} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?}",
             block_n,
             inner.exact.len(),
@@ -253,7 +253,7 @@ impl Snapshots {
             // snapshots are disabled. In these cases we want to return the snapshot for the current latest block.
             .unwrap_or_else(|| (inner.head_block_n, Arc::clone(&inner.head), "head"));
         if selected_block_n.is_some_and(|selected| selected > block_n) {
-            tracing::info!(
+            tracing::debug!(
                 "db_snapshot_selected_after_requested requested_block={} selected_snapshot_block={selected_block_n:?} source={} head_block_n={:?} historical_count={} oldest_snapshot={oldest_snapshot:?} newest_snapshot={newest_snapshot:?} max_kept_snapshots={:?} snapshot_interval={}",
                 block_n,
                 source,

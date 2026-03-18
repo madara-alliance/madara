@@ -129,8 +129,11 @@ impl BonsaiDatabase for BonsaiDB {
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
         let mut readopts = rocksdb::ReadOptions::default();
         readopts.set_prefix_same_as_start(true);
-        let iter =
-            self.backend.db.iterator_cf_opt(&handle, readopts, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let iter = self.backend.db.iterator_cf_opt(
+            &handle,
+            readopts,
+            IteratorMode::From(prefix.as_slice(), Direction::Forward),
+        );
         Ok(iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
@@ -196,8 +199,11 @@ impl BonsaiDatabase for BonsaiDB {
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
         let mut readopts = rocksdb::ReadOptions::default();
         readopts.set_prefix_same_as_start(true);
-        let iter =
-            self.backend.db.iterator_cf_opt(&handle, readopts, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let iter = self.backend.db.iterator_cf_opt(
+            &handle,
+            readopts,
+            IteratorMode::From(prefix.as_slice(), Direction::Forward),
+        );
         let mut batch = self.create_batch();
         for kv in iter {
             if let Ok((key, _)) = kv {
