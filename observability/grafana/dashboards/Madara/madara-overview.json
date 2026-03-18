@@ -7914,7 +7914,7 @@
         "type": "datasource"
       },
       {
-        "allValue": ".*",
+        "allValue": ".+",
         "current": {
           "selected": true,
           "text": "All",
@@ -7924,7 +7924,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(block_produced_no, namespace)",
+        "definition": "label_values(block_produced_no{namespace!=\"\"}, namespace)",
         "hide": 0,
         "includeAll": true,
         "label": "Namespace",
@@ -7932,7 +7932,7 @@
         "name": "namespace",
         "options": [],
         "query": {
-          "query": "label_values(block_produced_no, namespace)",
+          "query": "label_values(block_produced_no{namespace!=\"\"}, namespace)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
@@ -7942,7 +7942,7 @@
         "type": "query"
       },
       {
-        "allValue": ".*",
+        "allValue": ".+",
         "current": {
           "selected": true,
           "text": "All",
@@ -7952,7 +7952,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
+        "definition": "label_values(block_produced_no{namespace=~\"$namespace\", pod!=\"\", pod!~\".*fullnode.*\"}, pod)",
         "hide": 0,
         "includeAll": true,
         "label": "Pod",
@@ -7960,7 +7960,7 @@
         "name": "pod",
         "options": [],
         "query": {
-          "query": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
+          "query": "label_values(block_produced_no{namespace=~\"$namespace\", pod!=\"\", pod!~\".*fullnode.*\"}, pod)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
