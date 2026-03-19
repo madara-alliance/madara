@@ -1,6 +1,6 @@
 use super::error::DatabaseError;
 use crate::core::client::database::constant::{
-    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
+    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, LOOKUP_SCAN_LIMIT, SNOS_BATCHES_COLLECTION,
 };
 use crate::core::client::database::DatabaseClient;
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
@@ -95,6 +95,8 @@ impl MongoDbClient {
             IndexModel::builder().keys(doc! { "job_type": 1, "status": 1, "internal_id": -1 }).build(),
             // Index on status
             IndexModel::builder().keys(doc! { "status": 1 }).build(),
+            // Index on internal_id for $lookup joins (enables IndexedLoopJoin)
+            IndexModel::builder().keys(doc! { "internal_id": 1 }).build(),
         ];
 
         jobs_collection.create_indexes(jobs_indexes, None).await?;
@@ -589,8 +591,17 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Lookup to find jobs with matching internal_id
-            // Uses localField/foreignField form for proper index utilization
+            // Stage 2: Sort by internal_id descending to process most recent jobs first
+            // Jobs without successors are always at the frontier (most recent)
+            doc! {
+                "$sort": { "internal_id": -1 }
+            },
+            // Stage 3: Limit to recent jobs to avoid scanning the entire collection
+            doc! {
+                "$limit": LOOKUP_SCAN_LIMIT
+            },
+            // Stage 4: Lookup to find jobs with matching internal_id
+            // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
@@ -599,7 +610,7 @@ impl DatabaseClient for MongoDbClient {
                     "as": "successor_jobs"
                 }
             },
-            // Stage 3: Filter successor_jobs to only include job_b_type
+            // Stage 5: Filter successor_jobs to only include job_b_type
             doc! {
                 "$addFields": {
                     "successor_jobs": {
@@ -611,7 +622,7 @@ impl DatabaseClient for MongoDbClient {
                     }
                 }
             },
-            // Stage 4: Keep only documents with no successors
+            // Stage 6: Keep only documents with no successors
             doc! {
                 "$match": {
                     "successor_jobs": { "$eq": [] }
@@ -1201,8 +1212,17 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Lookup to find jobs with matching internal_id
-            // Uses localField/foreignField form for proper index utilization
+            // Stage 2: Sort by index descending to process most recent batches first
+            // Batches without jobs are always at the frontier (most recent)
+            doc! {
+                "$sort": { "index": -1 }
+            },
+            // Stage 3: Limit to recent batches to avoid scanning the entire collection
+            doc! {
+                "$limit": LOOKUP_SCAN_LIMIT
+            },
+            // Stage 4: Lookup to find jobs with matching internal_id
+            // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
@@ -1211,7 +1231,7 @@ impl DatabaseClient for MongoDbClient {
                     "as": "corresponding_jobs"
                 }
             },
-            // Stage 3: Filter corresponding_jobs to only include SnosRun jobs
+            // Stage 5: Filter corresponding_jobs to only include SnosRun jobs
             doc! {
                 "$addFields": {
                     "corresponding_jobs": {
@@ -1223,13 +1243,13 @@ impl DatabaseClient for MongoDbClient {
                     }
                 }
             },
-            // Stage 4: Keep only batches without corresponding jobs
+            // Stage 6: Keep only batches without corresponding jobs
             doc! {
                 "$match": {
                     "corresponding_jobs": { "$eq": [] }
                 }
             },
-            // Stage 4: Sort by snos_batch_id for consistent ordering
+            // Stage 7: Sort by index ascending for consistent ordering
             doc! {
                 "$sort": {
                     "index": 1
