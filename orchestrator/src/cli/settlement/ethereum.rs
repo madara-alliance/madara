@@ -2,7 +2,10 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address"])]
+// Note: we intentionally do not use requires_all here because env vars can populate
+// fields even when --settle-on-ethereum is not passed, causing clap to incorrectly
+// demand all fields. Validation is done in TryFrom<RunCmd> for SettlementConfig
+// (see src/types/params/settlement.rs).
 pub struct EthereumSettlementCliArgs {
     /// Use the Ethereum settlement layer.
     #[arg(long)]

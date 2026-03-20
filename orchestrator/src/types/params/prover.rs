@@ -2,6 +2,7 @@ use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use orchestrator_atlantic_service::AtlanticValidatedArgs;
 use orchestrator_sharp_service::SharpValidatedArgs;
+use orchestrator_utils::env_utils::resolve_secret_from_file;
 use orchestrator_utils::layer::Layer;
 
 #[derive(Debug, Clone)]
@@ -60,10 +61,14 @@ impl TryFrom<RunCmd> for ProverConfig {
                         "Cairo verifier program hash is required for L3".to_string(),
                     ));
                 }
+                // Resolve secret: _FILE env var takes precedence over direct value
+                let atlantic_api_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY")
+                    .map_err(OrchestratorError::RunCommandError)?
+                    .or(atlantic_args.atlantic_api_key)
+                    .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic API key is required".to_string()))?;
+
                 Ok(Self::Atlantic(AtlanticValidatedArgs {
-                    atlantic_api_key: atlantic_args.atlantic_api_key.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic API key is required".to_string())
-                    })?,
+                    atlantic_api_key,
                     atlantic_service_url: atlantic_args
                         .atlantic_service_url
                         .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic URL is required".to_string()))?,
