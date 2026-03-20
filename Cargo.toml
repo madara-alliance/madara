@@ -120,10 +120,10 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+blockifier = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+starknet_api = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations", features = [
   "testing",
 ] }
 cairo-lang-starknet-classes = "=2.12.3"
@@ -305,7 +305,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.1-alpha.2" }
+generate-pie = { git = "https://github.com/heemankv/snos", branch = "memory-optimisations" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -328,3 +328,11 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+cairo-vm = { git = "https://github.com/heemankv/cairo-vm", branch = "memory-optimisations" }
+
+[patch."https://github.com/karnotxyz/sequencer"]
+blockifier = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations" }
+starknet_api = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations" }
+starknet_os = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations" }
+starknet_patricia = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations" }
+shared_execution_objects = { git = "https://github.com/heemankv/sequencer", branch = "memory-optimisations" }
