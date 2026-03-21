@@ -317,10 +317,7 @@ impl EventWorker {
             Err((first_err, delivery)) => {
                 tracing::warn!("First ack attempt failed, retrying: {}", first_err);
                 tokio::time::sleep(Duration::from_millis(500)).await;
-                delivery
-                    .ack()
-                    .await
-                    .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+                delivery.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
                 Ok(())
             }
         }
