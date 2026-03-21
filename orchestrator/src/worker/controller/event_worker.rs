@@ -309,8 +309,21 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
-        Ok(())
+        // Retry ack once on failure. A transient DispatchFailure (e.g. stale HTTP
+        // connection) should not discard a successfully processed job — the message
+        // would become visible again and get re-processed, wasting work.
+        match message.ack().await {
+            Ok(()) => Ok(()),
+            Err((first_err, delivery)) => {
+                tracing::warn!("First ack attempt failed, retrying: {}", first_err);
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                delivery
+                    .ack()
+                    .await
+                    .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+                Ok(())
+            }
+        }
     }
 
     /// process_message - Process the message received from the queue
