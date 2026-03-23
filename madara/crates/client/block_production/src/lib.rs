@@ -340,8 +340,13 @@ impl CurrentBlockState {
         .await?;
 
         let stats = mem::take(&mut batch.stats);
-        if stats.n_added_to_block > 0 {
-            tracing::debug!(
+        if stats.n_executed > 0 {
+            tracing::info!(
+                txs_executed_in_batch = stats.n_executed,
+                txs_added_to_block = stats.n_added_to_block,
+                txs_reverted = stats.n_reverted,
+                txs_rejected = stats.n_rejected,
+                batch_exec_duration_ms = stats.exec_duration.as_secs_f64() * 1000.0,
                 "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
                 stats.n_added_to_block,
                 self.block_number,
