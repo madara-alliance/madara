@@ -29,6 +29,8 @@ struct ExecutorStateExecuting {
     executor: TransactionExecutor<LayeredStateAdapter>,
     declared_classes: HashMap<ClassHash, ContractClass>,
     consumed_l1_to_l2_nonces: HashSet<u64>,
+    block_stats: ExecutionStats,
+    last_batch_finished_at: Option<StdInstant>,
 }
 
 struct ExecutorStateNewBlock {
@@ -128,7 +130,7 @@ impl ExecutorThread {
         should_wait: bool,
     ) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
-            tracing::debug!(
+            tracing::info!(
                 "executor_batch_received block_number={current_block_n:?} tx_count={} receive_mode=try_recv",
                 batch.len()
             );
@@ -303,6 +305,8 @@ impl ExecutorThread {
             executor,
             consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
             declared_classes: HashMap::new(),
+            block_stats: ExecutionStats::default(),
+            last_batch_finished_at: None,
         })
     }
 
@@ -541,8 +545,11 @@ impl ExecutorThread {
                 (String::new(), "")
             };
             if has_txs_in_batch {
-                tracing::debug!(
-                    "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
+                let inter_batch_wait_ms = execution_state
+                    .last_batch_finished_at
+                    .map(|last_finished_at| last_finished_at.elapsed().as_secs_f64() * 1000.0);
+                tracing::info!(
+                    "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={} inter_batch_wait_ms={inter_batch_wait_ms:?}",
                     execution_state.exec_ctx.block_number,
                     to_exec.len(),
                     first_tx_hash,
@@ -614,6 +621,8 @@ impl ExecutorThread {
                 }
             }
             l2_gas_consumed_block += stats.l2_gas_consumed;
+            execution_state.block_stats += stats.clone();
+            execution_state.last_batch_finished_at = Some(StdInstant::now());
 
             if self.replay_mode_enabled && !replay_executed_hashes.is_empty() {
                 let block_n = execution_state.exec_ctx.block_number;
@@ -648,7 +657,7 @@ impl ExecutorThread {
             let exec_result =
                 super::BatchExecutionResult { executed_txs, blockifier_results, stats, emitted_at: StdInstant::now() };
             if has_txs_in_batch {
-                tracing::debug!(
+                tracing::info!(
                     "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
                     execution_state.exec_ctx.block_number,
                     exec_result.executed_txs.len(),
@@ -686,19 +695,42 @@ impl ExecutorThread {
             };
 
             if should_close {
-                tracing::debug!(
-                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached}, replay_boundary_exists={replay_boundary_exists}, replay_boundary_met={replay_boundary_met})",
+                let replay_boundary_status = if replay_boundary_exists {
+                    self.backend.get_replay_boundary_status(block_n)
+                } else {
+                    None
+                };
+                tracing::info!(
+                    "executor_close_decision block_number={} force_close={} block_full={} block_time_deadline_reached={} replay_boundary_exists={} replay_boundary_met={} expected_tx_count={:?} dispatched_tx_count={:?} executed_tx_count={:?} reached_last_tx_hash={:?} mismatch={:?}",
                     block_n,
+                    force_close,
+                    block_full,
+                    block_time_deadline_reached,
+                    replay_boundary_exists,
+                    replay_boundary_met,
+                    replay_boundary_status.as_ref().map(|status| status.expected_tx_count),
+                    replay_boundary_status.as_ref().map(|status| status.dispatched_tx_count),
+                    replay_boundary_status.as_ref().map(|status| status.executed_tx_count),
+                    replay_boundary_status.as_ref().map(|status| status.reached_last_tx_hash),
+                    replay_boundary_status.as_ref().and_then(|status| status.mismatch.as_ref())
                 );
                 let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
                 self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-                tracing::debug!(
+                tracing::info!(
                     block_number = block_n,
                     finalize_ms = finalize_secs * 1000.0,
-                    "executor_finalize_complete"
+                    execution_total_ms = execution_state.block_stats.exec_duration.as_secs_f64() * 1000.0,
+                    batches_executed = execution_state.block_stats.n_batches,
+                    txs_executed = execution_state.block_stats.n_executed,
+                    txs_added_to_block = execution_state.block_stats.n_added_to_block,
+                    txs_reverted = execution_state.block_stats.n_reverted,
+                    txs_rejected = execution_state.block_stats.n_rejected,
+                    classes_declared = execution_state.block_stats.declared_classes,
+                    l2_gas_consumed = execution_state.block_stats.l2_gas_consumed,
+                    "executor_block_execution_summary"
                 );
 
                 if self
@@ -709,7 +741,7 @@ impl ExecutorThread {
                     // Receiver closed
                     break Ok(());
                 }
-                tracing::debug!(
+                tracing::info!(
                     block_number = block_n,
                     force_close = force_close,
                     block_full = block_full,
