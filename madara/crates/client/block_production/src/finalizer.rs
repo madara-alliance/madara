@@ -1,8 +1,12 @@
 use crate::close_queue::{CloseJobCompletion, QueuedCloseJob, QueuedClosePayload};
 use crate::metrics::BlockProductionMetrics;
 use anyhow::{anyhow, bail, Context, Result};
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use mc_db::close_pipeline_contract::{ClosePreconfirmedResult, QueuedMeta};
 use opentelemetry::KeyValue;
+use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -27,6 +31,50 @@ impl Drop for InFlightGaugeGuard {
         let current = self.in_flight.fetch_sub(self.job_count, Ordering::Relaxed).saturating_sub(self.job_count);
         self.metrics.close_queue_in_flight.record(current as u64, &[]);
     }
+}
+
+struct RootTaskResult<T> {
+    block_n: u64,
+    completion: oneshot::Sender<Result<CloseJobCompletion>>,
+    in_flight_guard: InFlightGaugeGuard,
+    result: Result<T>,
+}
+
+enum ReadyCommitEntry<T> {
+    Success {
+        output: T,
+        completion: oneshot::Sender<Result<CloseJobCompletion>>,
+        in_flight_guard: InFlightGaugeGuard,
+    },
+    Failed {
+        error: anyhow::Error,
+        completion: oneshot::Sender<Result<CloseJobCompletion>>,
+        in_flight_guard: InFlightGaugeGuard,
+    },
+}
+
+fn drain_serial_batch(
+    receiver: &mut mpsc::Receiver<QueuedCloseJob>,
+    first_job: QueuedCloseJob,
+) -> (Vec<QueuedCloseJob>, Vec<u64>, f64, f64, f64) {
+    let mut jobs = vec![first_job];
+    while !jobs.last().is_some_and(|job| job.payload.is_boundary) {
+        match receiver.try_recv() {
+            Ok(job) => jobs.push(job),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+        }
+    }
+
+    let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.db_payload.block_n).collect();
+    let queue_waits_ms: Vec<_> =
+        jobs.iter().map(|job| job.payload.enqueued_at.elapsed().as_secs_f64() * 1000.0).collect();
+    let queue_wait_min_ms = queue_waits_ms.iter().copied().fold(f64::INFINITY, f64::min);
+    let queue_wait_max_ms = queue_waits_ms.iter().copied().fold(0.0, f64::max);
+    let queue_wait_avg_ms =
+        if queue_waits_ms.is_empty() { 0.0 } else { queue_waits_ms.iter().sum::<f64>() / queue_waits_ms.len() as f64 };
+
+    (jobs, block_numbers, queue_wait_min_ms, queue_wait_avg_ms, queue_wait_max_ms)
 }
 
 /// Handle used by the caller to enqueue close jobs into the finalizer pipeline.
@@ -72,31 +120,14 @@ impl FinalizerHandle {
         let join_handle = tokio::spawn(async move {
             let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
             while let Some(first_job) = receiver.recv().await {
-                let mut jobs = vec![first_job];
-                while !jobs.last().is_some_and(|job| job.payload.is_boundary) {
-                    match receiver.try_recv() {
-                        Ok(job) => jobs.push(job),
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
-                    }
-                }
-
+                let (jobs, block_numbers, queue_wait_min_ms, queue_wait_avg_ms, queue_wait_max_ms) =
+                    drain_serial_batch(&mut receiver, first_job);
                 let batch_len = jobs.len();
                 let _in_flight_guard =
                     InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker), batch_len);
 
                 let first_block_n = jobs.first().expect("close batch has first job").payload.db_payload.block_n;
                 let last_block_n = jobs.last().expect("close batch has last job").payload.db_payload.block_n;
-                let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.db_payload.block_n).collect();
-                let queue_waits_ms: Vec<_> =
-                    jobs.iter().map(|job| job.payload.enqueued_at.elapsed().as_secs_f64() * 1000.0).collect();
-                let queue_wait_min_ms = queue_waits_ms.iter().copied().fold(f64::INFINITY, f64::min);
-                let queue_wait_max_ms = queue_waits_ms.iter().copied().fold(0.0, f64::max);
-                let queue_wait_avg_ms = if queue_waits_ms.is_empty() {
-                    0.0
-                } else {
-                    queue_waits_ms.iter().sum::<f64>() / queue_waits_ms.len() as f64
-                };
                 for job in &jobs {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
@@ -159,6 +190,210 @@ impl FinalizerHandle {
                 for (completion, result) in completions.into_iter().zip(results.into_iter()) {
                     if let Err(_send_err) = completion.send(result) {
                         tracing::debug!("Close job completion receiver dropped before finalizer send");
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        let handle = Self { sender, configured_capacity: capacity, in_flight, metrics: handle_metrics };
+        let task_handle = FinalizerTaskHandle { join_handle };
+        (handle, task_handle)
+    }
+
+    /// Spawn the parallel-merkle finalizer.
+    ///
+    /// Root precompute is allowed to run in parallel across blocks, but the
+    /// commit stage remains strictly ordered by block number.
+    pub fn spawn_parallel<PrepareFn, PrepareFut, PreparedOutput, CommitFn, CommitFut>(
+        capacity: usize,
+        root_workers: usize,
+        metrics: Arc<BlockProductionMetrics>,
+        prepare_fn: PrepareFn,
+        commit_fn: CommitFn,
+    ) -> (Self, FinalizerTaskHandle)
+    where
+        PrepareFn: Fn(Arc<BlockProductionMetrics>, QueuedClosePayload) -> PrepareFut + Send + Sync + 'static,
+        PrepareFut: Future<Output = Result<PreparedOutput>> + Send + 'static,
+        PreparedOutput: Send + 'static,
+        CommitFn: Fn(Arc<BlockProductionMetrics>, PreparedOutput) -> CommitFut + Send + Sync + 'static,
+        CommitFut: Future<Output = Result<CloseJobCompletion>> + Send + 'static,
+    {
+        let capacity = capacity.max(1);
+        let root_workers = root_workers.max(1);
+        let (sender, receiver) = mpsc::channel(capacity);
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let in_flight_worker = Arc::clone(&in_flight);
+        let handle_metrics = Arc::clone(&metrics);
+        let prepare_fn = Arc::new(prepare_fn);
+        let commit_fn = Arc::new(commit_fn);
+
+        let join_handle = tokio::spawn(async move {
+            let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
+            let mut receiver_closed = false;
+            let mut waiting_jobs: VecDeque<QueuedCloseJob> = VecDeque::new();
+            let mut active_roots: FuturesUnordered<BoxFuture<'static, RootTaskResult<PreparedOutput>>> =
+                FuturesUnordered::new();
+            let mut ready_to_commit: BTreeMap<u64, ReadyCommitEntry<PreparedOutput>> = BTreeMap::new();
+            let mut next_commit_block_n: Option<u64> = None;
+
+            loop {
+                while active_roots.len() < root_workers {
+                    let Some(job) = waiting_jobs.pop_front() else {
+                        break;
+                    };
+
+                    let queue_wait = job.payload.enqueued_at.elapsed();
+                    metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
+
+                    let block_n = job.payload.db_payload.block_n;
+                    let completion = job.completion;
+                    let payload = job.payload;
+                    let prepare_fn = Arc::clone(&prepare_fn);
+                    let metrics_for_task = Arc::clone(&metrics);
+                    let guard = InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker), 1);
+
+                    tracing::info!(
+                        "parallel_root_scheduler_dispatched block_number={} active_root_jobs={} queued_root_jobs={} ready_to_commit={} queue_in_flight={} root_workers={}",
+                        block_n,
+                        active_roots.len() + 1,
+                        waiting_jobs.len(),
+                        ready_to_commit.len(),
+                        in_flight_worker.load(Ordering::Relaxed),
+                        root_workers
+                    );
+
+                    active_roots.push(Box::pin(async move {
+                        let result = prepare_fn(metrics_for_task, payload).await;
+                        RootTaskResult { block_n, completion, in_flight_guard: guard, result }
+                    }));
+                }
+
+                while let Some(block_n) = next_commit_block_n {
+                    let Some(entry) = ready_to_commit.remove(&block_n) else {
+                        break;
+                    };
+
+                    match entry {
+                        ReadyCommitEntry::Success { output, completion, in_flight_guard } => {
+                            let commit_result = commit_fn(metrics.clone(), output)
+                                .await
+                                .with_context(|| format!("Ordered close commit failed for block #{block_n}"));
+
+                            match commit_result {
+                                Ok(result) => {
+                                    tracing::info!(
+                                        "parallel_close_commit_complete block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
+                                        block_n,
+                                        waiting_jobs.len(),
+                                        ready_to_commit.len(),
+                                        active_roots.len(),
+                                        in_flight_worker.load(Ordering::Relaxed)
+                                    );
+                                    if let Err(_send_err) = completion.send(Ok(result)) {
+                                        tracing::debug!(
+                                            "Close job completion receiver dropped before ordered commit send"
+                                        );
+                                    }
+                                    drop(in_flight_guard);
+                                    next_commit_block_n = block_n.checked_add(1);
+                                }
+                                Err(error) => {
+                                    metrics.close_job_failures_total.add(1, &[]);
+                                    tracing::error!(block_number = block_n, error = ?error, "parallel_close_commit_failed");
+                                    if let Err(_send_err) = completion.send(Err(error)) {
+                                        tracing::debug!(
+                                            "Close job completion receiver dropped before ordered commit error send"
+                                        );
+                                    }
+                                    drop(in_flight_guard);
+                                    return Err(anyhow!("Ordered close commit failed for block #{block_n}"));
+                                }
+                            }
+                        }
+                        ReadyCommitEntry::Failed { error, completion, in_flight_guard } => {
+                            metrics.close_job_failures_total.add(1, &[]);
+                            tracing::error!(block_number = block_n, error = ?error, "parallel_root_job_failed");
+                            if let Err(_send_err) = completion.send(Err(error)) {
+                                tracing::debug!("Close job completion receiver dropped before root failure send");
+                            }
+                            drop(in_flight_guard);
+                            return Err(anyhow!("Parallel root precompute failed for block #{block_n}"));
+                        }
+                    }
+                }
+
+                if receiver_closed && waiting_jobs.is_empty() && active_roots.is_empty() {
+                    if let Some(next_block_n) = next_commit_block_n.filter(|_| !ready_to_commit.is_empty()) {
+                        return Err(anyhow!(
+                            "Parallel finalizer drained without next ordered result for block #{next_block_n}"
+                        ));
+                    }
+                    break;
+                }
+
+                tokio::select! {
+                    maybe_job = receiver.recv(), if !receiver_closed => {
+                        match maybe_job {
+                            Some(job) => {
+                                let block_n = job.payload.db_payload.block_n;
+                                if next_commit_block_n.is_none() {
+                                    next_commit_block_n = Some(block_n);
+                                }
+                                tracing::info!(
+                                    "parallel_root_scheduler_enqueued block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} root_workers={}",
+                                    block_n,
+                                    waiting_jobs.len() + 1,
+                                    ready_to_commit.len(),
+                                    active_roots.len(),
+                                    root_workers
+                                );
+                                waiting_jobs.push_back(job);
+                            }
+                            None => {
+                                receiver_closed = true;
+                            }
+                        }
+                    }
+                    Some(root_task_result) = active_roots.next(), if !active_roots.is_empty() => {
+                        let RootTaskResult { block_n, completion, in_flight_guard, result } = root_task_result;
+                        match result {
+                            Ok(output) => {
+                                let previous = ready_to_commit.insert(
+                                    block_n,
+                                    ReadyCommitEntry::Success { output, completion, in_flight_guard },
+                                );
+                                if previous.is_some() {
+                                    return Err(anyhow!("Parallel finalizer produced duplicate ready result for block #{block_n}"));
+                                }
+                                tracing::info!(
+                                    "parallel_root_ready_for_commit block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
+                                    block_n,
+                                    waiting_jobs.len(),
+                                    ready_to_commit.len(),
+                                    active_roots.len(),
+                                    in_flight_worker.load(Ordering::Relaxed)
+                                );
+                            }
+                            Err(error) => {
+                                let previous = ready_to_commit.insert(
+                                    block_n,
+                                    ReadyCommitEntry::Failed { error, completion, in_flight_guard },
+                                );
+                                if previous.is_some() {
+                                    return Err(anyhow!("Parallel finalizer produced duplicate failed result for block #{block_n}"));
+                                }
+                                tracing::info!(
+                                    "parallel_root_failed_ready_for_ordered_delivery block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
+                                    block_n,
+                                    waiting_jobs.len(),
+                                    ready_to_commit.len(),
+                                    active_roots.len(),
+                                    in_flight_worker.load(Ordering::Relaxed)
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -236,8 +471,10 @@ mod tests {
     use mp_chain_config::ChainConfig;
     use mp_state_update::StateDiff;
     use rstest::rstest;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
+    use tokio::time::{sleep, Duration};
 
     fn empty_block_exec_summary() -> BlockExecutionSummary {
         BlockExecutionSummary {
@@ -437,5 +674,78 @@ mod tests {
         assert_eq!(completion.block_n, 0, "in-flight job must complete during drain");
 
         task_handle.join().await.expect("worker should complete cleanly after drain");
+    }
+
+    #[derive(Clone, Copy)]
+    struct PreparedTestClose {
+        block_n: u64,
+    }
+
+    #[tokio::test]
+    async fn parallel_roots_can_finish_out_of_order_but_commit_in_order() {
+        let metrics = Arc::new(BlockProductionMetrics::register());
+        let commit_order = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let max_active_roots = Arc::new(AtomicUsize::new(0));
+        let active_roots = Arc::new(AtomicUsize::new(0));
+
+        let prepare_fn = {
+            let active_roots = Arc::clone(&active_roots);
+            let max_active_roots = Arc::clone(&max_active_roots);
+            move |_metrics: Arc<BlockProductionMetrics>,
+                  payload: QueuedClosePayload|
+                  -> std::pin::Pin<Box<dyn Future<Output = Result<PreparedTestClose>> + Send>> {
+                let active_roots = Arc::clone(&active_roots);
+                let max_active_roots = Arc::clone(&max_active_roots);
+                Box::pin(async move {
+                    let block_n = payload.db_payload.block_n;
+                    let now_active = active_roots.fetch_add(1, Ordering::Relaxed) + 1;
+                    max_active_roots.fetch_max(now_active, Ordering::Relaxed);
+
+                    if block_n == 0 {
+                        sleep(Duration::from_millis(40)).await;
+                    } else {
+                        sleep(Duration::from_millis(5)).await;
+                    }
+
+                    active_roots.fetch_sub(1, Ordering::Relaxed);
+                    Ok(PreparedTestClose { block_n })
+                })
+            }
+        };
+
+        let commit_fn = {
+            let commit_order = Arc::clone(&commit_order);
+            move |_metrics: Arc<BlockProductionMetrics>,
+                  prepared: PreparedTestClose|
+                  -> std::pin::Pin<Box<dyn Future<Output = Result<CloseJobCompletion>> + Send>> {
+                let commit_order = Arc::clone(&commit_order);
+                Box::pin(async move {
+                    commit_order.lock().expect("commit order mutex").push(prepared.block_n);
+                    Ok(CloseJobCompletion { block_n: prepared.block_n })
+                })
+            }
+        };
+
+        let (handle, task_handle) = FinalizerHandle::spawn_parallel(8, 2, metrics, prepare_fn, commit_fn);
+
+        let mut receivers = Vec::new();
+        for block_n in 0..4u64 {
+            let (_, recv) = handle.try_enqueue(test_payload(block_n)).expect("enqueue should succeed");
+            receivers.push(recv);
+        }
+
+        for (expected_block_n, recv) in receivers.into_iter().enumerate() {
+            let completion = recv.await.expect("channel open").expect("close ok");
+            assert_eq!(completion.block_n, expected_block_n as u64, "completions must remain ordered");
+        }
+
+        drop(handle);
+        task_handle.join().await.expect("parallel worker should complete cleanly");
+
+        assert_eq!(*commit_order.lock().expect("commit order mutex"), vec![0, 1, 2, 3]);
+        assert!(
+            max_active_roots.load(Ordering::Relaxed) >= 2,
+            "parallel root scheduler should run at least two root jobs concurrently"
+        );
     }
 }
