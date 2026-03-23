@@ -47,6 +47,22 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_PARALLEL_MERKLE_ENABLED", long, default_value_t = false)]
     pub parallel_merkle_enabled: bool,
 
+    /// Compare the parallel root against the sequential root implementation.
+    ///
+    /// This is intended for correctness validation and debugging only, as it
+    /// adds a full sequential root computation to the close path.
+    #[arg(env = "MADARA_PARALLEL_MERKLE_COMPARE_SEQUENTIAL", long, default_value_t = false)]
+    pub parallel_merkle_compare_sequential: bool,
+
+    /// Maximum number of root-precompute jobs that may run in parallel across blocks.
+    #[arg(
+        env = "MADARA_PARALLEL_MERKLE_ROOT_WORKERS",
+        long,
+        default_value_t = 1,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub parallel_merkle_root_workers: u64,
+
     /// Parallel merkle boundary flush interval (in blocks).
     #[arg(
         env = "MADARA_PARALLEL_MERKLE_FLUSH_INTERVAL",
@@ -119,5 +135,32 @@ mod tests {
     fn block_production_params_parse_replay_mode(#[case] args: Vec<&str>, #[case] expected: bool) {
         let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
         assert_eq!(params.replay_mode, expected);
+    }
+
+    #[rstest]
+    #[case::default_disabled(vec!["madara"], false)]
+    #[case::enabled(vec!["madara", "--parallel-merkle-compare-sequential"], true)]
+    fn block_production_params_parse_parallel_merkle_compare_sequential(
+        #[case] args: Vec<&str>,
+        #[case] expected: bool,
+    ) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.parallel_merkle_compare_sequential, expected);
+    }
+
+    #[rstest]
+    #[case::default_workers(vec!["madara"], 1)]
+    #[case::override_value(vec!["madara", "--parallel-merkle-root-workers", "4"], 4)]
+    fn block_production_params_parse_parallel_merkle_root_workers(#[case] args: Vec<&str>, #[case] expected: u64) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.parallel_merkle_root_workers, expected);
+    }
+
+    #[rstest]
+    #[case::zero("0")]
+    fn block_production_params_rejects_invalid_parallel_merkle_root_workers(#[case] invalid_value: &str) {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-root-workers", invalid_value])
+            .expect_err("root workers <1 must be rejected");
+        assert!(err.to_string().contains("parallel-merkle-root-workers"));
     }
 }

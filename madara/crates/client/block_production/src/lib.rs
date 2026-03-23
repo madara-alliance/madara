@@ -217,6 +217,12 @@ struct ParallelMerkleSummary {
     has_boundary_overlay: bool,
 }
 
+struct ParallelComputedClosePayload {
+    payload: QueuedClosePayload,
+    root_response: mc_db::rocksdb::global_trie::in_memory::InMemoryRootComputation,
+    parallel_summary: ParallelMerkleSummary,
+}
+
 fn validate_parallel_queue_invariant(parallel_merkle_enabled: bool, close_queue_capacity: usize) -> anyhow::Result<()> {
     if parallel_merkle_enabled && close_queue_capacity < PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT {
         anyhow::bail!(
@@ -521,6 +527,8 @@ pub struct BlockProductionTask {
     no_charge_fee: bool,
     replay_mode_enabled: bool,
     parallel_merkle_enabled: bool,
+    parallel_merkle_compare_sequential: bool,
+    parallel_merkle_root_workers: usize,
     parallel_merkle_flush_interval: u64,
     parallel_merkle_trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
     diffs_since_snapshot: Vec<(u64, StateDiff)>,
@@ -569,6 +577,8 @@ impl BlockProductionTask {
             no_charge_fee,
             replay_mode_enabled: false,
             parallel_merkle_enabled: false,
+            parallel_merkle_compare_sequential: false,
+            parallel_merkle_root_workers: 1,
             parallel_merkle_flush_interval: 3,
             parallel_merkle_trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
             diffs_since_snapshot: Vec::new(),
@@ -583,6 +593,16 @@ impl BlockProductionTask {
 
     pub fn with_parallel_merkle_enabled(mut self, enabled: bool) -> Self {
         self.parallel_merkle_enabled = enabled;
+        self
+    }
+
+    pub fn with_parallel_merkle_compare_sequential(mut self, enabled: bool) -> Self {
+        self.parallel_merkle_compare_sequential = enabled;
+        self
+    }
+
+    pub fn with_parallel_merkle_root_workers(mut self, worker_count: u64) -> Self {
+        self.parallel_merkle_root_workers = usize::try_from(worker_count).unwrap_or(usize::MAX).max(1);
         self
     }
 
@@ -1185,7 +1205,7 @@ impl BlockProductionTask {
             state_diff,
             is_boundary,
             trie_log_mode: self.parallel_merkle_trie_log_mode,
-            compare_parallel_with_sequential: self.replay_mode_enabled,
+            compare_parallel_with_sequential: self.parallel_merkle_compare_sequential,
             root_base_block_n,
             root_snapshot,
             root_state_diffs,
@@ -1412,17 +1432,6 @@ impl BlockProductionTask {
         Ok(CloseJobCompletion { block_n: state.block_number })
     }
 
-    async fn execute_close_payload_batch_parallel(
-        metrics: Arc<BlockProductionMetrics>,
-        payloads: Vec<QueuedClosePayload>,
-    ) -> Vec<anyhow::Result<CloseJobCompletion>> {
-        let mut results = Vec::with_capacity(payloads.len());
-        for payload in payloads {
-            results.push(Self::execute_close_payload_parallel(metrics.clone(), payload).await);
-        }
-        results
-    }
-
     async fn execute_close_payload_batch(
         metrics: Arc<BlockProductionMetrics>,
         payloads: Vec<QueuedClosePayload>,
@@ -1434,14 +1443,14 @@ impl BlockProductionTask {
         results
     }
 
-    /// Parallel merkle variant of `execute_close_payload`.
+    /// Parallel merkle stage 1: precompute the root for a single block.
     ///
-    /// Trie roots are computed one block at a time from the exact base snapshot,
-    /// while the contract/class trie work inside that computation remains parallel.
-    async fn execute_close_payload_parallel(
+    /// This stage is safe to run truly in parallel across blocks because it does
+    /// not mutate the confirmed head or the persisted block stream.
+    async fn compute_close_payload_parallel_root(
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
-    ) -> anyhow::Result<CloseJobCompletion> {
+    ) -> anyhow::Result<ParallelComputedClosePayload> {
         let QueuedClosePayload {
             db_payload,
             state,
@@ -1568,9 +1577,8 @@ impl BlockProductionTask {
         );
         let has_boundary_overlay = root_response.overlay.is_some();
 
-        Self::execute_close_payload_parallel_precomputed(
-            metrics,
-            QueuedClosePayload {
+        Ok(ParallelComputedClosePayload {
+            payload: QueuedClosePayload {
                 db_payload,
                 state,
                 block_exec_summary,
@@ -1586,7 +1594,7 @@ impl BlockProductionTask {
                 enqueued_at,
             },
             root_response,
-            ParallelMerkleSummary {
+            parallel_summary: ParallelMerkleSummary {
                 base_snapshot_block: root_base_block_n,
                 squashed_block_count,
                 diff_start_block,
@@ -1603,6 +1611,18 @@ impl BlockProductionTask {
                 boundary_flush: None,
                 has_boundary_overlay,
             },
+        })
+    }
+
+    async fn execute_close_payload_parallel_precomputed_job(
+        metrics: Arc<BlockProductionMetrics>,
+        computed: ParallelComputedClosePayload,
+    ) -> anyhow::Result<CloseJobCompletion> {
+        Self::execute_close_payload_parallel_precomputed(
+            metrics,
+            computed.payload,
+            computed.root_response,
+            computed.parallel_summary,
         )
         .await
     }
@@ -1934,20 +1954,24 @@ impl BlockProductionTask {
         validate_parallel_queue_invariant(self.parallel_merkle_enabled, close_queue_capacity)?;
 
         // Spawn the finalizer pipeline: serial (default) or parallel merkle.
-        // In parallel mode, the finalizer batches contiguous close jobs up to the
-        // next boundary and computes their trie roots together from a shared snapshot.
+        // In parallel mode, the finalizer streams per-block root jobs to a bounded
+        // worker pool while preserving ordered commit/write semantics.
         let (close_queue_handle, finalizer_task_handle) = if self.parallel_merkle_enabled {
-            let (close_queue_handle, finalizer_task_handle) = FinalizerHandle::spawn(
+            let (close_queue_handle, finalizer_task_handle) = FinalizerHandle::spawn_parallel(
                 close_queue_capacity,
+                self.parallel_merkle_root_workers,
                 self.metrics.clone(),
-                Self::execute_close_payload_batch_parallel,
+                Self::compute_close_payload_parallel_root,
+                Self::execute_close_payload_parallel_precomputed_job,
             );
             tracing::info!(
-                "initialized_finalizer_runtime mode=parallel_merkle queue_capacity={} configured_max_inflight={} configured_capacity={} parallel_merkle={}",
+                "initialized_finalizer_runtime mode=parallel_merkle queue_capacity={} configured_max_inflight={} configured_capacity={} parallel_merkle={} parallel_merkle_root_workers={} parallel_merkle_compare_sequential={}",
                 close_queue_capacity,
                 self.close_queue_capacity,
                 close_queue_handle.configured_capacity(),
-                true
+                true,
+                self.parallel_merkle_root_workers,
+                self.parallel_merkle_compare_sequential
             );
             (close_queue_handle, finalizer_task_handle)
         } else {
