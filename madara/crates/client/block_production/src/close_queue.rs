@@ -18,6 +18,8 @@ pub(crate) struct QueuedClosePayload {
     pub root_base_block_n: Option<u64>,
     pub root_snapshot: Option<SnapshotRef>,
     pub root_state_diffs: Vec<StateDiff>,
+    pub last_execution_finished_at: Option<Instant>,
+    pub close_block_received_at: Instant,
     pub enqueued_at: Instant,
 }
 

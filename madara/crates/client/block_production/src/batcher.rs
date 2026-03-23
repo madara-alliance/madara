@@ -78,7 +78,7 @@ impl Batcher {
                         self.out.capacity()
                     );
                 } else {
-                    tracing::debug!(
+                    tracing::info!(
                         "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
                         output_capacity_before_wait,
                         self.out.capacity()
@@ -184,23 +184,19 @@ impl Batcher {
                 let batch_wait_ms = batch_wait_started.elapsed().as_secs_f64() * 1000.0;
                 if self.replay_mode_enabled {
                     let head = self.backend.chain_head_state();
-                    if batch_wait_ms >= BATCHER_INPUT_WAIT_INFO_MS {
-                        tracing::info!(
-                            "batcher_batch_ready_after_wait tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
-                            batch.len(),
-                            head.confirmed_tip,
-                            head.external_preconfirmed_tip,
-                            head.internal_preconfirmed_tip
-                        );
+                    let log_name = if batch_wait_ms >= BATCHER_INPUT_WAIT_INFO_MS {
+                        "batcher_batch_ready_after_wait"
                     } else {
-                        tracing::debug!(
-                            "batcher_batch_ready tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
-                            batch.len(),
-                            head.confirmed_tip,
-                            head.external_preconfirmed_tip,
-                            head.internal_preconfirmed_tip
-                        );
-                    }
+                        "batcher_batch_ready"
+                    };
+                    tracing::info!(
+                        "{} tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                        log_name,
+                        batch.len(),
+                        head.confirmed_tip,
+                        head.external_preconfirmed_tip,
+                        head.internal_preconfirmed_tip
+                    );
                 } else {
                     tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
                 }
