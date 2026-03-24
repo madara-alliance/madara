@@ -1,3 +1,4 @@
+use crate::metrics::BlockProductionMetrics;
 use crate::util::{AdditionalTxInfo, BatchToExecute};
 use crate::MempoolIntakeMode;
 use anyhow::Context;
@@ -25,6 +26,7 @@ const BATCHER_INPUT_WAIT_INFO_MS: f64 = 100.0;
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
+    metrics: Arc<BlockProductionMetrics>,
     l1_message_stream: BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>,
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
@@ -38,6 +40,7 @@ impl Batcher {
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
+        metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
@@ -47,6 +50,7 @@ impl Batcher {
     ) -> Self {
         Self {
             mempool,
+            metrics,
             l1_message_stream: l1_client.create_message_to_l2_consumer(),
             ctx,
             out,
@@ -70,15 +74,18 @@ impl Batcher {
                 return anyhow::Ok(());
             };
             let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
+            let permit_wait_secs = permit_wait_ms / 1000.0;
+            self.metrics.batcher_output_backpressure_duration.record(permit_wait_secs, &[]);
+            self.metrics.batcher_output_backpressure_last.record(permit_wait_secs, &[]);
             if self.replay_mode_enabled {
                 if permit_wait_ms >= BATCHER_OUTPUT_BACKPRESSURE_INFO_MS {
-                    tracing::info!(
+                    tracing::debug!(
                         "batcher_output_backpressured permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
                         output_capacity_before_wait,
                         self.out.capacity()
                     );
                 } else {
-                    tracing::info!(
+                    tracing::debug!(
                         "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
                         output_capacity_before_wait,
                         self.out.capacity()
@@ -182,6 +189,9 @@ impl Batcher {
 
             if !batch.is_empty() {
                 let batch_wait_ms = batch_wait_started.elapsed().as_secs_f64() * 1000.0;
+                let batch_wait_secs = batch_wait_ms / 1000.0;
+                self.metrics.batcher_batch_wait_duration.record(batch_wait_secs, &[]);
+                self.metrics.batcher_batch_wait_last.record(batch_wait_secs, &[]);
                 if self.replay_mode_enabled {
                     let head = self.backend.chain_head_state();
                     let log_name = if batch_wait_ms >= BATCHER_INPUT_WAIT_INFO_MS {
@@ -189,7 +199,7 @@ impl Batcher {
                     } else {
                         "batcher_batch_ready"
                     };
-                    tracing::info!(
+                    tracing::debug!(
                         "{} tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
                         log_name,
                         batch.len(),

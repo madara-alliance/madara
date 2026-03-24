@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
 struct InFlightGaugeGuard {
@@ -45,12 +46,24 @@ enum ReadyCommitEntry<T> {
         output: T,
         completion: oneshot::Sender<Result<CloseJobCompletion>>,
         in_flight_guard: InFlightGaugeGuard,
+        ready_at: Instant,
     },
     Failed {
         error: anyhow::Error,
         completion: oneshot::Sender<Result<CloseJobCompletion>>,
         in_flight_guard: InFlightGaugeGuard,
     },
+}
+
+fn record_parallel_root_pipeline_gauges(
+    metrics: &BlockProductionMetrics,
+    active_root_jobs: usize,
+    waiting_root_jobs: usize,
+    ready_to_commit_jobs: usize,
+) {
+    metrics.parallel_root_active_jobs.record(active_root_jobs as u64, &[]);
+    metrics.parallel_root_waiting_jobs.record(waiting_root_jobs as u64, &[]);
+    metrics.parallel_root_ready_to_commit_jobs.record(ready_to_commit_jobs as u64, &[]);
 }
 
 fn drain_serial_batch(
@@ -116,6 +129,7 @@ impl FinalizerHandle {
         let in_flight = Arc::new(AtomicUsize::new(0));
         let in_flight_worker = Arc::clone(&in_flight);
         let handle_metrics = Arc::clone(&metrics);
+        record_parallel_root_pipeline_gauges(&metrics, 0, 0, 0);
 
         let join_handle = tokio::spawn(async move {
             let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
@@ -131,8 +145,9 @@ impl FinalizerHandle {
                 for job in &jobs {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
+                    metrics.close_queue_wait_last.record(queue_wait.as_secs_f64(), &[]);
                 }
-                tracing::info!(
+                tracing::debug!(
                     "finalizer_batch_started start_block={} end_block={} batch_size={} blocks={:?} in_flight={} queue_wait_min_ms={} queue_wait_avg_ms={} queue_wait_max_ms={}",
                     first_block_n,
                     last_block_n,
@@ -177,7 +192,7 @@ impl FinalizerHandle {
                 }
 
                 let successful = results.iter().filter(|result| result.is_ok()).count();
-                tracing::info!(
+                tracing::debug!(
                     "finalizer_batch_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
                     first_block_n,
                     last_block_n,
@@ -228,6 +243,7 @@ impl FinalizerHandle {
         let handle_metrics = Arc::clone(&metrics);
         let prepare_fn = Arc::new(prepare_fn);
         let commit_fn = Arc::new(commit_fn);
+        record_parallel_root_pipeline_gauges(&metrics, 0, 0, 0);
 
         let join_handle = tokio::spawn(async move {
             let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
@@ -246,6 +262,7 @@ impl FinalizerHandle {
 
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
+                    metrics.close_queue_wait_last.record(queue_wait.as_secs_f64(), &[]);
 
                     let block_n = job.payload.db_payload.block_n;
                     let completion = job.completion;
@@ -254,7 +271,13 @@ impl FinalizerHandle {
                     let metrics_for_task = Arc::clone(&metrics);
                     let guard = InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker), 1);
 
-                    tracing::info!(
+                    record_parallel_root_pipeline_gauges(
+                        &metrics,
+                        active_roots.len() + 1,
+                        waiting_jobs.len(),
+                        ready_to_commit.len(),
+                    );
+                    tracing::debug!(
                         "parallel_root_scheduler_dispatched block_number={} active_root_jobs={} queued_root_jobs={} ready_to_commit={} queue_in_flight={} root_workers={}",
                         block_n,
                         active_roots.len() + 1,
@@ -276,14 +299,27 @@ impl FinalizerHandle {
                     };
 
                     match entry {
-                        ReadyCommitEntry::Success { output, completion, in_flight_guard } => {
+                        ReadyCommitEntry::Success { output, completion, in_flight_guard, ready_at } => {
+                            let ready_to_commit_wait = ready_at.elapsed();
+                            metrics
+                                .parallel_root_ready_to_commit_wait_duration
+                                .record(ready_to_commit_wait.as_secs_f64(), &[]);
+                            metrics
+                                .parallel_root_ready_to_commit_wait_last
+                                .record(ready_to_commit_wait.as_secs_f64(), &[]);
                             let commit_result = commit_fn(metrics.clone(), output)
                                 .await
                                 .with_context(|| format!("Ordered close commit failed for block #{block_n}"));
 
                             match commit_result {
                                 Ok(result) => {
-                                    tracing::info!(
+                                    record_parallel_root_pipeline_gauges(
+                                        &metrics,
+                                        active_roots.len(),
+                                        waiting_jobs.len(),
+                                        ready_to_commit.len(),
+                                    );
+                                    tracing::debug!(
                                         "parallel_close_commit_complete block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
                                         block_n,
                                         waiting_jobs.len(),
@@ -341,7 +377,13 @@ impl FinalizerHandle {
                                 if next_commit_block_n.is_none() {
                                     next_commit_block_n = Some(block_n);
                                 }
-                                tracing::info!(
+                                record_parallel_root_pipeline_gauges(
+                                    &metrics,
+                                    active_roots.len(),
+                                    waiting_jobs.len() + 1,
+                                    ready_to_commit.len(),
+                                );
+                                tracing::debug!(
                                     "parallel_root_scheduler_enqueued block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} root_workers={}",
                                     block_n,
                                     waiting_jobs.len() + 1,
@@ -362,12 +404,23 @@ impl FinalizerHandle {
                             Ok(output) => {
                                 let previous = ready_to_commit.insert(
                                     block_n,
-                                    ReadyCommitEntry::Success { output, completion, in_flight_guard },
+                                    ReadyCommitEntry::Success {
+                                        output,
+                                        completion,
+                                        in_flight_guard,
+                                        ready_at: Instant::now(),
+                                    },
                                 );
                                 if previous.is_some() {
                                     return Err(anyhow!("Parallel finalizer produced duplicate ready result for block #{block_n}"));
                                 }
-                                tracing::info!(
+                                record_parallel_root_pipeline_gauges(
+                                    &metrics,
+                                    active_roots.len(),
+                                    waiting_jobs.len(),
+                                    ready_to_commit.len(),
+                                );
+                                tracing::debug!(
                                     "parallel_root_ready_for_commit block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
                                     block_n,
                                     waiting_jobs.len(),
@@ -379,12 +432,22 @@ impl FinalizerHandle {
                             Err(error) => {
                                 let previous = ready_to_commit.insert(
                                     block_n,
-                                    ReadyCommitEntry::Failed { error, completion, in_flight_guard },
+                                    ReadyCommitEntry::Failed {
+                                        error,
+                                        completion,
+                                        in_flight_guard,
+                                    },
                                 );
                                 if previous.is_some() {
                                     return Err(anyhow!("Parallel finalizer produced duplicate failed result for block #{block_n}"));
                                 }
-                                tracing::info!(
+                                record_parallel_root_pipeline_gauges(
+                                    &metrics,
+                                    active_roots.len(),
+                                    waiting_jobs.len(),
+                                    ready_to_commit.len(),
+                                );
+                                tracing::debug!(
                                     "parallel_root_failed_ready_for_ordered_delivery block_number={} queued_root_jobs={} ready_to_commit={} active_root_jobs={} queue_in_flight={}",
                                     block_n,
                                     waiting_jobs.len(),
@@ -397,6 +460,8 @@ impl FinalizerHandle {
                     }
                 }
             }
+
+            record_parallel_root_pipeline_gauges(&metrics, 0, 0, 0);
 
             Ok(())
         });
