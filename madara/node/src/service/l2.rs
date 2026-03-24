@@ -70,12 +70,16 @@ impl Service for SyncService {
             return Ok(());
         }
         let this = self.start_args.take().expect("Service already started");
+        let no_block_hash_check = std::env::var("MADARA_NO_BLOCK_HASH_CHECK")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
-            // TODO(heemankv, 2025-10-26): all_verifications_disabled should be configured from the env
             BlockValidationConfig::default()
                 .trust_parent_hash(this.unsafe_starting_block_enabled)
-                .trust_state_root(this.unsafe_starting_block_enabled),
+                .trust_state_root(this.unsafe_starting_block_enabled)
+                .all_verifications_disabled(no_block_hash_check),
         ));
 
         let config = SyncControllerConfig::default()
