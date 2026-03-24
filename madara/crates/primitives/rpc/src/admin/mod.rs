@@ -20,3 +20,23 @@ impl BroadcastedDeclareTxnV0 {
         self.is_query
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReplayBlockBoundary {
+    pub block_n: u64,
+    pub expected_tx_count: u64,
+    pub last_tx_hash: Felt,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReplayBlockBoundaryStatus {
+    pub block_n: u64,
+    pub expected_tx_count: u64,
+    pub dispatched_tx_count: u64,
+    pub executed_tx_count: u64,
+    pub last_executed_tx_hash: Option<Felt>,
+    pub reached_last_tx_hash: bool,
+    pub boundary_met: bool,
+    pub closed: bool,
+    pub mismatch: Option<String>,
+}

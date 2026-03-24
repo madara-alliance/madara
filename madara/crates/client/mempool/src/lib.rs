@@ -124,13 +124,14 @@ use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use metrics::{ExternalDbOutboxMetrics, MempoolMetrics};
+use mp_convert::ToFelt;
 use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, sync::Arc};
 use topic_pubsub::TopicWatchPubsub;
 use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
@@ -247,6 +248,70 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             }
         }
+        self.reconcile_loaded_txs_with_chain_head().await?;
+        Ok(())
+    }
+
+    async fn reconcile_loaded_txs_with_chain_head(&self) -> Result<(), anyhow::Error> {
+        let contract_addresses = {
+            let guard = self.inner.read().await;
+            guard.contract_addresses().map(|address| address.to_felt()).collect::<Vec<_>>()
+        };
+        if contract_addresses.is_empty() {
+            return Ok(());
+        }
+
+        let head = self.backend.chain_head_state();
+        let confirmed_view = self.backend.view_on_latest_confirmed();
+        let mut nonce_updates = HashMap::with_capacity(contract_addresses.len());
+
+        let mut preconfirmed_nonce_overrides = HashMap::new();
+        if let Some(internal_preconfirmed_tip) = head.internal_preconfirmed_tip {
+            let start_block_n = head.confirmed_tip.map(|n| n.saturating_add(1)).unwrap_or(0);
+            for block_number in start_block_n..=internal_preconfirmed_tip {
+                let preconfirmed_view = self
+                    .backend
+                    .block_view_on_preconfirmed(block_number)
+                    .with_context(|| format!("Missing preconfirmed block #{block_number} during mempool startup"))?;
+                for executed_tx in preconfirmed_view.borrow_content().executed_transactions() {
+                    preconfirmed_nonce_overrides
+                        .extend(executed_tx.state_diff.nonces.iter().map(|(&addr, &nonce)| (addr, nonce)));
+                }
+            }
+        }
+
+        for contract_address in contract_addresses {
+            let account_nonce = preconfirmed_nonce_overrides
+                .get(&contract_address)
+                .copied()
+                .or(confirmed_view.get_contract_nonce(&contract_address)?)
+                .unwrap_or(Felt::ZERO);
+            nonce_updates.insert(contract_address, account_nonce);
+        }
+
+        self.update_account_nonces(nonce_updates).await
+    }
+
+    async fn update_account_nonces(&self, nonce_updates: HashMap<Felt, Felt>) -> Result<(), anyhow::Error> {
+        if nonce_updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        let summary = {
+            let mut guard = self.inner.write().await;
+            for (contract_address, account_nonce) in nonce_updates {
+                guard.update_account_nonce(
+                    &contract_address.try_into().context("Invalid contract address")?,
+                    &Nonce(account_nonce),
+                    &mut removed_txs,
+                );
+            }
+            guard.summary()
+        };
+        self.metrics.record_mempool_state(&summary);
+        self.on_txs_removed(&removed_txs);
+
         Ok(())
     }
 
@@ -449,6 +514,11 @@ impl Iterator for MempoolConsumer {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
+    use mp_block::{header::PreconfirmedHeader, TransactionWithReceipt};
+    use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
+    use mp_state_update::TransactionStateUpdate;
+    use mp_transactions::{InvokeTransaction, Transaction};
     use starknet_api::{core::ContractAddress, transaction::TransactionHash};
     use std::time::Duration;
 
@@ -496,6 +566,39 @@ pub(crate) mod tests {
         )
     }
 
+    fn tx_account_with_nonce_and_hash(
+        template: &ValidatedTransaction,
+        nonce: Felt,
+        hash: Felt,
+    ) -> ValidatedTransaction {
+        let mut tx = template.clone();
+        tx.hash = hash;
+        match &mut tx.transaction {
+            Transaction::Invoke(InvokeTransaction::V3(inner)) => inner.nonce = nonce,
+            other => panic!("unexpected transaction variant for test: {other:?}"),
+        }
+        tx
+    }
+
+    fn executed_preconfirmed_tx(tx: &ValidatedTransaction, resulting_nonce: Felt) -> PreconfirmedExecutedTransaction {
+        PreconfirmedExecutedTransaction {
+            transaction: TransactionWithReceipt {
+                transaction: tx.transaction.clone(),
+                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                    transaction_hash: tx.hash,
+                    ..Default::default()
+                }),
+            },
+            state_diff: TransactionStateUpdate {
+                nonces: [(tx.contract_address, resulting_nonce)].into(),
+                ..Default::default()
+            },
+            declared_class: None,
+            arrived_at: tx.arrived_at,
+            paid_fee_on_l1: None,
+        }
+    }
+
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
@@ -527,6 +630,88 @@ pub(crate) mod tests {
         assert!(mempool.is_empty().await, "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_startup_reconciles_loaded_txs_against_internal_preconfirmed_runahead(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+
+        let block_1_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ZERO, Felt::from(101u64));
+        let block_2_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ONE, Felt::from(102u64));
+        let stale_saved_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ONE, Felt::from(103u64));
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                [executed_preconfirmed_tx(&block_1_tx, Felt::ONE)],
+                [],
+            ))
+            .unwrap();
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 2, ..Default::default() },
+                [executed_preconfirmed_tx(&block_2_tx, Felt::from(2u64))],
+                [],
+            ))
+            .unwrap();
+
+        let head = backend.chain_head_state();
+        assert_eq!(head.confirmed_tip, Some(0));
+        assert_eq!(head.external_preconfirmed_tip, Some(1));
+        assert_eq!(head.internal_preconfirmed_tip, Some(2));
+
+        backend.write_saved_mempool_transaction(&stale_saved_tx).unwrap();
+        assert_eq!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(),
+            vec![stale_saved_tx.clone()]
+        );
+
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.load_txs_from_db().await.unwrap();
+
+        assert!(mempool.is_empty().await, "stale tx should be dropped during startup reconciliation");
+        assert!(
+            mempool.get_transaction(CONTRACT_ADDRESS, Felt::ONE, |tx| tx.hash).await.is_none(),
+            "stale nonce should not remain queued after startup"
+        );
+        assert!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap().is_empty(),
+            "removed txs must also be cleared from persisted mempool storage"
+        );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn nonce_updates_remove_stale_saved_mempool_transactions(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+
+        let queued_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ZERO, Felt::from(201u64));
+        mempool.accept_tx(queued_tx.clone()).await.unwrap();
+
+        assert_eq!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(),
+            vec![queued_tx.clone()]
+        );
+
+        mempool.update_account_nonces([(queued_tx.contract_address, Felt::ONE)].into()).await.unwrap();
+
+        assert!(mempool.is_empty().await, "nonce advancement should evict stale txs from the in-memory mempool");
+        assert!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap().is_empty(),
+            "nonce-based removals must also clear saved mempool storage"
+        );
     }
 
     #[rstest::rstest]

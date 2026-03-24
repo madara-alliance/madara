@@ -1,4 +1,5 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+use crate::MempoolIntakeMode;
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
@@ -12,15 +13,36 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
+use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
+
+const BYPASS_ENQUEUE_WARN_MS: f64 = 25.0;
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
-        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
+        let tx_hash = tx.hash;
+        let available_capacity_before_send = self.0.capacity();
+        let send_started = Instant::now();
+        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))?;
+        let send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0;
+        if send_wait_ms >= BYPASS_ENQUEUE_WARN_MS {
+            tracing::warn!(
+                "bypass_input_tx_slow_enqueue tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
+                available_capacity_before_send,
+                self.0.capacity()
+            );
+        } else {
+            tracing::debug!(
+                "bypass_input_tx_enqueued tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
+                available_capacity_before_send,
+                self.0.capacity()
+            );
+        }
+        Ok(())
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
@@ -38,6 +60,8 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+    replay_mode_enabled: bool,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -47,11 +71,14 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
         no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            mempool_intake_tx,
+            replay_mode_enabled: false,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
@@ -68,6 +95,26 @@ impl BlockProductionHandle {
             .send(ExecutorCommand::CloseBlock(sender))
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
+    }
+
+    pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {
+        let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
+        let previous_mode = *self.mempool_intake_tx.borrow();
+        self.mempool_intake_tx.send(mode).map_err(|e| anyhow::anyhow!("Mempool intake channel closed: {e}"))?;
+        if previous_mode != mode {
+            tracing::info!(previous_mode = ?previous_mode, new_mode = ?mode, "mempool_intake_updated");
+        } else {
+            tracing::debug!(mode = ?mode, "mempool_intake_already_set");
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_replay_mode_enabled(&mut self, enabled: bool) {
+        self.replay_mode_enabled = enabled;
+    }
+
+    pub fn replay_mode_enabled(&self) -> bool {
+        self.replay_mode_enabled
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.

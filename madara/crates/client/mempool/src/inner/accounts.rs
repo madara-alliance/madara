@@ -172,6 +172,12 @@ pub struct Accounts {
     accounts: HashMap<ContractAddress, AccountState>,
 }
 
+impl Accounts {
+    pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {
+        self.accounts.keys()
+    }
+}
+
 #[cfg(any(test, feature = "testing"))]
 #[allow(unused)]
 impl Accounts {

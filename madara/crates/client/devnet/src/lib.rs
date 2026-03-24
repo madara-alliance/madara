@@ -245,7 +245,7 @@ impl ChainGenesisDescription {
     }
 
     pub async fn build_and_store(self, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
-        let (block, classes) = self.into_block(backend.chain_config()).unwrap();
+        let (block, classes) = self.into_block(backend.chain_config())?;
 
         let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
 
@@ -408,6 +408,7 @@ mod tests {
             Arc::clone(&mempool),
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
+            false,
             true,
         );
 
@@ -558,7 +559,10 @@ mod tests {
 
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if wait_block_time {
-                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+                assert!(matches!(
+                    notifications.recv().await.unwrap(),
+                    BlockProductionStateNotification::ClosedBlock { .. }
+                ));
                 let _found = chain
                     .backend
                     .view_on_latest_confirmed()
@@ -615,7 +619,10 @@ mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         if wait_block_time {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+            assert!(matches!(
+                notifications.recv().await.unwrap(),
+                BlockProductionStateNotification::ClosedBlock { .. }
+            ));
             let _found = chain
                 .backend
                 .view_on_latest_confirmed()

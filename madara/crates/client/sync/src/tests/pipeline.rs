@@ -72,7 +72,7 @@ async fn test_probed(mut ctx: TestContext) {
     assert_eq!(ctx.backend.block_view_on_confirmed(2).unwrap().get_block_info().unwrap().block_hash, felt!("0x12"));
     assert_eq!(ctx.backend.block_view_on_confirmed(3).unwrap().get_block_info().unwrap().block_hash, felt!("0x13"));
     assert!(ctx.backend.has_preconfirmed_block());
-    assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_number, 4);
+    assert_eq!(ctx.backend.block_view_on_current_preconfirmed().unwrap().header().block_number, 4);
 
     // add more blocks :)
     // pipeline should follow
@@ -125,7 +125,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
 
     assert!(ctx.backend.has_preconfirmed_block());
-    assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_timestamp.0, 1000000000000);
+    assert_eq!(ctx.backend.block_view_on_current_preconfirmed().unwrap().header().block_timestamp.0, 1000000000000);
 
     // 3. Pending block changes, we should reflect the change
 
@@ -135,7 +135,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
 
     assert!(ctx.backend.has_preconfirmed_block());
-    assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_timestamp.0, 1999999999999);
+    assert_eq!(ctx.backend.block_view_on_current_preconfirmed().unwrap().header().block_timestamp.0, 1999999999999);
 }
 
 #[rstest]
@@ -245,7 +245,7 @@ async fn test_stop_on_sync(mut ctx: TestContext) {
     assert_eq!(ctx.backend.block_view_on_confirmed(2).unwrap().get_block_info().unwrap().block_hash, felt!("0x12"));
     assert_eq!(ctx.backend.block_view_on_confirmed(3).unwrap().get_block_info().unwrap().block_hash, felt!("0x13"));
     assert!(ctx.backend.has_preconfirmed_block());
-    assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_number, 4);
+    assert_eq!(ctx.backend.block_view_on_current_preconfirmed().unwrap().header().block_number, 4);
 
     task.await // task returned.
 }

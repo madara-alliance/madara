@@ -127,7 +127,13 @@ impl BonsaiDatabase for BonsaiDB {
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         tracing::trace!("Getting by prefix from RocksDB: {:?}", prefix);
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
-        let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let mut readopts = rocksdb::ReadOptions::default();
+        readopts.set_prefix_same_as_start(true);
+        let iter = self.backend.db.iterator_cf_opt(
+            &handle,
+            readopts,
+            IteratorMode::From(prefix.as_slice(), Direction::Forward),
+        );
         Ok(iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
@@ -191,7 +197,13 @@ impl BonsaiDatabase for BonsaiDB {
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Getting from RocksDB: {:?}", prefix);
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
-        let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let mut readopts = rocksdb::ReadOptions::default();
+        readopts.set_prefix_same_as_start(true);
+        let iter = self.backend.db.iterator_cf_opt(
+            &handle,
+            readopts,
+            IteratorMode::From(prefix.as_slice(), Direction::Forward),
+        );
         let mut batch = self.create_batch();
         for kv in iter {
             if let Ok((key, _)) = kv {
@@ -267,7 +279,7 @@ impl BonsaiDatabase for BonsaiTransaction {
             return Ok(val.clone());
         }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -277,8 +289,11 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
+        if let Some(val) = self.changed.get(&to_changed_key(key)) {
+            return Ok(val.is_some());
+        }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
     }
 
     fn insert(

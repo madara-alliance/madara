@@ -457,6 +457,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 | `madara_bypassAddDeployAccountTransaction` | Bypasses mempool/validation for DeployAccount transactions  |
 | `madara_bypassAddInvokeTransaction`        | Bypasses mempool/validation for Invoke transactions         |
 | `madara_closeBlock`                        | Forces block closure in block production mode               |
+| `madara_setMempoolIntake`                  | Enables/disables mempool intake (requires `--rpc-unsafe`)   |
 | `madara_revertToAndShutdown`               | Reverts chain state to a block hash and shuts down the node |
 | `madara_addL1HandlerMessage`               | Pushes an L1 handler message into bypass input              |
 | `madara_setCustomBlockHeader`              | Sets custom block header fields for upcoming block          |
@@ -492,6 +493,21 @@ are exposed on a separate port **9943** unless specified otherwise with
 | `madara_pulse` | Periodically sends a signal that the node is alive |
 
 </details>
+
+#### Mempool Intake Control (Unsafe Admin RPC)
+
+`madara_setMempoolIntake` is only exposed when unsafe admin RPC methods are
+enabled (`--rpc-admin --rpc-unsafe`).
+When `--rpc-unsafe` is disabled, the method is not registered and returns
+`Method not found` if called.
+
+When enabled:
+
+- `madara_setMempoolIntake(true)` resumes intake from the mempool.
+- `madara_setMempoolIntake(false)` pauses intake from the mempool.
+- Bypass/L1 message paths remain active while intake is paused.
+- You can start with intake paused via `--mempool-paused`, which requires
+  `--rpc-admin --rpc-unsafe`.
 
 > [!CAUTION]
 > These methods are exposed on `localhost` by default for obvious security
