@@ -4374,8 +4374,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "get_full_block_without_state_diff_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Fetch Block",
+          "expr": "close_block_enqueue_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Close Request -> Enqueue",
           "refId": "A"
         },
         {
@@ -4383,8 +4383,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "block_commitments_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Commitments",
+          "expr": "close_queue_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Queue Wait",
           "refId": "B"
         },
         {
@@ -4392,8 +4392,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Merklization",
+          "expr": "parallel_root_total_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Root Dispatch -> Result",
           "refId": "C"
         },
         {
@@ -4401,8 +4401,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "block_hash_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Block Hash",
+          "expr": "parallel_root_ready_to_commit_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Ready -> Commit Wait",
           "refId": "D"
         },
         {
@@ -4410,13 +4410,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "db_write_block_parts_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Write Block to DB",
+          "expr": "close_commit_stage_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Commit Stage",
           "refId": "E"
         }
       ],
-      "title": "Close Block Timing Breakdown (Stacked)",
-      "type": "timeseries"
+      "title": "Close Path Breakdown (Latest Block)",
+      "type": "timeseries",
+      "description": "Latest-block close path components. In parallel mode these stages add up to the end-to-end close path after enqueue."
     },
     {
       "datasource": {
@@ -4503,8 +4504,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(get_full_block_without_state_diff_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Fetch Block p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_block_enqueue_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Enqueue p50",
           "refId": "A"
         },
         {
@@ -4512,8 +4513,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(get_full_block_without_state_diff_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Fetch Block p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_block_enqueue_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Enqueue p95",
           "refId": "B"
         },
         {
@@ -4521,8 +4522,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_commitments_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Commitments p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_queue_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Queue Wait p50",
           "refId": "C"
         },
         {
@@ -4530,8 +4531,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_commitments_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Commitments p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_queue_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Queue Wait p95",
           "refId": "D"
         },
         {
@@ -4539,8 +4540,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(apply_to_global_trie_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Merklization p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(parallel_root_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Root Total p50",
           "refId": "E"
         },
         {
@@ -4548,8 +4549,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(apply_to_global_trie_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Merklization p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(parallel_root_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Root Total p95",
           "refId": "F"
         },
         {
@@ -4557,8 +4558,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_hash_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Block Hash p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(parallel_root_ready_to_commit_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Ready -> Commit p50",
           "refId": "G"
         },
         {
@@ -4566,8 +4567,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_hash_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Block Hash p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(parallel_root_ready_to_commit_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Ready -> Commit p95",
           "refId": "H"
         },
         {
@@ -4575,8 +4576,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(db_write_block_parts_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Write to DB p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_commit_stage_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Commit Stage p50",
           "refId": "I"
         },
         {
@@ -4584,20 +4585,21 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_write_block_parts_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Write to DB p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_commit_stage_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Commit Stage p95",
           "refId": "J"
         }
       ],
-      "title": "Close Block Percentiles (p50, p95)",
-      "type": "timeseries"
+      "title": "Close Path Percentiles (P50, P95)",
+      "type": "timeseries",
+      "description": "Percentiles for the close queue, root pipeline, and ordered commit stages."
     },
     {
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Total time to close a block (P50, P95, P99) from Prometheus histogram.",
+      "description": "Time from the main task receiving a close request until the block is fully closed.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4678,8 +4680,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Close Block p50",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_end_to_end_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Close E2E p50",
           "refId": "A"
         },
         {
@@ -4687,8 +4689,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Close Block p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_end_to_end_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Close E2E p95",
           "refId": "B"
         },
         {
@@ -4696,12 +4698,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Close Block p99",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(close_end_to_end_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "Close E2E p99",
           "refId": "C"
         }
       ],
-      "title": "Close Block Total Duration (P50, P95, P99)",
+      "title": "Close End-to-End Duration (P50, P95, P99)",
       "type": "timeseries"
     },
     {
@@ -4709,7 +4711,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Full block production time from start to close (P50, P95, P99) from Prometheus histogram.",
+      "description": "Full block lifetime from block start until final close completion.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4791,7 +4793,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "histogram_quantile(0.50, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Block Production p50",
+          "legendFormat": "Lifetime p50",
           "refId": "A"
         },
         {
@@ -4800,7 +4802,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Block Production p95",
+          "legendFormat": "Lifetime p95",
           "refId": "B"
         },
         {
@@ -4809,11 +4811,11 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
-          "legendFormat": "Block Production p99",
+          "legendFormat": "Lifetime p99",
           "refId": "C"
         }
       ],
-      "title": "Block Production Time (P50, P95, P99)",
+      "title": "Block Lifetime (P50, P95, P99)",
       "type": "timeseries"
     },
     {
@@ -5177,7 +5179,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "sum(close_queue_depth{namespace=~\"$namespace\", pod=~\"$pod\"})",
-          "legendFormat": "Queue Depth",
+          "legendFormat": "Close Queue Depth",
           "refId": "A"
         },
         {
@@ -5185,9 +5187,27 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(close_queue_in_flight{namespace=~\"$namespace\", pod=~\"$pod\"})",
-          "legendFormat": "In Flight",
+          "expr": "sum(parallel_root_waiting_jobs{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Waiting For Root Worker",
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(parallel_root_active_jobs{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Active Root Jobs",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(parallel_root_ready_to_commit_jobs{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Ready To Commit",
+          "refId": "D"
         },
         {
           "datasource": {
@@ -5196,16 +5216,7 @@
           },
           "expr": "sum(block_stage_pending_close_completions{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Pending Completions",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(block_stage_diffs_since_snapshot{namespace=~\"$namespace\", pod=~\"$pod\"})",
-          "legendFormat": "Diffs Since Snapshot",
-          "refId": "D"
+          "refId": "E"
         },
         {
           "datasource": {
@@ -5214,7 +5225,7 @@
           },
           "expr": "sum(block_stage_executing_blocks{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Executing Blocks",
-          "refId": "E"
+          "refId": "F"
         },
         {
           "datasource": {
@@ -5223,15 +5234,6 @@
           },
           "expr": "sum(increase(close_queue_enqueue_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "Enqueue Failures",
-          "refId": "F"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(increase(close_job_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
-          "legendFormat": "Close Job Failures",
           "refId": "G"
         },
         {
@@ -5244,8 +5246,9 @@
           "refId": "H"
         }
       ],
-      "title": "Close Queue & Pipeline State",
-      "type": "timeseries"
+      "title": "Parallel Root Pipeline State",
+      "type": "timeseries",
+      "description": "Live queue and worker state for deferred close and parallel merkle root processing."
     },
     {
       "datasource": {
@@ -5333,9 +5336,36 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Total Merklization",
+          "expr": "parallel_root_spawn_blocking_queue_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Spawn Blocking Queue",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "parallel_root_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Root Compute",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "parallel_root_total_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Root Total",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Merklization",
+          "refId": "D"
         },
         {
           "datasource": {
@@ -5344,7 +5374,7 @@
           },
           "expr": "contract_trie_root_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Contract Trie Root",
-          "refId": "B"
+          "refId": "E"
         },
         {
           "datasource": {
@@ -5353,7 +5383,7 @@
           },
           "expr": "class_trie_root_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Class Trie Root",
-          "refId": "C"
+          "refId": "F"
         },
         {
           "datasource": {
@@ -5362,7 +5392,7 @@
           },
           "expr": "contract_storage_trie_commit_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Storage Trie Commit",
-          "refId": "D"
+          "refId": "G"
         },
         {
           "datasource": {
@@ -5371,7 +5401,7 @@
           },
           "expr": "contract_trie_commit_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Contract Trie Commit",
-          "refId": "E"
+          "refId": "H"
         },
         {
           "datasource": {
@@ -5380,11 +5410,12 @@
           },
           "expr": "class_trie_commit_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Class Trie Commit",
-          "refId": "F"
+          "refId": "I"
         }
       ],
-      "title": "Merklization Deep Dive",
-      "type": "timeseries"
+      "title": "Merklization Deep Dive (Latest Block)",
+      "type": "timeseries",
+      "description": "Latest-block root and trie timings. Root scheduler timings come from the parallel-merkle pipeline; trie timings come from the persisted close result."
     },
     {
       "datasource": {
@@ -5472,8 +5503,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(block_close_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.50, sum(rate(close_commit_stage_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Commit p50",
           "refId": "A"
         },
         {
@@ -5481,8 +5512,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(block_close_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum(rate(close_commit_stage_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Commit p95",
           "refId": "B"
         },
         {
@@ -5490,13 +5521,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "block_close_time_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Latest",
+          "expr": "close_commit_stage_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Commit latest",
           "refId": "C"
         }
       ],
-      "title": "Block Close Time (Histogram Trends)",
-      "type": "timeseries"
+      "title": "Close Commit Stage (P50, P95, Latest)",
+      "type": "timeseries",
+      "description": "Ordered close commit stage only. On serial close path this is the full close worker time."
     },
     {
       "datasource": {
@@ -5584,8 +5616,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(apply_to_global_trie_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.50, sum(rate(parallel_root_spawn_blocking_queue_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Spawn Queue p50",
           "refId": "A"
         },
         {
@@ -5593,8 +5625,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(apply_to_global_trie_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum(rate(parallel_root_spawn_blocking_queue_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Spawn Queue p95",
           "refId": "B"
         },
         {
@@ -5602,22 +5634,68 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Latest",
+          "expr": "histogram_quantile(0.50, sum(rate(parallel_root_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Root Compute p50",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(parallel_root_compute_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Root Compute p95",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(parallel_root_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Root Total p50",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(parallel_root_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Root Total p95",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(parallel_root_ready_to_commit_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Ready -> Commit p50",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(parallel_root_ready_to_commit_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Ready -> Commit p95",
+          "refId": "H"
         }
       ],
-      "title": "Merklization (Histogram Trends)",
-      "type": "timeseries"
+      "title": "Parallel Root Percentiles (P50, P95)",
+      "type": "timeseries",
+      "description": "Percentiles for the parallel root scheduler and computation stages."
     },
     {
       "id": 310,
       "type": "timeseries",
-      "title": "Close Block Timing Breakdown (Loki)",
-      "description": "Per-block timing breakdown extracted from structured logs",
+      "title": "Waits & Handoffs (Latest Block)",
+      "description": "Latest-block waiting and handoff timings from batcher through close enqueue.",
       "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 10,
@@ -5643,93 +5721,90 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
-          "legendFormat": "Total Close Block",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "batcher_batch_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Batcher Wait",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
-          "legendFormat": "Merklization",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "batcher_output_backpressure_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Batcher Output Backpressure",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
-          "legendFormat": "Commitments",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "executor_inter_batch_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Executor Inter-Batch Wait",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
-          "legendFormat": "DB Write",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "executor_to_main_delivery_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Executor -> Main Delivery",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
-          "legendFormat": "Block Hash",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "executor_finalize_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Executor Finalize",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_preconfirmed_ms [$__interval]) by ()",
-          "legendFormat": "Close Preconfirmed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "executor_to_close_queue_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Executor -> Close Request",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap get_full_block_ms [$__interval]) by ()",
-          "legendFormat": "Get Full Block",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "close_block_enqueue_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Close Request -> Enqueue",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_ms [$__interval]) by ()",
-          "legendFormat": "Contract Trie",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "close_queue_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Close Queue Wait",
           "refId": "H"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_ms [$__interval]) by ()",
-          "legendFormat": "Class Trie",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "parallel_root_ready_to_commit_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Ready -> Commit Wait",
           "refId": "I"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_storage_trie_commit_ms [$__interval]) by ()",
-          "legendFormat": "Contract Storage Trie Commit",
-          "refId": "J"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_commit_ms [$__interval]) by ()",
-          "legendFormat": "Contract Trie Commit",
-          "refId": "K"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_commit_ms [$__interval]) by ()",
-          "legendFormat": "Class Trie Commit",
-          "refId": "L"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
+          "unit": "s",
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
@@ -5747,11 +5822,11 @@
     {
       "id": 311,
       "type": "timeseries",
-      "title": "Block Execution Stats (Loki)",
-      "description": "Per-block execution statistics extracted from structured logs",
+      "title": "Last Closed Block Execution Outcome",
+      "description": "Last-block execution outcome and throughput counters without relying on logs.",
       "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 10,
@@ -5777,88 +5852,76 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_tx_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
-          "legendFormat": "Event Count",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_batches_executed_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Batches Executed",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
-          "legendFormat": "Txs Executed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_txs_added_to_block_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Tx Added",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
-          "legendFormat": "Txs Reverted",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_txs_executed_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Tx Executed",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
-          "legendFormat": "State Diff Length",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_txs_reverted_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Tx Reverted",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap batches_executed [$__interval]) by ()",
-          "legendFormat": "Batches Executed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_txs_rejected_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Tx Rejected",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_added_to_block [$__interval]) by ()",
-          "legendFormat": "Txs Added to Block",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_event_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Events",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_rejected [$__interval]) by ()",
-          "legendFormat": "Txs Rejected",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_l2_gas_consumed{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "L2 Gas Consumed",
           "refId": "H"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap classes_declared [$__interval]) by ()",
-          "legendFormat": "Classes Declared",
-          "refId": "I"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap deployed_contracts [$__interval]) by ()",
-          "legendFormat": "Deployed Contracts",
-          "refId": "J"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap storage_diffs [$__interval]) by ()",
-          "legendFormat": "Storage Diffs",
-          "refId": "K"
-        },
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap nonce_updates [$__interval]) by ()",
-          "legendFormat": "Nonce Updates",
-          "refId": "L"
         }
       ],
       "fieldConfig": {
@@ -7305,24 +7368,6 @@
   "templating": {
     "list": [
       {
-        "name": "log_field",
-        "type": "custom",
-        "label": "Log Field",
-        "hide": 0,
-        "query": "close_block_total_ms,block_close_ms,close_preconfirmed_ms,block_production_ms,get_full_block_ms,commitments_ms,merklization_ms,contract_trie_ms,class_trie_ms,contract_storage_trie_commit_ms,contract_trie_commit_ms,class_trie_commit_ms,block_hash_ms,db_write_ms,state_diff_len,declared_classes,deployed_contracts,storage_diffs,nonce_updates,consumed_l1_nonces,bouncer_l1_gas,bouncer_sierra_gas,bouncer_n_events,bouncer_message_segment_length,bouncer_state_diff_size,batches_executed,txs_added_to_block,txs_executed,txs_reverted,txs_rejected,classes_declared,l2_gas_consumed",
-        "current": {
-          "selected": false,
-          "text": "close_block_total_ms",
-          "value": "close_block_total_ms"
-        },
-        "options": [],
-        "multi": false,
-        "includeAll": false,
-        "skipUrlSync": false,
-        "allValue": null,
-        "refresh": 0
-      },
-      {
         "current": {
           "selected": false,
           "text": "Prometheus",
@@ -7334,23 +7379,6 @@
         "name": "DS_PROMETHEUS",
         "options": [],
         "query": "prometheus",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "type": "datasource"
-      },
-      {
-        "current": {
-          "selected": false,
-          "text": "Loki",
-          "value": "Loki"
-        },
-        "hide": 0,
-        "includeAll": false,
-        "multi": false,
-        "name": "DS_LOKI",
-        "options": [],
-        "query": "loki",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
