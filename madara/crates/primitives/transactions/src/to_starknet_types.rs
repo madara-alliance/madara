@@ -24,6 +24,25 @@ impl Transaction {
             Transaction::DeployAccount(tx) => mp_rpc::v0_8_1::Txn::DeployAccount(tx.to_rpc_v0_8()),
         }
     }
+
+    pub fn to_rpc_v0_10_2_with_proof_facts(self) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+        match self {
+            Transaction::Invoke(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(tx.to_rpc_v0_10_2_with_proof_facts()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::L1Handler(tx.to_rpc_v0_7()),
+            Transaction::Declare(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Declare(tx.to_rpc_v0_8()),
+            Transaction::Deploy(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Deploy(tx.to_rpc_v0_7()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::DeployAccount(tx.to_rpc_v0_8()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2(self, include_proof_facts: bool) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_2_with_proof_facts();
+        if include_proof_facts {
+            txn
+        } else {
+            strip_proof_facts(txn)
+        }
+    }
 }
 
 impl InvokeTransaction {
@@ -39,6 +58,23 @@ impl InvokeTransaction {
             InvokeTransaction::V0(tx) => mp_rpc::v0_8_1::InvokeTxn::V0(tx.to_rpc_v0_7()),
             InvokeTransaction::V1(tx) => mp_rpc::v0_8_1::InvokeTxn::V1(tx.to_rpc_v0_7()),
             InvokeTransaction::V3(tx) => mp_rpc::v0_8_1::InvokeTxn::V3(tx.to_rpc_v0_8()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2_with_proof_facts(self) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+        match self {
+            InvokeTransaction::V0(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V0(tx.to_rpc_v0_7()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V1(tx.to_rpc_v0_7()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx.to_rpc_v0_10_2()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2(self, include_proof_facts: bool) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_2_with_proof_facts();
+        if include_proof_facts {
+            txn
+        } else {
+            strip_invoke_proof_facts(txn)
         }
     }
 }
@@ -95,6 +131,43 @@ impl InvokeTransactionV3 {
             signature: self.signature,
             tip: self.tip,
         }
+    }
+
+    pub fn to_rpc_v0_10_2(self) -> mp_rpc::v0_10_2::InvokeTxnV3 {
+        mp_rpc::v0_10_2::InvokeTxnV3 {
+            inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                account_deployment_data: self.account_deployment_data,
+                calldata: self.calldata,
+                fee_data_availability_mode: self.fee_data_availability_mode.into(),
+                nonce: self.nonce,
+                nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+                paymaster_data: self.paymaster_data,
+                resource_bounds: self.resource_bounds.into(),
+                sender_address: self.sender_address,
+                signature: self.signature,
+                tip: self.tip,
+            },
+            proof_facts: self.proof_facts,
+        }
+    }
+}
+
+fn strip_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(tx) => {
+            mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(strip_invoke_proof_facts(tx))
+        }
+        other => other,
+    }
+}
+
+fn strip_invoke_proof_facts(txn: mp_rpc::v0_10_2::InvokeTxnWithProofFacts) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(mut tx) => {
+            tx.proof_facts = None;
+            mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)
+        }
+        other => other,
     }
 }
 

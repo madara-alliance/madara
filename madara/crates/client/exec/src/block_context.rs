@@ -51,6 +51,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     pub fn into_transaction_validator(self) -> StatefulValidator<BlockifierStateAdapter<D>> {
         StatefulValidator::create(self.state, Arc::unwrap_or_clone(self.block_context))
     }
+
+    pub fn get_initial_reads(
+        &self,
+    ) -> Result<blockifier::state::cached_state::StateMaps, blockifier::state::errors::StateError> {
+        self.state.get_initial_reads()
+    }
 }
 
 /// Extension trait that provides execution capabilities on the madara backend.

@@ -194,3 +194,55 @@ impl From<mp_rpc::v0_8_1::BroadcastedDeployAccountTxn> for DeployAccountTransact
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_rpc::v0_10_0::{DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
+
+    fn sample_broadcasted_invoke_v3() -> mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
+        mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
+            inner: InvokeTxnV3 {
+                sender_address: Felt::ONE,
+                calldata: vec![Felt::TWO, Felt::THREE].into(),
+                signature: vec![Felt::from(4_u64)].into(),
+                nonce: Felt::from(5_u64),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
+                    l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                    l1_data_gas: ResourceBounds { max_amount: 5, max_price_per_unit: 6 },
+                },
+                tip: 7,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: DaMode::L1,
+                fee_data_availability_mode: DaMode::L1,
+            },
+            proof: Some(vec![11, 12]),
+        }
+    }
+
+    #[test]
+    fn v0_10_2_query_invoke_preserves_query_version_for_hashing() {
+        let chain_id = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+
+        let regular: mp_rpc::v0_8_1::BroadcastedTxn = mp_rpc::v0_10_2::BroadcastedTxn::Invoke(
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(sample_broadcasted_invoke_v3()),
+        )
+        .into();
+        let query: mp_rpc::v0_8_1::BroadcastedTxn = mp_rpc::v0_10_2::BroadcastedTxn::Invoke(
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV3(sample_broadcasted_invoke_v3()),
+        )
+        .into();
+
+        assert!(!regular.is_query());
+        assert!(query.is_query());
+
+        let regular_hash =
+            TransactionWithHash::from_broadcasted_v0_8(regular, chain_id, StarknetVersion::LATEST, None).hash;
+        let query_hash =
+            TransactionWithHash::from_broadcasted_v0_8(query, chain_id, StarknetVersion::LATEST, None).hash;
+
+        assert_ne!(regular_hash, query_hash, "query transactions must use the simulate-version hash offset");
+    }
+}

@@ -150,10 +150,13 @@
 #![allow(clippy::result_large_err)]
 
 use blockifier::{
-    state::cached_state::CommitmentStateDiff,
+    state::cached_state::{CommitmentStateDiff, StateMaps},
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mp_chain_config::StarknetVersion;
+use mp_rpc::v0_10_2::{
+    InitialClassHashRead, InitialDeclaredContract, InitialNonceRead, InitialReads, InitialStorageRead,
+};
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
@@ -244,4 +247,42 @@ pub struct ExecutionResult {
     pub deployed_contracts: HashSet<Felt>,
     /// Class hash declared as deprecated (Cairo 0) by this transaction, if any.
     pub deprecated_declared_class: Option<Felt>,
+}
+
+pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {
+    InitialReads {
+        storage: state_maps
+            .storage
+            .into_iter()
+            .map(|((contract_address, key), value)| InitialStorageRead {
+                contract_address: Felt::from(contract_address),
+                key: Felt::from(key),
+                value,
+            })
+            .collect(),
+        nonces: state_maps
+            .nonces
+            .into_iter()
+            .map(|(contract_address, nonce)| InitialNonceRead {
+                contract_address: Felt::from(contract_address),
+                nonce: nonce.0,
+            })
+            .collect(),
+        class_hashes: state_maps
+            .class_hashes
+            .into_iter()
+            .map(|(contract_address, class_hash)| InitialClassHashRead {
+                contract_address: Felt::from(contract_address),
+                class_hash: Felt::from(class_hash),
+            })
+            .collect(),
+        declared_contracts: state_maps
+            .declared_contracts
+            .into_iter()
+            .map(|(class_hash, is_declared)| InitialDeclaredContract {
+                class_hash: Felt::from(class_hash),
+                is_declared,
+            })
+            .collect(),
+    }
 }

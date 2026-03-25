@@ -40,7 +40,7 @@ impl Transaction {
             crate::Transaction::Invoke(tx) => tx.compute_hash(chain_id, is_query, legacy),
             crate::Transaction::L1Handler(tx) => tx.compute_hash(chain_id, is_query, legacy),
             crate::Transaction::Declare(tx) => tx.compute_hash(chain_id, is_query),
-            crate::Transaction::Deploy(tx) => tx.compute_hash(chain_id, legacy),
+            crate::Transaction::Deploy(tx) => tx.compute_hash(chain_id, is_query, legacy),
             crate::Transaction::DeployAccount(tx) => tx.compute_hash(chain_id, is_query),
         }
     }
@@ -273,8 +273,7 @@ impl DeclareTransaction {
 impl DeclareTransactionV0 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool) -> Felt {
         let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ZERO };
-        let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
+        let class_or_nothing_hash = Pedersen::hash_array(&[]);
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
@@ -291,9 +290,8 @@ impl DeclareTransactionV0 {
 
 impl DeclareTransactionV1 {
     pub fn compute_hash(&self, chain_id: Felt, offset_version: bool) -> Felt {
-        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET } else { Felt::ONE };
-        let class_or_nothing_hash =
-            if version == Felt::ZERO { Pedersen::hash_array(&[]) } else { Pedersen::hash_array(&[self.class_hash]) };
+        let version = if offset_version { SIMULATE_TX_VERSION_OFFSET + Felt::ONE } else { Felt::ONE };
+        let class_or_nothing_hash = Pedersen::hash_array(&[self.class_hash]);
 
         Pedersen::hash_array(&[
             DECLARE_PREFIX,
@@ -441,13 +439,14 @@ impl DeployAccountTransactionV3 {
 }
 
 impl DeployTransaction {
-    pub fn compute_hash(&self, chain_id: Felt, legacy: bool) -> Felt {
+    pub fn compute_hash(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
         let contract_address = self.calculate_contract_address();
 
         if legacy {
             compute_hash_given_contract_address_legacy(chain_id, contract_address, &self.constructor_calldata)
         } else {
-            compute_hash_given_contract_address(self.version, chain_id, contract_address, &self.constructor_calldata)
+            let version = if offset_version { self.version + SIMULATE_TX_VERSION_OFFSET } else { self.version };
+            compute_hash_given_contract_address(version, chain_id, contract_address, &self.constructor_calldata)
         }
     }
 
@@ -563,12 +562,15 @@ pub fn calculate_contract_address(
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+    use serde_json::Value;
+
     use crate::tests::{
         dummy_l1_handler, dummy_tx_declare_v0, dummy_tx_declare_v1, dummy_tx_declare_v2, dummy_tx_declare_v3,
         dummy_tx_deploy, dummy_tx_deploy_account_v1, dummy_tx_deploy_account_v3, dummy_tx_invoke_v0,
         dummy_tx_invoke_v1, dummy_tx_invoke_v3,
     };
-    use crate::ResourceBounds;
+    use crate::{ResourceBounds, MAIN_CHAIN_ID, TEST_CHAIN_ID};
 
     use super::*;
 
@@ -665,6 +667,11 @@ mod tests {
             Felt::from_hex_unchecked("0x69ec1564562e52d5399e3faa244b9c5fdf379f0857f5ec51bd824d551f7b39b");
         assert_eq!(hash, expected_hash);
 
+        let query_hash = tx.compute_hash(CHAIN_ID, StarknetVersion::LATEST, true);
+        let expected_query_hash =
+            Felt::from_hex_unchecked("0x176fe90e0859474565355c01b086e16a1eaf7119483597b7926e52b2f71785c");
+        assert_eq!(query_hash, expected_query_hash);
+
         let tx: Transaction = dummy_tx_deploy_account_v1().into();
         let hash = tx.compute_hash(CHAIN_ID, StarknetVersion::LATEST, false);
         let expected_hash =
@@ -726,5 +733,104 @@ mod tests {
     #[test]
     fn test_pedersen_empty() {
         assert_eq!(PEDERSEN_EMPTY, Pedersen::hash_array(&[]))
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct SequencerTransactionHashVector {
+        block_number: u64,
+        chain_id: String,
+        transaction: Value,
+        transaction_hash: String,
+        only_query_transaction_hash: Option<String>,
+    }
+
+    fn parse_hex_u64(hex: &str) -> u64 {
+        u64::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap()
+    }
+
+    fn parse_chain_id(chain_id: &str) -> Felt {
+        match chain_id {
+            "SN_MAIN" => MAIN_CHAIN_ID,
+            "SN_SEPOLIA" => TEST_CHAIN_ID,
+            other => panic!("unsupported chain id in sequencer vector: {other}"),
+        }
+    }
+
+    fn normalize_transaction_json(value: &mut Value, parent_key: Option<&str>) {
+        match value {
+            Value::Object(map) => {
+                for (key, child) in map.iter_mut() {
+                    match key.as_str() {
+                        "nonce_data_availability_mode" | "fee_data_availability_mode" => {
+                            let numeric = match child.as_str() {
+                                Some("L1") => 0_u64,
+                                Some("L2") => 1_u64,
+                                Some(other) => panic!("unsupported data availability mode in test vector: {other}"),
+                                None => panic!("expected string data availability mode in test vector"),
+                            };
+                            *child = Value::Number(numeric.into());
+                        }
+                        "tip" => {
+                            let tip = child.as_str().map(parse_hex_u64).expect("expected hex tip in test vector");
+                            *child = Value::Number(tip.into());
+                        }
+                        "nonce" if parent_key == Some("L1Handler") => {
+                            let nonce = child
+                                .as_str()
+                                .map(parse_hex_u64)
+                                .expect("expected hex l1 handler nonce in test vector");
+                            *child = Value::Number(nonce.into());
+                        }
+                        _ => {}
+                    }
+                    normalize_transaction_json(child, Some(key));
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    normalize_transaction_json(item, parent_key);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+
+    fn parse_test_transaction(mut transaction: Value) -> Transaction {
+        normalize_transaction_json(&mut transaction, None);
+        serde_json::from_value(transaction).unwrap()
+    }
+
+    #[test]
+    fn test_compute_hash_matches_sequencer_vectors() {
+        let vectors: Vec<SequencerTransactionHashVector> =
+            serde_json::from_str(include_str!("test_data/sequencer_transaction_hash_vectors.json")).unwrap();
+
+        for vector in vectors {
+            let vector_debug = format!("{vector:?}");
+            let tx = parse_test_transaction(vector.transaction);
+            let chain_id = parse_chain_id(&vector.chain_id);
+            let starknet_version =
+                StarknetVersion::try_from_mainnet_block_number(vector.block_number).unwrap_or(StarknetVersion::LATEST);
+
+            let expected_regular_hash = Felt::from_hex(&vector.transaction_hash).unwrap();
+            assert_eq!(
+                tx.compute_hash(chain_id, starknet_version, false),
+                expected_regular_hash,
+                "regular hash mismatch for sequencer vector: {vector_debug}"
+            );
+
+            if tx.is_l1_handler() {
+                continue;
+            }
+
+            let expected_query_hash =
+                Felt::from_hex(vector.only_query_transaction_hash.as_deref().expect("missing only_query hash"))
+                    .unwrap();
+            assert_eq!(
+                tx.compute_hash(chain_id, starknet_version, true),
+                expected_query_hash,
+                "query hash mismatch for sequencer vector: {vector_debug}"
+            );
+        }
     }
 }

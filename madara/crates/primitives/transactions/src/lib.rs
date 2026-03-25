@@ -376,6 +376,8 @@ pub struct InvokeTransactionV3 {
     pub account_deployment_data: Vec<Felt>,
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
+    #[serde(default)]
+    pub proof_facts: Option<Vec<Felt>>,
 }
 
 impl InvokeTransactionV3 {
@@ -1106,6 +1108,7 @@ mod tests {
             account_deployment_data: vec![Felt::from(10), Felt::from(11)],
             nonce_data_availability_mode: DataAvailabilityMode::L1,
             fee_data_availability_mode: DataAvailabilityMode::L2,
+            proof_facts: None,
         }
     }
 

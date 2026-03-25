@@ -888,6 +888,11 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetTraceRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
 
+    rpc_api.merge(versions::user::v0_10_2::StarknetReadRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetWriteRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+
     Ok(rpc_api)
 }
 
