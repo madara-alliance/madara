@@ -4,13 +4,15 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
-use mp_convert::Felt;
+use mp_convert::{Felt, L1TransactionHash};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::L1HandlerTransactionResult;
+
+use crate::versions::admin::v0_1_0::api::L1HandlerMessageWithOrigin;
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -252,13 +254,32 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
     async fn add_l1_handler_message(
         &self,
-        l1_handler_message: L1HandlerTransactionWithFee,
+        l1_handler_message: L1HandlerMessageWithOrigin,
     ) -> RpcResult<L1HandlerTransactionResult> {
+        let nonce = l1_handler_message.message.tx.nonce;
+        let l1_tx_hash = L1TransactionHash(l1_handler_message.l1_transaction_hash.0);
+        let l1_block_number = l1_handler_message.l1_block_number;
+
+        // Persist L1 origin metadata so `starknet_getMessagesStatus` can track
+        // this message, matching what the settlement messaging worker writes.
+        self.backend
+            .write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash)
+            .context("Storing nonce → L1 tx hash")
+            .map_err(StarknetRpcApiError::from)?;
+        self.backend
+            .insert_message_to_l2_seen_marker(&l1_tx_hash, nonce)
+            .context("Storing (L1 tx hash, nonce) seen marker")
+            .map_err(StarknetRpcApiError::from)?;
+        self.backend
+            .write_l1_handler_l1_block_by_nonce(nonce, l1_block_number)
+            .context("Storing nonce → L1 block number")
+            .map_err(StarknetRpcApiError::from)?;
+
         Ok(self
             .block_prod_handle
             .as_ref()
-            .unwrap()
-            .submit_l1_handler_transaction(l1_handler_message)
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .submit_l1_handler_transaction(l1_handler_message.message)
             .await
             .map_err(StarknetRpcApiError::from)?)
     }
