@@ -302,14 +302,19 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 mod tests {
     use super::services_to_stop_for_revert;
     use crate::{
-        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
+        test_utils::TestTransactionProvider,
+        versions::admin::v0_1_0::{api::L1HandlerMessageWithOrigin, MadaraWriteRpcApiV0_1_0Server},
+        Starknet,
     };
     use mc_db::{
+        storage::L1ToL2MessageIndexEntry,
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
     use mp_chain_config::ChainConfig;
-    use mp_convert::Felt;
+    use mp_convert::{Felt, L1TransactionHash};
+    use mp_rpc::v0_9_0::L1TxnHash;
+    use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
@@ -378,5 +383,47 @@ mod tests {
         assert_ne!(err.code(), 0);
         assert_eq!(backend.latest_confirmed_block_n(), Some(1));
         assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
+    }
+
+    #[tokio::test]
+    async fn add_l1_handler_message_persists_origin_metadata() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let rpc = make_starknet(backend.clone(), ServiceContext::default());
+
+        let nonce = 42u64;
+        let l1_tx_hash_bytes = [0xab_u8; 32];
+        let l1_block_number = 12345u64;
+
+        let msg = L1HandlerMessageWithOrigin {
+            message: L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce,
+                    contract_address: Felt::from(456u64),
+                    entry_point_selector: Felt::from(789u64),
+                    calldata: vec![Felt::from(123u64)].into(),
+                },
+                1000,
+            ),
+            l1_transaction_hash: L1TxnHash(l1_tx_hash_bytes),
+            l1_block_number,
+        };
+
+        // The call will fail (no block_prod_handle), but metadata must already be persisted.
+        let _err = rpc.add_l1_handler_message(msg).await.expect_err("should fail without block_prod_handle");
+
+        let expected_l1_hash = L1TransactionHash(l1_tx_hash_bytes);
+
+        // 1) nonce → L1 tx hash
+        assert_eq!(backend.get_l1_txn_hash_by_nonce(nonce).unwrap(), Some(expected_l1_hash));
+
+        // 2) nonce → L1 block number
+        assert_eq!(backend.get_l1_handler_l1_block_by_nonce(nonce).unwrap(), Some(l1_block_number));
+
+        // 3) (L1 tx hash, nonce) → seen marker (empty, not yet consumed)
+        assert_eq!(
+            backend.get_message_to_l2_index_entry(&expected_l1_hash, nonce).unwrap(),
+            Some(L1ToL2MessageIndexEntry::Seen),
+        );
     }
 }
