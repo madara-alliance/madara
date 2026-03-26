@@ -73,6 +73,7 @@
       "nanos": 0
     },
     "unsafe_skip_l1_message_consumed_check": false,
+    "unsafe_no_l1_handler_tx_creation_from_message": false,
     "settlement_layer": "Eth"
   },
   "analytics_params": {
