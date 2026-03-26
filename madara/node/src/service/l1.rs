@@ -21,7 +21,6 @@ pub struct L1SyncConfig {
 pub struct L1SyncService {
     sync_worker_config: Option<SyncWorkerConfig>,
     client: Option<Arc<L1ClientImpl>>,
-    no_l1_handler_tx_creation: bool,
 }
 
 impl L1SyncService {
@@ -67,7 +66,7 @@ impl L1SyncService {
         }
 
         if config.l1_sync_disabled {
-            return Ok(Self { sync_worker_config: None, client: None, no_l1_handler_tx_creation: false });
+            return Ok(Self { sync_worker_config: None, client: None });
         }
 
         if config.unsafe_no_l1_handler_tx_creation_from_message {
@@ -119,16 +118,11 @@ impl L1SyncService {
                 unsafe_skip_l1_message_consumed_check: config.unsafe_skip_l1_message_consumed_check,
                 unsafe_no_l1_handler_tx_creation_from_message: config.unsafe_no_l1_handler_tx_creation_from_message,
             }),
-            no_l1_handler_tx_creation: config.unsafe_no_l1_handler_tx_creation_from_message,
         })
     }
 
     pub fn client(&self) -> Arc<dyn SettlementClient> {
-        if self.no_l1_handler_tx_creation {
-            // Flag set: block production gets an empty L1 message stream.
-            // L1 sync itself still runs with the real client for metadata.
-            Arc::new(L1SyncDisabledClient)
-        } else if let Some(client) = self.client.clone() {
+        if let Some(client) = self.client.clone() {
             client
         } else {
             Arc::new(L1SyncDisabledClient)
