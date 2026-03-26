@@ -21,6 +21,7 @@ pub struct L1SyncConfig {
 pub struct L1SyncService {
     sync_worker_config: Option<SyncWorkerConfig>,
     client: Option<Arc<L1ClientImpl>>,
+    no_l1_handler_tx_creation: bool,
 }
 
 impl L1SyncService {
@@ -66,7 +67,15 @@ impl L1SyncService {
         }
 
         if config.l1_sync_disabled {
-            return Ok(Self { sync_worker_config: None, client: None });
+            return Ok(Self { sync_worker_config: None, client: None, no_l1_handler_tx_creation: false });
+        }
+
+        if config.unsafe_no_l1_handler_tx_creation_from_message {
+            tracing::warn!(
+                "⚠⚠⚠ UNSAFE: --unsafe-no-l1-handler-tx-creation-from-message is enabled. \
+                 L1 sync will persist metadata but will NOT queue L1→L2 messages for block production. \
+                 L1 handler transactions must be submitted via the admin RPC. ⚠⚠⚠"
+            );
         }
         let Some(endpoint) = config.l1_endpoint.clone() else {
             tracing::error!("Missing l1_endpoint CLI argument. Either disable L1 sync using `--no-l1-sync` or give an L1 RPC endpoint URL using `--l1-endpoint <url>`.");
@@ -108,12 +117,18 @@ impl L1SyncService {
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
                 unsafe_skip_l1_message_consumed_check: config.unsafe_skip_l1_message_consumed_check,
+                unsafe_no_l1_handler_tx_creation_from_message: config.unsafe_no_l1_handler_tx_creation_from_message,
             }),
+            no_l1_handler_tx_creation: config.unsafe_no_l1_handler_tx_creation_from_message,
         })
     }
 
     pub fn client(&self) -> Arc<dyn SettlementClient> {
-        if let Some(client) = self.client.clone() {
+        if self.no_l1_handler_tx_creation {
+            // Flag set: block production gets an empty L1 message stream.
+            // L1 sync itself still runs with the real client for metadata.
+            Arc::new(L1SyncDisabledClient)
+        } else if let Some(client) = self.client.clone() {
             client
         } else {
             Arc::new(L1SyncDisabledClient)

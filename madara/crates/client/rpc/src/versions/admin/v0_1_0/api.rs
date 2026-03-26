@@ -6,24 +6,11 @@ use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash, L1TxnHash,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
-
-/// An L1 handler message together with the L1 origin metadata needed by
-/// `starknet_getMessagesStatus`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct L1HandlerMessageWithOrigin {
-    /// The L1 handler transaction and its paid fee on L1.
-    #[serde(flatten)]
-    pub message: L1HandlerTransactionWithFee,
-    /// Hash of the L1 transaction that emitted the `LogMessageToL2` event.
-    pub l1_transaction_hash: L1TxnHash,
-    /// L1 block number in which the message was emitted.
-    pub l1_block_number: u64,
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ServiceStatusInfo {
@@ -90,15 +77,11 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "revertToAndShutdown")]
     async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
 
-    /// Submit a L1 message into the bypass input stream.
-    ///
-    /// Also persists L1 origin metadata (nonce→L1 tx hash, nonce→L1 block,
-    /// and a `(l1_tx_hash, nonce)` seen marker) so that
-    /// `starknet_getMessagesStatus` can track admin-submitted messages.
+    /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
     async fn add_l1_handler_message(
         &self,
-        l1_handler_message: L1HandlerMessageWithOrigin,
+        l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
 
     /// Sets custom headers to be used for the upcoming block

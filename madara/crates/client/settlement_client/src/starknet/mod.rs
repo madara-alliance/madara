@@ -489,7 +489,7 @@ pub mod starknet_client_tests {
 
     /// This struct holds all commonly used test resources
     pub struct StarknetClientTextFixture {
-        pub context: crate::starknet::test_utils::TestContext,
+        pub context: test_utils::TestContext,
         pub client: StarknetClient,
     }
 
@@ -517,7 +517,7 @@ pub mod starknet_client_tests {
         let fixture = test_fixture.await;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
-            rpc_url: fixture.context.cmd.rpc_url().parse().unwrap(),
+            rpc_url: fixture.context.cmd.rpc_url().parse()?,
             core_contract_address: "0xdeadbeef".to_string(),
         })
         .await;
@@ -710,7 +710,7 @@ mod starknet_client_messaging_test {
 
     /// This struct holds all commonly used test resources
     pub struct StarknetClientTextFixture {
-        pub context: crate::starknet::test_utils::TestContext,
+        pub context: test_utils::TestContext,
         pub db_service: Arc<MadaraBackend>,
         pub starknet_client: StarknetClient,
     }
@@ -761,6 +761,7 @@ mod starknet_client_messaging_test {
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
+                    false,
                 )
                 .await
                 .unwrap();
@@ -771,7 +772,7 @@ mod starknet_client_messaging_test {
         // Firing the event
         let l1_tx_hash_felt =
             fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        sleep(Duration::from_secs(10)).await;
 
         // Assert that the event is well stored in db:
         // - pending message is persisted
@@ -850,6 +851,7 @@ mod starknet_client_messaging_test {
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     false,
+                    false,
                 )
                 .await
             })
@@ -860,7 +862,7 @@ mod starknet_client_messaging_test {
                 .await;
 
         cancel_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(5)).await;
         assert!(fixture.starknet_client.message_to_l2_has_cancel_request(&message_hash.to_bytes_be()).await.unwrap());
 
         Ok(())

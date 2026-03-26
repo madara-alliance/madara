@@ -94,6 +94,7 @@ pub async fn sync(
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
     unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
     // sync inner is cancellation safe.
     ctx.run_until_cancelled(sync_inner(
@@ -101,6 +102,7 @@ pub async fn sync(
         backend,
         notify_consumer,
         unsafe_skip_l1_message_consumed_check,
+        metadata_only,
     ))
     .await
     .transpose()?;
@@ -112,6 +114,7 @@ async fn sync_inner(
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
     unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
     // Note: It's fine to reprocess events - duplicates are filtered during block production.
 
@@ -129,6 +132,7 @@ async fn sync_inner(
             replay_max_duration,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
+            metadata_only,
         )
         .await
         {
@@ -153,6 +157,7 @@ async fn run_message_sync(
     replay_max_duration: Duration,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
     let from_l1_block_n = get_start_block(settlement_client, backend, replay_max_duration).await?;
 
@@ -200,6 +205,7 @@ async fn run_message_sync(
             &mut pending_events,
             finality_blocks,
             unsafe_skip_l1_message_consumed_check,
+            metadata_only,
         )
         .await
         {
@@ -241,6 +247,7 @@ async fn process_finalized_events(
     pending_events: &mut VecDeque<MessageToL2WithMetadata>,
     finality_blocks: u64,
     unsafe_skip_l1_message_consumed_check: bool,
+    metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
     if pending_events.is_empty() {
         return Ok(());
@@ -286,20 +293,24 @@ async fn process_finalized_events(
 
         // Backfill the consumed L2 tx hash in case the L1 handler transaction was already written to the DB
         // before we observed the L1 event for this nonce.
+        // Checking nonce -> L2 transaction hash
         if let Some(l2_tx_hash) = backend.get_l1_handler_txn_hash_by_nonce(nonce).map_err(|e| {
             SettlementClientError::DatabaseError(format!("Failed to read l1 handler tx hash by nonce: {}", e))
         })? {
+            // Write l1_tx_hash|nonce -> l2_tx_hash
             backend.write_message_to_l2_consumed_txn_hash(&l1_tx_hash, nonce, &l2_tx_hash).map_err(|e| {
                 SettlementClientError::DatabaseError(format!(
                     "Failed to backfill l1->l2 consumed tx hash for (l1_tx_hash, nonce): {}",
                     e
                 ))
             })?;
+            // Write nonce -> l1_block
             backend.write_l1_handler_l1_block_by_nonce(nonce, event.l1_block_number).map_err(|e| {
                 SettlementClientError::DatabaseError(format!("Failed to store message source block: {}", e))
             })?;
         }
 
+        // Check if the message is still valid
         let is_valid = check_message_to_l2_validity(
             settlement_client,
             backend,
@@ -315,17 +326,28 @@ async fn process_finalized_events(
         })?;
 
         if is_valid {
+            // Write nonce -> l1_block
             backend.write_l1_handler_l1_block_by_nonce(event.message.tx.nonce, event.l1_block_number).map_err(|e| {
                 SettlementClientError::DatabaseError(format!("Failed to store message source block: {}", e))
             })?;
-            backend
-                .write_pending_message_to_l2(&event.message)
-                .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store message: {}", e)))?;
-            tracing::debug!("Message stored: nonce={}", event.message.tx.nonce);
+            if metadata_only {
+                tracing::debug!(
+                    "Message metadata stored but NOT queued for block production (unsafe flag): nonce={}",
+                    event.message.tx.nonce
+                );
+            } else {
+                // Write nonce -> pending_message (to be picked by block production service)
+                backend
+                    .write_pending_message_to_l2(&event.message)
+                    .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store message: {}", e)))?;
+                tracing::debug!("Message stored: nonce={}", event.message.tx.nonce);
+            }
         } else {
             tracing::debug!("Message skipped (invalid/cancelled): nonce={}", event.message.tx.nonce);
         }
 
+        // Write the l1 message sync tip
+        // This is a marker for l1 sync service to start from later on
         backend
             .write_l1_messaging_sync_tip(Some(event.l1_block_number))
             .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to update sync tip: {}", e)))?;
@@ -452,14 +474,14 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Verify the message was processed
         assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
-        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
+        let l1_tx_hash = L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
         assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event1.message.tx.nonce).unwrap(), Some(l1_tx_hash));
         assert_eq!(
             db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
@@ -515,7 +537,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -585,7 +607,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -644,7 +666,7 @@ mod messaging_module_tests {
         let notify = Arc::new(Notify::new());
         let db_clone = db.clone();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
         // Wait for processing attempt (short wait)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -700,7 +722,7 @@ mod messaging_module_tests {
         let notify = Arc::new(Notify::new());
         let db_clone = db.clone();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
 
         // Wait for processing (short wait)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -744,7 +766,8 @@ mod messaging_module_tests {
         let client = Arc::new(mock_client);
         let ctx = ServiceContext::new_for_testing();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx, false).await });
+        let sync_handle =
+            tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx, false, false).await });
 
         // Verify exponential backoff: 1s -> 2s -> 4s
         tokio::time::advance(Duration::from_millis(50)).await;
@@ -762,6 +785,57 @@ mod messaging_module_tests {
         // Task should still be running (no panic)
         assert!(!sync_handle.is_finished());
 
+        sync_handle.abort();
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_metadata_only_flag_stores_metadata_but_not_pending(
+        #[future] setup_messaging_tests: MessagingTestRunner,
+    ) -> anyhow::Result<()> {
+        let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
+
+        let mock_event1 = create_mock_event(100, 1);
+        let notify = Arc::new(Notify::new());
+
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let events = vec![mock_event1.clone()];
+        client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+        client.expect_get_latest_block_number().returning(|| Ok(200));
+
+        mock_l1_handler_tx(&mut client, 1, true, false);
+        client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = db.clone();
+
+        // Pass metadata_only = true (last argument)
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false, true).await });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Metadata SHOULD be written
+        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
+        assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event1.message.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(mock_event1.message.tx.nonce, None)]
+        );
+        assert_eq!(
+            db.get_l1_handler_l1_block_by_nonce(mock_event1.message.tx.nonce).unwrap(),
+            Some(mock_event1.l1_block_number)
+        );
+
+        // Pending message should NOT be written
+        assert!(
+            db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().is_none(),
+            "Pending message should NOT be written when metadata_only is true"
+        );
+
+        ctx_clone.cancel_global();
         sync_handle.abort();
         Ok(())
     }

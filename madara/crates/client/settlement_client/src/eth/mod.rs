@@ -362,10 +362,7 @@ impl SettlementLayerProvider for EthereumClient {
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
         let block = self
             .provider
-            .get_block(
-                BlockId::Number(BlockNumberOrTag::Number(l1_block_n)),
-                alloy::rpc::types::BlockTransactionsKind::Hashes,
-            )
+            .get_block(BlockId::Number(BlockNumberOrTag::Number(l1_block_n)), BlockTransactionsKind::Hashes)
             .await
             .map_err(|e| -> SettlementClientError {
                 EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
@@ -687,13 +684,13 @@ mod l1_messaging_tests {
     /// Common setup for tests
     ///
     /// This test performs the following steps:
-    /// 1. Sets up test environemment
+    /// 1. Sets up test environment
     /// 2. Starts worker
     /// 3. Fires a Message event from the dummy contract
     /// 4. Waits for event to be processed
     /// 5. Assert that the worker handle the event with correct data
     /// 6. Assert that the hash computed by the worker is correct
-    /// 7. Assert that the tx is succesfully submited
+    /// 7. Assert that the tx is successfully submitted
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
     ///
@@ -754,6 +751,7 @@ mod l1_messaging_tests {
                     Arc::clone(&db),
                     Default::default(),
                     ServiceContext::new_for_testing(),
+                    false,
                     false,
                 )
                 .await
@@ -890,6 +888,7 @@ mod l1_messaging_tests {
                     Arc::clone(&db),
                     Default::default(),
                     ServiceContext::new_for_testing(),
+                    false,
                     false,
                 )
                 .await

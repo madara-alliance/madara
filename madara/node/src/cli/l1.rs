@@ -123,6 +123,23 @@ pub struct L1SyncParams {
     #[clap(env = "MADARA_UNSAFE_SKIP_L1_MESSAGE_CONSUMED_CHECK", long)]
     pub unsafe_skip_l1_message_consumed_check: bool,
 
+    /// DANGEROUS: Prevents L1→L2 messages from being queued for automatic inclusion in blocks.
+    ///
+    /// When enabled, the L1 sync messaging worker will still run and persist all metadata
+    /// (nonce → L1 tx hash, seen marker, nonce → L1 block number) needed by
+    /// `starknet_getMessagesStatus`, but it will NOT write messages to the pending table.
+    /// Block production will also not consume L1 messages from the pending table.
+    ///
+    /// This is useful when an external orchestrator submits L1 handler transactions exclusively
+    /// via the admin RPC (`addL1HandlerMessage`).
+    ///
+    /// WARNING: If this flag is enabled and no external service submits L1 handler transactions,
+    /// L1→L2 messages will be silently ignored and never executed on L2.
+    ///
+    /// Cannot be combined with `--no-l1-sync`.
+    #[clap(env = "MADARA_UNSAFE_NO_L1_HANDLER_TX_CREATION_FROM_MESSAGE", long, conflicts_with = "l1_sync_disabled")]
+    pub unsafe_no_l1_handler_tx_creation_from_message: bool,
+
     /// The settlement layer type. This specifies the type of API `--l1-endpoint <RPC url>` uses: Ethereum RPC, or Starknet RPC.
     /// The usual cases for this is:
     /// - When settling on Ethereum, which is the case for Starknet Mainnet, we are usually running an L2 - because Ethrereum is an L1 and doesn't settle on any other chain.
