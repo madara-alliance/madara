@@ -7,13 +7,15 @@ CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin mad
   --rpc-port 9944          \
   --rpc-cors "*"           \
   --rpc-external           \
+  --rpc-admin              \
   --devnet                 \
   --preset devnet          \
   --l1-gas-price 0         \
   --blob-gas-price 0       \
   --strk-per-eth 1         \
   --no-l1-sync             \
-  --rpc-pre-v0-9-preconfirmed-as-pending &
+  --rpc-pre-v0-9-preconfirmed-as-pending \
+  --chain-config-override block_time=1h &
 
 MADARA_PID=$!
 

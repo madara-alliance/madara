@@ -1,13 +1,13 @@
 {
   "name": "js_tests",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "index.js",
   "scripts": {
     "test": "tsc --noEmit && jest --config=jest.config.cjs --runInBand"
   },
   "author": "",
   "license": "MIT",
-  "description": "starknet js test for the madara",
+  "description": "Comprehensive Starknet RPC spec compliance tests for Madara",
   "dependencies": {
     "starknet": "^9.2.1"
   },
