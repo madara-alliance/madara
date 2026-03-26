@@ -362,7 +362,9 @@ async fn process_finalized_events(
 mod messaging_module_tests {
     use super::*;
     use crate::client::MockSettlementLayerProvider;
+    use crate::messages_to_l2_consumer::MessagesToL2Consumer;
     use futures::stream;
+    use futures::FutureExt;
     use mockall::predicate;
     use mp_chain_config::ChainConfig;
     use mp_transactions::L1HandlerTransaction;
@@ -833,6 +835,16 @@ mod messaging_module_tests {
         assert!(
             db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().is_none(),
             "Pending message should NOT be written when metadata_only is true"
+        );
+
+        // A consumer subscribed to the same notify should find nothing to consume
+        let mut mock_for_consumer = MockSettlementLayerProvider::new();
+        mock_for_consumer.expect_get_client_type().returning(|| ClientType::Eth);
+        let consumer_notify = Arc::new(Notify::new());
+        let mut consumer = MessagesToL2Consumer::new(db.clone(), Arc::new(mock_for_consumer), consumer_notify, false);
+        assert!(
+            consumer.consume_next_or_wait().now_or_never().is_none(),
+            "Consumer should have nothing to consume when metadata_only is true"
         );
 
         ctx_clone.cancel_global();
