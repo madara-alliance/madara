@@ -93,6 +93,46 @@ describe("Starknet RPC v0.10.0", () => {
         expect(envelope.result).toBeUndefined();
       });
     }
+
+    it("re-declaring already-declared class returns CLASS_ALREADY_DECLARED (code 51)", async () => {
+      // starknet.js calls estimateFee before submitting, which returns error 41 instead of 51.
+      // So we test this via the starknet.js error chain which surfaces the estimate error.
+      const {
+        Account,
+        Deployer,
+        RpcProvider: StarkRpcProvider,
+      } = await import("starknet");
+      const { loadContractSierra, loadContractCasm } =
+        await import("../src/contract-loader");
+      const { DEFAULT_ACCOUNT_ADDRESS, DEFAULT_PRIVATE_KEY, UDC_ADDRESS } =
+        await import("../src/config");
+
+      const provider = new StarkRpcProvider({ nodeUrl: ctx.rpcUrl });
+      const deployer = new Deployer(UDC_ADDRESS, "deployContract");
+      const account = new Account({
+        provider,
+        address: DEFAULT_ACCOUNT_ADDRESS,
+        signer: DEFAULT_PRIVATE_KEY,
+        deployer,
+      });
+
+      const sierra = loadContractSierra("madara_contracts_HelloStarknet");
+      const casm = loadContractCasm("madara_contracts_HelloStarknet");
+
+      try {
+        await account.declare({ contract: sierra, casm });
+        fail("Expected error when re-declaring already-declared class");
+      } catch (err: any) {
+        // starknet.js calls estimateFee first which returns execution error (41)
+        // containing "already declared" in the message. Either error code is acceptable.
+        const code = err.baseError?.code ?? err.code;
+        const data = JSON.stringify(
+          err.baseError?.data ?? err.data ?? err.message ?? "",
+        );
+        expect([41, 51]).toContain(code);
+        expect(data).toContain("already declared");
+      }
+    });
   });
 
   // ---- Phase 4: Method Surface Coverage ----

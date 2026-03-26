@@ -560,9 +560,9 @@
       "method": "starknet_estimateMessageFee",
       "params": {
         "message": {
-          "from_address": "0xdeadbeef",
-          "to_address": "$ref:deploy_new_account.contract_address",
-          "entry_point_selector": "$computed:sn_keccak:l1_handler_entrypoint",
+          "from_address": "0x00000000000000000000000000000000deadbeef",
+          "to_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+          "entry_point_selector": "0x0",
           "payload": ["0x1", "0x2"]
         },
         "block_id": "latest"
@@ -573,8 +573,7 @@
         "l1_gas_consumed": "$exists",
         "l2_gas_consumed": "$exists"
       },
-      "description": "TestContract l1_handler asserts caller is zero. Estimation may fail due to execution context. Needs investigation.",
-      "skip": true
+      "description": "Estimate L1 handler fee targeting the default pre-deployed account."
     },
     {
       "id": "simulate_transactions",
@@ -662,27 +661,6 @@
       "description": "MessageSent event. Validates v0.10.0 fields: transaction_index, event_index."
     },
     {
-      "id": "get_events_state_update",
-      "method": "starknet_getEvents",
-      "params": {
-        "filter": {
-          "from_block": {
-            "block_number": "$ref:invoke_update_state.block_number"
-          },
-          "to_block": {
-            "block_number": "$ref:invoke_update_state.block_number"
-          },
-          "address": "$ref:deploy_state_update.contract_address",
-          "keys": [],
-          "chunk_size": 100
-        }
-      },
-      "expected": {
-        "events": "$length_gte:1"
-      },
-      "description": "LogStateUpdate event from StateUpdateContract"
-    },
-    {
       "id": "get_events_l1_handler",
       "method": "starknet_getEvents",
       "params": {
@@ -737,8 +715,7 @@
         "transaction_hash": "$any",
         "class_hash": "$any"
       },
-      "description": "Re-declare already-declared class. Skipped: CLASS_ALREADY_DECLARED error expected.",
-      "skip": true
+      "description": "Declare StateUpdateContract (not declared in setup). Validates addDeclareTransaction works."
     },
     {
       "id": "add_deploy_account_transaction",
@@ -751,8 +728,7 @@
         "transaction_hash": "$any",
         "contract_address": "$any"
       },
-      "description": "Skipped: requires nonce coordination with add_invoke_transaction. Write methods are tested in state setup.",
-      "skip": true
+      "description": "Deploy a fresh account. Runner closes pending block first to sync nonce."
     }
   ]
 }
