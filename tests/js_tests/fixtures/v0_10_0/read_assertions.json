@@ -661,6 +661,27 @@
       "description": "MessageSent event. Validates v0.10.0 fields: transaction_index, event_index."
     },
     {
+      "id": "get_events_state_update",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_number": "$ref:invoke_update_state.block_number"
+          },
+          "to_block": {
+            "block_number": "$ref:invoke_update_state.block_number"
+          },
+          "address": "$ref:deploy_state_update.contract_address",
+          "keys": [],
+          "chunk_size": 100
+        }
+      },
+      "expected": {
+        "events": "$length_gte:1"
+      },
+      "description": "LogStateUpdate event from StateUpdateContract"
+    },
+    {
       "id": "get_events_l1_handler",
       "method": "starknet_getEvents",
       "params": {
@@ -709,13 +730,13 @@
       "params": {},
       "construct": {
         "type": "declare_v3",
-        "contract": "madara_contracts_StateUpdateContract"
+        "contract": "madara_contracts_DeclareTestContract"
       },
       "expected": {
         "transaction_hash": "$any",
         "class_hash": "$any"
       },
-      "description": "Declare StateUpdateContract (not declared in setup). Validates addDeclareTransaction works."
+      "description": "Declare DeclareTestContract (reserved for this test, not declared in setup)."
     },
     {
       "id": "add_deploy_account_transaction",

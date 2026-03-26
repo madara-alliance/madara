@@ -56,6 +56,29 @@
       "close_block": true
     },
     {
+      "id": "declare_state_update",
+      "type": "declare",
+      "contract": "madara_contracts_StateUpdateContract",
+      "close_block": true
+    },
+    {
+      "id": "deploy_state_update",
+      "type": "deploy",
+      "class_hash": "$ref:declare_state_update.class_hash",
+      "constructor_calldata": [],
+      "salt": "0x5678",
+      "unique": true,
+      "close_block": true
+    },
+    {
+      "id": "invoke_update_state",
+      "type": "invoke",
+      "contract_address": "$ref:deploy_state_update.contract_address",
+      "entry_point": "update_state",
+      "calldata": ["0x1", "0xdead", "0xbeef"],
+      "close_block": true
+    },
+    {
       "id": "declare_messaging",
       "type": "declare",
       "contract": "madara_contracts_MessagingContract",
