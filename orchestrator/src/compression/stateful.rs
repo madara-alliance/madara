@@ -6,7 +6,7 @@ use starknet::core::types::{
 };
 use starknet_core::types::BlockId;
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 // https://community.starknet.io/t/starknet-v0-13-4-pre-release-notes/115257
 const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
@@ -141,7 +141,10 @@ impl CompressedKeyValues {
 
             // Add fetched values to mappings
             for key in keys_needing_provider {
-                let value = provider_values.get(&(STATEFUL_SPECIAL_ADDRESS, key)).copied().unwrap_or(Felt::ZERO);
+                let value = provider_values.get(&(STATEFUL_SPECIAL_ADDRESS, key)).copied().unwrap_or_else(|| {
+                    error!("Failed to get 0x2 mapping for {}", key);
+                    Felt::ZERO
+                });
                 mappings.insert(key, value);
             }
         }

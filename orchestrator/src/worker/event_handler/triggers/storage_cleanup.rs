@@ -2,9 +2,10 @@ use crate::core::client::lock::LockValue;
 use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::types::constant::{
-    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_batch_dir,
-    STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY,
-    STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
+    get_batch_artifact_file, get_batch_blob_file, get_batch_state_update_file, get_snos_batch_dir, BLOB_DATA_FILE_NAME,
+    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, MAX_BLOBS, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
+    PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN,
+    STORAGE_CLEANUP_WORKER_KEY, STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SettlementContext, StateUpdateMetadata};
@@ -21,8 +22,6 @@ pub struct StorageCleanupTrigger;
 #[async_trait]
 impl JobTrigger for StorageCleanupTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!("StorageCleanupTrigger started");
-
         // Try to acquire distributed lock
         match config
             .lock()
@@ -31,6 +30,7 @@ impl JobTrigger for StorageCleanupTrigger {
         {
             Ok(_) => {
                 debug!("StorageCleanupTrigger acquired distributed lock");
+                info!("StorageCleanupTrigger started");
             }
             Err(err) => {
                 debug!("StorageCleanupTrigger could not acquire lock (another instance may be running): {}", err);
@@ -157,10 +157,9 @@ impl StorageCleanupTrigger {
     }
 
     /// Collect artifact paths from:
-    /// - batch artifacts dir
-    /// - batch blob dir
-    /// - SNOS batch dir (L3 only)
-    /// - SNOS batch dirs for all SNOS batches inside the aggregator batch (L2 only)
+    /// - known batch-scoped artifacts (no directory listing)
+    /// - known blob files (0..=MAX_BLOBS)
+    /// - SNOS batch root artifacts (L2: from DB, L3: job_id)
     /// - state update file
     async fn collect_artifact_paths(
         &self,
@@ -170,25 +169,21 @@ impl StorageCleanupTrigger {
     ) -> color_eyre::Result<Vec<String>> {
         let mut paths = BTreeSet::new();
 
-        // List files from each artifact directory
-        let mut dirs = vec![get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id)];
-
-        let is_l3 = matches!(state_metadata.context, SettlementContext::Block(_));
-        if is_l3 {
-            dirs.push(get_snos_batch_dir(job_id));
+        // Batch-scoped artifacts (known filenames)
+        let batch_artifact_files = [
+            CAIRO_PIE_FILE_NAME,
+            DA_SEGMENT_FILE_NAME,
+            PROGRAM_OUTPUT_FILE_NAME,
+            SNOS_OUTPUT_FILE_NAME,
+            PROOF_FILE_NAME,
+        ];
+        for file in batch_artifact_files {
+            paths.insert(get_batch_artifact_file(job_id, file));
         }
 
-        for dir in &dirs {
-            match config.storage().list_files_in_dir(dir).await {
-                Ok(files) => {
-                    debug!(job_id = %job_id, dir = %dir, count = files.len(), "Found files");
-                    paths.extend(files);
-                }
-                Err(e) => {
-                    MetricsRecorder::record_cleanup_failure("list_dir");
-                    debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error");
-                }
-            }
+        // Blob files (0..=MAX_BLOBS). Missing files are treated as NotFound during tagging.
+        for blob_index in 0..=MAX_BLOBS {
+            paths.insert(get_batch_blob_file(job_id, blob_index as u64));
         }
 
         if matches!(state_metadata.context, SettlementContext::Batch(_)) {
@@ -202,28 +197,22 @@ impl StorageCleanupTrigger {
             };
             for snos_batch in snos_batches {
                 let snos_dir = get_snos_batch_dir(snos_batch.index);
-                match config.storage().list_files_in_dir(&snos_dir).await {
-                    Ok(files) => {
-                        debug!(
-                            job_id = %job_id,
-                            snos_batch_index = %snos_batch.index,
-                            dir = %snos_dir,
-                            count = files.len(),
-                            "Found SNOS batch files"
-                        );
-                        paths.extend(files);
-                    }
-                    Err(e) => {
-                        MetricsRecorder::record_cleanup_failure("list_dir");
-                        debug!(
-                            job_id = %job_id,
-                            snos_batch_index = %snos_batch.index,
-                            dir = %snos_dir,
-                            error = %e,
-                            "SNOS batch dir not found or error"
-                        );
-                    }
+                for file in [CAIRO_PIE_FILE_NAME, SNOS_OUTPUT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME] {
+                    paths.insert(format!("{}/{}", snos_dir, file));
                 }
+            }
+        } else {
+            // L3: use job_id as SNOS batch id (assumes block_number == snos_batch_id)
+            let snos_dir = get_snos_batch_dir(job_id);
+            for file in [
+                CAIRO_PIE_FILE_NAME,
+                SNOS_OUTPUT_FILE_NAME,
+                PROGRAM_OUTPUT_FILE_NAME,
+                BLOB_DATA_FILE_NAME,
+                PROOF_FILE_NAME,
+                PROOF_PART2_FILE_NAME,
+            ] {
+                paths.insert(format!("{}/{}", snos_dir, file));
             }
         }
 

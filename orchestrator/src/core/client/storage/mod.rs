@@ -17,9 +17,6 @@ pub trait StorageClient: Send + Sync {
     /// Delete a bucket
     async fn delete_data(&self, key: &str) -> Result<(), StorageError>;
 
-    /// List files in a directory
-    async fn list_files_in_dir(&self, dir_path: &str) -> Result<Vec<String>, StorageError>;
-
     /// Perform a health check on the storage service
     ///
     /// This method verifies that the storage service (e.g., AWS S3) is accessible

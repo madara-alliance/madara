@@ -589,27 +589,29 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Lookup to find corresponding job_b_type jobs
+            // Stage 2: Lookup to find jobs with matching internal_id
+            // Uses localField/foreignField form for proper index utilization
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
-                    "let": { "internal_id": "$internal_id" },
-                    "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {
-                                    "$and": [
-                                        { "$eq": ["$job_type", job_b_type_bson] },
-                                        { "$eq": ["$internal_id", "$$internal_id"] }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
+                    "localField": "internal_id",
+                    "foreignField": "internal_id",
                     "as": "successor_jobs"
                 }
             },
-            // Stage 3: Filter out job_a_type jobs that have corresponding job_b_type jobs
+            // Stage 3: Filter successor_jobs to only include job_b_type
+            doc! {
+                "$addFields": {
+                    "successor_jobs": {
+                        "$filter": {
+                            "input": "$successor_jobs",
+                            "as": "job",
+                            "cond": { "$eq": ["$$job.job_type", job_b_type_bson] }
+                        }
+                    }
+                }
+            },
+            // Stage 4: Keep only documents with no successors
             doc! {
                 "$match": {
                     "successor_jobs": { "$eq": [] }
@@ -1199,28 +1201,29 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Lookup to find corresponding SNOS jobs
-            // We look for jobs where internal_id matches the index
+            // Stage 2: Lookup to find jobs with matching internal_id
+            // Uses localField/foreignField form for proper index utilization
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
-                    "let": { "index": "$index" },
-                    "pipeline": [
-                        {
-                            "$match": {
-                                "$expr": {
-                                    "$and": [
-                                        { "$eq": ["$job_type", snos_job_type_bson] },
-                                        { "$eq": ["$internal_id", "$$index"] }
-                                    ]
-                                }
-                            }
-                        }
-                    ],
+                    "localField": "index",
+                    "foreignField": "internal_id",
                     "as": "corresponding_jobs"
                 }
             },
-            // Stage 3: Filter to get only SNOS batches that DON'T have corresponding jobs
+            // Stage 3: Filter corresponding_jobs to only include SnosRun jobs
+            doc! {
+                "$addFields": {
+                    "corresponding_jobs": {
+                        "$filter": {
+                            "input": "$corresponding_jobs",
+                            "as": "job",
+                            "cond": { "$eq": ["$$job.job_type", snos_job_type_bson] }
+                        }
+                    }
+                }
+            },
+            // Stage 4: Keep only batches without corresponding jobs
             doc! {
                 "$match": {
                     "corresponding_jobs": { "$eq": [] }

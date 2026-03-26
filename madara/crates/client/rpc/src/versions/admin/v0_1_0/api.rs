@@ -12,6 +12,13 @@ use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct ServiceStatusInfo {
+    pub service: MadaraServiceId,
+    pub requested: MadaraServiceStatus,
+    pub actual: MadaraServiceStatus,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceRequest {
@@ -60,9 +67,15 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
 
-    /// Revert the blockchain to a specific block hash.
-    #[method(name = "revertTo")]
-    async fn revert_to(&self, block_hash: Felt) -> RpcResult<()>;
+    /// Revert the blockchain to a specific block hash, then shut down the node.
+    ///
+    /// This is the preferred reorg workflow for Madara because it coordinates
+    /// an in-process stop of other services (so they ack as "actually down")
+    /// before mutating the DB state, and then exits the process so Kubernetes
+    /// (or another supervisor) can restart cleanly.
+    ///
+    #[method(name = "revertToAndShutdown")]
+    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
 
     /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
@@ -120,4 +133,10 @@ pub trait MadaraServicesRpcApi {
     /// * 'on' if any service was active before being toggled, 'off' otherwise.
     #[method(name = "service")]
     async fn service(&self, service: Vec<MadaraServiceId>, status: ServiceRequest) -> RpcResult<MadaraServiceStatus>;
+
+    /// Returns the requested and actual status of services.
+    ///
+    /// If the list is empty, returns the status of all externally controllable services.
+    #[method(name = "serviceStatus")]
+    async fn service_status(&self, service: Vec<MadaraServiceId>) -> RpcResult<Vec<ServiceStatusInfo>>;
 }

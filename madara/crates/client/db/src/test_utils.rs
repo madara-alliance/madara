@@ -1,7 +1,10 @@
 #![cfg(any(test, feature = "testing"))]
 
+use crate::MadaraBackend;
+use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_class::{CompiledSierra, ConvertedClass, FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
 use mp_convert::Felt;
+use mp_receipt::{L1HandlerTransactionReceipt, TransactionReceipt};
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
     DataAvailabilityMode, DeclareTransactionV3, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV3,
@@ -9,6 +12,27 @@ use mp_transactions::{
 };
 use starknet_core::types::contract::SierraClass;
 use std::sync::Arc;
+
+pub fn add_test_block(
+    backend: &Arc<MadaraBackend>,
+    block_number: u64,
+    transactions: Vec<TransactionWithReceipt>,
+) -> Felt {
+    backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number, ..Default::default() },
+                state_diff: Default::default(),
+                transactions,
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .expect("Adding block should succeed")
+        .block_hash
+}
 
 pub fn devnet_account_address() -> Felt {
     Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d")
@@ -84,6 +108,16 @@ pub fn declare_v3(sender: Felt, nonce: Felt) -> (DeclareTransactionV3, Converted
         },
         converted,
     )
+}
+
+pub fn l1_handler_tx_with_receipt(nonce: u64, tx_hash: Felt) -> TransactionWithReceipt {
+    TransactionWithReceipt {
+        transaction: Transaction::L1Handler(L1HandlerTransaction { nonce, ..Default::default() }),
+        receipt: TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: tx_hash,
+            ..Default::default()
+        }),
+    }
 }
 
 pub fn deploy_account_v3(nonce: Felt) -> DeployAccountTransactionV3 {

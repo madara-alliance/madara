@@ -10,8 +10,10 @@ pub struct AtlanticCliArgs {
     pub atlantic: bool,
 
     /// The API key for the Atlantic.
+    /// Note: not marked required_if_eq because the value can be loaded from a file
+    /// via MADARA_ORCHESTRATOR_ATLANTIC_API_KEY_FILE. Validation is done in
+    /// TryFrom<RunCmd> for ProverConfig (see src/types/params/prover.rs).
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY", long)]
-    #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_api_key: Option<String>,
 
     /// The URL of the Atlantic server.
