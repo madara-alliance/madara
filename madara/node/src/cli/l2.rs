@@ -88,6 +88,12 @@ pub struct L2SyncParams {
     /// operators who want to manually handle chain divergences.
     #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = false)]
     pub disable_reorg: bool,
+
+    /// Disable all block hash verification checks during sync. This allows syncing blocks
+    /// without verifying block hashes, which can be useful for development or when syncing
+    /// against networks where hash computation may differ.
+    #[clap(env = "MADARA_NO_BLOCK_HASH_CHECK", long, default_value_t = false)]
+    pub no_block_hash_check: bool,
 }
 
 impl L2SyncParams {
