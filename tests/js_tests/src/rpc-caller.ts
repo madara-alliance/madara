@@ -1,7 +1,15 @@
 /**
- * Raw JSON-RPC caller for Starknet methods not directly exposed by starknet.js
- * (e.g., getStorageProof, getCompiledCasm, traceBlockTransactions, getMessagesStatus).
+ * Raw JSON-RPC caller for Starknet RPC methods.
+ * Provides both `call()` (unwraps result) and `rawCall()` (returns full envelope).
  */
+
+export interface JsonRpcEnvelope {
+  jsonrpc: string;
+  id: number;
+  result?: any;
+  error?: { code: number; message: string; data?: any };
+}
+
 export class RpcCaller {
   private url: string;
   private requestId = 0;
@@ -10,7 +18,10 @@ export class RpcCaller {
     this.url = url;
   }
 
-  async call(method: string, params: any): Promise<any> {
+  /**
+   * Make a raw JSON-RPC call and return the full envelope (for envelope/error testing).
+   */
+  async rawCall(method: string, params: any): Promise<JsonRpcEnvelope> {
     const id = ++this.requestId;
 
     const body: any = {
@@ -19,7 +30,6 @@ export class RpcCaller {
       method,
     };
 
-    // Handle both array params and object params
     if (Array.isArray(params)) {
       body.params = params;
     } else if (
@@ -40,16 +50,67 @@ export class RpcCaller {
 
     const json = await response.json();
 
-    if (json.error) {
+    // Validate JSON-RPC 2.0 envelope structure
+    assertValidEnvelope(json, id);
+
+    return json as JsonRpcEnvelope;
+  }
+
+  /**
+   * Make a JSON-RPC call and return the result, throwing on error.
+   */
+  async call(method: string, params: any): Promise<any> {
+    const envelope = await this.rawCall(method, params);
+
+    if (envelope.error) {
       throw new RpcError(
         method,
-        json.error.code,
-        json.error.message,
-        json.error.data,
+        envelope.error.code,
+        envelope.error.message,
+        envelope.error.data,
       );
     }
 
-    return json.result;
+    return envelope.result;
+  }
+}
+
+/**
+ * Validate JSON-RPC 2.0 envelope structure.
+ */
+function assertValidEnvelope(json: any, expectedId: number): void {
+  if (json.jsonrpc !== "2.0") {
+    throw new Error(
+      `Invalid JSON-RPC version: expected "2.0", got "${json.jsonrpc}"`,
+    );
+  }
+
+  if (json.id !== expectedId) {
+    throw new Error(
+      `JSON-RPC id mismatch: expected ${expectedId}, got ${json.id}`,
+    );
+  }
+
+  const hasResult = "result" in json;
+  const hasError = "error" in json;
+
+  if (!hasResult && !hasError) {
+    throw new Error(
+      "Invalid JSON-RPC envelope: neither result nor error present",
+    );
+  }
+
+  if (hasError) {
+    if (typeof json.error.code !== "number") {
+      throw new Error(
+        `Invalid JSON-RPC error: code must be a number, got ${typeof json.error.code}`,
+      );
+    }
+    if (typeof json.error.message !== "string") {
+      throw new Error(
+        `Invalid JSON-RPC error: message must be a string, got ${typeof json.error.message}`,
+      );
+    }
   }
 }
 

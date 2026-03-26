@@ -75,6 +75,19 @@ export async function runAssertion(
       `Assertion "${assertion.id}" failed (${assertion.method}):\n${errorMsg}`,
     );
   }
+
+  // Validate response shape against official OpenRPC spec (if registry available)
+  if (ctx.specRegistry && !assertion.construct) {
+    const specErrors = ctx.specRegistry.validateResult(
+      assertion.method,
+      actual,
+    );
+    if (specErrors && specErrors.length > 0) {
+      throw new Error(
+        `Spec schema validation failed for "${assertion.id}" (${assertion.method}):\n  ${specErrors.join("\n  ")}`,
+      );
+    }
+  }
 }
 
 // ---- RPC Call Execution ----

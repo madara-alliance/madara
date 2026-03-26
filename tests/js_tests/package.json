@@ -9,6 +9,8 @@
   "license": "MIT",
   "description": "Comprehensive Starknet RPC spec compliance tests for Madara",
   "dependencies": {
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "starknet": "^9.2.1"
   },
   "devDependencies": {

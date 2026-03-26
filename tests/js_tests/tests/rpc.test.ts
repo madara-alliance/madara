@@ -4,8 +4,13 @@ import { getRpcUrl, getAdminUrl } from "../src/config";
 import { executeStateSetup } from "../src/state-executor";
 import { runAssertion, matchValue } from "../src/assertion-runner";
 import { RpcCaller } from "../src/rpc-caller";
-import { RpcProvider } from "starknet";
-import { StateSetup, ReadAssertions, TestContext } from "../src/types";
+import {
+  StateSetup,
+  ReadAssertions,
+  ErrorAssertions,
+  TestContext,
+} from "../src/types";
+import { createSpecRegistry } from "../src/spec/spec-registry";
 
 // Load fixture JSONs
 const FIXTURE_DIR = path.resolve(__dirname, "../fixtures/v0_10_0");
@@ -14,6 +19,9 @@ const stateSetup: StateSetup = JSON.parse(
 );
 const readAssertions: ReadAssertions = JSON.parse(
   fs.readFileSync(path.join(FIXTURE_DIR, "read_assertions.json"), "utf-8"),
+);
+const errorAssertions: ErrorAssertions = JSON.parse(
+  fs.readFileSync(path.join(FIXTURE_DIR, "error_assertions.json"), "utf-8"),
 );
 
 const rpcUrl = getRpcUrl(stateSetup.version);
@@ -29,6 +37,15 @@ const ctx: TestContext = {
 };
 
 describe("Starknet RPC v0.10.0", () => {
+  // ---- Phase 0: Spec Registry ----
+  describe("Spec Registry", () => {
+    it("should download and compile OpenRPC spec validators", async () => {
+      const versionTag = `v${stateSetup.version}`;
+      ctx.specRegistry = await createSpecRegistry(versionTag);
+      expect(ctx.specRegistry.getMethodNames().length).toBeGreaterThan(0);
+    });
+  });
+
   // ---- Phase 1: State Setup ----
   describe("State Setup", () => {
     it("should execute all write steps and build deterministic chain state", async () => {
@@ -50,7 +67,6 @@ describe("Starknet RPC v0.10.0", () => {
       }
 
       it(`${assertion.id} (${assertion.method})`, async () => {
-        // Fail if state setup didn't complete
         if (ctx.results.size === 0) {
           throw new Error(
             "State setup did not complete - cannot run read assertions",
@@ -62,7 +78,85 @@ describe("Starknet RPC v0.10.0", () => {
     }
   });
 
-  // ---- Phase 3: Cross-Validations ----
+  // ---- Phase 3: Error Case Assertions ----
+  describe("Error Assertions", () => {
+    for (const assertion of errorAssertions.assertions) {
+      it(`${assertion.id} (${assertion.method})`, async () => {
+        const rpcCaller = new RpcCaller(ctx.rpcUrl);
+        const envelope = await rpcCaller.rawCall(
+          assertion.method,
+          assertion.params,
+        );
+
+        expect(envelope.error).toBeDefined();
+        expect(envelope.error!.code).toBe(assertion.expected_error.code);
+        expect(envelope.result).toBeUndefined();
+      });
+    }
+  });
+
+  // ---- Phase 4: Method Surface Coverage ----
+  describe("Method Surface", () => {
+    it("all spec methods are exposed by the node", async () => {
+      if (!ctx.specRegistry) return;
+
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const result = await rpcCaller.call("rpc_methods", []);
+      const exposedMethods: string[] = (result.methods || [])
+        .map((m: string) => {
+          // rpc_methods may return versioned paths like "starknet/v0_10_0/starknet_chainId"
+          const segments = m.split("/");
+          return segments[segments.length - 1];
+        })
+        .filter((m: string) => m.startsWith("starknet_"));
+      const exposedSet = new Set(exposedMethods);
+
+      const specMethods = ctx.specRegistry.getMethodNames();
+      const missing: string[] = [];
+      for (const method of specMethods) {
+        if (!exposedSet.has(method)) {
+          missing.push(method);
+        }
+      }
+
+      if (missing.length > 0) {
+        console.warn(
+          `[method-surface] Methods in spec but not exposed: ${missing.join(", ")}`,
+        );
+      }
+      // Allow getMessagesStatus to be missing (known Madara gap)
+      const criticalMissing = missing.filter(
+        (m) => m !== "starknet_getMessagesStatus",
+      );
+      expect(criticalMissing).toEqual([]);
+    });
+
+    it("test suite covers all spec methods", () => {
+      if (!ctx.specRegistry) return;
+
+      const testedMethods = new Set(
+        readAssertions.assertions.map((a) => a.method),
+      );
+      const specMethods = ctx.specRegistry.getMethodNames();
+      const untested: string[] = [];
+
+      for (const method of specMethods) {
+        if (!testedMethods.has(method)) {
+          untested.push(method);
+        }
+      }
+
+      if (untested.length > 0) {
+        console.warn(
+          `[coverage] Spec methods without test assertions: ${untested.join(", ")}`,
+        );
+      }
+      // All methods should have at least one assertion (skipped counts)
+      expect(untested.length).toBe(0);
+    });
+  });
+
+  // ---- Phase 5: Cross-Validations ----
   describe("Cross-Validations", () => {
     it("block hash consistency: blockHashAndNumber matches getBlockWithTxHashes(latest)", async () => {
       const bhan = ctx.assertionResults.get("block_hash_and_number");
@@ -71,7 +165,6 @@ describe("Starknet RPC v0.10.0", () => {
       );
       if (!bhan || !blockTxHashes) return;
 
-      // Both should have valid block_hash and block_number fields
       expect(bhan.block_hash).toBeDefined();
       expect(bhan.block_number).toBeDefined();
     });
@@ -143,7 +236,6 @@ describe("Starknet RPC v0.10.0", () => {
       const byIndex1 = ctx.assertionResults.get("get_tx_by_block_and_index_1");
       if (!byIndex0 || !byIndex1) return;
 
-      // They should be different transactions
       expect(byIndex0.transaction_hash).not.toBe(byIndex1.transaction_hash);
     });
 

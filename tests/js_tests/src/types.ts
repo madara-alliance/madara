@@ -96,6 +96,21 @@ export interface ConstructHint {
   contract?: string;
 }
 
+// ---- Error Assertions JSON Schema ----
+
+export interface ErrorAssertions {
+  version: string;
+  assertions: ErrorAssertion[];
+}
+
+export interface ErrorAssertion {
+  id: string;
+  method: string;
+  params: any;
+  expected_error: { code: number };
+  description?: string;
+}
+
 // ---- Test Context (shared between write and read phases) ----
 
 export interface TestContext {
@@ -104,4 +119,5 @@ export interface TestContext {
   results: Map<string, StepResult>;
   assertionResults: Map<string, any>;
   nonceTracker: Map<string, bigint>;
+  specRegistry?: import("./spec/spec-registry").SpecRegistry;
 }
