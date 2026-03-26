@@ -189,10 +189,14 @@ impl BlockImporterCtx {
         const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
         // First v0.13.2 mainnet block: https://voyager.online/block/671813.
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
+        // First v0.13.2 integration-sepolia block.
+        const INTEGRATION_SEPOLIA_FIRST_V0_13_2: u64 = 35748;
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
             && ((self.backend.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2)
+                || (self.backend.chain_config().chain_id == ChainId::IntegrationSepolia
+                    && block_n < INTEGRATION_SEPOLIA_FIRST_V0_13_2))
         {
             // Skip integrity check.
             return Ok(());
