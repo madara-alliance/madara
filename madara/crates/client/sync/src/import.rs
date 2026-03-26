@@ -146,7 +146,11 @@ impl BlockImporter {
     }
 
     fn ctx(&self) -> BlockImporterCtx {
-        BlockImporterCtx { backend: self.db.clone(), config: self.config.clone(), casm_rpc_urls: self.casm_rpc_urls.clone() }
+        BlockImporterCtx {
+            backend: self.db.clone(),
+            config: self.config.clone(),
+            casm_rpc_urls: self.casm_rpc_urls.clone(),
+        }
     }
 }
 
@@ -160,16 +164,19 @@ pub struct BlockImporterCtx {
 /// This allows us to defer remote CASM fetching to a sequential phase,
 /// avoiding blocking rayon threads with HTTP requests.
 enum CompileResult {
-    /// Class needs remote CASM fetch - compilation failed locally
-    NeedsRemoteFetch {
-        class_hash: Felt,
-        sierra: SierraClassInfo,
-        uses_blake: bool,
-        gateway_hash: Felt,
-        compile_error: ClassCompilationError,
-    },
+    /// Class needs remote CASM fetch - compilation failed locally.
+    /// Boxed to reduce enum size (SierraClassInfo is large).
+    NeedsRemoteFetch(Box<NeedsRemoteFetch>),
     /// Fatal error that should stop processing
     Error(BlockImportError),
+}
+
+struct NeedsRemoteFetch {
+    class_hash: Felt,
+    sierra: SierraClassInfo,
+    uses_blake: bool,
+    gateway_hash: Felt,
+    compile_error: ClassCompilationError,
 }
 
 impl BlockImporterCtx {
@@ -345,8 +352,7 @@ impl BlockImporterCtx {
             .map(|class| self.try_compile_class(block_n, class, check_against))
             .collect();
 
-        let needs_fetch_count =
-            results.iter().filter(|r| matches!(r, Err(CompileResult::NeedsRemoteFetch { .. }))).count();
+        let needs_fetch_count = results.iter().filter(|r| matches!(r, Err(CompileResult::NeedsRemoteFetch(_)))).count();
 
         // Phase 2: Process results - for classes that need remote fetch, do it sequentially
         // to avoid blocking multiple rayon threads with HTTP requests
@@ -363,13 +369,8 @@ impl BlockImporterCtx {
         for result in results {
             match result {
                 Ok(converted) => classes.push(converted),
-                Err(CompileResult::NeedsRemoteFetch {
-                    class_hash,
-                    sierra,
-                    uses_blake,
-                    gateway_hash,
-                    compile_error,
-                }) => {
+                Err(CompileResult::NeedsRemoteFetch(fetch)) => {
+                    let NeedsRemoteFetch { class_hash, sierra, uses_blake, gateway_hash, compile_error } = *fetch;
                     fetch_index += 1;
                     tracing::warn!(
                         "[{}/{}] Local compilation failed for class {:#x}: {}. Fetching from remote RPC...",
@@ -468,10 +469,9 @@ impl BlockImporterCtx {
 
                 // Verify class hash
                 if !self.config.no_check && !self.config.trust_class_hashes {
-                    let expected = sierra
-                        .contract_class
-                        .compute_class_hash()
-                        .map_err(|error| CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error }))?;
+                    let expected = sierra.contract_class.compute_class_hash().map_err(|error| {
+                        CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error })
+                    })?;
                     if !self.config.no_check && class_hash != expected {
                         return Err(CompileResult::Error(BlockImportError::ClassHash { got: class_hash, expected }));
                     }
@@ -528,13 +528,13 @@ impl BlockImporterCtx {
                         } else {
                             // Compilation failed - signal that we need remote fetch
                             // Don't do HTTP here to avoid blocking rayon threads
-                            Err(CompileResult::NeedsRemoteFetch {
+                            Err(CompileResult::NeedsRemoteFetch(Box::new(NeedsRemoteFetch {
                                 class_hash,
                                 sierra,
                                 uses_blake,
                                 gateway_hash,
                                 compile_error,
-                            })
+                            })))
                         }
                     }
                 }
@@ -552,10 +552,9 @@ impl BlockImporterCtx {
 
                 // Verify class hash
                 if !self.config.trust_class_hashes {
-                    let mut expected = legacy
-                        .contract_class
-                        .compute_class_hash()
-                        .map_err(|e| CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error: e }))?;
+                    let mut expected = legacy.contract_class.compute_class_hash().map_err(|e| {
+                        CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error: e })
+                    })?;
 
                     if let Some(block_n) = block_n {
                         if self.backend.chain_config().chain_id == ChainId::Mainnet {

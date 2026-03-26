@@ -138,8 +138,7 @@ mod tests {
     #[test]
     #[ignore = "Requires network access"]
     fn test_fetch_compiled_casm() {
-        let class_hash =
-            Felt::from_hex_unchecked("0x78d552edf8d22e566b050c9158d7f770b55021c36a9f5a98170ff8fcabc9e10");
+        let class_hash = Felt::from_hex_unchecked("0x78d552edf8d22e566b050c9158d7f770b55021c36a9f5a98170ff8fcabc9e10");
         let endpoints = ["https://free-rpc.nethermind.io/mainnet-juno/"];
 
         let result = fetch_compiled_casm(&class_hash, &endpoints);
