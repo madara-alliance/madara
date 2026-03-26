@@ -63,7 +63,7 @@ struct ReorgTestArgs {
 #[fixture]
 fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_sepolia()));
-    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
+    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default(), vec![]));
 
     // Set up genesis and base chain (blocks 0-2)
     gateway_mock.mock_block_from_json(0, include_str!("../../../../resources/sepolia.block_0.json"));

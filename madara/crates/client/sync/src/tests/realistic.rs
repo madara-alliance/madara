@@ -36,7 +36,7 @@ impl TestContext {
 #[fixture]
 fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_sepolia()));
-    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
+    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default(), vec![]));
 
     gateway_mock.mock_block_from_json(0, include_str!("../../../../resources/sepolia.block_0.json"));
     gateway_mock.mock_class_from_json(
@@ -200,7 +200,7 @@ async fn test_should_import(ctx: TestContext) {
 #[fixture]
 fn ctx_mainnet(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_mainnet()));
-    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
+    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default(), vec![]));
 
     gateway_mock.mock_block_from_json(0, include_str!("../../../../resources/mainnet.block_0.json"));
     gateway_mock.mock_class_from_json(

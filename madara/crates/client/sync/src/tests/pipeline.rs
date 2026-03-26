@@ -33,6 +33,7 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let importer = Arc::new(BlockImporter::new(
         backend.clone(),
         BlockValidationConfig::default().all_verifications_disabled(true),
+        vec![],
     ));
 
     let (service_state_sender, service_state_recv) = crate::util::service_state_channel();

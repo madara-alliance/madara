@@ -40,6 +40,12 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
     pub gateway_url: Option<Url>,
 
+    /// Comma-separated list of RPC endpoint URLs used to fetch compiled CASM when local
+    /// Sierra compilation fails. This is a fallback mechanism that allows sync to continue
+    /// even when the local compiler cannot handle certain classes.
+    #[clap(env = "MADARA_CASM_RPC_URL", long, value_name = "URL")]
+    pub casm_rpc_url: Option<String>,
+
     /// The port used for nodes to make rpc calls during a warp update.
     #[arg(env = "MADARA_WARP_UPDATE_PORT_RPC", long, value_name = "WARP UPDATE PORT RPC", default_value_t = RPC_DEFAULT_PORT_ADMIN)]
     pub warp_update_port_rpc: u16,

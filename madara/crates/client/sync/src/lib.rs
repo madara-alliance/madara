@@ -70,7 +70,7 @@
 //!     .all_verifications_disabled(true)
 //!     .trust_class_hashes(true);
 //!
-//! let importer = BlockImporter::new(backend, strict_config);
+//! let importer = BlockImporter::new(backend, strict_config, vec![]);
 //! ```
 //!
 //! # Sync Controller Configuration

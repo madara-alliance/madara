@@ -70,12 +70,19 @@ impl Service for SyncService {
             return Ok(());
         }
         let this = self.start_args.take().expect("Service already started");
+        let casm_rpc_urls: Vec<String> = this
+            .params
+            .casm_rpc_url
+            .as_deref()
+            .map(|val| val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .unwrap_or_default();
+
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
-            // TODO(heemankv, 2025-10-26): all_verifications_disabled should be configured from the env
             BlockValidationConfig::default()
                 .trust_parent_hash(this.unsafe_starting_block_enabled)
                 .trust_state_root(this.unsafe_starting_block_enabled),
+            casm_rpc_urls,
         ));
 
         let config = SyncControllerConfig::default()
