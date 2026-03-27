@@ -13,13 +13,15 @@ interface MethodEntry {
 }
 
 export class SpecRegistry {
-  private ajv: Ajv;
   private methods: Map<string, MethodEntry> = new Map();
-  private validatorCache: Map<string, ValidateFunction | null> = new Map();
+  private validators: Map<string, ValidateFunction> = new Map();
 
-  constructor(ajv: Ajv, methods: Map<string, MethodEntry>) {
-    this.ajv = ajv;
+  constructor(
+    methods: Map<string, MethodEntry>,
+    validators: Map<string, ValidateFunction>,
+  ) {
     this.methods = methods;
+    this.validators = validators;
   }
 
   /**
@@ -31,19 +33,12 @@ export class SpecRegistry {
 
   /**
    * Validate an RPC result against the spec schema.
-   * Returns null if no validator exists, otherwise returns validation errors or empty array.
+   * Returns null if method has no result schema, otherwise returns
+   * validation errors or empty array.
    */
   validateResult(method: string, result: unknown): string[] | null {
-    const entry = this.methods.get(method);
-    if (!entry) return null;
-
-    let validator = this.validatorCache.get(method);
-    if (validator === undefined) {
-      validator = compileResultValidator(this.ajv, entry.def);
-      this.validatorCache.set(method, validator);
-    }
-
-    if (validator === null) return null;
+    const validator = this.validators.get(method);
+    if (!validator) return null;
 
     const valid = validator(result);
     if (valid) return [];
@@ -53,7 +48,19 @@ export class SpecRegistry {
     // Tolerate oneOf ambiguity (AJV reports multiple branches matching)
     if (errors.every((e: any) => e.keyword === "oneOf")) return [];
 
-    return errors.map(
+    // Filter out known spec quirks:
+    // - continuation_token: spec says string, Madara returns null when absent
+    const filtered = errors.filter(
+      (e: any) =>
+        !(
+          e.instancePath === "/continuation_token" &&
+          e.keyword === "type" &&
+          e.message === "must be string"
+        ),
+    );
+    if (filtered.length === 0) return [];
+
+    return filtered.map(
       (e: any) => `${e.instancePath || "$"}: ${e.message} (${e.keyword})`,
     );
   }
@@ -61,6 +68,8 @@ export class SpecRegistry {
 
 /**
  * Create a SpecRegistry by downloading, caching, and indexing the spec.
+ * All validators are compiled eagerly — if any method's schema fails to
+ * compile, this function throws immediately rather than silently skipping.
  */
 export async function createSpecRegistry(
   versionTag: string,
@@ -74,15 +83,21 @@ export async function createSpecRegistry(
   const ajv = createSpecAjv({ read, write, trace });
 
   const methods = new Map<string, MethodEntry>();
+  const validators = new Map<string, ValidateFunction>();
 
   const indexMethods = (doc: any, source: "read" | "write" | "trace") => {
     for (const method of doc.methods || []) {
-      // Attach the document-level components to each method for $ref resolution
       const def: OpenRpcMethodDef = {
         ...method,
         components: doc.components,
       };
       methods.set(method.name, { name: method.name, source, def });
+
+      // Eagerly compile validator — throws on failure
+      const validator = compileResultValidator(ajv, def);
+      if (validator) {
+        validators.set(method.name, validator);
+      }
     }
   };
 
@@ -90,5 +105,5 @@ export async function createSpecRegistry(
   indexMethods(write, "write");
   indexMethods(trace, "trace");
 
-  return new SpecRegistry(ajv, methods);
+  return new SpecRegistry(methods, validators);
 }

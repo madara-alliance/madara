@@ -9,7 +9,7 @@ CORE_CONTRACT="0x5fbdb2315678afecb367f032d93f642f64180aa3"
 # Start Anvil (L1 simulator) with 1-second block time
 if command -v anvil &> /dev/null; then
   echo "Starting Anvil on port $ANVIL_PORT..."
-  anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent &
+  anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent > /dev/null 2>&1 &
   ANVIL_PID=$!
   sleep 2
 

@@ -56,7 +56,7 @@ jobs:
       - name: Setup Anvil and deploy DummyContract
         run: |
           ANVIL_PORT=8545
-          anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent &
+          anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent > /dev/null 2>&1 &
           echo "ANVIL_PID=$!" >> $GITHUB_ENV
           echo "ANVIL_PORT=$ANVIL_PORT" >> $GITHUB_ENV
           sleep 2

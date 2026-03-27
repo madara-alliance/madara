@@ -14,8 +14,9 @@ interface OpenRpcDocument {
 }
 
 /**
- * Create an AJV instance with all spec documents registered as schemas
- * so that cross-file $ref references resolve correctly.
+ * Create an AJV instance with all spec document components registered
+ * so that both internal (#/components/...) and cross-document
+ * (./api/starknet_api_openrpc.json#/components/...) $ref pointers resolve.
  */
 export function createSpecAjv(docs: {
   read: OpenRpcDocument;
@@ -29,8 +30,11 @@ export function createSpecAjv(docs: {
   });
   addFormats(ajv);
 
-  // Register each document under multiple alias IDs for $ref resolution
-  const aliases: Record<string, string[]> = {
+  // Register each document's components under alias IDs that cross-document
+  // $refs use. For example, the trace spec references:
+  //   ./api/starknet_api_openrpc.json#/components/schemas/FELT
+  // So the read doc's components must be findable under that $id.
+  const docAliases: Record<string, string[]> = {
     read: [
       "starknet_api_openrpc.json",
       "./api/starknet_api_openrpc.json",
@@ -48,28 +52,15 @@ export function createSpecAjv(docs: {
     ],
   };
 
-  for (const [key, ids] of Object.entries(aliases)) {
+  for (const [key, aliases] of Object.entries(docAliases)) {
     const doc = docs[key as keyof typeof docs];
-    if (!doc) continue;
+    if (!doc?.components) continue;
 
-    // Build a schema document with the components from the spec
-    const schemaDoc: any = {
-      $id: ids[0],
-      components: doc.components || {},
-    };
-
-    try {
-      ajv.addSchema(schemaDoc);
-    } catch {
-      // Schema might already be added
-    }
-
-    // Register additional aliases
-    for (let i = 1; i < ids.length; i++) {
+    for (const alias of aliases) {
       try {
-        ajv.addSchema({ ...schemaDoc, $id: ids[i] });
+        ajv.addSchema({ $id: alias, components: doc.components });
       } catch {
-        // Ignore duplicates
+        // Already registered
       }
     }
   }
@@ -79,6 +70,11 @@ export function createSpecAjv(docs: {
 
 /**
  * Compile a validator for a method's result schema.
+ *
+ * The result schema may contain:
+ * - Internal $refs: "#/components/schemas/CHAIN_ID" (resolved via components at root)
+ * - Cross-doc $refs: "./api/starknet_api_openrpc.json#/components/schemas/FELT"
+ *   (resolved via alias schemas registered in createSpecAjv)
  */
 export function compileResultValidator(
   ajv: Ajv,
@@ -87,12 +83,11 @@ export function compileResultValidator(
   const resultSchema = method.result?.schema;
   if (!resultSchema) return null;
 
-  try {
-    return ajv.compile(resultSchema);
-  } catch (err) {
-    console.warn(
-      `[schema-compiler] Failed to compile result validator for ${method.name}: ${err}`,
-    );
-    return null;
-  }
+  // Include components at root so internal #/components/schemas/... refs resolve
+  const wrappedSchema: any = {
+    ...resultSchema,
+    components: method.components || {},
+  };
+
+  return ajv.compile(wrappedSchema);
 }
