@@ -197,8 +197,9 @@ describe("Starknet RPC v0.10.0", () => {
         Deployer,
         RpcProvider: StarkRpcProvider,
       } = await import("starknet");
-      const { loadContractSierra, loadContractCasm } =
-        await import("../src/contract-loader");
+      const { loadContractSierra, loadContractCasm } = await import(
+        "../src/contract-loader"
+      );
       const { DEFAULT_ACCOUNT_ADDRESS, DEFAULT_PRIVATE_KEY, UDC_ADDRESS } =
         await import("../src/config");
 
