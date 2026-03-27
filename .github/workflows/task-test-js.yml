@@ -41,6 +41,9 @@ jobs:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
 
+      - name: Install Foundry (Anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Install dependencies
         run: |
           if ! command -v nc 2>&1 >/dev/null; then
@@ -50,7 +53,23 @@ jobs:
           cd tests/js_tests
           npm install
 
-      - name: Setup dev chain and run tests
+      - name: Setup Anvil and deploy DummyContract
+        run: |
+          ANVIL_PORT=8545
+          anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent &
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+          echo "ANVIL_PORT=$ANVIL_PORT" >> $GITHUB_ENV
+          sleep 2
+
+          BYTECODE=$(cat tests/js_tests/fixtures/DummyContract.bytecode)
+          curl -s "http://127.0.0.1:$ANVIL_PORT" -X POST -H "Content-Type: application/json" \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_sendTransaction\",\"params\":[{\"from\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"data\":\"$BYTECODE\",\"gas\":\"0x1000000\"}]}" > /dev/null
+          sleep 3
+
+          CORE_CONTRACT="0x5fbdb2315678afecb367f032d93f642f64180aa3"
+          echo "CORE_CONTRACT=$CORE_CONTRACT" >> $GITHUB_ENV
+
+      - name: Setup Madara with L1 sync and run tests
         run: |
           ./target/release/madara \
             --name madara \
@@ -64,14 +83,16 @@ jobs:
             --l1-gas-price 0 \
             --blob-gas-price 0 \
             --strk-per-eth 1 \
-            --no-l1-sync \
+            --l1-endpoint "http://127.0.0.1:${{ env.ANVIL_PORT }}" \
+            --unsafe-skip-l1-message-consumed-check \
             --rpc-pre-v0-9-preconfirmed-as-pending \
-            --chain-config-override block_time=1h &
+            --chain-config-override "block_time=1h,eth_core_contract_address=${{ env.CORE_CONTRACT }}" &
 
           MADARA_PID=$!
 
           while ! echo exit | nc localhost 9944; do sleep 1; done
           cd tests/js_tests
-          npm test
+          ANVIL_PORT=${{ env.ANVIL_PORT }} CORE_CONTRACT=${{ env.CORE_CONTRACT }} npm test
 
           kill $MADARA_PID
+          kill ${{ env.ANVIL_PID }} 2>/dev/null || true

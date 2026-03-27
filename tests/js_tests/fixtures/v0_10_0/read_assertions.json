@@ -25,15 +25,15 @@
       "id": "block_number",
       "method": "starknet_blockNumber",
       "params": [],
-      "expected": "$ref:empty_block.block_number"
+      "expected": "$gt:0"
     },
     {
       "id": "block_hash_and_number",
       "method": "starknet_blockHashAndNumber",
       "params": [],
       "expected": {
-        "block_hash": "$ref:empty_block.block_hash",
-        "block_number": "$ref:empty_block.block_number"
+        "block_hash": "$any",
+        "block_number": "$gt:0"
       }
     },
     {
@@ -701,10 +701,12 @@
     {
       "id": "get_messages_status",
       "method": "starknet_getMessagesStatus",
-      "params": {},
-      "expected": {},
-      "description": "Tested as error case in error_assertions.json (unknown L1 hash returns TXN_HASH_NOT_FOUND).",
-      "skip": true
+      "params": {
+        "transaction_hash": "$ref:l1_messaging_event.transaction_hash"
+      },
+      "expected": "$length_gte:1",
+      "description": "Returns consumed L1->L2 message status. Requires ANVIL_PORT env var for L1 messaging setup.",
+      "requires_anvil": true
     },
     {
       "id": "add_invoke_transaction",

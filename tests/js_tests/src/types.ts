@@ -85,6 +85,7 @@ export interface Assertion {
   description?: string;
   construct?: ConstructHint;
   skip?: boolean;
+  requires_anvil?: boolean;
 }
 
 export interface ConstructHint {

@@ -4,6 +4,7 @@ import { getRpcUrl, getAdminUrl } from "../src/config";
 import { executeStateSetup } from "../src/state-executor";
 import { runAssertion, matchValue } from "../src/assertion-runner";
 import { RpcCaller } from "../src/rpc-caller";
+import { AdminClient } from "../src/admin-client";
 import {
   StateSetup,
   ReadAssertions,
@@ -36,6 +37,10 @@ const ctx: TestContext = {
   nonceTracker: new Map(),
 };
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 describe("Starknet RPC v0.10.0", () => {
   // ---- Phase 0: Spec Registry ----
   describe("Spec Registry", () => {
@@ -58,11 +63,103 @@ describe("Starknet RPC v0.10.0", () => {
     });
   });
 
+  // ---- Phase 1.5: L1 Messaging Setup (Anvil) ----
+  describe("L1 Messaging Setup", () => {
+    it("should fire LogMessageToL2 on Anvil, sync, and consume the message", async () => {
+      const anvilPort = process.env.ANVIL_PORT;
+      if (!anvilPort) {
+        console.log(
+          "[l1-messaging] ANVIL_PORT not set, skipping L1 messaging setup",
+        );
+        return;
+      }
+
+      const anvilUrl = `http://127.0.0.1:${anvilPort}`;
+      const coreContract =
+        process.env.CORE_CONTRACT ||
+        "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+      const {
+        createPublicClient,
+        createWalletClient,
+        http,
+        parseAbi,
+        encodeFunctionData,
+      } = await import("viem");
+      const { foundry } = await import("viem/chains");
+
+      const abi = parseAbi([
+        "function fireEvent() public",
+        "function setIsCanceled(bool value) public",
+      ]);
+
+      const walletClient = createWalletClient({
+        chain: { ...foundry, id: 1337 },
+        transport: http(anvilUrl),
+        account: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`,
+      });
+
+      const publicClient = createPublicClient({
+        chain: { ...foundry, id: 1337 },
+        transport: http(anvilUrl),
+      });
+
+      // Set canceled to false
+      const setCanceledHash = await walletClient.sendTransaction({
+        to: coreContract as `0x${string}`,
+        data: encodeFunctionData({
+          abi,
+          functionName: "setIsCanceled",
+          args: [false],
+        }),
+      });
+      await publicClient.waitForTransactionReceipt({ hash: setCanceledHash });
+
+      // Fire the LogMessageToL2 event
+      const fireHash = await walletClient.sendTransaction({
+        to: coreContract as `0x${string}`,
+        data: encodeFunctionData({
+          abi,
+          functionName: "fireEvent",
+        }),
+      });
+      const fireReceipt = await publicClient.waitForTransactionReceipt({
+        hash: fireHash,
+      });
+      console.log(
+        `[l1-messaging] LogMessageToL2 fired in L1 tx ${fireReceipt.transactionHash} at block ${fireReceipt.blockNumber}`,
+      );
+
+      expect(fireReceipt.status).toBe("success");
+
+      // Store the L1 tx hash in context for the read assertion
+      ctx.results.set("l1_messaging_event", {
+        transaction_hash: fireReceipt.transactionHash,
+      });
+
+      // Wait for L1 finality (10 blocks at 1s each) + sync polling
+      console.log(
+        "[l1-messaging] Waiting for L1 finality + Madara sync (20s)...",
+      );
+      await sleep(20000);
+
+      // Close block to trigger block producer to consume the pending L1 message
+      const admin = new AdminClient(adminUrl);
+      await admin.closeBlock();
+      await sleep(3000);
+      console.log("[l1-messaging] Block closed, message should be consumed");
+    });
+  });
+
   // ---- Phase 2: Read Assertions ----
   describe("Read Assertions", () => {
     for (const assertion of readAssertions.assertions) {
       if (assertion.skip) {
         it.skip(`${assertion.id} (${assertion.method})`, () => {});
+        continue;
+      }
+      if (assertion.requires_anvil && !process.env.ANVIL_PORT) {
+        it.skip(`${assertion.id} (${assertion.method}) [requires Anvil]`, () => {});
         continue;
       }
 
@@ -95,8 +192,6 @@ describe("Starknet RPC v0.10.0", () => {
     }
 
     it("re-declaring already-declared class returns CLASS_ALREADY_DECLARED (code 51)", async () => {
-      // starknet.js calls estimateFee before submitting, which returns error 41 instead of 51.
-      // So we test this via the starknet.js error chain which surfaces the estimate error.
       const {
         Account,
         Deployer,
@@ -123,8 +218,6 @@ describe("Starknet RPC v0.10.0", () => {
         await account.declare({ contract: sierra, casm });
         fail("Expected error when re-declaring already-declared class");
       } catch (err: any) {
-        // starknet.js calls estimateFee first which returns execution error (41)
-        // containing "already declared" in the message. Either error code is acceptable.
         const code = err.baseError?.code ?? err.code;
         const data = JSON.stringify(
           err.baseError?.data ?? err.data ?? err.message ?? "",
@@ -144,7 +237,6 @@ describe("Starknet RPC v0.10.0", () => {
       const result = await rpcCaller.call("rpc_methods", []);
       const exposedMethods: string[] = (result.methods || [])
         .map((m: string) => {
-          // rpc_methods may return versioned paths like "starknet/v0_10_0/starknet_chainId"
           const segments = m.split("/");
           return segments[segments.length - 1];
         })
@@ -164,19 +256,16 @@ describe("Starknet RPC v0.10.0", () => {
           `[method-surface] Methods in spec but not exposed: ${missing.join(", ")}`,
         );
       }
-      // Allow getMessagesStatus to be missing (known Madara gap)
-      const criticalMissing = missing.filter(
-        (m) => m !== "starknet_getMessagesStatus",
-      );
-      expect(criticalMissing).toEqual([]);
+      expect(missing).toEqual([]);
     });
 
     it("test suite covers all spec methods", () => {
       if (!ctx.specRegistry) return;
 
-      const testedMethods = new Set(
-        readAssertions.assertions.map((a) => a.method),
-      );
+      const testedMethods = new Set([
+        ...readAssertions.assertions.map((a) => a.method),
+        ...errorAssertions.assertions.map((a) => a.method),
+      ]);
       const specMethods = ctx.specRegistry.getMethodNames();
       const untested: string[] = [];
 
@@ -191,7 +280,6 @@ describe("Starknet RPC v0.10.0", () => {
           `[coverage] Spec methods without test assertions: ${untested.join(", ")}`,
         );
       }
-      // All methods should have at least one assertion (skipped counts)
       expect(untested.length).toBe(0);
     });
   });
