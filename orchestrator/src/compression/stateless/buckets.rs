@@ -29,10 +29,8 @@ macro_rules! impl_bucket_element_trait {
                 let bit_length = BitLength::$bit_length_enum;
                 elms.chunks(bit_length.n_elems_in_felt())
                     .map(|chunk| {
-                        felt_from_bits_le_bytes_be(
-                            &(chunk.iter().flat_map(|elem| elem.0.as_ref()).copied().collect::<Vec<_>>()),
-                        )
-                        .map_err(|e| {
+                        let bits = chunk.iter().flat_map(|elem| elem.0.iter().copied()).collect::<Vec<_>>();
+                        felt_from_bits_le_bytes_be(&bits).map_err(|e| {
                             eyre!(
                                 "Chunks of size {}, each of bit length {}, fit in felts, {}",
                                 bit_length.n_elems_in_felt(),

@@ -1,10 +1,9 @@
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::types::ContinuationToken;
+use crate::types::{continuation_token_from_page, ContinuationToken};
 use crate::Starknet;
 use anyhow::Context;
 use mc_db::EventFilter;
-use mp_block::EventWithInfo;
 use mp_rpc::v0_10_2::{EventFilterWithPageRequest, EventsChunk};
 
 /// Returns events matching the filter with pagination support.
@@ -37,7 +36,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         None => view.latest_block_n().unwrap_or(0),
     };
 
-    let continuation_token = match filter.continuation_token {
+    let requested_continuation_token = match filter.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?,
         None => ContinuationToken { block_number: from_block_n, event_n: 0 },
     };
@@ -46,18 +45,21 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         return Ok(EventsChunk { events: vec![], continuation_token: None });
     }
 
-    let from_block = continuation_token.block_number;
-    let from_event_n = continuation_token.event_n as usize;
+    let from_block = requested_continuation_token.block_number;
+    let from_event_n = requested_continuation_token.event_n as usize;
 
-    let db_from_address = address_filter.as_ref().and_then(|filter| match filter {
-        mp_rpc::v0_10_2::AddressFilter::Single(address) => Some(*address),
-        mp_rpc::v0_10_2::AddressFilter::Multiple(_) => None,
+    let normalized_address_filter = address_filter.as_ref().and_then(|filter| filter.to_set());
+    let db_from_address = normalized_address_filter.as_ref().and_then(|addresses| {
+        if addresses.len() == 1 {
+            addresses.iter().next().copied()
+        } else {
+            None
+        }
     });
 
     let mut scan_block = from_block;
     let mut scan_event_n = from_event_n;
     let mut events_infos = Vec::with_capacity(chunk_size + 1);
-    let mut overflow = None;
 
     while events_infos.len() <= chunk_size {
         let batch = view
@@ -82,33 +84,29 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         }
 
         for event_info in batch {
-            let matches_address =
-                address_filter.as_ref().map(|filter| filter.matches(&event_info.event.from_address)).unwrap_or(true);
+            let matches_address = normalized_address_filter
+                .as_ref()
+                .map(|addresses| addresses.contains(&event_info.event.from_address))
+                .unwrap_or(true);
 
             if !matches_address {
                 continue;
             }
 
-            if events_infos.len() == chunk_size {
-                overflow = Some(event_info);
+            events_infos.push(event_info);
+            if events_infos.len() > chunk_size {
                 break;
             }
-
-            events_infos.push(event_info);
         }
 
-        if overflow.is_some() {
+        if events_infos.len() > chunk_size {
             break;
         }
     }
 
-    let mut continuation_token = None;
-    if let Some(EventWithInfo { block_number, event_index_in_block, .. }) = overflow {
-        continuation_token = Some(ContinuationToken { block_number, event_n: (event_index_in_block + 1) });
-    } else if events_infos.len() > chunk_size {
-        continuation_token = events_infos.pop().map(|EventWithInfo { block_number, event_index_in_block, .. }| {
-            ContinuationToken { block_number, event_n: (event_index_in_block + 1) }
-        });
+    let continuation_token = continuation_token_from_page(&events_infos, chunk_size, &requested_continuation_token);
+    if continuation_token.is_some() {
+        events_infos.truncate(chunk_size);
     }
 
     Ok(EventsChunk {

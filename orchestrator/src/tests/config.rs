@@ -24,7 +24,6 @@ use crate::types::Layer;
 use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
-use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 
@@ -747,15 +746,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .expect("Couldn't get versioned constants path")
         .map(PathBuf::from);
 
-    let versioned_constants = versioned_constants_path
-        .as_ref()
-        .map(|path| VersionedConstants::from_path(path).expect("Invalid versioned constant file"));
-
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
-        versioned_constants,
+        versioned_constants_path,
     };
 
     let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();

@@ -1,12 +1,12 @@
 use crate::cli::snos::SNOSCliArgs;
-use blockifier::blockifier_versioned_constants::VersionedConstants;
+use std::path::PathBuf;
 use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct SNOSParams {
     pub rpc_for_snos: Url,
     pub snos_full_output: bool,
-    pub versioned_constants: Option<VersionedConstants>,
+    pub versioned_constants_path: Option<PathBuf>,
 }
 
 impl From<SNOSCliArgs> for SNOSParams {
@@ -14,7 +14,7 @@ impl From<SNOSCliArgs> for SNOSParams {
         Self {
             rpc_for_snos: args.rpc_for_snos,
             snos_full_output: args.snos_full_output,
-            versioned_constants: args.versioned_constants,
+            versioned_constants_path: args.versioned_constants_path,
         }
     }
 }

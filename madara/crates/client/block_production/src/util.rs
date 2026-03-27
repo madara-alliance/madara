@@ -158,9 +158,18 @@ impl BlockExecutionContext {
     }
 
     pub fn to_blockifier(&self) -> Result<starknet_api::block::BlockInfo, StarknetApiError> {
+        let starknet_version = starknet_api::block::StarknetVersion::try_from(
+            self.protocol_version
+                .to_string()
+                .split('.')
+                .map(|part| part.parse::<u8>().expect("invalid internal Starknet version component"))
+                .collect::<Vec<_>>(),
+        )?;
+
         Ok(starknet_api::block::BlockInfo {
             block_number: starknet_api::block::BlockNumber(self.block_number),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
+            starknet_version,
             sequencer_address: self.sequencer_address.try_into()?,
             gas_prices: (&self.gas_prices).into(),
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,

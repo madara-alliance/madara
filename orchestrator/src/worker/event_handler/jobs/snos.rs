@@ -22,11 +22,11 @@ use generate_pie::generate_pie;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
+use generate_pie::utils::load_versioned_constants;
 use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
-use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 use url::Url;
 
@@ -55,14 +55,7 @@ pub trait ChainDetailsExt {
 
 impl ChainDetailsExt for ChainDetails {
     fn to_chain_config(&self) -> ChainConfig {
-        ChainConfig {
-            chain_id: ChainId::Other(self.chain_id.clone()),
-            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.strk_fee_token_address))
-                .expect("Invalid STRK fee token address"),
-            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.eth_fee_token_address))
-                .expect("Invalid ETH fee token address"),
-            is_l3: self.is_l3,
-        }
+        ChainConfig::new(&self.chain_id, &self.strk_fee_token_address, &self.eth_fee_token_address, self.is_l3)
     }
 }
 
@@ -109,8 +102,12 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
-        // Use pre-loaded versioned constants from config (loaded at startup)
-        let versioned_constants = config.snos_config().versioned_constants.clone();
+        let versioned_constants_path =
+            config.snos_config().versioned_constants_path.as_ref().map(|path| path.to_string_lossy().into_owned());
+        let versioned_constants = load_versioned_constants(versioned_constants_path.as_deref()).map_err(|e| {
+            error!(error = %e, "Failed to load versioned constants for SNOS");
+            SnosError::SnosExecutionError { internal_id, message: e }
+        })?;
 
         // Get DA public keys (already parsed as Felt values in config)
         let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();

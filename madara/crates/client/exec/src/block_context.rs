@@ -17,6 +17,18 @@ use starknet_api::{
 };
 use std::sync::Arc;
 
+fn to_blockifier_starknet_version(version: &StarknetVersion) -> Result<starknet_api::block::StarknetVersion, Error> {
+    let parsed = version
+        .to_string()
+        .split('.')
+        .map(str::parse::<u8>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| Error::Internal(anyhow::anyhow!("invalid Starknet version {version}: {e}")))?;
+
+    starknet_api::block::StarknetVersion::try_from(parsed)
+        .map_err(|e| Error::Internal(anyhow::anyhow!("unsupported Starknet version {version}: {e}")))
+}
+
 fn block_context(
     chain_config: &ChainConfig,
     block_info: MadaraMaybePreconfirmedBlockInfo,
@@ -25,6 +37,7 @@ fn block_context(
         BlockInfo {
             block_number: BlockNumber(block_info.block_number()),
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
+            starknet_version: to_blockifier_starknet_version(block_info.protocol_version())?,
             sequencer_address: ContractAddress::try_from(*block_info.sequencer_address())
                 .map_err(|_| Error::InvalidSequencerAddress(*block_info.sequencer_address()))?,
             gas_prices: block_info.gas_prices().into(),

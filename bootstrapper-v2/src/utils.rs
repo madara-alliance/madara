@@ -45,7 +45,7 @@ pub fn save_addresses_to_file(addresses_json: String, file_path: &str) -> Result
             .map_err(|e| FileError::FailedCreatingParentDirectory(file_path.to_string(), e))?;
     }
 
-    std::fs::write(file_path, &addresses_json).map_err(|e| FileError::FailedToWriteFile(e))?;
+    std::fs::write(file_path, &addresses_json).map_err(FileError::FailedToWriteFile)?;
 
     Ok(())
 }
@@ -107,9 +107,7 @@ pub async fn wait_for_transaction(
 
     match exec_result {
         ExecutionResult::Succeeded => Ok(()),
-        ExecutionResult::Reverted { reason } => {
-            return Err(MadaraError::FailedToWaitForTransaction(reason, tag.to_string()));
-        }
+        ExecutionResult::Reverted { reason } => Err(MadaraError::FailedToWaitForTransaction(reason, tag.to_string())),
     }
 }
 

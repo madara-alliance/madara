@@ -127,29 +127,29 @@ testcontainers = "0.18.0"
 build-version = { path = "../build-artifacts" }
 
 # Starknet dependencies
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.17.0-rc.0" }
-starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.1.0" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.17.0-rc.0" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.15.0-rc.0" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.2.6-rc.0" }
-starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.0-rc.2" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.0-rc.2" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.19.0-rc.2" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
+starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
   "serde",
 ] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = [
   "node_api",
   "cairo_native",
   "reexecution",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0" }
-cairo-lang-starknet-classes = "2.12.3"
-cairo-lang-utils = "2.12.3"
-cairo-vm = "2.5.0"
-cairo-native = "0.7.3"
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4" }
+cairo-lang-starknet-classes = "=2.16.0"
+cairo-lang-utils = "=2.16.0"
+cairo-vm = "=3.2.0"
+cairo-native = "0.9.0-rc.2"
 
 alloy = { version = "0.8.3", features = [
   "node-bindings",

@@ -8,7 +8,7 @@ mod test_rpc_read_calls {
     use rstest::rstest;
     use starknet_core::types::Felt;
     use starknet_core::types::{
-        BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
+        AddressFilter, BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
         BroadcastedDeployAccountTransactionV3, BroadcastedTransaction, ContractClass, ContractStorageDiffItem,
         DataAvailabilityMode, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent,
         EthAddress, EventFilter, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate, FeePayment,
@@ -412,66 +412,85 @@ mod test_rpc_read_calls {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
         let block = json_client
-            .get_block_with_receipts(BlockId::Number(2))
+            .get_block_with_receipts(BlockId::Number(2), None)
             .await
             .expect("Failed to get block with receipts for block number 2");
 
-        let expected_block = MaybePreConfirmedBlockWithReceipts::Block(BlockWithReceipts {
-            status: BlockStatus::AcceptedOnL2,
-            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
-            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
-            block_number: 2,
-            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
-            timestamp: 1700475581,
-            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
-                .unwrap(),
-            l1_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x0").unwrap(),
-                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
-            },
-            l1_data_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l2_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-            starknet_version: "0.12.3".to_string(),
-            transactions: vec![TransactionWithReceipt {
-                transaction: Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
-                    transaction_hash: Felt::from_hex(
-                        "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+        let expected_block = match &block {
+            MaybePreConfirmedBlockWithReceipts::Block(actual_block) => {
+                MaybePreConfirmedBlockWithReceipts::Block(BlockWithReceipts {
+                    status: BlockStatus::AcceptedOnL2,
+                    block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d")
+                        .unwrap(),
+                    parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6")
+                        .unwrap(),
+                    block_number: 2,
+                    new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0")
+                        .unwrap(),
+                    timestamp: 1700475581,
+                    sequencer_address: Felt::from_hex(
+                        "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
                     )
                     .unwrap(),
-                    sender_address: Felt::from_hex("0x1").unwrap(),
-                    max_fee: Felt::from_hex("0x0").unwrap(),
-                    signature: vec![],
-                    class_hash: Felt::from_hex("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")
-                        .unwrap(),
-                }))
-                .into(),
-                receipt: {
-                    TransactionReceipt::Declare(DeclareTransactionReceipt {
-                        transaction_hash: Felt::from_hex(
-                            "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
-                        )
-                        .unwrap(),
-                        actual_fee: FeePayment { amount: Felt::from_hex("0x0").unwrap(), unit: PriceUnit::Wei },
-                        finality_status: TransactionFinalityStatus::AcceptedOnL2,
-                        messages_sent: vec![],
-                        events: vec![],
-                        execution_resources: ExecutionResources {
-                            l1_gas: Default::default(),
-                            l1_data_gas: Default::default(),
-                            l2_gas: Default::default(),
+                    l1_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x0").unwrap(),
+                        price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+                    },
+                    l1_data_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x1").unwrap(),
+                        price_in_wei: Felt::from_hex("0x1").unwrap(),
+                    },
+                    l2_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x1").unwrap(),
+                        price_in_wei: Felt::from_hex("0x1").unwrap(),
+                    },
+                    l1_da_mode: L1DataAvailabilityMode::Calldata,
+                    starknet_version: "0.12.3".to_string(),
+                    event_commitment: actual_block.event_commitment,
+                    transaction_commitment: actual_block.transaction_commitment,
+                    receipt_commitment: actual_block.receipt_commitment,
+                    state_diff_commitment: actual_block.state_diff_commitment,
+                    event_count: actual_block.event_count,
+                    transaction_count: actual_block.transaction_count,
+                    state_diff_length: actual_block.state_diff_length,
+                    transactions: vec![TransactionWithReceipt {
+                        transaction: Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
+                            transaction_hash: Felt::from_hex(
+                                "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                            )
+                            .unwrap(),
+                            sender_address: Felt::from_hex("0x1").unwrap(),
+                            max_fee: Felt::from_hex("0x0").unwrap(),
+                            signature: vec![],
+                            class_hash: Felt::from_hex(
+                                "0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1",
+                            )
+                            .unwrap(),
+                        }))
+                        .into(),
+                        receipt: {
+                            TransactionReceipt::Declare(DeclareTransactionReceipt {
+                                transaction_hash: Felt::from_hex(
+                                    "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                                )
+                                .unwrap(),
+                                actual_fee: FeePayment { amount: Felt::from_hex("0x0").unwrap(), unit: PriceUnit::Wei },
+                                finality_status: TransactionFinalityStatus::AcceptedOnL2,
+                                messages_sent: vec![],
+                                events: vec![],
+                                execution_resources: ExecutionResources {
+                                    l1_gas: Default::default(),
+                                    l1_data_gas: Default::default(),
+                                    l2_gas: Default::default(),
+                                },
+                                execution_result: ExecutionResult::Succeeded,
+                            })
                         },
-                        execution_result: ExecutionResult::Succeeded,
-                    })
-                },
-            }],
-        });
+                    }],
+                })
+            }
+            _ => unreachable!("Block 2 should not be pending"),
+        };
         assert_eq!(block, expected_block);
     }
 
@@ -500,33 +519,51 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let block = { json_client.get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap() };
 
-        let expected_block = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
-            status: BlockStatus::AcceptedOnL2,
-            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
-            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
-            block_number: 2,
-            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
-            timestamp: 1700475581,
-            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
-                .unwrap(),
-            l1_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x0").unwrap(),
-                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
-            },
-            l1_data_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l2_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-            starknet_version: "0.12.3".to_string(),
-            transactions: vec![
-                Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772").unwrap()
-            ],
-        });
+        let expected_block = match &block {
+            MaybePreConfirmedBlockWithTxHashes::Block(actual_block) => {
+                MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
+                    status: BlockStatus::AcceptedOnL2,
+                    block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d")
+                        .unwrap(),
+                    parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6")
+                        .unwrap(),
+                    block_number: 2,
+                    new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0")
+                        .unwrap(),
+                    timestamp: 1700475581,
+                    sequencer_address: Felt::from_hex(
+                        "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                    )
+                    .unwrap(),
+                    l1_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x0").unwrap(),
+                        price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+                    },
+                    l1_data_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x1").unwrap(),
+                        price_in_wei: Felt::from_hex("0x1").unwrap(),
+                    },
+                    l2_gas_price: ResourcePrice {
+                        price_in_fri: Felt::from_hex("0x1").unwrap(),
+                        price_in_wei: Felt::from_hex("0x1").unwrap(),
+                    },
+                    l1_da_mode: L1DataAvailabilityMode::Calldata,
+                    starknet_version: "0.12.3".to_string(),
+                    event_commitment: actual_block.event_commitment,
+                    transaction_commitment: actual_block.transaction_commitment,
+                    receipt_commitment: actual_block.receipt_commitment,
+                    state_diff_commitment: actual_block.state_diff_commitment,
+                    event_count: actual_block.event_count,
+                    transaction_count: actual_block.transaction_count,
+                    state_diff_length: actual_block.state_diff_length,
+                    transactions: vec![Felt::from_hex(
+                        "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                    )
+                    .unwrap()],
+                })
+            }
+            _ => unreachable!("Block 2 should not be pending"),
+        };
         assert_eq!(block, expected_block);
     }
 
@@ -553,41 +590,55 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
-        let block = json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap();
+        let block = json_client.get_block_with_txs(BlockId::Number(2), None).await.unwrap();
 
-        let expected_block = MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
-            status: BlockStatus::AcceptedOnL2,
-            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
-            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
-            block_number: 2,
-            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
-            timestamp: 1700475581,
-            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
-                .unwrap(),
-            l1_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x0").unwrap(),
-                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
-            },
-            l1_data_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l2_gas_price: ResourcePrice {
-                price_in_fri: Felt::from_hex("0x1").unwrap(),
-                price_in_wei: Felt::from_hex("0x1").unwrap(),
-            },
-            l1_da_mode: L1DataAvailabilityMode::Calldata,
-            starknet_version: "0.12.3".to_string(),
-            transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
-                transaction_hash: Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")
+        let expected_block = match &block {
+            MaybePreConfirmedBlockWithTxs::Block(actual_block) => MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
+                status: BlockStatus::AcceptedOnL2,
+                block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d")
                     .unwrap(),
-                sender_address: Felt::from_hex("0x1").unwrap(),
-                max_fee: Felt::from_hex("0x0").unwrap(),
-                signature: vec![],
-                class_hash: Felt::from_hex("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")
+                parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6")
                     .unwrap(),
-            }))],
-        });
+                block_number: 2,
+                new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
+                timestamp: 1700475581,
+                sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
+                    .unwrap(),
+                l1_gas_price: ResourcePrice {
+                    price_in_fri: Felt::from_hex("0x0").unwrap(),
+                    price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+                },
+                l1_data_gas_price: ResourcePrice {
+                    price_in_fri: Felt::from_hex("0x1").unwrap(),
+                    price_in_wei: Felt::from_hex("0x1").unwrap(),
+                },
+                l2_gas_price: ResourcePrice {
+                    price_in_fri: Felt::from_hex("0x1").unwrap(),
+                    price_in_wei: Felt::from_hex("0x1").unwrap(),
+                },
+                l1_da_mode: L1DataAvailabilityMode::Calldata,
+                starknet_version: "0.12.3".to_string(),
+                event_commitment: actual_block.event_commitment,
+                transaction_commitment: actual_block.transaction_commitment,
+                receipt_commitment: actual_block.receipt_commitment,
+                state_diff_commitment: actual_block.state_diff_commitment,
+                event_count: actual_block.event_count,
+                transaction_count: actual_block.transaction_count,
+                state_diff_length: actual_block.state_diff_length,
+                transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
+                    transaction_hash: Felt::from_hex(
+                        "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                    )
+                    .unwrap(),
+                    sender_address: Felt::from_hex("0x1").unwrap(),
+                    max_fee: Felt::from_hex("0x0").unwrap(),
+                    signature: vec![],
+                    class_hash: Felt::from_hex("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")
+                        .unwrap(),
+                }))],
+            }),
+            _ => unreachable!("Block 2 should not be pending"),
+        };
         assert_eq!(block, expected_block);
     }
 
@@ -692,7 +743,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
-        let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap() };
+        let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1, None).await.unwrap() };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
             transaction_hash: Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a")
                 .unwrap(),
@@ -738,6 +789,7 @@ mod test_rpc_read_calls {
             json_client
                 .get_transaction_by_hash(
                     Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a").unwrap(),
+                    None,
                 )
                 .await
                 .unwrap()
@@ -889,13 +941,14 @@ mod test_rpc_read_calls {
                     Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
                     Felt::from_hex("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1").unwrap(),
                     BlockId::Number(12),
+                    None,
                 )
                 .await
                 .unwrap()
         };
         let expected_storage_response = Felt::from_hex("0x4574686572").unwrap();
 
-        assert_eq!(storage_response, expected_storage_response);
+        assert_eq!(storage_response.value(), expected_storage_response);
     }
 
     /// Retrieves the state update for a specific block.
@@ -1027,10 +1080,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(
+                        address: Some(AddressFilter::Single(
                             Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
                                 .unwrap(),
-                        ),
+                        )),
                         keys: Some(vec![vec![]]),
                     },
                     None,
@@ -1131,10 +1184,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(
+                        address: Some(AddressFilter::Single(
                             Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
                                 .unwrap(),
-                        ),
+                        )),
                         keys: Some(vec![vec![]]),
                     },
                     Some("0-2".to_string()),

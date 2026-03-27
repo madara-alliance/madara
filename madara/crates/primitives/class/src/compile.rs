@@ -219,12 +219,12 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra.extract_sierra_program().map_err(|e| {
+        let extracted_program = sierra.extract_sierra_program(false).map_err(|e| {
             ClassCompilationError::ExtractSierraProgramFailed(format!("Failed to extract Sierra program: {}", e))
         })?;
 
         let executor = AotContractExecutor::new_into(
-            &program,
+            &extracted_program.program,
             &sierra.entry_points_by_type,
             sierra_version,
             path,
@@ -467,9 +467,13 @@ mod v2 {
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
+        let extracted_program = sierra_class
+            .extract_sierra_program(false)
+            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
 
         let casm_class = CasmContractClass::from_contract_class(
             sierra_class,
+            extracted_program,
             /* add_pythonic_hints */ true,
             /* max_bytecode_size */ usize::MAX,
         )

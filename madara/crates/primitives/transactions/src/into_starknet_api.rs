@@ -415,6 +415,7 @@ impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransacti
             account_deployment_data: starknet_api::transaction::fields::AccountDeploymentData(
                 tx.account_deployment_data,
             ),
+            proof_facts: starknet_api::transaction::fields::ProofFacts(Arc::new(tx.proof_facts.unwrap_or_default())),
         })
     }
 }
