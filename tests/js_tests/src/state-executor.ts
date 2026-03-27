@@ -7,7 +7,12 @@ import {
   cairo,
   Deployer,
   num,
+  logger,
 } from "starknet";
+
+// Suppress starknet.js tip estimation warnings in devnet
+// ("Insufficient transaction data: found N V3 transactions with tips...")
+logger.setLogLevel("ERROR");
 import { AdminClient } from "./admin-client";
 import { BlockTracker } from "./block-tracker";
 import { loadContractSierra, loadContractCasm } from "./contract-loader";

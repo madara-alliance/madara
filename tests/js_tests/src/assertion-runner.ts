@@ -7,7 +7,11 @@ import {
   CallData,
   cairo,
   Deployer,
+  logger,
 } from "starknet";
+
+// Suppress starknet.js tip estimation warnings in devnet
+logger.setLogLevel("ERROR");
 import { RpcCaller } from "./rpc-caller";
 import { resolveValue } from "./ref-resolver";
 import { loadContractSierra, loadContractCasm } from "./contract-loader";
