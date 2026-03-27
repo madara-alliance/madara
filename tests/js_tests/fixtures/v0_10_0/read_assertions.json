@@ -701,11 +701,9 @@
     {
       "id": "get_messages_status",
       "method": "starknet_getMessagesStatus",
-      "params": {
-        "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
-      },
-      "expected": [],
-      "description": "Madara does not implement getMessagesStatus on v0.10.0 route yet.",
+      "params": {},
+      "expected": {},
+      "description": "Tested as error case in error_assertions.json (unknown L1 hash returns TXN_HASH_NOT_FOUND).",
       "skip": true
     },
     {

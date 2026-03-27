@@ -67,6 +67,15 @@
       },
       "expected_error": { "code": 27 },
       "description": "Out-of-range tx index returns INVALID_TXN_INDEX (code 27)"
+    },
+    {
+      "id": "messages_status_unknown_l1_hash",
+      "method": "starknet_getMessagesStatus",
+      "params": {
+        "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "expected_error": { "code": 29 },
+      "description": "Unknown L1 tx hash returns TXN_HASH_NOT_FOUND (code 29)"
     }
   ]
 }
