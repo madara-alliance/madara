@@ -591,15 +591,23 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
+        // Log and verify state root
+        let expected_root = self
+            .backend
+            .db
+            .get_block_info(last_block_n)?
+            .context("Block header can't be found")?
+            .header
+            .global_state_root;
+
+        if let Some(block_num) = block_range.end.checked_sub(1) {
+            let status = if got == expected_root { "✅ correct" } else { "❌ incorrect" };
+            tracing::info!("🌐 {} | Global State Root for block {} is {:#x} vs {:#x}", status, block_num, got, expected_root);
+        }
+
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {
-            let expected = self
-                .backend
-                .db
-                .get_block_info(last_block_n)? // Raw get
-                .context("Block header can't be found")?
-                .header
-                .global_state_root;
+            let expected = expected_root;
 
             if expected != got {
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
