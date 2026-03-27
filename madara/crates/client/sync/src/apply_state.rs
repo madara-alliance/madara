@@ -5,7 +5,7 @@ use crate::{
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
 };
 use anyhow::Context;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 use tokio::sync::Mutex;
@@ -245,7 +245,16 @@ impl ApplyStateSteps {
                 backend.write_snap_sync_latest_block(block_number)?;
 
                 if let Some(block_num) = block_number {
-                    tracing::info!("🌐 Global State Root for block {} is {:#x}", block_num, global_state_root);
+                    let expected_root = backend.db.get_block_info(*block_num)
+                        .ok()
+                        .flatten()
+                        .map(|info| info.header.global_state_root);
+                    if let Some(expected) = expected_root {
+                        let status = if global_state_root == expected { "✅ correct" } else { "❌ incorrect" };
+                        tracing::info!("🌐 {} | Global State Root for block {} is {:#x} vs {:#x}", status, block_num, global_state_root, expected);
+                    } else {
+                        tracing::info!("🌐 Global State Root for block {} is {:#x} (no expected root available)", block_num, global_state_root);
+                    }
                 }
                 Ok::<(), anyhow::Error>(())
             })
