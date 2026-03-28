@@ -96,8 +96,8 @@ impl Service for RpcService {
                 ctx.clone(),
             );
             if let Some(mempool_watcher) = tx_status_watcher.clone() {
-                starknet.set_tx_status_watcher(Some(mempool_watcher.clone()));
-                starknet.set_new_transactions_watcher(Some(mempool_watcher));
+                starknet.set_tx_status_watcher(Some(Arc::new(mempool_watcher.clone())));
+                starknet.set_new_transactions_watcher(Some(Arc::new(mempool_watcher)));
             }
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
