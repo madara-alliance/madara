@@ -1,0 +1,42 @@
+[package]
+name = "rpc-client"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.87.0"
+repository = "https://github.com/keep-starknet-strange/snos/"
+license-file = "../../LICENSE"
+
+[lib]
+doctest = false
+
+[features]
+cairo_native = ["blockifier/cairo_native"]
+
+[dependencies]
+anyhow = "1.0"
+bitvec = { version = "1.0", default-features = false, features = ["std"] }
+blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+  "testing",
+] }
+cairo-lang-starknet-classes = "=2.12.3"
+cairo-vm = "=2.5.0"
+futures = "0.3"
+log = "0.4.19"
+num-bigint = "0.4"
+rayon = "1.10"
+reqwest = { version = "0.11.18", features = ["blocking", "json"] }
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = { version = "1.0.105", features = ["arbitrary_precision"] }
+starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
+starknet-os-types = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.1-alpha.2", package = "starknet-os-types" }
+starknet-types-core = "0.2.3"
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+  "testing",
+] }
+thiserror = "1.0.48"
+tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+rstest = "0.18.2"

@@ -15,7 +15,7 @@ default-members = [
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
 ]
 resolver = "2"
-exclude = ["bootstrapper-v2"]
+exclude = ["bootstrapper-v2", "vendor/snos-rpc-client"]
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]
@@ -338,3 +338,6 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+
+[patch."https://github.com/keep-starknet-strange/snos"]
+rpc-client = { path = "vendor/snos-rpc-client" }

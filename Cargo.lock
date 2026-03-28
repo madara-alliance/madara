@@ -12789,7 +12789,6 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.2#0789756b960e000f33efa8af940403535cde0c61"
 dependencies = [
  "anyhow",
  "bitvec",
