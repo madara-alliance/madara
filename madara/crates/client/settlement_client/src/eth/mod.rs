@@ -578,14 +578,17 @@ pub mod eth_client_getter_test {
 mod l1_messaging_tests {
     use self::DummyContract::DummyContractInstance;
     use crate::client::SettlementLayerProvider;
-    use crate::eth::{DefaultHttpProvider, EthereumClient, StarknetCoreContract};
+    use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::messaging::sync;
     use alloy::{
         hex::FromHex,
-        network::Ethereum,
+        network::{Ethereum, EthereumWallet},
         node_bindings::{Anvil, AnvilInstance},
         primitives::{Address, U256},
-        providers::ProviderBuilder,
+        providers::{
+            fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
+            Identity, ProviderBuilder, RootProvider,
+        },
         sol,
     };
     use mc_db::MadaraBackend;
@@ -600,11 +603,20 @@ mod l1_messaging_tests {
     use tracing_test::traced_test;
     use url::Url;
 
+    type TestWalletProvider = FillProvider<
+        JoinFill<
+            JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+            WalletFiller<EthereumWallet>,
+        >,
+        RootProvider<Ethereum>,
+        Ethereum,
+    >;
+
     struct TestRunner {
         #[allow(dead_code)]
         anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
         db_service: Arc<MadaraBackend>,
-        dummy_contract: DummyContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
+        dummy_contract: DummyContractInstance<Arc<TestWalletProvider>, Ethereum>,
         eth_client: EthereumClient,
     }
 
@@ -717,10 +729,15 @@ mod l1_messaging_tests {
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url));
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
+        let wallet_provider = Arc::new(
+            ProviderBuilder::new()
+                .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
+                .connect_http(rpc_url),
+        );
 
         // Set up dummy contract
-        let contract = DummyContract::deploy(provider.clone()).await.unwrap();
+        let contract = DummyContract::deploy(wallet_provider).await.unwrap();
 
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
@@ -1050,9 +1067,14 @@ mod eth_client_event_subscription_test {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url));
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
+        let wallet_provider = Arc::new(
+            ProviderBuilder::new()
+                .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
+                .connect_http(rpc_url),
+        );
 
-        let contract = DummyContract::deploy(provider.clone()).await.unwrap();
+        let contract = DummyContract::deploy(wallet_provider).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
         let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract.clone() };
