@@ -17,10 +17,11 @@ pub use crate::v0_9_0::{
     GetTransactionStatusParams, GlobalRoots, InvokeTxn, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode,
     L1HandlerTxn, MaybeDeprecatedContractClass, MerkleNode, MessageFeeEstimate, MsgFromL1, MsgToL1, NewClasses,
     NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader, PreConfirmedBlockWithTxHashes,
-    PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds, ResourceBoundsMapping,
-    ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams, StorageKey,
-    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, Txn, TxnExecutionStatus,
-    TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus, TxnWithHash, TypedParameter,
+    PreConfirmedBlockWithTxs, PriceUnit, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds,
+    ResourceBoundsMapping, ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams,
+    StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, Txn,
+    TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus, TxnWithHash,
+    TypedParameter,
 };
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
