@@ -127,13 +127,13 @@ impl TxStatusWatcher for TestTxStatusWatcher {
 #[cfg(test)]
 impl TxStatusWatch for TestTxStatusWatch {
     fn take_current(&mut self) -> Option<TxStatusSnapshot> {
-        self.receiver.borrow_and_update().clone()
+        *self.receiver.borrow_and_update()
     }
 
     fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
         Box::pin(async move {
             self.receiver.changed().await.ok()?;
-            self.receiver.borrow_and_update().clone()
+            *self.receiver.borrow_and_update()
         })
     }
 }

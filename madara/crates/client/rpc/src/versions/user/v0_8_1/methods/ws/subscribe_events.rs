@@ -216,7 +216,6 @@ mod test {
             transactions
                 .into_iter()
                 .map(|transaction| transaction.receipt)
-                .into_iter()
                 .flat_map(|receipt| {
                     let tx_hash = *receipt.transaction_hash();
                     receipt.into_events().into_iter().map(move |events| (tx_hash, events))
