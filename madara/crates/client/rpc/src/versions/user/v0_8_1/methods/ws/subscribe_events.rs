@@ -40,7 +40,7 @@ pub async fn subscribe_events(
                 start_block: block_n,
                 start_event_index: 0,
                 end_block: latest_block,
-                from_address: from_address.clone(),
+                from_address,
                 keys_pattern: keys.clone(),
                 max_events: usize::MAX,
             })
@@ -87,7 +87,7 @@ pub async fn subscribe_events(
                 start_block: block_n,
                 start_event_index: 0,
                 end_block: block_n,
-                from_address: from_address.clone(),
+                from_address,
                 keys_pattern: keys.clone(),
                 max_events: usize::MAX,
             })

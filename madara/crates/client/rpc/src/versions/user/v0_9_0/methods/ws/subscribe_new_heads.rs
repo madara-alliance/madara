@@ -1,6 +1,5 @@
 use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
 use mc_db::subscription::SubscribeNewBlocksTag;
-use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
 use mp_rpc::v0_9_0::{BlockHeader, BlockId, BlockTag};
 
 use super::BLOCK_PAST_LIMIT;
@@ -136,6 +135,7 @@ mod test {
         core::{client::SubscriptionClientT, params::ObjectParams},
         ws_client::WsClientBuilder,
     };
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
     use std::time::Duration;

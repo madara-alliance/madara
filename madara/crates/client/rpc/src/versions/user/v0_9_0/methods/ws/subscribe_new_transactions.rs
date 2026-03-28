@@ -236,7 +236,7 @@ async fn send_validated_transaction(
     emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&status)
-        || !sender_address.map_or(true, |addresses| addresses.contains(&tx.contract_address))
+        || !sender_address.is_none_or(|addresses| addresses.contains(&tx.contract_address))
         || !mark_emitted(emitted, tx.hash, &status)
     {
         return Ok(());
