@@ -1,9 +1,8 @@
 //! # Caution
 //!
 //! This is a temporary workaround due to limitations in the way in which [jsonrpsee] works. If
-//! possible at all, clients should prefer to use the unsubscribe methods defined in [api.rs]. These
-//! follow the structure `starknet_unsubscribeMethodName`, so for example
-//! `starknet_unsubscribeNewHeads`.
+//! possible at all, clients should prefer the generated `starknet_unsubscribe` RPC method defined
+//! in [api.rs].
 //!
 //! Use these if you encounter any strange edge cases such as 500 error codes on unsubscribe.
 //!

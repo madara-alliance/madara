@@ -1,4 +1,5 @@
 use crate::Starknet;
+use crate::{NewTransactionsWatch, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch, TxStatusWatcher};
 use jsonrpsee::core::async_trait;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
@@ -68,6 +69,100 @@ impl SubmitTransaction for TestTransactionProvider {
     }
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+pub struct TestTxStatusWatcher {
+    sender: tokio::sync::watch::Sender<Option<TxStatusSnapshot>>,
+    _receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
+}
+
+#[cfg(test)]
+pub struct TestTxStatusWatch {
+    receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
+}
+
+#[cfg(test)]
+pub struct TestNewTransactionsWatcher {
+    sender: tokio::sync::broadcast::Sender<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+pub struct TestNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+impl TestTxStatusWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        Arc::new(Self { sender, _receiver: receiver })
+    }
+
+    pub fn set_status(&self, status: Option<TxStatusSnapshot>) {
+        let _ = self.sender.send_replace(status);
+    }
+}
+
+#[cfg(test)]
+impl TestNewTransactionsWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, _) = tokio::sync::broadcast::channel(32);
+        Arc::new(Self { sender })
+    }
+
+    pub fn send_transaction(&self, tx: mp_transactions::validated::ValidatedTransaction) {
+        let _ = self.sender.send(Arc::new(tx));
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatcher for TestTxStatusWatcher {
+    fn watch_transaction_status(&self, _transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        Some(Box::new(TestTxStatusWatch { receiver: self.sender.subscribe() }))
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatch for TestTxStatusWatch {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
+        self.receiver.borrow_and_update().clone()
+    }
+
+    fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
+        Box::pin(async move {
+            self.receiver.changed().await.ok()?;
+            self.receiver.borrow_and_update().clone()
+        })
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatcher for TestNewTransactionsWatcher {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(TestNewTransactionsWatch { receiver: self.sender.subscribe() }))
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatch for TestNewTransactionsWatch {
+    fn recv(
+        &mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Option<Arc<mp_transactions::validated::ValidatedTransaction>>> + Send + '_,
+        >,
+    > {
+        Box::pin(async move {
+            loop {
+                match self.receiver.recv().await {
+                    Ok(tx) => return Some(tx),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        })
     }
 }
 

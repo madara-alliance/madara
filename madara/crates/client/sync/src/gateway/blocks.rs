@@ -336,12 +336,7 @@ impl PipelineSteps for GatewaySyncSteps {
                                             self._backend.revert_to(&common_ancestor_hash)?;
 
                                             self._backend.db.flush()?;
-
-                                            let fresh_chain_tip = self._backend.db.get_chain_tip()
-                                                .context("Getting fresh chain tip after reorg")?;
-                                            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-                                            self._backend.chain_tip.send_replace(backend_chain_tip);
-                                            tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
+                                            tracing::info!("✅ Reorg completed successfully, aborting pipeline to restart from new chain tip");
 
                                             anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
                                         }

@@ -3,6 +3,7 @@ use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
 use jsonrpsee::server::ServerHandle;
 use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
+use mc_mempool::Mempool;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
 use mp_chain_config::RpcVersion;
@@ -24,6 +25,7 @@ pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
+    tx_status_watcher: Option<Arc<Mempool>>,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
@@ -34,11 +36,13 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        tx_status_watcher: Option<Arc<Mempool>>,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
@@ -49,12 +53,14 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        tx_status_watcher: Option<Arc<Mempool>>,
         block_prod_handle: BlockProductionHandle,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
@@ -68,6 +74,7 @@ impl Service for RpcService {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
+        let tx_status_watcher = self.tx_status_watcher.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -88,6 +95,10 @@ impl Service for RpcService {
                 block_prod_handle,
                 ctx.clone(),
             );
+            if let Some(mempool_watcher) = tx_status_watcher.clone() {
+                starknet.set_tx_status_watcher(Some(mempool_watcher.clone()));
+                starknet.set_new_transactions_watcher(Some(mempool_watcher));
+            }
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
 

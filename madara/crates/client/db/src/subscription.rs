@@ -1,4 +1,4 @@
-use crate::{prelude::*, ChainTip};
+use crate::{prelude::*, ChainTip, ReorgNotification};
 use futures::{stream, Stream};
 use std::sync::Arc;
 
@@ -192,6 +192,27 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
     }
 }
 
+/// Subscribe to first-class reorg notifications emitted by the backend.
+///
+/// # Lag behavior
+///
+/// Notifications are buffered in a bounded broadcast channel and may be dropped for lagging receivers.
+#[derive(Debug)]
+pub struct SubscribeReorgs<D: MadaraStorageRead> {
+    _backend: Arc<MadaraBackend<D>>,
+    subscription: tokio::sync::broadcast::Receiver<ReorgNotification>,
+}
+impl<D: MadaraStorageRead> SubscribeReorgs<D> {
+    fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
+        let subscription = backend.reorg_notifications.subscribe();
+        Self { _backend: backend.clone(), subscription }
+    }
+
+    pub async fn recv(&mut self) -> Result<ReorgNotification, tokio::sync::broadcast::error::RecvError> {
+        self.subscription.recv().await
+    }
+}
+
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Subscribe to new blocks. See [`WatchL1Confirmed`] for more details
     pub fn watch_l1_confirmed(self: &Arc<Self>) -> WatchL1Confirmed<D> {
@@ -211,5 +232,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
     pub fn subscribe_new_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
         SubscribeNewHeads::new(self, tag)
+    }
+
+    /// Subscribe to dedicated reorg notifications emitted after successful chain reverts.
+    pub fn subscribe_reorgs(self: &Arc<Self>) -> SubscribeReorgs<D> {
+        SubscribeReorgs::new(self)
     }
 }

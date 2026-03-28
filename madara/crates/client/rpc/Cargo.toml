@@ -36,6 +36,7 @@ mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
 mp-gateway = { workspace = true }
+mc-mempool = { workspace = true }
 mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
