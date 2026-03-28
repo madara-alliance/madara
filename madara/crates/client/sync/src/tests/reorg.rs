@@ -4,8 +4,7 @@ use crate::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
-use anyhow::Context;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
