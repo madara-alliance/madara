@@ -4,7 +4,6 @@ use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::MessageToL2WithMetadata;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
-use alloy::transports::http::{Client, Http};
 use futures::Stream;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
@@ -63,7 +62,7 @@ pub struct EthereumEventStream {
 }
 
 impl EthereumEventStream {
-    pub fn new(watcher: EventPoller<Http<Client>, LogMessageToL2>) -> Self {
+    pub fn new(watcher: EventPoller<LogMessageToL2>) -> Self {
         let stream = watcher.into_stream();
         Self { stream: Box::pin(stream) }
     }

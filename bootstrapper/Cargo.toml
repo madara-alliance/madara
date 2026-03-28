@@ -3,22 +3,33 @@ name = "bootstrapper"
 version = "0.1.0"
 edition = "2021"
 
-# Make this package explicitly standalone (not part of the parent workspace)
+# Temporary standalone workspace until root reintegration is complete.
+# See `WORKSPACE_REINTEGRATION.md` for the remaining blockers.
 [workspace]
 
 [dependencies]
-anyhow = "1.0.80"
+anyhow = "1.0"
 base64 = "0.22"
 ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
 futures = { version = "0.3", default-features = false, features = ["std"] }
-hex = { version = "0.4.3", default-features = false, features = ["std"] }
-reqwest = { version = "0.12.24", default-features = false }
-serde = { version = "1.0.192", default-features = false, features = ["std"] }
-serde_json = { version = "1.0.108", default-features = false, features = [
+hex = { version = "0.4", default-features = false, features = ["std"] }
+reqwest = { version = "0.12.7", features = [
+  "blocking",
+  "rustls-tls",
+  "native-tls",
+  "json",
+  "multipart",
+  "stream",
+] }
+serde = { version = "1.0", default-features = false, features = ["std"] }
+serde_json = { version = "1.0", default-features = false, features = [
   "std",
 ] }
-serde_with = { version = "2.3.3", default-features = false }
-url = "2.4.1"
+serde_with = { version = "3.11", default-features = false, features = [
+  "alloc",
+  "macros",
+] }
+url = { version = "2.4", features = ["serde"] }
 
 
 # Zaun Deps
@@ -45,9 +56,9 @@ starknet-types-core = { version = "0.1.5", default-features = false, features = 
 starknet_api = { git = "https://github.com/bidzyyys/starknet-api.git", branch = "feature/scale-codec" }
 
 # Third Party
-assert_matches = "1.5.0"
-async-trait = "0.1.74"
-clap = { version = "4.4.11", features = ["derive", "env"] }
+assert_matches = "1.5"
+async-trait = "0.1"
+clap = { version = "4.4", features = ["derive", "env"] }
 color-eyre = "0.6.2"
 dotenv = "0.15.0"
 env_logger = "0.11.3"
@@ -60,15 +71,15 @@ rstest = "0.18.1"
 scale-info = { version = "2.10.0", default-features = false, features = [
   "std",
 ] }
-thiserror = "1.0.50"
-tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["macros", "rt-multi-thread", "signal"] }
 
 # Subxt Dependencies
 bytes = "1.6.0"
-flate2 = "1.0.30"
+flate2 = "1.0"
 indexmap = "2.2.6"
 inline_colorization = "0.1.6"
-lazy_static = "1.4.0"
+lazy_static = { version = "1.4", default-features = false }
 subxt-lightclient = { version = "0.35.3", optional = true, default-features = false }
 tempfile = "3.10.1"
 

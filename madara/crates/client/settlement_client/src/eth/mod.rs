@@ -7,14 +7,14 @@ use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
 use alloy::network::primitives::BlockTransactionsKind;
+use alloy::network::Ethereum;
 use alloy::primitives::{keccak256, Address, B256, I256, U256};
-use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
+use alloy::providers::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
+use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::types::Filter;
 use alloy::sol;
 use alloy::sol_types::SolValue;
-use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
-use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
 use futures::stream::{self, BoxStream};
 use futures::StreamExt;
@@ -37,9 +37,15 @@ sol!(
     "src/eth/starknet_core.json"
 );
 
+pub type DefaultHttpProvider = FillProvider<
+    JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+    RootProvider<Ethereum>,
+    Ethereum,
+>;
+
 pub struct EthereumClient {
-    pub provider: Arc<ReqwestProvider>,
-    pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+    pub provider: Arc<DefaultHttpProvider>,
+    pub l1_core_contract: StarknetCoreContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
 }
 
 #[derive(Clone)]
@@ -56,7 +62,7 @@ impl Clone for EthereumClient {
 
 impl EthereumClient {
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
-        let provider = ProviderBuilder::new().on_http(config.rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(config.rpc_url));
         let core_contract_address =
             Address::from_str(&config.core_contract_address).map_err(|e| -> SettlementClientError {
                 EthereumClientError::Conversion(format!("Invalid core contract address: {e}")).into()
@@ -68,8 +74,8 @@ impl EthereumClient {
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?
             .is_empty()
         {
-            let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
-            Ok(Self { provider: Arc::new(provider), l1_core_contract: contract })
+            let contract = StarknetCoreContract::new(core_contract_address, Arc::clone(&provider));
+            Ok(Self { provider, l1_core_contract: contract })
         } else {
             Err(SettlementClientError::Ethereum(EthereumClientError::Contract(
                 "Core contract not found at given address".into(),
@@ -81,7 +87,7 @@ impl EthereumClient {
     /// using `eth_getLogs`. This ensures historical events are not missed (unlike `eth_newFilter`
     /// which only returns events after filter creation).
     async fn query_paginated_events(
-        contract: &StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        contract: &StarknetCoreContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
         from_block: u64,
         to_block: u64,
     ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
@@ -135,7 +141,7 @@ impl SettlementLayerProvider for EthereumClient {
         self.provider
             .get_block_number()
             .await
-            .map(|n| n.as_u64())
+            .map(|n| n)
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })
     }
 
@@ -179,10 +185,12 @@ impl SettlementLayerProvider for EthereumClient {
         // when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
         // executing the block 0.
         // link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
-        let block_number: Option<u64> = if block_number._0 == I256::MINUS_ONE {
+        let block_number: Option<u64> = if block_number == I256::MINUS_ONE {
             None // initial contract state
         } else {
-            Some(block_number._0.as_u64())
+            Some(u64::try_from(block_number).map_err(|e| -> SettlementClientError {
+                EthereumClientError::Conversion(format!("Failed to convert state block number: {e}")).into()
+            })?)
         };
 
         let global_root =
@@ -191,7 +199,7 @@ impl SettlementLayerProvider for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state root: {e:#}")).into()
                 },
             )?;
-        let global_root = global_root._0.to_felt();
+        let global_root = global_root.to_felt();
 
         let block_hash =
             self.l1_core_contract.stateBlockHash().block(BlockId::number(latest_block_n)).call().await.map_err(
@@ -199,7 +207,7 @@ impl SettlementLayerProvider for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
                 },
             )?;
-        let block_hash = block_hash._0.to_felt();
+        let block_hash = block_hash.to_felt();
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
@@ -326,7 +334,7 @@ impl SettlementLayerProvider for EthereumClient {
                 },
             )?;
 
-        Ok(!cancellation_timestamp._0.is_zero())
+        Ok(!cancellation_timestamp.is_zero())
     }
 
     /// Get cancellation status of an L1 to L2 message
@@ -356,7 +364,7 @@ impl SettlementLayerProvider for EthereumClient {
             )?;
 
         tracing::debug!("Returned");
-        Ok(cancellation_timestamp._0 != U256::ZERO)
+        Ok(cancellation_timestamp != U256::ZERO)
     }
 
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
@@ -463,10 +471,10 @@ pub mod eth_client_getter_test {
 
     pub fn create_ethereum_client(url: String) -> EthereumClient {
         let rpc_url: Url = url.parse().expect("issue while parsing URL");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
-        let contract = StarknetCoreContract::new(address, provider.clone());
-        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract }
+        let contract = StarknetCoreContract::new(address, Arc::clone(&provider));
+        EthereumClient { provider, l1_core_contract: contract }
     }
 
     #[tokio::test]
@@ -486,8 +494,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_latest_block_number_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let block_number =
-            eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
+        let block_number = eth_client.provider.get_block_number().await.expect("issue while fetching the block number");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
@@ -542,9 +549,9 @@ pub mod eth_client_getter_test {
                 .to_string(),
         };
 
-        let provider = ProviderBuilder::new().on_http(config.rpc_url);
-        let contract = StarknetCoreContract::new(config.core_contract_address.parse().unwrap(), provider.clone());
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract };
+        let provider = Arc::new(ProviderBuilder::new().connect_http(config.rpc_url));
+        let contract = StarknetCoreContract::new(config.core_contract_address.parse().unwrap(), Arc::clone(&provider));
+        let eth_client = EthereumClient { provider, l1_core_contract: contract };
 
         // Call contract and verify we get -1 as int256
         let block_number = eth_client
@@ -558,10 +565,10 @@ pub mod eth_client_getter_test {
             })
             .unwrap();
 
-        assert_eq!(block_number._0, I256::MINUS_ONE);
+        assert_eq!(block_number, I256::MINUS_ONE);
 
         // Verify that converting -1 to u64 returns None
-        let block_number: Option<u64> = block_number._0.try_into().ok();
+        let block_number: Option<u64> = block_number.try_into().ok();
         assert!(block_number.is_none());
 
         // Verify mock was called
@@ -579,9 +586,8 @@ mod l1_messaging_tests {
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
         primitives::{Address, U256},
-        providers::{ProviderBuilder, RootProvider},
+        providers::ProviderBuilder,
         sol,
-        transports::http::{Client, Http},
     };
     use mc_db::MadaraBackend;
     use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
@@ -599,7 +605,7 @@ mod l1_messaging_tests {
         #[allow(dead_code)]
         anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
         db_service: Arc<MadaraBackend>,
-        dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        dummy_contract: DummyContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
         eth_client: EthereumClient,
     }
 
@@ -712,15 +718,14 @@ mod l1_messaging_tests {
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url));
 
         // Set up dummy contract
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
 
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
+        let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract.clone() };
 
         TestRunner { anvil, db_service: db, dummy_contract: contract, eth_client }
     }
@@ -789,7 +794,6 @@ mod l1_messaging_tests {
             .call()
             .await
             .expect("Should successfully get the message hash from the contract")
-            ._0
             .to_string();
         assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
@@ -1047,13 +1051,12 @@ mod eth_client_event_subscription_test {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url));
 
         let contract = DummyContract::deploy(provider.clone()).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
+        let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract.clone() };
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
         let (snd, mut recv) = tokio::sync::watch::channel(None);
 

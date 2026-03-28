@@ -113,7 +113,7 @@ COPY .db-versions.yml .db-versions.yml
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path madara/Cargo.toml --release
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --release --bin madara
 
 # Step 3: runner
 FROM debian:bookworm-slim AS runner

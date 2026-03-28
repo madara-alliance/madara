@@ -40,6 +40,7 @@ use url::Url;
 
 mod formatter;
 mod prometheus_endpoint;
+mod prometheus_exporter;
 
 pub use prometheus_endpoint::PrometheusEndpointConfig;
 
