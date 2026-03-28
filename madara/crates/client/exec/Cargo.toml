@@ -30,7 +30,7 @@ mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
+blockifier = { workspace = true, features = ["reexecution"] }
 cairo-vm = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
