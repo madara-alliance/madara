@@ -152,7 +152,7 @@ impl Collector {
 
     fn get_name(&self, metric: &data::Metric) -> Cow<'static, str> {
         let name: Cow<'static, str> = Cow::Owned(metric.name().to_string());
-        let name = sanitize_name(&name);
+        let name = sanitize_name(name);
         match get_unit_suffixes(metric.unit()) {
             Some(suffix) => Cow::Owned(format!("{name}_{suffix}")),
             None => name,
@@ -582,7 +582,7 @@ fn get_prom_per_unit(unit: &str) -> Option<&'static str> {
     }
 }
 
-fn sanitize_name(s: &Cow<'static, str>) -> Cow<'static, str> {
+fn sanitize_name(s: Cow<'static, str>) -> Cow<'static, str> {
     let mut prefix = "";
     if let Some((replace_idx, _)) = s.char_indices().find(|(i, c)| {
         if *i == 0 && c.is_ascii_digit() {
@@ -601,7 +601,7 @@ fn sanitize_name(s: &Cow<'static, str>) -> Cow<'static, str> {
                 .collect(),
         )
     } else {
-        s.clone()
+        s
     }
 }
 
