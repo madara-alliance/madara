@@ -10,6 +10,7 @@ license-file = "../../LICENSE"
 doctest = false
 
 [features]
+default = ["cairo_native"]
 cairo_native = ["blockifier/cairo_native"]
 
 [dependencies]
