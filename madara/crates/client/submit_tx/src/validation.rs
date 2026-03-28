@@ -16,20 +16,24 @@ use mc_db::{MadaraBackend, MadaraBlockView};
 use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_mempool::{MempoolInsertionError, TxInsertionError};
+use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, BroadcastedInvokeTxn as AdminBroadcastedInvokeTxn};
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
-    IntoStarknetApiExt, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError,
+    IntoStarknetApiExt, InvokeTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError,
+    Transaction,
 };
 use starknet_api::{
-    executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
-    transaction::TransactionVersion,
+    executable_transaction::{
+        AccountTransaction as ApiAccountTransaction, InvokeTransaction as ApiInvokeTransaction, TransactionType,
+    },
+    transaction::{TransactionHash, TransactionVersion},
 };
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, fmt, sync::Arc};
@@ -309,6 +313,50 @@ impl TransactionValidator {
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
+    }
+
+    pub async fn submit_admin_invoke_transaction(
+        &self,
+        tx: AdminBroadcastedInvokeTxn,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
+        let chain_id = self.backend.chain_config().chain_id.to_felt();
+        let starknet_version = self.backend.chain_config().latest_protocol_version;
+        if starknet_version >= StarknetVersion::V0_14_0 && tx.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion.into());
+        }
+
+        let arrived_at = TxTimestamp::now();
+        let invoke = match tx {
+            AdminBroadcastedInvokeTxn::V0(tx) | AdminBroadcastedInvokeTxn::QueryV0(tx) => {
+                InvokeTransaction::V0(tx.into())
+            }
+            AdminBroadcastedInvokeTxn::V1(tx) | AdminBroadcastedInvokeTxn::QueryV1(tx) => {
+                InvokeTransaction::V1(tx.into())
+            }
+            AdminBroadcastedInvokeTxn::V3(tx) | AdminBroadcastedInvokeTxn::QueryV3(tx) => {
+                let mut invoke: mp_transactions::InvokeTransactionV3 = tx.inner.into();
+                invoke.proof_facts = tx.proof_facts;
+                InvokeTransaction::V3(invoke)
+            }
+        };
+
+        let transaction = Transaction::Invoke(invoke.clone());
+        let hash = transaction.compute_hash(chain_id, starknet_version, false);
+        let api_tx = ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+            tx: invoke.try_into().map_err(ToBlockifierError::from)?,
+            tx_hash: TransactionHash(hash),
+        });
+
+        self.accept_tx(api_tx, None, arrived_at).await?;
+        Ok(AddInvokeTransactionResult { transaction_hash: hash })
     }
 }
 

@@ -5,7 +5,7 @@ use mc_submit_tx::{
     SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
     TransactionValidator, TransactionValidatorConfig,
 };
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, BroadcastedInvokeTxn as AdminBroadcastedInvokeTxn};
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -73,6 +73,13 @@ impl BlockProductionHandle {
     /// Send a transaction through the bypass channel to bypass mempool and validation.
     pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
         self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)
+    }
+
+    pub async fn submit_admin_invoke_transaction(
+        &self,
+        tx: AdminBroadcastedInvokeTxn,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        self.tx_converter.submit_admin_invoke_transaction(tx).await
     }
 }
 

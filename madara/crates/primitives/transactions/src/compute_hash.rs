@@ -195,8 +195,7 @@ impl InvokeTransactionV3 {
             prepare_data_availability_modes(self.nonce_data_availability_mode, self.fee_data_availability_mode);
         let account_deployment_data_hash = Poseidon::hash_array(&self.account_deployment_data);
         let calldata_hash = Poseidon::hash_array(&self.calldata);
-
-        Poseidon::hash_array(&[
+        let mut elements = vec![
             INVOKE_PREFIX,
             version,
             self.sender_address,
@@ -207,7 +206,12 @@ impl InvokeTransactionV3 {
             data_availability_modes,
             account_deployment_data_hash,
             calldata_hash,
-        ])
+        ];
+        if let Some(proof_facts) = self.proof_facts.as_ref().filter(|proof_facts| !proof_facts.is_empty()) {
+            elements.push(Poseidon::hash_array(proof_facts));
+        }
+
+        Poseidon::hash_array(&elements)
     }
 }
 
@@ -563,7 +567,8 @@ pub fn calculate_contract_address(
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
-    use serde_json::Value;
+    use serde_json::{json, Value};
+    use starknet_api::{core::ChainId, transaction::TransactionOptions};
 
     use crate::tests::{
         dummy_l1_handler, dummy_tx_declare_v0, dummy_tx_declare_v1, dummy_tx_declare_v2, dummy_tx_declare_v3,
@@ -832,5 +837,75 @@ mod tests {
                 "query hash mismatch for sequencer vector: {vector_debug}"
             );
         }
+    }
+
+    #[test]
+    fn test_compute_hash_matches_sepolia_replay_invoke_v3() {
+        let tx = parse_test_transaction(json!({
+            "Invoke": {
+                "V3": {
+                    "sender_address": "0x5a018f06581781371af2d639e5c905e5da998acbc53136f17e6ec99bdd77aa",
+                    "calldata": [
+                        "0x1",
+                        "0x29b685fd5bb981ee15dd5b82e9daba0e6b4e893d64322f8308b8450914b9b04",
+                        "0x7a44dde9fea32737a5cf3f9683b3235138654aa2d189f6fe44af37a61dc60d",
+                        "0x1",
+                        "0x1"
+                    ],
+                    "signature": [
+                        "0x2b19bdb22496139ad968f878d528fb36d2925067f6e6c981cb46bf85167fb33",
+                        "0x540da32d65e745a2ecab0bb00160c437724f880da06fff1d35e3a20e86ceda9"
+                    ],
+                    "nonce": "0x1",
+                    "resource_bounds": {
+                        "L1_GAS": {
+                            "max_amount": "0x10000",
+                            "max_price_per_unit": "0x3a3529440000"
+                        },
+                        "L2_GAS": {
+                            "max_amount": "0x7000000",
+                            "max_price_per_unit": "0x1dcd65000"
+                        },
+                        "L1_DATA_GAS": {
+                            "max_amount": "0x1b0",
+                            "max_price_per_unit": "0x100000"
+                        }
+                    },
+                    "tip": "0x0",
+                    "paymaster_data": [],
+                    "account_deployment_data": [],
+                    "proof_facts": [
+                        "0x50524f4f4630",
+                        "0x5649525455414c5f534e4f53",
+                        "0x3e98c2d7703b03a7edb73ed7f075f97f1dcbaa8f717cdf6e1a57bf058265473",
+                        "0x5649525455414c5f534e4f5330",
+                        "0x7af406",
+                        "0x40f880f111c33c940475268be78e799921b3f30784625fede66a1fc3ea69287",
+                        "0x1b9900f77ff5923183a7795fcfbb54ed76917bc1ddd4160cc77fa96e36cf8c5",
+                        "0x0"
+                    ],
+                    "nonce_data_availability_mode": "L1",
+                    "fee_data_availability_mode": "L1"
+                }
+            }
+        }));
+
+        let expected_hash =
+            Felt::from_hex_unchecked("0x56fe231ad29fcee047c935783891e9b4b158d394b843de8aef337962eac0b9a");
+        let local_hash = tx.compute_hash(TEST_CHAIN_ID, StarknetVersion::LATEST, false);
+        assert_eq!(local_hash, expected_hash, "Madara hash must match the canonical Sepolia transaction hash");
+
+        let official_tx: starknet_api::transaction::Transaction = tx.clone().try_into().unwrap();
+        let official_hash = starknet_api::transaction_hash::get_transaction_hash(
+            &official_tx,
+            &ChainId::Sepolia,
+            &TransactionOptions { only_query: false },
+        )
+        .unwrap();
+        assert_eq!(
+            Felt::from(*official_hash),
+            expected_hash,
+            "official starknet_api hash must match the canonical hash"
+        );
     }
 }

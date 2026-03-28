@@ -7664,6 +7664,7 @@ dependencies = [
  "mc-db",
  "mc-exec",
  "mc-mempool",
+ "mp-chain-config",
  "mp-class",
  "mp-convert",
  "mp-rpc",
