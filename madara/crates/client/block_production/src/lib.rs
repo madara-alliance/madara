@@ -1939,6 +1939,31 @@ pub(crate) mod tests {
         );
     }
 
+    #[tokio::test]
+    #[timeout(Duration::from_secs(60))]
+    async fn test_force_close_materializes_empty_block_with_matching_custom_header() {
+        let mut setup = replay_like_devnet_setup(Duration::from_secs(10_000)).await;
+
+        let mut task = setup.block_prod_task();
+        let mut notifications = task.subscribe_state_notifications();
+        let handle = task.handle();
+        let _runner = AbortOnDrop::spawn(async move { task.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        let custom_header = replay_custom_header();
+        setup.backend.set_custom_header(custom_header.clone());
+
+        handle.close_block().await.unwrap();
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block = setup.backend.block_view_on_confirmed(1).expect("empty replay block should be closed");
+        let block_info = block.get_block_info().unwrap();
+
+        assert_eq!(block_info.header.gas_prices, custom_header.gas_prices);
+        assert_eq!(block_info.header.block_timestamp.0, custom_header.timestamp);
+        assert_eq!(block.get_executed_transactions(..).unwrap().len(), 0);
+    }
+
     // This test makes sure that the preconfirmed tick closes the block
     // if the bouncer capacity is reached
     #[ignore] // FIXME: this test is complicated by the fact validation / actual execution fee may differ a bit. Ignore for now.
