@@ -59,6 +59,9 @@ mc-sync.workspace = true
 mc-telemetry.workspace = true
 
 # Starknet dependencies
+blockifier.workspace = true
+cairo-lang-starknet-classes.workspace = true
+cairo-lang-utils.workspace = true
 cairo-vm.workspace = true
 starknet.workspace = true
 starknet-accounts.workspace = true
@@ -68,9 +71,6 @@ starknet-crypto.workspace = true
 starknet-providers.workspace = true
 starknet-signers.workspace = true
 starknet-types-core.workspace = true
-blockifier.workspace = true
-cairo-lang-starknet-classes.workspace = true
-cairo-lang-utils.workspace = true
 starknet_api.workspace = true
 
 # Other
