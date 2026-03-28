@@ -2,13 +2,11 @@ use mp_rpc::v0_10_0::{BlockId, FinalityStatus, TxnStatusWithoutL1};
 use starknet_types_core::felt::Felt;
 
 use crate::versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server;
-use crate::versions::user::v0_9_0::methods::ws::{
-    subscribe_new_transaction_receipts::subscribe_new_transaction_receipts_with_reorg,
-    subscribe_new_transactions::subscribe_new_transactions_with_reorg,
-};
+use crate::versions::user::v0_9_0::methods::ws::subscribe_new_transactions::subscribe_new_transactions_with_reorg;
 use crate::versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server as V0_9_0Impl;
 
 use super::starknet_unsubscribe::*;
+use super::subscribe_new_transaction_receipts::subscribe_new_transaction_receipts_with_reorg;
 
 #[jsonrpsee::core::async_trait]
 #[allow(unused)]
