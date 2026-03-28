@@ -579,10 +579,11 @@ pub mod eth_client_getter_test {
 mod l1_messaging_tests {
     use self::DummyContract::DummyContractInstance;
     use crate::client::SettlementLayerProvider;
-    use crate::eth::{EthereumClient, StarknetCoreContract};
+    use crate::eth::{DefaultHttpProvider, EthereumClient, StarknetCoreContract};
     use crate::messaging::sync;
     use alloy::{
         hex::FromHex,
+        network::Ethereum,
         node_bindings::{Anvil, AnvilInstance},
         primitives::{Address, U256},
         providers::ProviderBuilder,

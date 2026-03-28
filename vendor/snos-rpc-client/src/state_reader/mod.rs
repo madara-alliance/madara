@@ -327,7 +327,6 @@ impl StateReader for AsyncRpcStateReader {
         match compiled_class {
             RunnableCompiledClass::V0(_) => Ok(CompiledClassHash(class_hash.0)),
             RunnableCompiledClass::V1(compiled_class_v1) => Ok(compiled_class_v1.hash(&HashVersion::V2)),
-            #[cfg(feature = "cairo_native")]
             RunnableCompiledClass::V1Native(compiled_class_v1) => Ok(compiled_class_v1.hash(&HashVersion::V2)),
         }
     }
