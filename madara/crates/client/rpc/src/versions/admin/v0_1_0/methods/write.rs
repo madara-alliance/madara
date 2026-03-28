@@ -283,11 +283,13 @@ mod tests {
         test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
     };
     use mc_db::{
+        preconfirmed::PreconfirmedBlock,
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
+    use mp_block::header::{BlockTimestamp, CustomHeader, GasPrices, PreconfirmedHeader};
     use mp_chain_config::ChainConfig;
-    use mp_convert::Felt;
+    use mp_convert::{Felt, ToFelt};
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
@@ -356,5 +358,58 @@ mod tests {
         assert_ne!(err.code(), 0);
         assert_eq!(backend.latest_confirmed_block_n(), Some(1));
         assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
+    }
+
+    #[tokio::test]
+    async fn set_block_header_updates_matching_empty_preconfirmed_block() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let initial_header = PreconfirmedHeader {
+            block_number: 0,
+            sequencer_address: backend.chain_config().sequencer_address.to_felt(),
+            block_timestamp: BlockTimestamp(1),
+            protocol_version: backend.chain_config().latest_protocol_version,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 1,
+                strk_l1_gas_price: 2,
+                eth_l1_data_gas_price: 3,
+                strk_l1_data_gas_price: 4,
+                eth_l2_gas_price: 5,
+                strk_l2_gas_price: 6,
+            },
+            l1_da_mode: backend.chain_config().l1_da_mode,
+        };
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(initial_header))
+            .expect("failed to create preconfirmed block");
+
+        let rpc = make_starknet(backend.clone(), ServiceContext::new());
+        let custom_header = CustomHeader {
+            block_n: 0,
+            timestamp: 1234,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 11,
+                strk_l1_gas_price: 22,
+                eth_l1_data_gas_price: 33,
+                strk_l1_data_gas_price: 44,
+                eth_l2_gas_price: 55,
+                strk_l2_gas_price: 66,
+            },
+            expected_block_hash: Felt::ZERO,
+        };
+
+        rpc.set_block_header(custom_header.clone()).await.expect("setCustomBlockHeader should succeed");
+
+        let preconfirmed = backend.preconfirmed_block().expect("preconfirmed block should exist");
+        assert_eq!(preconfirmed.header.block_number, 0);
+        assert_eq!(preconfirmed.header.block_timestamp, custom_header.timestamp.into());
+        assert_eq!(preconfirmed.header.gas_prices, custom_header.gas_prices);
+        let stored_header = backend.get_custom_header().expect("custom header should be stored");
+        assert_eq!(stored_header.block_n, custom_header.block_n);
+        assert_eq!(stored_header.timestamp, custom_header.timestamp);
+        assert_eq!(stored_header.gas_prices, custom_header.gas_prices);
+        assert_eq!(stored_header.expected_block_hash, custom_header.expected_block_hash);
     }
 }

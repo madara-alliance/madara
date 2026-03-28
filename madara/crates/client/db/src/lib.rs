@@ -123,6 +123,7 @@ use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::header::CustomHeader;
+use mp_block::header::PreconfirmedHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -464,7 +465,35 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        *guard = Some(custom_header);
+        *guard = Some(custom_header.clone());
+        drop(guard);
+
+        let Some(preconfirmed) = self.preconfirmed_block() else {
+            return;
+        };
+
+        if preconfirmed.header.block_number != custom_header.block_n || preconfirmed.transaction_count() != 0 {
+            return;
+        }
+
+        let content = preconfirmed.content.borrow().clone();
+        let header = PreconfirmedHeader {
+            block_number: preconfirmed.header.block_number,
+            sequencer_address: preconfirmed.header.sequencer_address,
+            block_timestamp: custom_header.timestamp.into(),
+            protocol_version: preconfirmed.header.protocol_version,
+            gas_prices: custom_header.gas_prices,
+            l1_da_mode: preconfirmed.header.l1_da_mode,
+        };
+
+        self.chain_tip.send_replace(ChainTip::Preconfirmed(
+            PreconfirmedBlock::new_with_content(
+                header,
+                content.executed_transactions().cloned(),
+                content.candidate_transactions().cloned(),
+            )
+            .into(),
+        ));
     }
 
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
