@@ -3738,7 +3738,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5212,7 +5212,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=13dbe319a36c607801220449b8a640dbeced21f6#13dbe319a36c607801220449b8a640dbeced21f6"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1cd46d96c480f1e88a2d980f1e37794c737d89df#1cd46d96c480f1e88a2d980f1e37794c737d89df"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9251,7 +9251,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=13dbe319a36c607801220449b8a640dbeced21f6#13dbe319a36c607801220449b8a640dbeced21f6"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1cd46d96c480f1e88a2d980f1e37794c737d89df#1cd46d96c480f1e88a2d980f1e37794c737d89df"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -10517,7 +10517,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=13dbe319a36c607801220449b8a640dbeced21f6#13dbe319a36c607801220449b8a640dbeced21f6"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1cd46d96c480f1e88a2d980f1e37794c737d89df#1cd46d96c480f1e88a2d980f1e37794c737d89df"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -12458,7 +12458,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
