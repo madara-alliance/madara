@@ -1,4 +1,5 @@
 use crate::Starknet;
+use crate::{NewTransactionsWatch, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch, TxStatusWatcher};
 use jsonrpsee::core::async_trait;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
@@ -77,91 +78,98 @@ impl TransactionLookup for TestTransactionProvider {
     }
 }
 
-/// Address at which [`m_cairo_test_contracts::TEST_CONTRACT_SIERRA`] is predeployed by
-/// [`rpc_test_setup_with_execution`]. This contract exposes an `l1_handler_entrypoint` l1 handler.
 #[cfg(test)]
-pub const TEST_CONTRACT_ADDRESS: Felt = Felt::from_hex_unchecked("0x123456789");
-
-/// A chain whose genesis holds the devnet contracts (fee-token ERC20s, UDC, funded accounts) plus
-/// the test contract, for RPC tests that need to execute against real classes.
-#[cfg(test)]
-pub async fn rpc_test_setup_with_execution() -> (Arc<MadaraBackend>, Starknet, mc_devnet::DevnetKeys) {
-    let chain_config = Arc::new(ChainConfig::madara_devnet());
-    let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    backend.set_l1_gas_quote_for_testing();
-
-    let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
-    let keys = genesis.add_devnet_contracts(2).unwrap();
-    let test_class =
-        mc_devnet::InitiallyDeclaredClass::new_sierra(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
-    genesis.deployed_contracts.insert(TEST_CONTRACT_ADDRESS, test_class.class_hash());
-    genesis.declared_classes.insert(test_class);
-    genesis.build_and_store(&backend).await.unwrap();
-
-    let provider = Arc::new(TestTransactionProvider);
-    let rpc = Starknet::new(
-        backend.clone(),
-        Arc::clone(&provider) as _,
-        provider,
-        Default::default(),
-        None,
-        ServiceContext::new_for_testing(),
-    );
-    (backend, rpc, keys)
+pub struct TestTxStatusWatcher {
+    sender: tokio::sync::watch::Sender<Option<TxStatusSnapshot>>,
+    _receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
 }
 
-/// A fee-token transfer of 1 wei from `account` (a v3 invoke), signed iff `valid_signature`.
-/// For use with [`rpc_test_setup_with_execution`].
 #[cfg(test)]
-pub fn devnet_transfer_tx(
-    backend: &MadaraBackend,
-    account: &mc_devnet::DevnetPredeployedContract,
-    nonce: Felt,
-    valid_signature: bool,
-) -> mp_rpc::v0_9_0::BroadcastedTxn {
-    use mc_devnet::{Call, Multicall, Selector};
-    use mp_convert::ToFelt;
-    use mp_rpc::v0_9_0::{
-        BroadcastedInvokeTxn, BroadcastedTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
-    };
-    use mp_transactions::IntoStarknetApiExt;
+pub struct TestTxStatusWatch {
+    receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
+}
 
-    let mut tx = InvokeTxnV3 {
-        sender_address: account.address,
-        calldata: Multicall::default()
-            .with(Call {
-                to: backend.chain_config().native_fee_token_address.to_felt(),
-                selector: Selector::from("transfer"),
-                calldata: vec![account.address, Felt::ONE, Felt::ZERO],
-            })
-            .flatten()
-            .collect::<Vec<_>>()
-            .into(),
-        signature: vec![Felt::ONE, Felt::TWO].into(),
-        nonce,
-        resource_bounds: ResourceBoundsMapping {
-            l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-            l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
-            l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-        },
-        tip: 0,
-        paymaster_data: vec![],
-        account_deployment_data: vec![],
-        nonce_data_availability_mode: DaMode::L1,
-        fee_data_availability_mode: DaMode::L1,
-    };
-    if valid_signature {
-        let api_tx = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx.clone()))
-            .into_validated_tx(
-                backend.chain_config().chain_id.to_felt(),
-                backend.chain_config().latest_protocol_version,
-                TxTimestamp::now(),
-            )
-            .unwrap();
-        let signature = account.secret.sign(&api_tx.hash).unwrap();
-        tx.signature = vec![signature.r, signature.s].into();
+#[cfg(test)]
+pub struct TestNewTransactionsWatcher {
+    sender: tokio::sync::broadcast::Sender<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+pub struct TestNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+impl TestTxStatusWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, receiver) = tokio::sync::watch::channel(None);
+        Arc::new(Self { sender, _receiver: receiver })
     }
-    BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx))
+
+    pub fn set_status(&self, status: Option<TxStatusSnapshot>) {
+        let _ = self.sender.send_replace(status);
+    }
+}
+
+#[cfg(test)]
+impl TestNewTransactionsWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, _) = tokio::sync::broadcast::channel(32);
+        Arc::new(Self { sender })
+    }
+
+    pub fn send_transaction(&self, tx: mp_transactions::validated::ValidatedTransaction) {
+        let _ = self.sender.send(Arc::new(tx));
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatcher for TestTxStatusWatcher {
+    fn watch_transaction_status(&self, _transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        Some(Box::new(TestTxStatusWatch { receiver: self.sender.subscribe() }))
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatch for TestTxStatusWatch {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
+        self.receiver.borrow_and_update().clone()
+    }
+
+    fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
+        Box::pin(async move {
+            self.receiver.changed().await.ok()?;
+            self.receiver.borrow_and_update().clone()
+        })
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatcher for TestNewTransactionsWatcher {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(TestNewTransactionsWatch { receiver: self.sender.subscribe() }))
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatch for TestNewTransactionsWatch {
+    fn recv(
+        &mut self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Option<Arc<mp_transactions::validated::ValidatedTransaction>>> + Send + '_,
+        >,
+    > {
+        Box::pin(async move {
+            loop {
+                match self.receiver.recv().await {
+                    Ok(tx) => return Some(tx),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        })
+    }
 }
 
 #[fixture]
