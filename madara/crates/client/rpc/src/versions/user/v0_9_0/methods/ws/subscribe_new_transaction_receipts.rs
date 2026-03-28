@@ -162,6 +162,10 @@ mod test {
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
+    use mp_rpc::v0_10_0::{
+        FinalityStatus as FinalityStatusV10, TxnFinalityStatus as TxnFinalityStatusV10,
+        TxnReceiptWithBlockInfo as TxnReceiptWithBlockInfoV10,
+    };
     use mp_rpc::v0_9_0::{FinalityStatus, TxnFinalityStatus, TxnReceiptWithBlockInfo};
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction as MpTransaction};
     use serde_json::Value;
@@ -278,7 +282,7 @@ mod test {
 
         let mut sub = StarknetWsRpcApiV0_10_0Client::subscribe_new_transaction_receipts(
             &client,
-            Some(vec![FinalityStatus::AcceptedOnL2]),
+            Some(vec![FinalityStatusV10::AcceptedOnL2]),
             None,
         )
         .await
@@ -314,8 +318,8 @@ mod test {
 
         assert_eq!(
             serde_json::to_value(&item).expect("Failed to serialize receipt item")["result"],
-            serde_json::to_value(TxnReceiptWithBlockInfo {
-                transaction_receipt: tx.receipt.to_rpc_v0_9(TxnFinalityStatus::L2),
+            serde_json::to_value(TxnReceiptWithBlockInfoV10 {
+                transaction_receipt: tx.receipt.to_rpc_v0_10(TxnFinalityStatusV10::L2),
                 block_hash: Some(expected_block_hash),
                 block_number: 0,
             })
@@ -413,13 +417,13 @@ mod test {
             .expect("Timed out waiting for replacement receipt")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement receipt");
-        let item: super::super::SubscriptionItem<TxnReceiptWithBlockInfo> =
+        let item: super::super::SubscriptionItem<TxnReceiptWithBlockInfoV10> =
             serde_json::from_value(next).expect("Failed to deserialize replacement receipt item");
 
         assert_eq!(
             item.result,
-            TxnReceiptWithBlockInfo {
-                transaction_receipt: tx.receipt.to_rpc_v0_9(TxnFinalityStatus::L2),
+            TxnReceiptWithBlockInfoV10 {
+                transaction_receipt: tx.receipt.to_rpc_v0_10(TxnFinalityStatusV10::L2),
                 block_hash: Some(new_block_hash),
                 block_number: 1,
             }
