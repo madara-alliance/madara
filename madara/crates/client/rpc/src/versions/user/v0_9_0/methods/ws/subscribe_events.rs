@@ -91,7 +91,7 @@ async fn send_block_events(
             start_block: block_number,
             start_event_index: 0,
             end_block: block_number,
-            from_address: from_address.clone(),
+            from_address: *from_address,
             keys_pattern: keys.clone(),
             max_events: usize::MAX,
         })
