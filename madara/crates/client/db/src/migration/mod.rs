@@ -44,7 +44,8 @@ fn get_available_disk_space(path: &Path) -> std::io::Result<u64> {
         return Err(std::io::Error::last_os_error());
     }
 
-    Ok(stat.f_bavail as u64 * stat.f_frsize as u64)
+    let available_bytes = u128::from(stat.f_bavail) * u128::from(stat.f_frsize);
+    available_bytes.try_into().map_err(|_| std::io::Error::other("Available disk space exceeds u64"))
 }
 
 /// Calculate total size of a directory recursively
