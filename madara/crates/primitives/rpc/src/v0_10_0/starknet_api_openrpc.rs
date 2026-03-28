@@ -3,26 +3,24 @@ pub use crate::v0_9_0::{
     AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
     BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BroadcastedDeclareTxn,
     BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, BroadcastedTxn, CallParams, ChainId, ChainIdParams, ClassAndTxnHash, CommonReceiptProperties,
-    ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem, ContractStorageDiffItem,
-    ContractsProof, DaMode, DataAvailability, DeclareTxn, DeclareTxnReceipt, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2,
-    DeclareTxnV3, DeployAccountTxn, DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn,
-    DeployTxnReceipt, DeployedContractItem, DeprecatedCairoEntryPoint, DeprecatedContractClass,
-    DeprecatedEntryPointsByType, EntryPointsByType, EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event,
-    EventAbiEntry, EventAbiType, EventContent, EventFilterWithPageRequest, ExecutionResources, ExecutionStatus,
-    FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry, FunctionAbiType, FunctionCall,
-    FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams, GetBlockWithTxHashesParams,
-    GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams,
-    GetStateUpdateParams, GetStorageAtParams, GetStorageProofResult, GetTransactionByBlockIdAndIndexParams,
-    GetTransactionByHashParams, GetTransactionReceiptParams, GetTransactionStatusParams, GlobalRoots, InvokeTxn,
-    InvokeTxnReceipt, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt,
-    MaybeDeprecatedContractClass, MerkleNode, MessageFeeEstimate, MsgFromL1, MsgToL1, NewClasses,
-    NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader, PreConfirmedBlockWithReceipts,
-    PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds,
-    ResourceBoundsMapping, ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams,
-    StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
-    TransactionAndReceipt, Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
-    TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus, TxnWithHash, TypedParameter,
+    BroadcastedInvokeTxn, BroadcastedTxn, CallParams, ChainId, ChainIdParams, ClassAndTxnHash, ContractAbi,
+    ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem, ContractStorageDiffItem,
+    ContractsProof, DaMode, DataAvailability, DeclareTxn, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeclareTxnV3,
+    DeployAccountTxn, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn, DeployedContractItem,
+    DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType, EntryPointsByType,
+    EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType, EventContent,
+    EventFilterWithPageRequest, ExecutionStatus, FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry,
+    FunctionAbiType, FunctionCall, FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams,
+    GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams,
+    GetEventsParams, GetNonceParams, GetStateUpdateParams, GetStorageAtParams, GetStorageProofResult,
+    GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams, GetTransactionReceiptParams,
+    GetTransactionStatusParams, GlobalRoots, InvokeTxn, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode,
+    L1HandlerTxn, MaybeDeprecatedContractClass, MerkleNode, MessageFeeEstimate, MsgFromL1, MsgToL1, NewClasses,
+    NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader, PreConfirmedBlockWithTxHashes,
+    PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds, ResourceBoundsMapping,
+    ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams, StorageKey,
+    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, Txn, TxnExecutionStatus,
+    TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus, TxnWithHash, TypedParameter,
 };
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -32,6 +30,111 @@ use starknet_types_core::felt::Felt;
 /// 2. PreConfirmedStateUpdate: Removed `old_root` field
 /// 3. EmittedEvent: Added `transaction_index` and `event_index` fields
 /// 4. ContractStorageKeysItem: Changed `storage_keys` type from `Vec<Felt>` to `Vec<StorageKey>`
+/// 5. Receipt `execution_resources` values are plain integers
+///
+/// The resources consumed by the transaction.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionResources {
+    pub l1_gas: u64,
+    pub l1_data_gas: u64,
+    pub l2_gas: u64,
+}
+
+impl From<crate::v0_8_1::ExecutionResources> for ExecutionResources {
+    fn from(resources: crate::v0_8_1::ExecutionResources) -> Self {
+        Self {
+            l1_gas: resources.l1_gas.try_into().unwrap_or(u64::MAX),
+            l1_data_gas: resources.l1_data_gas.try_into().unwrap_or(u64::MAX),
+            l2_gas: resources.l2_gas.try_into().unwrap_or(u64::MAX),
+        }
+    }
+}
+
+/// Shared receipt fields.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct CommonReceiptProperties {
+    /// The fee that was charged by the sequencer
+    pub actual_fee: FeePayment,
+    /// The events emitted as part of this transaction
+    pub events: Vec<Event>,
+    /// The resources consumed by the transaction
+    pub execution_resources: ExecutionResources,
+    /// finality status of the tx
+    pub finality_status: TxnFinalityStatus,
+    pub messages_sent: Vec<MsgToL1>,
+    /// The hash identifying the transaction
+    pub transaction_hash: TxnHash,
+    #[serde(flatten)]
+    pub execution_status: ExecutionStatus,
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
+pub enum TxnReceipt {
+    #[serde(rename = "INVOKE")]
+    Invoke(InvokeTxnReceipt),
+    #[serde(rename = "L1_HANDLER")]
+    L1Handler(L1HandlerTxnReceipt),
+    #[serde(rename = "DECLARE")]
+    Declare(DeclareTxnReceipt),
+    #[serde(rename = "DEPLOY")]
+    Deploy(DeployTxnReceipt),
+    #[serde(rename = "DEPLOY_ACCOUNT")]
+    DeployAccount(DeployAccountTxnReceipt),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct InvokeTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+/// Receipt for l1 handler transaction.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct L1HandlerTxnReceipt {
+    /// The message hash as it appears on the L1 core contract
+    pub message_hash: String,
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeclareTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeployAccountTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+    /// The address of the deployed contract
+    pub contract_address: Felt,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeployTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+    /// The address of the deployed contract
+    pub contract_address: Felt,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TransactionAndReceipt {
+    pub receipt: TxnReceipt,
+    pub transaction: Txn,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TxnReceiptWithBlockInfo {
+    #[serde(flatten)]
+    pub transaction_receipt: TxnReceipt,
+    /// If this field is missing, it means the receipt belongs to the pre-confirmed block
+    #[serde(default)]
+    pub block_hash: Option<BlockHash>,
+    pub block_number: BlockNumber,
+}
 ///
 /// The change in state applied in this block, given as a mapping of addresses to the new values and/or new contracts
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -179,6 +282,15 @@ pub struct BlockWithReceipts {
     /// The block header
     #[serde(flatten)]
     pub block_header: BlockHeader,
+}
+
+/// The dynamic block being constructed by the sequencer.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct PreConfirmedBlockWithReceipts {
+    /// The transactions in this block
+    pub transactions: Vec<TransactionAndReceipt>,
+    #[serde(flatten)]
+    pub pre_confirmed_block_header: PreConfirmedBlockHeader,
 }
 
 /// The block object with full transactions

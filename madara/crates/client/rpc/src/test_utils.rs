@@ -191,6 +191,7 @@ pub struct SampleChainForBlockGetters {
     pub expected_receipts_v0_7: Vec<mp_rpc::v0_7_1::TxnReceipt>,
     pub expected_receipts_v0_8: Vec<mp_rpc::v0_8_1::TxnReceipt>,
     pub expected_receipts_v0_9: Vec<mp_rpc::v0_9_0::TxnReceipt>,
+    pub expected_receipts_v0_10: Vec<mp_rpc::v0_10_0::TxnReceipt>,
 }
 
 #[fixture]
@@ -466,6 +467,70 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
             }),
         ]
     };
+    let expected_receipts_v0_10 = {
+        use mp_rpc::v0_10_0::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, PriceUnitFri, PriceUnitWei,
+            TxnFinalityStatus, TxnReceipt,
+        };
+        vec![
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x9"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L1,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94dd"),
+                        unit: PriceUnit::Fri(PriceUnitFri::Fri),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Reverted("too bad".into()),
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::PreConfirmed,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+        ]
+    };
 
     {
         // Block 0
@@ -654,6 +719,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         expected_receipts_v0_7,
         expected_receipts_v0_8,
         expected_receipts_v0_9,
+        expected_receipts_v0_10,
     }
 }
 
@@ -675,6 +741,10 @@ fn defaut_execution_resources_v0_7() -> mp_rpc::v0_7_1::ExecutionResources {
 
 fn defaut_execution_resources_v0_8() -> mp_rpc::v0_8_1::ExecutionResources {
     mp_rpc::v0_8_1::ExecutionResources { l1_gas: 0, l2_gas: 0, l1_data_gas: 0 }
+}
+
+fn defaut_execution_resources_v0_10() -> mp_rpc::v0_10_0::ExecutionResources {
+    mp_rpc::v0_10_0::ExecutionResources { l1_gas: 0, l2_gas: 0, l1_data_gas: 0 }
 }
 
 // This sample chain is used for every rpcs that query info gotten from state updates.
