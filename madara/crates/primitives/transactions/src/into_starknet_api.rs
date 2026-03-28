@@ -382,6 +382,7 @@ impl TryFrom<InvokeTransactionV1> for starknet_api::transaction::InvokeTransacti
 
 impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV3 {
     fn from(value: starknet_api::transaction::InvokeTransactionV3) -> Self {
+        let proof_facts = (!value.proof_facts.0.is_empty()).then(|| value.proof_facts.0.as_ref().clone());
         Self {
             sender_address: **value.sender_address,
             calldata: value.calldata.0,
@@ -393,7 +394,7 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
             account_deployment_data: value.account_deployment_data.0,
             nonce_data_availability_mode: value.nonce_data_availability_mode.into(),
             fee_data_availability_mode: value.fee_data_availability_mode.into(),
-            proof_facts: None,
+            proof_facts,
         }
     }
 }
@@ -518,6 +519,41 @@ impl From<ResourceBounds> for starknet_api::transaction::fields::ResourceBounds 
 fn fee(fee: &Felt) -> Result<starknet_api::transaction::fields::Fee, TransactionApiError> {
     let fee = (*fee).try_into().map_err(|_| TransactionApiError::MaxFee)?;
     Ok(starknet_api::transaction::fields::Fee(fee))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invoke_v3_roundtrip_preserves_proof_facts() {
+        let original = InvokeTransactionV3 {
+            sender_address: Felt::from_hex_unchecked("0x123"),
+            calldata: vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")].into(),
+            signature: vec![Felt::from_hex_unchecked("0x3")].into(),
+            nonce: Felt::from_hex_unchecked("0x4"),
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
+                l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                l1_data_gas: Some(ResourceBounds { max_amount: 5, max_price_per_unit: 6 }),
+            },
+            tip: 7,
+            paymaster_data: vec![Felt::from_hex_unchecked("0x8")],
+            account_deployment_data: vec![Felt::from_hex_unchecked("0x9")],
+            nonce_data_availability_mode: DataAvailabilityMode::L1,
+            fee_data_availability_mode: DataAvailabilityMode::L2,
+            proof_facts: Some(vec![
+                Felt::from_hex_unchecked("0xa"),
+                Felt::from_hex_unchecked("0xb"),
+                Felt::from_hex_unchecked("0xc"),
+            ]),
+        };
+
+        let api: starknet_api::transaction::InvokeTransactionV3 = original.clone().try_into().unwrap();
+        let roundtrip = InvokeTransactionV3::from(api);
+
+        assert_eq!(roundtrip.proof_facts, original.proof_facts);
+    }
 }
 
 fn contract_address(contract_address: &Felt) -> Result<starknet_api::core::ContractAddress, TransactionApiError> {

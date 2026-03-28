@@ -378,6 +378,29 @@ impl ExecutorThread {
                 }
             }
 
+            let block_time_deadline_reached = Instant::now() >= next_block_deadline;
+
+            // Do not materialize a fresh execution context for an empty batch unless we are
+            // intentionally producing empty blocks. This is critical for replay, where the
+            // custom header is often set just before the first tx lands.
+            if matches!(state, ExecutorThreadState::NewBlock(_)) && to_exec.is_empty() {
+                if force_close {
+                    tracing::debug!("Ignoring force-close while no block is open yet.");
+                    force_close = false;
+                    next_block_deadline = Instant::now() + block_time;
+                    continue;
+                }
+
+                if no_empty_blocks || !block_time_deadline_reached {
+                    tracing::trace!(
+                        "Skipping execution state creation for empty batch (no_empty_blocks={}, deadline_reached={})",
+                        no_empty_blocks,
+                        block_time_deadline_reached
+                    );
+                    continue;
+                }
+            }
+
             // Create a new execution state (new block) if it does not already exist.
             // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
             // creates the blockifier TransactionExecutor.

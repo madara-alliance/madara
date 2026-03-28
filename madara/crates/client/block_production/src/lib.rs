@@ -207,6 +207,37 @@ impl CurrentBlockState {
             if let Ok((execution_info, state_diff)) = blockifier_exec_result {
                 let declared_class = additional_info.declared_class.take().filter(|_| !execution_info.is_reverted());
 
+                let native_fee_token_address = self.backend.chain_config().native_fee_token_address.to_felt();
+                let fee_token_writes: Vec<_> = state_diff
+                    .storage
+                    .iter()
+                    .filter_map(|((contract_addr, key), value)| {
+                        (contract_addr.to_felt() == native_fee_token_address)
+                            .then(|| (format!("{:#x}", key.to_felt()), format!("{:#x}", value)))
+                    })
+                    .collect();
+                if !fee_token_writes.is_empty() {
+                    let fee_transfer_event_data: Vec<Vec<String>> = execution_info
+                        .fee_transfer_call_info
+                        .iter()
+                        .flat_map(|call_info| call_info.iter())
+                        .flat_map(|call| {
+                            call.execution.events.iter().map(|event| {
+                                event.event.data.0.iter().map(|felt| format!("{felt:#x}")).collect::<Vec<_>>()
+                            })
+                        })
+                        .collect();
+                    tracing::info!(
+                        target: "replay_debug",
+                        "live_execution_fee_token_writes block_number={} tx_hash={:#x} receipt_fee={:#x} fee_token_writes={:?} fee_transfer_event_data={:?}",
+                        self.block_number,
+                        blockifier_tx.tx_hash().to_felt(),
+                        execution_info.receipt.fee.0,
+                        fee_token_writes,
+                        fee_transfer_event_data,
+                    );
+                }
+
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
                 let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
@@ -745,6 +776,19 @@ impl BlockProductionTask {
         match reply {
             ExecutorMessage::StartNewBlock { exec_ctx } => {
                 tracing::debug!("Received ExecutorMessage::StartNewBlock block_n={}", exec_ctx.block_number);
+                tracing::info!(
+                    target: "replay_debug",
+                    "start_new_block block_number={} protocol_version={} timestamp_secs={} eth_l1_gas_price={} strk_l1_gas_price={} eth_l1_data_gas_price={} strk_l1_data_gas_price={} eth_l2_gas_price={} strk_l2_gas_price={}",
+                    exec_ctx.block_number,
+                    exec_ctx.protocol_version,
+                    exec_ctx.block_timestamp.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    exec_ctx.gas_prices.eth_l1_gas_price,
+                    exec_ctx.gas_prices.strk_l1_gas_price,
+                    exec_ctx.gas_prices.eth_l1_data_gas_price,
+                    exec_ctx.gas_prices.strk_l1_data_gas_price,
+                    exec_ctx.gas_prices.eth_l2_gas_price,
+                    exec_ctx.gas_prices.strk_l2_gas_price,
+                );
                 let current_state = self.current_state.take().context("No current state")?;
                 let TaskState::NotExecuting { latest_block_n } = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be NotExecuting")
@@ -851,6 +895,28 @@ impl BlockProductionTask {
             &state.deployed_contracts,
             old_declared_contracts,
         );
+        let native_fee_token_address = self.backend.chain_config().native_fee_token_address.to_felt();
+        let finalized_fee_token_writes: Vec<_> = state_diff
+            .storage_diffs
+            .iter()
+            .filter(|entry| entry.address == native_fee_token_address)
+            .flat_map(|entry| {
+                entry
+                    .storage_entries
+                    .iter()
+                    .map(|storage| (format!("{:#x}", storage.key), format!("{:#x}", storage.value)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        if !finalized_fee_token_writes.is_empty() {
+            tracing::info!(
+                target: "replay_debug",
+                "finalized_fee_token_writes block_number={} protocol_version={} finalized_fee_token_writes={:?}",
+                state.block_number,
+                self.backend.chain_config().latest_protocol_version,
+                finalized_fee_token_writes,
+            );
+        }
 
         // Capture state diff counts before moving state_diff
         let declared_classes_count = state_diff.declared_classes.len();
@@ -1086,6 +1152,7 @@ pub(crate) mod tests {
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
+    use mp_block::header::{CustomHeader, GasPrices};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
@@ -1444,6 +1511,96 @@ pub(crate) mod tests {
         validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
     }
 
+    async fn replay_like_devnet_setup(block_time: Duration) -> DevnetSetup {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        let mut genesis = ChainGenesisDescription::base_config().unwrap();
+        let contracts = genesis.add_devnet_contracts(10).unwrap();
+        let chain_config = Arc::new(ChainConfig { block_time, no_empty_blocks: true, ..ChainConfig::madara_devnet() });
+
+        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
+        genesis.build_and_store(&backend).await.unwrap();
+
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
+        let tx_validator = Arc::new(TransactionValidator::new(
+            Arc::clone(&mempool) as _,
+            Arc::clone(&backend),
+            TransactionValidatorConfig::default(),
+        ));
+
+        DevnetSetup {
+            backend,
+            mempool,
+            metrics: Arc::new(BlockProductionMetrics::register()),
+            tx_validator,
+            contracts,
+            l1_client: L1ClientMock::new(),
+        }
+    }
+
+    fn replay_custom_header() -> CustomHeader {
+        CustomHeader {
+            block_n: 1,
+            timestamp: 1_742_000_000,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 31_000_000_000,
+                strk_l1_gas_price: 41_000_000_000,
+                eth_l1_data_gas_price: 17_000_000_000,
+                strk_l1_data_gas_price: 23_000_000_000,
+                eth_l2_gas_price: 29_000_000_000,
+                strk_l2_gas_price: 37_000_000_000,
+            },
+            expected_block_hash: Felt::ZERO,
+        }
+    }
+
+    fn to_admin_invoke_tx(tx: BroadcastedInvokeTxn) -> mp_rpc::admin::BroadcastedInvokeTxn {
+        match tx {
+            BroadcastedInvokeTxn::V0(tx) => mp_rpc::admin::BroadcastedInvokeTxn::V0(tx),
+            BroadcastedInvokeTxn::V1(tx) => mp_rpc::admin::BroadcastedInvokeTxn::V1(tx),
+            BroadcastedInvokeTxn::V3(tx) => {
+                mp_rpc::admin::BroadcastedInvokeTxn::V3(mp_rpc::admin::BroadcastedInvokeTxnV3 {
+                    inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                        sender_address: tx.sender_address,
+                        calldata: tx.calldata,
+                        signature: tx.signature,
+                        nonce: tx.nonce,
+                        resource_bounds: tx.resource_bounds,
+                        tip: tx.tip,
+                        paymaster_data: tx.paymaster_data,
+                        account_deployment_data: tx.account_deployment_data,
+                        nonce_data_availability_mode: tx.nonce_data_availability_mode,
+                        fee_data_availability_mode: tx.fee_data_availability_mode,
+                    },
+                    proof_facts: None,
+                })
+            }
+            BroadcastedInvokeTxn::QueryV0(tx) => mp_rpc::admin::BroadcastedInvokeTxn::QueryV0(tx),
+            BroadcastedInvokeTxn::QueryV1(tx) => mp_rpc::admin::BroadcastedInvokeTxn::QueryV1(tx),
+            BroadcastedInvokeTxn::QueryV3(tx) => {
+                mp_rpc::admin::BroadcastedInvokeTxn::QueryV3(mp_rpc::admin::BroadcastedInvokeTxnV3 {
+                    inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                        sender_address: tx.sender_address,
+                        calldata: tx.calldata,
+                        signature: tx.signature,
+                        nonce: tx.nonce,
+                        resource_bounds: tx.resource_bounds,
+                        tip: tx.tip,
+                        paymaster_data: tx.paymaster_data,
+                        account_deployment_data: tx.account_deployment_data,
+                        nonce_data_availability_mode: tx.nonce_data_availability_mode,
+                        fee_data_availability_mode: tx.fee_data_availability_mode,
+                    },
+                    proof_facts: None,
+                })
+            }
+        }
+    }
+
     //
     // This test verifies that when Madara restarts with a preconfirmed block, `close_preconfirmed_block_if_exists`
     // correctly re-executes transactions and produces the same global state root, state diff, and receipts as the original
@@ -1707,6 +1864,79 @@ pub(crate) mod tests {
                 original_tx.receipt.transaction_hash()
             );
         }
+    }
+
+    #[tokio::test]
+    #[timeout(Duration::from_secs(60))]
+    async fn test_admin_bypass_invoke_matches_normal_invoke_with_custom_header() {
+        let mut normal_setup = replay_like_devnet_setup(Duration::from_secs(10_000)).await;
+        let mut admin_setup = replay_like_devnet_setup(Duration::from_secs(10_000)).await;
+
+        let mut normal_task = normal_setup.block_prod_task();
+        let mut normal_notifications = normal_task.subscribe_state_notifications();
+        let normal_handle = normal_task.handle();
+        let _normal_runner =
+            AbortOnDrop::spawn(async move { normal_task.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        let mut admin_task = admin_setup.block_prod_task();
+        let mut admin_notifications = admin_task.subscribe_state_notifications();
+        let admin_handle = admin_task.handle();
+        let _admin_runner =
+            AbortOnDrop::spawn(async move { admin_task.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        let custom_header = replay_custom_header();
+        normal_setup.backend.set_custom_header(custom_header.clone());
+        admin_setup.backend.set_custom_header(custom_header);
+
+        let tx = make_invoke_tx(
+            &normal_setup.contracts.0[0],
+            Multicall::default().with(Call {
+                to: Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                selector: Selector::from("transfer"),
+                calldata: vec![
+                    normal_setup.contracts.0[1].address,
+                    (1_234u128 * 1_000_000_000_000_000_000).into(),
+                    Felt::ZERO,
+                ],
+            }),
+            &normal_setup.backend,
+            Felt::ZERO,
+        );
+
+        normal_setup.tx_validator.submit_invoke_transaction(tx.clone()).await.unwrap();
+        admin_handle.submit_admin_invoke_transaction(to_admin_invoke_tx(tx)).await.unwrap();
+
+        assert_eq!(normal_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        assert_eq!(admin_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+
+        normal_handle.close_block().await.unwrap();
+        admin_handle.close_block().await.unwrap();
+
+        assert_eq!(normal_notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert_eq!(admin_notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let normal_block = normal_setup.backend.block_view_on_confirmed(1).unwrap();
+        let admin_block = admin_setup.backend.block_view_on_confirmed(1).unwrap();
+
+        let mut normal_state_diff = normal_block.get_state_diff().unwrap();
+        let mut admin_state_diff = admin_block.get_state_diff().unwrap();
+        normal_state_diff.sort();
+        admin_state_diff.sort();
+
+        assert_eq!(
+            normal_state_diff, admin_state_diff,
+            "admin bypass state diff should match normal invoke state diff when replaying with a custom header"
+        );
+        assert_eq!(
+            normal_block.get_executed_transactions(..).unwrap(),
+            admin_block.get_executed_transactions(..).unwrap(),
+            "admin bypass receipt/transaction output should match normal invoke output with a custom header"
+        );
+        assert_eq!(
+            normal_block.get_block_info().unwrap().header.gas_prices,
+            admin_block.get_block_info().unwrap().header.gas_prices,
+            "both blocks should persist the same custom gas prices"
+        );
     }
 
     // This test makes sure that the preconfirmed tick closes the block

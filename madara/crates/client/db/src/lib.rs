@@ -464,25 +464,53 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        tracing::info!(
+            target: "replay_debug",
+            "set_custom_header incoming_block_n={} incoming_timestamp={} incoming_expected_block_hash={:#x} incoming_eth_l1_gas_price={} incoming_strk_l1_gas_price={} incoming_eth_l1_data_gas_price={} incoming_strk_l1_data_gas_price={} incoming_eth_l2_gas_price={} incoming_strk_l2_gas_price={}",
+            custom_header.block_n,
+            custom_header.timestamp,
+            custom_header.expected_block_hash,
+            custom_header.gas_prices.eth_l1_gas_price,
+            custom_header.gas_prices.strk_l1_gas_price,
+            custom_header.gas_prices.eth_l1_data_gas_price,
+            custom_header.gas_prices.strk_l1_data_gas_price,
+            custom_header.gas_prices.eth_l2_gas_price,
+            custom_header.gas_prices.strk_l2_gas_price,
+        );
+
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header.clone());
         drop(guard);
 
         let Some(preconfirmed) = self.preconfirmed_block() else {
+            tracing::info!(
+                target: "replay_debug",
+                "set_custom_header no_preconfirmed_block_available_for_update block_n={}",
+                custom_header.block_n,
+            );
             return;
         };
 
         if preconfirmed.header.block_number != custom_header.block_n || preconfirmed.transaction_count() != 0 {
+            tracing::info!(
+                target: "replay_debug",
+                "set_custom_header skipped_preconfirmed_update incoming_block_n={} preconfirmed_block_n={} preconfirmed_tx_count={}",
+                custom_header.block_n,
+                preconfirmed.header.block_number,
+                preconfirmed.transaction_count(),
+            );
             return;
         }
 
         let content = preconfirmed.content.borrow().clone();
+        let custom_gas_prices = custom_header.gas_prices.clone();
+
         let header = PreconfirmedHeader {
             block_number: preconfirmed.header.block_number,
             sequencer_address: preconfirmed.header.sequencer_address,
             block_timestamp: custom_header.timestamp.into(),
             protocol_version: preconfirmed.header.protocol_version,
-            gas_prices: custom_header.gas_prices,
+            gas_prices: custom_gas_prices.clone(),
             l1_da_mode: preconfirmed.header.l1_da_mode,
         };
 
@@ -494,6 +522,19 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             )
             .into(),
         ));
+
+        tracing::info!(
+            target: "replay_debug",
+            "set_custom_header updated_preconfirmed_header block_n={} timestamp={} eth_l1_gas_price={} strk_l1_gas_price={} eth_l1_data_gas_price={} strk_l1_data_gas_price={} eth_l2_gas_price={} strk_l2_gas_price={}",
+            custom_header.block_n,
+            custom_header.timestamp,
+            custom_gas_prices.eth_l1_gas_price,
+            custom_gas_prices.strk_l1_gas_price,
+            custom_gas_prices.eth_l1_data_gas_price,
+            custom_gas_prices.strk_l1_data_gas_price,
+            custom_gas_prices.eth_l2_gas_price,
+            custom_gas_prices.strk_l2_gas_price,
+        );
     }
 
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
