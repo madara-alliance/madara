@@ -140,7 +140,6 @@ impl SettlementLayerProvider for EthereumClient {
         self.provider
             .get_block_number()
             .await
-            .map(|n| n)
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })
     }
 
