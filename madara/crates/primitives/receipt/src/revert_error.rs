@@ -4,6 +4,7 @@
 //! reshaping of the stack trace changes the revert-reason hash and therefore the receipt
 //! commitment.
 
+use blockifier::execution::stack_trace::{EntryPointErrorFrame, ErrorStack, ErrorStackSegment, PreambleType};
 use blockifier::transaction::objects::RevertError;
 
 /// Thin helpers which keep receipt formatting aligned with blockifier's canonical `Display`
@@ -15,20 +16,69 @@ pub trait RevertErrorExt {
 
 impl RevertErrorExt for RevertError {
     fn format_for_receipt(self) -> RevertError {
-        self
+        match self {
+            RevertError::Execution(error_stack) if should_strip_vm_tracebacks_for_receipt(&error_stack) => {
+                RevertError::Execution(strip_vm_tracebacks(error_stack))
+            }
+            other => other,
+        }
     }
 
     fn format_for_receipt_string(&self) -> String {
-        self.to_string()
+        match self {
+            RevertError::Execution(error_stack) if should_strip_vm_tracebacks_for_receipt(error_stack) => {
+                strip_vm_tracebacks_ref(error_stack).to_string()
+            }
+            _ => self.to_string(),
+        }
     }
+}
+
+fn should_strip_vm_tracebacks_for_receipt(error_stack: &ErrorStack) -> bool {
+    error_stack.stack.iter().rev().find_map(|segment| match segment {
+        ErrorStackSegment::EntryPoint(entry_point) => Some(entry_point.preamble_type == PreambleType::Constructor),
+        _ => None,
+    }) == Some(true)
+}
+
+fn strip_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
+    ErrorStack {
+        header: error_stack.header,
+        stack: error_stack.stack.into_iter().filter(|segment| !matches!(segment, ErrorStackSegment::Vm(_))).collect(),
+    }
+}
+
+fn strip_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
+    let mut new_stack = ErrorStack { header: error_stack.header.clone(), stack: Vec::new() };
+
+    for segment in &error_stack.stack {
+        match segment {
+            ErrorStackSegment::Vm(_) => {}
+            ErrorStackSegment::EntryPoint(entry_point) => {
+                new_stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+                    depth: entry_point.depth,
+                    preamble_type: entry_point.preamble_type.clone(),
+                    storage_address: entry_point.storage_address,
+                    class_hash: entry_point.class_hash,
+                    selector: entry_point.selector,
+                }));
+            }
+            ErrorStackSegment::Cairo1RevertSummary(summary) => {
+                new_stack.push(ErrorStackSegment::Cairo1RevertSummary(summary.clone()));
+            }
+            ErrorStackSegment::StringFrame(s) => {
+                new_stack.push(ErrorStackSegment::StringFrame(s.clone()));
+            }
+        }
+    }
+
+    new_stack
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blockifier::execution::stack_trace::{
-        EntryPointErrorFrame, ErrorStack, ErrorStackHeader, ErrorStackSegment, PreambleType, VmExceptionFrame,
-    };
+    use blockifier::execution::stack_trace::{ErrorStackHeader, ErrorStackSegment, VmExceptionFrame};
     use cairo_vm::types::relocatable::Relocatable;
     use starknet_api::core::EntryPointSelector;
     use starknet_api::{class_hash, contract_address, felt};
@@ -108,6 +158,35 @@ Unknown location (pc=0:36748)
 Unknown location (pc=0:34763)
 
 Could not reach the end of the program. RunResources has no remaining steps.
+"#;
+
+    const EXPECTED_PATHFINDER_RECEIPT_8138315: &str = r#"Transaction execution has failed:
+0: Error in the called contract (contract address: 0x0578a41eafe7e6f5a34ff42444ca7df1b04516fc2e6d4d9a65e329eeb75109de, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):
+1: Error in the called contract (contract address: 0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125, class hash: 0x01b2df6d8861670d4a8ca4670433b2418d78169c2947f46dc614e69f333745c8, selector: 0x02730079d734ee55315f4f141eaed376bddd8c2133523d223a344c5604e0f7f8):
+2: Error in the contract class constructor (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194):
+Execution failed. Failure reason:
+Error in contract (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194):
+0x4661696c656420746f20646573657269616c697a6520706172616d202331 ('Failed to deserialize param #1').
+"#;
+
+    const RAW_TRACE_8138315: &str = r#"Transaction execution has failed:
+0: Error in the called contract (contract address: 0x0578a41eafe7e6f5a34ff42444ca7df1b04516fc2e6d4d9a65e329eeb75109de, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):
+Error at pc=0:2929:
+Cairo traceback (most recent call last):
+Unknown location (pc=0:56)
+Unknown location (pc=0:1187)
+Unknown location (pc=0:1670)
+Unknown location (pc=0:2289)
+
+1: Error in the called contract (contract address: 0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125, class hash: 0x01b2df6d8861670d4a8ca4670433b2418d78169c2947f46dc614e69f333745c8, selector: 0x02730079d734ee55315f4f141eaed376bddd8c2133523d223a344c5604e0f7f8):
+Error at pc=0:774:
+Cairo traceback (most recent call last):
+Unknown location (pc=0:152)
+
+2: Error in the contract class constructor (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194):
+Execution failed. Failure reason:
+Error in contract (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3, class hash: 0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: 0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194):
+0x4661696c656420746f20646573657269616c697a6520706172616d202331 ('Failed to deserialize param #1').
 "#;
 
     fn sepolia_8097402_revert_error() -> RevertError {
@@ -196,6 +275,61 @@ Could not reach the end of the program. RunResources has no remaining steps.
         RevertError::Execution(stack)
     }
 
+    fn sepolia_8138315_revert_error() -> RevertError {
+        let mut stack = ErrorStack { header: ErrorStackHeader::Execution, stack: Vec::new() };
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 0,
+            preamble_type: PreambleType::CallContract,
+            storage_address: contract_address!("0x0578a41eafe7e6f5a34ff42444ca7df1b04516fc2e6d4d9a65e329eeb75109de"),
+            class_hash: class_hash!("0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c"),
+            selector: Some(EntryPointSelector(felt!(
+                "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+            ))),
+        }));
+        stack.push(ErrorStackSegment::Vm(VmExceptionFrame {
+            pc: Relocatable::from((0, 2929)),
+            error_attr_value: None,
+            traceback: Some(
+                "Cairo traceback (most recent call last):\nUnknown location (pc=0:56)\nUnknown location \
+                 (pc=0:1187)\nUnknown location (pc=0:1670)\nUnknown location (pc=0:2289)\n"
+                    .to_string(),
+            ),
+        }));
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 1,
+            preamble_type: PreambleType::CallContract,
+            storage_address: contract_address!("0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125"),
+            class_hash: class_hash!("0x01b2df6d8861670d4a8ca4670433b2418d78169c2947f46dc614e69f333745c8"),
+            selector: Some(EntryPointSelector(felt!(
+                "0x02730079d734ee55315f4f141eaed376bddd8c2133523d223a344c5604e0f7f8"
+            ))),
+        }));
+        stack.push(ErrorStackSegment::Vm(VmExceptionFrame {
+            pc: Relocatable::from((0, 774)),
+            error_attr_value: None,
+            traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:152)\n".to_string()),
+        }));
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 2,
+            preamble_type: PreambleType::Constructor,
+            storage_address: contract_address!("0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3"),
+            class_hash: class_hash!("0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c"),
+            selector: Some(EntryPointSelector(felt!(
+                "0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194"
+            ))),
+        }));
+        stack.push(ErrorStackSegment::StringFrame(
+            "Execution failed. Failure reason:\nError in contract (contract address: \
+             0x062d39dd09d4799967ad7201a2a7651ae7c9ace4722182b900329e0817aef9a3, class hash: \
+             0x0012276b8ff0f4c1f5c3a087ddc53a263fda97a5ee784f66bcda65467be5a98c, selector: \
+             0x028ffe4ff0f226a9107253e17a904099aa4f63a02a5621de0576e5aa71bc5194):\n\
+             0x4661696c656420746f20646573657269616c697a6520706172616d202331 ('Failed to deserialize \
+             param #1').\n"
+                .replace("             ", ""),
+        ));
+        RevertError::Execution(stack)
+    }
+
     #[test]
     fn sepolia_8097402_receipt_string_matches_pathfinder_and_not_filtered_madara() {
         let actual = sepolia_8097402_revert_error().format_for_receipt_string();
@@ -209,5 +343,22 @@ Could not reach the end of the program. RunResources has no remaining steps.
         let actual = sepolia_8097402_revert_error().format_for_receipt();
 
         assert_eq!(actual.to_string(), EXPECTED_PATHFINDER_RECEIPT);
+    }
+
+    #[test]
+    fn sepolia_8138315_receipt_string_matches_pathfinder_and_not_raw_trace() {
+        let raw = sepolia_8138315_revert_error().to_string();
+        let actual = sepolia_8138315_revert_error().format_for_receipt_string();
+
+        assert_eq!(raw, RAW_TRACE_8138315);
+        assert_eq!(actual, EXPECTED_PATHFINDER_RECEIPT_8138315);
+        assert_ne!(actual, raw);
+    }
+
+    #[test]
+    fn sepolia_8138315_receipt_value_strips_constructor_chain_vm_tracebacks() {
+        let actual = sepolia_8138315_revert_error().format_for_receipt();
+
+        assert_eq!(actual.to_string(), EXPECTED_PATHFINDER_RECEIPT_8138315);
     }
 }
