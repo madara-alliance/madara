@@ -35,10 +35,16 @@ impl RevertErrorExt for RevertError {
 }
 
 fn should_strip_vm_tracebacks_for_receipt(error_stack: &ErrorStack) -> bool {
-    error_stack.stack.iter().rev().find_map(|segment| match segment {
-        ErrorStackSegment::EntryPoint(entry_point) => Some(entry_point.preamble_type == PreambleType::Constructor),
-        _ => None,
-    }) == Some(true)
+    let has_constructor_frame = error_stack
+        .stack
+        .iter()
+        .any(|segment| matches!(segment, ErrorStackSegment::EntryPoint(entry_point) if entry_point.preamble_type == PreambleType::Constructor));
+    let has_nested_constructor_failure = error_stack
+        .stack
+        .iter()
+        .any(|segment| matches!(segment, ErrorStackSegment::StringFrame(s) if s.starts_with("Execution failed. Failure reason:\n")));
+
+    has_constructor_frame && has_nested_constructor_failure
 }
 
 fn strip_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
@@ -189,6 +195,26 @@ Error in contract (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace47
 0x4661696c656420746f20646573657269616c697a6520706172616d202331 ('Failed to deserialize param #1').
 "#;
 
+    const EXPECTED_PATHFINDER_RECEIPT_8168453: &str = r#"Transaction execution has failed:
+0: Error in the called contract (contract address: 0x03666fcf7f5c9195d08464c5f2713d756864220f02342bd2382f781afc1c2b0d, class hash: 0x05b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):
+Error at pc=0:7331:
+Cairo traceback (most recent call last):
+Unknown location (pc=0:188)
+Unknown location (pc=0:2616)
+Unknown location (pc=0:3553)
+Unknown location (pc=0:4820)
+Unknown location (pc=0:5564)
+Unknown location (pc=0:6675)
+
+1: Error in the called contract (contract address: 0x076f0c5e5a7c9ded2d875321902d958dafa28a40bd56b51b6c983df94d7e03c9, class hash: 0x0637eda47d4e51b44a71ae559a69601ea8fcda38dfc1345665a8465ebe02a2e9, selector: 0x00161dc77f8e29b5e4194910df4cf7368b6c3c4ef7168245d7b194c9402b3fa6):
+Error at pc=0:651:
+Cairo traceback (most recent call last):
+Unknown location (pc=0:70)
+
+2: Error in the contract class constructor (contract address: 0x03673e9f0d6396cac1c232bfbfb2155d7bcc3af7e0268e440b4822c8145e47c4, class hash: 0x07efbb7f0a20d7fa7d25ff24fff9a974695c109ff17696aa8a68b105542c5cd3, selector: UNKNOWN):
+Deployment failed: contract already deployed at address 0x03673e9f0d6396cac1c232bfbfb2155d7bcc3af7e0268e440b4822c8145e47c4
+"#;
+
     fn sepolia_8097402_revert_error() -> RevertError {
         let mut stack = ErrorStack { header: ErrorStackHeader::Execution, stack: Vec::new() };
         stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
@@ -330,6 +356,56 @@ Error in contract (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace47
         RevertError::Execution(stack)
     }
 
+    fn sepolia_8168453_revert_error() -> RevertError {
+        let mut stack = ErrorStack { header: ErrorStackHeader::Execution, stack: Vec::new() };
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 0,
+            preamble_type: PreambleType::CallContract,
+            storage_address: contract_address!("0x03666fcf7f5c9195d08464c5f2713d756864220f02342bd2382f781afc1c2b0d"),
+            class_hash: class_hash!("0x05b4b537eaa2399e3aa99c4e2e0208ebd6c71bc1467938cd52c798c601e43564"),
+            selector: Some(EntryPointSelector(felt!(
+                "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+            ))),
+        }));
+        stack.push(ErrorStackSegment::Vm(VmExceptionFrame {
+            pc: Relocatable::from((0, 7331)),
+            error_attr_value: None,
+            traceback: Some(
+                "Cairo traceback (most recent call last):\nUnknown location (pc=0:188)\nUnknown location \
+                 (pc=0:2616)\nUnknown location (pc=0:3553)\nUnknown location (pc=0:4820)\nUnknown \
+                 location (pc=0:5564)\nUnknown location (pc=0:6675)\n"
+                    .to_string(),
+            ),
+        }));
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 1,
+            preamble_type: PreambleType::CallContract,
+            storage_address: contract_address!("0x076f0c5e5a7c9ded2d875321902d958dafa28a40bd56b51b6c983df94d7e03c9"),
+            class_hash: class_hash!("0x0637eda47d4e51b44a71ae559a69601ea8fcda38dfc1345665a8465ebe02a2e9"),
+            selector: Some(EntryPointSelector(felt!(
+                "0x00161dc77f8e29b5e4194910df4cf7368b6c3c4ef7168245d7b194c9402b3fa6"
+            ))),
+        }));
+        stack.push(ErrorStackSegment::Vm(VmExceptionFrame {
+            pc: Relocatable::from((0, 651)),
+            error_attr_value: None,
+            traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:70)\n".to_string()),
+        }));
+        stack.push(ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+            depth: 2,
+            preamble_type: PreambleType::Constructor,
+            storage_address: contract_address!("0x03673e9f0d6396cac1c232bfbfb2155d7bcc3af7e0268e440b4822c8145e47c4"),
+            class_hash: class_hash!("0x07efbb7f0a20d7fa7d25ff24fff9a974695c109ff17696aa8a68b105542c5cd3"),
+            selector: None,
+        }));
+        stack.push(ErrorStackSegment::StringFrame(
+            "Deployment failed: contract already deployed at address \
+             0x03673e9f0d6396cac1c232bfbfb2155d7bcc3af7e0268e440b4822c8145e47c4\n"
+                .replace("             ", ""),
+        ));
+        RevertError::Execution(stack)
+    }
+
     #[test]
     fn sepolia_8097402_receipt_string_matches_pathfinder_and_not_filtered_madara() {
         let actual = sepolia_8097402_revert_error().format_for_receipt_string();
@@ -360,5 +436,21 @@ Error in contract (contract address: 0x062d39dd09d4799967ad7201a2a7651ae7c9ace47
         let actual = sepolia_8138315_revert_error().format_for_receipt();
 
         assert_eq!(actual.to_string(), EXPECTED_PATHFINDER_RECEIPT_8138315);
+    }
+
+    #[test]
+    fn sepolia_8168453_receipt_string_keeps_outer_vm_tracebacks() {
+        let raw = sepolia_8168453_revert_error().to_string();
+        let actual = sepolia_8168453_revert_error().format_for_receipt_string();
+
+        assert_eq!(actual, EXPECTED_PATHFINDER_RECEIPT_8168453);
+        assert_eq!(actual, raw);
+    }
+
+    #[test]
+    fn sepolia_8168453_receipt_value_matches_pathfinder() {
+        let actual = sepolia_8168453_revert_error().format_for_receipt();
+
+        assert_eq!(actual.to_string(), EXPECTED_PATHFINDER_RECEIPT_8168453);
     }
 }
