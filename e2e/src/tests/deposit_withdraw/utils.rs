@@ -1,3 +1,6 @@
+use crate::services::constants::{
+    BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, DATA_DIR,
+};
 use crate::services::helpers::get_file_path;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::helpers::TransactionFinalityStatus;
@@ -19,25 +22,81 @@ use starknet::{
     providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
 
-// Constants - Taken from: addresses.json, bootstrapper.json and output of bootstrapper
-pub const L2_ACCOUNT_ADDRESS: &str = "0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860";
+// Constants that are fixed (Anvil defaults / Madara devnet key)
 pub const L2_ACCOUNT_PRIVATE_KEY: &str = "0xabcd"; // Hex Madara Account Private Key
-
-pub const L2_ERC20_TOKEN_ADDRESS: &str = "0x25205e11d1c0017f94a531a139b47137dae34ae0b9bed9e8fe698ace64f0609"; // Hex Madara ERC20 TOKEN Address
-pub const L2_ERC20_BRIDGE_ADDRESS: &str = "0x7e46129030dcff37062dd4353a738a7a5d5a88e8481bfa8b36a2ef5f8f7fa47"; // Hex Madara ERC20 BRIDGE Address
-
-pub const L2_ETH_TOKEN_ADDRESS: &str = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"; // Hex Madara ETH TOKEN Address
-pub const L2_ETH_BRIDGE_ADDRESS: &str = "0x190f2407f7040ef9a60d4df4d2eace6089419aa9ec42cda229a82a29b2d5b3e"; // Hex Madara ETH BRIDGE Address
-
-pub const L1_ACCOUNT_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // Hex L1 Account Address
-pub const L1_ACCOUNT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Hex L1 Account Private Key
-
-pub const L1_ERC20_BRIDGE_ADDRESS: &str = "0x59b670e9fa9d0a427751af201d676719a970857b"; // Hex L1 ERC20 BRIDGE Address
-pub const L1_ERC20_TOKEN_ADDRESS: &str = "0x4ed7c70f96b99c776995fb64377f0d4ab3b0e1c1";
-
-pub const L1_ETH_BRIDGE_ADDRESS: &str = "0x8a791620dd6260079bf849dc5567adc3f2fdc318"; // Hex L1 ETH BRIDGE Address
+pub const L1_ACCOUNT_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+pub const L1_ACCOUNT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 pub type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Addresses deployed by bootstrapper v2, loaded from output JSON files
+pub struct DeployedAddresses {
+    // L2 addresses (from madara_addresses.json)
+    pub l2_account_address: String,
+    pub l2_eth_token_address: String,
+    pub l2_eth_bridge_address: String,
+    pub l2_erc20_token_address: String,
+    pub l2_erc20_bridge_address: String,
+    // L1 addresses (from base_addresses.json)
+    pub l1_eth_bridge_address: String,
+    pub l1_erc20_token_address: String,
+    pub l1_erc20_bridge_address: String,
+}
+
+impl DeployedAddresses {
+    /// Load addresses from bootstrapper v2 output files in the given test directory
+    pub fn load(test_name: &str) -> TestResult<Self> {
+        let base_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+        let madara_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT));
+
+        // Try test directory first, fall back to DATA_DIR
+        let base_content = std::fs::read_to_string(&base_path)
+            .or_else(|_| {
+                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+                std::fs::read_to_string(fallback)
+            })
+            .map_err(|e| format!("Failed to read base_addresses.json: {}", e))?;
+
+        let madara_content = std::fs::read_to_string(&madara_path)
+            .or_else(|_| {
+                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT));
+                std::fs::read_to_string(fallback)
+            })
+            .map_err(|e| format!("Failed to read madara_addresses.json: {}", e))?;
+
+        let base: serde_json::Value =
+            serde_json::from_str(&base_content).map_err(|e| format!("Failed to parse base_addresses.json: {}", e))?;
+        let madara: serde_json::Value = serde_json::from_str(&madara_content)
+            .map_err(|e| format!("Failed to parse madara_addresses.json: {}", e))?;
+
+        let get_addr = |json: &serde_json::Value, key: &str| -> TestResult<String> {
+            json["addresses"][key]
+                .as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| format!("Address '{}' not found in JSON", key).into())
+        };
+
+        // L2 account address is deterministic based on class hash + salt + deployer
+        // Read it from madara_addresses.json if available, otherwise it's computed by bootstrapper
+        let l2_account_address =
+            madara["addresses"]["l2_account"].as_str().map(|s| s.to_string()).unwrap_or_else(|| {
+                // Fallback: this is the deterministic address from bootstrapper v2
+                // with private key 0xabcd and salt 0x626f6f7473747261705f73616c74
+                "0x4da71bd1d9153651a8e393bdbee29e2cafc9bade4cf17a5d56501ff764e4c78".to_string()
+            });
+
+        Ok(Self {
+            l2_account_address,
+            l2_eth_token_address: get_addr(&madara, "l2_eth_token")?,
+            l2_eth_bridge_address: get_addr(&madara, "l2_eth_bridge")?,
+            l2_erc20_token_address: get_addr(&madara, "l2_fee_token")?,
+            l2_erc20_bridge_address: get_addr(&madara, "l2_token_bridge")?,
+            l1_eth_bridge_address: get_addr(&base, "ethTokenBridge")?,
+            l1_erc20_token_address: get_addr(&base, "l1Token")?,
+            l1_erc20_bridge_address: get_addr(&base, "tokenBridge")?,
+        })
+    }
+}
 
 // Helper structures for better organization - using type inference approach
 
@@ -109,7 +168,7 @@ pub async fn wait_for_transactions_finality(setup: &ChainSetup, transaction_hash
         // Remove finalized transactions from the pending list
         pending_txs.retain(|tx| !newly_finalized.contains(tx));
 
-        // If all transactions are finalized, we’re done
+        // If all transactions are finalized, we're done
         if pending_txs.is_empty() {
             println!("🎉 All transactions finalized in {:?}", start_time.elapsed());
             break;
@@ -154,22 +213,4 @@ pub fn cleanup_test_directory(test_name: &str) {
         Ok(_) => println!("🗑️  Test directory cleaned up successfully"),
         Err(err) => eprintln!("⚠️  Failed to delete directory: {}", err),
     }
-}
-
-// Keep the original helper function for backward compatibility
-pub async fn l2_read_token_balance(
-    rpc: &JsonRpcClient<HttpTransport>,
-    contract_address: Felt,
-    account_address: Felt,
-) -> Vec<Felt> {
-    rpc.call(
-        FunctionCall {
-            contract_address,
-            entry_point_selector: get_selector_from_name("balanceOf").unwrap(),
-            calldata: vec![account_address],
-        },
-        BlockId::Tag(BlockTag::Latest),
-    )
-    .await
-    .unwrap()
 }
