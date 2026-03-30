@@ -45,7 +45,7 @@ pub fn save_addresses_to_file(addresses_json: String, file_path: &str) -> Result
             .map_err(|e| FileError::FailedCreatingParentDirectory(file_path.to_string(), e))?;
     }
 
-    std::fs::write(file_path, &addresses_json).map_err(|e| FileError::FailedToWriteFile(e))?;
+    std::fs::write(file_path, &addresses_json).map_err(FileError::FailedToWriteFile)?;
 
     Ok(())
 }
@@ -107,9 +107,7 @@ pub async fn wait_for_transaction(
 
     match exec_result {
         ExecutionResult::Succeeded => Ok(()),
-        ExecutionResult::Reverted { reason } => {
-            return Err(MadaraError::FailedToWaitForTransaction(reason, tag.to_string()));
-        }
+        ExecutionResult::Reverted { reason } => Err(MadaraError::FailedToWaitForTransaction(reason, tag.to_string())),
     }
 }
 
@@ -233,4 +231,25 @@ pub async fn get_contracts_deployed_addresses(
     };
 
     Ok(addresses)
+}
+
+/// Helper for reading deployed addresses from JSON output files
+pub struct DeployedAddresses {
+    data: serde_json::Value,
+}
+
+impl DeployedAddresses {
+    /// Load addresses from a JSON file
+    pub fn from_file(path: &str) -> Result<Self, FileError> {
+        let content =
+            std::fs::read_to_string(path).map_err(|e| FileError::FailedCreatingParentDirectory(path.to_string(), e))?;
+        let data: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| FileError::FailedToWriteFile(IoError::other(e)))?;
+        Ok(Self { data })
+    }
+
+    /// Get a string value from the addresses section
+    pub fn get_address(&self, key: &str) -> Option<&str> {
+        self.data["addresses"][key].as_str()
+    }
 }
