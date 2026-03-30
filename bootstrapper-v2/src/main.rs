@@ -10,7 +10,7 @@ use std::fs::File;
 #[tokio::main]
 #[allow(clippy::result_large_err)]
 async fn main() -> BootstrapperResult<()> {
-    dotenvy::from_filename_override(".env")?;
+    let _ = dotenvy::from_filename_override(".env");
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let args = CliArgs::parse();
