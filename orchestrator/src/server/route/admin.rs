@@ -13,6 +13,7 @@ use super::super::error::JobRouteError;
 use super::super::service::admin::{AdminService, BulkJobResult};
 use super::super::types::{ApiResponse, JobRouteResult};
 use crate::core::config::Config;
+use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics_recorder::MetricsRecorder;
 
@@ -186,11 +187,78 @@ async fn handle_requeue_created_jobs(
     .await
 }
 
+/// Response for batch close operations
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CloseBatchesResponse {
+    pub snos_batches_closed: u64,
+    pub aggregator_batches_closed: u64,
+}
+
+async fn handle_close_open_batches(State(config): State<Arc<Config>>) -> JobRouteResult {
+    if !config.server_config().admin_enabled {
+        error!("Admin endpoints are disabled");
+        return Err(JobRouteError::ProcessingError(
+            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+        ));
+    }
+
+    info!("Admin: close open batches request received");
+
+    let db = config.database();
+
+    let open_agg_batches =
+        db.get_aggregator_batches_by_status(AggregatorBatchStatus::Open, None, None).await.map_err(|e| {
+            error!(error = %e, "Failed to fetch open aggregator batches");
+            JobRouteError::ProcessingError(e.to_string())
+        })?;
+
+    let mut agg_closed = 0u64;
+    for batch in &open_agg_batches {
+        match db.update_aggregator_batch_status_by_index(batch.index, AggregatorBatchStatus::Closed).await {
+            Ok(_) => {
+                info!(index = batch.index, "Closed aggregator batch");
+                agg_closed += 1;
+            }
+            Err(e) => {
+                error!(index = batch.index, error = %e, "Failed to close aggregator batch");
+            }
+        }
+    }
+
+    let open_snos_batches = db.get_snos_batches_by_status(SnosBatchStatus::Open, None, None).await.map_err(|e| {
+        error!(error = %e, "Failed to fetch open SNOS batches");
+        JobRouteError::ProcessingError(e.to_string())
+    })?;
+
+    let mut snos_closed = 0u64;
+    for batch in &open_snos_batches {
+        match db.update_snos_batch_status_by_index(batch.index, SnosBatchStatus::Closed).await {
+            Ok(_) => {
+                info!(index = batch.index, "Closed SNOS batch");
+                snos_closed += 1;
+            }
+            Err(e) => {
+                error!(index = batch.index, error = %e, "Failed to close SNOS batch");
+            }
+        }
+    }
+
+    let message = format!("Closed {} aggregator batch(es) and {} SNOS batch(es)", agg_closed, snos_closed);
+    info!("{}", message);
+
+    Ok(Json(ApiResponse::success_with_data(
+        CloseBatchesResponse { snos_batches_closed: snos_closed, aggregator_batches_closed: agg_closed },
+        Some(message),
+    ))
+    .into_response())
+}
+
 pub fn admin_router(config: Arc<Config>) -> Router {
     Router::new()
         .route("/jobs/retry/failed", post(handle_retry_all_failed_jobs))
         .route("/jobs/reverify/verification-timeout", post(handle_reverify_verification_timeout_jobs))
         .route("/jobs/requeue/pending-verification", post(handle_requeue_pending_verification))
         .route("/jobs/requeue/created", post(handle_requeue_created_jobs))
+        .route("/batches/close-open", post(handle_close_open_batches))
         .with_state(config)
 }
