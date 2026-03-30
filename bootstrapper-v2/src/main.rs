@@ -8,6 +8,7 @@ use env_logger::Env;
 use std::fs::File;
 
 #[tokio::main]
+#[allow(clippy::result_large_err)]
 async fn main() -> BootstrapperResult<()> {
     dotenvy::from_filename_override(".env")?;
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -98,7 +99,9 @@ async fn main() -> BootstrapperResult<()> {
                 bootstrapper_v2::error::BootstrapperError::Other("coreContract not found in base addresses".into())
             })?;
 
-            base_layer_setup.verify_update_config_hash(&format!("{:#x}", fee_token_for_config_hash), core_contract_address).await?;
+            base_layer_setup
+                .verify_update_config_hash(&format!("{:#x}", fee_token_for_config_hash), core_contract_address)
+                .await?;
 
             log::info!("Post-Madara setup completed successfully!");
         }

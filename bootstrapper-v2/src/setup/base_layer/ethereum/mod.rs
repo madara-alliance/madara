@@ -49,6 +49,7 @@ pub struct EthereumSetup {
 }
 
 impl EthereumSetup {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rpc_url: String,
         private_key: String,

@@ -329,7 +329,7 @@ impl MadaraSetup {
 
         // Parse the L2 token bridge address to Felt
         let l2_token_bridge =
-            Felt::from_hex(l2_token_bridge_address).map_err(|e| MadaraError::InvalidPrivateKeyFormat(e))?;
+            Felt::from_hex(l2_token_bridge_address).map_err(MadaraError::InvalidPrivateKeyFormat)?;
 
         // Calculate the selector for get_l2_token function
         let selector = get_selector_or_panic("get_l2_token");
