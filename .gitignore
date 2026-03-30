@@ -43,6 +43,11 @@ rustc-ice-*.txt
 .local
 .cairo
 
+# IDE
+.cursor/
+.claude/
+
+
 # direnv cache
 .direnv
 .cairo

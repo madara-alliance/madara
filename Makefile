@@ -117,7 +117,7 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
 AWS_REGION ?= us-east-1
-PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.1/pathfinder-aarch64-apple-darwin.tar.gz
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.3/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -398,9 +398,9 @@ build-e2e-binaries:
 	@# Build Orchestrator
 	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
-	@# Build Bootstrapper
-	@echo -e "$(INFO)Building Bootstrapper...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper/Cargo.toml --bin bootstrapper --release
+	@# Build Bootstrapper V2
+	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
@@ -424,6 +424,7 @@ make-e2e-binaries-executable:
 	@echo -e "$(DIM)Making binaries executable...$(RESET)"
 	@chmod +x $(CARGO_TARGET_DIR)/release/madara
 	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper
+	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper-v2
 	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
 	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
 	@chmod +x test_utils/scripts/deploy_dummy_verifier.sh
