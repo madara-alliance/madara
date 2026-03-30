@@ -252,15 +252,44 @@ impl ServiceManager {
         let duration = self.config.get_timeouts().complete_orchestration;
 
         timeout(duration, async {
-            // Use batch size 1 during setup so that the last batch gets closed
-            // and the orchestrator can complete the full pipeline for all blocks.
-            let orchestrator_config = self.get_orchestrator_config_with_core_contract()?
-                .builder()
-                .env_var("MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", "1")
-                .build();
+            let orchestrator_config = self.get_orchestrator_config_with_core_contract()?;
             let orchestrator_service = OrchestratorService::run(orchestrator_config).await?;
             services.orchestrator_service = Some(orchestrator_service);
 
+            let last_block = self
+                .bootstrapped_madara_block_number
+                .ok_or(SetupError::OtherError("No bootstrapped block number available".to_string()))?;
+
+            // Step 1: Poll until last block is included in an aggregator batch
+            println!("⏳ Waiting for block {} to be included in an aggregator batch...", last_block);
+            {
+                let poll_delay = Duration::from_secs(30);
+                let poll_timeout = Duration::from_secs(600);
+                let orch = services.orchestrator_service.as_ref().unwrap();
+                let operation = || async {
+                    match orch.is_block_in_batch(last_block).await {
+                        Ok(true) => Ok(()),
+                        Ok(false) => Err(SetupError::Orchestrator(OrchestratorError::NotSynced)),
+                        Err(e) => Err(SetupError::Orchestrator(e)),
+                    }
+                };
+                retry_with_timeout(poll_delay, poll_timeout, operation)
+                    .await
+                    .map_err(|_| SetupError::Timeout("Timed out waiting for block in aggregator batch".to_string()))?;
+            }
+            println!("✅ Block {} is in an aggregator batch", last_block);
+
+            // Step 2: Wait for SNOS batches to be created (they lag behind aggregator batches)
+            println!("⏳ Waiting 120s for SNOS batches to be created...");
+            tokio::time::sleep(Duration::from_secs(120)).await;
+
+            // Step 3: Close all open batches
+            println!("🔒 Closing all open batches...");
+            if let Some(orchestrator) = &services.orchestrator_service {
+                orchestrator.close_open_batches().await.map_err(SetupError::Orchestrator)?;
+            }
+
+            // Step 4: Wait for state transition to complete
             self.wait_for_orchestrator_sync(services).await?;
             self.dump_databases(services).await?;
 

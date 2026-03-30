@@ -391,6 +391,7 @@ impl SetupConfigBuilder {
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port().await?)
+            .admin_enabled(true)
             .da_on_ethereum(true)
             .settle_on_ethereum(true)
             .ethereum_rpc_url(anvil_config.endpoint())
@@ -466,10 +467,9 @@ impl SetupConfigBuilder {
             .build();
 
         // Setting some envs
-        std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
-        std::env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
-        std::env::set_var("ROLLUP_SEQ_URL", test_config.madara_config.rpc_endpoint().to_string());
-        // std::env::set_var("MADARA_NO_MEMPOOL_SAVING", "true");
+        env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
+        env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
+        env::set_var("ROLLUP_SEQ_URL", test_config.madara_config.rpc_endpoint().to_string());
 
         let mut sconfig_builder = self
             .anvil_config(anvil_config)
