@@ -423,7 +423,6 @@ download-pathfinder-mac:
 make-e2e-binaries-executable:
 	@echo -e "$(DIM)Making binaries executable...$(RESET)"
 	@chmod +x $(CARGO_TARGET_DIR)/release/madara
-	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper
 	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper-v2
 	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
 	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
