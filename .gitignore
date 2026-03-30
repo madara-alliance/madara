@@ -50,7 +50,6 @@ rustc-ice-*.txt
 
 # direnv cache
 .direnv
-.cairo
 
 # Javascript dependencies
 **/node_modules/
@@ -107,6 +106,7 @@ e2e_data/
 /e2e_data/*
 /e2e_data*
 /e2e/data/*
+deposit_withdraw/
 
 out
 cache
@@ -122,3 +122,4 @@ AI_docs/
 .claude
 orchestrator/package-lock.json
 orchestrator/crates/prover-clients/atlantic-service/swagger.json
+tests/js_tests/.cache
