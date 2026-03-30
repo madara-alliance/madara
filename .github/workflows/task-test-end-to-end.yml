@@ -47,13 +47,13 @@ jobs:
         uses: ./.github/actions/setup-python-cairo
 
       - name: Build Madara
-        run: cargo build --manifest-path madara/Cargo.toml --bin madara --release
+        run: CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml --bin madara --release
 
       - name: Build Orchestrator
-        run: cargo build --package orchestrator --bin orchestrator --release
+        run: CARGO_TARGET_DIR=target cargo build --manifest-path orchestrator/Cargo.toml --bin orchestrator --release
 
       - name: Build Bootstrapper V2
-        run: cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
+        run: CARGO_TARGET_DIR=target cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 
       - name: Download and extract Pathfinder binary
         run: |
