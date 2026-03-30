@@ -1,4 +1,4 @@
-current_version: 10
+current_version: 8
 versions:
   - version: 8
     pr: 801
