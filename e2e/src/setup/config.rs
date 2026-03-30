@@ -6,7 +6,7 @@ use crate::services::orchestrator::Layer;
 use crate::services::server::ServerError;
 use crate::services::{
     anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError},
-    bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode},
+    bootstrapper_v2::{BootstrapperV2Config, BootstrapperV2Error},
     helpers::{get_database_path, get_free_port},
     localstack::{LocalstackConfig, LocalstackError},
     madara::{MadaraConfig, MadaraConfigBuilder, MadaraError},
@@ -18,7 +18,6 @@ use crate::services::{
 };
 use std::env;
 use std::time::Duration;
-use url::Url;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -59,8 +58,8 @@ pub enum SetupError {
     Orchestrator(#[from] OrchestratorError),
     #[error("Madara service error: {0}")]
     Madara(#[from] MadaraError),
-    #[error("Bootstrapper service error: {0}")]
-    Bootstrapper(#[from] BootstrapperError),
+    #[error("Bootstrapper V2 service error: {0}")]
+    BootstrapperV2(#[from] BootstrapperV2Error),
     #[error("Mock Verifier Deployer service error: {0}")]
     MockVerifierDeployer(#[from] MockVerifierDeployerError),
     #[error("Mock Prover service error: {0}")]
@@ -134,8 +133,8 @@ pub struct SetupConfig {
     pub mock_verifier_deployer_config: MockVerifierDeployerConfig,
     pub mock_prover_config: MockProverConfig,
     pub orchestrator_run_config: OrchestratorConfig,
-    pub bootstrapper_setup_l1_config: BootstrapperConfig,
-    pub bootstrapper_setup_l2_config: BootstrapperConfig,
+    pub bootstrapper_setup_base_config: Option<BootstrapperV2Config>,
+    pub bootstrapper_setup_madara_config: Option<BootstrapperV2Config>,
 }
 
 impl Default for SetupConfig {
@@ -152,8 +151,8 @@ impl Default for SetupConfig {
             mock_verifier_deployer_config: MockVerifierDeployerConfig::default(),
             mock_prover_config: MockProverConfig::default(),
             orchestrator_run_config: OrchestratorConfig::default(),
-            bootstrapper_setup_l1_config: BootstrapperConfig::default(),
-            bootstrapper_setup_l2_config: BootstrapperConfig::default(),
+            bootstrapper_setup_base_config: None,
+            bootstrapper_setup_madara_config: None,
         }
     }
 }
@@ -209,14 +208,14 @@ impl SetupConfig {
         &self.orchestrator_setup_config
     }
 
-    /// Get the Bootstrapper Setup L1 Config
-    pub fn get_bootstrapper_setup_l1_config(&self) -> &BootstrapperConfig {
-        &self.bootstrapper_setup_l1_config
+    /// Get the Bootstrapper Setup Base Config
+    pub fn get_bootstrapper_setup_base_config(&self) -> &BootstrapperV2Config {
+        self.bootstrapper_setup_base_config.as_ref().expect("Bootstrapper setup base config not set")
     }
 
-    /// Get the Bootstrapper Setup L2 Config
-    pub fn get_bootstrapper_setup_l2_config(&self) -> &BootstrapperConfig {
-        &self.bootstrapper_setup_l2_config
+    /// Get the Bootstrapper Setup Madara Config
+    pub fn get_bootstrapper_setup_madara_config(&self) -> &BootstrapperV2Config {
+        self.bootstrapper_setup_madara_config.as_ref().expect("Bootstrapper setup madara config not set")
     }
 
     /// Get the Mock Prover Config
@@ -310,15 +309,15 @@ impl SetupConfigBuilder {
         self
     }
 
-    /// Set the Bootstrapper Setup L1 Config
-    pub fn bootstrapper_setup_l1_config(mut self, bootstrapper_setup_l1_config: BootstrapperConfig) -> Self {
-        self.config.bootstrapper_setup_l1_config = bootstrapper_setup_l1_config;
+    /// Set the Bootstrapper Setup Base Config
+    pub fn bootstrapper_setup_base_config(mut self, bootstrapper_setup_base_config: BootstrapperV2Config) -> Self {
+        self.config.bootstrapper_setup_base_config = Some(bootstrapper_setup_base_config);
         self
     }
 
-    /// Set the Bootstrapper Setup L2 Config
-    pub fn bootstrapper_setup_l2_config(mut self, bootstrapper_setup_l2_config: BootstrapperConfig) -> Self {
-        self.config.bootstrapper_setup_l2_config = bootstrapper_setup_l2_config;
+    /// Set the Bootstrapper Setup Madara Config
+    pub fn bootstrapper_setup_madara_config(mut self, bootstrapper_setup_madara_config: BootstrapperV2Config) -> Self {
+        self.config.bootstrapper_setup_madara_config = Some(bootstrapper_setup_madara_config);
         self
     }
 
@@ -353,14 +352,6 @@ impl SetupConfigBuilder {
         let mock_verifier_deployer_config =
             MockVerifierDeployerConfigBuilder::new().l1_url(anvil_config.endpoint()).logs((true, true)).build();
 
-        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL1)
-            .config_path(BOOTSTRAPPER_CONFIG)
-            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
-            .env_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY)
-            .logs((true, true))
-            .build();
-
         let madara_config = MadaraConfigBuilder::new()
             .rpc_port(get_free_port().await?)
             .rpc_admin_port(get_free_port().await?)
@@ -370,22 +361,29 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL2)
-            .config_path(BOOTSTRAPPER_CONFIG)
-            .timeout(*BOOTSTRAPPER_SETUP_L2_TIMEOUT)
-            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
-            .env_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY)
-            .env_var("ROLLUP_SEQ_URL", madara_config.rpc_endpoint().as_str())
-            .env_var("ROLLUP_DECLARE_V0_SEQ_URL", madara_config.rpc_admin_endpoint().as_str())
+        // Bootstrapper V2 configs
+        let bootstrapper_base_config = BootstrapperV2Config::setup_base()
+            .config_path(BOOTSTRAPPER_V2_CONFIG)
+            .addresses_output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT))
+            .private_key(ANVIL_PRIVATE_KEY)
             .logs((true, true))
-            .build();
+            .build()?;
+
+        let bootstrapper_madara_config = BootstrapperV2Config::setup_madara()
+            .config_path(BOOTSTRAPPER_V2_CONFIG)
+            .base_addresses_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT))
+            .output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT))
+            .private_key("0xabcd") // Madara devnet key
+            .base_layer_private_key(ANVIL_PRIVATE_KEY)
+            .timeout(*BOOTSTRAPPER_V2_SETUP_MADARA_TIMEOUT)
+            .logs((true, true))
+            .build()?;
 
         let pathfinder_config = PathfinderConfigBuilder::new()
             .port(get_free_port().await?)
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
-            .ethereum_url(Url::parse(&env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").unwrap()).unwrap())
+            .ethereum_url(anvil_config.endpoint())
             .logs((true, true))
             .build();
 
@@ -399,7 +397,7 @@ impl SetupConfigBuilder {
             .mongodb(true)
             .mongodb_connection_url(mongodb_config.endpoint())
             // .atlantic_service_url(mock_prover_config.endpoint())
-            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", madara_config.rpc_endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
@@ -416,8 +414,8 @@ impl SetupConfigBuilder {
             .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(mock_verifier_deployer_config)
             .orchestrator_setup_config(orchestrator_setup_config)
-            .bootstrapper_setup_l1_config(bootstrapper_l1_config)
-            .bootstrapper_setup_l2_config(bootstrapper_l2_config)
+            .bootstrapper_setup_base_config(bootstrapper_base_config)
+            .bootstrapper_setup_madara_config(bootstrapper_madara_config)
             .mock_prover_config(mock_prover_config)
             .mongo_config(mongodb_config)
             .localstack_config(localstack_config)
@@ -448,7 +446,7 @@ impl SetupConfigBuilder {
             .database_path(get_database_path(test_name, PATHFINDER_DATABASE_DIR))
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
-            .ethereum_url(Url::parse(&env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").unwrap()).unwrap())
+            .ethereum_url(anvil_config.endpoint())
             .logs((true, true))
             .build();
 
@@ -458,7 +456,7 @@ impl SetupConfigBuilder {
             .ethereum_rpc_url(anvil_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
-            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", madara_config.rpc_endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
             .env_var(
@@ -473,19 +471,26 @@ impl SetupConfigBuilder {
         std::env::set_var("ROLLUP_SEQ_URL", test_config.madara_config.rpc_endpoint().to_string());
         // std::env::set_var("MADARA_NO_MEMPOOL_SAVING", "true");
 
-        let sconfig = self
+        let mut sconfig_builder = self
             .anvil_config(anvil_config)
             .madara_config(madara_config)
             .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(test_config.mock_verifier_deployer_config)
             .orchestrator_setup_config(test_config.orchestrator_setup_config)
-            .bootstrapper_setup_l1_config(test_config.bootstrapper_setup_l1_config)
-            .bootstrapper_setup_l2_config(test_config.bootstrapper_setup_l2_config)
             .mock_prover_config(test_config.mock_prover_config)
             .mongo_config(test_config.mongo_config)
             .localstack_config(test_config.localstack_config)
-            .orchestrator_run_config(orchestrator_run_config)
-            .build();
+            .orchestrator_run_config(orchestrator_run_config);
+
+        // Copy bootstrapper configs from test_config if they exist
+        if let Some(base_config) = test_config.bootstrapper_setup_base_config {
+            sconfig_builder = sconfig_builder.bootstrapper_setup_base_config(base_config);
+        }
+        if let Some(madara_config) = test_config.bootstrapper_setup_madara_config {
+            sconfig_builder = sconfig_builder.bootstrapper_setup_madara_config(madara_config);
+        }
+
+        let sconfig = sconfig_builder.build();
 
         Ok(sconfig)
     }
