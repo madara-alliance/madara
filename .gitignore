@@ -100,6 +100,9 @@ test-artifacts/madara
 .npm-global
 
 
+# bootstrapper v2 output
+bootstrapper-v2/output/
+
 # e2e test
 e2e_data/
 /e2e_data.zip
