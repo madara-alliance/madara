@@ -106,45 +106,9 @@ impl Collector {
         let mut name = self.get_name(metric);
 
         let result = match metric.data() {
-            data::AggregatedMetrics::F64(metric_data) => match metric_data {
-                data::MetricData::Histogram(_) => Some(MetricType::HISTOGRAM),
-                data::MetricData::Gauge(_) => Some(MetricType::GAUGE),
-                data::MetricData::Sum(sum) => {
-                    if sum.is_monotonic() {
-                        name = format!("{name}{COUNTER_SUFFIX}").into();
-                        Some(MetricType::COUNTER)
-                    } else {
-                        Some(MetricType::GAUGE)
-                    }
-                }
-                data::MetricData::ExponentialHistogram(_) => None,
-            },
-            data::AggregatedMetrics::I64(metric_data) => match metric_data {
-                data::MetricData::Histogram(_) => Some(MetricType::HISTOGRAM),
-                data::MetricData::Gauge(_) => Some(MetricType::GAUGE),
-                data::MetricData::Sum(sum) => {
-                    if sum.is_monotonic() {
-                        name = format!("{name}{COUNTER_SUFFIX}").into();
-                        Some(MetricType::COUNTER)
-                    } else {
-                        Some(MetricType::GAUGE)
-                    }
-                }
-                data::MetricData::ExponentialHistogram(_) => None,
-            },
-            data::AggregatedMetrics::U64(metric_data) => match metric_data {
-                data::MetricData::Histogram(_) => Some(MetricType::HISTOGRAM),
-                data::MetricData::Gauge(_) => Some(MetricType::GAUGE),
-                data::MetricData::Sum(sum) => {
-                    if sum.is_monotonic() {
-                        name = format!("{name}{COUNTER_SUFFIX}").into();
-                        Some(MetricType::COUNTER)
-                    } else {
-                        Some(MetricType::GAUGE)
-                    }
-                }
-                data::MetricData::ExponentialHistogram(_) => None,
-            },
+            data::AggregatedMetrics::F64(metric_data) => metric_type_for_data(metric_data, &mut name),
+            data::AggregatedMetrics::I64(metric_data) => metric_type_for_data(metric_data, &mut name),
+            data::AggregatedMetrics::U64(metric_data) => metric_type_for_data(metric_data, &mut name),
         };
 
         result.map(|metric_type| (metric_type, name))
@@ -195,37 +159,13 @@ impl PrometheusCollector for Collector {
         }
 
         for scope_metrics in metrics.scope_metrics() {
-            let scope_labels = if scope_metrics.scope().attributes().count() > 0 {
+            if scope_metrics.scope().attributes().count() > 0 {
                 let scope_info =
                     inner.scope_infos.entry(scope_metrics.scope().clone()).or_insert_with_key(create_scope_info_metric);
                 res.push(scope_info.clone());
+            }
 
-                let mut labels = Vec::with_capacity(1 + scope_metrics.scope().version().is_some() as usize);
-                let mut name = LabelPair::new();
-                name.set_name(SCOPE_INFO_KEYS[0].into());
-                name.set_value(scope_metrics.scope().name().to_string());
-                labels.push(name);
-                if let Some(version) = scope_metrics.scope().version() {
-                    let mut version_label = LabelPair::new();
-                    version_label.set_name(SCOPE_INFO_KEYS[1].into());
-                    version_label.set_value(version.to_string());
-                    labels.push(version_label);
-                }
-                labels
-            } else {
-                let mut labels = Vec::with_capacity(1 + scope_metrics.scope().version().is_some() as usize);
-                let mut name = LabelPair::new();
-                name.set_name(SCOPE_INFO_KEYS[0].into());
-                name.set_value(scope_metrics.scope().name().to_string());
-                labels.push(name);
-                if let Some(version) = scope_metrics.scope().version() {
-                    let mut version_label = LabelPair::new();
-                    version_label.set_name(SCOPE_INFO_KEYS[1].into());
-                    version_label.set_value(version.to_string());
-                    labels.push(version_label);
-                }
-                labels
-            };
+            let scope_labels = create_scope_labels(scope_metrics.scope());
 
             for metric in scope_metrics.metrics() {
                 let (metric_type, name) = match self.metric_type_and_name(metric) {
@@ -239,42 +179,9 @@ impl PrometheusCollector for Collector {
                 };
 
                 match metric.data() {
-                    data::AggregatedMetrics::F64(metric_data) => match metric_data {
-                        data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(family, hist, &scope_labels);
-                        }
-                        data::MetricData::Sum(sum) => {
-                            add_sum_metric(family, sum, &scope_labels);
-                        }
-                        data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(family, gauge, &scope_labels);
-                        }
-                        data::MetricData::ExponentialHistogram(_) => {}
-                    },
-                    data::AggregatedMetrics::I64(metric_data) => match metric_data {
-                        data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(family, hist, &scope_labels);
-                        }
-                        data::MetricData::Sum(sum) => {
-                            add_sum_metric(family, sum, &scope_labels);
-                        }
-                        data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(family, gauge, &scope_labels);
-                        }
-                        data::MetricData::ExponentialHistogram(_) => {}
-                    },
-                    data::AggregatedMetrics::U64(metric_data) => match metric_data {
-                        data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(family, hist, &scope_labels);
-                        }
-                        data::MetricData::Sum(sum) => {
-                            add_sum_metric(family, sum, &scope_labels);
-                        }
-                        data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(family, gauge, &scope_labels);
-                        }
-                        data::MetricData::ExponentialHistogram(_) => {}
-                    },
+                    data::AggregatedMetrics::F64(metric_data) => add_metric_data(family, metric_data, &scope_labels),
+                    data::AggregatedMetrics::I64(metric_data) => add_metric_data(family, metric_data, &scope_labels),
+                    data::AggregatedMetrics::U64(metric_data) => add_metric_data(family, metric_data, &scope_labels),
                 }
             }
         }
@@ -437,24 +344,47 @@ fn create_info_metric(target_info_name: &str, target_info_description: &str, res
     family
 }
 
+fn metric_type_for_data<T>(metric_data: &data::MetricData<T>, name: &mut Cow<'static, str>) -> Option<MetricType> {
+    match metric_data {
+        data::MetricData::Histogram(_) => Some(MetricType::HISTOGRAM),
+        data::MetricData::Gauge(_) => Some(MetricType::GAUGE),
+        data::MetricData::Sum(sum) => {
+            if sum.is_monotonic() {
+                *name = format!("{name}{COUNTER_SUFFIX}").into();
+                Some(MetricType::COUNTER)
+            } else {
+                Some(MetricType::GAUGE)
+            }
+        }
+        data::MetricData::ExponentialHistogram(_) => None,
+    }
+}
+
+fn add_metric_data<T: Numeric + Copy>(
+    family: &mut MetricFamily,
+    metric_data: &data::MetricData<T>,
+    extra: &[LabelPair],
+) {
+    match metric_data {
+        data::MetricData::Histogram(hist) => {
+            add_histogram_metric(family, hist, extra);
+        }
+        data::MetricData::Sum(sum) => {
+            add_sum_metric(family, sum, extra);
+        }
+        data::MetricData::Gauge(gauge) => {
+            add_gauge_metric(family, gauge, extra);
+        }
+        data::MetricData::ExponentialHistogram(_) => {}
+    }
+}
+
 fn create_scope_info_metric(scope: &InstrumentationScope) -> MetricFamily {
     let mut gauge = prometheus::proto::Gauge::default();
     gauge.set_value(1.0);
 
-    let mut labels = Vec::with_capacity(1 + scope.version().is_some() as usize);
-    let mut name = LabelPair::new();
-    name.set_name(SCOPE_INFO_KEYS[0].into());
-    name.set_value(scope.name().to_string());
-    labels.push(name);
-    if let Some(version) = scope.version() {
-        let mut label = LabelPair::new();
-        label.set_name(SCOPE_INFO_KEYS[1].into());
-        label.set_value(version.to_string());
-        labels.push(label);
-    }
-
     let mut metric = prometheus::proto::Metric::default();
-    metric.set_label(labels.into());
+    metric.set_label(create_scope_labels(scope).into());
     metric.set_gauge(gauge);
 
     let mut family = MetricFamily::default();
@@ -463,6 +393,21 @@ fn create_scope_info_metric(scope: &InstrumentationScope) -> MetricFamily {
     family.set_field_type(MetricType::GAUGE);
     family.set_metric(vec![metric].into());
     family
+}
+
+fn create_scope_labels(scope: &InstrumentationScope) -> Vec<LabelPair> {
+    let mut labels = Vec::with_capacity(1 + scope.version().is_some() as usize);
+    let mut name = LabelPair::new();
+    name.set_name(SCOPE_INFO_KEYS[0].into());
+    name.set_value(scope.name().to_string());
+    labels.push(name);
+    if let Some(version) = scope.version() {
+        let mut version_label = LabelPair::new();
+        version_label.set_name(SCOPE_INFO_KEYS[1].into());
+        version_label.set_value(version.to_string());
+        labels.push(version_label);
+    }
+    labels
 }
 
 trait Numeric: fmt::Debug {
