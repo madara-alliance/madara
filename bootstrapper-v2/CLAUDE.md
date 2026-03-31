@@ -103,7 +103,7 @@ RUST_LOG=debug cargo run -- \
 2. Deploy Factory contract with implementation references
 3. Call Factory.setup() → BaseLayerContractsDeployed event
 4. Extract addresses: CoreContract, Manager, Registry, MultiBridge, EthBridge
-5. Post-Madara 
+5. Post-Madara
 ```
 
 **Madara (L2 - StarkNet):**
@@ -165,6 +165,7 @@ RUST_LOG=debug cargo run -- \
 ```
 
 **Config fields:**
+
 - `deploy_test_contracts`: If true, deploys mock L1 token for testing (default: false)
 - `l1_token_address`: Required if `deploy_test_contracts` is false
 - `config_hash_config`: Configuration for dynamic config hash computation
