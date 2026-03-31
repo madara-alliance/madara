@@ -185,7 +185,7 @@ impl TxInfo for Transaction {
 
     fn declared_class_hash(&self) -> Option<ClassHash> {
         match self {
-            Self::Account(tx) => tx.class_hash(),
+            Self::Account(AccountTransaction { tx: ApiAccountTransaction::Declare(tx), .. }) => Some(tx.class_hash()),
             _ => None,
         }
     }

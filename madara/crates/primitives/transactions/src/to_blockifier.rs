@@ -156,6 +156,17 @@ impl IntoStarknetApiExt for mp_rpc::v0_8_1::BroadcastedTxn {
     }
 }
 
+impl IntoStarknetApiExt for mp_rpc::v0_10_2::BroadcastedTxn {
+    fn into_starknet_api(
+        self,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        let tx: mp_rpc::v0_8_1::BroadcastedTxn = self.into();
+        tx.into_starknet_api(chain_id, starknet_version)
+    }
+}
+
 impl IntoStarknetApiExt for mp_rpc::v0_7_1::BroadcastedTxn {
     fn into_starknet_api(
         self,

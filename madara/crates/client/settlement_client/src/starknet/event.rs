@@ -5,7 +5,7 @@ use bigdecimal::ToPrimitive;
 use futures::{stream, Stream, StreamExt, TryStreamExt};
 use mp_convert::FeltExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
-use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
+use starknet_core::types::{AddressFilter, BlockId, EmittedEvent, EventFilter};
 use starknet_providers::{Provider, ProviderError};
 use starknet_types_core::felt::Felt;
 use std::iter;
@@ -127,7 +127,7 @@ pub fn get_events(
 }
 
 pub struct WatchEventFilter {
-    pub address: Option<Felt>,
+    pub address: Option<AddressFilter>,
     pub keys: Option<Vec<Vec<Felt>>>,
 }
 pub fn watch_events(
@@ -146,7 +146,7 @@ pub fn watch_events(
                     // add 1 to the previous block_n to start returning events from the block we don't know about. (EventFilter range is inclusive)
                     from_block: Some(BlockId::Number(ev.previous.map(|n| n.saturating_add(1)).unwrap_or(0))),
                     to_block: Some(BlockId::Number(ev.new)),
-                    address: filter.address,
+                    address: filter.address.clone(),
                     keys: filter.keys.clone(),
                 },
                 chunk_size,
@@ -274,7 +274,10 @@ mod starknet_event_stream_tests {
         watch_events(
             Arc::new(provider),
             Some(0),
-            WatchEventFilter { address: Some(Felt::from_hex("0x1").unwrap()), keys: Some(vec![]) },
+            WatchEventFilter {
+                address: Some(AddressFilter::Single(Felt::from_hex("0x1").unwrap())),
+                keys: Some(vec![]),
+            },
             Duration::from_millis(100),
             /* chunk size */ 5,
         )

@@ -138,29 +138,77 @@ impl RocksDBStorageInner {
 
         // Reverse order
         for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
-            let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
-            tracing::debug!("Remove block block_n={block_n}");
+            let block_info = self
+                .get_block_info(block_n)
+                .with_context(|| format!("Startup tail cleanup: reading block info for block_n={block_n}"))?
+                .with_context(|| format!("Startup tail cleanup: block info missing for block_n={block_n}"))?;
+            tracing::info!(
+                target: "replay_debug",
+                "startup_tail_cleanup block_n={} block_hash={:#x} tx_count={}",
+                block_n,
+                block_info.block_hash,
+                block_info.tx_hashes.len()
+            );
 
             let mut batch = WriteBatchWithTransaction::default();
             {
-                if let Some(state_diff) = self.get_block_state_diff(block_n)? {
+                if let Some(state_diff) = self
+                    .get_block_state_diff(block_n)
+                    .with_context(|| format!("Startup tail cleanup: reading state diff for block_n={block_n}"))?
+                {
+                    tracing::info!(
+                        target: "replay_debug",
+                        "startup_tail_cleanup block_n={} state_diff storage_diffs={} declared_classes={} deployed_contracts={} replaced_classes={} nonces={} migrated_compiled_classes={}",
+                        block_n,
+                        state_diff.storage_diffs.len(),
+                        state_diff.declared_classes.len(),
+                        state_diff.deployed_contracts.len(),
+                        state_diff.replaced_classes.len(),
+                        state_diff.nonces.len(),
+                        state_diff.migrated_compiled_classes.len()
+                    );
                     // State diff is in db.
-                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)?;
-                    self.state_remove(block_n, &state_diff, &mut batch)?;
+                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)
+                        .with_context(|| format!("Startup tail cleanup: removing classes for block_n={block_n}"))?;
+                    self.state_remove(block_n, &state_diff, &mut batch)
+                        .with_context(|| format!("Startup tail cleanup: removing state for block_n={block_n}"))?;
                 }
 
                 // This vec is empty if transactions for this block are not yet imported.
-                let transactions: Vec<_> = self
-                    .get_block_transactions(block_n, /* from_tx_index */ 0)
-                    .take(block_info.tx_hashes.len())
+                let transactions: Vec<_> = (0..block_info.tx_hashes.len())
+                    .map(|tx_index| {
+                        let expected_tx_hash = block_info.tx_hashes[tx_index];
+                        self.get_transaction(block_n, tx_index as u64)
+                            .with_context(|| {
+                                format!(
+                                    "Startup tail cleanup: reading tx/receipt for block_n={block_n} tx_index={tx_index} tx_hash={expected_tx_hash:#x}"
+                                )
+                            })?
+                            .with_context(|| {
+                                format!(
+                                    "Startup tail cleanup: tx/receipt missing for block_n={block_n} tx_index={tx_index} tx_hash={expected_tx_hash:#x}"
+                                )
+                            })
+                    })
                     .collect::<Result<_>>()?;
 
-                self.events_remove_block(block_n, &mut batch)?;
+                tracing::info!(
+                    target: "replay_debug",
+                    "startup_tail_cleanup block_n={} loaded_transactions={}",
+                    block_n,
+                    transactions.len()
+                );
+
+                self.events_remove_block(block_n, &mut batch)
+                    .with_context(|| format!("Startup tail cleanup: removing events for block_n={block_n}"))?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
+                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch).with_context(|| {
+                    format!("Startup tail cleanup: removing L1 handler nonces for block_n={block_n}")
+                })?;
 
-                self.blocks_remove_block(&block_info, &mut batch)?;
+                self.blocks_remove_block(&block_info, &mut batch)
+                    .with_context(|| format!("Startup tail cleanup: removing block columns for block_n={block_n}"))?;
             }
 
             self.db

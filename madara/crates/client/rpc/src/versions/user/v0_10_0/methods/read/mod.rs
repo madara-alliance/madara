@@ -1,3 +1,4 @@
+use crate::versions::user::common::convert_storage_keys_for_v0_8_1;
 use crate::versions::user::v0_10_0::StarknetReadRpcApiV0_10_0Server;
 use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
 use crate::versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server as V0_9_0Impl;
@@ -144,18 +145,7 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         let block_view = self.resolve_view_on(block_id)?;
 
         // Convert StorageKey to Felt for v0.8.1 compatibility
-        let contracts_storage_keys_v0_8_1 = contracts_storage_keys.map(|keys| {
-            keys.into_iter()
-                .map(|item| mp_rpc::v0_8_1::ContractStorageKeysItem {
-                    contract_address: item.contract_address,
-                    storage_keys: item
-                        .storage_keys
-                        .into_iter()
-                        .map(|key| Felt::from_hex(&key).unwrap_or(Felt::ZERO))
-                        .collect(),
-                })
-                .collect()
-        });
+        let contracts_storage_keys_v0_8_1 = convert_storage_keys_for_v0_8_1(contracts_storage_keys)?;
 
         V0_8_1Impl::get_storage_proof(
             self,

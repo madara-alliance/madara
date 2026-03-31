@@ -485,6 +485,7 @@ pub(crate) mod tests {
                             fee_data_availability_mode: Default::default(),
                             paymaster_data: Default::default(),
                             account_deployment_data: Default::default(),
+                            proof_facts: Default::default(),
                         },
                     ),
                     tx_hash,

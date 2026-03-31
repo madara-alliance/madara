@@ -1,6 +1,8 @@
 use std::fmt;
 use std::num::ParseIntError;
 
+use mp_block::EventWithInfo;
+
 #[derive(PartialEq, Eq, Debug, Default)]
 pub struct ContinuationToken {
     pub block_number: u64,
@@ -32,8 +34,36 @@ impl ContinuationToken {
     }
 }
 
+pub fn continuation_token_from_page(
+    events_infos: &[EventWithInfo],
+    page_size: usize,
+    previous_token: &ContinuationToken,
+) -> Option<ContinuationToken> {
+    if events_infos.len() <= page_size {
+        return None;
+    }
+
+    let last_block_number = events_infos.last()?.block_number;
+    let number_of_events_in_last_block =
+        events_infos.iter().rev().take_while(|event| event.block_number == last_block_number).count();
+
+    if number_of_events_in_last_block < events_infos.len() {
+        Some(ContinuationToken {
+            block_number: last_block_number,
+            event_n: number_of_events_in_last_block.saturating_sub(1) as u64,
+        })
+    } else {
+        Some(ContinuationToken {
+            block_number: previous_token.block_number,
+            event_n: previous_token.event_n + page_size as u64,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use starknet_types_core::felt::Felt;
+
     use rstest::rstest;
 
     use crate::types::*;
@@ -73,5 +103,41 @@ mod tests {
     fn parse_u64_should_fail(#[case] string_token: String) {
         let result = ContinuationToken::parse(string_token);
         assert!(result.is_err());
+    }
+
+    fn dummy_event(block_number: u64) -> EventWithInfo {
+        EventWithInfo {
+            event: mp_receipt::Event { from_address: Felt::ZERO, keys: vec![], data: vec![] },
+            block_number,
+            block_hash: None,
+            transaction_hash: Felt::ZERO,
+            transaction_index: 0,
+            event_index_in_block: 0,
+            in_preconfirmed: false,
+        }
+    }
+
+    #[test]
+    fn continuation_token_stays_on_same_block_when_extra_event_is_in_same_block() {
+        let events = vec![dummy_event(0), dummy_event(0), dummy_event(0)];
+        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 0 });
+
+        assert_eq!(token, Some(ContinuationToken { block_number: 0, event_n: 2 }));
+    }
+
+    #[test]
+    fn continuation_token_moves_to_new_block_when_extra_event_is_first_match_there() {
+        let events = vec![dummy_event(0), dummy_event(0), dummy_event(4)];
+        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 0 });
+
+        assert_eq!(token, Some(ContinuationToken { block_number: 4, event_n: 0 }));
+    }
+
+    #[test]
+    fn continuation_token_tracks_offset_inside_new_block() {
+        let events = vec![dummy_event(4), dummy_event(6), dummy_event(6)];
+        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 2 });
+
+        assert_eq!(token, Some(ContinuationToken { block_number: 6, event_n: 1 }));
     }
 }

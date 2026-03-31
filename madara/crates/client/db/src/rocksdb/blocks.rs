@@ -7,12 +7,17 @@ use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
+use mp_receipt::TransactionReceipt;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
 };
+use mp_transactions::{
+    DataAvailabilityMode, DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction,
+    InvokeTransactionV0, InvokeTransactionV1, L1HandlerTransaction, ResourceBoundsMapping, Transaction,
+};
 use rocksdb::{IteratorMode, ReadOptions};
 use starknet_types_core::felt::Felt as StarkFelt;
-use std::iter;
+use std::{iter, sync::Arc};
 
 // TODO (mohit, 14/12/2024): Remove this struct once the v8→v9 migration from
 // tmp/0.14.1-with-migration is merged. After that, all databases will have migrated_compiled_classes.
@@ -25,6 +30,102 @@ struct StateDiffV8 {
     deployed_contracts: Vec<DeployedContractItem>,
     replaced_classes: Vec<ReplacedClassItem>,
     nonces: Vec<NonceUpdate>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct LegacyTransactionWithReceipt {
+    transaction: LegacyTransaction,
+    receipt: TransactionReceipt,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum LegacyTransaction {
+    Invoke(LegacyInvokeTransaction),
+    L1Handler(L1HandlerTransaction),
+    Declare(DeclareTransaction),
+    Deploy(DeployTransaction),
+    DeployAccount(DeployAccountTransaction),
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum LegacyInvokeTransaction {
+    V0(InvokeTransactionV0),
+    V1(InvokeTransactionV1),
+    V3(LegacyInvokeTransactionV3),
+}
+
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+struct LegacyInvokeTransactionV3 {
+    sender_address: Felt,
+    calldata: Arc<Vec<Felt>>,
+    signature: Arc<Vec<Felt>>,
+    nonce: Felt,
+    resource_bounds: ResourceBoundsMapping,
+    tip: u64,
+    paymaster_data: Vec<Felt>,
+    account_deployment_data: Vec<Felt>,
+    nonce_data_availability_mode: DataAvailabilityMode,
+    fee_data_availability_mode: DataAvailabilityMode,
+}
+
+impl From<LegacyTransactionWithReceipt> for TransactionWithReceipt {
+    fn from(value: LegacyTransactionWithReceipt) -> Self {
+        Self { transaction: value.transaction.into(), receipt: value.receipt }
+    }
+}
+
+impl From<LegacyTransaction> for Transaction {
+    fn from(value: LegacyTransaction) -> Self {
+        match value {
+            LegacyTransaction::Invoke(tx) => Self::Invoke(tx.into()),
+            LegacyTransaction::L1Handler(tx) => Self::L1Handler(tx),
+            LegacyTransaction::Declare(tx) => Self::Declare(tx),
+            LegacyTransaction::Deploy(tx) => Self::Deploy(tx),
+            LegacyTransaction::DeployAccount(tx) => Self::DeployAccount(tx),
+        }
+    }
+}
+
+impl From<LegacyInvokeTransaction> for InvokeTransaction {
+    fn from(value: LegacyInvokeTransaction) -> Self {
+        match value {
+            LegacyInvokeTransaction::V0(tx) => Self::V0(tx),
+            LegacyInvokeTransaction::V1(tx) => Self::V1(tx),
+            LegacyInvokeTransaction::V3(tx) => Self::V3(tx.into()),
+        }
+    }
+}
+
+impl From<LegacyInvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
+    fn from(value: LegacyInvokeTransactionV3) -> Self {
+        Self {
+            sender_address: value.sender_address,
+            calldata: value.calldata,
+            signature: value.signature,
+            nonce: value.nonce,
+            resource_bounds: value.resource_bounds,
+            tip: value.tip,
+            paymaster_data: value.paymaster_data,
+            account_deployment_data: value.account_deployment_data,
+            nonce_data_availability_mode: value.nonce_data_availability_mode,
+            fee_data_availability_mode: value.fee_data_availability_mode,
+            proof_facts: None,
+        }
+    }
+}
+
+fn deserialize_transaction_with_receipt(bytes: &[u8]) -> Result<TransactionWithReceipt> {
+    match super::deserialize::<TransactionWithReceipt>(bytes) {
+        Ok(transaction) => Ok(transaction),
+        Err(current_err) => {
+            let legacy: LegacyTransactionWithReceipt = super::deserialize(bytes).map_err(|legacy_err| {
+                anyhow::anyhow!(
+                    "deserializing TransactionWithReceipt failed with current schema ({current_err}) and legacy invoke-v3 fallback ({legacy_err})"
+                )
+            })?;
+            Ok(legacy.into())
+        }
+    }
 }
 
 /// <block_hash 32 bytes> => bincode(block_n)
@@ -150,7 +251,7 @@ impl RocksDBStorageInner {
         else {
             return Ok(None);
         };
-        Ok(Some(super::deserialize(&res)?))
+        Ok(Some(deserialize_transaction_with_receipt(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
@@ -174,7 +275,7 @@ impl RocksDBStorageInner {
             options,
             IteratorMode::From(&from, rocksdb::Direction::Forward),
         )
-        .into_iter_values(|bytes| super::deserialize::<TransactionWithReceipt>(bytes))
+        .into_iter_values(deserialize_transaction_with_receipt)
         .map(|res| Ok(res??));
 
         Either::Right(iter)
@@ -426,5 +527,70 @@ impl RocksDBStorageInner {
         );
 
         Ok(state_diffs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_receipt::{ExecutionResources, ExecutionResult, FeePayment, GasVector, InvokeTransactionReceipt, PriceUnit};
+
+    #[test]
+    fn deserialize_legacy_invoke_v3_transaction_without_proof_facts() {
+        let legacy = LegacyTransactionWithReceipt {
+            transaction: LegacyTransaction::Invoke(LegacyInvokeTransaction::V3(LegacyInvokeTransactionV3 {
+                sender_address: Felt::from_hex_unchecked("0x123"),
+                calldata: Arc::new(vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")]),
+                signature: Arc::new(vec![Felt::from_hex_unchecked("0x3")]),
+                nonce: Felt::from_hex_unchecked("0x4"),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: mp_transactions::ResourceBounds { max_amount: 5, max_price_per_unit: 6 },
+                    l2_gas: mp_transactions::ResourceBounds { max_amount: 7, max_price_per_unit: 8 },
+                    l1_data_gas: Some(mp_transactions::ResourceBounds { max_amount: 9, max_price_per_unit: 10 }),
+                },
+                tip: 11,
+                paymaster_data: vec![Felt::from_hex_unchecked("0xc")],
+                account_deployment_data: vec![Felt::from_hex_unchecked("0xd")],
+                nonce_data_availability_mode: DataAvailabilityMode::L1,
+                fee_data_availability_mode: DataAvailabilityMode::L2,
+            })),
+            receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                transaction_hash: Felt::from_hex_unchecked("0xbeef"),
+                actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x1234"), unit: PriceUnit::Fri },
+                messages_sent: vec![],
+                events: vec![],
+                execution_resources: ExecutionResources {
+                    steps: 1,
+                    memory_holes: 2,
+                    range_check_builtin_applications: 3,
+                    pedersen_builtin_applications: 4,
+                    poseidon_builtin_applications: 5,
+                    ec_op_builtin_applications: 6,
+                    ecdsa_builtin_applications: 7,
+                    bitwise_builtin_applications: 8,
+                    keccak_builtin_applications: 9,
+                    segment_arena_builtin: 10,
+                    data_availability: GasVector { l1_gas: 11, l1_data_gas: 12, l2_gas: 13 },
+                    total_gas_consumed: GasVector { l1_gas: 14, l1_data_gas: 15, l2_gas: 16 },
+                },
+                execution_result: ExecutionResult::Succeeded,
+            }),
+        };
+
+        let encoded = super::super::serialize(&legacy).expect("legacy tx should serialize");
+        let decoded = deserialize_transaction_with_receipt(&encoded).expect("legacy tx should deserialize");
+
+        match decoded.transaction {
+            Transaction::Invoke(InvokeTransaction::V3(tx)) => {
+                assert_eq!(tx.sender_address, Felt::from_hex_unchecked("0x123"));
+                assert_eq!(tx.calldata.as_ref(), &vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")]);
+                assert_eq!(tx.signature.as_ref(), &vec![Felt::from_hex_unchecked("0x3")]);
+                assert_eq!(tx.proof_facts, None);
+            }
+            other => panic!("expected invoke v3 transaction, got {other:?}"),
+        }
+
+        assert_eq!(*decoded.receipt.transaction_hash(), Felt::from_hex_unchecked("0xbeef"));
+        assert_eq!(decoded.receipt.actual_fee().unit, PriceUnit::Fri);
     }
 }

@@ -105,30 +105,29 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-cairo-vm = "=2.5.0"
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.17.0-rc.0" }
-starknet-contract = { package = "starknet-rust-contract", version = "0.17.0-rc.0" }
-starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.1.0" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.17.0-rc.0" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.15.0-rc.0" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.2.6-rc.0" }
-starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.0-rc.2" }
+starknet-contract = { package = "starknet-rust-contract", version = "0.19.0-rc.2" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.0-rc.2" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.19.0-rc.2" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
+starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = [
   "testing",
 ] }
-cairo-lang-starknet-classes = "=2.12.3"
-cairo-lang-utils = "=2.12.3"
-
+cairo-lang-starknet-classes = "=2.16.0"
+cairo-lang-utils = "=2.16.0"
+cairo-vm = "=3.2.0"
 alloy = { version = "1.1.0", features = [
   "node-bindings",
   "eips",
@@ -305,7 +304,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.1-alpha.2" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "1cd46d96c480f1e88a2d980f1e37794c737d89df" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

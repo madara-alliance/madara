@@ -25,6 +25,8 @@ pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
 pub mod mainnet_legacy_class_hashes;
+#[cfg(test)]
+pub(crate) mod test_utils;
 mod to_starknet_api;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

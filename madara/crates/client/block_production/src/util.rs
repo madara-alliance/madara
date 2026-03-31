@@ -161,6 +161,7 @@ impl BlockExecutionContext {
         Ok(starknet_api::block::BlockInfo {
             block_number: starknet_api::block::BlockNumber(self.block_number),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
+            starknet_version: self.protocol_version.to_blockifier()?,
             sequencer_address: self.sequencer_address.try_into()?,
             gas_prices: (&self.gas_prices).into(),
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
@@ -191,9 +192,7 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-    let (block_timestamp, gas_prices) = if let Some(custom_header) =
-        backend.get_custom_header().filter(|h| h.block_n == block_n)
-    {
+    let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header(block_n) {
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
         let gas_prices = custom_header.gas_prices;
@@ -273,4 +272,40 @@ pub(crate) fn create_executor_with_block_n_min_10(
     }
 
     Ok(executor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(StarknetVersion::V0_14_2, Some("0.14.2"))]
+    #[case(StarknetVersion::new(1, 2, 3, 4), None)]
+    fn block_execution_context_to_blockifier_keeps_protocol_version(
+        #[case] protocol_version: StarknetVersion,
+        #[case] expected: Option<&str>,
+    ) {
+        let exec_ctx = BlockExecutionContext {
+            block_number: 7,
+            sequencer_address: Felt::ONE,
+            block_timestamp: UNIX_EPOCH,
+            protocol_version,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 1,
+                strk_l1_gas_price: 2,
+                eth_l1_data_gas_price: 3,
+                strk_l1_data_gas_price: 4,
+                eth_l2_gas_price: 5,
+                strk_l2_gas_price: 6,
+            },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+        };
+
+        let block_info = exec_ctx.to_blockifier();
+        match expected {
+            Some(expected) => assert_eq!(block_info.unwrap().starknet_version.to_string(), expected),
+            None => assert!(block_info.is_err()),
+        }
+    }
 }
