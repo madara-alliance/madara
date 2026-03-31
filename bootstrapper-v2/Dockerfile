@@ -1,0 +1,70 @@
+# Step 0: setup tooling (rust)
+FROM rust:1.89-bookworm AS base-rust
+WORKDIR /app
+
+ENV SCCACHE_VERSION=v0.10.0
+ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_BIN=/bin/sccache
+ENV SCCACHE_DIR=/sccache
+ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
+
+ENV CHEF_VERSION=v0.1.71
+ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+
+ENV RUSTC_WRAPPER=/bin/sccache
+
+ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
+
+RUN apt-get update -y && apt-get install -y wget clang
+
+RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
+RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
+
+# Step 1: Cache dependencies
+FROM base-rust AS planner
+
+COPY . .
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
+
+# Step 2: Build crate
+FROM base-rust AS builder-rust
+
+COPY --from=planner /app/recipe.json recipe.json
+
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
+
+COPY Cargo.toml Cargo.lock ./
+COPY bootstrapper-v2 bootstrapper-v2
+COPY build-artifacts build-artifacts
+
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper-v2/Cargo.toml --release
+
+# Step 3: runner
+FROM debian:bookworm-slim AS runner
+
+RUN apt-get -y update && \
+    apt-get install -y openssl ca-certificates tini curl &&\
+    apt-get autoremove -y; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder-rust /app/target/release/bootstrapper-v2 /bin
+COPY --from=builder-rust /app/build-artifacts /app/build-artifacts
+
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
+RUN chmod +x /bin/tini
+
+# Set the entrypoint
+ENTRYPOINT ["tini", "--", "bootstrapper-v2"]
+CMD ["--help"]

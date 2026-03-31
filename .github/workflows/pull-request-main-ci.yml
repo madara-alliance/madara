@@ -204,8 +204,7 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
-  # E2E tests only run on PRs targeting exact 'main' branch (not main-v0.14.1, etc.)
+  # E2E tests run nightly only (see nightly-run.yml)
   test-end-to-end:
     if: github.event.pull_request.draft == false && github.base_ref == 'main'
-    uses: ./.github/workflows/task-test-end-to-end.yml
-    secrets: inherit
+    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
