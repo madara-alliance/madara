@@ -1,7 +1,5 @@
-current_version: 9
+current_version: 8
 versions:
-  - version: 9
-    pr: 1013
   - version: 8
     pr: 801
   - version: 7
