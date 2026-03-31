@@ -71,16 +71,6 @@ impl GatewayMock {
         self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, starknet_version);
     }
 
-    pub fn mock_block_with_declared_class(
-        &self,
-        block_number: u64,
-        hash: Felt,
-        parent_hash: Felt,
-        declared_class: Option<DeclaredClassItem>,
-    ) {
-        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, declared_class, "0.13.2.1");
-    }
-
     fn mock_block_with_declared_class_and_version(
         &self,
         block_number: u64,
