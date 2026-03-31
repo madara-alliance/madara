@@ -58,16 +58,28 @@ impl GatewayMock {
     }
 
     pub fn mock_block(&self, block_number: u64, hash: Felt, parent_hash: Felt) {
-        self.mock_block_with_declared_class(block_number, hash, parent_hash, None);
+        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, "0.13.2.1");
     }
 
-    pub fn mock_block_with_declared_class(
+    pub fn mock_block_with_starknet_version(
+        &self,
+        block_number: u64,
+        hash: Felt,
+        parent_hash: Felt,
+        starknet_version: impl Into<String>,
+    ) {
+        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, starknet_version);
+    }
+
+    fn mock_block_with_declared_class_and_version(
         &self,
         block_number: u64,
         hash: Felt,
         parent_hash: Felt,
         declared_class: Option<DeclaredClassItem>,
+        starknet_version: impl Into<String>,
     ) {
+        let starknet_version = starknet_version.into();
         let declared_classes = declared_class
             .map(|item| {
                 json!({
@@ -109,7 +121,7 @@ impl GatewayMock {
                     "timestamp": 1725974819,
                     "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
                     "transaction_receipts": [],
-                    "starknet_version": "0.13.2.1"
+                    "starknet_version": starknet_version
                 },
                 "state_update": {
                     "block_hash": "0x541112d5d5937a66ff09425a0256e53ac5c4f554be7e24917fc21a71aa3cf32",
