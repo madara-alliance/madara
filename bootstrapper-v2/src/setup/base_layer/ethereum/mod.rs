@@ -201,7 +201,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
         // Deploy the factory contract
         let factory_deploy = DeployedFactory::deploy_new(provider, self.signer.address(), implementation_contracts)
             .await
-            .map_err(BaseLayerError::FailedToDeployFactory)?;
+            .map_err(|e| BaseLayerError::FailedToDeployFactory(e))?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
         self.base_layer_factory_address = Some(factory_deploy.address().to_string());
@@ -227,7 +227,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
     async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
         // Read the base layer factory address from addresses.json
         let addresses_content = std::fs::read_to_string(&self.addresses_output_path)
-            .map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
+            .map_err(|e| BaseLayerError::FailedToReadBaseLayerOutput(e))?;
         let addresses: serde_json::Value = serde_json::from_str(&addresses_content)?;
 
         let base_layer_factory_address = addresses["implementation_addresses"]["baseLayerFactory"]
@@ -236,7 +236,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
 
         // Read the L2 bridge addresses from madara_addresses.json
         let madara_addresses_content =
-            std::fs::read_to_string(madara_addresses_path).map_err(BaseLayerError::FailedToReadMadaraOutput)?;
+            std::fs::read_to_string(madara_addresses_path).map_err(|e| BaseLayerError::FailedToReadMadaraOutput(e))?;
         let madara_addresses: serde_json::Value = serde_json::from_str(&madara_addresses_content)?;
 
         let l2_eth_bridge_address = madara_addresses["addresses"]["l2_eth_bridge"]
