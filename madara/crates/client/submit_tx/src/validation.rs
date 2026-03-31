@@ -20,10 +20,10 @@ use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_10_2::BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedTxn, ClassAndTxnHash,
+    ContractAndTxnHash,
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
@@ -444,30 +444,6 @@ impl SubmitTransaction for TransactionValidator {
     async fn submit_invoke_transaction(
         &self,
         tx: BroadcastedInvokeTxn,
-    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        if tx.is_query() {
-            return Err(RejectedTransactionError::new(
-                RejectedTransactionErrorKind::InvalidTransactionVersion,
-                "Cannot submit query-only transactions",
-            )
-            .into());
-        }
-
-        let arrived_at = TxTimestamp::now();
-        let tx = BroadcastedTxn::Invoke(tx);
-        let (api_tx, class) = tx.into_starknet_api(
-            self.backend.chain_config().chain_id.to_felt(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
-
-        let res = AddInvokeTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
-        self.accept_tx(api_tx, class, arrived_at).await?;
-        Ok(res)
-    }
-
-    async fn submit_invoke_transaction_v0_10_2(
-        &self,
-        tx: BroadcastedInvokeTxnV0_10_2,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         if tx.is_query() {
             return Err(RejectedTransactionError::new(

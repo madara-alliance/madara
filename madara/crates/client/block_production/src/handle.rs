@@ -6,10 +6,9 @@ use mc_submit_tx::{
     TransactionValidator, TransactionValidatorConfig,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_10_2::BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
@@ -104,12 +103,6 @@ impl SubmitTransaction for BlockProductionHandle {
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.tx_converter.submit_invoke_transaction(tx).await
-    }
-    async fn submit_invoke_transaction_v0_10_2(
-        &self,
-        tx: BroadcastedInvokeTxnV0_10_2,
-    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        self.tx_converter.submit_invoke_transaction_v0_10_2(tx).await
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None

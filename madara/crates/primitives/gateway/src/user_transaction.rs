@@ -37,10 +37,13 @@ use std::sync::Arc;
 
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
+use mp_rpc::v0_10_2::{
+    BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2, BroadcastedInvokeTxnV3 as BroadcastedInvokeTxnV3V0_10_2,
+    BroadcastedTxn,
+};
 use mp_rpc::v0_9_0::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
-    BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, DeployAccountTxnV1, DeployAccountTxnV3,
-    InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
+    BroadcastedDeployAccountTxn, DeployAccountTxnV1, DeployAccountTxnV3, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
@@ -337,25 +340,27 @@ pub enum UserInvokeFunctionTransaction {
     V3(UserInvokeFunctionV3Transaction),
 }
 
-impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxn {
+impl From<UserInvokeFunctionTransaction> for BroadcastedInvokeTxnV0_10_2 {
     fn from(transaction: UserInvokeFunctionTransaction) -> Self {
         match transaction {
-            UserInvokeFunctionTransaction::V0(tx) => BroadcastedInvokeTxn::V0(tx.into()),
-            UserInvokeFunctionTransaction::V1(tx) => BroadcastedInvokeTxn::V1(tx.into()),
-            UserInvokeFunctionTransaction::V3(tx) => BroadcastedInvokeTxn::V3(tx.into()),
+            UserInvokeFunctionTransaction::V0(tx) => Self::V0(tx.into()),
+            UserInvokeFunctionTransaction::V1(tx) => Self::V1(tx.into()),
+            UserInvokeFunctionTransaction::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
 
-impl TryFrom<BroadcastedInvokeTxn> for UserInvokeFunctionTransaction {
+impl TryFrom<BroadcastedInvokeTxnV0_10_2> for UserInvokeFunctionTransaction {
     type Error = UserTransactionConversionError;
 
-    fn try_from(transaction: BroadcastedInvokeTxn) -> Result<Self, Self::Error> {
+    fn try_from(transaction: BroadcastedInvokeTxnV0_10_2) -> Result<Self, Self::Error> {
         match transaction {
-            BroadcastedInvokeTxn::V0(tx) => Ok(UserInvokeFunctionTransaction::V0(tx.into())),
-            BroadcastedInvokeTxn::V1(tx) => Ok(UserInvokeFunctionTransaction::V1(tx.into())),
-            BroadcastedInvokeTxn::V3(tx) => Ok(UserInvokeFunctionTransaction::V3(tx.into())),
-            BroadcastedInvokeTxn::QueryV0(_) | BroadcastedInvokeTxn::QueryV1(_) | BroadcastedInvokeTxn::QueryV3(_) => {
+            BroadcastedInvokeTxnV0_10_2::V0(tx) => Ok(UserInvokeFunctionTransaction::V0(tx.into())),
+            BroadcastedInvokeTxnV0_10_2::V1(tx) => Ok(UserInvokeFunctionTransaction::V1(tx.into())),
+            BroadcastedInvokeTxnV0_10_2::V3(tx) => Ok(UserInvokeFunctionTransaction::V3(tx.into())),
+            BroadcastedInvokeTxnV0_10_2::QueryV0(_)
+            | BroadcastedInvokeTxnV0_10_2::QueryV1(_)
+            | BroadcastedInvokeTxnV0_10_2::QueryV3(_) => {
                 Err(UserTransactionConversionError::UnsupportedQueryTransaction)
             }
         }
@@ -442,6 +447,8 @@ pub struct UserInvokeFunctionV3Transaction {
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof: Option<Vec<u64>>,
 }
 
 impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3 {
@@ -474,7 +481,23 @@ impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
+            proof: None,
         }
+    }
+}
+
+impl From<UserInvokeFunctionV3Transaction> for BroadcastedInvokeTxnV3V0_10_2 {
+    fn from(transaction: UserInvokeFunctionV3Transaction) -> Self {
+        let proof = transaction.proof.clone();
+        Self { inner: transaction.into(), proof }
+    }
+}
+
+impl From<BroadcastedInvokeTxnV3V0_10_2> for UserInvokeFunctionV3Transaction {
+    fn from(transaction: BroadcastedInvokeTxnV3V0_10_2) -> Self {
+        let mut user_transaction: UserInvokeFunctionV3Transaction = transaction.inner.into();
+        user_transaction.proof = transaction.proof;
+        user_transaction
     }
 }
 
@@ -592,6 +615,45 @@ impl From<DeployAccountTxnV3> for UserDeployAccountV3Transaction {
             resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    fn sample_user_invoke_v3(proof: Option<Vec<u64>>) -> UserInvokeFunctionTransaction {
+        let resource_bounds = ResourceBoundsMapping { l1_data_gas: Some(Default::default()), ..Default::default() };
+
+        UserInvokeFunctionTransaction::V3(UserInvokeFunctionV3Transaction {
+            sender_address: Felt::from_hex_unchecked("0x123"),
+            calldata: Arc::new(vec![Felt::from_hex_unchecked("0x456")]),
+            signature: Arc::new(vec![Felt::from_hex_unchecked("0x789")]),
+            nonce: Felt::from_hex_unchecked("0xabc"),
+            nonce_data_availability_mode: DataAvailabilityMode::L1,
+            fee_data_availability_mode: DataAvailabilityMode::L2,
+            resource_bounds,
+            tip: 7,
+            paymaster_data: vec![Felt::from_hex_unchecked("0xdef")],
+            account_deployment_data: vec![Felt::from_hex_unchecked("0x987")],
+            proof,
+        })
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(vec![1, 2, 3]))]
+    fn invoke_v3_roundtrip_preserves_optional_proof(#[case] proof: Option<Vec<u64>>) {
+        let transaction = sample_user_invoke_v3(proof.clone());
+        let broadcasted: BroadcastedInvokeTxnV0_10_2 = transaction.clone().into();
+        let roundtrip = UserInvokeFunctionTransaction::try_from(broadcasted).unwrap();
+
+        assert_eq!(roundtrip, transaction);
+        match roundtrip {
+            UserInvokeFunctionTransaction::V3(tx) => assert_eq!(tx.proof, proof),
+            _ => unreachable!("expected v3 invoke transaction"),
         }
     }
 }

@@ -255,6 +255,27 @@ pub struct AddInvokeTransactionParams {
     pub invoke_transaction: BroadcastedInvokeTxn,
 }
 
+impl From<crate::v0_9_0::BroadcastedInvokeTxn> for BroadcastedInvokeTxn {
+    fn from(value: crate::v0_9_0::BroadcastedInvokeTxn) -> Self {
+        match value {
+            crate::v0_9_0::BroadcastedInvokeTxn::V0(tx) => Self::V0(tx),
+            crate::v0_9_0::BroadcastedInvokeTxn::V1(tx) => Self::V1(tx),
+            crate::v0_9_0::BroadcastedInvokeTxn::V3(tx) => Self::V3(BroadcastedInvokeTxnV3 { inner: tx, proof: None }),
+            crate::v0_9_0::BroadcastedInvokeTxn::QueryV0(tx) => Self::QueryV0(tx),
+            crate::v0_9_0::BroadcastedInvokeTxn::QueryV1(tx) => Self::QueryV1(tx),
+            crate::v0_9_0::BroadcastedInvokeTxn::QueryV3(tx) => {
+                Self::QueryV3(BroadcastedInvokeTxnV3 { inner: tx, proof: None })
+            }
+        }
+    }
+}
+
+impl From<crate::v0_7_1::BroadcastedInvokeTxn> for BroadcastedInvokeTxn {
+    fn from(value: crate::v0_7_1::BroadcastedInvokeTxn) -> Self {
+        crate::v0_8_1::BroadcastedInvokeTxn::from(value).into()
+    }
+}
+
 impl From<BroadcastedInvokeTxnV3> for crate::v0_8_1::InvokeTxnV3 {
     fn from(value: BroadcastedInvokeTxnV3) -> Self {
         value.inner
