@@ -11,7 +11,7 @@ use crate::{
 };
 use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::StateUpdate;
-use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_chain_config::ChainConfig;
 use mp_utils::{service::ServiceContext, AbortOnDrop};
 use rstest::{fixture, rstest};
 use starknet_api::felt;
@@ -39,28 +39,6 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
 
     TestContext { backend, importer, service_state_sender, service_state_recv, gateway_mock }
 }
-
-fn next_unsupported_starknet_version() -> String {
-    let mut components =
-        StarknetVersion::LATEST.to_string().split('.').map(|part| part.parse::<u8>().unwrap()).collect::<Vec<_>>();
-
-    while components.len() < 4 {
-        components.push(0);
-    }
-
-    for idx in (0..components.len()).rev() {
-        if components[idx] < u8::MAX {
-            components[idx] += 1;
-            for component in components.iter_mut().skip(idx + 1) {
-                *component = 0;
-            }
-            return format!("{}.{}.{}.{}", components[0], components[1], components[2], components[3]);
-        }
-    }
-
-    panic!("failed to derive unsupported Starknet version after {}", StarknetVersion::LATEST);
-}
-
 #[rstest]
 #[tokio::test]
 /// The pipeline should follow the mock_header_latest.
@@ -112,7 +90,8 @@ async fn test_probed(mut ctx: TestContext) {
 #[rstest]
 #[tokio::test]
 async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
-    let unsupported_version = next_unsupported_starknet_version();
+    // TODO: Update this value whenever the latest supported Starknet version is bumped.
+    let unsupported_version = "0.14.2".to_string();
 
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
