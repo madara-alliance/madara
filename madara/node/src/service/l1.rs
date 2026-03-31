@@ -68,6 +68,14 @@ impl L1SyncService {
         if config.l1_sync_disabled {
             return Ok(Self { sync_worker_config: None, client: None });
         }
+
+        if config.unsafe_l1_handler_metadata_only {
+            tracing::warn!(
+                "⚠⚠⚠ UNSAFE: --unsafe-l1-handler-metadata-only is enabled. \
+                 L1 sync will persist metadata but will NOT queue L1→L2 messages for block production. \
+                 L1 handler transactions must be submitted via the admin RPC. ⚠⚠⚠"
+            );
+        }
         let Some(endpoint) = config.l1_endpoint.clone() else {
             tracing::error!("Missing l1_endpoint CLI argument. Either disable L1 sync using `--no-l1-sync` or give an L1 RPC endpoint URL using `--l1-endpoint <url>`.");
             std::process::exit(1);
@@ -108,6 +116,7 @@ impl L1SyncService {
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
                 unsafe_skip_l1_message_consumed_check: config.unsafe_skip_l1_message_consumed_check,
+                unsafe_l1_handler_metadata_only: config.unsafe_l1_handler_metadata_only,
             }),
         })
     }
