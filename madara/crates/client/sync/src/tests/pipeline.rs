@@ -11,7 +11,7 @@ use crate::{
 };
 use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::StateUpdate;
-use mp_chain_config::ChainConfig;
+use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_utils::{service::ServiceContext, AbortOnDrop};
 use rstest::{fixture, rstest};
 use starknet_api::felt;
@@ -38,6 +38,27 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let (service_state_sender, service_state_recv) = crate::util::service_state_channel();
 
     TestContext { backend, importer, service_state_sender, service_state_recv, gateway_mock }
+}
+
+fn next_unsupported_starknet_version() -> String {
+    let mut components =
+        StarknetVersion::LATEST.to_string().split('.').map(|part| part.parse::<u8>().unwrap()).collect::<Vec<_>>();
+
+    while components.len() < 4 {
+        components.push(0);
+    }
+
+    for idx in (0..components.len()).rev() {
+        if components[idx] < u8::MAX {
+            components[idx] += 1;
+            for component in components.iter_mut().skip(idx + 1) {
+                *component = 0;
+            }
+            return format!("{}.{}.{}.{}", components[0], components[1], components[2], components[3]);
+        }
+    }
+
+    panic!("failed to derive unsupported Starknet version after {}", StarknetVersion::LATEST);
 }
 
 #[rstest]
@@ -86,6 +107,43 @@ async fn test_probed(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 6 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
+    let unsupported_version = next_unsupported_starknet_version();
+
+    ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
+    ctx.gateway_mock.mock_block_with_starknet_version(2, felt!("0x12"), felt!("0x11"), unsupported_version.clone());
+    ctx.gateway_mock.mock_header_latest(2, felt!("0x12"));
+    ctx.gateway_mock.mock_block_pending_not_found();
+
+    let mut sync = crate::gateway::forward_sync(
+        ctx.backend.clone(),
+        ctx.importer,
+        ctx.gateway_mock.client(),
+        SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
+        ForwardSyncConfig::default(),
+    );
+
+    let task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await });
+
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Starting);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 2 });
+
+    let err = task.await.expect_err("sync should stop on the first unsupported Starknet version");
+    let err = format!("{err:#}");
+    assert!(err.contains("Unsupported Starknet version {unsupported_version}"), "{err}");
+    assert!(err.contains("Latest supported version is"), "{err}");
+    assert!(err.contains("block 2"), "{err}");
+
+    assert_eq!(ctx.backend.block_view_on_confirmed(0).unwrap().get_block_info().unwrap().block_hash, felt!("0x10"));
+    assert_eq!(ctx.backend.block_view_on_confirmed(1).unwrap().get_block_info().unwrap().block_hash, felt!("0x11"));
+    assert_eq!(ctx.backend.block_view_on_confirmed(2), None);
+    assert!(!ctx.backend.has_preconfirmed_block());
 }
 
 #[rstest]
