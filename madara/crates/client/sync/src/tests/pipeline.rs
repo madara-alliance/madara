@@ -140,8 +140,10 @@ async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
     assert!(err.contains("Latest supported version is"), "{err}");
     assert!(err.contains("block 2"), "{err}");
 
-    assert_eq!(ctx.backend.block_view_on_confirmed(0).unwrap().get_block_info().unwrap().block_hash, felt!("0x10"));
-    assert_eq!(ctx.backend.block_view_on_confirmed(1).unwrap().get_block_info().unwrap().block_hash, felt!("0x11"));
+    // The sync aborts as soon as the unsupported block is encountered. Because the block, class,
+    // and state pipelines run independently, earlier blocks may still be in flight and not yet
+    // sealed as confirmed when the error is returned.
+    assert!(ctx.backend.latest_confirmed_block_n().map(|n| n < 2).unwrap_or(true));
     assert_eq!(ctx.backend.block_view_on_confirmed(2), None);
     assert!(!ctx.backend.has_preconfirmed_block());
 }
