@@ -1,7 +1,7 @@
 pub const BOOTSTRAP_ACCOUNT_SIERRA: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_Account.contract_class.json";
+    "../build-artifacts/oz-account-sierra-1-4-0/OpenZeppelinAccountCairoOne.sierra.json";
 pub const BOOTSTRAP_ACCOUNT_CASM: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_Account.compiled_contract_class.json";
+    "../build-artifacts/oz-account-sierra-1-4-0/OpenZeppelinAccountCairoOne.casm.json";
 // Hex value of `BOOTSTRAP`
 /// This is a special private key for the bootstrap account.
 /// It can be used to make the first special declare txn without any validation.
