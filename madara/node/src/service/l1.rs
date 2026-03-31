@@ -69,9 +69,9 @@ impl L1SyncService {
             return Ok(Self { sync_worker_config: None, client: None });
         }
 
-        if config.unsafe_no_l1_handler_tx_creation_from_message {
+        if config.unsafe_l1_handler_metadata_only {
             tracing::warn!(
-                "⚠⚠⚠ UNSAFE: --unsafe-no-l1-handler-tx-creation-from-message is enabled. \
+                "⚠⚠⚠ UNSAFE: --unsafe-l1-handler-metadata-only is enabled. \
                  L1 sync will persist metadata but will NOT queue L1→L2 messages for block production. \
                  L1 handler transactions must be submitted via the admin RPC. ⚠⚠⚠"
             );
@@ -116,7 +116,7 @@ impl L1SyncService {
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
                 unsafe_skip_l1_message_consumed_check: config.unsafe_skip_l1_message_consumed_check,
-                unsafe_no_l1_handler_tx_creation_from_message: config.unsafe_no_l1_handler_tx_creation_from_message,
+                unsafe_l1_handler_metadata_only: config.unsafe_l1_handler_metadata_only,
             }),
         })
     }
