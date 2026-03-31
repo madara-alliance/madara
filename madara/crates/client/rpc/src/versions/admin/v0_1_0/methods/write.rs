@@ -6,9 +6,9 @@ use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::rayon::global_spawn_rayon_task;
@@ -97,7 +97,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .block_prod_handle
             .as_ref()
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .submit_invoke_transaction(invoke_transaction.into())
+            .submit_invoke_transaction(invoke_transaction)
             .await
             .map_err(StarknetRpcApiError::from)?)
     }

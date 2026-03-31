@@ -92,7 +92,8 @@ impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxn> for InvokeTransaction {
 impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxnV3> for crate::InvokeTransactionV3 {
     fn from(tx: mp_rpc::v0_10_2::BroadcastedInvokeTxnV3) -> Self {
         let mut invoke: crate::InvokeTransactionV3 = tx.inner.into();
-        invoke.proof_facts = tx.proof.map(|proof| proof.into_iter().map(Felt::from).collect());
+        invoke.proof_facts =
+            tx.proof_facts.or_else(|| tx.proof.map(|proof| proof.into_iter().map(Felt::from).collect()));
         invoke
     }
 }
@@ -219,6 +220,8 @@ impl From<mp_rpc::v0_8_1::BroadcastedDeployAccountTxn> for DeployAccountTransact
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TEST_CHAIN_ID;
+    use mp_chain_config::StarknetVersion;
     use mp_rpc::v0_10_0::{DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
 
     fn sample_broadcasted_invoke_v3() -> mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
@@ -240,6 +243,7 @@ mod tests {
                 fee_data_availability_mode: DaMode::L1,
             },
             proof: Some(vec![11, 12]),
+            proof_facts: None,
         }
     }
 
@@ -276,5 +280,130 @@ mod tests {
         };
 
         assert_eq!(invoke.proof_facts, Some(vec![Felt::from(11_u64), Felt::from(12_u64)]));
+    }
+
+    #[test]
+    fn v0_10_2_broadcasted_invoke_v3_prefers_proof_facts_when_present() {
+        let mut tx = sample_broadcasted_invoke_v3();
+        tx.proof_facts = Some(vec![
+            Felt::from_hex_unchecked("0x50524f4f4630"),
+            Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+        ]);
+
+        let InvokeTransaction::V3(invoke) = InvokeTransaction::from(mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(tx))
+        else {
+            panic!("expected invoke v3");
+        };
+
+        assert_eq!(
+            invoke.proof_facts,
+            Some(vec![
+                Felt::from_hex_unchecked("0x50524f4f4630"),
+                Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+            ])
+        );
+    }
+
+    #[test]
+    fn replay_invoke_v3_with_proof_facts_matches_sepolia_hash() {
+        let tx = mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
+            inner: InvokeTxnV3 {
+                sender_address: Felt::from_hex_unchecked(
+                    "0x7ae2c9e63c7ee60372bacb2e86db4f958b2709cd8e0637788933389a315ee45",
+                ),
+                calldata: vec![
+                    Felt::from_hex_unchecked("0x1"),
+                    Felt::from_hex_unchecked("0x75a180e18e56da1b1cae181c92a288f586f5fe22c18df21cf97886f1e4b316c"),
+                    Felt::from_hex_unchecked("0x25933a01f93ed7abacc8133bf5dc66ad2f5722e0a879d4dede30dabc3881047"),
+                    Felt::from_hex_unchecked("0x31"),
+                    Felt::from_hex_unchecked("0x2"),
+                    Felt::from_hex_unchecked("0x192b9a24f91be6275777dc355fe0b12f2b7db4da6d9217f0e9788f957f4c432"),
+                    Felt::from_hex_unchecked("0x34cc13b274446654ca3233ed2c1620d4c5d1d32fd20b47146a3371064bdc57d"),
+                    Felt::from_hex_unchecked("0xe"),
+                    Felt::from_hex_unchecked("0x75a180e18e56da1b1cae181c92a288f586f5fe22c18df21cf97886f1e4b316c"),
+                    Felt::from_hex_unchecked("0x753e4db34afd1b8e094e6be0c9b56532"),
+                    Felt::from_hex_unchecked("0x1"),
+                    Felt::from_hex_unchecked("0x69cbc5b4"),
+                    Felt::from_hex_unchecked("0x1"),
+                    Felt::from_hex_unchecked("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                    Felt::from_hex_unchecked("0x219209e083275171774dab1df80982e9df2096516f06319c5c6d71ae0a8480c"),
+                    Felt::from_hex_unchecked("0x3"),
+                    Felt::from_hex_unchecked("0xd894af9ed2bdede33675049ae5285df000c44258a2250b84a9c3bed0d7c233"),
+                    Felt::from_hex_unchecked("0x2b5e3af16b1880000"),
+                    Felt::from_hex_unchecked("0x0"),
+                    Felt::from_hex_unchecked("0x2"),
+                    Felt::from_hex_unchecked("0x57342f44df9d83f56c97a2420a6fb48c2af2335306a9497f2078cfbd871ca88"),
+                    Felt::from_hex_unchecked("0x653d0f0853626c851db54ce891b473a3582427901075892c53cf32304dfa01c"),
+                    Felt::from_hex_unchecked("0xd894af9ed2bdede33675049ae5285df000c44258a2250b84a9c3bed0d7c233"),
+                    Felt::from_hex_unchecked("0x246333a752c1ac637ff1591c5c885e27d56060d241a29aad8475072da0777db"),
+                    Felt::from_hex_unchecked("0x1b"),
+                    Felt::from_hex_unchecked("0x6"),
+                    Felt::from_hex_unchecked("0x2"),
+                    Felt::from_hex_unchecked("0x192b9a24f91be6275777dc355fe0b12f2b7db4da6d9217f0e9788f957f4c432"),
+                    Felt::from_hex_unchecked("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                    Felt::from_hex_unchecked("0x2b5e3af16b1880000"),
+                    Felt::from_hex_unchecked("0x6"),
+                    Felt::from_hex_unchecked("0x192b9a24f91be6275777dc355fe0b12f2b7db4da6d9217f0e9788f957f4c432"),
+                    Felt::from_hex_unchecked("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                    Felt::from_hex_unchecked("0x2b5e3af16b1880000"),
+                    Felt::from_hex_unchecked("0x0"),
+                    Felt::from_hex_unchecked("0x4bb9def5919624c678cf4dc7be7a8126b6c2f652e66f4d8e385df6553577e4a"),
+                    Felt::from_hex_unchecked("0x1"),
+                    Felt::from_hex_unchecked("0x4a49bfa61eebae3b93669737b08ed8036a5ad2a58189aa47d105ed91961795"),
+                    Felt::from_hex_unchecked("0x8"),
+                    Felt::from_hex_unchecked("0x4df18929b50cb8b8466814fe6551d912f11ea800fe64990dac98ec5ff09f9d0"),
+                    Felt::from_hex_unchecked("0x4a49bfa61eebae3b93669737b08ed8036a5ad2a58189aa47d105ed91961795"),
+                    Felt::from_hex_unchecked("0x3"),
+                    Felt::from_hex_unchecked("0x75a180e18e56da1b1cae181c92a288f586f5fe22c18df21cf97886f1e4b316c"),
+                    Felt::from_hex_unchecked("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                    Felt::from_hex_unchecked("0x854f5e1b599fa540"),
+                    Felt::from_hex_unchecked("0x5"),
+                    Felt::from_hex_unchecked("0x2fbf66c1dd8c556f8f9ee8852669513a9559385194da39ff0e33ed38586fe47"),
+                    Felt::from_hex_unchecked("0x52c9965dae6c21b3bf648dd6e70e9eccef5b7a26698cca29cf54aa452a4b871"),
+                    Felt::from_hex_unchecked("0x4bc0bec4e1ab98cd413364f7d81657dd92812c1ec32924acb8ce64608c07e99"),
+                    Felt::from_hex_unchecked("0x75a180e18e56da1b1cae181c92a288f586f5fe22c18df21cf97886f1e4b316c"),
+                    Felt::from_hex_unchecked("0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"),
+                    Felt::from_hex_unchecked("0x854f5e1b599fa540"),
+                    Felt::from_hex_unchecked("0x0"),
+                ]
+                .into(),
+                signature: vec![
+                    Felt::from_hex_unchecked("0x5cb857710c5e9e2e7dde66c509ecd392b7e3328a483e9ee6326376f44284c26"),
+                    Felt::from_hex_unchecked("0x3f2b88aa300bad32a23137f371051b1601a08eff44bbae0beed86ee7ea43e38"),
+                ]
+                .into(),
+                nonce: Felt::from_hex_unchecked("0x4357"),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0x50475c75f82c },
+                    l2_gas: ResourceBounds { max_amount: 0x15752a00, max_price_per_unit: 0x2cb417800 },
+                    l1_data_gas: ResourceBounds { max_amount: 0x1d4c, max_price_per_unit: 0x158ca },
+                },
+                tip: 0,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: DaMode::L1,
+                fee_data_availability_mode: DaMode::L1,
+            },
+            proof: None,
+            proof_facts: Some(vec![
+                Felt::from_hex_unchecked("0x50524f4f4630"),
+                Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+                Felt::from_hex_unchecked("0x3e98c2d7703b03a7edb73ed7f075f97f1dcbaa8f717cdf6e1a57bf058265473"),
+                Felt::from_hex_unchecked("0x5649525455414c5f534e4f5330"),
+                Felt::from_hex_unchecked("0x7e1879"),
+                Felt::from_hex_unchecked("0x4e39d28d70db4afd1edd02917f5804e329c236b01fbd72857804fa2065d6721"),
+                Felt::from_hex_unchecked("0x1b9900f77ff5923183a7795fcfbb54ed76917bc1ddd4160cc77fa96e36cf8c5"),
+                Felt::from_hex_unchecked("0x1"),
+                Felt::from_hex_unchecked("0x52b4f445e5f429d76c67d1616b89193e03fde104327f30c73cc293a2fc1cdff"),
+            ]),
+        });
+
+        let hash = Transaction::Invoke(InvokeTransaction::from(tx)).compute_hash(
+            TEST_CHAIN_ID,
+            StarknetVersion::LATEST,
+            false,
+        );
+
+        assert_eq!(hash, Felt::from_hex_unchecked("0x20b72b09e352ffc746cb1163463fc980183c4b85b41d171ffef51aba106f3b1"));
     }
 }

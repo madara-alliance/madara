@@ -489,7 +489,7 @@ impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
 impl From<UserInvokeFunctionV3Transaction> for BroadcastedInvokeTxnV3V0_10_2 {
     fn from(transaction: UserInvokeFunctionV3Transaction) -> Self {
         let proof = transaction.proof.clone();
-        Self { inner: transaction.into(), proof }
+        Self { inner: transaction.into(), proof, proof_facts: None }
     }
 }
 

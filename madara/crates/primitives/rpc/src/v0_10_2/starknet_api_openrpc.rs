@@ -129,10 +129,11 @@ pub struct InvokeTxnV3 {
     pub proof_facts: Option<Vec<ProofFactElem>>,
 }
 
-/// Broadcasted INVOKE_TXN_V3 with optional proof (NEW in v0.10.2)
+/// Broadcasted INVOKE_TXN_V3 with optional proof or proof_facts (NEW in v0.10.2)
 ///
 /// When submitting a transaction via addInvokeTransaction, users can optionally
-/// include a proof that will be passed to the gateway.
+/// include either gateway proof inputs or already-expanded proof_facts. When both
+/// are provided, proof_facts takes precedence.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BroadcastedInvokeTxnV3 {
     /// The flattened base broadcasted invoke v3 transaction fields
@@ -141,6 +142,9 @@ pub struct BroadcastedInvokeTxnV3 {
     /// Optional proof to be passed to the gateway (NEW in v0.10.2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proof: Option<Vec<ProofElem>>,
+    /// Optional proof facts to use directly for replay/admin submission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_facts: Option<Vec<ProofFactElem>>,
 }
 
 /// Response flags for transaction-returning methods (NEW in v0.10.2)
@@ -260,11 +264,13 @@ impl From<crate::v0_9_0::BroadcastedInvokeTxn> for BroadcastedInvokeTxn {
         match value {
             crate::v0_9_0::BroadcastedInvokeTxn::V0(tx) => Self::V0(tx),
             crate::v0_9_0::BroadcastedInvokeTxn::V1(tx) => Self::V1(tx),
-            crate::v0_9_0::BroadcastedInvokeTxn::V3(tx) => Self::V3(BroadcastedInvokeTxnV3 { inner: tx, proof: None }),
+            crate::v0_9_0::BroadcastedInvokeTxn::V3(tx) => {
+                Self::V3(BroadcastedInvokeTxnV3 { inner: tx, proof: None, proof_facts: None })
+            }
             crate::v0_9_0::BroadcastedInvokeTxn::QueryV0(tx) => Self::QueryV0(tx),
             crate::v0_9_0::BroadcastedInvokeTxn::QueryV1(tx) => Self::QueryV1(tx),
             crate::v0_9_0::BroadcastedInvokeTxn::QueryV3(tx) => {
-                Self::QueryV3(BroadcastedInvokeTxnV3 { inner: tx, proof: None })
+                Self::QueryV3(BroadcastedInvokeTxnV3 { inner: tx, proof: None, proof_facts: None })
             }
         }
     }

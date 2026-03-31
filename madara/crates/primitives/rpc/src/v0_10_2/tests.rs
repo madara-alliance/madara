@@ -822,6 +822,33 @@ fn test_broadcasted_invoke_txn_v3_without_proof() {
     assert!(txn.proof.is_none());
 }
 
+#[test]
+fn test_broadcasted_invoke_txn_v3_with_proof_facts() {
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof_facts": ["0x100", "0x200"]
+    }"#;
+
+    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    assert!(txn.proof.is_none());
+    assert_eq!(txn.proof_facts, Some(vec![Felt::from_hex("0x100").unwrap(), Felt::from_hex("0x200").unwrap(),]));
+}
+
 // ============================================================================
 // Block Types with proof_facts Tests (v0.10.2 specific)
 // ============================================================================
