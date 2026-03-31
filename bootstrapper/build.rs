@@ -1,7 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+const USE_LOCAL_ARTIFACTS_ENV: &str = "MADARA_BOOTSTRAPPER_USE_LOCAL_ARTIFACTS";
 
 fn main() {
-    if local_artifacts_available() {
+    println!("cargo::rerun-if-env-changed={USE_LOCAL_ARTIFACTS_ENV}");
+
+    if use_local_artifacts() && local_artifacts_available() {
         println!("cargo::warning=using existing local artifacts from ../build-artifacts");
         return;
     }
@@ -10,15 +14,27 @@ fn main() {
 }
 
 fn local_artifacts_available() -> bool {
-    let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => return false,
-    };
-
-    let Some(root_dir) = manifest_dir.parent() else {
+    let Some(root_dir) = root_dir() else {
         return false;
     };
 
+    local_artifacts_available_at(&root_dir)
+}
+
+fn use_local_artifacts() -> bool {
+    matches!(std::env::var(USE_LOCAL_ARTIFACTS_ENV), Ok(value) if value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes"))
+}
+
+fn root_dir() -> Option<PathBuf> {
+    let manifest_dir = match std::env::var("CARGO_MANIFEST_DIR") {
+        Ok(dir) => PathBuf::from(dir),
+        Err(_) => return None,
+    };
+
+    manifest_dir.parent().map(Path::to_path_buf)
+}
+
+fn local_artifacts_available_at(root_dir: &Path) -> bool {
     [
         "build-artifacts/starkgate_latest/erc20.sierra.json",
         "build-artifacts/starkgate_latest/token_bridge.sierra.json",
