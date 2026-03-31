@@ -13,7 +13,7 @@ sol!(
     #[sol(rpc)]
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     Factory,
-    "contracts/ethereum/out/Factory.sol/Factory.json"
+    "../build-artifacts/bootstrapper/solidity/out/Factory.sol/Factory.json"
 );
 
 // Manager contract for token enrollment

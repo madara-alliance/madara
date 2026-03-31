@@ -48,4 +48,3 @@ print_stderr = "warn"
 
 [build-dependencies]
 build-version = { path = "../build-artifacts" }
-fs_extra = "1.3.0"

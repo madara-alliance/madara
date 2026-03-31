@@ -4,5 +4,6 @@ pub const REGISTRY_ARTIFACT: &str = "../build-artifacts/starkgate_latest/solidit
 pub const MULTI_BRIDGE_ARTIFACT: &str = "../build-artifacts/starkgate_latest/solidity/multiBridge.json";
 pub const ETH_BRIDGE_ARTIFACT: &str = "../build-artifacts/starkgate_latest/solidity/ethBridge.json";
 pub const ETH_BRIDGE_EIC_ARTIFACT: &str =
-    "./contracts/ethereum/out/ConfigureSingleBridgeEIC.sol/ConfigureSingleBridgeEIC.json";
-pub const MOCK_TOKEN_ARTIFACT: &str = "./contracts/ethereum/out/Strk.sol/STRKMock.json";
+    "../build-artifacts/bootstrapper/solidity/out/ConfigureSingleBridgeEIC.sol/ConfigureSingleBridgeEIC.json";
+pub const MOCK_TOKEN_ARTIFACT: &str =
+    "../build-artifacts/bootstrapper/solidity/out/strk.sol/STRKMock.json";
