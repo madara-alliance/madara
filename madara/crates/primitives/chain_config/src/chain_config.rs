@@ -891,7 +891,7 @@ mod tests {
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
-        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
+        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.14.1").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
 
         assert_eq!(
