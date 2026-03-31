@@ -11,7 +11,7 @@ use opentelemetry_sdk::{
 use prometheus::core::Collector as PrometheusCollector;
 use prometheus::proto::{LabelPair, MetricFamily, MetricType};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap};
 use std::fmt;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 
@@ -180,6 +180,10 @@ impl PrometheusCollector for Collector {
             return vec![];
         }
 
+        for family in inner.metric_families.values_mut() {
+            family.mut_metric().clear();
+        }
+
         let mut res = Vec::with_capacity(metrics.scope_metrics().size_hint().0 + 1);
 
         let target_info = self
@@ -229,54 +233,56 @@ impl PrometheusCollector for Collector {
                     None => continue,
                 };
 
-                let (drop, help) =
-                    validate_metrics(&name, metric.description(), metric_type, &mut inner.metric_families);
-                if drop {
+                let Some(family) = metric_family(&name, metric.description(), metric_type, &mut inner.metric_families)
+                else {
                     continue;
-                }
-
-                let description = help.unwrap_or_else(|| metric.description().into());
+                };
 
                 match metric.data() {
                     data::AggregatedMetrics::F64(metric_data) => match metric_data {
                         data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(&mut res, hist, description, &scope_labels, name);
+                            add_histogram_metric(family, hist, &scope_labels);
                         }
                         data::MetricData::Sum(sum) => {
-                            add_sum_metric(&mut res, sum, description, &scope_labels, name);
+                            add_sum_metric(family, sum, &scope_labels);
                         }
                         data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(&mut res, gauge, description, &scope_labels, name);
+                            add_gauge_metric(family, gauge, &scope_labels);
                         }
                         data::MetricData::ExponentialHistogram(_) => {}
                     },
                     data::AggregatedMetrics::I64(metric_data) => match metric_data {
                         data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(&mut res, hist, description, &scope_labels, name);
+                            add_histogram_metric(family, hist, &scope_labels);
                         }
                         data::MetricData::Sum(sum) => {
-                            add_sum_metric(&mut res, sum, description, &scope_labels, name);
+                            add_sum_metric(family, sum, &scope_labels);
                         }
                         data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(&mut res, gauge, description, &scope_labels, name);
+                            add_gauge_metric(family, gauge, &scope_labels);
                         }
                         data::MetricData::ExponentialHistogram(_) => {}
                     },
                     data::AggregatedMetrics::U64(metric_data) => match metric_data {
                         data::MetricData::Histogram(hist) => {
-                            add_histogram_metric(&mut res, hist, description, &scope_labels, name);
+                            add_histogram_metric(family, hist, &scope_labels);
                         }
                         data::MetricData::Sum(sum) => {
-                            add_sum_metric(&mut res, sum, description, &scope_labels, name);
+                            add_sum_metric(family, sum, &scope_labels);
                         }
                         data::MetricData::Gauge(gauge) => {
-                            add_gauge_metric(&mut res, gauge, description, &scope_labels, name);
+                            add_gauge_metric(family, gauge, &scope_labels);
                         }
                         data::MetricData::ExponentialHistogram(_) => {}
                     },
                 }
             }
         }
+
+        let mut metric_families: Vec<_> =
+            inner.metric_families.values().filter(|family| !family.get_metric().is_empty()).cloned().collect();
+        metric_families.sort_by(|a, b| a.get_name().cmp(b.get_name()));
+        res.extend(metric_families);
 
         res
     }
@@ -306,48 +312,47 @@ fn get_attrs(kvs: &mut dyn Iterator<Item = (&Key, &Value)>, extra: &[LabelPair])
     res
 }
 
-fn validate_metrics(
+fn metric_family<'a>(
     name: &str,
     description: &str,
     metric_type: MetricType,
-    mfs: &mut HashMap<String, MetricFamily>,
-) -> (bool, Option<String>) {
-    if let Some(existing) = mfs.get(name) {
-        if existing.get_field_type() != metric_type {
-            tracing::warn!(
-                metric_name = name,
-                existing_type = ?existing.get_field_type(),
-                dropped_type = ?metric_type,
-                "Instrument type conflict, using existing type definition"
-            );
-            return (true, None);
+    mfs: &'a mut HashMap<String, MetricFamily>,
+) -> Option<&'a mut MetricFamily> {
+    match mfs.entry(name.to_string()) {
+        Entry::Occupied(entry) => {
+            if entry.get().get_field_type() != metric_type {
+                tracing::warn!(
+                    metric_name = name,
+                    existing_type = ?entry.get().get_field_type(),
+                    dropped_type = ?metric_type,
+                    "Instrument type conflict, using existing type definition"
+                );
+                return None;
+            }
+            if entry.get().get_help() != description {
+                tracing::warn!(
+                    metric_name = name,
+                    existing_help = entry.get().get_help(),
+                    dropped_help = description,
+                    "Instrument description conflict, using existing"
+                );
+            }
+            Some(entry.into_mut())
         }
-        if existing.get_help() != description {
-            tracing::warn!(
-                metric_name = name,
-                existing_help = existing.get_help(),
-                dropped_help = description,
-                "Instrument description conflict, using existing"
-            );
-            return (false, Some(existing.get_help().to_string()));
+        Entry::Vacant(entry) => {
+            let mut mf = MetricFamily::default();
+            mf.set_name(name.into());
+            mf.set_help(description.to_string());
+            mf.set_field_type(metric_type);
+            Some(entry.insert(mf))
         }
-        (false, None)
-    } else {
-        let mut mf = MetricFamily::default();
-        mf.set_name(name.into());
-        mf.set_help(description.to_string());
-        mf.set_field_type(metric_type);
-        mfs.insert(name.to_string(), mf);
-        (false, None)
     }
 }
 
 fn add_histogram_metric<T: Numeric + Copy>(
-    res: &mut Vec<MetricFamily>,
+    family: &mut MetricFamily,
     histogram: &data::Histogram<T>,
-    description: String,
     extra: &[LabelPair],
-    name: Cow<'static, str>,
 ) {
     for dp in histogram.data_points() {
         let kvs = get_attrs(&mut dp.attributes().map(|kv| (&kv.key, &kv.value)), extra);
@@ -374,23 +379,11 @@ fn add_histogram_metric<T: Numeric + Copy>(
         let mut metric = prometheus::proto::Metric::default();
         metric.set_label(kvs.into());
         metric.set_histogram(histogram);
-
-        let mut family = MetricFamily::default();
-        family.set_name(name.to_string());
-        family.set_help(description.clone());
-        family.set_field_type(MetricType::HISTOGRAM);
-        family.set_metric(vec![metric].into());
-        res.push(family);
+        family.mut_metric().push(metric);
     }
 }
 
-fn add_sum_metric<T: Numeric + Copy>(
-    res: &mut Vec<MetricFamily>,
-    sum: &data::Sum<T>,
-    description: String,
-    extra: &[LabelPair],
-    name: Cow<'static, str>,
-) {
+fn add_sum_metric<T: Numeric + Copy>(family: &mut MetricFamily, sum: &data::Sum<T>, extra: &[LabelPair]) {
     let metric_type = if sum.is_monotonic() { MetricType::COUNTER } else { MetricType::GAUGE };
 
     for dp in sum.data_points() {
@@ -409,22 +402,12 @@ fn add_sum_metric<T: Numeric + Copy>(
             metric.set_gauge(gauge);
         }
 
-        let mut family = MetricFamily::default();
-        family.set_name(name.to_string());
-        family.set_help(description.clone());
-        family.set_field_type(metric_type);
-        family.set_metric(vec![metric].into());
-        res.push(family);
+        debug_assert_eq!(family.get_field_type(), metric_type);
+        family.mut_metric().push(metric);
     }
 }
 
-fn add_gauge_metric<T: Numeric + Copy>(
-    res: &mut Vec<MetricFamily>,
-    gauge: &data::Gauge<T>,
-    description: String,
-    extra: &[LabelPair],
-    name: Cow<'static, str>,
-) {
+fn add_gauge_metric<T: Numeric + Copy>(family: &mut MetricFamily, gauge: &data::Gauge<T>, extra: &[LabelPair]) {
     for dp in gauge.data_points() {
         let kvs = get_attrs(&mut dp.attributes().map(|kv| (&kv.key, &kv.value)), extra);
 
@@ -434,13 +417,7 @@ fn add_gauge_metric<T: Numeric + Copy>(
         let mut prom_gauge = prometheus::proto::Gauge::default();
         prom_gauge.set_value(dp.value().as_f64());
         metric.set_gauge(prom_gauge);
-
-        let mut family = MetricFamily::default();
-        family.set_name(name.to_string());
-        family.set_help(description.to_string());
-        family.set_field_type(MetricType::GAUGE);
-        family.set_metric(vec![metric].into());
-        res.push(family);
+        family.mut_metric().push(metric);
     }
 }
 
@@ -606,5 +583,97 @@ fn sanitize_name(s: Cow<'static, str>) -> Cow<'static, str> {
 }
 
 fn sanitize_prom_kv(s: &str) -> String {
-    s.chars().map(|c| if c.is_ascii_alphanumeric() || c == ':' { c } else { '_' }).collect()
+    let mut out = String::with_capacity(s.len() + 1);
+
+    for (idx, c) in s.chars().enumerate() {
+        let valid = c.is_ascii_alphanumeric() || c == '_';
+        if idx == 0 {
+            if c.is_ascii_alphabetic() || c == '_' {
+                out.push(c);
+            } else {
+                out.push('_');
+                if valid {
+                    out.push(c);
+                }
+            }
+        } else if valid {
+            out.push(c);
+        } else {
+            out.push('_');
+        }
+    }
+
+    if out.is_empty() {
+        out.push('_');
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::{metrics::MeterProvider as _, KeyValue};
+    use opentelemetry_sdk::metrics::SdkMeterProvider;
+    use prometheus::Registry;
+
+    fn label_value<'a>(metric: &'a prometheus::proto::Metric, name: &str) -> Option<&'a str> {
+        metric.get_label().iter().find(|label| label.get_name() == name).map(|label| label.get_value())
+    }
+
+    #[test]
+    fn collects_all_samples_into_single_metric_family() {
+        let registry = Registry::new();
+        let exporter = exporter().with_registry(registry.clone()).build().expect("build exporter");
+        let provider = SdkMeterProvider::builder().with_reader(exporter).build();
+        let meter = provider.meter("analytics-exporter-test");
+
+        let counter = meter.u64_counter("requests").with_description("request count").build();
+        counter.add(1, &[KeyValue::new("tenant", "alpha")]);
+        counter.add(2, &[KeyValue::new("tenant", "beta")]);
+
+        let histogram = meter.f64_histogram("latency").with_description("request latency").build();
+        histogram.record(1.5, &[KeyValue::new("tenant", "alpha")]);
+        histogram.record(2.5, &[KeyValue::new("tenant", "beta")]);
+
+        let gauge = meter.f64_gauge("temperature").with_description("room temperature").build();
+        gauge.record(18.5, &[KeyValue::new("tenant", "alpha")]);
+        gauge.record(21.0, &[KeyValue::new("tenant", "beta")]);
+
+        provider.force_flush().expect("flush metrics");
+
+        let families = registry.gather();
+
+        let counter_families: Vec<_> = families.iter().filter(|family| family.get_name() == "requests_total").collect();
+        assert_eq!(counter_families.len(), 1);
+        assert_eq!(counter_families[0].get_metric().len(), 2);
+
+        let histogram_families: Vec<_> = families.iter().filter(|family| family.get_name() == "latency").collect();
+        assert_eq!(histogram_families.len(), 1);
+        assert_eq!(histogram_families[0].get_metric().len(), 2);
+
+        let gauge_families: Vec<_> = families.iter().filter(|family| family.get_name() == "temperature").collect();
+        assert_eq!(gauge_families.len(), 1);
+        assert_eq!(gauge_families[0].get_metric().len(), 2);
+
+        let counter_metrics = counter_families[0].get_metric();
+        assert_eq!(label_value(&counter_metrics[0], "tenant"), Some("alpha"));
+        assert_eq!(label_value(&counter_metrics[1], "tenant"), Some("beta"));
+
+        let histogram_metrics = histogram_families[0].get_metric();
+        assert_eq!(label_value(&histogram_metrics[0], "tenant"), Some("alpha"));
+        assert_eq!(label_value(&histogram_metrics[1], "tenant"), Some("beta"));
+
+        let gauge_metrics = gauge_families[0].get_metric();
+        assert_eq!(label_value(&gauge_metrics[0], "tenant"), Some("alpha"));
+        assert_eq!(label_value(&gauge_metrics[1], "tenant"), Some("beta"));
+    }
+
+    #[test]
+    fn sanitizes_prometheus_label_keys() {
+        assert_eq!(sanitize_prom_kv("tenant.id"), "tenant_id");
+        assert_eq!(sanitize_prom_kv("9bad:key"), "_9bad_key");
+        assert_eq!(sanitize_prom_kv(":bad.key"), "_bad_key");
+        assert_eq!(sanitize_prom_kv("_already_valid"), "_already_valid");
+    }
 }
