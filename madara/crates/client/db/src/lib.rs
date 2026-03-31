@@ -283,6 +283,38 @@ impl ChainTip {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReorgHead {
+    /// Full backend tip state visible to subscribers at this point in time.
+    pub tip: ChainTip,
+    /// Latest confirmed block number associated with the tip.
+    pub latest_confirmed_block_n: u64,
+    /// Hash of that latest confirmed block.
+    pub latest_confirmed_block_hash: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReorgNotification {
+    /// Chain head before the revert was applied.
+    pub previous_head: ReorgHead,
+    /// Chain head after the revert was applied.
+    pub new_head: ReorgHead,
+    /// First confirmed block number removed by the reorg.
+    pub first_reverted_block_n: u64,
+    /// Hash of the first confirmed block removed by the reorg.
+    pub first_reverted_block_hash: Felt,
+}
+
+impl ReorgNotification {
+    pub fn last_reverted_block_n(&self) -> u64 {
+        self.previous_head.latest_confirmed_block_n
+    }
+
+    pub fn reverted_block_count(&self) -> u64 {
+        self.last_reverted_block_n() - self.first_reverted_block_n + 1
+    }
+}
+
 /// Madara client database backend singleton.
 #[derive(Debug)]
 pub struct MadaraBackend<DB = RocksDBStorage> {
@@ -299,6 +331,9 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
+
+    /// First-class reorg notifications for consumers that need more than the lossy chain-tip watch.
+    reorg_notifications: tokio::sync::broadcast::Sender<ReorgNotification>,
 
     /// Cairo Native execution configuration.
     ///
@@ -359,6 +394,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         config: MadaraBackendConfig,
         cairo_native_config: Arc<NativeConfig>,
     ) -> Result<Self> {
+        let (reorg_notifications, _) = tokio::sync::broadcast::channel(16);
         let mut backend = Self {
             db,
             // db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -372,6 +408,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            reorg_notifications,
             custom_header: Mutex::new(None),
         };
         backend.init().context("Initializing madara backend")?;
@@ -1059,7 +1096,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
-impl<D: MadaraStorageWrite> MadaraBackend<D> {
+impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)
     }
@@ -1126,6 +1163,71 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
 
     /// Revert the blockchain to a specific block hash.
     pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
-        self.db.revert_to(new_tip_block_hash)
+        let previous_tip = self.chain_tip.borrow().clone();
+        let previous_latest_confirmed_block_n = previous_tip.latest_confirmed_block_n().ok_or_else(|| {
+            anyhow::anyhow!("Cannot revert backend cache state without a confirmed block in the current chain tip")
+        })?;
+        let previous_latest_confirmed_block_hash = self
+            .db
+            .get_block_info(previous_latest_confirmed_block_n)?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Current tip block info not found for block_n={previous_latest_confirmed_block_n}")
+            })?
+            .block_hash;
+        let requested_new_tip_block_n = self
+            .db
+            .find_block_hash(new_tip_block_hash)?
+            .ok_or_else(|| anyhow::anyhow!("Target block hash {new_tip_block_hash:#x} not found"))?;
+        let first_reverted_block_n =
+            (requested_new_tip_block_n < previous_latest_confirmed_block_n).then_some(requested_new_tip_block_n + 1);
+        let first_reverted_block_hash = first_reverted_block_n
+            .map(|block_n| {
+                self.db
+                    .get_block_info(block_n)?
+                    .ok_or_else(|| anyhow::anyhow!("First reverted block info not found for block_n={block_n}"))
+                    .map(|info| info.block_hash)
+            })
+            .transpose()?;
+        let (new_tip_block_n, new_tip_block_hash) = self.db.revert_to(new_tip_block_hash)?;
+
+        if new_tip_block_n == previous_latest_confirmed_block_n {
+            return Ok((new_tip_block_n, new_tip_block_hash));
+        }
+
+        let refreshed_chain_tip = ChainTip::from_storage(self.db.get_chain_tip()?);
+        ensure!(
+            refreshed_chain_tip.latest_confirmed_block_n() == Some(new_tip_block_n),
+            "Refreshed chain tip cache ({refreshed_chain_tip:?}) does not match reverted block_n={new_tip_block_n}",
+        );
+        self.chain_tip.send_replace(refreshed_chain_tip.clone());
+
+        let stored_l1_confirmed = self.db.get_confirmed_on_l1_tip()?;
+        let clamped_l1_confirmed = stored_l1_confirmed.map(|block_n| block_n.min(new_tip_block_n));
+        if clamped_l1_confirmed != stored_l1_confirmed {
+            self.db.write_confirmed_on_l1_tip(clamped_l1_confirmed)?;
+        }
+        if *self.latest_l1_confirmed.borrow() != clamped_l1_confirmed {
+            self.latest_l1_confirmed.send_replace(clamped_l1_confirmed);
+        }
+
+        let notification = ReorgNotification {
+            previous_head: ReorgHead {
+                tip: previous_tip,
+                latest_confirmed_block_n: previous_latest_confirmed_block_n,
+                latest_confirmed_block_hash: previous_latest_confirmed_block_hash,
+            },
+            new_head: ReorgHead {
+                tip: refreshed_chain_tip,
+                latest_confirmed_block_n: new_tip_block_n,
+                latest_confirmed_block_hash: new_tip_block_hash,
+            },
+            first_reverted_block_n: first_reverted_block_n
+                .ok_or_else(|| anyhow::anyhow!("Missing first reverted block number for reorg notification"))?,
+            first_reverted_block_hash: first_reverted_block_hash
+                .ok_or_else(|| anyhow::anyhow!("Missing first reverted block hash for reorg notification"))?,
+        };
+        let _ = self.reorg_notifications.send(notification);
+
+        Ok((new_tip_block_n, new_tip_block_hash))
     }
 }

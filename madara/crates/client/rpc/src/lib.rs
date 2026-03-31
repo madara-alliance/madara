@@ -637,23 +637,18 @@
 //! }
 //! ```
 //!
-//! #### `starknet_subscribePendingTransactions`
+//! #### Transaction Stream Subscriptions
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
+//! Madara supports different transaction-stream methods depending on the Starknet RPC version:
 //!
-//! Creates a subscription for pending transactions.
+//! - `v0.8.1`: [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
+//! - `v0.9.0`: [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transactions`]
+//! - `v0.10.0`: [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transactions`]
 //!
-//! ```json
-//! {
-//!   "jsonrpc": "2.0",
-//!   "method": "starknet_subscribePendingTransactions",
-//!   "params": {
-//!     "transaction_details": false,
-//!     "sender_address": ["0x123...", "0x456..."]
-//!   },
-//!   "id": 1
-//! }
-//! ```
+//! `v0.9.0+` also supports receipt streaming through:
+//!
+//! - [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transaction_receipts`]
+//! - [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transaction_receipts`]
 //!
 //! #### `starknet_unsubscribe`
 //!
@@ -799,9 +794,13 @@ mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
+use mc_mempool::{
+    Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus, WatchTransactionStatus,
+};
 use mc_submit_tx::SubmitTransaction;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -822,6 +821,105 @@ impl Default for StorageProofConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxStatusSnapshot {
+    Received,
+    AcceptedOnL2,
+    AcceptedOnL1,
+}
+
+pub trait TxStatusWatch: Send {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot>;
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>>;
+}
+
+pub trait TxStatusWatcher: Send + Sync {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>>;
+}
+
+pub trait NewTransactionsWatch: Send {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<Arc<ValidatedTransaction>>> + Send + '_>>;
+}
+
+pub trait NewTransactionsWatcher: Send + Sync {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>>;
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
+        let snapshot = match WatchTransactionStatus::current(self).clone() {
+            Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
+                PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
+                PreConfirmationStatus::Candidate { .. } | PreConfirmationStatus::Executed { .. } => {
+                    Some(TxStatusSnapshot::AcceptedOnL2)
+                }
+            },
+            Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
+                if is_on_l1 {
+                    Some(TxStatusSnapshot::AcceptedOnL1)
+                } else {
+                    Some(TxStatusSnapshot::AcceptedOnL2)
+                }
+            }
+            None => None,
+        };
+        WatchTransactionStatus::refresh(self);
+        snapshot
+    }
+
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
+        Box::pin(async move {
+            match WatchTransactionStatus::recv(self).await.clone() {
+                Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
+                    PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
+                    PreConfirmationStatus::Candidate { .. } | PreConfirmationStatus::Executed { .. } => {
+                        Some(TxStatusSnapshot::AcceptedOnL2)
+                    }
+                },
+                Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
+                    if is_on_l1 {
+                        Some(TxStatusSnapshot::AcceptedOnL1)
+                    } else {
+                        Some(TxStatusSnapshot::AcceptedOnL2)
+                    }
+                }
+                None => None,
+            }
+        })
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatcher for Arc<Mempool<D>> {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        let watch = Arc::clone(self).watch_transaction_status(transaction_hash).ok()?;
+        Some(Box::new(watch))
+    }
+}
+
+struct BroadcastNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>>,
+}
+
+impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<Arc<ValidatedTransaction>>> + Send + '_>> {
+        Box::pin(async move {
+            loop {
+                match self.receiver.recv().await {
+                    Ok(tx) => return Some(tx),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+                }
+            }
+        })
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead + mc_db::MadaraStorageWrite> NewTransactionsWatcher for Arc<Mempool<D>> {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(BroadcastNewTransactionsWatch { receiver: self.subscribe_new_transactions() }))
+    }
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
@@ -829,6 +927,8 @@ pub struct Starknet {
     ws_handles: Arc<WsSubscribeHandles>,
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
+    pub(crate) tx_status_watcher: Option<Arc<dyn TxStatusWatcher>>,
+    pub(crate) new_transactions_watcher: Option<Arc<dyn NewTransactionsWatcher>>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -848,6 +948,8 @@ impl Starknet {
             backend,
             ws_handles,
             add_transaction_provider,
+            tx_status_watcher: None,
+            new_transactions_watcher: None,
             storage_proof_config,
             block_prod_handle,
             ctx,
@@ -862,6 +964,14 @@ impl Starknet {
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
         self.rpc_unsafe_enabled = value;
+    }
+
+    pub fn set_tx_status_watcher(&mut self, watcher: Option<Arc<dyn TxStatusWatcher>>) {
+        self.tx_status_watcher = watcher;
+    }
+
+    pub fn set_new_transactions_watcher(&mut self, watcher: Option<Arc<dyn NewTransactionsWatcher>>) {
+        self.new_transactions_watcher = watcher;
     }
 }
 

@@ -28,6 +28,7 @@ pub mod get_block_with_tx_hashes;
 pub mod get_block_with_txs;
 pub mod get_events;
 pub mod get_state_update;
+pub mod get_transaction_receipt;
 
 #[async_trait]
 impl StarknetReadRpcApiV0_10_0Server for Starknet {
@@ -117,7 +118,7 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo> {
-        V0_9_0Impl::get_transaction_receipt(self, transaction_hash)
+        Ok(get_transaction_receipt::get_transaction_receipt(self, transaction_hash)?)
     }
 
     async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
