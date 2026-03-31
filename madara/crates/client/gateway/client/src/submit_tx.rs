@@ -2,6 +2,7 @@ use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -119,6 +120,22 @@ impl SubmitTransaction for GatewayProvider {
             .await
             .map_err(map_gateway_error)
             .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
+    }
+
+    async fn submit_invoke_transaction_v0_10_2(
+        &self,
+        tx: BroadcastedInvokeTxnV0_10_2,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        let proof_is_present = match &tx {
+            BroadcastedInvokeTxnV0_10_2::V3(tx) | BroadcastedInvokeTxnV0_10_2::QueryV3(tx) => tx.proof.is_some(),
+            _ => false,
+        };
+
+        if proof_is_present {
+            return Err(SubmitTransactionError::Unsupported);
+        }
+
+        self.submit_invoke_transaction(tx.into()).await
     }
 
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {

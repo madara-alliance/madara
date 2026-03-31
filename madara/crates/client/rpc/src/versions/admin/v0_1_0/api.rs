@@ -3,9 +3,10 @@ use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::{BroadcastedDeclareTxnV0, BroadcastedInvokeTxn};
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};

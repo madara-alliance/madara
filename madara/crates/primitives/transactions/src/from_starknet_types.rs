@@ -108,6 +108,14 @@ impl From<mp_rpc::v0_8_1::InvokeTxnV3> for InvokeTransactionV3 {
     }
 }
 
+impl From<mp_rpc::v0_10_2::InvokeTxnV3> for InvokeTransactionV3 {
+    fn from(tx: mp_rpc::v0_10_2::InvokeTxnV3) -> Self {
+        let mut invoke: Self = tx.inner.into();
+        invoke.proof_facts = tx.proof_facts;
+        invoke
+    }
+}
+
 impl From<mp_rpc::v0_7_1::L1HandlerTxn> for L1HandlerTransaction {
     fn from(tx: mp_rpc::v0_7_1::L1HandlerTxn) -> Self {
         Self {

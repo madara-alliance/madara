@@ -76,6 +76,27 @@ impl From<mp_rpc::v0_8_1::BroadcastedInvokeTxn> for InvokeTransaction {
     }
 }
 
+impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxn> for InvokeTransaction {
+    fn from(tx: mp_rpc::v0_10_2::BroadcastedInvokeTxn) -> Self {
+        match tx {
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::V0(tx) => InvokeTransaction::V0(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::V1(tx) => InvokeTransaction::V1(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(tx) => InvokeTransaction::V3(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV0(tx) => InvokeTransaction::V0(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV1(tx) => InvokeTransaction::V1(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV3(tx) => InvokeTransaction::V3(tx.into()),
+        }
+    }
+}
+
+impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxnV3> for crate::InvokeTransactionV3 {
+    fn from(tx: mp_rpc::v0_10_2::BroadcastedInvokeTxnV3) -> Self {
+        let mut invoke: crate::InvokeTransactionV3 = tx.inner.into();
+        invoke.proof_facts = tx.proof.map(|proof| proof.into_iter().map(Felt::from).collect());
+        invoke
+    }
+}
+
 impl DeclareTransaction {
     fn from_broadcasted_v0_7(tx: mp_rpc::v0_7_1::BroadcastedDeclareTxn, class_hash: Felt) -> Self {
         match tx {
@@ -244,5 +265,16 @@ mod tests {
             TransactionWithHash::from_broadcasted_v0_8(query, chain_id, StarknetVersion::LATEST, None).hash;
 
         assert_ne!(regular_hash, query_hash, "query transactions must use the simulate-version hash offset");
+    }
+
+    #[test]
+    fn v0_10_2_broadcasted_invoke_v3_preserves_proof() {
+        let tx = mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(sample_broadcasted_invoke_v3());
+
+        let InvokeTransaction::V3(invoke) = InvokeTransaction::from(tx) else {
+            panic!("expected invoke v3");
+        };
+
+        assert_eq!(invoke.proof_facts, Some(vec![Felt::from(11_u64), Felt::from(12_u64)]));
     }
 }

@@ -5,7 +5,8 @@ use mc_submit_tx::{
     SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
     TransactionValidator, TransactionValidatorConfig,
 };
-use mp_rpc::admin::{BroadcastedDeclareTxnV0, BroadcastedInvokeTxn as AdminBroadcastedInvokeTxn};
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -74,13 +75,6 @@ impl BlockProductionHandle {
     pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
         self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)
     }
-
-    pub async fn submit_admin_invoke_transaction(
-        &self,
-        tx: AdminBroadcastedInvokeTxn,
-    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        self.tx_converter.submit_admin_invoke_transaction(tx).await
-    }
 }
 
 // For convenience, we proxy the submit tx traits.
@@ -110,6 +104,12 @@ impl SubmitTransaction for BlockProductionHandle {
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.tx_converter.submit_invoke_transaction(tx).await
+    }
+    async fn submit_invoke_transaction_v0_10_2(
+        &self,
+        tx: BroadcastedInvokeTxnV0_10_2,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        self.tx_converter.submit_invoke_transaction_v0_10_2(tx).await
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None

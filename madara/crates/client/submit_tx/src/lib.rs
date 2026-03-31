@@ -111,6 +111,7 @@ use async_trait::async_trait;
 use mc_db::MadaraStorage;
 use mc_mempool::Mempool;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
@@ -151,6 +152,13 @@ pub trait SubmitTransaction: Send + Sync {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError>;
+
+    async fn submit_invoke_transaction_v0_10_2(
+        &self,
+        tx: BroadcastedInvokeTxnV0_10_2,
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        self.submit_invoke_transaction(tx.into()).await
+    }
 
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 

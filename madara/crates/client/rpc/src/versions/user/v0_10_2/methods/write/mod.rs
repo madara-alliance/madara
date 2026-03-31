@@ -24,6 +24,10 @@ impl StarknetWriteRpcApiV0_10_2Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
-        V0_8_1Impl::add_invoke_transaction(self, invoke_transaction.into()).await
+        Ok(self
+            .add_transaction_provider
+            .submit_invoke_transaction_v0_10_2(invoke_transaction)
+            .await
+            .map_err(crate::StarknetRpcApiError::from)?)
     }
 }

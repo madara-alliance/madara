@@ -1,4 +1,5 @@
 config_version: 1
+# Source notes for 0.14.2 preset values: see configs/presets/SOURCES_0_14_2.md
 chain_name: "Madara"
 chain_id: "MADARA_DEVNET"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"

@@ -1,3 +1,4 @@
+use crate::versions::user::common::convert_storage_keys_for_v0_8_1;
 use crate::versions::user::v0_10_0::StarknetReadRpcApiV0_10_0Server as V0_10_0Impl;
 use crate::versions::user::v0_10_2::StarknetReadRpcApiV0_10_2Server;
 use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
@@ -19,7 +20,6 @@ use mp_rpc::v0_10_2::{
 
 // v0.10.2 specific implementation
 pub mod get_events;
-mod get_messages_status;
 pub mod get_state_update;
 pub mod get_storage_at;
 
@@ -247,7 +247,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
     }
 
     fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>> {
-        Ok(get_messages_status::get_messages_status(self, transaction_hash)?)
+        V0_9_0Impl::get_messages_status(self, transaction_hash)
     }
 
     fn get_storage_proof(
@@ -260,18 +260,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
         let block_view = self.resolve_view_on(block_id)?;
 
         // Convert StorageKey to Felt for v0.8.1 compatibility
-        let contracts_storage_keys_v0_8_1 = contracts_storage_keys.map(|keys| {
-            keys.into_iter()
-                .map(|item| mp_rpc::v0_8_1::ContractStorageKeysItem {
-                    contract_address: item.contract_address,
-                    storage_keys: item
-                        .storage_keys
-                        .into_iter()
-                        .map(|key| Felt::from_hex(&key).unwrap_or(Felt::ZERO))
-                        .collect(),
-                })
-                .collect()
-        });
+        let contracts_storage_keys_v0_8_1 = convert_storage_keys_for_v0_8_1(contracts_storage_keys)?;
 
         V0_8_1Impl::get_storage_proof(
             self,
