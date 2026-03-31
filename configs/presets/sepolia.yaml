@@ -1,7 +1,7 @@
 config_version: 1
 chain_name: "Starknet Sepolia"
 chain_id: "SN_SEPOLIA"
-feeder_gateway_url: "https://alpha-sepolia.starknet.io/feeder_gateway/"
+feeder_gateway_url: "https://feeder.alpha-sepolia.starknet.io/feeder_gateway/"
 gateway_url: "https://alpha-sepolia.starknet.io/gateway/"
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
@@ -34,7 +34,7 @@ bouncer_config:
       blake: 3334
 sequencer_address: "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"
 eth_core_contract_address: "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057"
-eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
+eth_gps_statement_verifier: "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20
 mempool_ttl: "5h"
