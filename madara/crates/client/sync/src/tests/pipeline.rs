@@ -136,7 +136,7 @@ async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
 
     let err = task.await.expect_err("sync should stop on the first unsupported Starknet version");
     let err = format!("{err:#}");
-    assert!(err.contains("Unsupported Starknet version {unsupported_version}"), "{err}");
+    assert!(err.contains(&format!("Unsupported Starknet version {unsupported_version}")), "{err}");
     assert!(err.contains("Latest supported version is"), "{err}");
     assert!(err.contains("block 2"), "{err}");
 
