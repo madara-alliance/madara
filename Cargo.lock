@@ -7012,7 +7012,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=codex%2Frpc-client-cairo-native-minimal#83aa64750461c25ed318ea0786485841cd5113ff"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12791,7 +12791,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=codex%2Frpc-client-cairo-native-minimal#83aa64750461c25ed318ea0786485841cd5113ff"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -12802,7 +12802,7 @@ dependencies = [
  "log",
  "num-bigint",
  "rayon",
- "reqwest 0.11.27",
+ "reqwest 0.12.26",
  "serde",
  "serde_json",
  "starknet-os-types",
@@ -14176,7 +14176,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=codex%2Frpc-client-cairo-native-minimal#83aa64750461c25ed318ea0786485841cd5113ff"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
