@@ -543,7 +543,6 @@
       },
       "construct": {
         "type": "invoke_v3",
-        "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
         "contract_address": "$ref:deploy_hello.contract_address",
         "entry_point": "increase_balance",
         "calldata": ["0x1"]
@@ -584,7 +583,6 @@
       },
       "construct": {
         "type": "invoke_v3",
-        "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
         "contract_address": "$ref:deploy_hello.contract_address",
         "entry_point": "increase_balance",
         "calldata": ["0x1"]
@@ -714,7 +712,6 @@
       "params": {},
       "construct": {
         "type": "invoke_v3",
-        "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
         "contract_address": "$ref:deploy_hello.contract_address",
         "entry_point": "increase_balance",
         "calldata": ["0x1"]

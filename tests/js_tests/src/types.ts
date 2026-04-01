@@ -90,7 +90,6 @@ export interface Assertion {
 
 export interface ConstructHint {
   type: "invoke_v3" | "declare_v3" | "deploy_account_v3";
-  sender_address?: string;
   contract_address?: string;
   entry_point?: string;
   calldata?: string[];

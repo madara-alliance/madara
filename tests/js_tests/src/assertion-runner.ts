@@ -169,7 +169,7 @@ async function buildInvokeV3Params(
   const deployer = new Deployer(UDC_ADDRESS, "deployContract");
   const account = new Account({
     provider,
-    address: hint.sender_address || DEFAULT_ACCOUNT_ADDRESS,
+    address: DEFAULT_ACCOUNT_ADDRESS,
     signer: DEFAULT_PRIVATE_KEY,
     deployer,
   });
