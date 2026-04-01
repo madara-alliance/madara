@@ -2,24 +2,11 @@
 
 CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 
-ANVIL_PORT=8545
 RPC_PORT=9944
-CORE_CONTRACT="0x5fbdb2315678afecb367f032d93f642f64180aa3"
 
-# Start Anvil (L1 simulator) with 1-second block time
+# Start Anvil and deploy DummyContract if anvil is available
 if command -v anvil &> /dev/null; then
-  echo "Starting Anvil on port $ANVIL_PORT..."
-  anvil --port $ANVIL_PORT --block-time 1 --chain-id 1337 --slots-in-an-epoch 1 --silent > /dev/null 2>&1 &
-  ANVIL_PID=$!
-  sleep 2
-
-  # Deploy the DummyContract (messaging + state stubs)
-  BYTECODE=$(cat tests/js_tests/fixtures/DummyContract.bytecode)
-  curl -s "http://127.0.0.1:$ANVIL_PORT" -X POST -H "Content-Type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_sendTransaction\",\"params\":[{\"from\":\"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\",\"data\":\"$BYTECODE\",\"gas\":\"0x1000000\"}]}" > /dev/null
-  sleep 3
-  echo "DummyContract deployed at $CORE_CONTRACT"
-
+  source scripts/setup-anvil.sh
   ANVIL_ENV="ANVIL_PORT=$ANVIL_PORT CORE_CONTRACT=$CORE_CONTRACT"
 else
   echo "Anvil not found, running without L1 messaging tests"
@@ -40,8 +27,6 @@ if [ -n "$ANVIL_PID" ]; then
     --blob-gas-price 0       \
     --strk-per-eth 1         \
     --l1-endpoint "http://127.0.0.1:$ANVIL_PORT" \
-    --unsafe-skip-l1-message-consumed-check \
-    --rpc-pre-v0-9-preconfirmed-as-pending \
     --chain-config-override "block_time=1h,eth_core_contract_address=$CORE_CONTRACT" &
 else
   ./target/release/madara    \
@@ -57,7 +42,6 @@ else
     --blob-gas-price 0       \
     --strk-per-eth 1         \
     --no-l1-sync             \
-    --rpc-pre-v0-9-preconfirmed-as-pending \
     --chain-config-override block_time=1h &
 fi
 
