@@ -368,7 +368,7 @@ impl SettlementLayerProvider for EthereumClient {
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
         let block = self
             .provider
-            .get_block(BlockId::Number(BlockNumberOrTag::Number(l1_block_n)), BlockTransactionsKind::Hashes)
+            .get_block(BlockId::Number(BlockNumberOrTag::Number(l1_block_n)))
             .await
             .map_err(|e| -> SettlementClientError {
                 EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
