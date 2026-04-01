@@ -137,7 +137,9 @@ describe("Starknet RPC v0.10.0", () => {
         transaction_hash: fireReceipt.transactionHash,
       });
 
-      // Wait for L1 finality (10 blocks at 1s each) + sync polling
+      // Wait for L1 finality (10 blocks at 1s each) + sync polling.
+      // TODO: Replace with a polling loop (e.g., poll getMessagesStatus until
+      // the L1 tx hash is indexed) for more resilient CI behavior.
       console.log(
         "[l1-messaging] Waiting for L1 finality + Madara sync (20s)...",
       );

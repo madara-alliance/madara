@@ -3,7 +3,7 @@
  * These are Madara-specific methods not in starknet.js.
  */
 export class AdminClient {
-  private url: string;
+  private readonly url: string;
   private requestId = 0;
 
   constructor(url: string) {
@@ -26,7 +26,7 @@ export class AdminClient {
     const json = await response.json();
     if (json.error) {
       throw new Error(
-        `Admin RPC error [${method}]: ${json.error.message} (code: ${json.error.code})`,
+        `Admin RPC error [${method}]: ${json.error.message} (code: ${json.error.code}, data: ${JSON.stringify(json.error.data)})`,
       );
     }
     return json.result;
@@ -57,6 +57,9 @@ export class AdminClient {
         entry_point_selector: params.entry_point_selector,
         calldata: params.calldata,
       },
+      // Note: parseInt loses precision for values > Number.MAX_SAFE_INTEGER (2^53-1).
+      // Madara's u128 field can hold much larger values. Current test fixtures use
+      // small values so this is safe, but realistic L1 fees may need BigInt handling.
       paid_fee_on_l1: parseInt(params.paid_fee_on_l1),
     };
     return this.call("madara_addL1HandlerMessage", [message]);
