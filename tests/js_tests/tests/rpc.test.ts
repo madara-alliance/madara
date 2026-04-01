@@ -170,9 +170,22 @@ describe("Starknet RPC v0.10.0", () => {
     });
   });
 
+  // Split assertions into read (no state mutation) and write (construct hints that submit txs)
+  const writeMethodIds = new Set([
+    "add_invoke_transaction",
+    "add_declare_transaction",
+    "add_deploy_account_transaction",
+  ]);
+  const readOnly = readAssertions.assertions.filter(
+    (a) => !writeMethodIds.has(a.id),
+  );
+  const writeOnly = readAssertions.assertions.filter((a) =>
+    writeMethodIds.has(a.id),
+  );
+
   // ---- Phase 2: Read Assertions ----
   describe("Read Assertions", () => {
-    for (const assertion of readAssertions.assertions) {
+    for (const assertion of readOnly) {
       if (assertion.skip) {
         it.skip(`${assertion.id} (${assertion.method})`, () => {});
         continue;
@@ -187,6 +200,26 @@ describe("Starknet RPC v0.10.0", () => {
           throw new Error(
             "State setup did not complete - cannot run read assertions",
           );
+        }
+
+        await runAssertion(assertion, ctx);
+      });
+    }
+  });
+
+  // ---- Phase 2.5: Write Assertions ----
+  // These submit transactions and modify chain state. A block close before
+  // each ensures nonces are canonical (not stale from a prior pending tx).
+  describe("Write Assertions", () => {
+    for (const assertion of writeOnly) {
+      it(`${assertion.id} (${assertion.method})`, async () => {
+        // Close any pending block so on-chain nonces are up to date
+        const admin = new AdminClient(adminUrl);
+        try {
+          await admin.closeBlock();
+          await sleep(1000);
+        } catch {
+          // No pending block to close
         }
 
         await runAssertion(assertion, ctx);

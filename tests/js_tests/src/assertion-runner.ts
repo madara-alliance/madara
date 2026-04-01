@@ -20,9 +20,7 @@ import {
   DEFAULT_PRIVATE_KEY,
   UDC_ADDRESS,
   ERC20_STRK_ADDRESS,
-  getAdminUrl,
 } from "./config";
-import { AdminClient } from "./admin-client";
 import { Assertion, ConstructHint, TestContext } from "./types";
 
 // We use raw JSON-RPC for ALL assertion calls to test the actual RPC spec,
@@ -213,15 +211,6 @@ async function buildDeclareV3Params(
   _ctx: TestContext,
   provider: RpcProvider,
 ): Promise<any> {
-  // Close any pending block from prior write assertions so nonce is canonical
-  const admin = new AdminClient(getAdminUrl());
-  try {
-    await admin.closeBlock();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  } catch {
-    // Ignore if no pending block
-  }
-
   const deployer = new Deployer(UDC_ADDRESS, "deployContract");
   const account = new Account({
     provider,
@@ -244,17 +233,6 @@ async function buildDeployAccountV3Params(
   ctx: TestContext,
   provider: RpcProvider,
 ): Promise<any> {
-  // Close any pending block from prior write assertions (addInvokeTransaction, addDeclareTransaction)
-  // so that on-chain nonces are canonical before we fund + deploy a new account.
-  const admin = new AdminClient(getAdminUrl());
-  try {
-    await admin.closeBlock();
-    // Wait a moment for the block to finalize
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  } catch {
-    // Ignore if no pending block to close
-  }
-
   const deployer = new Deployer(UDC_ADDRESS, "deployContract");
   const privateKey = stark.randomAddress();
   const publicKey = ec.starkCurve.getStarkKey(privateKey);
