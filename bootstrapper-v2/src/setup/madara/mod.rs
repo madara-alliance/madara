@@ -43,29 +43,20 @@ pub enum DeployedContract {
     L2FeeToken,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct MadaraSetup {
-    rpc_url: String,
     provider: JsonRpcClient<HttpTransport>,
     account: Option<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>>,
     classes: HashMap<MadaraClass, Felt>,
     addresses: HashMap<DeployedContract, Felt>,
 }
 
-#[allow(dead_code)]
 impl MadaraSetup {
     pub fn new(madara_config: MadaraConfig) -> Self {
         let provider = JsonRpcClient::new(HttpTransport::new(
             Url::parse(&madara_config.rpc_url).expect("Failed to parse rpc Url"),
         ));
-        Self {
-            rpc_url: madara_config.rpc_url,
-            provider,
-            account: None,
-            classes: HashMap::new(),
-            addresses: HashMap::new(),
-        }
+        Self { provider, account: None, classes: HashMap::new(), addresses: HashMap::new() }
     }
 
     pub async fn init(&mut self, private_key: &str, madara_addresses_path: &str) -> Result<(), MadaraError> {

@@ -76,14 +76,7 @@ impl DeployedAddresses {
                 .ok_or_else(|| format!("Address '{}' not found in JSON", key).into())
         };
 
-        // L2 account address is deterministic based on class hash + salt + deployer
-        // Read it from madara_addresses.json if available, otherwise it's computed by bootstrapper
-        let l2_account_address =
-            madara["addresses"]["l2_account"].as_str().map(|s| s.to_string()).unwrap_or_else(|| {
-                // Fallback: this is the deterministic address from bootstrapper v2
-                // with private key 0xabcd and salt 0x626f6f7473747261705f73616c74
-                "0x4da71bd1d9153651a8e393bdbee29e2cafc9bade4cf17a5d56501ff764e4c78".to_string()
-            });
+        let l2_account_address = get_addr(&madara, "l2_account")?;
 
         Ok(Self {
             l2_account_address,

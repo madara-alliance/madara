@@ -27,7 +27,6 @@ use serde_json;
 use starknet::core::types::Felt;
 use strum::IntoEnumIterator;
 
-#[allow(dead_code)]
 pub struct EthereumSetup {
     rpc_url: String,
     signer: PrivateKeySigner,

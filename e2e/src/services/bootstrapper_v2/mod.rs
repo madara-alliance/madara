@@ -126,9 +126,19 @@ impl BootstrapperV2Service {
             })?;
         }
 
-        // Set the final key's value
+        // Set the final key's value (only string-valued fields are supported)
         if let Some(last_key) = keys.last() {
-            current[*last_key] = serde_json::Value::String(value.to_string());
+            match current.get(*last_key) {
+                Some(serde_json::Value::String(_)) | None => {
+                    current[*last_key] = serde_json::Value::String(value.to_string());
+                }
+                Some(other) => {
+                    return Err(BootstrapperV2Error::InvalidConfig(format!(
+                        "Key '{}' has non-string type {:?}, refusing to overwrite with string",
+                        key, other
+                    )));
+                }
+            }
         }
 
         std::fs::write(

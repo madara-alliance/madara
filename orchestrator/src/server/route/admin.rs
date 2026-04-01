@@ -243,6 +243,21 @@ async fn handle_close_open_batches(State(config): State<Arc<Config>>) -> JobRout
         }
     }
 
+    let total_closed = agg_closed + snos_closed;
+    let failed_count = (open_agg_batches.len() as u64 - agg_closed) + (open_snos_batches.len() as u64 - snos_closed);
+
+    MetricsRecorder::record_successful_job_operation(
+        total_closed as f64,
+        &[KeyValue::new("operation_type", "admin_close_open_batches"), KeyValue::new("admin", "true")],
+    );
+
+    if failed_count > 0 {
+        MetricsRecorder::record_failed_job_operation(
+            failed_count as f64,
+            &[KeyValue::new("operation_type", "admin_close_open_batches"), KeyValue::new("admin", "true")],
+        );
+    }
+
     let message = format!("Closed {} aggregator batch(es) and {} SNOS batch(es)", agg_closed, snos_closed);
     info!("{}", message);
 

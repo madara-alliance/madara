@@ -33,16 +33,14 @@ impl BaseLayerSetupTrait for StarknetSetup {
         unimplemented!("Starknet base layer is not implemented yet")
     }
 
-    #[allow(unused_variables)]
-    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
+    async fn post_madara_setup(&mut self, _madara_addresses_path: &str) -> Result<(), BaseLayerError> {
         unimplemented!("Starknet base layer is not implemented yet")
     }
 
-    #[allow(unused_variables)]
     async fn verify_update_config_hash(
         &self,
-        l2_fee_token: &str,
-        core_contract_address: &str,
+        _l2_fee_token: &str,
+        _core_contract_address: &str,
     ) -> Result<(), BaseLayerError> {
         unimplemented!("Starknet base layer is not implemented yet")
     }

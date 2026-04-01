@@ -204,8 +204,9 @@ impl ServiceManager {
                 // Step 3: Wait for target block to be mined
                 madara.wait_for_block_mined(target_block).await?;
 
-                // Step 4: Store for Pathfinder sync
-                self.bootstrapped_madara_block_number = Some(current_block);
+                // Step 4: Store for Pathfinder sync - use target_block so pathfinder
+                // syncs past the bootstrap transaction blocks
+                self.bootstrapped_madara_block_number = Some(target_block);
                 println!("✅ Block {} mined, proceeding to Pathfinder sync", target_block);
             }
 
