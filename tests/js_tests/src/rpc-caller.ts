@@ -100,6 +100,10 @@ function assertValidEnvelope(json: any, expectedId: number): void {
     );
   }
 
+  if (hasResult && hasError) {
+    throw new Error("Invalid JSON-RPC envelope: both result and error present");
+  }
+
   if (hasError) {
     if (typeof json.error.code !== "number") {
       throw new Error(
