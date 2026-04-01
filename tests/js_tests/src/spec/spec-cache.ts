@@ -44,7 +44,8 @@ async function cacheSingleFile(
 
   if (sha !== fileLock.sha256) {
     throw new Error(
-      `SHA-256 mismatch for ${tag}/${fileLock.file}: expected ${fileLock.sha256}, got ${sha}`,
+      `SHA-256 mismatch for ${tag}/${fileLock.file}: expected ${fileLock.sha256}, got ${sha}. ` +
+        `The upstream spec file may have been updated. Verify the changes and update the checksum in spec-manifest.ts.`,
     );
   }
 

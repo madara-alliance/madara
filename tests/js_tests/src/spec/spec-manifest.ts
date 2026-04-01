@@ -1,6 +1,12 @@
 /**
  * Pinned spec file URLs and SHA-256 checksums per RPC version.
  * When adding a new version, add entries here with verified checksums.
+ *
+ * URLs point to the `main` branch of the pathfinder repo because the
+ * Starknet RPC spec doesn't publish tagged releases for individual versions.
+ * The SHA-256 checksums act as the real pin — if upstream updates a spec file,
+ * the checksum mismatch will fail explicitly, prompting a manual review and
+ * re-pin of the new checksums.
  */
 export interface SpecFileLock {
   file: string;

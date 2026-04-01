@@ -307,13 +307,13 @@ describe("Starknet RPC v0.10.0", () => {
   });
 
   // ---- Phase 5: Cross-Validations ----
+  // These tests compare results across multiple RPC endpoints.
+  // They use expect().toBeDefined() for dependencies so that a missing
+  // upstream result causes an explicit failure, not a silent pass.
   describe("Cross-Validations", () => {
     it("block hash consistency: blockHashAndNumber matches getBlockWithTxHashes(latest)", async () => {
       const bhan = ctx.assertionResults.get("block_hash_and_number");
-      const blockTxHashes = ctx.assertionResults.get(
-        "get_block_tx_hashes_single",
-      );
-      if (!bhan || !blockTxHashes) return;
+      expect(bhan).toBeDefined();
 
       expect(bhan.block_hash).toBeDefined();
       expect(bhan.block_number).toBeDefined();
@@ -324,7 +324,8 @@ describe("Starknet RPC v0.10.0", () => {
       const blockTxHashes = ctx.assertionResults.get(
         "get_block_tx_hashes_multi",
       );
-      if (txCount === undefined || !blockTxHashes) return;
+      expect(txCount).toBeDefined();
+      expect(blockTxHashes).toBeDefined();
 
       expect(txCount).toBe(blockTxHashes.transactions.length);
     });
@@ -332,7 +333,8 @@ describe("Starknet RPC v0.10.0", () => {
     it("class lookup consistency: getClass and getClassAt return same entry points", async () => {
       const byHash = ctx.assertionResults.get("get_class");
       const byAddr = ctx.assertionResults.get("get_class_at");
-      if (!byHash || !byAddr) return;
+      expect(byHash).toBeDefined();
+      expect(byAddr).toBeDefined();
 
       expect(byHash.entry_points_by_type.EXTERNAL.length).toBe(
         byAddr.entry_points_by_type.EXTERNAL.length,
@@ -343,17 +345,19 @@ describe("Starknet RPC v0.10.0", () => {
     it("class hash consistency: getClassHashAt matches declared class_hash", async () => {
       const classHashAt = ctx.assertionResults.get("get_class_hash_at");
       const declareResult = ctx.results.get("declare_hello");
-      if (!classHashAt || !declareResult) return;
+      expect(classHashAt).toBeDefined();
+      expect(declareResult).toBeDefined();
 
       expect(normHex(String(classHashAt))).toBe(
-        normHex(declareResult.class_hash!),
+        normHex(declareResult!.class_hash!),
       );
     });
 
     it("storage vs call consistency: getStorageAt matches call(get_balance)", async () => {
       const storageResult = ctx.assertionResults.get("get_storage_at_balance");
       const callResult = ctx.assertionResults.get("call_get_balance");
-      if (!storageResult || !callResult) return;
+      expect(storageResult).toBeDefined();
+      expect(callResult).toBeDefined();
 
       const storageHex = normHex(String(storageResult));
       const callHex = normHex(
@@ -365,16 +369,17 @@ describe("Starknet RPC v0.10.0", () => {
     it("receipt block info consistency: receipt block_hash matches block from write phase", async () => {
       const receiptInvoke = ctx.assertionResults.get("get_tx_receipt_invoke");
       const invokeStep = ctx.results.get("invoke_increase_100");
-      if (!receiptInvoke || !invokeStep) return;
+      expect(receiptInvoke).toBeDefined();
+      expect(invokeStep).toBeDefined();
 
       expect(normHex(receiptInvoke.block_hash)).toBe(
-        normHex(invokeStep.block_hash!),
+        normHex(invokeStep!.block_hash!),
       );
     });
 
     it("header transaction_count matches transactions array length", async () => {
       const block = ctx.assertionResults.get("get_block_tx_hashes_single");
-      if (!block) return;
+      expect(block).toBeDefined();
 
       if (block.transaction_count !== undefined && block.transactions) {
         expect(block.transaction_count).toBe(block.transactions.length);
@@ -384,14 +389,15 @@ describe("Starknet RPC v0.10.0", () => {
     it("tx by index matches tx by hash in multi-tx block", async () => {
       const byIndex0 = ctx.assertionResults.get("get_tx_by_block_and_index_0");
       const byIndex1 = ctx.assertionResults.get("get_tx_by_block_and_index_1");
-      if (!byIndex0 || !byIndex1) return;
+      expect(byIndex0).toBeDefined();
+      expect(byIndex1).toBeDefined();
 
       expect(byIndex0.transaction_hash).not.toBe(byIndex1.transaction_hash);
     });
 
     it("empty block has zero transactions", async () => {
       const emptyCount = ctx.assertionResults.get("get_block_tx_count_empty");
-      if (emptyCount === undefined) return;
+      expect(emptyCount).toBeDefined();
 
       expect(emptyCount).toBe(0);
     });
@@ -399,7 +405,8 @@ describe("Starknet RPC v0.10.0", () => {
     it("nonce at genesis is 0 and increases after transactions", async () => {
       const nonceGenesis = ctx.assertionResults.get("get_nonce_at_genesis");
       const nonceCurrent = ctx.assertionResults.get("get_nonce");
-      if (nonceGenesis === undefined || nonceCurrent === undefined) return;
+      expect(nonceGenesis).toBeDefined();
+      expect(nonceCurrent).toBeDefined();
 
       expect(normHex(String(nonceGenesis))).toBe("0x0");
       const currentNonce = parseInt(String(nonceCurrent), 16);
