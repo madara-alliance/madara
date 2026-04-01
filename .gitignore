@@ -110,7 +110,7 @@ e2e_data/
 /e2e_data/*
 /e2e_data*
 /e2e/data/*
-deposit_withdraw/
+/deposit_withdraw/
 
 out
 cache
