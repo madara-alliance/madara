@@ -133,17 +133,34 @@ describe("Starknet RPC v0.10.0", () => {
       expect(fireReceipt.status).toBe("success");
 
       // Store the L1 tx hash in context for the read assertion
+      const l1TxHash = fireReceipt.transactionHash;
       ctx.results.set("l1_messaging_event", {
-        transaction_hash: fireReceipt.transactionHash,
+        transaction_hash: l1TxHash,
       });
 
-      // Wait for L1 finality (10 blocks at 1s each) + sync polling.
-      // TODO: Replace with a polling loop (e.g., poll getMessagesStatus until
-      // the L1 tx hash is indexed) for more resilient CI behavior.
-      console.log(
-        "[l1-messaging] Waiting for L1 finality + Madara sync (20s)...",
-      );
-      await sleep(20000);
+      // Poll until Madara has synced the L1 event (tx hash appears in DB).
+      // getMessagesStatus returns error 29 when the hash is unknown, and
+      // a result (possibly empty array) once indexed.
+      console.log("[l1-messaging] Polling for L1 message sync...");
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const pollDeadline = Date.now() + 60_000;
+      let synced = false;
+      while (Date.now() < pollDeadline) {
+        try {
+          const envelope = await rpcCaller.rawCall(
+            "starknet_getMessagesStatus",
+            { transaction_hash: l1TxHash },
+          );
+          if (!envelope.error) {
+            synced = true;
+            break;
+          }
+        } catch {
+          // Still not indexed, keep polling
+        }
+        await sleep(2000);
+      }
+      expect(synced).toBe(true);
 
       // Close block to trigger block producer to consume the pending L1 message
       const admin = new AdminClient(adminUrl);
@@ -219,7 +236,9 @@ describe("Starknet RPC v0.10.0", () => {
 
       try {
         await account.declare({ contract: sierra, casm });
-        fail("Expected error when re-declaring already-declared class");
+        throw new Error(
+          "Expected error when re-declaring already-declared class",
+        );
       } catch (err: any) {
         const code = err.baseError?.code ?? err.code;
         const data = JSON.stringify(
