@@ -35,6 +35,10 @@ use crate::worker::service::JobService;
 use orchestrator_utils::layer::Layer;
 use tracing::{debug, error, info, warn, Span};
 
+// SLA thresholds in seconds
+const SLA_DEGRADED_THRESHOLD_TOTAL: f64 = 1800.0; // 30 minutes
+const SLA_DOWNTIME_THRESHOLD_TOTAL: f64 = 10800.0; // 3 hours
+
 pub struct JobHandlerService;
 
 impl JobHandlerService {
@@ -469,6 +473,54 @@ impl JobHandlerService {
 
         job.metadata.common.verification_started_at = Some(Utc::now());
 
+        // Emit SLA T1 when ProofCreation verification starts
+        // T1 = time from SnosRun.created_at to ProofCreation.verification_started_at
+        if job.job_type == JobType::ProofCreation && job.metadata.common.verification_attempt_no == 0 {
+            match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::SnosRun).await {
+                Ok(Some(snos_job)) => {
+                    let t1 = Utc::now().signed_duration_since(snos_job.created_at).num_seconds() as f64;
+                    MetricsRecorder::record_sla_stage_duration("t1", t1);
+                    MetricsRecorder::check_sla_threshold("t1", t1, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+                    info!(t1_duration = t1, internal_id = job.internal_id, "SLA T1 recorded");
+                }
+                Ok(None) => {
+                    warn!(internal_id = job.internal_id, "SnosRun job not found for SLA T1");
+                }
+                Err(e) => {
+                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SnosRun job for SLA T1");
+                }
+            }
+        }
+
+        // Emit SLA T2 when Aggregator verification starts
+        // T2 = time from earliest ProofCreation.verification_completed_at to Aggregator.verification_started_at
+        if job.job_type == JobType::Aggregator && job.metadata.common.verification_attempt_no == 0 {
+            match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
+                Ok(snos_batches) => {
+                    let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
+                    for snos_batch in &snos_batches {
+                        if let Ok(Some(proof_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await {
+                            if let Some(vc) = proof_job.metadata.common.verification_completed_at {
+                                earliest_proof_completed = Some(match earliest_proof_completed {
+                                    Some(existing) => existing.min(vc),
+                                    None => vc,
+                                });
+                            }
+                        }
+                    }
+                    if let Some(earliest) = earliest_proof_completed {
+                        let t2 = Utc::now().signed_duration_since(earliest).num_seconds() as f64;
+                        MetricsRecorder::record_sla_stage_duration("t2", t2);
+                        MetricsRecorder::check_sla_threshold("t2", t2, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+                        info!(t2_duration = t2, internal_id = job.internal_id, "SLA T2 recorded");
+                    }
+                }
+                Err(e) => {
+                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SNOS batches for SLA T2");
+                }
+            }
+        }
+
         // Increment verification attempt counter
         job.metadata.common.verification_attempt_no += 1;
 
@@ -510,6 +562,12 @@ impl JobHandlerService {
 
                 // Check SLA compliance (example: 5 minute SLA)
                 MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
+
+                // Emit SLA T3 + total when StateTransition verification completes
+                // T3 = time from Aggregator.verification_completed_at to StateTransition.verification_completed_at
+                if job.job_type == JobType::StateTransition {
+                    Self::record_sla_t3_and_total(&job, &config).await;
+                }
 
                 config
                     .database()
@@ -871,6 +929,96 @@ impl JobHandlerService {
                 );
                 internal_id as f64
             }
+        }
+    }
+
+    /// Computes SLA T3 and total (T1+T2+T3) when StateTransition verification completes.
+    ///
+    /// T3 = Aggregator.verification_completed_at → StateTransition.verification_completed_at
+    /// Total = T1 + T2 + T3, computed by looking up all related jobs for this batch.
+    async fn record_sla_t3_and_total(job: &JobItem, config: &Arc<Config>) {
+        // Look up the Aggregator job for this batch
+        let agg_job = match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::Aggregator).await {
+            Ok(Some(j)) => j,
+            Ok(None) => {
+                warn!(internal_id = job.internal_id, "Aggregator job not found for SLA T3");
+                return;
+            }
+            Err(e) => {
+                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up Aggregator job for SLA T3");
+                return;
+            }
+        };
+
+        let agg_verify_completed = match agg_job.metadata.common.verification_completed_at {
+            Some(ts) => ts,
+            None => {
+                warn!(internal_id = job.internal_id, "Aggregator job missing verification_completed_at for SLA T3");
+                return;
+            }
+        };
+
+        // T3: Aggregator verify completed → now (StateTransition just completed)
+        let now = Utc::now();
+        let t3 = now.signed_duration_since(agg_verify_completed).num_seconds() as f64;
+        MetricsRecorder::record_sla_stage_duration("t3", t3);
+        MetricsRecorder::check_sla_threshold("t3", t3, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+        info!(t3_duration = t3, internal_id = job.internal_id, "SLA T3 recorded");
+
+        // Compute total T1+T2+T3 by looking up all related jobs
+        let snos_batches = match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
+            Ok(batches) => batches,
+            Err(e) => {
+                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SNOS batches for SLA total");
+                return;
+            }
+        };
+
+        let mut earliest_snos_created: Option<chrono::DateTime<Utc>> = None;
+        let mut latest_proof_verify_started: Option<chrono::DateTime<Utc>> = None;
+        let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
+
+        for snos_batch in &snos_batches {
+            // Look up SnosRun job
+            if let Ok(Some(snos_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::SnosRun).await {
+                earliest_snos_created = Some(match earliest_snos_created {
+                    Some(existing) => existing.min(snos_job.created_at),
+                    None => snos_job.created_at,
+                });
+            }
+
+            // Look up ProofCreation job
+            if let Ok(Some(proof_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await {
+                if let Some(vs) = proof_job.metadata.common.verification_started_at {
+                    latest_proof_verify_started = Some(match latest_proof_verify_started {
+                        Some(existing) => existing.max(vs),
+                        None => vs,
+                    });
+                }
+                if let Some(vc) = proof_job.metadata.common.verification_completed_at {
+                    earliest_proof_completed = Some(match earliest_proof_completed {
+                        Some(existing) => existing.min(vc),
+                        None => vc,
+                    });
+                }
+            }
+        }
+
+        if let (Some(snos_created), Some(proof_vs), Some(proof_vc)) =
+            (earliest_snos_created, latest_proof_verify_started, earliest_proof_completed)
+        {
+            let t1 = proof_vs.signed_duration_since(snos_created).num_seconds() as f64;
+            let t2 = match agg_job.metadata.common.verification_started_at {
+                Some(avs) => avs.signed_duration_since(proof_vc).num_seconds() as f64,
+                None => 0.0,
+            };
+            let total = t1 + t2 + t3;
+
+            MetricsRecorder::record_sla_stage_duration("total", total);
+            MetricsRecorder::check_sla_threshold("total", total, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+            info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
+        } else {
+            warn!(internal_id = job.internal_id, "Could not compute SLA total: missing timestamps from related jobs");
         }
     }
 
