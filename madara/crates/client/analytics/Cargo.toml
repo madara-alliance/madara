@@ -28,7 +28,6 @@ opentelemetry-otlp = { workspace = true, features = [
   "metrics",
   "logs",
 ] }
-opentelemetry-prometheus = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }

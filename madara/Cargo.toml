@@ -1,291 +1,171 @@
-[workspace]
-members = [
-  "node",
-  "crates/client/cairo_native",
-  "crates/client/db",
-  "crates/client/exec",
-  "crates/client/external_db",
-  "crates/client/sync",
-  "crates/client/settlement_client",
-  "crates/client/rpc",
-  "crates/client/gateway/client",
-  "crates/client/gateway/server",
-  "crates/client/analytics",
-  "crates/client/telemetry",
-  "crates/client/devnet",
-  "crates/client/mempool",
-  "crates/client/submit_tx",
-  "crates/client/block_production",
-  "crates/primitives/block",
-  "crates/primitives/bloom_filter",
-  "crates/primitives/convert",
-  "crates/primitives/transactions",
-  "crates/primitives/class",
-  "crates/primitives/gateway",
-  "crates/primitives/rpc",
-  "crates/primitives/receipt",
-  "crates/primitives/state_update",
-  "crates/primitives/chain_config",
-  "crates/primitives/utils",
-  "crates/proc-macros",
-  "crates/tests",
-  "crates/cairo-test-contracts",
-]
-resolver = "2"
+[package]
+name = "madara"
+description = "Madara node"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+build = "node/build.rs"
 
-[workspace.lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true
 
-[workspace.lints.clippy]
-print_stdout = "warn"
-print_stderr = "warn"
-# todo: uncomment these & fix them
-# unwrap_used = "warn"
-# missing_docs = "warn"
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
 
-[workspace.metadata.build]
-rustflags = ["-C", "symbol-mangling-version=v0"]
+[[bin]]
+name = "madara"
+path = "node/src/main.rs"
 
-[profile.dev]
-incremental = true
-
-[profile.release]
-panic = "unwind"
-
-[profile.profiling]
-inherits = "release"
-debug = 1
-
-[profile.production]
-codegen-units = 1
-inherits = "release"
-lto = "fat"
-opt-level = 3
-rpath = false
-strip = "symbols"
-
-[workspace.package]
-authors = ["Madara <https://github.com/madara-alliance>"]
-homepage = "https://madara.build"
-edition = "2021"
-repository = "https://github.com/madara-alliance/madara/"
-version = "0.10.0"
-license = "Apache-2.0"
-
-[workspace.dependencies]
-rocksdb = "0.22"
-librocksdb-sys = "0.17.0"
-uuid = { version = "1.20.0", features = ["v4"] }
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "update-starknet-types-core", features = [
-  "std",
-] }
+[dependencies]
+# Database
+bonsai-trie.workspace = true
+librocksdb-sys.workspace = true
+rocksdb.workspace = true
 
 # Madara proc macros
-m-proc-macros = { path = "crates/proc-macros", default-features = false }
+m-proc-macros.workspace = true
 
 # Madara primitives
-mp-block = { path = "crates/primitives/block", default-features = false }
-mp-bloom-filter = { path = "crates/primitives/bloom_filter", default-features = false }
-mp-convert = { path = "crates/primitives/convert", default-features = false }
-mp-transactions = { path = "crates/primitives/transactions", default-features = false }
-mp-class = { path = "crates/primitives/class", default-features = false }
-mp-gateway = { path = "crates/primitives/gateway", default-features = false }
-mp-rpc = { path = "crates/primitives/rpc", default-features = false }
-mp-receipt = { path = "crates/primitives/receipt", default-features = false }
-mp-state-update = { path = "crates/primitives/state_update", default-features = false }
-mp-utils = { path = "crates/primitives/utils", default-features = false }
-mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
-mp-oracle = { path = "crates/primitives/oracle", default-features = false }
+mp-block.workspace = true
+mp-chain-config.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-gateway.workspace = true
+mp-oracle.workspace = true
+mp-receipt.workspace = true
+mp-rpc.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Madara client
-mc-analytics = { path = "crates/client/analytics" }
-mc-class-exec = { path = "crates/client/cairo_native" }
-mc-telemetry = { path = "crates/client/telemetry" }
-mc-db = { path = "crates/client/db" }
-mc-exec = { path = "crates/client/exec" }
-mc-rpc = { path = "crates/client/rpc" }
-mc-gateway-client = { path = "crates/client/gateway/client" }
-mc-gateway-server = { path = "crates/client/gateway/server" }
-mc-sync = { path = "crates/client/sync" }
-mc-settlement-client = { path = "crates/client/settlement_client" }
-mc-mempool = { path = "crates/client/mempool" }
-mc-block-production = { path = "crates/client/block_production" }
-mc-devnet = { path = "crates/client/devnet" }
-mc-submit-tx = { path = "crates/client/submit_tx" }
-mc-external-db = { path = "crates/client/external_db" }
-
-# Madara misc
-m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
-mc-e2e-tests = { path = "crates/tests" }
-
-# Testing
-# Used by `mc-external-db` e2e tests to run MongoDB via Docker.
-# Only crates that opt-in with `workspace = true` pull this dependency.
-testcontainers = "0.18.0"
-
-# Build
-build-version = { path = "../build-artifacts" }
+mc-analytics.workspace = true
+mc-block-production.workspace = true
+mc-class-exec.workspace = true
+mc-db.workspace = true
+mc-devnet.workspace = true
+mc-exec.workspace = true
+mc-external-db.workspace = true
+mc-gateway-client.workspace = true
+mc-gateway-server.workspace = true
+mc-mempool.workspace = true
+mc-rpc.workspace = true
+mc-settlement-client.workspace = true
+mc-submit-tx.workspace = true
+mc-sync.workspace = true
+mc-telemetry.workspace = true
 
 # Starknet dependencies
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.17.0-rc.0" }
-starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.1.0" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.17.0-rc.0" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.15.0-rc.0" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.2.6-rc.0" }
-starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+blockifier.workspace = true
+cairo-lang-starknet-classes.workspace = true
+cairo-lang-utils.workspace = true
+cairo-vm.workspace = true
+starknet.workspace = true
+starknet-accounts.workspace = true
+starknet-contract.workspace = true
+starknet-core.workspace = true
+starknet-crypto.workspace = true
+starknet-providers.workspace = true
+starknet-signers.workspace = true
+starknet-types-core.workspace = true
+starknet_api.workspace = true
 
-starknet-types-core = { version = "0.2.4", default-features = false, features = [
-  "hash",
-  "serde",
-] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
-  "node_api",
-  "cairo_native",
-  "reexecution",
-] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0" }
-cairo-lang-starknet-classes = "2.12.3"
-cairo-lang-utils = "2.12.3"
-cairo-vm = "2.5.0"
-cairo-native = "0.7.3"
-
-alloy = { version = "0.8.3", features = [
-  "node-bindings",
-  "rpc-types",
-  "provider-http",
-  "contract",
-] }
+# Other
+alloy.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+derive_more = { workspace = true, features = ["from_str"] }
+dotenv.workspace = true
+fdlimit.workspace = true
+figment = { workspace = true, features = ["toml", "json", "yaml"] }
+futures = { workspace = true, features = ["thread-pool"] }
+governor.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper = { version = "0.14", features = ["server"] }
+hyper-tls.workspace = true
+hyper-util.workspace = true
+ip_network.workspace = true
+jsonrpsee.workspace = true
+rand.workspace = true
+rayon.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_with.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+url.workspace = true
 
 # Instrumentation
-opentelemetry = { version = "0.28.0", features = ["metrics", "logs"] }
-opentelemetry_sdk = { version = "0.28.0", features = ["rt-tokio", "logs"] }
-opentelemetry-stdout = { version = "0.28.0" }
-opentelemetry-otlp = { version = "0.28.0", features = [
-  "tonic",
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }
-opentelemetry-semantic-conventions = { version = "0.28.0" }
-opentelemetry-appender-tracing = { version = "0.28.0", default-features = false }
-opentelemetry-prometheus = "0.28.0"
-prometheus = "0.13.4"
-tracing = { version = "0.1.40", default-features = false }
-tracing-core = { version = "0.1.32", default-features = false }
-tracing-subscriber = { version = "0.3.19", features = [
-  "env-filter",
-  "registry",
-  "std",
-] }
-tracing-test = "0.2.5"
-tracing-opentelemetry = "0.29.0"
-time = "0.3"
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
-# Networking
-jsonrpsee = { version = "0.22", default-features = false, features = [
-  "server",
-  "client",
-] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.4", features = ["cors"] }
-hyper = { version = "1.5.0", features = ["full"] }
-hyper-tls = "0.6"
-hyper-util = "0.1.9"
-http = "1.1.0"
-http-body-util = "0.1.2"
-reqwest = { version = "0.12.7", features = [
-  "blocking",
-  "rustls-tls",
-  "native-tls",
-  "json",
-  "multipart",
-  "stream",
-] }
-url = { version = "2.4", features = ["serde"] }
+[dev-dependencies]
+# Core
+mc-e2e-tests = { workspace = true }
 
-# Async
-tokio = { version = "1.34", features = ["signal", "rt"] }
-tokio-util = "0.7.12"
-rayon = "1.10"
-futures = { version = "0.3", default-features = false, features = ["std"] }
-async-trait = "0.1"
-
-# Serialization
-derive_more = "2.0.1"
-serde = { version = "1.0", default-features = false, features = ["std", "rc"] }
-serde_with = { version = "3.11", default-features = false, features = [
-  "alloc",
-  "macros",
-] }
-serde_json = { version = "1.0", default-features = false, features = ["std"] }
-serde_yaml = { version = "0.9.34" }
-bincode = "1.3"
-
-# Numbers
-ahash = "0.8"
-base64 = "0.22"
-bigdecimal = "0.4.5"
-num-traits = "0.2"
-num-bigint = "0.4"
-primitive-types = "0.12"
-rand = "0.8"
-twox-hash = "2.1"
-crypto-bigint = "0.5.5"
-zeroize = "1.8"
-rustc-hash = "2.1"
-highway = "1.3"
-siphasher = "1.0"
-
-# Std extensions
-lazy_static = { version = "1.4", default-features = false }
-bitvec = { version = "1.0", default-features = false, features = ["std"] }
-bytes = "1.6.0"
-smallvec = { version = "1.15", features = ["write"] }
-itertools = { version = "0.13.0" }
-libc = "0.2"
-
-# Error handling
-thiserror = "2.0"
-anyhow = "1.0"
+# Primitives
+mp-bloom-filter = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
+mp-gateway = { workspace = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 
 # Testing
-criterion = { version = "0.5", features = ["html_reports"] }
-rstest = "0.18"
-proptest = "1.5.0"
-proptest-derive = "0.5.0"
-proptest-state-machine = "0.3.1"
-tempfile = "3.10.1"
-httpmock = "0.7.0"
-mockall = "0.13.0"
-fdlimit = "0.3.0"
-assert_matches = "1.5"
-
-# Macros
-indoc = "2"
-proc-macro2 = "1.0.86"
-quote = "1.0.26"
-syn = { version = "2.0.39", features = ["full"] }
-paste = "1.0.15"
-
-# Setup
-clap = { version = "4.4", features = ["derive", "env"] }
-dotenv = "0.15.0"
-figment = "0.10.19"
+assert_matches.workspace = true
+httpmock.workspace = true
+mockall.workspace = true
+proptest.workspace = true
+proptest-derive.workspace = true
+proptest-state-machine.workspace = true
+rstest.workspace = true
+tempfile.workspace = true
 
 # Misc
-flate2 = "1.0"
-regex = "1.10.5"
-sha3 = "0.10"
-dashmap = "6.1.0"
+base64.workspace = true
+bigdecimal.workspace = true
+bincode.workspace = true
+bitvec.workspace = true
+bytes.workspace = true
+crypto-bigint.workspace = true
+flate2.workspace = true
+indoc.workspace = true
+itertools.workspace = true
+lazy_static.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+once_cell.workspace = true
+paste.workspace = true
+primitive-types.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+sha3.workspace = true
+syn.workspace = true
+zeroize.workspace = true
 
-# Orchestrator
-chrono = { version = "0.4", features = ["serde"] }
-
-# External DB
-mongodb = "3.1"
-bson = "2"
-
-[patch.crates-io]
-rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+[features]
+default = []

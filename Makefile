@@ -221,7 +221,7 @@ setup-cairo:
 .PHONY: build-madara
 build-madara:
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
-	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+	@$(VENV_ACTIVATE) && cargo build --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: build-orchestrator
@@ -240,20 +240,12 @@ check:
 	@npm install
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
-	@cargo fmt -- --check
-	@cd madara && cargo fmt -- --check
+	@cargo fmt --all -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
 	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --no-deps -- -D warnings
 	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
-	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
-	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
-	@# Remove this once we add madara back to toplevel workspace.
-	@echo "Running cargo clippy for madara..."
-	@cd madara && \
-	cargo clippy --workspace --all-features --no-deps -- -D warnings && \
-	cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
@@ -272,8 +264,7 @@ fmt:
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
-	@cargo fmt
-	@cd madara && cargo fmt
+	@cargo fmt --all
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e
@@ -394,7 +385,7 @@ build-e2e-binaries:
 	@mkdir -p $(CARGO_TARGET_DIR)/release
 	@# Build Madara
 	@echo -e "$(INFO)Building Madara...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path madara/Cargo.toml --bin madara --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara --release
 	@# Build Orchestrator
 	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
