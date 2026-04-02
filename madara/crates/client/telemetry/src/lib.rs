@@ -123,9 +123,7 @@ impl TelemetryService {
                     .init();
             }
             (Some(tracer), None) => {
-                tracing_subscriber
-                    .with(OpenTelemetryLayer::new(tracer.tracer(self.subscriber_service_name())))
-                    .init();
+                tracing_subscriber.with(OpenTelemetryLayer::new(tracer.tracer(self.subscriber_service_name()))).init();
             }
             (None, Some(logger)) => {
                 tracing_subscriber.with(OpenTelemetryTracingBridge::new(logger)).init();
