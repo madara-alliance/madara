@@ -7,6 +7,10 @@ inputs:
     description: LLVM version required by Cairo Native
     required: false
     default: "19"
+  llvm-sys-version:
+    description: llvm-sys crate version suffix used for LLVM_SYS_*_PREFIX
+    required: false
+    default: "191"
   install-if-missing:
     description: Whether to install LLVM from the repo Makefile when the runner image does not already provide it
     required: false
@@ -95,19 +99,19 @@ runs:
       shell: bash
       run: |
         LLVM_VERSION="${{ inputs.llvm-version }}"
+        LLVM_SYS_VERSION="${{ inputs.llvm-sys-version }}"
         LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
         LLVM_FAMILY_ENV_SUFFIX=$((LLVM_VERSION * 10))
-        LLVM_SYS_ENV_SUFFIX=$((LLVM_VERSION * 10 + 1))
 
         echo "MLIR_SYS_${LLVM_FAMILY_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
-        echo "LLVM_SYS_${LLVM_SYS_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+        echo "LLVM_SYS_${LLVM_SYS_VERSION}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
         echo "TABLEGEN_${LLVM_FAMILY_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
 
         echo "LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> "$GITHUB_ENV"
         echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> "$GITHUB_ENV"
 
         echo "CC=clang-${LLVM_VERSION}" >> "$GITHUB_ENV"
-        echo "CXX=clang-${LLVM_VERSION}" >> "$GITHUB_ENV"
+        echo "CXX=clang++-${LLVM_VERSION}" >> "$GITHUB_ENV"
         echo "LDFLAGS=-fuse-ld=lld-${LLVM_VERSION}" >> "$GITHUB_ENV"
 
         echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
