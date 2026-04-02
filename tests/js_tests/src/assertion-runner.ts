@@ -80,8 +80,16 @@ export async function runAssertion(
     );
   }
 
-  // Validate response shape against official OpenRPC spec (if registry available)
-  if (ctx.specRegistry && !assertion.construct) {
+  // Validate response shape against official OpenRPC spec (if registry available).
+  // Skip for methods where starknet.js transforms the response into a different
+  // shape than the raw RPC spec (e.g., estimateFee adds resourceBounds,
+  // simulateTransactions restructures the trace). Write methods (addInvoke,
+  // addDeclare, addDeployAccount) return spec-compliant shapes and are validated.
+  const SKIP_SPEC_VALIDATION = new Set([
+    "starknet_estimateFee",
+    "starknet_simulateTransactions",
+  ]);
+  if (ctx.specRegistry && !SKIP_SPEC_VALIDATION.has(assertion.method)) {
     const specErrors = ctx.specRegistry.validateResult(
       assertion.method,
       actual,
