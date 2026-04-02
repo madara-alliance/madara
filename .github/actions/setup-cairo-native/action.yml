@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
+name: Action - Setup Cairo Native
+description: Configures the LLVM toolchain required by Cairo Native. The preferred runner image already includes LLVM; this action only installs it as a fallback.
+
+inputs:
+  llvm-version:
+    description: LLVM version required by Cairo Native
+    required: false
+    default: "19"
+  install-if-missing:
+    description: Whether to install LLVM from the repo Makefile when the runner image does not already provide it
+    required: false
+    default: "true"
+  codename:
+    description: Ubuntu/Debian codename used by the fallback installer
+    required: false
+    default: "jammy"
+
+runs:
+  using: composite
+  steps:
+    - name: Diagnose LLVM availability
+      shell: bash
+      run: |
+        LLVM_VERSION="${{ inputs.llvm-version }}"
+        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+
+        echo "Diagnosing LLVM ${LLVM_VERSION} on runner"
+        echo "Runner kernel: $(uname -srmo)"
+
+        if [ -f /etc/os-release ]; then
+          echo "Runner OS:"
+          grep -E '^(NAME|VERSION|VERSION_CODENAME)=' /etc/os-release || true
+        fi
+
+        if command -v "clang-${LLVM_VERSION}" >/dev/null 2>&1; then
+          echo "clang-${LLVM_VERSION} path: $(command -v "clang-${LLVM_VERSION}")"
+          "clang-${LLVM_VERSION}" --version | head -n 1
+        elif [ -x "${LLVM_PREFIX}/bin/clang" ]; then
+          echo "clang path: ${LLVM_PREFIX}/bin/clang"
+          "${LLVM_PREFIX}/bin/clang" --version | head -n 1
+        else
+          echo "clang-${LLVM_VERSION} not found before setup"
+        fi
+
+        if command -v "lld-${LLVM_VERSION}" >/dev/null 2>&1; then
+          echo "lld-${LLVM_VERSION} path: $(command -v "lld-${LLVM_VERSION}")"
+          "lld-${LLVM_VERSION}" --version | head -n 1
+        elif [ -x "${LLVM_PREFIX}/bin/lld" ]; then
+          echo "lld path: ${LLVM_PREFIX}/bin/lld"
+          "${LLVM_PREFIX}/bin/lld" --version | head -n 1
+        elif [ -x "${LLVM_PREFIX}/bin/ld.lld" ]; then
+          echo "ld.lld path: ${LLVM_PREFIX}/bin/ld.lld"
+          "${LLVM_PREFIX}/bin/ld.lld" --version | head -n 1
+        else
+          echo "lld-${LLVM_VERSION} not found before setup"
+        fi
+
+        if [ -d "${LLVM_PREFIX}" ]; then
+          echo "LLVM prefix exists: ${LLVM_PREFIX}"
+        else
+          echo "LLVM prefix missing: ${LLVM_PREFIX}"
+        fi
+
+    - name: Ensure LLVM is available
+      shell: bash
+      run: |
+        LLVM_VERSION="${{ inputs.llvm-version }}"
+        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        HAS_CLANG=false
+        HAS_LINKER=false
+
+        if [ -d "${LLVM_PREFIX}" ] && { [ -x "${LLVM_PREFIX}/bin/clang-${LLVM_VERSION}" ] || [ -x "${LLVM_PREFIX}/bin/clang" ]; }; then
+          HAS_CLANG=true
+        fi
+
+        if [ -d "${LLVM_PREFIX}" ] && { [ -x "${LLVM_PREFIX}/bin/lld" ] || [ -x "${LLVM_PREFIX}/bin/lld-${LLVM_VERSION}" ] || [ -x "${LLVM_PREFIX}/bin/ld.lld" ] || [ -x "${LLVM_PREFIX}/bin/ld.lld-${LLVM_VERSION}" ]; }; then
+          HAS_LINKER=true
+        fi
+
+        if [ "${HAS_CLANG}" = "true" ] && [ "${HAS_LINKER}" = "true" ]; then
+          echo "LLVM ${LLVM_VERSION} already available on the runner image"
+          exit 0
+        fi
+
+        if [ "${{ inputs.install-if-missing }}" != "true" ]; then
+          echo "LLVM ${LLVM_VERSION} is required but missing from the runner image"
+          exit 1
+        fi
+
+        echo "LLVM ${LLVM_VERSION} not found on runner image, installing fallback toolchain"
+        make "install-llvm${LLVM_VERSION}" SUDO=sudo CODENAME="${{ inputs.codename }}"
+
+    - name: Export LLVM environment
+      shell: bash
+      run: |
+        LLVM_VERSION="${{ inputs.llvm-version }}"
+        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_FAMILY_ENV_SUFFIX=$((LLVM_VERSION * 10))
+        LLVM_SYS_ENV_SUFFIX=$((LLVM_VERSION * 10 + 1))
+
+        echo "MLIR_SYS_${LLVM_FAMILY_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+        echo "LLVM_SYS_${LLVM_SYS_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+        echo "TABLEGEN_${LLVM_FAMILY_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
+
+        echo "LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> "$GITHUB_ENV"
+        echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> "$GITHUB_ENV"
+
+        echo "CC=clang-${LLVM_VERSION}" >> "$GITHUB_ENV"
+        echo "CXX=clang-${LLVM_VERSION}" >> "$GITHUB_ENV"
+        echo "LDFLAGS=-fuse-ld=lld-${LLVM_VERSION}" >> "$GITHUB_ENV"
+
+        echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"

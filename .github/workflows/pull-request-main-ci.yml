@@ -80,13 +80,13 @@ jobs:
 
   # Run Rust-specific linters
   lint-rust:
-    needs: [update-version-db, publish-artifacts]
+    needs: update-version-db
     uses: ./.github/workflows/task-lint-cargo.yml
     secrets: inherit
 
   # Run linters for code style and quality
   lint-code-style:
-    needs: [update-version-db, publish-artifacts]
+    needs: update-version-db
     uses: ./.github/workflows/task-lint-code-style.yml
 
   # ========================================================================= #
@@ -95,16 +95,16 @@ jobs:
 
   # Build Madara binary
   build-madara:
-    needs: [lint-code-style]
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
-  # Run coverage tests
+  # Run integration tests
   test-madara:
     needs: build-madara
     uses: ./.github/workflows/task-test-madara.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      madara-tests-hash: ${{ needs.build-madara.outputs.madara-tests-hash }}
     secrets: inherit
 
   # Run migration tests
@@ -113,6 +113,7 @@ jobs:
     uses: ./.github/workflows/task-test-migration.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      migration-tests-hash: ${{ needs.build-madara.outputs.migration-tests-hash }}
     secrets: inherit
 
   # Run JavaScript tests against the built binary
@@ -127,32 +128,68 @@ jobs:
   test-cli:
     needs: build-madara
     uses: ./.github/workflows/task-test-cli.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # ========================================================================= #
   #                                ORCHESTRATOR                               #
   # ========================================================================= #
 
+  detect-orchestrator-runtime-changes:
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    outputs:
+      should-run: ${{ steps.set-output.outputs.should-run }}
+    steps:
+      - name: Detect orchestrator runtime changes
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            orchestrator:
+              - 'orchestrator/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/actions/setup-rust/**'
+              - '.github/actions/setup-cairo-native/**'
+              - '.github/actions/setup-python-cairo/**'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-build-binary.yml'
+              - '.github/workflows/task-build-orchestrator-tests.yml'
+              - '.github/workflows/task-check-orchestrator.yml'
+              - '.github/workflows/task-test-orchestrator.yml'
+
+      - name: Set check-orchestrator gate
+        id: set-output
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-run=${{ steps.filter.outputs.orchestrator }}" >> "$GITHUB_OUTPUT"
+          fi
+
   # Check Orchestrator binary
   # (We don't re-use the Orchestrator binary in other tests)
   check-orchestrator:
-    needs: lint-code-style
+    if: needs.detect-orchestrator-runtime-changes.outputs.should-run == 'true'
+    needs: [lint-code-style, detect-orchestrator-runtime-changes]
     uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
 
-  # TODO: maybe we can remove the check, if we are building the binary ourselves ?
-  # Build Orchestrator binary
-  # build-orchestrator:
-  #   needs: lint-code-style
-  #   uses: ./.github/workflows/task-build-orchestrator.yml
-  #   secrets: inherit
+  # Build the archived orchestrator test binaries in parallel with Madara.
+  build-orchestrator-tests:
+    uses: ./.github/workflows/task-build-orchestrator-tests.yml
+    secrets: inherit
 
-  # Run coverage tests
+  # Run integration tests
   test-orchestrator:
-    needs: [build-madara, check-orchestrator]
+    needs: [build-madara, build-orchestrator-tests]
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
+      orchestrator-tests-hash: ${{ needs.build-orchestrator-tests.outputs.orchestrator-tests-hash }}
     secrets: inherit
 
   # Run e2e tests

@@ -62,6 +62,9 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 

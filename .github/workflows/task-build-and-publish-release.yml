@@ -54,8 +54,10 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}-rust-1.89
 
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
       - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
-        if: inputs.is-standalone == false
         uses: ./.github/actions/setup-python-cairo
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}

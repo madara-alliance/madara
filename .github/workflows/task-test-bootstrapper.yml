@@ -42,6 +42,9 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 

@@ -24,6 +24,9 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
       - name: Scarb setup
         uses: ./.github/actions/setup-scarb
         with:

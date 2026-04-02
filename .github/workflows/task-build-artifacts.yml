@@ -52,6 +52,9 @@ jobs:
       - name: Load env
         uses: ./.github/actions/load-env
 
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
       - name: Compile artifacts
         run: make artifacts
 
