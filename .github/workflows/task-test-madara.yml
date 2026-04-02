@@ -97,6 +97,7 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
         run: |
+          export COVERAGE_BIN="$(realpath target/release/madara)"
           cargo nextest run \
             --archive-file target/nextest/madara-tests.tar.zst \
             --workspace-remap "$GITHUB_WORKSPACE" \
