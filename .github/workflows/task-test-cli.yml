@@ -3,6 +3,11 @@
 name: Task - Run CLI tests
 on:
   workflow_dispatch:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara binary artifact"
+        required: true
+        type: string
   workflow_call:
     inputs:
       madara-binary-hash:
