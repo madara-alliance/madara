@@ -42,7 +42,7 @@ testing = ["mc-db/testing", "mockall", "mc-settlement-client/testing"]
 [dependencies]
 
 # Madara
-mc-analytics.workspace = true
+mc-telemetry.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mc-mempool.workspace = true

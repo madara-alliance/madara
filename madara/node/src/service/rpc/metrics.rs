@@ -1,6 +1,6 @@
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
+use mc_telemetry::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{global, KeyValue};
 use opentelemetry::{
     metrics::{Counter, Histogram},

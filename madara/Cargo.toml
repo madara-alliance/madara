@@ -42,7 +42,6 @@ mp-transactions.workspace = true
 mp-utils.workspace = true
 
 # Madara client
-mc-analytics.workspace = true
 mc-block-production.workspace = true
 mc-class-exec.workspace = true
 mc-db.workspace = true

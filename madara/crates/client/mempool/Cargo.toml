@@ -38,7 +38,7 @@ testing = ["mc-db/testing", "mockall"]
 [dependencies]
 
 # Madara
-mc-analytics.workspace = true
+mc-telemetry.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mp-block.workspace = true

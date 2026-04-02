@@ -39,7 +39,6 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
                 MadaraServiceId::RpcUser,
                 MadaraServiceId::Gateway,
                 MadaraServiceId::Telemetry,
-                MadaraServiceId::Analytics,
                 MadaraServiceId::Mempool,
             ]
         } else {
