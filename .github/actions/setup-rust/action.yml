@@ -6,6 +6,11 @@ inputs:
   rust-version:
     description: Rust version to set up
     required: true
+  cache-workspaces:
+    description: "Workspace to target-directory mappings cached by rust-cache"
+    required: false
+    default: |
+      . -> target
   extra-cache:
     description: "Whether or not to enable cached dependencies"
     required: false
@@ -22,11 +27,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
     - name: Setup Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
@@ -40,8 +40,7 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ${{ inputs.cache-key }}
-        workspaces: |
-          . -> target
+        workspaces: ${{ inputs.cache-workspaces }}
         cache-workspace-crates: "true"
 
     - name: Setup mold

@@ -11,7 +11,7 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -22,7 +22,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          extra-cache: false
+          cache-key: workspace-clippy-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
 
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
