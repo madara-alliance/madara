@@ -40,7 +40,7 @@ zeroize.workspace = true
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-  "tonic",
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }
