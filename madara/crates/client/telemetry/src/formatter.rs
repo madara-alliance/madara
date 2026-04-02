@@ -454,9 +454,7 @@ impl CustomFormatter {
     fn get_timing_style(timing_str: &str) -> Style {
         let timing_clean = timing_str.trim();
 
-        if timing_clean.ends_with("ns") {
-            return Style::new().dim();
-        } else if timing_clean.ends_with("µs") || timing_clean.ends_with("us") {
+        if timing_clean.ends_with("ns") || timing_clean.ends_with("µs") || timing_clean.ends_with("us") {
             return Style::new().dim();
         } else if timing_clean.ends_with("ms") {
             if let Ok(val) = timing_clean.trim_end_matches("ms").trim().parse::<f64>() {

@@ -1,4 +1,4 @@
-use clap::{ArgAction, Args, Parser};
+use clap::{ArgAction, Args};
 use mc_telemetry::TelemetryConfig;
 use mp_utils::parsers::parse_url;
 use serde::{Deserialize, Serialize};
@@ -57,6 +57,7 @@ impl TelemetryParams {
 mod tests {
     use super::*;
     use crate::cli::RunCmd;
+    use clap::Parser;
 
     #[test]
     fn telemetry_params_use_new_defaults() {
