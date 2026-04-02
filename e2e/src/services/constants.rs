@@ -43,6 +43,16 @@ pub const BOOTSTRAPPER_CONFIG: &str = "e2e/config/bootstrapper.json";
 pub const BOOTSTRAPPER_ADDRESSES_FILE: &str = "addresses.json";
 
 // =============================================================================
+// BOOTSTRAPPER V2 SERVICE
+// =============================================================================
+pub const BOOTSTRAPPER_V2_BINARY: &str = "bootstrapper-v2";
+pub static BOOTSTRAPPER_V2_SETUP_BASE_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs(120));
+pub static BOOTSTRAPPER_V2_SETUP_MADARA_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs(1200));
+pub const BOOTSTRAPPER_V2_CONFIG: &str = "e2e/config/bootstrapper_v2.json";
+pub const BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT: &str = "base_addresses.json";
+pub const BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT: &str = "madara_addresses.json";
+
+// =============================================================================
 // LOCALSTACK SERVICE
 // =============================================================================
 pub const LOCALSTACK_IMAGE: &str =

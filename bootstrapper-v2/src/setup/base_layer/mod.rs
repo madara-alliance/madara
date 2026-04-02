@@ -12,6 +12,14 @@ pub trait BaseLayerSetupTrait {
     async fn init(&mut self) -> Result<(), BaseLayerError>;
     async fn setup(&mut self) -> Result<(), BaseLayerError>;
     async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError>;
+
+    /// Verify/update config hash with the actual deployed fee token.
+    /// This should be called after polling for the L2 token to be deployed.
+    async fn verify_update_config_hash(
+        &self,
+        l2_fee_token: &str,
+        core_contract_address: &str,
+    ) -> Result<(), BaseLayerError>;
 }
 
 #[derive(thiserror::Error, Debug)]

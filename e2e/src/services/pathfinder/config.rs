@@ -162,6 +162,7 @@ impl PathfinderConfig {
         }
 
         command.arg("--storage.state-tries").arg(self.storage_state_tries());
+        command.arg("--max-rpc-connections").arg("64"); // Having a larger (or default) value leads to issues when running locally
         command.arg("--gateway.request-timeout").arg(self.gateway_request_timeout().to_string());
         command.arg("--is-l3").arg("false"); // we are running the E2E for L2s
 
