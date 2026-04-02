@@ -1,10 +1,5 @@
 pub const JOBS_COLLECTION: &str = "jobs";
 
-/// Maximum number of recent documents to scan before a $lookup anti-join.
-/// Jobs/batches without successors are always at the frontier (most recent),
-/// so we only need to check a bounded window instead of the entire collection.
-pub const LOOKUP_SCAN_LIMIT: i64 = 500;
-
 /// Collection name for SNOS batches
 ///
 /// SNOS batches represent individual batch units that contain block ranges

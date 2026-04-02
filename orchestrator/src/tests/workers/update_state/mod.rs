@@ -12,6 +12,7 @@ use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::Layer;
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -96,6 +97,41 @@ async fn update_state_worker_first_block_missing() {
 
     // update state worker should not create any job
     assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn update_state_worker_does_not_starve_first_block_with_large_backlog() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_layer(Layer::L2)
+        .build()
+        .await;
+
+    for block_number in 1..=550 {
+        let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), block_number, JobStatus::Completed)
+            .await
+            .unwrap();
+    }
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
+
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
+    assert_eq!(latest_job.status, JobStatus::Created);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+
+    let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
+    let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Batch context") };
+    assert_eq!(data.to_settle, 1, "Expected the oldest completed parent batch to be processed first");
 }
 
 #[rstest]

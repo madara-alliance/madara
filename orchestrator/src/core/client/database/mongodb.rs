@@ -1,6 +1,6 @@
 use super::error::DatabaseError;
 use crate::core::client::database::constant::{
-    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, LOOKUP_SCAN_LIMIT, SNOS_BATCHES_COLLECTION,
+    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
 use crate::core::client::database::DatabaseClient;
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
@@ -591,16 +591,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Sort by internal_id descending to process most recent jobs first
-            // Jobs without successors are always at the frontier (most recent)
-            doc! {
-                "$sort": { "internal_id": -1 }
-            },
-            // Stage 3: Limit to recent jobs to avoid scanning the entire collection
-            doc! {
-                "$limit": LOOKUP_SCAN_LIMIT
-            },
-            // Stage 4: Lookup to find jobs with matching internal_id
+            // Stage 2: Lookup to find jobs with matching internal_id
             // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
             doc! {
                 "$lookup": {
@@ -610,7 +601,7 @@ impl DatabaseClient for MongoDbClient {
                     "as": "successor_jobs"
                 }
             },
-            // Stage 5: Filter successor_jobs to only include job_b_type
+            // Stage 3: Filter successor_jobs to only include job_b_type
             doc! {
                 "$addFields": {
                     "successor_jobs": {
@@ -622,10 +613,16 @@ impl DatabaseClient for MongoDbClient {
                     }
                 }
             },
-            // Stage 6: Keep only documents with no successors
+            // Stage 4: Keep only documents with no successors
             doc! {
                 "$match": {
                     "successor_jobs": { "$eq": [] }
+                }
+            },
+            // Stage 5: Return the oldest missing work first so callers do not starve earlier jobs.
+            doc! {
+                "$sort": {
+                    "internal_id": 1
                 }
             },
         ];
@@ -1212,16 +1209,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": match_filter
             },
-            // Stage 2: Sort by index descending to process most recent batches first
-            // Batches without jobs are always at the frontier (most recent)
-            doc! {
-                "$sort": { "index": -1 }
-            },
-            // Stage 3: Limit to recent batches to avoid scanning the entire collection
-            doc! {
-                "$limit": LOOKUP_SCAN_LIMIT
-            },
-            // Stage 4: Lookup to find jobs with matching internal_id
+            // Stage 2: Lookup to find jobs with matching internal_id
             // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
             doc! {
                 "$lookup": {
@@ -1231,7 +1219,7 @@ impl DatabaseClient for MongoDbClient {
                     "as": "corresponding_jobs"
                 }
             },
-            // Stage 5: Filter corresponding_jobs to only include SnosRun jobs
+            // Stage 3: Filter corresponding_jobs to only include SnosRun jobs
             doc! {
                 "$addFields": {
                     "corresponding_jobs": {
@@ -1243,19 +1231,19 @@ impl DatabaseClient for MongoDbClient {
                     }
                 }
             },
-            // Stage 6: Keep only batches without corresponding jobs
+            // Stage 4: Keep only batches without corresponding jobs
             doc! {
                 "$match": {
                     "corresponding_jobs": { "$eq": [] }
                 }
             },
-            // Stage 7: Sort by index ascending for consistent ordering
+            // Stage 5: Sort by index ascending so we return the oldest missing batches overall.
             doc! {
                 "$sort": {
                     "index": 1
                 }
             },
-            // Stage 5: Limit to max number of batches we want
+            // Stage 6: Limit to max number of batches we want
             doc! {
                 "$limit": limit as i64
             },
