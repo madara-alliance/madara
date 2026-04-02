@@ -3,7 +3,13 @@
 name: Task - Build Madara
 
 # This workflow builds the main Madara binary and related components
-# It also caches the build artifacts for other workflows to use
+# It also prepares the reusable Cairo artifacts consumed by downstream jobs.
+#
+# Test archives are built in separate workflows on purpose. CI logs showed that
+# `cargo nextest archive --features testing ...` recompiles a large overlapping
+# Rust graph instead of behaving like a tiny delta on top of
+# `cargo build --bin madara --release`, so keeping those archive builds out of
+# this job improves PR wall-clock by parallelizing the producer lane.
 on:
   workflow_dispatch:
   workflow_call:
@@ -14,12 +20,6 @@ on:
       cairo-artifacts-hash:
         description: "Hash of the cairo artifacts"
         value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
-      madara-tests-hash:
-        description: "Hash of the archived madara test binaries"
-        value: ${{ jobs.build-binaries.outputs.madara-tests-hash }}
-      migration-tests-hash:
-        description: "Hash of the archived migration test binaries"
-        value: ${{ jobs.build-binaries.outputs.migration-tests-hash }}
 
 jobs:
   build-binaries:
@@ -27,8 +27,6 @@ jobs:
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
-      madara-tests-hash: ${{ steps.generate-binary-hash.outputs.madara-tests-hash }}
-      migration-tests-hash: ${{ steps.generate-binary-hash.outputs.migration-tests-hash }}
 
     steps:
       - name: Checkout Repository
@@ -60,25 +58,6 @@ jobs:
       - name: Build Cairo artifacts
         run: yes | make artifacts
 
-      - name: Archive Madara tests
-        run: |
-          mkdir -p target/nextest
-          CARGO_TARGET_DIR=target cargo nextest archive \
-            --release \
-            --features testing \
-            --package "mc-*" \
-            --package "mp-*" \
-            --package "m-proc-*" \
-            --archive-file target/nextest/madara-tests.tar.zst
-
-      - name: Archive migration tests
-        run: |
-          CARGO_TARGET_DIR=target cargo nextest archive \
-            --release \
-            --package mc-e2e-tests \
-            --features migration-tests \
-            --archive-file target/nextest/migration-tests.tar.zst
-
       # Generate hashes for all reusable build artifacts
       - name: Generate binary hashes
         id: generate-binary-hash
@@ -87,18 +66,12 @@ jobs:
 
           MADARA_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/release/madara; } | sha256sum | awk '{ print $1 }')
           CAIRO_HASH=$( { printf '%s\n' "$TIMESTAMP"; tar -cf - build-artifacts; } | sha256sum | awk '{ print $1 }')
-          MADARA_TESTS_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/nextest/madara-tests.tar.zst; } | sha256sum | awk '{ print $1 }')
-          MIGRATION_TESTS_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/nextest/migration-tests.tar.zst; } | sha256sum | awk '{ print $1 }')
 
           echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
           echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
-          echo "madara-tests-hash=$MADARA_TESTS_HASH" >> $GITHUB_OUTPUT
-          echo "migration-tests-hash=$MIGRATION_TESTS_HASH" >> $GITHUB_OUTPUT
 
           echo "Hash of the madara is: $MADARA_HASH (with timestamp: $TIMESTAMP)"
           echo "Hash of cairo artifacts is: $CAIRO_HASH (with timestamp: $TIMESTAMP)"
-          echo "Hash of madara test archive is: $MADARA_TESTS_HASH (with timestamp: $TIMESTAMP)"
-          echo "Hash of migration test archive is: $MIGRATION_TESTS_HASH (with timestamp: $TIMESTAMP)"
 
       # Upload Madara binary as artifact
       - name: Upload Madara binary
@@ -113,15 +86,3 @@ jobs:
         with:
           name: build-artifacts-${{ steps.generate-binary-hash.outputs.cairo-hash }}
           path: build-artifacts/**
-
-      - name: Upload Madara test archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: madara-tests-${{ steps.generate-binary-hash.outputs.madara-tests-hash }}
-          path: target/nextest/madara-tests.tar.zst
-
-      - name: Upload migration test archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: migration-tests-${{ steps.generate-binary-hash.outputs.migration-tests-hash }}
-          path: target/nextest/migration-tests.tar.zst

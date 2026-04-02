@@ -1,0 +1,69 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Migration Test Archive
+
+# Build the migration test archive separately for the same reason as the main
+# Madara test archive: the nextest archive compilation still rebuilds a large
+# overlapping graph, so a dedicated producer job is better for PR wall-clock.
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      migration-tests-hash:
+        description: "Hash of the archived migration test binaries"
+        value: ${{ jobs.build-migration-tests.outputs.migration-tests-hash }}
+
+jobs:
+  build-migration-tests:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    outputs:
+      migration-tests-hash: ${{ steps.generate-hash.outputs.migration-tests-hash }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara-${{ runner.os }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Archive migration tests
+        run: |
+          mkdir -p target/nextest
+          CARGO_TARGET_DIR=target cargo nextest archive \
+            --release \
+            --package mc-e2e-tests \
+            --features migration-tests \
+            --archive-file target/nextest/migration-tests.tar.zst
+
+      - name: Generate archive hash
+        id: generate-hash
+        run: |
+          TIMESTAMP=$(date +%s)
+          MIGRATION_TESTS_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/nextest/migration-tests.tar.zst; } | sha256sum | awk '{ print $1 }')
+
+          echo "migration-tests-hash=$MIGRATION_TESTS_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of migration test archive is: $MIGRATION_TESTS_HASH (with timestamp: $TIMESTAMP)"
+
+      - name: Upload migration test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-tests-${{ steps.generate-hash.outputs.migration-tests-hash }}
+          path: target/nextest/migration-tests.tar.zst

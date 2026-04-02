@@ -93,27 +93,38 @@ jobs:
   #                                   MADARA                                  #
   # ========================================================================= #
 
-  # Build Madara binary
+  # Build the runtime binary and reusable Cairo artifacts only.
+  # Madara test archives are split into separate producer jobs because
+  # `cargo nextest archive` still recompiles a large overlapping graph instead
+  # of cleanly reusing the release build one-for-one.
   build-madara:
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
+  build-madara-tests:
+    uses: ./.github/workflows/task-build-madara-tests.yml
+    secrets: inherit
+
+  build-migration-tests:
+    uses: ./.github/workflows/task-build-migration-tests.yml
+    secrets: inherit
+
   # Run integration tests
   test-madara:
-    needs: build-madara
+    needs: [build-madara, build-madara-tests]
     uses: ./.github/workflows/task-test-madara.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      madara-tests-hash: ${{ needs.build-madara.outputs.madara-tests-hash }}
+      madara-tests-hash: ${{ needs.build-madara-tests.outputs.madara-tests-hash }}
     secrets: inherit
 
   # Run migration tests
   test-migration:
-    needs: build-madara
+    needs: [build-madara, build-migration-tests]
     uses: ./.github/workflows/task-test-migration.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      migration-tests-hash: ${{ needs.build-madara.outputs.migration-tests-hash }}
+      migration-tests-hash: ${{ needs.build-migration-tests.outputs.migration-tests-hash }}
     secrets: inherit
 
   # Run JavaScript tests against the built binary
