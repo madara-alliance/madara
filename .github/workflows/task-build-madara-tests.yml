@@ -1,0 +1,72 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Madara Test Archive
+
+# Build the Madara test archive in its own producer job.
+# CI logs showed `cargo nextest archive --features testing ...` recompiles a
+# large overlapping graph from the release build, so splitting it out shortens
+# PR wall-clock even if total compute goes up.
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      madara-tests-hash:
+        description: "Hash of the archived Madara test binaries"
+        value: ${{ jobs.build-madara-tests.outputs.madara-tests-hash }}
+
+jobs:
+  build-madara-tests:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    outputs:
+      madara-tests-hash: ${{ steps.generate-hash.outputs.madara-tests-hash }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara-${{ runner.os }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Archive Madara tests
+        run: |
+          mkdir -p target/nextest
+          CARGO_TARGET_DIR=target cargo nextest archive \
+            --release \
+            --features testing \
+            --package "mc-*" \
+            --package "mp-*" \
+            --package "m-proc-*" \
+            --archive-file target/nextest/madara-tests.tar.zst
+
+      - name: Generate archive hash
+        id: generate-hash
+        run: |
+          TIMESTAMP=$(date +%s)
+          MADARA_TESTS_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/nextest/madara-tests.tar.zst; } | sha256sum | awk '{ print $1 }')
+
+          echo "madara-tests-hash=$MADARA_TESTS_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of Madara test archive is: $MADARA_TESTS_HASH (with timestamp: $TIMESTAMP)"
+
+      - name: Upload Madara test archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: madara-tests-${{ steps.generate-hash.outputs.madara-tests-hash }}
+          path: target/nextest/madara-tests.tar.zst
