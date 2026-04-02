@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -33,7 +33,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
 
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
@@ -63,7 +63,7 @@ jobs:
           echo "Hash of migration test archive is: $MIGRATION_TESTS_HASH (with timestamp: $TIMESTAMP)"
 
       - name: Upload migration test archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: migration-tests-${{ steps.generate-hash.outputs.migration-tests-hash }}
           path: target/nextest/migration-tests.tar.zst

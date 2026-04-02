@@ -33,7 +33,7 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -55,14 +55,14 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Download Madara binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
       - run: chmod +x target/release/madara
 
       - name: Download Madara test archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: madara-tests-${{ inputs.madara-tests-hash }}
           path: target/nextest/

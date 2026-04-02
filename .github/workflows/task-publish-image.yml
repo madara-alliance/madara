@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: Download ${{ inputs.image-name }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ inputs.image-name }}
           path: ${{ runner.temp }}

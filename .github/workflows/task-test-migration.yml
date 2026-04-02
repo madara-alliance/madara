@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Read versions from .db-versions.yml
         id: versions
@@ -63,7 +63,7 @@ jobs:
           echo "✅ DB version: $(cat /tmp/migration-test/.db-version)"
 
       - name: Download Madara binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
@@ -113,7 +113,7 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Download migration test archive
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: migration-tests-${{ inputs.migration-tests-hash }}
           path: target/nextest/

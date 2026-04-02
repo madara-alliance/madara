@@ -93,12 +93,16 @@ jobs:
   #                                   MADARA                                  #
   # ========================================================================= #
 
-  # Build the runtime binary and reusable Cairo artifacts only.
-  # Madara test archives are split into separate producer jobs because
-  # `cargo nextest archive` still recompiles a large overlapping graph instead
-  # of cleanly reusing the release build one-for-one.
+  # Build the runtime binary and Cairo artifacts in separate producer jobs.
+  # Madara test archives are also split out because `cargo nextest archive`
+  # still recompiles a large overlapping graph instead of cleanly reusing the
+  # release build one-for-one.
   build-madara:
     uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
+
+  build-cairo-artifacts:
+    uses: ./.github/workflows/task-build-cairo-artifacts.yml
     secrets: inherit
 
   build-madara-tests:
@@ -129,11 +133,11 @@ jobs:
 
   # Run JavaScript tests against the built binary
   test-js:
-    needs: build-madara
+    needs: [build-madara, build-cairo-artifacts]
     uses: ./.github/workflows/task-test-js.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
+      cairo-artifacts-hash: ${{ needs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
 
   # Run CLI tests against the built binary
   test-cli:
@@ -195,11 +199,11 @@ jobs:
 
   # Run integration tests
   test-orchestrator:
-    needs: [build-madara, build-orchestrator-tests]
+    needs: [build-madara, build-cairo-artifacts, build-orchestrator-tests]
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
+      cairo-artifacts-hash: ${{ needs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
       orchestrator-tests-hash: ${{ needs.build-orchestrator-tests.outputs.orchestrator-tests-hash }}
     secrets: inherit
 
