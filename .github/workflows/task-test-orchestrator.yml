@@ -1,15 +1,22 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Task - Integration Tests and Coverage (Orchestrator)
+name: Task - Integration Tests (Orchestrator)
 
-# This workflow runs tests and generates code coverage reports
-# for the Orchestrator component
+# This workflow runs orchestrator integration tests from a prebuilt nextest archive
 on:
   workflow_dispatch:
   workflow_call:
     inputs:
       madara-binary-hash:
         description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the build artifacts"
+        required: true
+        type: string
+      orchestrator-tests-hash:
+        description: "Hash used to retrieve the archived orchestrator test binaries"
         required: true
         type: string
     secrets:
@@ -61,10 +68,10 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}
+          extra-cache: false
 
-      - name: Install cargo-llvm-cov & nextest
-        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
@@ -78,6 +85,18 @@ jobs:
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
 
+      - name: Download Cairo artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: build-artifacts/
+
+      - name: Download orchestrator test archive
+        uses: actions/download-artifact@v4
+        with:
+          name: orchestrator-tests-${{ inputs.orchestrator-tests-hash }}
+          path: target/nextest/
+
       - name: Prepare Madara Environment (Orchestrator)
         run: |
           mv target/release/madara ./madara-binary
@@ -86,18 +105,12 @@ jobs:
           # Copy the devnet.yaml file to the test directory
           cp ./configs/presets/devnet.yaml ./orchestrator/crates/settlement-clients/starknet/src/tests/devnet.yaml
 
-      - name: Check rust version
-        run: rustup show
-
-      - name: Run make artifacts
-        run: yes | make artifacts
-
       - name: Python Cairo setup (before orchestrator tests)
         uses: ./.github/actions/setup-python-cairo
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
-      - name: Run llvm-cov tests
+      - name: Run tests
         continue-on-error: false
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC }}
@@ -107,16 +120,7 @@ jobs:
           AWS_REGION: us-east-1
         run: |
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
-          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
-            --features testing \
-            --lcov \
-            --output-path lcov.info \
-            --package "orchestrator*" \
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo nextest run \
+            --archive-file target/nextest/orchestrator-tests.tar.zst \
+            --workspace-remap "$GITHUB_WORKSPACE" \
             --no-fail-fast
-
-      - name: Upload coverage to Coveralls
-        uses: coverallsapp/github-action@v2
-        continue-on-error: true
-        with:
-          parallel-finished: true
-          files: lcov.info

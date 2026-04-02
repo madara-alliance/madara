@@ -4,6 +4,11 @@ name: Task - Run CLI tests
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara binary artifact"
+        required: true
+        type: string
 jobs:
   test-cli:
     runs-on: blacksmith-4vcpu-ubuntu-2204
@@ -14,22 +19,26 @@ jobs:
           submodules: recursive
       - name: Load env
         uses: ./.github/actions/load-env
-      - name: Rust setup
-        uses: ./.github/actions/setup-rust
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
         with:
-          rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
       - name: Run cli without arguments
         timeout-minutes: 20
         run: |
-          CARGO_TARGET_DIR=target cargo run --bin madara --release -- --no-l1-sync --devnet &
+          ./target/release/madara --no-l1-sync --devnet &
           MADARA_PID=$!
           while ! curl -s -X POST http://localhost:9944 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' | grep -q result; do sleep 1; done
           kill $MADARA_PID
+          wait $MADARA_PID || true
       - name: Run cli pointing to a file
         timeout-minutes: 20
         run: |
-          CARGO_TARGET_DIR=target cargo run --bin madara --release -- --no-l1-sync --devnet --config-file ./configs/args/config.json &
+          ./target/release/madara --no-l1-sync --devnet --config-file ./configs/args/config.json &
           MADARA_PID=$!
           while ! curl -s -X POST http://localhost:9944 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' | grep -q result; do sleep 1; done
           kill $MADARA_PID
+          wait $MADARA_PID || true
