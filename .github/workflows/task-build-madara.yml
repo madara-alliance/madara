@@ -39,6 +39,12 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
 
+      # The release binary still compiles crates that require LLVM tooling
+      # (for example `tblgen`), so this job needs the shared Cairo/LLVM setup
+      # even though `make artifacts` now runs in its own producer lane.
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
       # Build Madara
       - name: Cargo build
         run: |

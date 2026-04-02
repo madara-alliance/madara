@@ -150,7 +150,13 @@ jobs:
 
   # End-to-end tests
   test-end-to-end:
-    needs: [build-madara, build-cairo-artifacts, build-orchestrator, build-bootstrapper]
+    needs:
+      [
+        build-madara,
+        build-cairo-artifacts,
+        build-orchestrator,
+        build-bootstrapper,
+      ]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     uses: ./.github/workflows/task-test-end-to-end.yml
     with:
