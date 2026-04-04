@@ -27,14 +27,39 @@ runs:
       shell: bash
       run: |
         LLVM_VERSION="${{ inputs.llvm-version }}"
-        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_DEFAULT_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_CONFIG=""
+
+        if command -v "llvm-config-${LLVM_VERSION}" >/dev/null 2>&1; then
+          LLVM_CONFIG="$(command -v "llvm-config-${LLVM_VERSION}")"
+        elif command -v llvm-config >/dev/null 2>&1 && [ "$(llvm-config --version | cut -d. -f1)" = "${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="$(command -v llvm-config)"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config"
+        fi
+
+        if [ -n "${LLVM_CONFIG}" ]; then
+          LLVM_PREFIX="$("${LLVM_CONFIG}" --prefix)"
+        else
+          LLVM_PREFIX="${LLVM_DEFAULT_PREFIX}"
+        fi
 
         echo "Diagnosing LLVM ${LLVM_VERSION} on runner"
         echo "Runner kernel: $(uname -srmo)"
+        echo "LLVM prefix candidate: ${LLVM_PREFIX}"
 
         if [ -f /etc/os-release ]; then
           echo "Runner OS:"
           grep -E '^(NAME|VERSION|VERSION_CODENAME)=' /etc/os-release || true
+        fi
+
+        if [ -n "${LLVM_CONFIG}" ]; then
+          echo "llvm-config path: ${LLVM_CONFIG}"
+          "${LLVM_CONFIG}" --version | head -n 1
+        else
+          echo "llvm-config-${LLVM_VERSION} not found before setup"
         fi
 
         if command -v "clang-${LLVM_VERSION}" >/dev/null 2>&1; then
@@ -70,9 +95,26 @@ runs:
       shell: bash
       run: |
         LLVM_VERSION="${{ inputs.llvm-version }}"
-        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_DEFAULT_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_CONFIG=""
         HAS_CLANG=false
         HAS_LINKER=false
+
+        if command -v "llvm-config-${LLVM_VERSION}" >/dev/null 2>&1; then
+          LLVM_CONFIG="$(command -v "llvm-config-${LLVM_VERSION}")"
+        elif command -v llvm-config >/dev/null 2>&1 && [ "$(llvm-config --version | cut -d. -f1)" = "${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="$(command -v llvm-config)"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config"
+        fi
+
+        if [ -n "${LLVM_CONFIG}" ]; then
+          LLVM_PREFIX="$("${LLVM_CONFIG}" --prefix)"
+        else
+          LLVM_PREFIX="${LLVM_DEFAULT_PREFIX}"
+        fi
 
         if [ -d "${LLVM_PREFIX}" ] && { [ -x "${LLVM_PREFIX}/bin/clang-${LLVM_VERSION}" ] || [ -x "${LLVM_PREFIX}/bin/clang" ]; }; then
           HAS_CLANG=true
@@ -100,8 +142,25 @@ runs:
       run: |
         LLVM_VERSION="${{ inputs.llvm-version }}"
         LLVM_SYS_VERSION="${{ inputs.llvm-sys-version }}"
-        LLVM_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
+        LLVM_DEFAULT_PREFIX="/usr/lib/llvm-${LLVM_VERSION}"
         LLVM_FAMILY_ENV_SUFFIX=$((LLVM_VERSION * 10))
+        LLVM_CONFIG=""
+
+        if command -v "llvm-config-${LLVM_VERSION}" >/dev/null 2>&1; then
+          LLVM_CONFIG="$(command -v "llvm-config-${LLVM_VERSION}")"
+        elif command -v llvm-config >/dev/null 2>&1 && [ "$(llvm-config --version | cut -d. -f1)" = "${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="$(command -v llvm-config)"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config-${LLVM_VERSION}"
+        elif [ -x "${LLVM_DEFAULT_PREFIX}/bin/llvm-config" ]; then
+          LLVM_CONFIG="${LLVM_DEFAULT_PREFIX}/bin/llvm-config"
+        fi
+
+        if [ -n "${LLVM_CONFIG}" ]; then
+          LLVM_PREFIX="$("${LLVM_CONFIG}" --prefix)"
+        else
+          LLVM_PREFIX="${LLVM_DEFAULT_PREFIX}"
+        fi
 
         echo "MLIR_SYS_${LLVM_FAMILY_ENV_SUFFIX}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
         echo "LLVM_SYS_${LLVM_SYS_VERSION}_PREFIX=${LLVM_PREFIX}" >> "$GITHUB_ENV"
