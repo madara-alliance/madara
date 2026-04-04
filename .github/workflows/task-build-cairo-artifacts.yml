@@ -1,0 +1,50 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Runtime Cairo Artifacts
+
+# Build reusable Cairo artifacts in a dedicated producer job so the Docker-heavy
+# `make artifacts` step can run in parallel with the Madara release binary
+# build. The test-archive producer jobs intentionally keep their own local
+# artifact build because blocking them on shared artifacts regressed PR
+# wall-clock more than the duplicate compute helped.
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      cairo-artifacts-hash:
+        description: "Hash of the built cairo artifacts"
+        value: ${{ jobs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
+
+jobs:
+  build-cairo-artifacts:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    outputs:
+      cairo-artifacts-hash: ${{ steps.generate-artifact-hash.outputs.cairo-hash }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Generate artifact hash
+        id: generate-artifact-hash
+        run: |
+          TIMESTAMP=$(date +%s)
+          CAIRO_HASH=$( { printf '%s\n' "$TIMESTAMP"; tar -cf - build-artifacts; } | sha256sum | awk '{ print $1 }')
+
+          echo "cairo-hash=$CAIRO_HASH" >> "$GITHUB_OUTPUT"
+          echo "Hash of cairo artifacts is: $CAIRO_HASH (with timestamp: $TIMESTAMP)"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-artifacts-${{ steps.generate-artifact-hash.outputs.cairo-hash }}
+          path: build-artifacts/**

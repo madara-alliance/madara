@@ -10,11 +10,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
     - name: Setup Scarb
       uses: software-mansion/setup-scarb@v1
       with:

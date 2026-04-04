@@ -1,0 +1,71 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Orchestrator Test Archive
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      orchestrator-tests-hash:
+        description: "Hash of the archived orchestrator test binaries"
+        value: ${{ jobs.build-orchestrator-tests.outputs.orchestrator-tests-hash }}
+
+jobs:
+  build-orchestrator-tests:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    outputs:
+      orchestrator-tests-hash: ${{ steps.generate-hash.outputs.orchestrator-tests-hash }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Python Cairo setup (before orchestrator archive build)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
+      - name: Archive orchestrator tests
+        run: |
+          mkdir -p target/nextest
+          CARGO_TARGET_DIR=target cargo nextest archive \
+            --release \
+            --features testing \
+            --package "orchestrator*" \
+            --archive-file target/nextest/orchestrator-tests.tar.zst
+
+      - name: Generate archive hash
+        id: generate-hash
+        run: |
+          TIMESTAMP=$(date +%s)
+          ORCHESTRATOR_TESTS_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/nextest/orchestrator-tests.tar.zst; } | sha256sum | awk '{ print $1 }')
+
+          echo "orchestrator-tests-hash=$ORCHESTRATOR_TESTS_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of orchestrator test archive is: $ORCHESTRATOR_TESTS_HASH (with timestamp: $TIMESTAMP)"
+
+      - name: Upload orchestrator test archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: orchestrator-tests-${{ steps.generate-hash.outputs.orchestrator-tests-hash }}
+          path: target/nextest/orchestrator-tests.tar.zst

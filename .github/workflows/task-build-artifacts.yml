@@ -45,12 +45,15 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
 
       - name: Compile artifacts
         run: make artifacts
@@ -97,7 +100,7 @@ jobs:
           outputs: type=docker,dest=${{ runner.temp }}/artifacts.tar
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: artifacts
           path: ${{ runner.temp }}/artifacts.tar

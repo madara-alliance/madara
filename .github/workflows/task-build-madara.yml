@@ -2,8 +2,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Build Madara
 
-# This workflow builds the main Madara binary and related components
-# It also caches the build artifacts for other workflows to use
+# This workflow builds only the main Madara runtime binary.
+#
+# The Docker-heavy `make artifacts` step now runs in its own producer workflow
+# so it no longer serializes the runtime binary lane on PRs. Test archives are
+# still built in separate workflows because `cargo nextest archive --features
+# testing ...` recompiles a large overlapping Rust graph instead of behaving
+# like a tiny delta on top of `cargo build --bin madara --release`.
 on:
   workflow_dispatch:
   workflow_call:
@@ -11,20 +16,16 @@ on:
       madara-binary-hash:
         description: "Hash of the built madara binary"
         value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
-      cairo-artifacts-hash:
-        description: "Hash of the cairo artifacts"
-        value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
 
 jobs:
   build-binaries:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
-      cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -36,42 +37,34 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      # The release binary still compiles crates that require LLVM tooling
+      # (for example `tblgen`), so this job needs the shared Cairo/LLVM setup
+      # even though `make artifacts` now runs in its own producer lane.
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
 
       # Build Madara
       - name: Cargo build
         run: |
           CARGO_TARGET_DIR=target cargo build --bin madara --release
 
-      # Generate hash for the Madara binary
+      # Generate hash for the reusable runtime binary.
       - name: Generate binary hashes
         id: generate-binary-hash
         run: |
-          # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
 
-          # Path to the compiled Madara binary
-          BINARY_PATH=./target/release/madara
-          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
+          MADARA_HASH=$( { printf '%s\n' "$TIMESTAMP"; cat target/release/madara; } | sha256sum | awk '{ print $1 }')
 
-          # Path to the cairo artifacts
-          ARTIFACTS_PATH=./artifacts.tar.gz
-          HASH=$(echo "$TIMESTAMP" | cat - $ARTIFACTS_PATH | sha256sum | awk '{ print $1 }')
-          echo "cairo-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+          echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
+
+          echo "Hash of the madara is: $MADARA_HASH (with timestamp: $TIMESTAMP)"
 
       # Upload Madara binary as artifact
       - name: Upload Madara binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
           path: target/release/madara
-
-      # Upload cairo artifacts
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts-${{ steps.generate-binary-hash.outputs.cairo-hash }}
-          path: build-artifacts/**

@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Task - Build Orchestrator
+name: Task - Check Orchestrator (Production)
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -26,7 +26,10 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          extra-cache: false
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
 
       - name: Compile artifacts
         run: make artifacts
@@ -36,7 +39,6 @@ jobs:
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
-      # Check Orchestrator
-      - name: Cargo check
+      - name: Cargo check production orchestrator
         run: |
           cargo check -p orchestrator --release
