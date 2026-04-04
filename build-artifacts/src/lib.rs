@@ -133,10 +133,6 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
     println!("cargo::warning=fetching artifacts from image: {}", image);
 
-    // Use a unique container name to avoid conflicts in CI environments
-    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let container_name = format!("madara-artifacts-extractor-v{}-{}", version, timestamp);
-
     let root = &root.0;
 
     // Download image
@@ -148,37 +144,24 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
         .then_some(())
         .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
-    // Clean up old artifact extractor containers to prevent accumulation
-    // Match containers with pattern: madara-artifacts-extractor-v{version} or madara-artifacts-extractor-v{version}-{timestamp}
+    // Let Docker allocate the container ID so parallel build scripts do not
+    // collide on a shared name and then spuriously fall back to `make artifacts`.
     let mut docker = std::process::Command::new("docker");
-    docker.args(["ps", "-a", "--format", "{{.Names}}"]);
-    if let Ok(output) = docker.output() {
-        if output.status.success() {
-            let containers = String::from_utf8_lossy(&output.stdout);
-            let prefix = format!("madara-artifacts-extractor-v{}", version);
-            for container in containers.lines() {
-                let container = container.trim();
-                // Match containers that start with the prefix (handles both with and without timestamp)
-                if !container.is_empty() && container.starts_with(&prefix) {
-                    let mut rm_docker = std::process::Command::new("docker");
-                    rm_docker.args(["rm", "-f", container]).status().ok();
-                }
-            }
-        }
-    }
-
-    // Create extraction container with consistent name
-    let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["create", "--name", &container_name, &image, "do-nothing"]);
+    let cmd = docker.args(["create", &image, "do-nothing"]);
     let output = cmd.output().expect(err_msg);
 
     if !output.status.success() {
         return Err(err_handl(cmd, "Failed to create extraction container"));
     }
 
+    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if container_id.is_empty() {
+        return Err(BuildError::Cmd("docker create returned an empty container id".to_string()));
+    }
+
     // Copy artifacts from container
     let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["cp", &format!("{}:/artifacts.tar.gz", container_name), &root.to_string_lossy()]);
+    let cmd = docker.args(["cp", &format!("{container_id}:/artifacts.tar.gz"), &root.to_string_lossy()]);
     let copy_result = cmd
         .status()
         .expect(err_msg)
@@ -188,7 +171,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 
     // Always attempt to remove container, even if copy failed
     let mut docker = std::process::Command::new("docker");
-    let cleanup_cmd = docker.args(["rm", "-f", &container_name]);
+    let cleanup_cmd = docker.args(["rm", "-f", &container_id]);
     let cleanup_result = cleanup_cmd.status();
 
     // Check if copy failed
@@ -197,7 +180,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     // Check if cleanup failed
     if let Ok(status) = cleanup_result {
         if !status.success() {
-            println!("cargo::warning=Failed to remove container {}", container_name);
+            println!("cargo::warning=Failed to remove container {}", container_id);
         }
     }
 
