@@ -161,6 +161,38 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
     assert_eq!(jobs_old_version[0].internal_id, 4);
 }
 
+/// Regression test for `get_jobs_without_successor`.
+/// Ensures older missing jobs are still reachable when the backlog exceeds the former scan limit.
+#[rstest]
+#[tokio::test]
+async fn database_get_jobs_without_successor_does_not_starve_older_backlog() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    let backlog_size = 550;
+
+    for internal_id in 1..=backlog_size {
+        database_client.create_job(build_job_item(JobType::SnosRun, JobStatus::Completed, internal_id)).await.unwrap();
+
+        if internal_id != 1 && internal_id != backlog_size {
+            database_client
+                .create_job(build_job_item(JobType::ProofCreation, JobStatus::Created, internal_id))
+                .await
+                .unwrap();
+        }
+    }
+
+    let jobs_without_successor = database_client
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
+        .await
+        .unwrap();
+
+    let returned_ids: Vec<u64> = jobs_without_successor.iter().map(|job| job.internal_id).collect();
+
+    assert_eq!(returned_ids, vec![1, backlog_size], "Expected the full missing set in oldest-first order");
+}
+
 /// Test for `get_latest_job_by_type` operation in database trait.
 /// Creates the jobs in following sequence :
 ///
@@ -742,6 +774,37 @@ async fn test_get_snos_batches_without_jobs() {
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
     assert_eq!(old_version_batches[0].index, 3);
+}
+
+/// Regression test for `get_snos_batches_without_jobs`.
+/// Ensures the oldest missing batch is returned even when newer candidates exceed the former scan limit.
+#[rstest]
+#[tokio::test]
+async fn test_get_snos_batches_without_jobs_returns_oldest_missing_across_large_backlog() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    let backlog_size = 550;
+
+    for index in 1..=backlog_size {
+        let mut batch = build_snos_batch(index, Some(1), 1000 + index);
+        batch.status = SnosBatchStatus::Closed;
+        database_client.create_snos_batch(batch).await.unwrap();
+
+        if index != 1 && index != backlog_size {
+            database_client.create_job(build_job_item(JobType::SnosRun, JobStatus::Created, index)).await.unwrap();
+        }
+    }
+
+    let oldest_missing_batch =
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 1, None).await.unwrap();
+    let first_two_missing_batches =
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 2, None).await.unwrap();
+
+    assert_eq!(oldest_missing_batch.len(), 1);
+    assert_eq!(oldest_missing_batch[0].index, 1, "Expected the oldest missing batch overall");
+    assert_eq!(first_two_missing_batches.iter().map(|batch| batch.index).collect::<Vec<_>>(), vec![1, backlog_size]);
 }
 
 /// Test for `get_aggregator_batches_by_indexes` operation in database trait.
