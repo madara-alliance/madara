@@ -1,5 +1,6 @@
 //! OpenTelemetry service and metric registration helpers for the Madara node.
 
+use anyhow::Context;
 use formatter::CustomFormatter;
 use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceRunner};
 use opentelemetry::global;
@@ -11,8 +12,7 @@ use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
-use std::fmt::Display;
-use std::time::Duration;
+use std::{env, fmt::Display, time::Duration};
 use tracing_core::LevelFilter;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -79,12 +79,28 @@ impl TelemetryService {
         format!("{}_logs_service", self.config.service_name)
     }
 
+    fn collection_endpoint(&self) -> anyhow::Result<Option<Url>> {
+        if let Some(endpoint) = &self.config.collection_endpoint {
+            return Ok(Some(endpoint.clone()));
+        }
+
+        let Some(endpoint) = env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT") else {
+            return Ok(None);
+        };
+        let endpoint =
+            endpoint.into_string().map_err(|_| anyhow::anyhow!("OTEL_EXPORTER_OTLP_ENDPOINT must be valid UTF-8"))?;
+
+        Url::parse(&endpoint)
+            .with_context(|| format!("Parsing OTEL_EXPORTER_OTLP_ENDPOINT as a URL: {endpoint}"))
+            .map(Some)
+    }
+
     pub fn setup(&mut self) -> anyhow::Result<()> {
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().event_format(CustomFormatter::new()))
             .with(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?);
 
-        let Some(otel_endpoint) = &self.config.collection_endpoint else {
+        let Some(otel_endpoint) = self.collection_endpoint()? else {
             tracing_subscriber.init();
             return Ok(());
         };
@@ -93,7 +109,7 @@ impl TelemetryService {
             .config
             .export_metrics
             .then(|| -> anyhow::Result<SdkMeterProvider> {
-                let provider = self.init_meter_provider(otel_endpoint)?;
+                let provider = self.init_meter_provider(&otel_endpoint)?;
                 global::set_meter_provider(provider.clone());
                 Ok(provider)
             })
@@ -103,7 +119,7 @@ impl TelemetryService {
             .config
             .export_traces
             .then(|| -> anyhow::Result<SdkTracerProvider> {
-                let provider = self.init_tracer_provider(otel_endpoint)?;
+                let provider = self.init_tracer_provider(&otel_endpoint)?;
                 global::set_tracer_provider(provider.clone());
                 Ok(provider)
             })
@@ -112,7 +128,7 @@ impl TelemetryService {
         let logger_provider = self
             .config
             .export_logs
-            .then(|| -> anyhow::Result<SdkLoggerProvider> { self.init_logs_provider(otel_endpoint) })
+            .then(|| -> anyhow::Result<SdkLoggerProvider> { self.init_logs_provider(&otel_endpoint) })
             .transpose()?;
 
         match (&tracer_provider, &logger_provider) {

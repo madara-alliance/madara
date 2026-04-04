@@ -9,6 +9,14 @@ use crate::{
 };
 
 const RESTART_INTERVAL: Duration = Duration::from_secs(5);
+const DEFAULT_EXTERNALLY_CONTROLLABLE_SERVICES: [MadaraServiceId; 6] = [
+    MadaraServiceId::L1Sync,
+    MadaraServiceId::L2Sync,
+    MadaraServiceId::BlockProduction,
+    MadaraServiceId::RpcUser,
+    MadaraServiceId::Gateway,
+    MadaraServiceId::Mempool,
+];
 
 #[async_trait]
 impl MadaraServicesRpcApiV0_1_0Server for Starknet {
@@ -20,6 +28,7 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
                 Some(()),
             ))
         } else {
+            ensure_services_are_externally_controllable(&service)?;
             match status {
                 ServiceRequest::Start => service_start(&self.ctx, &service),
                 ServiceRequest::Stop => service_stop(&self.ctx, &service),
@@ -31,16 +40,9 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
     async fn service_status(&self, service: Vec<MadaraServiceId>) -> RpcResult<Vec<ServiceStatusInfo>> {
         let services = if service.is_empty() {
             // Note: a few services are intentionally not externally controllable
-            // (`Monitor`, `Database`, `RpcAdmin`) and are not serializable.
-            vec![
-                MadaraServiceId::L1Sync,
-                MadaraServiceId::L2Sync,
-                MadaraServiceId::BlockProduction,
-                MadaraServiceId::RpcUser,
-                MadaraServiceId::Gateway,
-                MadaraServiceId::Telemetry,
-                MadaraServiceId::Mempool,
-            ]
+            // (`Monitor`, `Database`, `RpcAdmin`, `Telemetry`) and are not
+            // included in the default admin-RPC list.
+            DEFAULT_EXTERNALLY_CONTROLLABLE_SERVICES.to_vec()
         } else {
             service
         };
@@ -54,6 +56,18 @@ impl MadaraServicesRpcApiV0_1_0Server for Starknet {
             })
             .collect())
     }
+}
+
+fn ensure_services_are_externally_controllable(svcs: &[MadaraServiceId]) -> RpcResult<()> {
+    if svcs.contains(&MadaraServiceId::Telemetry) {
+        return Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::ErrorCode::InvalidParams.code(),
+            "Telemetry is process-global and cannot be started, stopped, or restarted via admin RPC",
+            Some(()),
+        ));
+    }
+
+    Ok(())
 }
 
 fn service_start(ctx: &ServiceContext, svcs: &[MadaraServiceId]) -> RpcResult<MadaraServiceStatus> {
@@ -91,4 +105,21 @@ async fn service_restart(ctx: &ServiceContext, svcs: &[MadaraServiceId]) -> RpcR
     }
 
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn telemetry_service_is_not_externally_controllable() {
+        let err = ensure_services_are_externally_controllable(&[MadaraServiceId::Telemetry]).unwrap_err();
+
+        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
+    }
+
+    #[test]
+    fn non_telemetry_services_remain_externally_controllable() {
+        ensure_services_are_externally_controllable(&[MadaraServiceId::Gateway, MadaraServiceId::Mempool]).unwrap();
+    }
 }

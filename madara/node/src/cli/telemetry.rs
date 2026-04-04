@@ -21,22 +21,23 @@ pub struct TelemetryParams {
     pub otel_service_name: String,
 
     /// Endpoint of the OTEL collector.
-    #[arg(env = "OTEL_EXPORTER_OTLP_ENDPOINT", long, value_parser = parse_url)]
+    /// Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT` during setup if unset here.
+    #[arg(env = "MADARA_OTEL_COLLECTOR_ENDPOINT", long, value_parser = parse_url)]
     #[serde(default)]
     pub otel_collector_endpoint: Option<Url>,
 
     /// Export metrics to the OTEL collector.
-    #[arg(env = "OTEL_EXPORT_METRICS", long, action = ArgAction::Set, default_value_t = default_metrics_export())]
+    #[arg(env = "MADARA_OTEL_EXPORT_METRICS", long, action = ArgAction::Set, default_value_t = default_metrics_export())]
     #[serde(default = "default_metrics_export")]
     pub otel_export_metrics: bool,
 
     /// Export traces to the OTEL collector.
-    #[arg(env = "OTEL_EXPORT_TRACES", long)]
+    #[arg(env = "MADARA_OTEL_EXPORT_TRACES", long)]
     #[serde(default)]
     pub otel_export_traces: bool,
 
     /// Export logs to the OTEL collector.
-    #[arg(env = "OTEL_EXPORT_LOGS", long)]
+    #[arg(env = "MADARA_OTEL_EXPORT_LOGS", long)]
     #[serde(default)]
     pub otel_export_logs: bool,
 }
@@ -57,7 +58,8 @@ impl TelemetryParams {
 mod tests {
     use super::*;
     use crate::cli::RunCmd;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
+    use std::ffi::OsStr;
 
     #[test]
     fn telemetry_params_use_new_defaults() {
@@ -95,5 +97,25 @@ mod tests {
         assert!(!run_cmd.telemetry_params.otel_export_metrics);
         assert!(run_cmd.telemetry_params.otel_export_traces);
         assert!(run_cmd.telemetry_params.otel_export_logs);
+    }
+
+    #[test]
+    fn telemetry_params_expose_madara_prefixed_env_vars() {
+        let command = RunCmd::command();
+        let expected_envs = [
+            ("otel-service-name", "MADARA_OTEL_SERVICE_NAME"),
+            ("otel-collector-endpoint", "MADARA_OTEL_COLLECTOR_ENDPOINT"),
+            ("otel-export-metrics", "MADARA_OTEL_EXPORT_METRICS"),
+            ("otel-export-traces", "MADARA_OTEL_EXPORT_TRACES"),
+            ("otel-export-logs", "MADARA_OTEL_EXPORT_LOGS"),
+        ];
+
+        for (flag, env_name) in expected_envs {
+            let arg = command
+                .get_arguments()
+                .find(|arg| arg.get_long() == Some(flag))
+                .unwrap_or_else(|| panic!("missing argument for --{flag}"));
+            assert_eq!(arg.get_env(), Some(OsStr::new(env_name)));
+        }
     }
 }

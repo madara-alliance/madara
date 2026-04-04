@@ -157,6 +157,17 @@ The stack also includes 4 Orchestrator-specific dashboards:
 --otel-export-logs
 ```
 
+Madara-specific environment variables:
+
+- `MADARA_OTEL_SERVICE_NAME`
+- `MADARA_OTEL_COLLECTOR_ENDPOINT`
+- `MADARA_OTEL_EXPORT_METRICS`
+- `MADARA_OTEL_EXPORT_TRACES`
+- `MADARA_OTEL_EXPORT_LOGS`
+
+If `MADARA_OTEL_COLLECTOR_ENDPOINT` is unset, Madara also respects the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT` environment variable as a fallback.
+
 ### Multi-Node Monitoring
 
 Multiple Madara nodes can send metrics to the same OTel Collector via OTLP.
