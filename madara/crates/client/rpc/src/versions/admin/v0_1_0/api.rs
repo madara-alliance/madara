@@ -128,6 +128,8 @@ pub trait MadaraStatusRpcApi {
 pub trait MadaraServicesRpcApi {
     /// Sets the status of one or more services
     ///
+    /// Process-global services such as telemetry are intentionally excluded.
+    ///
     /// # Returns
     ///
     /// * 'on' if any service was active before being toggled, 'off' otherwise.

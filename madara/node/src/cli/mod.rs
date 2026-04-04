@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-pub mod analytics;
 pub mod backend;
 pub mod block_production;
 pub mod cairo_native;
@@ -20,7 +19,6 @@ pub mod rpc;
 pub mod telemetry;
 pub mod validator;
 
-pub use analytics::*;
 pub use backend::*;
 pub use block_production::*;
 pub use cairo_native::*;
@@ -166,10 +164,6 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub l1_sync_params: L1SyncParams,
-
-    #[allow(missing_docs)]
-    #[clap(flatten)]
-    pub analytics_params: AnalyticsParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

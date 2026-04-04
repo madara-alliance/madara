@@ -1,6 +1,6 @@
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
+use mc_telemetry::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{global, KeyValue};
 use opentelemetry::{
     metrics::{Counter, Histogram},
@@ -27,6 +27,16 @@ pub struct RpcMetrics {
 }
 
 impl RpcMetrics {
+    // Keep the label dimensions aligned across the related RPC call metrics.
+    // Requests use `success=unknown` until the response is available.
+    fn call_started_labels(method: &str) -> [KeyValue; 2] {
+        [KeyValue::new("method", method.to_string()), KeyValue::new("success", "unknown")]
+    }
+
+    fn call_completed_labels(method: &str, success: bool) -> [KeyValue; 2] {
+        [KeyValue::new("method", method.to_string()), KeyValue::new("success", success.to_string())]
+    }
+
     /// Create an instance of metrics
     pub fn register() -> anyhow::Result<Self> {
         let meter = global::meter_with_scope(
@@ -102,7 +112,7 @@ impl RpcMetrics {
             req.method_name(),
             req.params(),
         );
-        self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
+        self.calls_started.add(1, &Self::call_started_labels(req.method_name()));
     }
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
@@ -117,15 +127,10 @@ impl RpcMetrics {
             millis,
         );
 
-        self.calls_time.record(millis as f64, &[KeyValue::new("method", req.method_name().to_string())]);
+        let labels = Self::call_completed_labels(req.method_name(), rp.is_success());
 
-        self.calls_finished.add(
-            1,
-            &[
-                KeyValue::new("method", req.method_name().to_string()),
-                KeyValue::new("success", rp.is_success().to_string()),
-            ],
-        );
+        self.calls_time.record(millis as f64, &labels);
+        self.calls_finished.add(1, &labels);
     }
 }
 
