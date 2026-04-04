@@ -28,6 +28,9 @@ jobs:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load env
+        uses: ./.github/actions/load-env
+
       - name: Build Cairo artifacts
         run: yes | make artifacts
 

@@ -202,7 +202,7 @@ fn build_artifacts(root: &RootDir) -> Result<(), BuildError> {
 }
 
 fn err_handl(cmd: &mut std::process::Command, msg: &str) -> BuildError {
-    println!("carg::warning={msg}: {cmd:?}");
+    println!("cargo::warning={msg}: {cmd:?}");
     match cmd.output() {
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr).to_string();
