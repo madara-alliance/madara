@@ -113,7 +113,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
 
     // Test without version filter
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, None)
         .await
         .unwrap();
 
@@ -133,6 +133,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobType::SnosRun,
             JobStatus::Completed,
             JobType::ProofCreation,
+            None,
             Some(current_version),
         )
         .await
@@ -151,6 +152,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobType::SnosRun,
             JobStatus::Completed,
             JobType::ProofCreation,
+            None,
             Some("old-version".to_string()),
         )
         .await
@@ -162,7 +164,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
 }
 
 /// Regression test for `get_jobs_without_successor`.
-/// Ensures older missing jobs are still reachable when the backlog exceeds the former scan limit.
+/// Ensures older missing jobs are still reachable when the backlog exceeds the per-run limit.
 #[rstest]
 #[tokio::test]
 async fn database_get_jobs_without_successor_does_not_starve_older_backlog() {
@@ -184,13 +186,13 @@ async fn database_get_jobs_without_successor_does_not_starve_older_backlog() {
     }
 
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, Some(2), None)
         .await
         .unwrap();
 
     let returned_ids: Vec<u64> = jobs_without_successor.iter().map(|job| job.internal_id).collect();
 
-    assert_eq!(returned_ids, vec![1, backlog_size], "Expected the full missing set in oldest-first order");
+    assert_eq!(returned_ids, vec![1, backlog_size], "Expected the oldest missing jobs in oldest-first order");
 }
 
 /// Test for `get_latest_job_by_type` operation in database trait.
