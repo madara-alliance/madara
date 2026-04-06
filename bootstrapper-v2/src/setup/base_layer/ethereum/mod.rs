@@ -378,7 +378,6 @@ impl BaseLayerSetupTrait for EthereumSetup {
     async fn post_madara_setup(
         &mut self,
         madara_addresses_path: &str,
-        config_path: &str,
         madara_setup: &mut crate::setup::madara::MadaraSetup,
     ) -> Result<(), BaseLayerError> {
         use crate::utils::{BaseLayerAddresses, MadaraDeployedAddresses};
@@ -388,11 +387,10 @@ impl BaseLayerSetupTrait for EthereumSetup {
         let madara_addresses = MadaraDeployedAddresses::from_file(madara_addresses_path)?;
 
         // Read the base layer factory address from implementation_addresses
-        let addresses_content = std::fs::read_to_string(&self.addresses_output_path)
-            .map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
-        let raw: serde_json::Value = serde_json::from_str(&addresses_content)?;
-        let base_layer_factory_address = raw["implementation_addresses"]["baseLayerFactory"]
-            .as_str()
+        let base_layer_factory_address = base_addresses
+            .implementation_addresses
+            .base_layer_factory
+            .as_deref()
             .ok_or(BaseLayerError::KeyNotFound("implementation_addresses.baseLayerFactory".to_string()))?;
 
         // Step 1: Set L2 bridge addresses on L1
@@ -433,14 +431,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
         // The config hash on the CoreContract must match what SNOS computes.
         // SNOS uses native_fee_token_address from the chain config (madara.yaml),
         // not the deployed fee token address.
-        let config_content =
-            std::fs::read_to_string(config_path).map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
-        let config: serde_json::Value = serde_json::from_str(&config_content)?;
-
-        let fee_token_for_config_hash = if let Some(configured_fee_token_str) =
-            config["base_layer"]["config_hash_config"]["madara_fee_token"].as_str()
-        {
-            if let Ok(configured_fee_token) = Felt::from_hex(configured_fee_token_str) {
+        let fee_token_for_config_hash =
+            if let Ok(configured_fee_token) = Felt::from_hex(&self.config_hash_config.madara_fee_token) {
                 if l2_fee_token != configured_fee_token {
                     log::warn!(
                         "Fee token mismatch: configured={:#x}, deployed={:#x}. Using configured token for config hash.",
@@ -451,10 +443,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 configured_fee_token
             } else {
                 l2_fee_token
-            }
-        } else {
-            l2_fee_token
-        };
+            };
 
         // Step 5: Verify/update config hash on CoreContract
         self.verify_update_config_hash(

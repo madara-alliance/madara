@@ -30,7 +30,6 @@ use starknet::{
 };
 use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
-use std::fs;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DeployedContract {
@@ -91,16 +90,10 @@ impl MadaraSetup {
 
     pub async fn setup(&mut self, base_addresses_path: &str, madara_addresses_path: &str) -> Result<(), MadaraError> {
         // Read base addresses to get L1 bridge addresses
-        let base_addresses_content = fs::read_to_string(base_addresses_path)?;
-        let base_addresses: serde_json::Value = serde_json::from_str(&base_addresses_content)?;
+        let base_addresses = crate::utils::BaseLayerAddresses::from_file(base_addresses_path)?;
 
-        let l1_eth_bridge_address = base_addresses["addresses"]["ethTokenBridge"]
-            .as_str()
-            .ok_or_else(|| MadaraError::MissingBaseLayerAddress("ethTokenBridge".to_string()))?;
-
-        let l1_erc20_bridge_address = base_addresses["addresses"]["tokenBridge"]
-            .as_str()
-            .ok_or_else(|| MadaraError::MissingBaseLayerAddress("tokenBridge".to_string()))?;
+        let l1_eth_bridge_address = &base_addresses.addresses.eth_token_bridge;
+        let l1_erc20_bridge_address = &base_addresses.addresses.token_bridge;
 
         log::info!("L1 ETH Bridge Address: {}", l1_eth_bridge_address);
         log::info!("L1 ERC20 Bridge Address: {}", l1_erc20_bridge_address);

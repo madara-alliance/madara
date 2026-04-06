@@ -22,7 +22,6 @@ pub trait BaseLayerSetupTrait {
     async fn post_madara_setup(
         &mut self,
         madara_addresses_path: &str,
-        config_path: &str,
         madara_setup: &mut crate::setup::madara::MadaraSetup,
     ) -> Result<(), BaseLayerError>;
 }

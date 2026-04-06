@@ -236,6 +236,7 @@ pub async fn get_contracts_deployed_addresses(
 #[derive(Debug, serde::Deserialize)]
 pub struct BaseLayerAddresses {
     pub addresses: BaseContractAddresses,
+    pub implementation_addresses: BaseImplementationAddresses,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -248,6 +249,18 @@ pub struct BaseContractAddresses {
     pub registry: String,
     #[serde(default)]
     pub l1_token: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaseImplementationAddresses {
+    pub base_layer_factory: Option<String>,
+    pub core_contract: Option<String>,
+    pub manager: Option<String>,
+    pub registry: Option<String>,
+    pub multi_bridge: Option<String>,
+    pub eth_bridge: Option<String>,
+    pub eth_bridge_eic: Option<String>,
 }
 
 /// Strongly typed Madara addresses from madara_addresses.json

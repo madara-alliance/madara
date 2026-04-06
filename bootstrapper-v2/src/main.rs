@@ -41,9 +41,7 @@ async fn main() -> BootstrapperResult<()> {
             // 2. Enroll token bridge
             // 3. Poll for enrolled L2 fee token
             // 4. Verify/update config hash on CoreContract
-            base_layer_setup
-                .post_madara_setup(&setup_madara.output_path, &setup_madara.config_path, &mut madara_setup)
-                .await?;
+            base_layer_setup.post_madara_setup(&setup_madara.output_path, &mut madara_setup).await?;
         }
     }
 
