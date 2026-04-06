@@ -38,8 +38,8 @@ use starknet::providers::Provider;
 use tracing::{debug, error, info, warn, Span};
 
 // SLA thresholds in seconds
-const SLA_DEGRADED_THRESHOLD_TOTAL: f64 = 1800.0; // 30 minutes
-const SLA_DOWNTIME_THRESHOLD_TOTAL: f64 = 10800.0; // 3 hours
+const SLA_DEGRADED_THRESHOLD: f64 = 1800.0; // 30 minutes
+const SLA_DOWNTIME_THRESHOLD: f64 = 10800.0; // 3 hours
 
 pub struct JobHandlerService;
 
@@ -478,16 +478,12 @@ impl JobHandlerService {
         // Emit SLA T1 when ProofCreation verification starts
         // T1 = time from earliest block production (L2 block timestamp) to ProofCreation.verification_started_at
         if job.job_type == JobType::ProofCreation && job.metadata.common.verification_attempt_no == 0 {
+            let verification_started = job.metadata.common.verification_started_at.unwrap();
             match Self::fetch_earliest_block_timestamp(job.internal_id, &config).await {
                 Some(block_ts) => {
-                    let t1 = Utc::now().signed_duration_since(block_ts).num_seconds() as f64;
+                    let t1 = verification_started.signed_duration_since(block_ts).num_seconds() as f64;
                     MetricsRecorder::record_sla_stage_duration("t1", t1);
-                    MetricsRecorder::check_sla_threshold(
-                        "t1",
-                        t1,
-                        SLA_DEGRADED_THRESHOLD_TOTAL,
-                        SLA_DOWNTIME_THRESHOLD_TOTAL,
-                    );
+                    MetricsRecorder::check_sla_threshold("t1", t1, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
                     info!(t1_duration = t1, internal_id = job.internal_id, "SLA T1 recorded");
                 }
                 None => {
@@ -499,6 +495,7 @@ impl JobHandlerService {
         // Emit SLA T2 when Aggregator verification starts
         // T2 = time from earliest ProofCreation.verification_completed_at to Aggregator.verification_started_at
         if job.job_type == JobType::Aggregator && job.metadata.common.verification_attempt_no == 0 {
+            let verification_started = job.metadata.common.verification_started_at.unwrap();
             match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
                 Ok(snos_batches) => {
                     let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
@@ -517,14 +514,9 @@ impl JobHandlerService {
                         }
                     }
                     if let Some(earliest) = earliest_proof_completed {
-                        let t2 = Utc::now().signed_duration_since(earliest).num_seconds() as f64;
+                        let t2 = verification_started.signed_duration_since(earliest).num_seconds() as f64;
                         MetricsRecorder::record_sla_stage_duration("t2", t2);
-                        MetricsRecorder::check_sla_threshold(
-                            "t2",
-                            t2,
-                            SLA_DEGRADED_THRESHOLD_TOTAL,
-                            SLA_DOWNTIME_THRESHOLD_TOTAL,
-                        );
+                        MetricsRecorder::check_sla_threshold("t2", t2, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
                         info!(t2_duration = t2, internal_id = job.internal_id, "SLA T2 recorded");
                     }
                 }
@@ -972,11 +964,20 @@ impl JobHandlerService {
             }
         };
 
-        // T3: Aggregator verify completed → now (StateTransition just completed)
-        let now = Utc::now();
-        let t3 = now.signed_duration_since(agg_verify_completed).num_seconds() as f64;
+        // T3: Aggregator verify completed → StateTransition verify completed
+        let state_transition_completed = match job.metadata.common.verification_completed_at {
+            Some(ts) => ts,
+            None => {
+                warn!(
+                    internal_id = job.internal_id,
+                    "StateTransition job missing verification_completed_at for SLA T3"
+                );
+                return;
+            }
+        };
+        let t3 = state_transition_completed.signed_duration_since(agg_verify_completed).num_seconds() as f64;
         MetricsRecorder::record_sla_stage_duration("t3", t3);
-        MetricsRecorder::check_sla_threshold("t3", t3, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+        MetricsRecorder::check_sla_threshold("t3", t3, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
         info!(t3_duration = t3, internal_id = job.internal_id, "SLA T3 recorded");
 
         // Compute total T1+T2+T3 by looking up all related jobs
@@ -1027,17 +1028,18 @@ impl JobHandlerService {
             let t1 = proof_vs.signed_duration_since(block_ts).num_seconds() as f64;
             let t2 = match agg_job.metadata.common.verification_started_at {
                 Some(avs) => avs.signed_duration_since(proof_vc).num_seconds() as f64,
-                None => 0.0,
+                None => {
+                    warn!(
+                        internal_id = job.internal_id,
+                        "Aggregator job missing verification_started_at; skipping SLA total"
+                    );
+                    return;
+                }
             };
             let total = t1 + t2 + t3;
 
             MetricsRecorder::record_sla_stage_duration("total", total);
-            MetricsRecorder::check_sla_threshold(
-                "total",
-                total,
-                SLA_DEGRADED_THRESHOLD_TOTAL,
-                SLA_DOWNTIME_THRESHOLD_TOTAL,
-            );
+            MetricsRecorder::check_sla_threshold("total", total, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
             info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
         } else {
             warn!(internal_id = job.internal_id, "Could not compute SLA total: missing timestamps from related jobs");
