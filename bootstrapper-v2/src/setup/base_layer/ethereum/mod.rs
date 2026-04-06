@@ -171,12 +171,37 @@ impl EthereumSetup {
         Ok(())
     }
 
-    /// Verify the config hash on the CoreContract matches what SNOS will compute.
-    /// If there's a mismatch, accept governance (two-step pattern: nominate → accept)
-    /// and update the config hash.
+    /// Accept the Starknet governance nomination on the CoreContract.
     ///
-    /// The governance accept is needed because the Factory contract only nominates
-    /// the governor during setup() — it doesn't accept on behalf of the nominee.
+    /// The Factory contract nominates the governor during setup() but doesn't accept
+    /// on behalf of the nominee (Starknet governance is two-step: nominate → accept).
+    /// This must be called before any governance-gated operations like setConfigHash.
+    async fn accept_governance(&self, core_contract_address: &str) -> Result<(), BaseLayerError> {
+        let provider = self.provider()?;
+        let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
+        let core_contract = Starknet::new(core_contract_addr, provider);
+
+        if !core_contract.starknetIsGovernor(self.signer.address()).call().await.map_err(EthereumError::from)? {
+            log::info!("Accepting governance nomination on CoreContract...");
+            core_contract
+                .starknetAcceptGovernance()
+                .send()
+                .await
+                .map_err(EthereumError::from)?
+                .watch()
+                .await
+                .map_err(EthereumError::from)?;
+            log::info!("Governance accepted successfully");
+        } else {
+            log::info!("Already governor, skipping acceptance");
+        }
+
+        Ok(())
+    }
+
+    /// Verify the config hash on the CoreContract matches what SNOS will compute.
+    /// If there's a mismatch, update it via setConfigHash.
+    /// Caller must already be governor (call accept_governance first).
     async fn verify_update_config_hash(
         &self,
         l2_fee_token: &str,
@@ -190,25 +215,11 @@ impl EthereumSetup {
         log::info!("Expected config hash (with fee token): {:#x}", expected_config_hash);
 
         let provider = self.provider()?;
-
         let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
-        let core_contract = Starknet::new(core_contract_addr, provider.clone());
+        let core_contract = Starknet::new(core_contract_addr, provider);
 
         let current_config_hash = core_contract.configHash().call().await.map_err(EthereumError::from)?;
         log::info!("Current config hash on CoreContract: {:#x}", current_config_hash);
-
-        if !core_contract.starknetIsGovernor(self.signer.address()).call().await.map_err(EthereumError::from)? {
-            log::info!("Accepting governance nomination on CoreContract...");
-            core_contract
-                .starknetAcceptGovernance()
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Governance accepted successfully");
-        }
 
         if current_config_hash != expected_config_hash {
             log::info!("Config hash mismatch detected, updating CoreContract...");
@@ -445,7 +456,10 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 l2_fee_token
             };
 
-        // Step 5: Verify/update config hash on CoreContract
+        // Step 5: Accept governance on CoreContract
+        self.accept_governance(&base_addresses.addresses.core_contract).await?;
+
+        // Step 6: Verify/update config hash on CoreContract
         self.verify_update_config_hash(
             &format!("{:#x}", fee_token_for_config_hash),
             &base_addresses.addresses.core_contract,
