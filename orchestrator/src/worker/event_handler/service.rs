@@ -513,10 +513,9 @@ impl JobHandlerService {
                 // Check SLA compliance (example: 5 minute SLA)
                 MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
 
-                // Emit SLA T3 + total when StateTransition verification completes
-                // T3 = time from Aggregator.verification_completed_at to StateTransition.verification_completed_at
+                // Emit SLA stage durations (T1/T2/T3/total) when StateTransition completes
                 if job.job_type == JobType::StateTransition {
-                    Self::record_sla_t3_and_total(&job, &config).await;
+                    Self::record_sla_stages(&job, &config).await;
                 }
 
                 config
@@ -882,120 +881,85 @@ impl JobHandlerService {
         }
     }
 
-    /// Computes SLA T3 and total (T1+T2+T3) when StateTransition verification completes.
+    /// Computes and emits SLA stage durations (T1/T2/T3/total) when StateTransition completes.
+    /// Excludes Atlantic processing time by measuring only orchestrator-controlled segments.
     ///
-    /// T3 = Aggregator.verification_completed_at → StateTransition.verification_completed_at
-    /// Total = T1 + T2 + T3, computed by looking up all related jobs for this batch.
-    async fn record_sla_t3_and_total(job: &JobItem, config: &Arc<Config>) {
-        // Look up the Aggregator job for this batch
-        let agg_job =
-            match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::Aggregator).await {
-                Ok(Some(j)) => j,
-                Ok(None) => {
-                    warn!(internal_id = job.internal_id, "Aggregator job not found for SLA T3");
-                    return;
-                }
-                Err(e) => {
-                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up Aggregator job for SLA T3");
-                    return;
-                }
-            };
+    /// T1 = block production → last proof submitted to Atlantic
+    /// T2 = last proof returned from Atlantic → aggregation starts
+    /// T3 = aggregation completed → settlement completed
+    async fn record_sla_stages(job: &JobItem, config: &Arc<Config>) {
+        let id = job.internal_id;
 
-        let agg_verify_completed = match agg_job.metadata.common.verification_completed_at {
-            Some(ts) => ts,
-            None => {
-                warn!(internal_id = job.internal_id, "Aggregator job missing verification_completed_at for SLA T3");
-                return;
-            }
+        let Some(st_completed) = job.metadata.common.verification_completed_at else {
+            warn!(internal_id = id, "SLA: StateTransition missing verification_completed_at");
+            return;
         };
 
-        // T3: Aggregator verify completed → StateTransition verify completed
-        let state_transition_completed = match job.metadata.common.verification_completed_at {
-            Some(ts) => ts,
-            None => {
-                warn!(
-                    internal_id = job.internal_id,
-                    "StateTransition job missing verification_completed_at for SLA T3"
-                );
-                return;
-            }
+        // Fetch aggregator job and batch
+        let Ok(Some(agg_job)) = config.database().get_job_by_internal_id_and_type(id, &JobType::Aggregator).await
+        else {
+            warn!(internal_id = id, "SLA: Aggregator job not found");
+            return;
         };
-        let t3 = state_transition_completed.signed_duration_since(agg_verify_completed).num_seconds() as f64;
-        MetricsRecorder::record_sla_stage_duration("t3", t3);
-        info!(t3_duration = t3, internal_id = job.internal_id, "SLA T3 recorded");
-
-        // Fetch aggregator batch document for start_block
-        let agg_batch = match config.database().get_aggregator_batches_by_indexes(vec![job.internal_id]).await {
-            Ok(batches) if !batches.is_empty() => batches.into_iter().next().unwrap(),
-            Ok(_) => {
-                warn!(internal_id = job.internal_id, "Aggregator batch not found for SLA total");
-                return;
-            }
-            Err(e) => {
-                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up aggregator batch for SLA total");
-                return;
-            }
+        let (Some(agg_v_started), Some(agg_v_completed)) =
+            (agg_job.metadata.common.verification_started_at, agg_job.metadata.common.verification_completed_at)
+        else {
+            warn!(internal_id = id, "SLA: Aggregator job missing verification timestamps");
+            return;
         };
 
-        // Fetch earliest block timestamp from Madara RPC using aggregator batch's start_block
-        let earliest_block_ts = Self::fetch_block_timestamp(agg_batch.start_block, config).await;
-
-        // Compute T1+T2+T3 by looking up ProofCreation jobs across SNOS batches
-        let snos_batches = match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
-            Ok(batches) => batches,
-            Err(e) => {
-                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SNOS batches for SLA total");
-                return;
-            }
+        let Ok(agg_batches) = config.database().get_aggregator_batches_by_indexes(vec![id]).await else {
+            warn!(internal_id = id, "SLA: Failed to look up aggregator batch");
+            return;
+        };
+        let Some(agg_batch) = agg_batches.into_iter().next() else {
+            warn!(internal_id = id, "SLA: Aggregator batch not found");
+            return;
         };
 
-        let mut latest_proof_verify_started: Option<chrono::DateTime<Utc>> = None;
-        let mut latest_proof_completed: Option<chrono::DateTime<Utc>> = None;
+        let Some(block_ts) = Self::fetch_block_timestamp(agg_batch.start_block, config).await else {
+            warn!(internal_id = id, "SLA: Failed to fetch block timestamp from Madara RPC");
+            return;
+        };
 
+        // Find max(verification_started_at) and max(verification_completed_at) across ProofCreation jobs
+        let Ok(snos_batches) = config.database().get_snos_batches_by_aggregator_index(id).await else {
+            warn!(internal_id = id, "SLA: Failed to look up SNOS batches");
+            return;
+        };
+
+        let (mut last_proof_submitted, mut last_proof_returned): (
+            Option<chrono::DateTime<Utc>>,
+            Option<chrono::DateTime<Utc>>,
+        ) = (None, None);
         for snos_batch in &snos_batches {
-            // Look up ProofCreation job
             if let Ok(Some(proof_job)) =
                 config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await
             {
                 if let Some(vs) = proof_job.metadata.common.verification_started_at {
-                    latest_proof_verify_started = Some(match latest_proof_verify_started {
-                        Some(existing) => existing.max(vs),
-                        None => vs,
-                    });
+                    last_proof_submitted = Some(last_proof_submitted.map_or(vs, |e: chrono::DateTime<Utc>| e.max(vs)));
                 }
                 if let Some(vc) = proof_job.metadata.common.verification_completed_at {
-                    latest_proof_completed = Some(match latest_proof_completed {
-                        Some(existing) => existing.max(vc),
-                        None => vc,
-                    });
+                    last_proof_returned = Some(last_proof_returned.map_or(vc, |e: chrono::DateTime<Utc>| e.max(vc)));
                 }
             }
         }
 
-        if let (Some(block_ts), Some(proof_vs), Some(proof_vc)) =
-            (earliest_block_ts, latest_proof_verify_started, latest_proof_completed)
-        {
-            let t1 = proof_vs.signed_duration_since(block_ts).num_seconds() as f64;
-            // T2: last proof returned from Atlantic → aggregation starts
-            let t2 = match agg_job.metadata.common.verification_started_at {
-                Some(avs) => avs.signed_duration_since(proof_vc).num_seconds() as f64,
-                None => {
-                    warn!(
-                        internal_id = job.internal_id,
-                        "Aggregator job missing verification_started_at; skipping SLA total"
-                    );
-                    return;
-                }
-            };
-            let total = t1 + t2 + t3;
+        let (Some(last_submitted), Some(last_returned)) = (last_proof_submitted, last_proof_returned) else {
+            warn!(internal_id = id, "SLA: Missing ProofCreation timestamps");
+            return;
+        };
 
-            MetricsRecorder::record_sla_stage_duration("t1", t1);
-            MetricsRecorder::record_sla_stage_duration("t2", t2);
-            MetricsRecorder::record_sla_stage_duration("total", total);
-            info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
-        } else {
-            warn!(internal_id = job.internal_id, "Could not compute SLA total: missing timestamps from related jobs");
-        }
+        let t1 = last_submitted.signed_duration_since(block_ts).num_seconds() as f64;
+        let t2 = agg_v_started.signed_duration_since(last_returned).num_seconds() as f64;
+        let t3 = st_completed.signed_duration_since(agg_v_completed).num_seconds() as f64;
+        let total = t1 + t2 + t3;
+
+        MetricsRecorder::record_sla_stage_duration("t1", t1);
+        MetricsRecorder::record_sla_stage_duration("t2", t2);
+        MetricsRecorder::record_sla_stage_duration("t3", t3);
+        MetricsRecorder::record_sla_stage_duration("total", total);
+        info!(t1, t2, t3, total, internal_id = id, "SLA stages recorded");
     }
 
     /// Fetches the L2 block timestamp from Madara RPC for a given block number.
