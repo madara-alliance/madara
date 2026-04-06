@@ -33,6 +33,8 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use orchestrator_utils::layer::Layer;
+use starknet::core::types::BlockId;
+use starknet::providers::Provider;
 use tracing::{debug, error, info, warn, Span};
 
 // SLA thresholds in seconds
@@ -474,20 +476,22 @@ impl JobHandlerService {
         job.metadata.common.verification_started_at = Some(Utc::now());
 
         // Emit SLA T1 when ProofCreation verification starts
-        // T1 = time from SnosRun.created_at to ProofCreation.verification_started_at
+        // T1 = time from earliest block production (L2 block timestamp) to ProofCreation.verification_started_at
         if job.job_type == JobType::ProofCreation && job.metadata.common.verification_attempt_no == 0 {
-            match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::SnosRun).await {
-                Ok(Some(snos_job)) => {
-                    let t1 = Utc::now().signed_duration_since(snos_job.created_at).num_seconds() as f64;
+            match Self::fetch_earliest_block_timestamp(job.internal_id, &config).await {
+                Some(block_ts) => {
+                    let t1 = Utc::now().signed_duration_since(block_ts).num_seconds() as f64;
                     MetricsRecorder::record_sla_stage_duration("t1", t1);
-                    MetricsRecorder::check_sla_threshold("t1", t1, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+                    MetricsRecorder::check_sla_threshold(
+                        "t1",
+                        t1,
+                        SLA_DEGRADED_THRESHOLD_TOTAL,
+                        SLA_DOWNTIME_THRESHOLD_TOTAL,
+                    );
                     info!(t1_duration = t1, internal_id = job.internal_id, "SLA T1 recorded");
                 }
-                Ok(None) => {
-                    warn!(internal_id = job.internal_id, "SnosRun job not found for SLA T1");
-                }
-                Err(e) => {
-                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SnosRun job for SLA T1");
+                None => {
+                    warn!(internal_id = job.internal_id, "Could not fetch block timestamp for SLA T1");
                 }
             }
         }
@@ -499,7 +503,11 @@ impl JobHandlerService {
                 Ok(snos_batches) => {
                     let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
                     for snos_batch in &snos_batches {
-                        if let Ok(Some(proof_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await {
+                        if let Ok(Some(proof_job)) = config
+                            .database()
+                            .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
+                            .await
+                        {
                             if let Some(vc) = proof_job.metadata.common.verification_completed_at {
                                 earliest_proof_completed = Some(match earliest_proof_completed {
                                     Some(existing) => existing.min(vc),
@@ -511,7 +519,12 @@ impl JobHandlerService {
                     if let Some(earliest) = earliest_proof_completed {
                         let t2 = Utc::now().signed_duration_since(earliest).num_seconds() as f64;
                         MetricsRecorder::record_sla_stage_duration("t2", t2);
-                        MetricsRecorder::check_sla_threshold("t2", t2, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+                        MetricsRecorder::check_sla_threshold(
+                            "t2",
+                            t2,
+                            SLA_DEGRADED_THRESHOLD_TOTAL,
+                            SLA_DOWNTIME_THRESHOLD_TOTAL,
+                        );
                         info!(t2_duration = t2, internal_id = job.internal_id, "SLA T2 recorded");
                     }
                 }
@@ -938,17 +951,18 @@ impl JobHandlerService {
     /// Total = T1 + T2 + T3, computed by looking up all related jobs for this batch.
     async fn record_sla_t3_and_total(job: &JobItem, config: &Arc<Config>) {
         // Look up the Aggregator job for this batch
-        let agg_job = match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::Aggregator).await {
-            Ok(Some(j)) => j,
-            Ok(None) => {
-                warn!(internal_id = job.internal_id, "Aggregator job not found for SLA T3");
-                return;
-            }
-            Err(e) => {
-                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up Aggregator job for SLA T3");
-                return;
-            }
-        };
+        let agg_job =
+            match config.database().get_job_by_internal_id_and_type(job.internal_id, &JobType::Aggregator).await {
+                Ok(Some(j)) => j,
+                Ok(None) => {
+                    warn!(internal_id = job.internal_id, "Aggregator job not found for SLA T3");
+                    return;
+                }
+                Err(e) => {
+                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up Aggregator job for SLA T3");
+                    return;
+                }
+            };
 
         let agg_verify_completed = match agg_job.metadata.common.verification_completed_at {
             Some(ts) => ts,
@@ -974,21 +988,24 @@ impl JobHandlerService {
             }
         };
 
-        let mut earliest_snos_created: Option<chrono::DateTime<Utc>> = None;
+        // Find the earliest block timestamp across all SNOS batches (worst-case SLA)
+        let mut earliest_block_ts: Option<chrono::DateTime<Utc>> = None;
         let mut latest_proof_verify_started: Option<chrono::DateTime<Utc>> = None;
         let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
 
         for snos_batch in &snos_batches {
-            // Look up SnosRun job
-            if let Ok(Some(snos_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::SnosRun).await {
-                earliest_snos_created = Some(match earliest_snos_created {
-                    Some(existing) => existing.min(snos_job.created_at),
-                    None => snos_job.created_at,
+            // Fetch L2 block timestamp for this batch's start_block
+            if let Some(block_ts) = Self::fetch_block_timestamp(snos_batch.start_block, config).await {
+                earliest_block_ts = Some(match earliest_block_ts {
+                    Some(existing) => existing.min(block_ts),
+                    None => block_ts,
                 });
             }
 
             // Look up ProofCreation job
-            if let Ok(Some(proof_job)) = config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await {
+            if let Ok(Some(proof_job)) =
+                config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await
+            {
                 if let Some(vs) = proof_job.metadata.common.verification_started_at {
                     latest_proof_verify_started = Some(match latest_proof_verify_started {
                         Some(existing) => existing.max(vs),
@@ -1004,10 +1021,10 @@ impl JobHandlerService {
             }
         }
 
-        if let (Some(snos_created), Some(proof_vs), Some(proof_vc)) =
-            (earliest_snos_created, latest_proof_verify_started, earliest_proof_completed)
+        if let (Some(block_ts), Some(proof_vs), Some(proof_vc)) =
+            (earliest_block_ts, latest_proof_verify_started, earliest_proof_completed)
         {
-            let t1 = proof_vs.signed_duration_since(snos_created).num_seconds() as f64;
+            let t1 = proof_vs.signed_duration_since(block_ts).num_seconds() as f64;
             let t2 = match agg_job.metadata.common.verification_started_at {
                 Some(avs) => avs.signed_duration_since(proof_vc).num_seconds() as f64,
                 None => 0.0,
@@ -1015,10 +1032,49 @@ impl JobHandlerService {
             let total = t1 + t2 + t3;
 
             MetricsRecorder::record_sla_stage_duration("total", total);
-            MetricsRecorder::check_sla_threshold("total", total, SLA_DEGRADED_THRESHOLD_TOTAL, SLA_DOWNTIME_THRESHOLD_TOTAL);
+            MetricsRecorder::check_sla_threshold(
+                "total",
+                total,
+                SLA_DEGRADED_THRESHOLD_TOTAL,
+                SLA_DOWNTIME_THRESHOLD_TOTAL,
+            );
             info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
         } else {
             warn!(internal_id = job.internal_id, "Could not compute SLA total: missing timestamps from related jobs");
+        }
+    }
+
+    /// Fetches the L2 block timestamp from Madara RPC for a given block number.
+    /// Returns `None` if the block is pending or the RPC call fails.
+    async fn fetch_block_timestamp(block_number: u64, config: &Arc<Config>) -> Option<chrono::DateTime<Utc>> {
+        match config.madara_rpc_client().get_block_with_tx_hashes(BlockId::Number(block_number)).await {
+            Ok(starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block)) => {
+                chrono::DateTime::from_timestamp(block.timestamp as i64, 0)
+            }
+            Ok(starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
+                warn!(block_number, "Block is still pending, cannot get timestamp for SLA");
+                None
+            }
+            Err(e) => {
+                warn!(error = ?e, block_number, "Failed to fetch block timestamp from Madara RPC");
+                None
+            }
+        }
+    }
+
+    /// Fetches the earliest block timestamp for a given SNOS batch (by batch index).
+    /// Looks up the SNOS batch to find `start_block`, then fetches that block's timestamp from Madara RPC.
+    async fn fetch_earliest_block_timestamp(batch_index: u64, config: &Arc<Config>) -> Option<chrono::DateTime<Utc>> {
+        match config.database().get_snos_batches_by_indices(vec![batch_index]).await {
+            Ok(batches) if !batches.is_empty() => Self::fetch_block_timestamp(batches[0].start_block, config).await,
+            Ok(_) => {
+                warn!(batch_index, "SNOS batch not found for SLA T1 block timestamp lookup");
+                None
+            }
+            Err(e) => {
+                warn!(error = ?e, batch_index, "Failed to look up SNOS batch for SLA T1");
+                None
+            }
         }
     }
 

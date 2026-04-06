@@ -211,19 +211,16 @@ impl MetricsRecorder {
     /// Record SLA stage duration (orchestrator-only processing time)
     /// stage: "t1", "t2", "t3", or "total"
     pub fn record_sla_stage_duration(stage: &str, duration_seconds: f64) {
-        ORCHESTRATOR_METRICS.sla_stage_duration.record(duration_seconds, &[
-            KeyValue::new("stage", stage.to_string()),
-        ]);
+        ORCHESTRATOR_METRICS.sla_stage_duration.record(duration_seconds, &[KeyValue::new("stage", stage.to_string())]);
     }
 
     /// Record SLA breach per stage and severity
     /// stage: "t1", "t2", "t3", or "total"
     /// severity: "degraded" or "downtime"
     pub fn record_sla_breach_staged(stage: &str, severity: &str) {
-        ORCHESTRATOR_METRICS.sla_breach_count_staged.add(1.0, &[
-            KeyValue::new("stage", stage.to_string()),
-            KeyValue::new("severity", severity.to_string()),
-        ]);
+        ORCHESTRATOR_METRICS
+            .sla_breach_count_staged
+            .add(1.0, &[KeyValue::new("stage", stage.to_string()), KeyValue::new("severity", severity.to_string())]);
     }
 
     /// Check SLA thresholds and record breaches for a given stage
