@@ -37,10 +37,6 @@ use starknet::core::types::BlockId;
 use starknet::providers::Provider;
 use tracing::{debug, error, info, warn, Span};
 
-// SLA thresholds in seconds
-const SLA_DEGRADED_THRESHOLD: f64 = 1800.0; // 30 minutes
-const SLA_DOWNTIME_THRESHOLD: f64 = 10800.0; // 3 hours
-
 pub struct JobHandlerService;
 
 impl JobHandlerService {
@@ -483,7 +479,6 @@ impl JobHandlerService {
                 Some(block_ts) => {
                     let t1 = verification_started.signed_duration_since(block_ts).num_seconds() as f64;
                     MetricsRecorder::record_sla_stage_duration("t1", t1);
-                    MetricsRecorder::check_sla_threshold("t1", t1, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
                     info!(t1_duration = t1, internal_id = job.internal_id, "SLA T1 recorded");
                 }
                 None => {
@@ -516,7 +511,6 @@ impl JobHandlerService {
                     if let Some(earliest) = earliest_proof_completed {
                         let t2 = verification_started.signed_duration_since(earliest).num_seconds() as f64;
                         MetricsRecorder::record_sla_stage_duration("t2", t2);
-                        MetricsRecorder::check_sla_threshold("t2", t2, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
                         info!(t2_duration = t2, internal_id = job.internal_id, "SLA T2 recorded");
                     }
                 }
@@ -977,7 +971,6 @@ impl JobHandlerService {
         };
         let t3 = state_transition_completed.signed_duration_since(agg_verify_completed).num_seconds() as f64;
         MetricsRecorder::record_sla_stage_duration("t3", t3);
-        MetricsRecorder::check_sla_threshold("t3", t3, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
         info!(t3_duration = t3, internal_id = job.internal_id, "SLA T3 recorded");
 
         // Compute total T1+T2+T3 by looking up all related jobs
@@ -1039,7 +1032,6 @@ impl JobHandlerService {
             let total = t1 + t2 + t3;
 
             MetricsRecorder::record_sla_stage_duration("total", total);
-            MetricsRecorder::check_sla_threshold("total", total, SLA_DEGRADED_THRESHOLD, SLA_DOWNTIME_THRESHOLD);
             info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
         } else {
             warn!(internal_id = job.internal_id, "Could not compute SLA total: missing timestamps from related jobs");

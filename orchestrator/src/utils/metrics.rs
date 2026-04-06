@@ -45,7 +45,6 @@ pub struct OrchestratorMetrics {
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
     pub sla_stage_duration: Histogram<f64>,
-    pub sla_breach_count_staged: Counter<f64>,
     pub job_age_p99: Gauge<f64>,
     pub batch_creation_total: Counter<f64>,
     // Job Status Tracking
@@ -265,13 +264,6 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
-        let sla_breach_count_staged = register_counter_metric_instrument(
-            &orchestrator_meter,
-            "sla_breach_count_staged".to_string(),
-            "SLA breaches per stage and severity (degraded/downtime)".to_string(),
-            "1".to_string(),
-        );
-
         let job_age_p99 = register_gauge_metric_instrument(
             &orchestrator_meter,
             "job_age_p99".to_string(),
@@ -410,7 +402,6 @@ impl Metrics for OrchestratorMetrics {
             active_jobs_count,
             sla_breach_count,
             sla_stage_duration,
-            sla_breach_count_staged,
             job_age_p99,
             batch_creation_total,
             job_status_tracker,
