@@ -315,8 +315,8 @@ impl MadaraSetup {
         poll_interval_ms: u64,
     ) -> Result<Felt, MadaraError> {
         // Parse the L1 token address to EthAddress, then convert to Felt
-        let l1_token_eth = EthAddress::from_hex(l1_token_address)?;
-        let l1_token_felt = Felt::from(l1_token_eth);
+        let l1_token = EthAddress::from_hex(l1_token_address)?;
+        let l1_token = Felt::from(l1_token);
 
         // Parse the L2 token bridge address to Felt
         let l2_token_bridge = Felt::from_hex(l2_token_bridge_address).map_err(MadaraError::InvalidPrivateKeyFormat)?;
@@ -343,7 +343,7 @@ impl MadaraSetup {
                     starknet::core::types::FunctionCall {
                         contract_address: l2_token_bridge,
                         entry_point_selector: selector,
-                        calldata: vec![l1_token_felt],
+                        calldata: vec![l1_token],
                     },
                     starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed),
                 )
