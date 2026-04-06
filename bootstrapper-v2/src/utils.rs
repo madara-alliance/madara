@@ -19,10 +19,16 @@ use std::io::Error as IoError;
 
 use crate::error::madara::MadaraError;
 
+/// Read a JSON file and deserialize it into the given type.
+pub fn read_json_file<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, MadaraError> {
+    let file = std::fs::File::open(path).map_err(|e| MadaraError::FailedToOpenFile(e, path.to_string()))?;
+    serde_json::from_reader(file).map_err(|e| MadaraError::FailedToParseFile(e, path.to_string()))
+}
+
 /// Returns the Starknet selector for a given function name.
 ///
 /// # Panics
-/// Panics if `name` contains non-ASCII characters. This is safe for all
+/// If `name` contains non-ASCII characters. This is safe for all
 /// standard Starknet function names which are ASCII-only.
 pub fn get_selector_or_panic(name: &str) -> Felt {
     get_selector_from_name(name)
@@ -118,15 +124,8 @@ pub async fn declare_contract(
 ) -> Result<Felt, MadaraError> {
     log::info!("Declaring contract from sierra file: {:?}", sierra_path);
     log::info!("Declaring contract from casm file: {:?}", casm_path);
-    let contract_artifact: SierraClass = serde_json::from_reader(
-        std::fs::File::open(sierra_path).map_err(|e| MadaraError::FailedToOpenFile(e, sierra_path.to_string()))?,
-    )
-    .map_err(|e| MadaraError::FailedToParseFile(e, sierra_path.to_string()))?;
-
-    let contract_artifact_casm: CompiledClass = serde_json::from_reader(
-        std::fs::File::open(casm_path).map_err(|e| MadaraError::FailedToOpenFile(e, casm_path.to_string()))?,
-    )
-    .map_err(|e| MadaraError::FailedToParseFile(e, casm_path.to_string()))?;
+    let contract_artifact: SierraClass = read_json_file(sierra_path)?;
+    let contract_artifact_casm: CompiledClass = read_json_file(casm_path)?;
 
     let class_hash = contract_artifact.class_hash()?;
     let compiled_class_hash = contract_artifact_casm.class_hash()?;
@@ -233,23 +232,57 @@ pub async fn get_contracts_deployed_addresses(
     Ok(addresses)
 }
 
-/// Helper for reading deployed addresses from JSON output files
-pub struct DeployedAddresses {
-    data: serde_json::Value,
+/// Strongly typed base layer addresses from base_addresses.json
+#[derive(Debug, serde::Deserialize)]
+pub struct BaseLayerAddresses {
+    pub addresses: BaseContractAddresses,
 }
 
-impl DeployedAddresses {
-    /// Load addresses from a JSON file
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaseContractAddresses {
+    pub core_contract: String,
+    pub eth_token_bridge: String,
+    pub token_bridge: String,
+    pub manager: String,
+    pub registry: String,
+    #[serde(default)]
+    pub l1_token: Option<String>,
+}
+
+/// Strongly typed Madara addresses from madara_addresses.json
+#[derive(Debug, serde::Deserialize)]
+pub struct MadaraDeployedAddresses {
+    pub addresses: MadaraContractAddresses,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct MadaraContractAddresses {
+    pub l2_eth_bridge: String,
+    pub l2_eth_token: String,
+    pub l2_token_bridge: String,
+    #[serde(default)]
+    pub l2_fee_token: Option<String>,
+    #[serde(default)]
+    pub l2_account: Option<String>,
+    #[serde(default)]
+    pub madara_factory: Option<String>,
+    #[serde(default)]
+    pub universal_deployer: Option<String>,
+}
+
+impl BaseLayerAddresses {
     pub fn from_file(path: &str) -> Result<Self, FileError> {
         let content =
             std::fs::read_to_string(path).map_err(|e| FileError::FailedCreatingParentDirectory(path.to_string(), e))?;
-        let data: serde_json::Value =
-            serde_json::from_str(&content).map_err(|e| FileError::FailedToWriteFile(IoError::other(e)))?;
-        Ok(Self { data })
+        serde_json::from_str(&content).map_err(|e| FileError::FailedToWriteFile(IoError::other(e)))
     }
+}
 
-    /// Get a string value from the addresses section
-    pub fn get_address(&self, key: &str) -> Option<&str> {
-        self.data["addresses"][key].as_str()
+impl MadaraDeployedAddresses {
+    pub fn from_file(path: &str) -> Result<Self, FileError> {
+        let content =
+            std::fs::read_to_string(path).map_err(|e| FileError::FailedCreatingParentDirectory(path.to_string(), e))?;
+        serde_json::from_str(&content).map_err(|e| FileError::FailedToWriteFile(IoError::other(e)))
     }
 }

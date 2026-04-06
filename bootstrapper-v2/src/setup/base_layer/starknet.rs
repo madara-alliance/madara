@@ -33,14 +33,11 @@ impl BaseLayerSetupTrait for StarknetSetup {
         unimplemented!("Starknet base layer is not implemented yet")
     }
 
-    async fn post_madara_setup(&mut self, _madara_addresses_path: &str) -> Result<(), BaseLayerError> {
-        unimplemented!("Starknet base layer is not implemented yet")
-    }
-
-    async fn verify_update_config_hash(
-        &self,
-        _l2_fee_token: &str,
-        _core_contract_address: &str,
+    async fn post_madara_setup(
+        &mut self,
+        _madara_addresses_path: &str,
+        _config_path: &str,
+        _madara_setup: &mut crate::setup::madara::MadaraSetup,
     ) -> Result<(), BaseLayerError> {
         unimplemented!("Starknet base layer is not implemented yet")
     }

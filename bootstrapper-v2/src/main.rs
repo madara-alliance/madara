@@ -1,7 +1,6 @@
 use bootstrapper_v2::cli::{CliArgs, Commands};
 use bootstrapper_v2::config::{BaseConfigOuter, MadaraConfigOuter};
 use bootstrapper_v2::setup::madara::MadaraSetup;
-use bootstrapper_v2::utils::DeployedAddresses;
 use bootstrapper_v2::BootstrapperResult;
 use clap::Parser;
 use env_logger::Env;
@@ -27,9 +26,6 @@ async fn main() -> BootstrapperResult<()> {
         }
 
         Commands::SetupMadara(setup_madara) => {
-            // Notice the same config path is used for both madara and base layer
-            // This is because `serialization` can be done to both the types, ignoring the unknown fields.
-            // This is useful as we can use the same config file for both madara and base layer.
             let madara_config: MadaraConfigOuter = serde_json::from_reader(File::open(&setup_madara.config_path)?)?;
             let base_layer_config: BaseConfigOuter = serde_json::from_reader(File::open(&setup_madara.config_path)?)?;
 
@@ -40,70 +36,14 @@ async fn main() -> BootstrapperResult<()> {
             madara_setup.init(&setup_madara.private_key, &setup_madara.output_path).await?;
             madara_setup.setup(&setup_madara.base_addresses_path, &setup_madara.output_path).await?;
 
-            // Step 1: post_madara_setup (setL2Bridge + enrollTokenBridge)
-            base_layer_setup.post_madara_setup(&setup_madara.output_path).await?;
-
-            // Step 2: Get the enrolled L2 token (polling L2)
-            // Read addresses from the output files
-            let base_addresses = DeployedAddresses::from_file(&setup_madara.base_addresses_path)?;
-            let madara_addresses = DeployedAddresses::from_file(&setup_madara.output_path)?;
-
-            let l1_token_address = base_addresses.get_address("l1Token").ok_or_else(|| {
-                bootstrapper_v2::error::BootstrapperError::Other("l1Token not found in base addresses".into())
-            })?;
-            let l2_token_bridge = madara_addresses.get_address("l2_token_bridge").ok_or_else(|| {
-                bootstrapper_v2::error::BootstrapperError::Other("l2_token_bridge not found in madara addresses".into())
-            })?;
-
-            let l2_fee_token = madara_setup
-                .get_enrolled_l2_token(
-                    l1_token_address,
-                    l2_token_bridge,
-                    300,  // 5 min timeout
-                    5000, // 5 sec interval
-                )
-                .await?;
-
-            // Save the fee token to Madara addresses file
-            madara_setup.insert_address(bootstrapper_v2::setup::madara::DeployedContract::L2FeeToken, l2_fee_token);
-            madara_setup.save_madara_addresses(&setup_madara.output_path)?;
-
-            // Step 3: Read configured fee token for config hash computation
-            // The config hash on the CoreContract must match what SNOS computes,
-            // and SNOS uses the native_fee_token_address from the chain config (madara.yaml),
-            // not the deployed fee token address.
-            let config_content = std::fs::read_to_string(&setup_madara.config_path)?;
-            let config: serde_json::Value = serde_json::from_str(&config_content)?;
-
-            let fee_token_for_config_hash = if let Some(configured_fee_token_str) =
-                config["base_layer"]["config_hash_config"]["madara_fee_token"].as_str()
-            {
-                if let Ok(configured_fee_token) = starknet::core::types::Felt::from_hex(configured_fee_token_str) {
-                    if l2_fee_token != configured_fee_token {
-                        log::warn!(
-                            "Fee token mismatch: configured={:#x}, deployed={:#x}. Using configured token for config hash.",
-                            configured_fee_token,
-                            l2_fee_token
-                        );
-                    }
-                    configured_fee_token
-                } else {
-                    l2_fee_token
-                }
-            } else {
-                l2_fee_token
-            };
-
-            // Step 4: Verify/update config hash using the configured fee token
-            let core_contract_address = base_addresses.get_address("coreContract").ok_or_else(|| {
-                bootstrapper_v2::error::BootstrapperError::Other("coreContract not found in base addresses".into())
-            })?;
-
+            // Post-Madara setup handles everything:
+            // 1. Set L2 bridge addresses on L1
+            // 2. Enroll token bridge
+            // 3. Poll for enrolled L2 fee token
+            // 4. Verify/update config hash on CoreContract
             base_layer_setup
-                .verify_update_config_hash(&format!("{:#x}", fee_token_for_config_hash), core_contract_address)
+                .post_madara_setup(&setup_madara.output_path, &setup_madara.config_path, &mut madara_setup)
                 .await?;
-
-            log::info!("Post-Madara setup completed successfully!");
         }
     }
 

@@ -93,10 +93,15 @@ impl EthereumSetup {
         Ok(config_hash_u256)
     }
 
-    async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> Result<Address, EthereumError> {
-        let provider = ProviderBuilder::new()
+    /// Create an authenticated Ethereum provider using the configured signer and RPC URL.
+    fn provider(&self) -> Result<impl Provider + Clone, EthereumError> {
+        Ok(ProviderBuilder::new()
             .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
+            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?))
+    }
+
+    async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> Result<Address, EthereumError> {
+        let provider = self.provider()?;
 
         // Read the artifact file
         let artifact_content = std::fs::read_to_string(artifact_path)?;
@@ -159,9 +164,66 @@ impl EthereumSetup {
 
         let json_string = serde_json::to_string_pretty(&base_layer_addresses)?;
 
-        crate::utils::save_addresses_to_file(json_string, &self.addresses_output_path)?;
+        save_addresses_to_file(json_string, &self.addresses_output_path)?;
 
         log::info!("Ethereum base layer addresses saved to: {}", self.addresses_output_path);
+
+        Ok(())
+    }
+
+    /// Verify the config hash on the CoreContract matches what SNOS will compute.
+    /// If there's a mismatch, accept governance (two-step pattern: nominate → accept)
+    /// and update the config hash.
+    ///
+    /// The governance accept is needed because the Factory contract only nominates
+    /// the governor during setup() — it doesn't accept on behalf of the nominee.
+    async fn verify_update_config_hash(
+        &self,
+        l2_fee_token: &str,
+        core_contract_address: &str,
+    ) -> Result<(), BaseLayerError> {
+        let fee_token = Felt::from_hex(l2_fee_token).map_err(|e| {
+            EthereumError::FeltParseError(format!("Failed to parse l2_fee_token '{}': {}", l2_fee_token, e))
+        })?;
+
+        let expected_config_hash = self.compute_config_hash(Some(fee_token))?;
+        log::info!("Expected config hash (with fee token): {:#x}", expected_config_hash);
+
+        let provider = self.provider()?;
+
+        let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
+        let core_contract = Starknet::new(core_contract_addr, provider.clone());
+
+        let current_config_hash = core_contract.configHash().call().await.map_err(EthereumError::from)?;
+        log::info!("Current config hash on CoreContract: {:#x}", current_config_hash);
+
+        if !core_contract.starknetIsGovernor(self.signer.address()).call().await.map_err(EthereumError::from)? {
+            log::info!("Accepting governance nomination on CoreContract...");
+            core_contract
+                .starknetAcceptGovernance()
+                .send()
+                .await
+                .map_err(EthereumError::from)?
+                .watch()
+                .await
+                .map_err(EthereumError::from)?;
+            log::info!("Governance accepted successfully");
+        }
+
+        if current_config_hash != expected_config_hash {
+            log::info!("Config hash mismatch detected, updating CoreContract...");
+            core_contract
+                .setConfigHash(expected_config_hash)
+                .send()
+                .await
+                .map_err(EthereumError::from)?
+                .watch()
+                .await
+                .map_err(EthereumError::from)?;
+            log::info!("Config hash updated successfully on CoreContract");
+        } else {
+            log::info!("Config hash matches, no update needed");
+        }
 
         Ok(())
     }
@@ -186,17 +248,14 @@ impl EthereumSetup {
         )?;
 
         // Convert string addresses to Address format
-        let eth_token_bridge_address = eth_token_bridge.parse::<alloy::primitives::Address>()?;
-        let token_bridge_address = token_bridge.parse::<alloy::primitives::Address>()?;
+        let eth_token_bridge_address = eth_token_bridge.parse::<Address>()?;
+        let token_bridge_address = token_bridge.parse::<Address>()?;
 
         // Create a provider and instantiate the factory contract
-        let provider = ProviderBuilder::new()
-            .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
+        let provider = self.provider()?;
 
         // Create a new factory instance with the deployed address
-        let factory_instance =
-            Factory::new(base_layer_factory_address.parse::<alloy::primitives::Address>()?, provider);
+        let factory_instance = Factory::new(base_layer_factory_address.parse::<Address>()?, provider);
 
         // Call set_l2_bridge on the factory contract
         factory_instance
@@ -211,12 +270,10 @@ impl EthereumSetup {
 
     /// Enrolls a token bridge on the Manager contract
     async fn enroll_token_bridge(&self, manager_address: &str, l1_token_address: &str) -> Result<(), EthereumError> {
-        let provider = ProviderBuilder::new()
-            .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
+        let provider = self.provider()?;
 
-        let manager_addr = manager_address.parse::<alloy::primitives::Address>()?;
-        let l1_token_addr = l1_token_address.parse::<alloy::primitives::Address>()?;
+        let manager_addr = manager_address.parse::<Address>()?;
+        let l1_token_addr = l1_token_address.parse::<Address>()?;
 
         let manager_instance = Manager::new(manager_addr, provider);
 
@@ -283,9 +340,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
         // Build the full CoreContractInitData with the computed config hash
         let core_contract_init_data = self.core_contract_init_data.with_config_hash(config_hash);
 
-        let provider = ProviderBuilder::new()
-            .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
+        let provider = self.provider()?;
 
         log::info!("Implementation addresses before serializing: {:?}", self.implementation_address);
         // Convert implementation addresses to the required format
@@ -320,116 +375,95 @@ impl BaseLayerSetupTrait for EthereumSetup {
         Ok(())
     }
 
-    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
-        // Read the base layer factory address from addresses.json
+    async fn post_madara_setup(
+        &mut self,
+        madara_addresses_path: &str,
+        config_path: &str,
+        madara_setup: &mut crate::setup::madara::MadaraSetup,
+    ) -> Result<(), BaseLayerError> {
+        use crate::utils::{BaseLayerAddresses, MadaraDeployedAddresses};
+
+        // Read typed addresses from output files
+        let base_addresses = BaseLayerAddresses::from_file(&self.addresses_output_path)?;
+        let madara_addresses = MadaraDeployedAddresses::from_file(madara_addresses_path)?;
+
+        // Read the base layer factory address from implementation_addresses
         let addresses_content = std::fs::read_to_string(&self.addresses_output_path)
             .map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
-        let addresses: serde_json::Value = serde_json::from_str(&addresses_content)?;
-
-        let base_layer_factory_address = addresses["implementation_addresses"]["baseLayerFactory"]
+        let raw: serde_json::Value = serde_json::from_str(&addresses_content)?;
+        let base_layer_factory_address = raw["implementation_addresses"]["baseLayerFactory"]
             .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".implementation_addresses.baseLayerFactory".to_string()))?;
+            .ok_or(BaseLayerError::KeyNotFound("implementation_addresses.baseLayerFactory".to_string()))?;
 
-        // Read the L2 bridge addresses from madara_addresses.json
-        let madara_addresses_content =
-            std::fs::read_to_string(madara_addresses_path).map_err(BaseLayerError::FailedToReadMadaraOutput)?;
-        let madara_addresses: serde_json::Value = serde_json::from_str(&madara_addresses_content)?;
-
-        let l2_eth_bridge_address = madara_addresses["addresses"]["l2_eth_bridge"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.l2_eth_bridge".to_string()))?;
-        let l2_erc20_bridge_address = madara_addresses["addresses"]["l2_token_bridge"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.l2_token_bridge".to_string()))?;
-
-        // Read the deployed bridge addresses from addresses.json
-        let eth_token_bridge = addresses["addresses"]["ethTokenBridge"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.ethTokenBridge".to_string()))?;
-        let token_bridge = addresses["addresses"]["tokenBridge"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.tokenBridge".to_string()))?;
-
+        // Step 1: Set L2 bridge addresses on L1
         self.post_madara(
-            l2_eth_bridge_address,
-            l2_erc20_bridge_address,
-            eth_token_bridge,
-            token_bridge,
+            &madara_addresses.addresses.l2_eth_bridge,
+            &madara_addresses.addresses.l2_token_bridge,
+            &base_addresses.addresses.eth_token_bridge,
+            &base_addresses.addresses.token_bridge,
             base_layer_factory_address,
         )
         .await?;
-
         log::info!("Successfully called set_l2_bridge on factory contract");
 
-        // Enroll Token Bridge on Manager
-        let manager_address = addresses["addresses"]["manager"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.manager".to_string()))?;
-        let l1_token_address = addresses["addresses"]["l1Token"]
-            .as_str()
-            .ok_or(BaseLayerError::KeyNotFound(".addresses.l1Token".to_string()))?;
+        // Step 2: Enroll token bridge on Manager
+        let l1_token_address = base_addresses
+            .addresses
+            .l1_token
+            .as_deref()
+            .ok_or(BaseLayerError::KeyNotFound("addresses.l1Token".to_string()))?;
+        self.enroll_token_bridge(&base_addresses.addresses.manager, l1_token_address).await?;
 
-        self.enroll_token_bridge(manager_address, l1_token_address).await?;
+        // Step 3: Poll for enrolled L2 fee token
+        let l2_fee_token = madara_setup
+            .get_enrolled_l2_token(
+                l1_token_address,
+                &madara_addresses.addresses.l2_token_bridge,
+                300,  // 5 min timeout
+                5000, // 5 sec interval
+            )
+            .await
+            .map_err(|e| BaseLayerError::Internal(Box::new(e)))?;
 
-        Ok(())
-    }
+        // Save the fee token to Madara addresses file
+        madara_setup.insert_address(crate::setup::madara::DeployedContract::L2FeeToken, l2_fee_token);
+        madara_setup.save_madara_addresses(madara_addresses_path).map_err(|e| BaseLayerError::Internal(Box::new(e)))?;
 
-    async fn verify_update_config_hash(
-        &self,
-        l2_fee_token: &str,
-        core_contract_address: &str,
-    ) -> Result<(), BaseLayerError> {
-        // 1. Parse l2_fee_token to Felt
-        let fee_token = Felt::from_hex(l2_fee_token).map_err(|e| {
-            EthereumError::FeltParseError(format!("Failed to parse l2_fee_token '{}': {}", l2_fee_token, e))
-        })?;
+        // Step 4: Determine which fee token to use for config hash
+        // The config hash on the CoreContract must match what SNOS computes.
+        // SNOS uses native_fee_token_address from the chain config (madara.yaml),
+        // not the deployed fee token address.
+        let config_content =
+            std::fs::read_to_string(config_path).map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
+        let config: serde_json::Value = serde_json::from_str(&config_content)?;
 
-        // 2. Compute expected config hash with this fee token
-        let expected_config_hash = self.compute_config_hash(Some(fee_token))?;
-        log::info!("Expected config hash (with fee token): {:#x}", expected_config_hash);
-
-        // 3. Call configHash() on CoreContract to get current
-        let provider = ProviderBuilder::new()
-            .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
-
-        let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
-        let core_contract = Starknet::new(core_contract_addr, provider.clone());
-
-        let current_config_hash = core_contract.configHash().call().await.map_err(EthereumError::from)?;
-        log::info!("Current config hash on CoreContract: {:#x}", current_config_hash);
-
-        // 4. Accept governance nomination so we can call setConfigHash
-        if !core_contract.starknetIsGovernor(self.signer.address()).call().await.map_err(EthereumError::from)? {
-            log::info!("Accepting governance nomination on CoreContract...");
-            core_contract
-                .starknetAcceptGovernance()
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Governance accepted successfully");
-        }
-
-        // 5. If different, call setConfigHash(expected)
-        if current_config_hash != expected_config_hash {
-            log::info!("Config hash mismatch detected, updating CoreContract...");
-
-            core_contract
-                .setConfigHash(expected_config_hash)
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Config hash updated successfully on CoreContract");
+        let fee_token_for_config_hash = if let Some(configured_fee_token_str) =
+            config["base_layer"]["config_hash_config"]["madara_fee_token"].as_str()
+        {
+            if let Ok(configured_fee_token) = Felt::from_hex(configured_fee_token_str) {
+                if l2_fee_token != configured_fee_token {
+                    log::warn!(
+                        "Fee token mismatch: configured={:#x}, deployed={:#x}. Using configured token for config hash.",
+                        configured_fee_token,
+                        l2_fee_token
+                    );
+                }
+                configured_fee_token
+            } else {
+                l2_fee_token
+            }
         } else {
-            log::info!("Config hash matches, no update needed");
-        }
+            l2_fee_token
+        };
 
+        // Step 5: Verify/update config hash on CoreContract
+        self.verify_update_config_hash(
+            &format!("{:#x}", fee_token_for_config_hash),
+            &base_addresses.addresses.core_contract,
+        )
+        .await?;
+
+        log::info!("Post-Madara setup completed successfully!");
         Ok(())
     }
 }

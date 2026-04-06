@@ -66,9 +66,6 @@ pub enum EthereumError {
     #[error("L2 token polling timeout after {0} seconds")]
     L2TokenPollingTimeout(u64),
 
-    #[error("Fee token mismatch: expected {expected}, got {actual}")]
-    FeeTokenMismatch { expected: String, actual: String },
-
     #[error("Starknet Felt parse error: {0}")]
     FeltParseError(String),
 }
