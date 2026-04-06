@@ -471,55 +471,6 @@ impl JobHandlerService {
 
         job.metadata.common.verification_started_at = Some(Utc::now());
 
-        // Emit SLA T1 when ProofCreation verification starts
-        // T1 = time from earliest block production (L2 block timestamp) to ProofCreation.verification_started_at
-        if job.job_type == JobType::ProofCreation && job.metadata.common.verification_attempt_no == 0 {
-            let verification_started = job.metadata.common.verification_started_at.unwrap();
-            match Self::fetch_earliest_block_timestamp(job.internal_id, &config).await {
-                Some(block_ts) => {
-                    let t1 = verification_started.signed_duration_since(block_ts).num_seconds() as f64;
-                    MetricsRecorder::record_sla_stage_duration("t1", t1);
-                    info!(t1_duration = t1, internal_id = job.internal_id, "SLA T1 recorded");
-                }
-                None => {
-                    warn!(internal_id = job.internal_id, "Could not fetch block timestamp for SLA T1");
-                }
-            }
-        }
-
-        // Emit SLA T2 when Aggregator verification starts
-        // T2 = time from earliest ProofCreation.verification_completed_at to Aggregator.verification_started_at
-        if job.job_type == JobType::Aggregator && job.metadata.common.verification_attempt_no == 0 {
-            let verification_started = job.metadata.common.verification_started_at.unwrap();
-            match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
-                Ok(snos_batches) => {
-                    let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
-                    for snos_batch in &snos_batches {
-                        if let Ok(Some(proof_job)) = config
-                            .database()
-                            .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
-                            .await
-                        {
-                            if let Some(vc) = proof_job.metadata.common.verification_completed_at {
-                                earliest_proof_completed = Some(match earliest_proof_completed {
-                                    Some(existing) => existing.min(vc),
-                                    None => vc,
-                                });
-                            }
-                        }
-                    }
-                    if let Some(earliest) = earliest_proof_completed {
-                        let t2 = verification_started.signed_duration_since(earliest).num_seconds() as f64;
-                        MetricsRecorder::record_sla_stage_duration("t2", t2);
-                        info!(t2_duration = t2, internal_id = job.internal_id, "SLA T2 recorded");
-                    }
-                }
-                Err(e) => {
-                    warn!(error = ?e, internal_id = job.internal_id, "Failed to look up SNOS batches for SLA T2");
-                }
-            }
-        }
-
         // Increment verification attempt counter
         job.metadata.common.verification_attempt_no += 1;
 
@@ -973,7 +924,23 @@ impl JobHandlerService {
         MetricsRecorder::record_sla_stage_duration("t3", t3);
         info!(t3_duration = t3, internal_id = job.internal_id, "SLA T3 recorded");
 
-        // Compute total T1+T2+T3 by looking up all related jobs
+        // Fetch aggregator batch document for start_block
+        let agg_batch = match config.database().get_aggregator_batches_by_indexes(vec![job.internal_id]).await {
+            Ok(batches) if !batches.is_empty() => batches.into_iter().next().unwrap(),
+            Ok(_) => {
+                warn!(internal_id = job.internal_id, "Aggregator batch not found for SLA total");
+                return;
+            }
+            Err(e) => {
+                warn!(error = ?e, internal_id = job.internal_id, "Failed to look up aggregator batch for SLA total");
+                return;
+            }
+        };
+
+        // Fetch earliest block timestamp from Madara RPC using aggregator batch's start_block
+        let earliest_block_ts = Self::fetch_block_timestamp(agg_batch.start_block, config).await;
+
+        // Compute T1+T2+T3 by looking up ProofCreation jobs across SNOS batches
         let snos_batches = match config.database().get_snos_batches_by_aggregator_index(job.internal_id).await {
             Ok(batches) => batches,
             Err(e) => {
@@ -982,20 +949,10 @@ impl JobHandlerService {
             }
         };
 
-        // Find the earliest block timestamp across all SNOS batches (worst-case SLA)
-        let mut earliest_block_ts: Option<chrono::DateTime<Utc>> = None;
         let mut latest_proof_verify_started: Option<chrono::DateTime<Utc>> = None;
-        let mut earliest_proof_completed: Option<chrono::DateTime<Utc>> = None;
+        let mut latest_proof_completed: Option<chrono::DateTime<Utc>> = None;
 
         for snos_batch in &snos_batches {
-            // Fetch L2 block timestamp for this batch's start_block
-            if let Some(block_ts) = Self::fetch_block_timestamp(snos_batch.start_block, config).await {
-                earliest_block_ts = Some(match earliest_block_ts {
-                    Some(existing) => existing.min(block_ts),
-                    None => block_ts,
-                });
-            }
-
             // Look up ProofCreation job
             if let Ok(Some(proof_job)) =
                 config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await
@@ -1007,8 +964,8 @@ impl JobHandlerService {
                     });
                 }
                 if let Some(vc) = proof_job.metadata.common.verification_completed_at {
-                    earliest_proof_completed = Some(match earliest_proof_completed {
-                        Some(existing) => existing.min(vc),
+                    latest_proof_completed = Some(match latest_proof_completed {
+                        Some(existing) => existing.max(vc),
                         None => vc,
                     });
                 }
@@ -1016,9 +973,10 @@ impl JobHandlerService {
         }
 
         if let (Some(block_ts), Some(proof_vs), Some(proof_vc)) =
-            (earliest_block_ts, latest_proof_verify_started, earliest_proof_completed)
+            (earliest_block_ts, latest_proof_verify_started, latest_proof_completed)
         {
             let t1 = proof_vs.signed_duration_since(block_ts).num_seconds() as f64;
+            // T2: last proof returned from Atlantic → aggregation starts
             let t2 = match agg_job.metadata.common.verification_started_at {
                 Some(avs) => avs.signed_duration_since(proof_vc).num_seconds() as f64,
                 None => {
@@ -1031,6 +989,8 @@ impl JobHandlerService {
             };
             let total = t1 + t2 + t3;
 
+            MetricsRecorder::record_sla_stage_duration("t1", t1);
+            MetricsRecorder::record_sla_stage_duration("t2", t2);
             MetricsRecorder::record_sla_stage_duration("total", total);
             info!(t1 = t1, t2 = t2, t3 = t3, total = total, internal_id = job.internal_id, "SLA total recorded");
         } else {
@@ -1051,22 +1011,6 @@ impl JobHandlerService {
             }
             Err(e) => {
                 warn!(error = ?e, block_number, "Failed to fetch block timestamp from Madara RPC");
-                None
-            }
-        }
-    }
-
-    /// Fetches the earliest block timestamp for a given SNOS batch (by batch index).
-    /// Looks up the SNOS batch to find `start_block`, then fetches that block's timestamp from Madara RPC.
-    async fn fetch_earliest_block_timestamp(batch_index: u64, config: &Arc<Config>) -> Option<chrono::DateTime<Utc>> {
-        match config.database().get_snos_batches_by_indices(vec![batch_index]).await {
-            Ok(batches) if !batches.is_empty() => Self::fetch_block_timestamp(batches[0].start_block, config).await,
-            Ok(_) => {
-                warn!(batch_index, "SNOS batch not found for SLA T1 block timestamp lookup");
-                None
-            }
-            Err(e) => {
-                warn!(error = ?e, batch_index, "Failed to look up SNOS batch for SLA T1");
                 None
             }
         }
