@@ -595,6 +595,11 @@ impl MadaraServiceMask {
     }
 
     fn active_set(&self) -> Vec<MadaraServiceId> {
+        // NOTE: keep this cursor in sync with the highest `MadaraServiceId`
+        // variant. Any new variant added after `ExternalDb` MUST update this
+        // start value, otherwise it will be silently omitted from the iteration
+        // (only used by `tracing::debug!` so the impact is incomplete debug
+        // output, but the bug is easy to miss).
         let mut i = MadaraServiceId::ExternalDb.svc_id() as u64;
         let state = self.value();
         let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);

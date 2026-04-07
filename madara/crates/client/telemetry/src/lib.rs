@@ -27,10 +27,26 @@ pub use sysinfo::*;
 
 #[derive(Debug, Clone)]
 pub struct TelemetryConfig {
+    /// Logical name reported as `service.name` to the OTEL collector. Used as
+    /// the prefix for the per-signal service names (e.g. `madara` becomes
+    /// `madara_meter_service`, `madara_trace_service`, `madara_logs_service`).
     pub service_name: String,
+    /// OTLP/gRPC endpoint of the OTEL collector to export to. When `None`, the
+    /// service falls back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT`
+    /// environment variable; if that is also unset, no OTEL exporters are
+    /// installed and only the local `tracing_subscriber` is configured.
     pub collection_endpoint: Option<Url>,
+    /// Whether to install a metric exporter and register a global
+    /// `SdkMeterProvider`. Has no effect when `collection_endpoint` resolves to
+    /// `None`.
     pub export_metrics: bool,
+    /// Whether to install a span exporter and register a global
+    /// `SdkTracerProvider`. Has no effect when `collection_endpoint` resolves
+    /// to `None`.
     pub export_traces: bool,
+    /// Whether to install a log exporter and bridge `tracing` events into OTEL
+    /// logs via `OpenTelemetryTracingBridge`. Has no effect when
+    /// `collection_endpoint` resolves to `None`.
     pub export_logs: bool,
 }
 
@@ -53,6 +69,16 @@ struct Providers {
     logger_provider: Option<SdkLoggerProvider>,
 }
 
+/// `TelemetryService` is intentionally **non-restartable**: it owns the global
+/// OTEL providers (`SdkMeterProvider`, `SdkTracerProvider`, `SdkLoggerProvider`)
+/// which are installed once into `opentelemetry::global` during `setup()` and
+/// must only be shut down once. The admin RPC service surface explicitly
+/// rejects start/stop/restart of `MadaraServiceId::Telemetry` via
+/// `ensure_services_are_externally_controllable` (see
+/// `madara/crates/client/rpc/src/versions/admin/v0_1_0/methods/services.rs`).
+/// If you ever re-enable external control over this service, you must also
+/// rework the `Service::start` impl below — currently `providers.take()`
+/// assumes a single call.
 pub struct TelemetryService {
     providers: Option<Providers>,
     config: TelemetryConfig,
@@ -192,6 +218,12 @@ impl TelemetryService {
 #[async_trait::async_trait]
 impl Service for TelemetryService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        // SAFETY: `providers.take()` is only safe because `TelemetryService`
+        // is non-restartable — see the doc comment on `TelemetryService`.
+        // If `Telemetry` is ever re-added to the admin-RPC controllable set,
+        // a second `start()` call would capture `providers = None` and the
+        // OTEL providers would never be flushed/shut down, silently losing
+        // any buffered telemetry.
         let providers = self.providers.take();
 
         runner.service_loop(move |mut ctx| async move {

@@ -27,10 +27,12 @@ pub struct RpcMetrics {
 }
 
 impl RpcMetrics {
-    // Keep the label dimensions aligned across the related RPC call metrics.
-    // Requests use `success=unknown` until the response is available.
-    fn call_started_labels(method: &str) -> [KeyValue; 2] {
-        [KeyValue::new("method", method.to_string()), KeyValue::new("success", "unknown")]
+    // `calls_started` only carries the `method` label because the outcome is
+    // not known yet at the time it is incremented. `calls_finished` and
+    // `calls_time` additionally carry `success` so failed calls can be
+    // distinguished from successful ones in dashboards.
+    fn call_started_labels(method: &str) -> [KeyValue; 1] {
+        [KeyValue::new("method", method.to_string())]
     }
 
     fn call_completed_labels(method: &str, success: bool) -> [KeyValue; 2] {
