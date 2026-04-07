@@ -44,6 +44,9 @@ incremental = true
 [profile.release]
 panic = "unwind"
 
+[profile.release.package.orchestrator]
+debug = true
+
 [profile.profiling]
 inherits = "release"
 debug = 1
@@ -132,7 +135,7 @@ casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.16.0"
 casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.16.0" }
 cairo-vm = "=3.2.0"
 cairo-native = "0.9.0-rc.2"
-alloy = { version = "=1.1.0", features = [
+alloy = { version = "1.1.0", features = [
   "node-bindings",
   "eips",
   "rpc-types",
@@ -282,20 +285,20 @@ subxt-lightclient = { version = "0.35.3", default-features = false }
 
 # Orchestrator
 num = { version = "0.4.1" }
-alloy-primitives = { version = "=0.8.5", default-features = false }
-alloy-sol-types = "=0.8.5"
-aws-config = { version = "=1.1.7", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "=1.38.0", features = ["behavior-version-latest"] }
-aws-sdk-eventbridge = { version = "=1.41.0", features = [
+alloy-primitives = { version = "0.8.5", default-features = false }
+alloy-sol-types = "0.8.5"
+aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
+aws-sdk-eventbridge = { version = "1.41.0", features = [
   "behavior-version-latest",
 ] }
-aws-sdk-iam = "=1.52.0"
-aws-sdk-scheduler = "=1.49.0"
-aws-sdk-sns = { version = "=1.40.0", features = ["behavior-version-latest"] }
-aws-credential-types = { version = "=1.2.1", features = [
+aws-sdk-iam = "1.52.0"
+aws-sdk-scheduler = "1.49.0"
+aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
+aws-credential-types = { version = "1.2.1", features = [
   "hardcoded-credentials",
 ] }
-aws-sdk-sqs = "=1.36.0"
+aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 color-eyre = "0.6.3"
 chrono = { version = "0.4", features = ["serde"] }
@@ -340,3 +343,6 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+
+[patch."https://github.com/keep-starknet-strange/snos.git"]
+rpc-client = { path = "vendor/rpc-client" }

@@ -276,7 +276,7 @@ impl RocksDBStorageInner {
             IteratorMode::From(&from, rocksdb::Direction::Forward),
         )
         .into_iter_values(deserialize_transaction_with_receipt)
-        .map(|res| Ok(res??));
+        .map(|res| res?);
 
         Either::Right(iter)
     }

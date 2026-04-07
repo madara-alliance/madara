@@ -120,6 +120,7 @@ fn canonical_compiled_class_hash_fields(uses_blake: bool, canonical_hash: Felt) 
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn resolve_compiled_class_hash_fields(
     no_check: bool,
     uses_blake: bool,

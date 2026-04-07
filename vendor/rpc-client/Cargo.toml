@@ -1,0 +1,37 @@
+[package]
+name = "rpc-client"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.87.0"
+repository = "https://github.com/keep-starknet-strange/snos/"
+
+[lib]
+doctest = false
+
+[features]
+cairo_native = []
+
+[dependencies]
+anyhow = "1.0"
+bitvec = { version = "1.0", default-features = false, features = ["std"] }
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = ["testing", "reexecution"] }
+cairo-lang-starknet-classes = "=2.16.0"
+cairo-vm = "=3.2.0"
+futures = "0.3"
+log = "0.4.19"
+num-bigint = "0.4"
+rayon = "1.10"
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "default-tls"] }
+serde = { version = "1.0.188", features = ["derive"] }
+serde_json = { version = "1.0.105", features = ["arbitrary_precision"] }
+starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
+starknet-os-types = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "1cd46d96c480f1e88a2d980f1e37794c737d89df", package = "starknet-os-types" }
+starknet-types-core = "0.2.4"
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = ["testing"] }
+thiserror = "1.0.48"
+tokio = { version = "1.37.0", features = ["rt-multi-thread"] }
+
+[dev-dependencies]
+rstest = "0.18.2"

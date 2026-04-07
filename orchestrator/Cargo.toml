@@ -140,6 +140,3 @@ c-kzg = { workspace = true }
 
 [build-dependencies]
 build-version.workspace = true
-
-[profile.release]
-debug = true
