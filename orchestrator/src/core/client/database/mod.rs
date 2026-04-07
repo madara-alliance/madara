@@ -91,12 +91,14 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_a_type` - Type of the first job
     /// * `job_a_status` - Status of the first job
     /// * `job_b_type` - Type of the successor job to check for
+    /// * `limit` - Optional maximum number of oldest missing jobs to return
     /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
+        limit: Option<u64>,
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 

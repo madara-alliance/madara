@@ -7,6 +7,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
+use crate::worker::event_handler::triggers::get_job_creation_batch_limit;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
@@ -81,6 +82,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                             parent_job_type,
                             JobStatus::Completed,
                             JobType::StateTransition,
+                            Some(get_job_creation_batch_limit(config.as_ref(), JobType::StateTransition)),
                             Some(ORCHESTRATOR_VERSION.to_string()),
                         )
                         .await?,
