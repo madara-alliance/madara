@@ -258,7 +258,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(self
             .block_prod_handle
             .as_ref()
-            .unwrap()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .submit_l1_handler_transaction(l1_handler_message)
             .await
             .map_err(StarknetRpcApiError::from)?)

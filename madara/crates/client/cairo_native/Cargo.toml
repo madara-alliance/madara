@@ -22,7 +22,7 @@ mp-class = { workspace = true }
 mp-convert = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
+blockifier = { workspace = true, features = ["cairo_native"] }
 cairo-native = { workspace = true }
 cairo-vm = { workspace = true }
 casm-classes-v2 = { workspace = true }

@@ -12,6 +12,7 @@ pub struct SyncWorkerConfig {
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
     pub unsafe_skip_l1_message_consumed_check: bool,
+    pub unsafe_l1_handler_metadata_only: bool,
 }
 
 impl L1ClientImpl {
@@ -36,6 +37,7 @@ impl L1ClientImpl {
             self.notify_new_message_to_l2.clone(),
             ctx.clone(),
             config.unsafe_skip_l1_message_consumed_check,
+            config.unsafe_l1_handler_metadata_only,
         ));
 
         if !config.gas_provider_config.all_is_fixed() {

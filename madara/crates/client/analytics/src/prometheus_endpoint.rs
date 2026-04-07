@@ -1,9 +1,9 @@
+use crate::prometheus_exporter::{exporter, PrometheusExporter};
 use anyhow::Context;
 use http_body_util::Full;
 use hyper::{body::Bytes, server::conn::http1, service::service_fn, Response};
 use hyper_util::rt::TokioIo;
 use mp_utils::service::ServiceContext;
-use opentelemetry_prometheus::PrometheusExporter;
 use prometheus::Encoder;
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio::net::TcpListener;
@@ -31,10 +31,7 @@ impl PrometheusEndpoint {
     pub fn new(config: PrometheusEndpointConfig) -> anyhow::Result<Self> {
         let registry = prometheus::Registry::new();
 
-        let exporter = opentelemetry_prometheus::exporter()
-            .with_registry(registry.clone())
-            .build()
-            .context("Building opentelemetry_prometheus")?;
+        let exporter = exporter().with_registry(registry.clone()).build().context("Building prometheus exporter")?;
         Ok(Self { exporter: Some(exporter), config, registry })
     }
 
@@ -69,7 +66,6 @@ impl PrometheusEndpoint {
                     let registry = registry.clone();
                     async move {
                         if req.uri().path() == "/metrics" {
-                            // L'exportateur a une méthode pour accéder au registre
                             let metrics = registry.gather();
 
                             let mut buffer = vec![];
