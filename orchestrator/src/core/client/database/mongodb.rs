@@ -95,8 +95,6 @@ impl MongoDbClient {
             IndexModel::builder().keys(doc! { "job_type": 1, "status": 1, "internal_id": -1 }).build(),
             // Index on status
             IndexModel::builder().keys(doc! { "status": 1 }).build(),
-            // Index on internal_id for $lookup joins (enables IndexedLoopJoin)
-            IndexModel::builder().keys(doc! { "internal_id": 1 }).build(),
         ];
 
         jobs_collection.create_indexes(jobs_indexes, None).await?;
@@ -568,7 +566,6 @@ impl DatabaseClient for MongoDbClient {
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
-        limit: Option<u64>,
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
@@ -587,13 +584,13 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Construct the aggregation pipeline
-        let mut pipeline = vec![
+        let pipeline = vec![
             // Stage 1: Match job_a_type with job_a_status and orchestrator_version
             doc! {
                 "$match": match_filter
             },
             // Stage 2: Lookup to find jobs with matching internal_id
-            // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
+            // Uses localField/foreignField form for proper index utilization
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
@@ -620,19 +617,7 @@ impl DatabaseClient for MongoDbClient {
                     "successor_jobs": { "$eq": [] }
                 }
             },
-            // Stage 5: Return the oldest missing work first so callers do not starve earlier jobs.
-            doc! {
-                "$sort": {
-                    "internal_id": 1
-                }
-            },
         ];
-
-        if let Some(limit) = limit {
-            pipeline.push(doc! {
-                "$limit": limit as i64
-            });
-        }
 
         debug!("Fetching jobs without successor");
 
@@ -1217,7 +1202,7 @@ impl DatabaseClient for MongoDbClient {
                 "$match": match_filter
             },
             // Stage 2: Lookup to find jobs with matching internal_id
-            // Uses localField/foreignField form for IndexedLoopJoin with { internal_id: 1 } index
+            // Uses localField/foreignField form for proper index utilization
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
@@ -1244,13 +1229,13 @@ impl DatabaseClient for MongoDbClient {
                     "corresponding_jobs": { "$eq": [] }
                 }
             },
-            // Stage 5: Sort by index ascending so we return the oldest missing batches overall.
+            // Stage 4: Sort by snos_batch_id for consistent ordering
             doc! {
                 "$sort": {
                     "index": 1
                 }
             },
-            // Stage 6: Limit to max number of batches we want
+            // Stage 5: Limit to max number of batches we want
             doc! {
                 "$limit": limit as i64
             },

@@ -4,7 +4,6 @@ use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, Provin
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::get_job_creation_batch_limit;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
@@ -24,7 +23,6 @@ impl JobTrigger for ProofRegistrationJobTrigger {
                 JobType::ProofCreation,
                 JobStatus::Completed,
                 JobType::ProofRegistration,
-                Some(get_job_creation_batch_limit(config.as_ref(), JobType::ProofRegistration)),
                 Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
