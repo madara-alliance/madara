@@ -113,7 +113,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
 
     // Test without version filter
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
         .await
         .unwrap();
 
@@ -133,7 +133,6 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobType::SnosRun,
             JobStatus::Completed,
             JobType::ProofCreation,
-            None,
             Some(current_version),
         )
         .await
@@ -152,7 +151,6 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobType::SnosRun,
             JobStatus::Completed,
             JobType::ProofCreation,
-            None,
             Some("old-version".to_string()),
         )
         .await
@@ -164,10 +162,11 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
 }
 
 /// Regression test for `get_jobs_without_successor`.
-/// Ensures older missing jobs are still reachable when the backlog exceeds the per-run limit.
+/// Ensures missing jobs are returned oldest-first so callers iterating the result do not starve
+/// earlier jobs that happen to live further back in the collection.
 #[rstest]
 #[tokio::test]
-async fn database_get_jobs_without_successor_does_not_starve_older_backlog() {
+async fn database_get_jobs_without_successor_returns_missing_jobs_oldest_first() {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
@@ -186,7 +185,7 @@ async fn database_get_jobs_without_successor_does_not_starve_older_backlog() {
     }
 
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, Some(2), None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
         .await
         .unwrap();
 

@@ -568,7 +568,6 @@ impl DatabaseClient for MongoDbClient {
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
-        limit: Option<u64>,
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
@@ -587,7 +586,7 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Construct the aggregation pipeline
-        let mut pipeline = vec![
+        let pipeline = vec![
             // Stage 1: Match job_a_type with job_a_status and orchestrator_version
             doc! {
                 "$match": match_filter
@@ -627,12 +626,6 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
         ];
-
-        if let Some(limit) = limit {
-            pipeline.push(doc! {
-                "$limit": i64::try_from(limit).unwrap_or(i64::MAX)
-            });
-        }
 
         debug!("Fetching jobs without successor");
 
