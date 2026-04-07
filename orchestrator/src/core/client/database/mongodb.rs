@@ -630,7 +630,7 @@ impl DatabaseClient for MongoDbClient {
 
         if let Some(limit) = limit {
             pipeline.push(doc! {
-                "$limit": limit as i64
+                "$limit": i64::try_from(limit).unwrap_or(i64::MAX)
             });
         }
 

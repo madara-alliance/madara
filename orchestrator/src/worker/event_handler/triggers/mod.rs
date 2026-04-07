@@ -76,23 +76,26 @@ pub trait JobTrigger: Send + Sync {
 pub(crate) fn get_job_creation_batch_limit(config: &Config, job_type: JobType) -> u64 {
     let process_queue = job_type.process_queue_name();
 
-    match job_type {
+    // Falls back to 1 with a warning if the queue config is missing for `job_type`. This should
+    // never happen because every `QueueType` is registered in the static `QUEUES` map, but we
+    // prefer a degraded-but-running orchestrator over a panic on a hot path.
+    let queue_max_message_count = || {
+        QUEUES.get(&process_queue).map(|q| q.queue_control.max_message_count as u64).unwrap_or_else(|| {
+            tracing::warn!(
+                "No queue config found for job type {:?}; defaulting batch limit to 1",
+                job_type
+            );
+            1
+        })
+    };
+
+    match &job_type {
         // State transitions are created sequentially; fetching more than one parent job is unnecessary.
         JobType::StateTransition => 1,
         // This knob is configurable through service config, unlike the static queue table.
-        JobType::ProofCreation => config.service_config().max_concurrent_proving_jobs.unwrap_or_else(|| {
-            QUEUES
-                .get(&process_queue)
-                .expect("ProofCreation queue config should always exist")
-                .queue_control
-                .max_message_count
-        }) as u64,
-        _ => {
-            QUEUES
-                .get(&process_queue)
-                .expect("Job processing queue config should always exist")
-                .queue_control
-                .max_message_count as u64
+        JobType::ProofCreation => {
+            config.service_config().max_concurrent_proving_jobs.map(|n| n as u64).unwrap_or_else(queue_max_message_count)
         }
+        _ => queue_max_message_count(),
     }
 }
