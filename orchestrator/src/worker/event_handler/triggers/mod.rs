@@ -11,7 +11,9 @@ pub(crate) mod update_state;
 
 use crate::core::config::Config;
 use crate::types::constant::ORCHESTRATOR_VERSION;
-use crate::types::jobs::types::JobStatus;
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::queue::QueueNameForJobType;
+use crate::types::queue_control::QUEUES;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -68,5 +70,29 @@ pub trait JobTrigger: Send + Sync {
         }
 
         Ok(true)
+    }
+}
+
+pub(crate) fn get_job_creation_batch_limit(config: &Config, job_type: JobType) -> u64 {
+    let process_queue = job_type.process_queue_name();
+
+    match job_type {
+        // State transitions are created sequentially; fetching more than one parent job is unnecessary.
+        JobType::StateTransition => 1,
+        // This knob is configurable through service config, unlike the static queue table.
+        JobType::ProofCreation => config.service_config().max_concurrent_proving_jobs.unwrap_or_else(|| {
+            QUEUES
+                .get(&process_queue)
+                .expect("ProofCreation queue config should always exist")
+                .queue_control
+                .max_message_count
+        }) as u64,
+        _ => {
+            QUEUES
+                .get(&process_queue)
+                .expect("Job processing queue config should always exist")
+                .queue_control
+                .max_message_count as u64
+        }
     }
 }

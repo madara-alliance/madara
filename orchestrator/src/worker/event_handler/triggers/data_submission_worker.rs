@@ -5,6 +5,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::Layer;
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
+use crate::worker::event_handler::triggers::get_job_creation_batch_limit;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
@@ -30,6 +31,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 previous_job_type,
                 JobStatus::Completed,
                 JobType::DataSubmission,
+                Some(get_job_creation_batch_limit(config.as_ref(), JobType::DataSubmission)),
                 Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
