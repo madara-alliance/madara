@@ -19,7 +19,37 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-RUN apt-get update -y && apt-get install -y wget clang
+# Copy Makefile for LLVM installation
+COPY Makefile /tmp/Makefile
+
+# Install LLVM 19 build prerequisites. Required because the unified root
+# workspace transitively pulls in cairo-native crates (tblgen, mlir-sys, etc.)
+# whose build scripts need llvm-config 19 even when only the bootstrapper
+# binary is being built.
+RUN apt-get update -y && apt-get install -y \
+    bash \
+    build-essential \
+    ca-certificates \
+    clang \
+    curl \
+    git \
+    gnupg \
+    libssl-dev \
+    make \
+    openssl \
+    software-properties-common \
+    wget && \
+    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set LLVM environment variables so cairo-native build scripts (tblgen,
+# llvm-sys, mlir-sys) can locate LLVM 19. CC is intentionally NOT pinned to
+# clang-19 here — bootstrapper does not run Cairo Native at runtime, and the
+# default gcc keeps Python's --enable-optimizations PGO build working below.
+ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
+ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
+ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
+ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
 
 # Install Python 3.9
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
