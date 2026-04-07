@@ -81,10 +81,7 @@ pub(crate) fn get_job_creation_batch_limit(config: &Config, job_type: JobType) -
     // prefer a degraded-but-running orchestrator over a panic on a hot path.
     let queue_max_message_count = || {
         QUEUES.get(&process_queue).map(|q| q.queue_control.max_message_count as u64).unwrap_or_else(|| {
-            tracing::warn!(
-                "No queue config found for job type {:?}; defaulting batch limit to 1",
-                job_type
-            );
+            tracing::warn!("No queue config found for job type {:?}; defaulting batch limit to 1", job_type);
             1
         })
     };
@@ -93,9 +90,11 @@ pub(crate) fn get_job_creation_batch_limit(config: &Config, job_type: JobType) -
         // State transitions are created sequentially; fetching more than one parent job is unnecessary.
         JobType::StateTransition => 1,
         // This knob is configurable through service config, unlike the static queue table.
-        JobType::ProofCreation => {
-            config.service_config().max_concurrent_proving_jobs.map(|n| n as u64).unwrap_or_else(queue_max_message_count)
-        }
+        JobType::ProofCreation => config
+            .service_config()
+            .max_concurrent_proving_jobs
+            .map(|n| n as u64)
+            .unwrap_or_else(queue_max_message_count),
         _ => queue_max_message_count(),
     }
 }
