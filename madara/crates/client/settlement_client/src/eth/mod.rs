@@ -738,11 +738,7 @@ mod l1_messaging_tests {
     #[fixture]
     async fn setup_test_env() -> TestRunner {
         // Start Anvil instance
-        let anvil = Anvil::new()
-            .block_time(1)
-            .chain_id(1337)
-            .try_spawn()
-            .expect("failed to spawn anvil instance");
+        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
         let chain_config = Arc::new(ChainConfig::madara_test());
         // Initialize database service
         let db = MadaraBackend::open_for_testing(chain_config.clone());
@@ -1016,49 +1012,31 @@ mod l1_messaging_tests {
         assert_eq!(msg, expected_hash);
     }
 
-    /// End-to-end test verifying that:
-    ///   1. The canonical block hash check correctly drops L1 messages whose source block
-    ///      has been reorged out, AND
-    ///   2. Dropping a reorged event does NOT poison the nonce mapping — proving that a
-    ///      legitimate future message with the same nonce can still be processed.
+    /// End-to-end test of the full L1 reorg flow against Anvil:
+    ///   1. Event #1 with nonce 0 is fired and observed by the worker.
+    ///   2. The chain is reorged past event #1's block.
+    ///   3. Event #2 with the same nonce is fired on the new canonical chain.
+    ///   4. The worker drops event #1 (canonical hash mismatch) without poisoning the
+    ///      nonce mapping.
+    ///   5. Event #2 is processed normally and queued for L2 inclusion, with nonce 0
+    ///      mapped to event #2's L1 tx hash.
     ///
-    /// We test the second property indirectly: after the reorged event is dropped, we
-    /// assert that `l1_txn_hash_by_nonce(0)` is `None`. If it were `Some(...)`, the next
-    /// message with nonce 0 would be incorrectly skipped by `check_message_to_l2_validity`.
-    /// Asserting `None` is therefore equivalent to asserting "non-poisoning".
-    ///
-    /// We deliberately do not fire a second event with the same nonce because alloy's
-    /// `NonceFiller` caches the wallet's nonce locally; after `anvil_rollback`, the cache
-    /// is out of sync with the chain and any subsequent transaction hangs forever waiting
-    /// for confirmation. Working around that would require manual nonce management with no
-    /// added test value beyond what the indirect check already provides.
-    ///
-    /// Flow:
-    /// 1. Start the sync worker against Anvil with `l1_messages_finality_blocks = 15`
-    ///    (large enough that events have to wait in the in-memory queue, giving us a
-    ///    window to reorg).
-    /// 2. Fire event #1 with nonce 0; wait long enough for the worker's live filter
-    ///    (alloy polling interval ~7s) to observe it.
-    /// 3. Use `anvil_rollback` to roll the chain back past event #1's block. The block
-    ///    that originally contained event #1 is now off the canonical chain.
-    /// 4. Wait until anvil mines enough new blocks for `latest >= event_block + 15`,
-    ///    so the worker's confirmation check passes for the queued event.
-    /// 5. The worker pops event #1 from the queue, runs the canonical check, finds the
-    ///    block hash mismatch, and drops the event.
-    /// 6. Verify: no pending message for nonce 0, no nonce metadata written, sync tip
-    ///    advanced past the dropped event.
+    /// Working around alloy's `NonceFiller` cache:
+    /// `CachedNonceManager` (the default) fetches `eth_getTransactionCount` once per
+    /// address, then increments the cache locally on each send. After `anvil_rollback`
+    /// the cache is ahead of the chain — sending another tx through the same provider
+    /// produces a "future" nonce that sits in the mempool forever and `get_receipt()`
+    /// hangs. We work around this by creating a **fresh** `wallet_provider_2` after the
+    /// rollback; its new `NonceFiller` calls `eth_getTransactionCount` on first use and
+    /// picks up the correct post-rollback nonce.
     #[traced_test]
     #[tokio::test]
-    async fn e2e_test_reorg_drops_event_and_does_not_poison_nonce() {
+    async fn e2e_test_reorg_drops_event_and_processes_re_emission() {
         use alloy::providers::ext::AnvilApi;
         use alloy::providers::Provider;
 
         // === Setup ===
-        let anvil = Anvil::new()
-            .block_time(1)
-            .chain_id(1337)
-            .try_spawn()
-            .expect("failed to spawn anvil instance");
+        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
 
         // Use a moderate finality_blocks: large enough to give us a window to reorg
         // before the worker processes the event, small enough to keep the test fast.
@@ -1072,7 +1050,7 @@ mod l1_messaging_tests {
         let wallet_provider = Arc::new(
             ProviderBuilder::new()
                 .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
-                .connect_http(rpc_url),
+                .connect_http(rpc_url.clone()),
         );
 
         let contract = DummyContract::deploy(wallet_provider.clone()).await.unwrap();
@@ -1108,8 +1086,6 @@ mod l1_messaging_tests {
         tracing::info!("Event #1 fired at block #{event_block_1}, tx={:#x}", l1_tx_hash_1_u256);
 
         // Wait for the worker's live filter to observe event #1 (alloy polls ~7s).
-        // With finality_blocks=15 and ~10s of blocks elapsed, the event is observed but
-        // not yet processed (waiting for confirmations).
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Sanity: event should be in the in-memory queue, not yet in DB
@@ -1121,10 +1097,7 @@ mod l1_messaging_tests {
         // === Phase 2: Reorg past event #1's block ===
         let current_latest = provider.get_block_number().await.expect("get_block_number failed");
         let depth = current_latest - event_block_1 + 1;
-        tracing::info!(
-            "Rolling back chain by {depth} blocks (latest #{current_latest} → #{})",
-            current_latest - depth
-        );
+        tracing::info!("Rolling back chain by {depth} blocks (latest #{current_latest} → #{})", current_latest - depth);
         provider.anvil_rollback(Some(depth)).await.expect("anvil_rollback failed");
 
         let post_reorg_latest = provider.get_block_number().await.expect("get_block_number failed");
@@ -1134,42 +1107,79 @@ mod l1_messaging_tests {
             "After rollback, latest (#{post_reorg_latest}) should be before event #1's block (#{event_block_1})"
         );
 
-        // === Phase 3: Wait for anvil to mine past event_block_1 + finality_blocks ===
-        // Anvil mines 1 block/sec. We need latest >= event_block_1 + 15.
-        // After rollback, latest is below event_block_1, so we need to wait
-        // (event_block_1 - post_reorg_latest) + 15 seconds plus a small buffer.
-        let blocks_to_mine = (event_block_1 - post_reorg_latest) + 15 + 5;
-        tracing::info!("Waiting {blocks_to_mine}s for anvil to mine enough blocks...");
-        tokio::time::sleep(Duration::from_secs(blocks_to_mine)).await;
+        // === Phase 3: Fire event #2 from a DIFFERENT anvil dev account ===
+        //
+        // Two reasons we use a different account here (not the same one with a fresh provider):
+        //
+        // 1. `CachedNonceManager` cache staleness: the original `wallet_provider` remembers
+        //    having sent deploy + setIsCanceled + event #1, so it thinks the next nonce is 3.
+        //    After the rollback, the chain only has deploy + setIsCanceled and expects nonce 2.
+        //    A fresh provider would query the chain and get nonce 2 — but then send a tx
+        //    that's BIT-FOR-BIT IDENTICAL to event #1's tx (same from, same nonce, same
+        //    calldata, same gas), producing the same tx hash. We'd lose the ability to
+        //    distinguish event #1 from event #2 in the assertions.
+        //
+        // 2. Using a different account guarantees a different `from` field → different tx
+        //    hash → we can prove the nonce mapping points to event #2 specifically.
+        let signer_2: alloy::signers::local::PrivateKeySigner = anvil.keys()[1].clone().into();
+        let wallet_2 = EthereumWallet::from(signer_2);
+        let wallet_provider_2 = Arc::new(ProviderBuilder::new().wallet(wallet_2).connect_http(rpc_url.clone()));
+        let contract_2 = DummyContract::new(*contract.address(), wallet_provider_2);
+
+        let fire_tx_2 = contract_2.fireEvent().send().await.expect("fireEvent #2 failed");
+        let l1_tx_hash_2_u256: U256 = (*fire_tx_2.tx_hash()).into();
+        let receipt_2 = fire_tx_2.get_receipt().await.expect("receipt #2 failed");
+        let event_block_2 = receipt_2.block_number.expect("event #2 receipt missing block number");
+        tracing::info!("Event #2 fired at block #{event_block_2}, tx={:#x}", l1_tx_hash_2_u256);
+
+        // Sanity: distinct L1 tx hashes (different from-addresses, hence different RLP)
+        assert_ne!(l1_tx_hash_1_u256, l1_tx_hash_2_u256, "Event #1 and event #2 must have distinct L1 tx hashes");
+
+        // === Phase 4: Wait for both events to reach the confirmation threshold ===
+        // Need: latest >= max(event_block_1, event_block_2) + 15
+        let max_event_block = std::cmp::max(event_block_1, event_block_2);
+        let target_latest = max_event_block + 15;
+        let post_2_latest = provider.get_block_number().await.expect("get_block_number failed");
+        let blocks_to_wait = if post_2_latest < target_latest {
+            (target_latest - post_2_latest) + 5 // small buffer for filter polling
+        } else {
+            5
+        };
+        tracing::info!("Waiting {blocks_to_wait}s for confirmations (need latest >= #{target_latest})...");
+        tokio::time::sleep(Duration::from_secs(blocks_to_wait)).await;
 
         let final_latest = provider.get_block_number().await.expect("get_block_number failed");
         tracing::info!("Final latest: #{final_latest}");
-        assert!(
-            final_latest >= event_block_1 + 15,
-            "Latest #{final_latest} should be >= event_block_1 (#{event_block_1}) + 15"
-        );
+        assert!(final_latest >= target_latest, "Latest #{final_latest} should be >= target #{target_latest}");
 
-        // === Phase 4: Verify event #1 was dropped and nonce was NOT poisoned ===
-        // Event #1 should NOT be in pending_message_to_l2
-        assert!(
-            db.get_pending_message_to_l2(0).unwrap().is_none(),
-            "Reorged event #1 should have been dropped, not queued for L2 inclusion"
-        );
+        // === Phase 5: Verify event #1 dropped, event #2 processed, nonce mapped to event #2 ===
+        let pending = db.get_pending_message_to_l2(0).unwrap();
+        assert!(pending.is_some(), "Event #2 should be in pending_message_to_l2 (worker should have processed it)");
 
-        // CRITICAL: nonce metadata must NOT have been written (no poisoning).
-        // If this were `Some(...)`, a future message with nonce 0 on the new canonical chain
-        // would be incorrectly skipped by `check_message_to_l2_validity`.
+        let l1_tx_hash_2_typed = mp_convert::L1TransactionHash(l1_tx_hash_2_u256.to_be_bytes::<32>());
+        let l1_tx_hash_1_typed = mp_convert::L1TransactionHash(l1_tx_hash_1_u256.to_be_bytes::<32>());
         let stored_l1_tx_hash = db.get_l1_txn_hash_by_nonce(0).unwrap();
-        assert!(
-            stored_l1_tx_hash.is_none(),
-            "Nonce 0 must NOT be poisoned after dropping a reorged event (got: {stored_l1_tx_hash:?})"
+
+        // CRITICAL: nonce 0 must be mapped to event #2's L1 tx hash, NOT event #1's.
+        // If event #1 had poisoned the mapping (because we wrote nonce metadata before
+        // checking canonicity), this would point to event #1 and we'd be processing a
+        // message that was reorged out.
+        assert_eq!(
+            stored_l1_tx_hash,
+            Some(l1_tx_hash_2_typed),
+            "Nonce 0 should be mapped to event #2's L1 tx hash (proving non-poisoning)"
+        );
+        assert_ne!(
+            stored_l1_tx_hash,
+            Some(l1_tx_hash_1_typed),
+            "Nonce 0 must NOT be mapped to event #1's tx hash (which was reorged out)"
         );
 
-        // Sync tip should have advanced past event #1's block (so we don't re-fetch it)
+        // Sync tip should have advanced at least past event #2's block
         let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
         assert!(
-            sync_tip >= event_block_1,
-            "Sync tip #{sync_tip} should have advanced to at least event #1's block #{event_block_1}"
+            sync_tip >= event_block_2,
+            "Sync tip #{sync_tip} should have advanced to at least event #2's block #{event_block_2}"
         );
 
         worker_handle.abort();

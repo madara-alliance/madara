@@ -893,10 +893,7 @@ mod messaging_module_tests {
 
         // Sync tip should still have advanced past the dropped event so we don't re-fetch the same range
         let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
-        assert!(
-            sync_tip >= mock_event.l1_block_number,
-            "Sync tip should have advanced past the dropped event's block"
-        );
+        assert!(sync_tip >= mock_event.l1_block_number, "Sync tip should have advanced past the dropped event's block");
 
         ctx_clone.cancel_global();
         sync_handle.abort();
