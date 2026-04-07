@@ -76,10 +76,15 @@ ENV RUSTFLAGS="-L /usr/local/lib -l blst"
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
 
 # Install Python 3.9
+# Note: --enable-optimizations (PGO) is intentionally omitted. With CC=clang-19
+# set above for Cairo Native, PGO would require llvm-profdata on PATH, which is
+# not present in login shells (/etc/profile resets PATH). Python here is only
+# used at build time to run cairo-compile, so runtime perf is irrelevant and
+# skipping PGO also halves this step's build time.
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
   && tar xzf Python-3.9.16.tgz \
   && cd Python-3.9.16 \
-  && ./configure --enable-optimizations \
+  && ./configure \
   && make altinstall \
   && cd .. \
   && rm -rf Python-3.9.16 Python-3.9.16.tgz
