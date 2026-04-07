@@ -43,10 +43,15 @@ ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 
 # Install Python 3.9
+# Note: --enable-optimizations (PGO) is intentionally omitted. Python here is
+# only used at build time to run cairo-compile for SNOS dependencies, so
+# runtime perf is irrelevant and skipping PGO halves this step's build time
+# (PGO builds Python twice). With CC=clang-19 below, PGO would also require
+# llvm-profdata which adds further fragility.
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
     && tar xzf Python-3.9.16.tgz \
     && cd Python-3.9.16 \
-    && ./configure --enable-optimizations \
+    && ./configure \
     && make altinstall \
     && cd .. \
     && rm -rf Python-3.9.16 Python-3.9.16.tgz
