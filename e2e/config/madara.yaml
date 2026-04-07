@@ -1,5 +1,5 @@
 chain_name: "Madara"
-# Source notes for 0.14.2 preset values: see configs/presets/SOURCES_0_14_2.md
+# 0.14.2 preset values below are aligned with StarkWare sequencer tag APOLLO-0.14.2-RC.4.
 config_version: 1
 chain_id: "MADARA_DEVNET"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"

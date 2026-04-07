@@ -1,5 +1,5 @@
 config_version: 1
-# Source notes for 0.14.2 preset values: see configs/presets/SOURCES_0_14_2.md
+# 0.14.2 preset values below are aligned with StarkWare sequencer tag APOLLO-0.14.2-RC.4.
 chain_name: "Starknet Mainnet"
 chain_id: "SN_MAIN"
 feeder_gateway_url: "https://feeder.alpha-mainnet.starknet.io/feeder_gateway/"

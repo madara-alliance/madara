@@ -583,7 +583,10 @@ mod tests {
         match decoded.transaction {
             Transaction::Invoke(InvokeTransaction::V3(tx)) => {
                 assert_eq!(tx.sender_address, Felt::from_hex_unchecked("0x123"));
-                assert_eq!(tx.calldata.as_ref(), &vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")]);
+                assert_eq!(
+                    tx.calldata.as_ref(),
+                    &vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")]
+                );
                 assert_eq!(tx.signature.as_ref(), &vec![Felt::from_hex_unchecked("0x3")]);
                 assert_eq!(tx.proof_facts, None);
             }

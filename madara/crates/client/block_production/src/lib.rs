@@ -1441,7 +1441,7 @@ pub(crate) mod tests {
             nonce,
         );
 
-        validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
+        validator.submit_invoke_transaction(tx.into()).await.expect("Should accept the transaction");
     }
 
     //
@@ -1518,7 +1518,7 @@ pub(crate) mod tests {
                 declare_res.class_hash,
                 /* calldata (pubkey) */ &[Felt::TWO],
             );
-            setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
+            setup.tx_validator.submit_invoke_transaction(deploy_tx.into()).await.unwrap();
 
             // 3. Invoke transaction
             sign_and_add_invoke_tx(
@@ -1868,7 +1868,7 @@ pub(crate) mod tests {
             res.class_hash,
             /* calldata (pubkey) */ &[Felt::TWO],
         );
-        devnet_setup.tx_validator.submit_invoke_transaction(tx).await.unwrap();
+        devnet_setup.tx_validator.submit_invoke_transaction(tx.into()).await.unwrap();
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
