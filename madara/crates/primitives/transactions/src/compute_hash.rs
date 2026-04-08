@@ -749,6 +749,16 @@ mod tests {
         only_query_transaction_hash: Option<String>,
     }
 
+    struct KnownTransactionHashCase {
+        label: String,
+        block_number: u64,
+        chain_id: Felt,
+        transaction: Transaction,
+        expected_regular_hash: Felt,
+        expected_query_hash: Option<Felt>,
+        official_chain_id: Option<ChainId>,
+    }
+
     fn parse_hex_u64(hex: &str) -> u64 {
         u64::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap()
     }
@@ -805,107 +815,128 @@ mod tests {
         serde_json::from_value(transaction).unwrap()
     }
 
-    #[test]
-    fn test_compute_hash_matches_sequencer_vectors() {
+    fn sequencer_vector_cases() -> Vec<KnownTransactionHashCase> {
         let vectors: Vec<SequencerTransactionHashVector> =
             serde_json::from_str(include_str!("test_data/sequencer_transaction_hash_vectors.json")).unwrap();
 
-        for vector in vectors {
-            let vector_debug = format!("{vector:?}");
-            let tx = parse_test_transaction(vector.transaction);
-            let chain_id = parse_chain_id(&vector.chain_id);
-            let starknet_version =
-                StarknetVersion::try_from_mainnet_block_number(vector.block_number).unwrap_or(StarknetVersion::LATEST);
+        vectors
+            .into_iter()
+            .map(|vector| KnownTransactionHashCase {
+                label: format!("sequencer vector at block {}", vector.block_number),
+                block_number: vector.block_number,
+                chain_id: parse_chain_id(&vector.chain_id),
+                transaction: parse_test_transaction(vector.transaction),
+                expected_regular_hash: Felt::from_hex(&vector.transaction_hash).unwrap(),
+                expected_query_hash: vector
+                    .only_query_transaction_hash
+                    .as_deref()
+                    .map(Felt::from_hex)
+                    .transpose()
+                    .unwrap(),
+                official_chain_id: None,
+            })
+            .collect()
+    }
 
-            let expected_regular_hash = Felt::from_hex(&vector.transaction_hash).unwrap();
-            assert_eq!(
-                tx.compute_hash(chain_id, starknet_version, false),
-                expected_regular_hash,
-                "regular hash mismatch for sequencer vector: {vector_debug}"
-            );
-
-            if tx.is_l1_handler() {
-                continue;
-            }
-
-            let expected_query_hash =
-                Felt::from_hex(vector.only_query_transaction_hash.as_deref().expect("missing only_query hash"))
-                    .unwrap();
-            assert_eq!(
-                tx.compute_hash(chain_id, starknet_version, true),
-                expected_query_hash,
-                "query hash mismatch for sequencer vector: {vector_debug}"
-            );
+    fn sepolia_replay_invoke_v3_case() -> KnownTransactionHashCase {
+        KnownTransactionHashCase {
+            label: "Sepolia replay invoke v3".to_string(),
+            block_number: u64::MAX,
+            chain_id: TEST_CHAIN_ID,
+            transaction: parse_test_transaction(json!({
+                "Invoke": {
+                    "V3": {
+                        "sender_address": "0x5a018f06581781371af2d639e5c905e5da998acbc53136f17e6ec99bdd77aa",
+                        "calldata": [
+                            "0x1",
+                            "0x29b685fd5bb981ee15dd5b82e9daba0e6b4e893d64322f8308b8450914b9b04",
+                            "0x7a44dde9fea32737a5cf3f9683b3235138654aa2d189f6fe44af37a61dc60d",
+                            "0x1",
+                            "0x1"
+                        ],
+                        "signature": [
+                            "0x2b19bdb22496139ad968f878d528fb36d2925067f6e6c981cb46bf85167fb33",
+                            "0x540da32d65e745a2ecab0bb00160c437724f880da06fff1d35e3a20e86ceda9"
+                        ],
+                        "nonce": "0x1",
+                        "resource_bounds": {
+                            "L1_GAS": {
+                                "max_amount": "0x10000",
+                                "max_price_per_unit": "0x3a3529440000"
+                            },
+                            "L2_GAS": {
+                                "max_amount": "0x7000000",
+                                "max_price_per_unit": "0x1dcd65000"
+                            },
+                            "L1_DATA_GAS": {
+                                "max_amount": "0x1b0",
+                                "max_price_per_unit": "0x100000"
+                            }
+                        },
+                        "tip": "0x0",
+                        "paymaster_data": [],
+                        "account_deployment_data": [],
+                        "proof_facts": [
+                            "0x50524f4f4630",
+                            "0x5649525455414c5f534e4f53",
+                            "0x3e98c2d7703b03a7edb73ed7f075f97f1dcbaa8f717cdf6e1a57bf058265473",
+                            "0x5649525455414c5f534e4f5330",
+                            "0x7af406",
+                            "0x40f880f111c33c940475268be78e799921b3f30784625fede66a1fc3ea69287",
+                            "0x1b9900f77ff5923183a7795fcfbb54ed76917bc1ddd4160cc77fa96e36cf8c5",
+                            "0x0"
+                        ],
+                        "nonce_data_availability_mode": "L1",
+                        "fee_data_availability_mode": "L1"
+                    }
+                }
+            })),
+            expected_regular_hash: Felt::from_hex_unchecked(
+                "0x56fe231ad29fcee047c935783891e9b4b158d394b843de8aef337962eac0b9a",
+            ),
+            expected_query_hash: None,
+            official_chain_id: Some(ChainId::Sepolia),
         }
     }
 
     #[test]
-    fn test_compute_hash_matches_sepolia_replay_invoke_v3() {
-        let tx = parse_test_transaction(json!({
-            "Invoke": {
-                "V3": {
-                    "sender_address": "0x5a018f06581781371af2d639e5c905e5da998acbc53136f17e6ec99bdd77aa",
-                    "calldata": [
-                        "0x1",
-                        "0x29b685fd5bb981ee15dd5b82e9daba0e6b4e893d64322f8308b8450914b9b04",
-                        "0x7a44dde9fea32737a5cf3f9683b3235138654aa2d189f6fe44af37a61dc60d",
-                        "0x1",
-                        "0x1"
-                    ],
-                    "signature": [
-                        "0x2b19bdb22496139ad968f878d528fb36d2925067f6e6c981cb46bf85167fb33",
-                        "0x540da32d65e745a2ecab0bb00160c437724f880da06fff1d35e3a20e86ceda9"
-                    ],
-                    "nonce": "0x1",
-                    "resource_bounds": {
-                        "L1_GAS": {
-                            "max_amount": "0x10000",
-                            "max_price_per_unit": "0x3a3529440000"
-                        },
-                        "L2_GAS": {
-                            "max_amount": "0x7000000",
-                            "max_price_per_unit": "0x1dcd65000"
-                        },
-                        "L1_DATA_GAS": {
-                            "max_amount": "0x1b0",
-                            "max_price_per_unit": "0x100000"
-                        }
-                    },
-                    "tip": "0x0",
-                    "paymaster_data": [],
-                    "account_deployment_data": [],
-                    "proof_facts": [
-                        "0x50524f4f4630",
-                        "0x5649525455414c5f534e4f53",
-                        "0x3e98c2d7703b03a7edb73ed7f075f97f1dcbaa8f717cdf6e1a57bf058265473",
-                        "0x5649525455414c5f534e4f5330",
-                        "0x7af406",
-                        "0x40f880f111c33c940475268be78e799921b3f30784625fede66a1fc3ea69287",
-                        "0x1b9900f77ff5923183a7795fcfbb54ed76917bc1ddd4160cc77fa96e36cf8c5",
-                        "0x0"
-                    ],
-                    "nonce_data_availability_mode": "L1",
-                    "fee_data_availability_mode": "L1"
+    fn test_compute_hash_matches_known_vectors() {
+        let mut cases = sequencer_vector_cases();
+        cases.push(sepolia_replay_invoke_v3_case());
+
+        for case in cases {
+            let starknet_version =
+                StarknetVersion::try_from_mainnet_block_number(case.block_number).unwrap_or(StarknetVersion::LATEST);
+            let actual_regular_hash = case.transaction.compute_hash(case.chain_id, starknet_version, false);
+            assert_eq!(actual_regular_hash, case.expected_regular_hash, "regular hash mismatch for {}", case.label);
+
+            if let Some(expected_query_hash) = case.expected_query_hash {
+                if case.transaction.is_l1_handler() {
+                    continue;
                 }
+                assert_eq!(
+                    case.transaction.compute_hash(case.chain_id, starknet_version, true),
+                    expected_query_hash,
+                    "query hash mismatch for {}",
+                    case.label
+                );
             }
-        }));
 
-        let expected_hash =
-            Felt::from_hex_unchecked("0x56fe231ad29fcee047c935783891e9b4b158d394b843de8aef337962eac0b9a");
-        let local_hash = tx.compute_hash(TEST_CHAIN_ID, StarknetVersion::LATEST, false);
-        assert_eq!(local_hash, expected_hash, "Madara hash must match the canonical Sepolia transaction hash");
-
-        let official_tx: starknet_api::transaction::Transaction = tx.clone().try_into().unwrap();
-        let official_hash = starknet_api::transaction_hash::get_transaction_hash(
-            &official_tx,
-            &ChainId::Sepolia,
-            &TransactionOptions { only_query: false },
-        )
-        .unwrap();
-        assert_eq!(
-            Felt::from(*official_hash),
-            expected_hash,
-            "official starknet_api hash must match the canonical hash"
-        );
+            if let Some(official_chain_id) = case.official_chain_id {
+                let official_tx: starknet_api::transaction::Transaction = case.transaction.clone().try_into().unwrap();
+                let official_hash = starknet_api::transaction_hash::get_transaction_hash(
+                    &official_tx,
+                    &official_chain_id,
+                    &TransactionOptions { only_query: false },
+                )
+                .unwrap();
+                assert_eq!(
+                    Felt::from(*official_hash),
+                    case.expected_regular_hash,
+                    "official starknet_api hash mismatch for {}",
+                    case.label
+                );
+            }
+        }
     }
 }

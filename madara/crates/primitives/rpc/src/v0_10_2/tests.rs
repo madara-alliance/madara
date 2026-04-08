@@ -3,74 +3,28 @@
 //! These tests follow TDD principles - written before the full implementation.
 
 use super::*;
+use rstest::rstest;
+use serde_json::json;
 use starknet_types_core::felt::Felt;
 
 // ============================================================================
 // Address Filter Tests (inspired by Pathfinder PR #3180)
 // ============================================================================
 
-#[test]
-fn test_parsing_multiple_addresses() {
-    // Test deserialization of multiple addresses in filter
-    let filter_json = r#"{
-        "address": ["0x10", "0x20"],
-        "chunk_size": 100
-    }"#;
-
+#[rstest]
+#[case(r#"{"address": ["0x10", "0x20"], "chunk_size": 100}"#, Some(AddressFilter::Multiple(vec![
+    Felt::from_hex_unchecked("0x10"),
+    Felt::from_hex_unchecked("0x20"),
+])))]
+#[case(r#"{"address": "0x10", "chunk_size": 100}"#, Some(AddressFilter::Single(Felt::from_hex_unchecked("0x10"))))]
+#[case(r#"{"address": [], "chunk_size": 100}"#, Some(AddressFilter::Multiple(vec![])))]
+#[case(r#"{"chunk_size": 100}"#, None)]
+fn test_address_filter_deserialization(
+    #[case] filter_json: &str,
+    #[case] expected_address_filter: Option<AddressFilter>,
+) {
     let filter: EventFilterWithPageRequest = serde_json::from_str(filter_json).unwrap();
-    match filter.address {
-        Some(AddressFilter::Multiple(addrs)) => {
-            assert_eq!(addrs.len(), 2);
-            assert!(addrs.contains(&Felt::from_hex("0x10").unwrap()));
-            assert!(addrs.contains(&Felt::from_hex("0x20").unwrap()));
-        }
-        _ => panic!("Expected multiple addresses"),
-    }
-}
-
-#[test]
-fn test_parsing_single_address_backward_compat() {
-    // Test backward compatibility with single address
-    let filter_json = r#"{
-        "address": "0x10",
-        "chunk_size": 100
-    }"#;
-
-    let filter: EventFilterWithPageRequest = serde_json::from_str(filter_json).unwrap();
-    match filter.address {
-        Some(AddressFilter::Single(addr)) => {
-            assert_eq!(addr, Felt::from_hex("0x10").unwrap());
-        }
-        _ => panic!("Expected single address"),
-    }
-}
-
-#[test]
-fn test_empty_address_array() {
-    // Empty array should deserialize properly
-    let filter_json = r#"{
-        "address": [],
-        "chunk_size": 100
-    }"#;
-
-    let filter: EventFilterWithPageRequest = serde_json::from_str(filter_json).unwrap();
-    match filter.address {
-        Some(AddressFilter::Multiple(addrs)) => {
-            assert!(addrs.is_empty());
-        }
-        _ => panic!("Expected empty address array"),
-    }
-}
-
-#[test]
-fn test_no_address_filter() {
-    // No address field should result in None
-    let filter_json = r#"{
-        "chunk_size": 100
-    }"#;
-
-    let filter: EventFilterWithPageRequest = serde_json::from_str(filter_json).unwrap();
-    assert!(filter.address.is_none());
+    assert_eq!(filter.address, expected_address_filter);
 }
 
 #[test]
@@ -119,27 +73,16 @@ fn test_address_filter_matches() {
 // Simulation Flag Tests
 // ============================================================================
 
-#[test]
-fn test_simulation_flag_skip_fee_charge() {
-    let flags: Vec<SimulationFlag> = serde_json::from_str(r#"["SKIP_FEE_CHARGE"]"#).unwrap();
-    assert_eq!(flags.len(), 1);
-    assert_eq!(flags[0], SimulationFlag::SkipFeeCharge);
-}
-
-#[test]
-fn test_simulation_flag_skip_validate() {
-    let flags: Vec<SimulationFlag> = serde_json::from_str(r#"["SKIP_VALIDATE"]"#).unwrap();
-    assert_eq!(flags.len(), 1);
-    assert_eq!(flags[0], SimulationFlag::SkipValidate);
-}
-
-#[test]
-fn test_simulation_flag_return_initial_reads() {
-    // Test that RETURN_INITIAL_READS flag is parsed correctly (NEW in v0.10.2)
-    let flags: Vec<SimulationFlag> = serde_json::from_str(r#"["SKIP_VALIDATE", "RETURN_INITIAL_READS"]"#).unwrap();
-    assert_eq!(flags.len(), 2);
-    assert!(flags.contains(&SimulationFlag::SkipValidate));
-    assert!(flags.contains(&SimulationFlag::ReturnInitialReads));
+#[rstest]
+#[case(r#"["SKIP_FEE_CHARGE"]"#, vec![SimulationFlag::SkipFeeCharge])]
+#[case(r#"["SKIP_VALIDATE"]"#, vec![SimulationFlag::SkipValidate])]
+#[case(
+    r#"["SKIP_VALIDATE", "RETURN_INITIAL_READS"]"#,
+    vec![SimulationFlag::SkipValidate, SimulationFlag::ReturnInitialReads]
+)]
+fn test_simulation_flag_deserialization(#[case] json: &str, #[case] expected: Vec<SimulationFlag>) {
+    let flags: Vec<SimulationFlag> = serde_json::from_str(json).unwrap();
+    assert_eq!(flags, expected);
 }
 
 #[test]
@@ -432,6 +375,54 @@ fn test_event_filter_serialization_roundtrip() {
     assert_eq!(filter, deserialized);
 }
 
+fn invoke_txn_v3_json(extra_fields: &str) -> String {
+    format!(
+        r#"{{
+        "sender_address": "0x1",
+        "calldata": ["0x2", "0x3"],
+        "signature": ["0x4"],
+        "nonce": "0x5",
+        "resource_bounds": {{
+            "l1_gas": {{"max_amount": "0x10", "max_price_per_unit": "0x1"}},
+            "l2_gas": {{"max_amount": "0x20", "max_price_per_unit": "0x2"}},
+            "l1_data_gas": {{"max_amount": "0x30", "max_price_per_unit": "0x3"}}
+        }},
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1"{extra_fields}
+    }}"#
+    )
+}
+
+fn typed_invoke_txn_v3_json() -> serde_json::Value {
+    json!({
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1"
+    })
+}
+
+fn broadcasted_invoke_txn_v3_json() -> serde_json::Value {
+    let mut txn = typed_invoke_txn_v3_json();
+    txn.as_object_mut().expect("invoke json should be object").remove("type");
+    txn
+}
+
 // ============================================================================
 // L1TxnHash Tests
 // ============================================================================
@@ -458,91 +449,30 @@ fn test_l1_txn_hash_deserialize_invalid_prefix() {
 // deserialized correctly (backward compatibility), and that new transactions
 // with proof_facts work as expected.
 
-#[test]
-fn test_invoke_txn_v3_without_proof_facts_backward_compat() {
-    // Old transaction format without proof_facts field
-    // This simulates reading from a database with old transactions
-    let txn_json = r#"{
-        "sender_address": "0x1",
-        "calldata": ["0x2", "0x3"],
-        "signature": ["0x4"],
-        "nonce": "0x5",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1"
-    }"#;
-
-    // Should deserialize successfully with proof_facts defaulting to None
-    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    assert!(txn.proof_facts.is_none());
-    assert_eq!(txn.inner.sender_address, Felt::from_hex("0x1").unwrap());
+#[rstest]
+#[case("", None)]
+#[case(r#", "proof_facts": ["0x100", "0x200", "0x300"]"#, Some(vec![
+    Felt::from_hex_unchecked("0x100"),
+    Felt::from_hex_unchecked("0x200"),
+    Felt::from_hex_unchecked("0x300"),
+]))]
+#[case(r#", "proof_facts": []"#, Some(vec![]))]
+fn test_invoke_txn_v3_proof_facts_deserialization(
+    #[case] extra_fields: &str,
+    #[case] expected_proof_facts: Option<Vec<Felt>>,
+) {
+    let txn: InvokeTxnV3 = serde_json::from_str(&invoke_txn_v3_json(extra_fields)).unwrap();
+    assert_eq!(txn.proof_facts, expected_proof_facts);
+    assert_eq!(txn.inner.sender_address, Felt::from_hex_unchecked("0x1"));
 }
 
-#[test]
-fn test_invoke_txn_v3_with_proof_facts() {
-    // New transaction format with proof_facts field
-    let txn_json = r#"{
-        "sender_address": "0x1",
-        "calldata": ["0x2", "0x3"],
-        "signature": ["0x4"],
-        "nonce": "0x5",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1",
-        "proof_facts": ["0x100", "0x200", "0x300"]
-    }"#;
-
-    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    assert!(txn.proof_facts.is_some());
-    let proof_facts = txn.proof_facts.unwrap();
-    assert_eq!(proof_facts.len(), 3);
-    assert_eq!(proof_facts[0], Felt::from_hex("0x100").unwrap());
-}
-
-#[test]
-fn test_invoke_txn_v3_with_empty_proof_facts() {
-    // Transaction with empty proof_facts array
-    let txn_json = r#"{
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x4"],
-        "nonce": "0x5",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1",
-        "proof_facts": []
-    }"#;
-
-    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    // Empty array should deserialize as Some([]) not None
-    assert!(txn.proof_facts.is_some());
-    assert!(txn.proof_facts.unwrap().is_empty());
-}
-
-#[test]
-fn test_invoke_txn_v3_serialization_skips_none_proof_facts() {
-    // When proof_facts is None, it should not appear in serialized output
+#[rstest]
+#[case(None, false)]
+#[case(Some(vec![Felt::from_hex_unchecked("0x100")]), true)]
+fn test_invoke_txn_v3_serialization_of_proof_facts(
+    #[case] proof_facts: Option<Vec<Felt>>,
+    #[case] expects_proof_facts: bool,
+) {
     let txn = InvokeTxnV3 {
         inner: crate::v0_10_0::InvokeTxnV3 {
             sender_address: Felt::from_hex("0x1").unwrap(),
@@ -560,106 +490,36 @@ fn test_invoke_txn_v3_serialization_skips_none_proof_facts() {
             nonce_data_availability_mode: crate::v0_10_0::DaMode::L1,
             fee_data_availability_mode: crate::v0_10_0::DaMode::L1,
         },
-        proof_facts: None,
+        proof_facts,
     };
 
     let json = serde_json::to_string(&txn).unwrap();
-    // proof_facts should NOT appear in the output when it's None
-    assert!(!json.contains("proof_facts"));
-}
-
-#[test]
-fn test_invoke_txn_v3_serialization_includes_proof_facts_when_present() {
-    let txn = InvokeTxnV3 {
-        inner: crate::v0_10_0::InvokeTxnV3 {
-            sender_address: Felt::from_hex("0x1").unwrap(),
-            calldata: vec![Felt::from_hex("0x2").unwrap()].into(),
-            signature: vec![Felt::from_hex("0x3").unwrap()].into(),
-            nonce: Felt::from_hex("0x4").unwrap(),
-            resource_bounds: crate::v0_10_0::ResourceBoundsMapping {
-                l1_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x10, max_price_per_unit: 0x1 },
-                l2_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x20, max_price_per_unit: 0x2 },
-                l1_data_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x30, max_price_per_unit: 0x3 },
-            },
-            tip: 0,
-            paymaster_data: vec![],
-            account_deployment_data: vec![],
-            nonce_data_availability_mode: crate::v0_10_0::DaMode::L1,
-            fee_data_availability_mode: crate::v0_10_0::DaMode::L1,
-        },
-        proof_facts: Some(vec![Felt::from_hex("0x100").unwrap()]),
-    };
-
-    let json = serde_json::to_string(&txn).unwrap();
-    // proof_facts should appear in the output
-    assert!(json.contains("proof_facts"));
-    assert!(json.contains("0x100"));
+    assert_eq!(json.contains("proof_facts"), expects_proof_facts);
 }
 
 // ============================================================================
 // TxnWithProofFacts Tests (v0.10.2 specific types)
 // ============================================================================
 
-#[test]
-fn test_txn_with_proof_facts_invoke_v3() {
-    // Test deserialization of TxnWithProofFacts for INVOKE V3
-    let txn_json = r#"{
-        "type": "INVOKE",
-        "version": "0x3",
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x3"],
-        "nonce": "0x4",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1",
-        "proof_facts": ["0x100"]
-    }"#;
-
-    let txn: TxnWithProofFacts = serde_json::from_str(txn_json).unwrap();
-    match txn {
-        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(invoke)) => {
-            assert!(invoke.proof_facts.is_some());
-            assert_eq!(invoke.proof_facts.unwrap()[0], Felt::from_hex("0x100").unwrap());
-        }
-        _ => panic!("Expected INVOKE V3 transaction"),
+#[rstest]
+#[case(r#", "proof_facts": ["0x100"]"#, Some(vec![Felt::from_hex_unchecked("0x100")]))]
+#[case("", None)]
+fn test_txn_with_proof_facts_invoke_v3_deserialization(
+    #[case] extra_fields: &str,
+    #[case] expected_proof_facts: Option<Vec<Felt>>,
+) {
+    let mut txn_json = typed_invoke_txn_v3_json();
+    if !extra_fields.is_empty() {
+        let extra_fields =
+            serde_json::from_str::<serde_json::Value>(&format!("{{{}}}", extra_fields.trim_start_matches(", ")))
+                .unwrap();
+        txn_json.as_object_mut().unwrap().extend(extra_fields.as_object().unwrap().clone());
     }
-}
 
-#[test]
-fn test_txn_with_proof_facts_invoke_v3_no_proof_facts() {
-    // Old V3 transaction without proof_facts
-    let txn_json = r#"{
-        "type": "INVOKE",
-        "version": "0x3",
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x3"],
-        "nonce": "0x4",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1"
-    }"#;
-
-    let txn: TxnWithProofFacts = serde_json::from_str(txn_json).unwrap();
+    let txn: TxnWithProofFacts = serde_json::from_value(txn_json).unwrap();
     match txn {
         TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(invoke)) => {
-            // proof_facts should default to None for old transactions
-            assert!(invoke.proof_facts.is_none());
+            assert_eq!(invoke.proof_facts, expected_proof_facts)
         }
         _ => panic!("Expected INVOKE V3 transaction"),
     }
@@ -702,35 +562,30 @@ fn test_txn_with_hash_and_proof_facts() {
 // BroadcastedInvokeTxnV3 proof Tests
 // ============================================================================
 
-#[test]
-fn test_broadcasted_invoke_txn_v3_with_proof() {
-    // Test that proof field (array of integers) is handled correctly
-    let txn_json = r#"{
-        "type": "INVOKE",
-        "version": "0x3",
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x3"],
-        "nonce": "0x4",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1",
-        "proof": [1, 2, 3, 4, 5]
-    }"#;
+#[rstest]
+#[case(r#", "proof": [1, 2, 3, 4, 5]"#, Some(vec![1, 2, 3, 4, 5]), None)]
+#[case("", None, None)]
+#[case(
+    r#", "proof_facts": ["0x100", "0x200"]"#,
+    None,
+    Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")])
+)]
+fn test_broadcasted_invoke_txn_v3_optional_proof_fields(
+    #[case] extra_fields: &str,
+    #[case] expected_proof: Option<Vec<u64>>,
+    #[case] expected_proof_facts: Option<Vec<Felt>>,
+) {
+    let mut txn_json = broadcasted_invoke_txn_v3_json();
+    if !extra_fields.is_empty() {
+        let extra_fields =
+            serde_json::from_str::<serde_json::Value>(&format!("{{{}}}", extra_fields.trim_start_matches(", ")))
+                .unwrap();
+        txn_json.as_object_mut().unwrap().extend(extra_fields.as_object().unwrap().clone());
+    }
 
-    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    assert!(txn.proof.is_some());
-    let proof = txn.proof.unwrap();
-    assert_eq!(proof.len(), 5);
-    assert_eq!(proof[0], 1u64);
-    assert_eq!(proof[4], 5u64);
+    let txn: BroadcastedInvokeTxnV3 = serde_json::from_value(txn_json).unwrap();
+    assert_eq!(txn.proof, expected_proof);
+    assert_eq!(txn.proof_facts, expected_proof_facts);
 }
 
 #[test]
@@ -794,59 +649,6 @@ fn test_broadcasted_txn_enum_with_proof() {
         BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx)) => assert_eq!(tx.proof, Some(vec![7, 8])),
         _ => panic!("Expected INVOKE/BroadcastedInvokeTxn::V3"),
     }
-}
-
-#[test]
-fn test_broadcasted_invoke_txn_v3_without_proof() {
-    // Backward compatibility: no proof field
-    let txn_json = r#"{
-        "type": "INVOKE",
-        "version": "0x3",
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x3"],
-        "nonce": "0x4",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1"
-    }"#;
-
-    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    assert!(txn.proof.is_none());
-}
-
-#[test]
-fn test_broadcasted_invoke_txn_v3_with_proof_facts() {
-    let txn_json = r#"{
-        "type": "INVOKE",
-        "version": "0x3",
-        "sender_address": "0x1",
-        "calldata": ["0x2"],
-        "signature": ["0x3"],
-        "nonce": "0x4",
-        "resource_bounds": {
-            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
-            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
-            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
-        },
-        "tip": "0x0",
-        "paymaster_data": [],
-        "account_deployment_data": [],
-        "nonce_data_availability_mode": "L1",
-        "fee_data_availability_mode": "L1",
-        "proof_facts": ["0x100", "0x200"]
-    }"#;
-
-    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
-    assert!(txn.proof.is_none());
-    assert_eq!(txn.proof_facts, Some(vec![Felt::from_hex("0x100").unwrap(), Felt::from_hex("0x200").unwrap(),]));
 }
 
 // ============================================================================

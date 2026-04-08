@@ -1,4 +1,4 @@
-use crate::{ContractClass, LegacyContractClass};
+use crate::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use reqwest::Client;
 use starknet_core::types::FlattenedSierraClass as CoreFlattenedSierraClass;
 use std::sync::Arc;
@@ -24,4 +24,10 @@ pub(crate) async fn fetch_contract_class(feeder_gateway_url: &str, class_hash_he
     let class = serde_json::from_str::<LegacyContractClass>(&body).expect("Failed to parse class response");
     let compressed = class.compress().expect("Failed to compress legacy class response");
     ContractClass::Legacy(Arc::new(compressed.into()))
+}
+
+pub(crate) async fn fetch_sierra_class(feeder_gateway_url: &str, class_hash_hex: &str) -> Arc<FlattenedSierraClass> {
+    let class = fetch_contract_class(feeder_gateway_url, class_hash_hex).await;
+    let ContractClass::Sierra(class) = class else { panic!("Expected Sierra contract class") };
+    class
 }

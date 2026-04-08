@@ -248,60 +248,49 @@ mod tests {
     }
 
     #[test]
-    fn v0_10_2_query_invoke_preserves_query_version_for_hashing() {
-        let chain_id = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+    fn v0_10_2_broadcasted_invoke_v3_preserves_query_hashing_and_proof_fields() {
+        let cases = [
+            (None, Some(vec![11, 12]), vec![Felt::from(11_u64), Felt::from(12_u64)]),
+            (
+                Some(vec![
+                    Felt::from_hex_unchecked("0x50524f4f4630"),
+                    Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+                ]),
+                Some(vec![11, 12]),
+                vec![
+                    Felt::from_hex_unchecked("0x50524f4f4630"),
+                    Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+                ],
+            ),
+        ];
 
-        let regular: mp_rpc::v0_8_1::BroadcastedTxn = mp_rpc::v0_10_2::BroadcastedTxn::Invoke(
-            mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(sample_broadcasted_invoke_v3()),
-        )
-        .into();
-        let query: mp_rpc::v0_8_1::BroadcastedTxn = mp_rpc::v0_10_2::BroadcastedTxn::Invoke(
-            mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV3(sample_broadcasted_invoke_v3()),
-        )
-        .into();
+        for (proof_facts, proof, expected_proof_facts) in cases {
+            let mut base = sample_broadcasted_invoke_v3();
+            base.proof_facts = proof_facts;
+            base.proof = proof;
 
-        assert!(!regular.is_query());
-        assert!(query.is_query());
+            let regular: mp_rpc::v0_8_1::BroadcastedTxn =
+                mp_rpc::v0_10_2::BroadcastedTxn::Invoke(mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(base.clone())).into();
+            let query: mp_rpc::v0_8_1::BroadcastedTxn =
+                mp_rpc::v0_10_2::BroadcastedTxn::Invoke(mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV3(base.clone()))
+                    .into();
 
-        let regular_hash =
-            TransactionWithHash::from_broadcasted_v0_8(regular, chain_id, StarknetVersion::LATEST, None).hash;
-        let query_hash =
-            TransactionWithHash::from_broadcasted_v0_8(query, chain_id, StarknetVersion::LATEST, None).hash;
+            assert!(!regular.is_query());
+            assert!(query.is_query());
 
-        assert_ne!(regular_hash, query_hash, "query transactions must use the simulate-version hash offset");
-    }
+            let regular_hash =
+                TransactionWithHash::from_broadcasted_v0_8(regular, TEST_CHAIN_ID, StarknetVersion::LATEST, None).hash;
+            let query_hash =
+                TransactionWithHash::from_broadcasted_v0_8(query, TEST_CHAIN_ID, StarknetVersion::LATEST, None).hash;
+            assert_ne!(regular_hash, query_hash, "query transactions must use the simulate-version hash offset");
 
-    #[test]
-    fn v0_10_2_broadcasted_invoke_v3_preserves_proof() {
-        let tx = mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(sample_broadcasted_invoke_v3());
-
-        let InvokeTransaction::V3(invoke) = InvokeTransaction::from(tx) else {
-            panic!("expected invoke v3");
-        };
-
-        assert_eq!(invoke.proof_facts, Some(vec![Felt::from(11_u64), Felt::from(12_u64)]));
-    }
-
-    #[test]
-    fn v0_10_2_broadcasted_invoke_v3_prefers_proof_facts_when_present() {
-        let mut tx = sample_broadcasted_invoke_v3();
-        tx.proof_facts = Some(vec![
-            Felt::from_hex_unchecked("0x50524f4f4630"),
-            Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
-        ]);
-
-        let InvokeTransaction::V3(invoke) = InvokeTransaction::from(mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(tx))
-        else {
-            panic!("expected invoke v3");
-        };
-
-        assert_eq!(
-            invoke.proof_facts,
-            Some(vec![
-                Felt::from_hex_unchecked("0x50524f4f4630"),
-                Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
-            ])
-        );
+            let InvokeTransaction::V3(invoke) =
+                InvokeTransaction::from(mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(base))
+            else {
+                panic!("expected invoke v3");
+            };
+            assert_eq!(invoke.proof_facts, Some(expected_proof_facts));
+        }
     }
 
     #[test]

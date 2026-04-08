@@ -117,27 +117,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn continuation_token_stays_on_same_block_when_extra_event_is_in_same_block() {
-        let events = vec![dummy_event(0), dummy_event(0), dummy_event(0)];
-        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 0 });
+    #[rstest]
+    #[case(&[0, 0, 0], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 0, event_n: 2 }))]
+    #[case(&[0, 0, 4], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 4, event_n: 0 }))]
+    #[case(&[4, 6, 6], 2, ContinuationToken { block_number: 0, event_n: 2 }, Some(ContinuationToken { block_number: 6, event_n: 1 }))]
+    fn continuation_token_from_page_tracks_block_boundaries(
+        #[case] block_numbers: &[u64],
+        #[case] page_size: usize,
+        #[case] previous_token: ContinuationToken,
+        #[case] expected: Option<ContinuationToken>,
+    ) {
+        let events = block_numbers.iter().copied().map(dummy_event).collect::<Vec<_>>();
 
-        assert_eq!(token, Some(ContinuationToken { block_number: 0, event_n: 2 }));
-    }
-
-    #[test]
-    fn continuation_token_moves_to_new_block_when_extra_event_is_first_match_there() {
-        let events = vec![dummy_event(0), dummy_event(0), dummy_event(4)];
-        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 0 });
-
-        assert_eq!(token, Some(ContinuationToken { block_number: 4, event_n: 0 }));
-    }
-
-    #[test]
-    fn continuation_token_tracks_offset_inside_new_block() {
-        let events = vec![dummy_event(4), dummy_event(6), dummy_event(6)];
-        let token = continuation_token_from_page(&events, 2, &ContinuationToken { block_number: 0, event_n: 2 });
-
-        assert_eq!(token, Some(ContinuationToken { block_number: 6, event_n: 1 }));
+        let token = continuation_token_from_page(&events, page_size, &previous_token);
+        assert_eq!(token, expected);
     }
 }

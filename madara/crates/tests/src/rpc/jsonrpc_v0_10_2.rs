@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod test_rpc_raw_v0_10_2 {
+mod test_rpc_jsonrpc_v0_10_2 {
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use serde_json::{json, Map, Value};
     use tokio::sync::OnceCell;
