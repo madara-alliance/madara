@@ -5,7 +5,6 @@ use mc_submit_tx::{
     SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
     TransactionValidator, TransactionValidatorConfig,
 };
-use mp_block::header::CustomHeader;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -67,15 +66,6 @@ impl BlockProductionHandle {
         let (sender, recv) = oneshot::channel();
         self.executor_commands
             .send(ExecutorCommand::CloseBlock(sender))
-            .map_err(|_| ExecutorCommandError::ChannelClosed)?;
-        recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
-    }
-
-    /// Refresh the current block execution context after a custom header update.
-    pub async fn refresh_current_block_header(&self, custom_header: CustomHeader) -> Result<(), ExecutorCommandError> {
-        let (sender, recv) = oneshot::channel();
-        self.executor_commands
-            .send(ExecutorCommand::RefreshCurrentBlockHeader { custom_header, callback: sender })
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }

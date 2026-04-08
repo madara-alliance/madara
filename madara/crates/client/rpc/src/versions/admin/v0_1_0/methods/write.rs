@@ -281,15 +281,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             global_spawn_rayon_task(move || backend.write_access().replace_preconfirmed_header(&custom_header))
                 .await
                 .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
-
-        if updated_preconfirmed {
-            if let Some(block_prod_handle) = &self.block_prod_handle {
-                block_prod_handle
-                    .refresh_current_block_header(custom_block_headers)
-                    .await
-                    .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
-            }
-        }
+        let _ = updated_preconfirmed;
 
         Ok(())
     }
