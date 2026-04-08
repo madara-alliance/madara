@@ -273,23 +273,22 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        self.backend.set_custom_header(custom_block_headers.clone());
-
-        let backend = self.backend.clone();
-        let custom_header = custom_block_headers.clone();
-        let updated_preconfirmed =
-            global_spawn_rayon_task(move || backend.write_access().replace_preconfirmed_header(&custom_header))
-                .await
-                .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
-
-        if updated_preconfirmed {
-            if let Some(block_prod_handle) = &self.block_prod_handle {
-                block_prod_handle
-                    .refresh_current_block_header(custom_block_headers)
-                    .await
-                    .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
+        if self
+            .backend
+            .block_view_on_preconfirmed()
+            .is_some_and(|preconfirmed| preconfirmed.block_number() == custom_block_headers.block_n)
+        {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: format!(
+                    "Cannot set custom header for block {} after PRE_CONFIRMED has started; set it before replaying transactions",
+                    custom_block_headers.block_n
+                )
+                .into(),
             }
+            .into());
         }
+
+        self.backend.set_custom_header(custom_block_headers.clone());
 
         Ok(())
     }
@@ -411,7 +410,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_block_header_updates_open_preconfirmed_view() {
+    async fn set_block_header_rejects_open_preconfirmed_block() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         add_test_block(&backend, 0, vec![]);
         global_spawn_rayon_task({
@@ -441,12 +440,17 @@ mod tests {
             expected_block_hash: Felt::from(0x1234_u64),
         };
 
-        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
+        let err = rpc
+            .set_block_header(custom_header.clone())
+            .await
+            .expect_err("set block header should fail once PRE_CONFIRMED exists");
 
         let preconfirmed = backend.block_view_on_preconfirmed().expect("preconfirmed block should exist");
 
+        assert_ne!(err.code(), 0);
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
-        assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
-        assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+        assert_eq!(preconfirmed.header().block_timestamp.0, 0);
+        assert_eq!(preconfirmed.header().gas_prices, GasPrices::default());
+        assert_eq!(backend.get_custom_header(custom_header.block_n), None);
     }
 }

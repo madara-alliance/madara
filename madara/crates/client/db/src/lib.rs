@@ -730,38 +730,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(())
     }
 
-    /// Update the header of the current preconfirmed block when replay needs to correct it before any
-    /// transactions are appended. Returns `true` when the current preconfirmed block was updated.
-    pub fn replace_preconfirmed_header(&self, custom_header: &CustomHeader) -> Result<bool> {
-        let Some(block) = self.inner.preconfirmed_block() else {
-            return Ok(false);
-        };
-        if block.header.block_number != custom_header.block_n {
-            return Ok(false);
-        }
-        ensure!(
-            block.transaction_count() == 0,
-            "Cannot update preconfirmed header for block {} after transactions have been appended",
-            custom_header.block_n
-        );
-
-        let content = block.content.borrow();
-        let updated_block = PreconfirmedBlock::new_with_content(
-            mp_block::header::PreconfirmedHeader {
-                block_timestamp: custom_header.timestamp.into(),
-                gas_prices: custom_header.gas_prices.clone(),
-                ..block.header.clone()
-            },
-            content.executed_transactions().cloned(),
-            content.candidate_transactions().cloned(),
-        );
-        drop(content);
-
-        self.new_preconfirmed(updated_block)?;
-
-        Ok(true)
-    }
-
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
     ///
     /// When `state_diff` is provided, this function uses an optimized path that skips the expensive
