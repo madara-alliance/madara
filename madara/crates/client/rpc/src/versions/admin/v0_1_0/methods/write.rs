@@ -450,6 +450,6 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, 0);
         assert_eq!(preconfirmed.header().gas_prices, GasPrices::default());
-        assert_eq!(backend.get_custom_header(custom_header.block_n), None);
+        assert!(backend.get_custom_header(custom_header.block_n).is_none());
     }
 }

@@ -36,6 +36,10 @@ struct StateDiffV8 {
 ///
 /// This stays in the RocksDB layer because it models a legacy on-disk encoding, not a canonical
 /// `mp_*` primitive shared across the rest of the system.
+///
+/// The main alternative would be a DB migration which opens and rewrites historic
+/// `block_transactions` rows to the current schema. That would simplify the read path, but it is a
+/// costly full-database migration for older nodes, so we keep the compatibility shim local here.
 #[derive(serde::Deserialize)]
 #[cfg_attr(test, derive(serde::Serialize))]
 struct LegacyTransactionWithReceipt {
@@ -541,11 +545,13 @@ impl RocksDBStorageInner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{storage::MadaraStorageRead, MadaraBackend};
+    use mp_chain_config::ChainConfig;
     use mp_receipt::{ExecutionResources, ExecutionResult, FeePayment, GasVector, InvokeTransactionReceipt, PriceUnit};
+    use std::sync::Arc;
 
-    #[test]
-    fn deserialize_legacy_invoke_v3_transaction_without_proof_facts() {
-        let legacy = LegacyTransactionWithReceipt {
+    fn sample_legacy_transaction_with_receipt() -> LegacyTransactionWithReceipt {
+        LegacyTransactionWithReceipt {
             transaction: LegacyTransaction::Invoke(LegacyInvokeTransaction::V3(LegacyInvokeTransactionV3 {
                 sender_address: Felt::from_hex_unchecked("0x123"),
                 calldata: Arc::new(vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")]),
@@ -583,11 +589,10 @@ mod tests {
                 },
                 execution_result: ExecutionResult::Succeeded,
             }),
-        };
+        }
+    }
 
-        let encoded = super::super::serialize(&legacy).expect("legacy tx should serialize");
-        let decoded = deserialize_transaction_with_receipt(&encoded).expect("legacy tx should deserialize");
-
+    fn assert_legacy_v3_roundtrips_without_proof_facts(decoded: TransactionWithReceipt) {
         match decoded.transaction {
             Transaction::Invoke(InvokeTransaction::V3(tx)) => {
                 assert_eq!(tx.sender_address, Felt::from_hex_unchecked("0x123"));
@@ -603,5 +608,44 @@ mod tests {
 
         assert_eq!(*decoded.receipt.transaction_hash(), Felt::from_hex_unchecked("0xbeef"));
         assert_eq!(decoded.receipt.actual_fee().unit, PriceUnit::Fri);
+    }
+
+    #[test]
+    fn deserialize_legacy_invoke_v3_transaction_without_proof_facts() {
+        let legacy = sample_legacy_transaction_with_receipt();
+        let encoded = super::super::serialize(&legacy).expect("legacy tx should serialize");
+        let decoded = deserialize_transaction_with_receipt(&encoded).expect("legacy tx should deserialize");
+
+        assert_legacy_v3_roundtrips_without_proof_facts(decoded);
+    }
+
+    #[test]
+    fn legacy_invoke_v3_transaction_is_readable_through_storage_api() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let encoded =
+            super::super::serialize(&sample_legacy_transaction_with_receipt()).expect("legacy tx should serialize");
+        let tx_key = make_transaction_column_key(7, 0);
+        let txs_cf = backend
+            .db
+            .inner_db()
+            .cf_handle(BLOCK_TRANSACTIONS_COLUMN.rocksdb_name)
+            .expect("transactions column should exist");
+
+        backend.db.inner_db().put_cf(&txs_cf, tx_key, encoded).expect("writing legacy tx row should succeed");
+
+        let direct = backend
+            .db
+            .get_transaction(7, 0)
+            .expect("storage read should succeed")
+            .expect("legacy tx should be present");
+        assert_legacy_v3_roundtrips_without_proof_facts(direct);
+
+        let iterated = backend
+            .db
+            .get_block_transactions(7, 0)
+            .next()
+            .expect("iterator should yield the legacy tx")
+            .expect("iterated storage read should succeed");
+        assert_legacy_v3_roundtrips_without_proof_facts(iterated);
     }
 }

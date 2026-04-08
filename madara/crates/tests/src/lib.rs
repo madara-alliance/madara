@@ -311,7 +311,7 @@ impl MadaraCmd {
                 anyhow::Ok(())
             },
             Duration::from_millis(500),
-            50,
+            120,
         )
         .await;
         self.ready = true;

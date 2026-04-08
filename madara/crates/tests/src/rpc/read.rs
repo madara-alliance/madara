@@ -8,15 +8,16 @@ mod test_rpc_read_calls {
     use rstest::rstest;
     use starknet_core::types::Felt;
     use starknet_core::types::{
-        BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
+        AddressFilter, BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
         BroadcastedDeployAccountTransactionV3, BroadcastedTransaction, ContractClass, ContractStorageDiffItem,
         DataAvailabilityMode, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent,
         EthAddress, EventFilter, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate, FeePayment,
-        FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction, MaybePreConfirmedBlockWithReceipts,
-        MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate,
-        MessageFeeEstimate, MsgFromL1, PriceUnit, ReceiptBlock, ResourceBounds, ResourceBoundsMapping, ResourcePrice,
-        SimulationFlagForEstimateFee, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionFinalityStatus,
-        TransactionReceipt, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt,
+        FunctionCall, GetStorageAtResult, L1DataAvailabilityMode, L1HandlerTransaction,
+        MaybePreConfirmedBlockWithReceipts, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs,
+        MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, PriceUnit, ReceiptBlock, ResourceBounds,
+        ResourceBoundsMapping, ResourcePrice, SimulationFlagForEstimateFee, StateDiff, StateUpdate, StorageEntry,
+        Transaction, TransactionFinalityStatus, TransactionReceipt, TransactionReceiptWithBlockInfo, TransactionStatus,
+        TransactionWithReceipt,
     };
     use starknet_providers::Provider;
     use std::any::Any;
@@ -412,7 +413,7 @@ mod test_rpc_read_calls {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
         let block = json_client
-            .get_block_with_receipts(BlockId::Number(2))
+            .get_block_with_receipts(BlockId::Number(2), None)
             .await
             .expect("Failed to get block with receipts for block number 2");
 
@@ -590,7 +591,7 @@ mod test_rpc_read_calls {
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
-        let block = json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap();
+        let block = json_client.get_block_with_txs(BlockId::Number(2), None).await.unwrap();
 
         let expected_block = match &block {
             MaybePreConfirmedBlockWithTxs::Block(actual_block) => MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
@@ -743,7 +744,7 @@ mod test_rpc_read_calls {
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
-        let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap() };
+        let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1, None).await.unwrap() };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
             transaction_hash: Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a")
                 .unwrap(),
@@ -789,6 +790,7 @@ mod test_rpc_read_calls {
             json_client
                 .get_transaction_by_hash(
                     Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a").unwrap(),
+                    None,
                 )
                 .await
                 .unwrap()
@@ -940,11 +942,12 @@ mod test_rpc_read_calls {
                     Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
                     Felt::from_hex("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1").unwrap(),
                     BlockId::Number(12),
+                    None,
                 )
                 .await
                 .unwrap()
         };
-        let expected_storage_response = Felt::from_hex("0x4574686572").unwrap();
+        let expected_storage_response = GetStorageAtResult::Value(Felt::from_hex("0x4574686572").unwrap());
 
         assert_eq!(storage_response, expected_storage_response);
     }
@@ -1078,10 +1081,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(
+                        address: Some(AddressFilter::Single(
                             Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
                                 .unwrap(),
-                        ),
+                        )),
                         keys: Some(vec![vec![]]),
                     },
                     None,
@@ -1182,10 +1185,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(
+                        address: Some(AddressFilter::Single(
                             Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
                                 .unwrap(),
-                        ),
+                        )),
                         keys: Some(vec![vec![]]),
                     },
                     Some("0-2".to_string()),

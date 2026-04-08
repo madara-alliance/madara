@@ -138,52 +138,29 @@ impl RocksDBStorageInner {
 
         // Reverse order
         for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
-            let block_info = self
-                .get_block_info(block_n)
-                .with_context(|| format!("Startup tail cleanup: reading block info for block_n={block_n}"))?
-                .with_context(|| format!("Startup tail cleanup: block info missing for block_n={block_n}"))?;
+            let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
 
             let mut batch = WriteBatchWithTransaction::default();
             {
-                if let Some(state_diff) = self
-                    .get_block_state_diff(block_n)
-                    .with_context(|| format!("Startup tail cleanup: reading state diff for block_n={block_n}"))?
-                {
+                if let Some(state_diff) = self.get_block_state_diff(block_n)? {
                     // State diff is in db.
-                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)
-                        .with_context(|| format!("Startup tail cleanup: removing classes for block_n={block_n}"))?;
-                    self.state_remove(block_n, &state_diff, &mut batch)
-                        .with_context(|| format!("Startup tail cleanup: removing state for block_n={block_n}"))?;
+                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)?;
+                    self.state_remove(block_n, &state_diff, &mut batch)?;
                 }
 
                 // This vec is empty if transactions for this block are not yet imported.
                 let transactions: Vec<_> = (0..block_info.tx_hashes.len())
                     .map(|tx_index| {
-                        let expected_tx_hash = block_info.tx_hashes[tx_index];
-                        self.get_transaction(block_n, tx_index as u64)
-                            .with_context(|| {
-                                format!(
-                                    "Startup tail cleanup: reading tx/receipt for block_n={block_n} tx_index={tx_index} tx_hash={expected_tx_hash:#x}"
-                                )
-                            })?
-                            .with_context(|| {
-                                format!(
-                                    "Startup tail cleanup: tx/receipt missing for block_n={block_n} tx_index={tx_index} tx_hash={expected_tx_hash:#x}"
-                                )
-                            })
+                        self.get_transaction(block_n, tx_index as u64)?.context("Transaction should be found")
                     })
                     .collect::<Result<_>>()?;
 
-                self.events_remove_block(block_n, &mut batch)
-                    .with_context(|| format!("Startup tail cleanup: removing events for block_n={block_n}"))?;
+                self.events_remove_block(block_n, &mut batch)?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch).with_context(|| {
-                    format!("Startup tail cleanup: removing L1 handler nonces for block_n={block_n}")
-                })?;
+                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
 
-                self.blocks_remove_block(&block_info, &mut batch)
-                    .with_context(|| format!("Startup tail cleanup: removing block columns for block_n={block_n}"))?;
+                self.blocks_remove_block(&block_info, &mut batch)?;
             }
 
             self.db

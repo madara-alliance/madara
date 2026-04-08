@@ -30,47 +30,32 @@ fn assert_custom_header_eq(actual: &CustomHeader, expected: &CustomHeader) {
 }
 
 #[test]
-fn get_custom_header_returns_clone_without_consuming_entry() {
+fn custom_header_lifecycle_matches_storage_contract() {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-    let custom_header = sample_custom_header(7, 1);
+    let initial = sample_custom_header(7, 1);
+    let replacement = sample_custom_header(7, 2);
 
-    backend.set_custom_header(custom_header.clone());
+    // `get` is a non-destructive peek: callers can inspect the staged header multiple times
+    // while the block is still open.
+    backend.set_custom_header(initial.clone());
 
-    let first = backend.get_custom_header(custom_header.block_n).expect("custom header should be present");
-    let second = backend.get_custom_header(custom_header.block_n).expect("custom header should still be present");
-    let taken = backend.take_custom_header(custom_header.block_n).expect("take should still return the entry");
+    let first = backend.get_custom_header(initial.block_n).expect("custom header should be present");
+    let second = backend.get_custom_header(initial.block_n).expect("custom header should still be present");
 
-    assert_custom_header_eq(&first, &custom_header);
-    assert_custom_header_eq(&second, &custom_header);
-    assert_custom_header_eq(&taken, &custom_header);
-}
+    assert_custom_header_eq(&first, &initial);
+    assert_custom_header_eq(&second, &initial);
 
-#[test]
-fn take_custom_header_removes_entry() {
-    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-    let custom_header = sample_custom_header(8, 2);
-
-    backend.set_custom_header(custom_header.clone());
-
-    let taken = backend.take_custom_header(custom_header.block_n).expect("take should return the stored header");
-    assert_custom_header_eq(&taken, &custom_header);
-    assert!(backend.get_custom_header(custom_header.block_n).is_none(), "take should consume the header");
-    assert!(backend.take_custom_header(custom_header.block_n).is_none(), "entry should only be consumed once");
-}
-
-#[test]
-fn set_custom_header_overwrites_existing_entry_for_same_block() {
-    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-    let initial = sample_custom_header(9, 3);
-    let replacement = sample_custom_header(9, 4);
-
-    backend.set_custom_header(initial);
+    // `set` for the same block number should overwrite the staged value. This is how replay can
+    // replace the header before block close without accumulating stale entries.
     backend.set_custom_header(replacement.clone());
 
     let stored = backend.get_custom_header(replacement.block_n).expect("latest header should be stored");
-    let taken = backend.take_custom_header(replacement.block_n).expect("take should return latest header");
-
     assert_custom_header_eq(&stored, &replacement);
+
+    // `take` is the consuming read used at block close. It should return the latest header once
+    // and remove it from storage.
+    let taken = backend.take_custom_header(replacement.block_n).expect("take should return latest header");
     assert_custom_header_eq(&taken, &replacement);
     assert!(backend.get_custom_header(replacement.block_n).is_none(), "take should clear the overwritten entry");
+    assert!(backend.take_custom_header(replacement.block_n).is_none(), "entry should only be consumed once");
 }

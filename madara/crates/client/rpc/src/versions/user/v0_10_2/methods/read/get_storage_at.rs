@@ -35,6 +35,9 @@ pub fn get_storage_at(
     }
 }
 
+// TODO (mohit 08/04/2026): This performs a backward scan over state diffs and can add
+// significant load to getStorageAt when INCLUDE_LAST_UPDATE_BLOCK is requested.
+// Replace this with indexed or cached last-write tracking instead of recomputing it per request.
 fn find_last_update_block(
     view: &mc_db::MadaraStateView,
     contract_address: Felt,
