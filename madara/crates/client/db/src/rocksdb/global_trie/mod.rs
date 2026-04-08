@@ -122,13 +122,23 @@ pub fn apply_to_global_trie<'a>(
 /// "STARKNET_STATE_V0"
 const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e45545f53544154455f5630");
 
+/// Computes the global state root from the contract and class trie roots.
+///
+/// Matches Starknet ≥ 0.14.0 / Cairo-OS `commitment.cairo`: always hashes unless both
+/// trie roots are zero.
+///
+/// NOTE: pre-0.14.0 chains historically short-circuited `class_trie_root == 0 → contract_root`.
+/// That case is not handled here — if/when madara needs to sync pre-0.14.0 chains from genesis,
+/// thread `StarknetVersion` through `apply_to_global_trie` and gate the short-circuit on
+/// `version < 0.14.0`, matching `pathfinder/crates/common/src/lib.rs::StateCommitment::calculate`.
 fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> Felt {
-    tracing::trace!("global state root calc {contracts_trie_root:#x} {classes_trie_root:#x}");
-    if classes_trie_root == Felt::ZERO {
-        contracts_trie_root
-    } else {
-        Poseidon::hash_array(&[STARKNET_STATE_PREFIX, contracts_trie_root, classes_trie_root])
+    tracing::trace!("global state root calc contracts={contracts_trie_root:#x} classes={classes_trie_root:#x}");
+
+    if contracts_trie_root == Felt::ZERO && classes_trie_root == Felt::ZERO {
+        return Felt::ZERO;
     }
+
+    Poseidon::hash_array(&[STARKNET_STATE_PREFIX, contracts_trie_root, classes_trie_root])
 }
 
 pub fn get_state_root(backend: &RocksDBStorage) -> Result<Felt> {
@@ -158,33 +168,27 @@ mod tests {
     }
 
     /// Test cases for the `calculate_state_root` function.
-    ///
-    /// This test uses `rstest` to parameterize different scenarios for calculating
-    /// the state root. It verifies that the function correctly handles various
-    /// input combinations and produces the expected results.
     #[rstest]
     #[case::non_zero_inputs(
-        Felt::from_hex_unchecked("0x123456"),  // Non-zero contracts trie root
-        Felt::from_hex_unchecked("0x789abc"),  // Non-zero classes trie root
-        // Expected result: Poseidon hash of STARKNET_STATE_PREFIX and both non-zero roots
+        Felt::from_hex_unchecked("0x123456"),
+        Felt::from_hex_unchecked("0x789abc"),
+        // Poseidon(STARKNET_STATE_V0, 0x123456, 0x789abc)
         Felt::from_hex_unchecked("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e")
     )]
+    // Regression test for Starknet ≥ 0.14.0: the `class_trie_root == 0` short-circuit must
+    // NOT fire — the result is Poseidon(STARKNET_STATE_V0, contract_root, 0), not contract_root.
     #[case::zero_class_trie_root(
-        Felt::from_hex_unchecked("0x123456"),  // Non-zero contracts trie root
-        Felt::from_hex_unchecked("0x0"),       // Zero classes trie root
-        Felt::from_hex_unchecked("0x123456")   // Expected result: same as contracts trie root
+        Felt::from_hex_unchecked("0x3c538d437670f4c6f72dd799f215a007720ec7d19bc64195c96399145d8746f"),
+        Felt::ZERO,
+        Felt::from_hex_unchecked("0x68bcf9e9257ab6bffd9425833a208aaab6b85649fd21c787a546cb7cb9abf")
     )]
+    #[case::both_zero(Felt::ZERO, Felt::ZERO, Felt::ZERO)]
     fn test_calculate_state_root(
         #[case] contracts_trie_root: Felt,
         #[case] classes_trie_root: Felt,
         #[case] expected_result: Felt,
     ) {
-        // GIVEN: We have a contracts trie root and a classes trie root
-
-        // WHEN: We calculate the state root using these inputs
         let result = calculate_state_root(contracts_trie_root, classes_trie_root);
-
-        // THEN: The calculated state root should match the expected result
         assert_eq!(result, expected_result, "State root should match the expected result");
     }
 }
