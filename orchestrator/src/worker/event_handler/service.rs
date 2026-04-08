@@ -881,12 +881,13 @@ impl JobHandlerService {
         }
     }
 
-    /// Computes and emits SLA stage durations (T1/T2/T3/total) when StateTransition completes.
+    /// Computes and emits SLA stage durations when StateTransition completes.
     /// Excludes Atlantic processing time by measuring only orchestrator-controlled segments.
     ///
-    /// T1 = block production → last proof submitted to Atlantic
-    /// T2 = last proof returned from Atlantic → aggregation starts
-    /// T3 = aggregation completed → settlement completed
+    /// T1 = block production → block's SNOS batch's ProofCreation submitted to Atlantic (per-block observation)
+    /// T2 = last proof returned from Atlantic → aggregation starts (one observation per agg batch)
+    /// T3 = aggregation completed → settlement completed (one observation per agg batch)
+    /// Total = T1 + T2 + T3 (per-block observation)
     async fn record_sla_stages(job: &JobItem, config: &Arc<Config>) {
         let id = job.internal_id;
 
@@ -895,7 +896,7 @@ impl JobHandlerService {
             return;
         };
 
-        // Fetch aggregator job and batch
+        // Fetch aggregator job
         let Ok(Some(agg_job)) = config.database().get_job_by_internal_id_and_type(id, &JobType::Aggregator).await
         else {
             warn!(internal_id = id, "SLA: Aggregator job not found");
@@ -908,58 +909,64 @@ impl JobHandlerService {
             return;
         };
 
-        let Ok(agg_batches) = config.database().get_aggregator_batches_by_indexes(vec![id]).await else {
-            warn!(internal_id = id, "SLA: Failed to look up aggregator batch");
-            return;
-        };
-        let Some(agg_batch) = agg_batches.into_iter().next() else {
-            warn!(internal_id = id, "SLA: Aggregator batch not found");
-            return;
-        };
-
-        let Some(block_ts) = Self::fetch_block_timestamp(agg_batch.start_block, config).await else {
-            warn!(internal_id = id, "SLA: Failed to fetch block timestamp from Madara RPC");
-            return;
-        };
-
-        // Find max(verification_started_at) and max(verification_completed_at) across ProofCreation jobs
+        // Fetch SNOS batches and their ProofCreation timestamps
         let Ok(snos_batches) = config.database().get_snos_batches_by_aggregator_index(id).await else {
             warn!(internal_id = id, "SLA: Failed to look up SNOS batches");
             return;
         };
 
-        let (mut last_proof_submitted, mut last_proof_returned): (
-            Option<chrono::DateTime<Utc>>,
-            Option<chrono::DateTime<Utc>>,
-        ) = (None, None);
+        // Collect (start_block, end_block, proof_started_at) per SNOS batch
+        // and track latest proof returned for T2
+        let mut snos_proof_data: Vec<(u64, u64, chrono::DateTime<Utc>)> = Vec::new();
+        let mut last_proof_returned: Option<chrono::DateTime<Utc>> = None;
         for snos_batch in &snos_batches {
             if let Ok(Some(proof_job)) =
                 config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await
             {
-                if let Some(vs) = proof_job.metadata.common.verification_started_at {
-                    last_proof_submitted = Some(last_proof_submitted.map_or(vs, |e: chrono::DateTime<Utc>| e.max(vs)));
-                }
-                if let Some(vc) = proof_job.metadata.common.verification_completed_at {
+                if let (Some(vs), Some(vc)) = (
+                    proof_job.metadata.common.verification_started_at,
+                    proof_job.metadata.common.verification_completed_at,
+                ) {
+                    snos_proof_data.push((snos_batch.start_block, snos_batch.end_block, vs));
                     last_proof_returned = Some(last_proof_returned.map_or(vc, |e: chrono::DateTime<Utc>| e.max(vc)));
                 }
             }
         }
 
-        let (Some(last_submitted), Some(last_returned)) = (last_proof_submitted, last_proof_returned) else {
+        let Some(last_returned) = last_proof_returned else {
             warn!(internal_id = id, "SLA: Missing ProofCreation timestamps");
             return;
         };
 
-        let t1 = last_submitted.signed_duration_since(block_ts).num_seconds() as f64;
+        // T2 and T3 are constant for the whole aggregator batch
         let t2 = agg_v_started.signed_duration_since(last_returned).num_seconds() as f64;
         let t3 = st_completed.signed_duration_since(agg_v_completed).num_seconds() as f64;
-        let total = t1 + t2 + t3;
 
-        MetricsRecorder::record_sla_stage_duration("t1", t1);
+        // Build list of (block_num, proof_started) pairs across all SNOS batches
+        let block_proofs: Vec<(u64, chrono::DateTime<Utc>)> = snos_proof_data
+            .into_iter()
+            .flat_map(|(start, end, proof_started)| (start..=end).map(move |b| (b, proof_started)))
+            .collect();
+
+        // Fetch block timestamps in parallel
+        let timestamps =
+            futures::future::join_all(block_proofs.iter().map(|(b, _)| Self::fetch_block_timestamp(*b, config))).await;
+
+        // Emit T1 and total per block
+        let mut block_count = 0u64;
+        for ((_, proof_started), block_ts) in block_proofs.iter().zip(timestamps.into_iter()) {
+            let Some(block_ts) = block_ts else { continue };
+            let t1 = proof_started.signed_duration_since(block_ts).num_seconds() as f64;
+            let total = t1 + t2 + t3;
+            MetricsRecorder::record_sla_stage_duration("t1", t1);
+            MetricsRecorder::record_sla_stage_duration("total", total);
+            block_count += 1;
+        }
+
+        // T2 and T3 emitted once per aggregator batch
         MetricsRecorder::record_sla_stage_duration("t2", t2);
         MetricsRecorder::record_sla_stage_duration("t3", t3);
-        MetricsRecorder::record_sla_stage_duration("total", total);
-        info!(t1, t2, t3, total, internal_id = id, "SLA stages recorded");
+        info!(t2, t3, block_count, internal_id = id, "SLA stages recorded");
     }
 
     /// Fetches the L2 block timestamp from Madara RPC for a given block number.
