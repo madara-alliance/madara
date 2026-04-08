@@ -158,6 +158,7 @@ mod tests {
     use super::*;
     use crate::MadaraBackend;
     use mp_chain_config::ChainConfig;
+    use mp_state_update::{ContractStorageDiffItem, StorageEntry};
     use rstest::*;
     use std::sync::Arc;
 
@@ -190,5 +191,38 @@ mod tests {
     ) {
         let result = calculate_state_root(contracts_trie_root, classes_trie_root);
         assert_eq!(result, expected_result, "State root should match the expected result");
+    }
+
+    /// End-to-end regression for the Starknet ≥ 0.14.0 state root bug.
+    ///
+    /// Drives a real Starknet 0.14.1 genesis-shaped state diff (a single storage write on the
+    /// stateful-compression system contract `0x2`: `key=0x0 → value=0x80`) through
+    /// `apply_to_global_trie` and asserts the returned global state root.
+    ///
+    /// This pins the full path: bonsai insert → `contract_trie_root` (with system-contract leaf
+    /// hash: `class_hash=0, nonce=0`) → `calculate_state_root`. Against the old unconditional
+    /// `class_trie_root == 0 → contract_root` short-circuit this test fails, because the
+    /// short-circuit returns `0x3c538d…` (the contract trie root) instead of
+    /// `Poseidon(STARKNET_STATE_V0, 0x3c538d…, 0) = 0x68bcf9…`.
+    #[rstest]
+    fn test_apply_to_global_trie_v0_14_genesis(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+
+        let state_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: Felt::from_hex_unchecked("0x2"),
+                storage_entries: vec![StorageEntry { key: Felt::ZERO, value: Felt::from_hex_unchecked("0x80") }],
+            }],
+            ..Default::default()
+        };
+
+        let (state_root, _timings) =
+            apply_to_global_trie(&backend.db, 0, [&state_diff]).expect("apply_to_global_trie should succeed");
+
+        assert_eq!(
+            state_root,
+            Felt::from_hex_unchecked("0x68bcf9e9257ab6bffd9425833a208aaab6b85649fd21c787a546cb7cb9abf"),
+            "Global state root for 0.14.1 genesis state diff should equal Poseidon(STARKNET_STATE_V0, contract_root, 0)"
+        );
     }
 }
