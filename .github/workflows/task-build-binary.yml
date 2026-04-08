@@ -33,16 +33,29 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Load env
         uses: ./.github/actions/load-env
 
-      - name: Rust setup
+      - name: Rust setup (workspace binary)
+        if: inputs.is-standalone == false
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: ${{ inputs.binary-name }}-${{ runner.os }}-rust-1.89${{ inputs.cache-key-suffix }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}${{ inputs.cache-key-suffix }}
+
+      - name: Rust setup (standalone binary)
+        if: inputs.is-standalone == true
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: ${{ inputs.binary-name }}-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}${{ inputs.cache-key-suffix }}
+          cache-workspaces: ${{ inputs.binary-name }} -> ${{ inputs.binary-name }}/target
+
+      - name: Cairo Native setup
+        if: inputs.is-standalone == false
+        uses: ./.github/actions/setup-cairo-native
 
       - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
         if: inputs.is-standalone == false
@@ -85,7 +98,7 @@ jobs:
 
       # Upload binary as artifact
       - name: Upload ${{ inputs.binary-name }} binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.binary-name }}-binary-${{ steps.generate-binary-hash.outputs.binary-hash }}
           path: target/release/${{ inputs.binary-name }}

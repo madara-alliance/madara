@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -23,7 +23,8 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          extra-cache: false
+          cache-key: bootstrapper-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+          cache-workspaces: bootstrapper -> bootstrapper/target
 
       # Check Bootstrapper (standalone project)
       - name: Cargo check

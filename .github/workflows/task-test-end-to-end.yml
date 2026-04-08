@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -53,28 +53,28 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          extra-cache: false
+          cache-key: workspace-dev-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
 
       - name: Download Madara binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
       - name: Download Orchestrator binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: orchestrator-binary-${{ inputs.orchestrator-binary-hash }}
           path: target/release/
 
       - name: Download Bootstrapper binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: bootstrapper-binary-${{ inputs.bootstrapper-binary-hash }}
           path: target/release/
 
       - name: Download Cairo artiracts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
