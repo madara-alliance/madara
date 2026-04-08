@@ -32,13 +32,19 @@ struct StateDiffV8 {
     nonces: Vec<NonceUpdate>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+/// Compatibility fallback for old RocksDB rows written before invoke-v3 stored `proof_facts`.
+///
+/// This stays in the RocksDB layer because it models a legacy on-disk encoding, not a canonical
+/// `mp_*` primitive shared across the rest of the system.
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct LegacyTransactionWithReceipt {
     transaction: LegacyTransaction,
     receipt: TransactionReceipt,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 enum LegacyTransaction {
     Invoke(LegacyInvokeTransaction),
     L1Handler(L1HandlerTransaction),
@@ -47,14 +53,16 @@ enum LegacyTransaction {
     DeployAccount(DeployAccountTransaction),
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 enum LegacyInvokeTransaction {
     V0(InvokeTransactionV0),
     V1(InvokeTransactionV1),
     V3(LegacyInvokeTransactionV3),
 }
 
-#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 struct LegacyInvokeTransactionV3 {
     sender_address: Felt,
     calldata: Arc<Vec<Felt>>,

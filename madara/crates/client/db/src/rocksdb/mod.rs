@@ -142,13 +142,6 @@ impl RocksDBStorageInner {
                 .get_block_info(block_n)
                 .with_context(|| format!("Startup tail cleanup: reading block info for block_n={block_n}"))?
                 .with_context(|| format!("Startup tail cleanup: block info missing for block_n={block_n}"))?;
-            tracing::info!(
-                target: "replay_debug",
-                "startup_tail_cleanup block_n={} block_hash={:#x} tx_count={}",
-                block_n,
-                block_info.block_hash,
-                block_info.tx_hashes.len()
-            );
 
             let mut batch = WriteBatchWithTransaction::default();
             {
@@ -156,17 +149,6 @@ impl RocksDBStorageInner {
                     .get_block_state_diff(block_n)
                     .with_context(|| format!("Startup tail cleanup: reading state diff for block_n={block_n}"))?
                 {
-                    tracing::info!(
-                        target: "replay_debug",
-                        "startup_tail_cleanup block_n={} state_diff storage_diffs={} declared_classes={} deployed_contracts={} replaced_classes={} nonces={} migrated_compiled_classes={}",
-                        block_n,
-                        state_diff.storage_diffs.len(),
-                        state_diff.declared_classes.len(),
-                        state_diff.deployed_contracts.len(),
-                        state_diff.replaced_classes.len(),
-                        state_diff.nonces.len(),
-                        state_diff.migrated_compiled_classes.len()
-                    );
                     // State diff is in db.
                     self.classes_remove(state_diff.all_declared_classes(), &mut batch)
                         .with_context(|| format!("Startup tail cleanup: removing classes for block_n={block_n}"))?;
@@ -191,13 +173,6 @@ impl RocksDBStorageInner {
                             })
                     })
                     .collect::<Result<_>>()?;
-
-                tracing::info!(
-                    target: "replay_debug",
-                    "startup_tail_cleanup block_n={} loaded_transactions={}",
-                    block_n,
-                    transactions.len()
-                );
 
                 self.events_remove_block(block_n, &mut batch)
                     .with_context(|| format!("Startup tail cleanup: removing events for block_n={block_n}"))?;
