@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
+    time::UNIX_EPOCH,
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -249,6 +250,45 @@ impl ExecutorThread {
         }))
     }
 
+    fn maybe_refresh_execution_context_for_custom_header(
+        &mut self,
+        execution_state: &mut ExecutorStateExecuting,
+        previous_l2_gas_used: u128,
+        block_empty: bool,
+    ) -> anyhow::Result<()> {
+        if !block_empty || !execution_state.declared_classes.is_empty() {
+            return Ok(());
+        }
+
+        let Some(custom_header) = self.backend.get_custom_header(execution_state.exec_ctx.block_number) else {
+            return Ok(());
+        };
+
+        let current_timestamp = execution_state
+            .exec_ctx
+            .block_timestamp
+            .duration_since(UNIX_EPOCH)
+            .context("Execution context timestamp is before Unix epoch")?
+            .as_secs();
+        if current_timestamp == custom_header.timestamp
+            && execution_state.exec_ctx.gas_prices == custom_header.gas_prices
+        {
+            return Ok(());
+        }
+
+        let block_state = execution_state
+            .executor
+            .block_state
+            .take()
+            .context("Cannot recreate execution context: executor state already taken")?;
+        let consumed_l1_to_l2_nonces = mem::take(&mut execution_state.consumed_l1_to_l2_nonces);
+        let new_state = ExecutorStateNewBlock { state_adaptor: block_state.state, consumed_l1_to_l2_nonces };
+
+        *execution_state = self.create_execution_state(new_state, previous_l2_gas_used)?;
+
+        Ok(())
+    }
+
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
@@ -409,6 +449,15 @@ impl ExecutorThread {
                     execution_state
                 }
             };
+
+            if !to_exec.is_empty() {
+                self.maybe_refresh_execution_context_for_custom_header(
+                    execution_state,
+                    l2_gas_consumed_block,
+                    block_empty,
+                )
+                .context("Refreshing execution context from custom header before executing batch")?;
+            }
 
             let exec_start_time = Instant::now();
 
