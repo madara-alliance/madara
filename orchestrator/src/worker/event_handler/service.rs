@@ -884,10 +884,16 @@ impl JobHandlerService {
     /// Computes and emits SLA stage durations when StateTransition completes.
     /// Excludes Atlantic processing time by measuring only orchestrator-controlled segments.
     ///
-    /// T1 = block production → block's SNOS batch's ProofCreation submitted to Atlantic (per-block observation)
-    /// T2 = last proof returned from Atlantic → aggregation starts (one observation per agg batch)
-    /// T3 = aggregation completed → settlement completed (one observation per agg batch)
-    /// Total = T1 + T2 + T3 (per-block observation)
+    /// For each SNOS batch we compute max/min T1 using only its start_block and end_block
+    /// timestamps (T1 within a SNOS batch is monotonically decreasing by block number),
+    /// then take the global max/min across all SNOS batches to get the aggregator's
+    /// worst/best T1. This gives exact extremes with only 2 RPC calls per SNOS batch.
+    ///
+    /// T1 = block production → block's SNOS batch's ProofCreation submitted to Atlantic
+    ///      (emitted twice per agg batch: global max and global min)
+    /// T2 = last proof returned from Atlantic → aggregation starts (once per agg batch)
+    /// T3 = aggregation completed → settlement completed (once per agg batch)
+    /// Total = T1 + T2 + T3 (emitted twice: max_total and min_total)
     async fn record_sla_stages(job: &JobItem, config: &Arc<Config>) {
         let id = job.internal_id;
 
@@ -909,7 +915,7 @@ impl JobHandlerService {
             return;
         };
 
-        // Fetch SNOS batches and their ProofCreation timestamps
+        // Fetch SNOS batches
         let Ok(snos_batches) = config.database().get_snos_batches_by_aggregator_index(id).await else {
             warn!(internal_id = id, "SLA: Failed to look up SNOS batches");
             return;
@@ -942,31 +948,48 @@ impl JobHandlerService {
         let t2 = agg_v_started.signed_duration_since(last_returned).num_seconds() as f64;
         let t3 = st_completed.signed_duration_since(agg_v_completed).num_seconds() as f64;
 
-        // Build list of (block_num, proof_started) pairs across all SNOS batches
-        let block_proofs: Vec<(u64, chrono::DateTime<Utc>)> = snos_proof_data
-            .into_iter()
-            .flat_map(|(start, end, proof_started)| (start..=end).map(move |b| (b, proof_started)))
+        // For each SNOS batch, fetch start_block and end_block timestamps in parallel (2 * N calls)
+        let block_fetches: Vec<_> = snos_proof_data
+            .iter()
+            .flat_map(|(start, end, _)| vec![*start, *end])
+            .map(|block_num| Self::fetch_block_timestamp(block_num, config))
             .collect();
+        let timestamps = futures::future::join_all(block_fetches).await;
 
-        // Fetch block timestamps in parallel
-        let timestamps =
-            futures::future::join_all(block_proofs.iter().map(|(b, _)| Self::fetch_block_timestamp(*b, config))).await;
-
-        // Emit T1 and total per block
-        let mut block_count = 0u64;
-        for ((_, proof_started), block_ts) in block_proofs.iter().zip(timestamps.into_iter()) {
-            let Some(block_ts) = block_ts else { continue };
-            let t1 = proof_started.signed_duration_since(block_ts).num_seconds() as f64;
-            let total = t1 + t2 + t3;
-            MetricsRecorder::record_sla_stage_duration("t1", t1);
-            MetricsRecorder::record_sla_stage_duration("total", total);
-            block_count += 1;
+        // Compute max/min T1 across all SNOS batches
+        let mut max_t1: Option<f64> = None;
+        let mut min_t1: Option<f64> = None;
+        for (i, (_, _, proof_started)) in snos_proof_data.iter().enumerate() {
+            let start_ts = timestamps[i * 2];
+            let end_ts = timestamps[i * 2 + 1];
+            // Max T1 for this SNOS batch = proof_started - start_block_ts (oldest block)
+            if let Some(ts) = start_ts {
+                let t1 = proof_started.signed_duration_since(ts).num_seconds() as f64;
+                max_t1 = Some(max_t1.map_or(t1, |m| m.max(t1)));
+            }
+            // Min T1 for this SNOS batch = proof_started - end_block_ts (newest block)
+            if let Some(ts) = end_ts {
+                let t1 = proof_started.signed_duration_since(ts).num_seconds() as f64;
+                min_t1 = Some(min_t1.map_or(t1, |m| m.min(t1)));
+            }
         }
 
-        // T2 and T3 emitted once per aggregator batch
+        let (Some(max_t1), Some(min_t1)) = (max_t1, min_t1) else {
+            warn!(internal_id = id, "SLA: Failed to fetch any block timestamps from Madara RPC");
+            return;
+        };
+
+        let max_total = max_t1 + t2 + t3;
+        let min_total = min_t1 + t2 + t3;
+
+        MetricsRecorder::record_sla_stage_duration("t1", max_t1);
+        MetricsRecorder::record_sla_stage_duration("t1", min_t1);
         MetricsRecorder::record_sla_stage_duration("t2", t2);
         MetricsRecorder::record_sla_stage_duration("t3", t3);
-        info!(t2, t3, block_count, internal_id = id, "SLA stages recorded");
+        MetricsRecorder::record_sla_stage_duration("total", max_total);
+        MetricsRecorder::record_sla_stage_duration("total", min_total);
+
+        info!(max_t1, min_t1, t2, t3, max_total, min_total, internal_id = id, "SLA stages recorded");
     }
 
     /// Fetches the L2 block timestamp from Madara RPC for a given block number.
