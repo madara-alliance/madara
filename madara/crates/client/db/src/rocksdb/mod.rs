@@ -139,6 +139,7 @@ impl RocksDBStorageInner {
         // Reverse order
         for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
             let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
+            tracing::debug!("Remove block block_n={block_n}");
 
             let mut batch = WriteBatchWithTransaction::default();
             {
@@ -149,10 +150,9 @@ impl RocksDBStorageInner {
                 }
 
                 // This vec is empty if transactions for this block are not yet imported.
-                let transactions: Vec<_> = (0..block_info.tx_hashes.len())
-                    .map(|tx_index| {
-                        self.get_transaction(block_n, tx_index as u64)?.context("Transaction should be found")
-                    })
+                let transactions: Vec<_> = self
+                    .get_block_transactions(block_n, /* from_tx_index */ 0)
+                    .take(block_info.tx_hashes.len())
                     .collect::<Result<_>>()?;
 
                 self.events_remove_block(block_n, &mut batch)?;
