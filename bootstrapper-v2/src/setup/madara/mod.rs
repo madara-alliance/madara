@@ -33,6 +33,8 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DeployedContract {
+    /// The L2 account deployed during bootstrap (used for all subsequent L2 transactions)
+    L2Account,
     UniversalDeployer,
     MadaraFactory,
     L2EthToken,
@@ -65,6 +67,7 @@ impl MadaraSetup {
 
         bootstrap_account.bootstrap_declare().await?;
         let acc = bootstrap_account.deploy_account(private_key).await?;
+        self.insert_address(DeployedContract::L2Account, acc.address());
         self.account = Some(acc.clone());
 
         log::info!("Starting contract declarations...");
@@ -280,6 +283,7 @@ impl MadaraSetup {
                 "madara_factory": format!("0x{:x}", self.require_class_hash(&MadaraClass::MadaraFactory)?),
             },
             "addresses": {
+                "l2_account": format!("0x{:x}", self.addresses.get(&DeployedContract::L2Account).unwrap_or(&Felt::ZERO)),
                 "universal_deployer": format!("0x{:x}", self.addresses.get(&DeployedContract::UniversalDeployer).unwrap_or(&Felt::ZERO)),
                 "madara_factory": format!("0x{:x}", self.addresses.get(&DeployedContract::MadaraFactory).unwrap_or(&Felt::ZERO)),
                 "l2_eth_token": format!("0x{:x}", self.addresses.get(&DeployedContract::L2EthToken).unwrap_or(&Felt::ZERO)),
