@@ -11,7 +11,6 @@ use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -273,15 +272,26 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        self.backend.set_custom_header(custom_block_headers.clone());
+        if let Some(preconfirmed) = self.backend.block_view_on_preconfirmed() {
+            // Replay may resend the same header after a restart to restore the in-memory
+            // expected hash, but once PRE_CONFIRMED exists we must not mutate the values
+            // that were already used to create the execution context.
+            if preconfirmed.block_number() == custom_block_headers.block_n
+                && (preconfirmed.header().block_timestamp.0 != custom_block_headers.timestamp
+                    || preconfirmed.header().gas_prices != custom_block_headers.gas_prices)
+            {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: format!(
+                        "Cannot change custom header for block {} after PRE_CONFIRMED has started",
+                        custom_block_headers.block_n
+                    )
+                    .into(),
+                }
+                .into());
+            }
+        }
 
-        let backend = self.backend.clone();
-        let custom_header = custom_block_headers.clone();
-        let updated_preconfirmed =
-            global_spawn_rayon_task(move || backend.write_access().replace_preconfirmed_header(&custom_header))
-                .await
-                .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
-        let _ = updated_preconfirmed;
+        self.backend.set_custom_header(custom_block_headers);
 
         Ok(())
     }
@@ -403,7 +413,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_block_header_updates_open_preconfirmed_view() {
+    async fn set_block_header_accepts_matching_open_preconfirmed_block() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        add_test_block(&backend, 0, vec![]);
+        let custom_header = CustomHeader {
+            block_n: 1,
+            timestamp: 1_234_567_890,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 11,
+                strk_l1_gas_price: 12,
+                eth_l1_data_gas_price: 21,
+                strk_l1_data_gas_price: 22,
+                eth_l2_gas_price: 31,
+                strk_l2_gas_price: 32,
+            },
+            expected_block_hash: Felt::from(0x1234_u64),
+        };
+        global_spawn_rayon_task({
+            let backend = backend.clone();
+            let custom_header = custom_header.clone();
+            move || {
+                backend.write_access().new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                    block_number: 1,
+                    block_timestamp: custom_header.timestamp.into(),
+                    gas_prices: custom_header.gas_prices.clone(),
+                    ..Default::default()
+                }))
+            }
+        })
+        .await
+        .expect("new preconfirmed block should succeed");
+
+        let rpc = make_starknet(backend.clone(), ServiceContext::default());
+
+        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
+
+        assert_eq!(backend.get_custom_header(custom_header.block_n), Some(custom_header));
+    }
+
+    #[tokio::test]
+    async fn set_block_header_rejects_mismatched_open_preconfirmed_block() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         add_test_block(&backend, 0, vec![]);
         global_spawn_rayon_task({
@@ -433,12 +482,17 @@ mod tests {
             expected_block_hash: Felt::from(0x1234_u64),
         };
 
-        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
+        let err = rpc
+            .set_block_header(custom_header.clone())
+            .await
+            .expect_err("set block header should fail when PRE_CONFIRMED header differs");
 
         let preconfirmed = backend.block_view_on_preconfirmed().expect("preconfirmed block should exist");
 
+        assert_ne!(err.code(), 0);
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
-        assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
-        assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+        assert_eq!(preconfirmed.header().block_timestamp.0, 0);
+        assert_eq!(preconfirmed.header().gas_prices, GasPrices::default());
+        assert_eq!(backend.get_custom_header(custom_header.block_n), None);
     }
 }
