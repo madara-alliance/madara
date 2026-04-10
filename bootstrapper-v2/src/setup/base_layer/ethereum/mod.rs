@@ -45,6 +45,10 @@ pub struct EthereumSetup {
     deploy_test_contracts: bool,
     /// L1 token address (deployed mock or provided)
     l1_token_address: Option<String>,
+    /// Final governor address (nominated after setup, must accept out-of-band)
+    governor_address: Option<Address>,
+    /// Final operator address (registered during setup)
+    operator_address: Option<Address>,
 }
 
 impl EthereumSetup {
@@ -58,6 +62,8 @@ impl EthereumSetup {
         addresses_output_path: &str,
         deploy_test_contracts: bool,
         l1_token_address: Option<String>,
+        governor_address: Option<String>,
+        operator_address: Option<String>,
     ) -> Self {
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
         Self {
@@ -71,6 +77,8 @@ impl EthereumSetup {
             base_layer_contracts: None,
             deploy_test_contracts,
             l1_token_address,
+            governor_address: governor_address.map(|a| a.parse().expect("Failed to parse governor address")),
+            operator_address: operator_address.map(|a| a.parse().expect("Failed to parse operator address")),
         }
     }
 
@@ -374,14 +382,39 @@ impl BaseLayerSetupTrait for EthereumSetup {
             &self.addresses_output_path,
         )?;
 
+        // Use final operator if provided, otherwise deployer acts as operator
+        let operator = self.operator_address.unwrap_or(self.signer.address());
+        // Deployer is always the initial governor (needs to accept + set config hash)
+        // Final governor is nominated separately after acceptance
         let base_layer_contracts =
-            factory_deploy.setup(core_contract_init_data, self.signer.address(), self.signer.address()).await?;
+            factory_deploy.setup(core_contract_init_data, operator, self.signer.address()).await?;
+
+        let core_contract_address = base_layer_contracts.coreContract;
 
         // Store the base layer contracts for later use
         self.base_layer_contracts = Some(base_layer_contracts);
 
         // Save the addresses including the deployed base layer contracts
         self.save_ethereum_addresses()?;
+
+        // Accept governance as deployer so we can set config hash later
+        self.accept_governance(&core_contract_address.to_string()).await?;
+
+        // Nominate the final governor if provided (they must accept out-of-band)
+        if let Some(final_governor) = self.governor_address {
+            let provider = self.provider()?;
+            let core_contract = Starknet::new(core_contract_address, provider);
+            log::info!("Nominating final governor: {:?}", final_governor);
+            core_contract
+                .starknetNominateNewGovernor(final_governor)
+                .send()
+                .await
+                .map_err(EthereumError::from)?
+                .watch()
+                .await
+                .map_err(EthereumError::from)?;
+            log::info!("Final governor nominated successfully");
+        }
 
         Ok(())
     }
@@ -456,10 +489,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 l2_fee_token
             };
 
-        // Step 5: Accept governance on CoreContract
-        self.accept_governance(&base_addresses.addresses.core_contract).await?;
-
-        // Step 6: Verify/update config hash on CoreContract
+        // Step 5: Verify/update config hash on CoreContract
+        // Deployer already accepted governance during setup-base
         self.verify_update_config_hash(
             &format!("{:#x}", fee_token_for_config_hash),
             &base_addresses.addresses.core_contract,

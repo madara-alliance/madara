@@ -61,6 +61,7 @@ pub struct MadaraConfigOuter {
     pub madara: MadaraConfig,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "layer")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -82,6 +83,12 @@ pub enum BaseLayerConfig {
         deploy_test_contracts: bool,
         /// L1 token address (required if deploy_test_contracts is false)
         l1_token_address: Option<String>,
+        /// Final governor address (will be nominated, must accept out-of-band)
+        #[serde(default)]
+        governor_address: Option<String>,
+        /// Final operator address (registered immediately during setup)
+        #[serde(default)]
+        operator_address: Option<String>,
     },
     Starknet {
         rpc_url: String,
@@ -126,6 +133,8 @@ impl BaseConfigOuter {
                 config_hash_config,
                 deploy_test_contracts,
                 l1_token_address,
+                governor_address,
+                operator_address,
             } => Ok(Box::new(EthereumSetup::new(
                 rpc_url.clone(),
                 private_key,
@@ -135,6 +144,8 @@ impl BaseConfigOuter {
                 addresses_output_path,
                 *deploy_test_contracts,
                 l1_token_address.clone(),
+                governor_address.clone(),
+                operator_address.clone(),
             ))),
             BaseLayerConfig::Starknet { rpc_url } => Ok(Box::new(StarknetSetup::new(rpc_url.clone(), private_key))),
         }
