@@ -13,6 +13,7 @@ import {IBridge} from "./interfaces/IBridge.sol";
 import {IRoles} from "./interfaces/IRoles.sol";
 import {IStarknetGovernor} from "./interfaces/IStarknetGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
+import {ICoreContract} from "./interfaces/ICoreContract.sol";
 
 // int.from_bytes(Web3.keccak(text="ROLE_APP_ROLE_ADMIN"), "big") & MASK_250 .
 bytes32 constant APP_ROLE_ADMIN = bytes32(
@@ -263,6 +264,18 @@ contract Factory is Ownable, Pausable, Implementations {
     IRoles(proxyContract).registerAppRoleAdmin(address(this));
     IRoles(proxyContract).registerAppGovernor(governanceAdmin);
     IRoles(proxyContract).renounceRole(APP_ROLE_ADMIN, address(this)); 
+  }
+
+  /// @notice Updates the config hash on the CoreContract.
+  /// @dev Factory is the Starknet governor on the CoreContract.
+  ///      This allows the Factory owner to update the config hash without needing governor keys.
+  ///      The final governor can later revoke Factory's governor role after accepting their own.
+  function updateConfigHash(
+    address coreContract,
+    uint256 configHash
+  ) public onlyOwner {
+    _requireNotPaused();
+    ICoreContract(coreContract).setConfigHash(configHash);
   }
 
   function pause() external onlyOwner {

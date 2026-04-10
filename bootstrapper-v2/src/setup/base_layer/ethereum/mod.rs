@@ -20,7 +20,7 @@ use alloy::{
 use anyhow::Result;
 use async_trait::async_trait;
 use config_hash::ConfigHashParams;
-use factory::{BaseLayerContracts, DeployedFactory, Factory, Manager, Starknet};
+use factory::{BaseLayerContracts, DeployedFactory, Factory, Manager};
 use implementation_contracts::ImplementationContract;
 use log;
 use serde_json;
@@ -179,70 +179,36 @@ impl EthereumSetup {
         Ok(())
     }
 
-    /// Accept the Starknet governance nomination on the CoreContract.
-    ///
-    /// The Factory contract nominates the governor during setup() but doesn't accept
-    /// on behalf of the nominee (Starknet governance is two-step: nominate → accept).
-    /// This must be called before any governance-gated operations like setConfigHash.
-    async fn accept_governance(&self, core_contract_address: &str) -> Result<(), BaseLayerError> {
-        let provider = self.provider()?;
-        let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
-        let core_contract = Starknet::new(core_contract_addr, provider);
-
-        if !core_contract.starknetIsGovernor(self.signer.address()).call().await.map_err(EthereumError::from)? {
-            log::info!("Accepting governance nomination on CoreContract...");
-            core_contract
-                .starknetAcceptGovernance()
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Governance accepted successfully");
-        } else {
-            log::info!("Already governor, skipping acceptance");
-        }
-
-        Ok(())
-    }
-
-    /// Verify the config hash on the CoreContract matches what SNOS will compute.
-    /// If there's a mismatch, update it via setConfigHash.
-    /// Caller must already be governor (call accept_governance first).
-    async fn verify_update_config_hash(
+    /// Update the config hash on the CoreContract via the Factory.
+    /// Factory is the Starknet governor on the CoreContract (set during deployment),
+    /// so we call Factory.updateConfigHash which forwards to CoreContract.setConfigHash.
+    async fn update_config_hash(
         &self,
         l2_fee_token: &str,
         core_contract_address: &str,
+        factory_address: &str,
     ) -> Result<(), BaseLayerError> {
         let fee_token = Felt::from_hex(l2_fee_token).map_err(|e| {
             EthereumError::FeltParseError(format!("Failed to parse l2_fee_token '{}': {}", l2_fee_token, e))
         })?;
 
-        let expected_config_hash = self.compute_config_hash(Some(fee_token))?;
-        log::info!("Expected config hash (with fee token): {:#x}", expected_config_hash);
+        let config_hash = self.compute_config_hash(Some(fee_token))?;
+        log::info!("Setting config hash on CoreContract via Factory: {:#x}", config_hash);
 
         let provider = self.provider()?;
+        let factory_addr: Address = factory_address.parse().map_err(EthereumError::from)?;
         let core_contract_addr: Address = core_contract_address.parse().map_err(EthereumError::from)?;
-        let core_contract = Starknet::new(core_contract_addr, provider);
+        let factory_instance = Factory::new(factory_addr, provider);
 
-        let current_config_hash = core_contract.configHash().call().await.map_err(EthereumError::from)?;
-        log::info!("Current config hash on CoreContract: {:#x}", current_config_hash);
-
-        if current_config_hash != expected_config_hash {
-            log::info!("Config hash mismatch detected, updating CoreContract...");
-            core_contract
-                .setConfigHash(expected_config_hash)
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Config hash updated successfully on CoreContract");
-        } else {
-            log::info!("Config hash matches, no update needed");
-        }
+        factory_instance
+            .updateConfigHash(core_contract_addr, config_hash)
+            .send()
+            .await
+            .map_err(EthereumError::from)?
+            .watch()
+            .await
+            .map_err(EthereumError::from)?;
+        log::info!("Config hash updated successfully on CoreContract");
 
         Ok(())
     }
@@ -384,37 +350,17 @@ impl BaseLayerSetupTrait for EthereumSetup {
 
         // Use final operator if provided, otherwise deployer acts as operator
         let operator = self.operator_address.unwrap_or(self.signer.address());
-        // Deployer is always the initial governor (needs to accept + set config hash)
-        // Final governor is nominated separately after acceptance
-        let base_layer_contracts =
-            factory_deploy.setup(core_contract_init_data, operator, self.signer.address()).await?;
-
-        let core_contract_address = base_layer_contracts.coreContract;
+        // Pass final governor if provided, otherwise deployer is nominated as governor.
+        // Factory itself is already an accepted governor (set during CoreContract deployment).
+        // The nominated governor must accept out-of-band and can then revoke Factory.
+        let governor = self.governor_address.unwrap_or(self.signer.address());
+        let base_layer_contracts = factory_deploy.setup(core_contract_init_data, operator, governor).await?;
 
         // Store the base layer contracts for later use
         self.base_layer_contracts = Some(base_layer_contracts);
 
         // Save the addresses including the deployed base layer contracts
         self.save_ethereum_addresses()?;
-
-        // Accept governance as deployer so we can set config hash later
-        self.accept_governance(&core_contract_address.to_string()).await?;
-
-        // Nominate the final governor if provided (they must accept out-of-band)
-        if let Some(final_governor) = self.governor_address {
-            let provider = self.provider()?;
-            let core_contract = Starknet::new(core_contract_address, provider);
-            log::info!("Nominating final governor: {:?}", final_governor);
-            core_contract
-                .starknetNominateNewGovernor(final_governor)
-                .send()
-                .await
-                .map_err(EthereumError::from)?
-                .watch()
-                .await
-                .map_err(EthereumError::from)?;
-            log::info!("Final governor nominated successfully");
-        }
 
         Ok(())
     }
@@ -489,11 +435,12 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 l2_fee_token
             };
 
-        // Step 5: Verify/update config hash on CoreContract
-        // Deployer already accepted governance during setup-base
-        self.verify_update_config_hash(
+        // Step 5: Update config hash on CoreContract via Factory
+        // Factory is the Starknet governor (set during CoreContract deployment)
+        self.update_config_hash(
             &format!("{:#x}", fee_token_for_config_hash),
             &base_addresses.addresses.core_contract,
+            base_layer_factory_address,
         )
         .await?;
 
