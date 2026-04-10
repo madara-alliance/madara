@@ -18,6 +18,7 @@
     "deploy_test_contracts": true,
     "implementation_addresses": {},
     "layer": "ETHEREUM",
+    "operator_address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "rpc_url": "http://127.0.0.1:8545/"
   },
   "madara": {
