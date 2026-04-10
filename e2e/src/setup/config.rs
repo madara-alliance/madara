@@ -100,7 +100,7 @@ pub struct Timeouts {
 impl Default for Timeouts {
     fn default() -> Self {
         Self {
-            validate_dependencies: Duration::from_secs(60),
+            validate_dependencies: Duration::from_secs(120),
             start_infrastructure_services: Duration::from_secs(180),
             setup_localstack_infrastructure_services: Duration::from_secs(180),
             setup_mongodb_infrastructure_services: Duration::from_secs(180),

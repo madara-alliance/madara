@@ -11,7 +11,7 @@ on:
       ETHEREUM_SEPOLIA_RPC:
         required: false
       MADARA_ORCHESTRATOR_ATLANTIC_API_KEY:
-        required: false
+        required: true
 
 jobs:
   test-end-to-end:
@@ -20,9 +20,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Load env
         uses: ./.github/actions/load-env
