@@ -19,14 +19,48 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-# Install system dependencies including OpenSSL
-RUN apt-get update && apt-get install -y \
-  git libgmp3-dev wget bash curl \
-  build-essential clang \
-  libssl-dev openssl \
+# Copy Makefile for LLVM installation
+COPY Makefile /tmp/Makefile
+
+# Install LLVM 19 for Cairo Native support using Makefile target
+RUN apt-get update -y && apt-get install -y \
+  bash \
+  build-essential \
   ca-certificates \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+  curl \
+  git \
+  gnupg \
+  libgmp3-dev \
+  libssl-dev \
+  make \
+  openssl \
+  software-properties-common \
+  wget && \
+  cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set LLVM environment variables for Cairo Native
+ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
+ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
+ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
+ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
+
+# Set explicit compilers for Cairo Native runtime compilation
+ENV CC=clang-19
+ENV CXX=clang++-19
+
+# Configure linker search paths for Cairo Native runtime compilation.
+# DEB_HOST_MULTIARCH resolves to the correct lib directory for the build runner architecture.
+RUN DEB_HOST_MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" && \
+  printf '%s\n' \
+    "export LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
+    "export LD_LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
+    > /etc/profile.d/cairo-native-libs.sh
+# Use bash (non-login) so BASH_ENV is honored. A login shell would source
+# /etc/profile, which on Debian unconditionally resets PATH and would wipe
+# /usr/local/cargo/bin and /usr/lib/llvm-19/bin from PATH for every later RUN.
+ENV BASH_ENV=/etc/profile.d/cairo-native-libs.sh
+SHELL ["/bin/bash", "-c"]
 
 # Install BLST from source
 RUN git clone --depth 1 --branch v0.3.15 https://github.com/supranational/blst.git /tmp/blst && \
@@ -45,10 +79,14 @@ ENV RUSTFLAGS="-L /usr/local/lib -l blst"
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
 
 # Install Python 3.9
+# Note: --enable-optimizations (PGO) is intentionally omitted. Python here is
+# only used at build time to run cairo-compile for SNOS dependencies, so
+# runtime perf is irrelevant and skipping PGO halves this step's build time
+# (PGO builds Python twice).
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
   && tar xzf Python-3.9.16.tgz \
   && cd Python-3.9.16 \
-  && ./configure --enable-optimizations \
+  && ./configure \
   && make altinstall \
   && cd .. \
   && rm -rf Python-3.9.16 Python-3.9.16.tgz
