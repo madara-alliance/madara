@@ -252,16 +252,16 @@ async fn get_start_block(
 ///      satisfied, leave the event in the queue and stop (events are ordered, so later events
 ///      are also not yet confirmed).
 ///
-///   2. **Canonical block check**: query the current canonical block hash at `event.l1_block_number`
-///      and compare against `event.l1_block_hash` (captured at observation time). If they differ,
-///      the block was reorged out of the canonical chain — drop the event entirely WITHOUT writing
-///      any nonce metadata (otherwise the nonce would be permanently poisoned and a re-emitted
-///      message with the same nonce on the new canonical chain would be incorrectly skipped).
-///      Still advance the sync tip past the event so we don't keep re-fetching the same range.
+///   2. **Canonical block check** (RPC call — done BEFORE popping the event): query the current
+///      canonical block hash at `event.l1_block_number` and compare against `event.l1_block_hash`
+///      (captured at observation time). If the RPC call fails transiently, the event stays in the
+///      queue and is retried on the next poll. If the hashes differ, the block was reorged out —
+///      pop and drop the event WITHOUT writing any nonce metadata and WITHOUT advancing the sync
+///      tip (so reconnection can re-scan the reorged region for new canonical events).
 ///
-///   3. **Validity check**: only after the canonical check passes, write nonce metadata and
-///      run `check_message_to_l2_validity` (existence check on the L1 contract + cancellation
-///      check). If valid, queue for L2 inclusion via `write_pending_message_to_l2`.
+///   3. **Validity check**: only after the canonical check passes, pop the event, write nonce
+///      metadata, and run `check_message_to_l2_validity` (existence check on the L1 contract +
+///      cancellation check). If valid, queue for L2 inclusion via `write_pending_message_to_l2`.
 ///
 /// Note: there is still a small unprotected window between queue-write and L2 block production
 /// inclusion. Within this window, a deeper-than-`finality_blocks` reorg could invalidate a message
@@ -282,11 +282,12 @@ async fn process_finalized_events(
 
     let latest_l1_block = settlement_client.get_latest_block_number().await?;
 
-    // Process events from the front (oldest first) that have reached the confirmation depth
     while let Some(event) = pending_events.front() {
+        // Step 1: peek at the front event and check confirmation depth.
+        // We deliberately do NOT pop yet — the event stays in the queue until we've
+        // confirmed the canonical hash check (step 2). This way, if the RPC call in
+        // step 2 fails transiently, the event is not lost.
         let confirmations = latest_l1_block.saturating_sub(event.l1_block_number);
-
-        // Step 1: confirmation depth check
         if confirmations < finality_blocks {
             tracing::debug!(
                 "Message at block {} waiting for confirmations: {}/{}",
@@ -296,51 +297,57 @@ async fn process_finalized_events(
             );
             break; // Events are ordered, remaining events are also not yet confirmed
         }
-
-        // SAFETY: We just confirmed front() returned Some
-        let event = pending_events.pop_front().expect("front() was Some");
+        // Copy the values we need for step 2. After this, `event` (the borrow from
+        // front()) is no longer used, so NLL releases the immutable borrow on
+        // pending_events — allowing pop_front() and async calls below.
+        let block_number = event.l1_block_number;
+        let block_hash = event.l1_block_hash;
 
         // Step 2: canonical block check — guard against reorged-out blocks.
-        // We compare the block hash captured at event observation time against the current
-        // canonical hash at the same block number. If they differ, the block was reorged out
-        // and the event must be dropped without poisoning nonce metadata.
-        let canonical_hash = settlement_client.get_block_n_hash(event.l1_block_number).await.map_err(|e| {
-            SettlementClientError::InvalidResponse(format!(
-                "Failed to fetch canonical hash at block {}: {}",
-                event.l1_block_number, e
-            ))
-        })?;
+        // The RPC call happens while the event is still safely in the queue.
+        // If the call fails, we return Ok(()) and retry on the next poll (100ms).
+        let canonical_hash = match settlement_client.get_block_n_hash(block_number).await {
+            Ok(hash) => hash,
+            Err(e) => {
+                tracing::warn!(
+                    "Transient failure checking canonical hash at block #{block_number}: {e:#}. \
+                     Event stays in queue, will retry on next poll."
+                );
+                return Ok(());
+            }
+        };
+
         match canonical_hash {
-            Some(hash) if hash == event.l1_block_hash => {
-                // Block is canonical — proceed with processing.
+            Some(hash) if hash == block_hash => {
+                // Block is canonical — pop and proceed with processing.
             }
             Some(hash) => {
+                // Block was reorged — pop and discard. Do NOT write nonce metadata (would
+                // poison the nonce) and do NOT advance sync tip (a reconnection should
+                // re-scan this region to pick up events from the new canonical chain).
+                let event = pending_events.pop_front().expect("front() was Some");
                 tracing::warn!(
                     "Dropping reorged L1→L2 message: block={}, nonce={}, observed_hash={:#x}, canonical_hash={:#x}",
-                    event.l1_block_number,
+                    block_number,
                     event.message.tx.nonce,
-                    B256::from(event.l1_block_hash),
+                    B256::from(block_hash),
                     B256::from(hash),
                 );
-                // Advance the sync tip so we don't re-fetch this range. Do NOT write any
-                // nonce metadata: the nonce may be re-emitted on the new canonical chain,
-                // and we must not block its future processing.
-                backend
-                    .write_l1_messaging_sync_tip(Some(event.l1_block_number))
-                    .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to update sync tip: {}", e)))?;
                 continue;
             }
             None => {
+                let event = pending_events.pop_front().expect("front() was Some");
                 tracing::warn!(
-                    "Dropping L1→L2 message: block #{} no longer exists on L1 (deep reorg or pruning)",
-                    event.l1_block_number,
+                    "Dropping L1→L2 message: block #{} no longer exists on L1 (deep reorg or pruning), nonce={}",
+                    block_number,
+                    event.message.tx.nonce,
                 );
-                backend
-                    .write_l1_messaging_sync_tip(Some(event.l1_block_number))
-                    .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to update sync tip: {}", e)))?;
                 continue;
             }
         }
+
+        // Step 3: pop the event — we've confirmed the block is canonical.
+        let event = pending_events.pop_front().expect("front() was Some");
 
         tracing::info!(
             "Processing L1→L2 message: block={}, nonce={}, confirmations={}",
@@ -891,9 +898,75 @@ mod messaging_module_tests {
             "Nonce should NOT be poisoned after dropping a reorged event"
         );
 
-        // Sync tip should still have advanced past the dropped event so we don't re-fetch the same range
+        // Sync tip should NOT have advanced past the dropped event — on reconnection,
+        // the historical query should re-scan this region to pick up new canonical events.
         let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
-        assert!(sync_tip >= mock_event.l1_block_number, "Sync tip should have advanced past the dropped event's block");
+        assert_eq!(sync_tip, 99, "Sync tip should NOT advance when dropping a reorged event");
+
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+
+        Ok(())
+    }
+
+    /// Same as `test_drops_event_when_block_does_not_exist`, but for the more common reorg case
+    /// where the block still exists at the same height but has a DIFFERENT hash (i.e., the chain
+    /// reorged and a new block was mined at the same height with different content).
+    #[tokio::test]
+    async fn test_drops_event_when_block_hash_mismatches() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.l1_messages_finality_blocks = 10;
+        let chain_config = Arc::new(chain_config);
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
+
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let mut mock_client = MockSettlementLayerProvider::new();
+
+        // Event at block 100 with l1_block_hash = [0u8; 32] (from create_mock_event).
+        // Latest at 115 → confirmation check passes.
+        let mock_event = create_mock_event(100, 1);
+        let events = vec![mock_event.clone()];
+        mock_client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+        mock_client.expect_get_latest_block_number().returning(|| Ok(115));
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        // CRITICAL: get_block_n_hash returns a DIFFERENT hash than the event's l1_block_hash.
+        // This simulates a reorg where block 100 was replaced with a new block at the same height.
+        mock_client.expect_get_block_n_hash().returning(|_| Ok(Some([1u8; 32])));
+
+        // No validity-check mocks — they should NOT be called (canonical check short-circuits).
+
+        let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+        let notify = Arc::new(Notify::new());
+        let db_clone = db.clone();
+
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false, false).await });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Event must NOT have been queued for L2 inclusion
+        assert!(
+            db.get_pending_message_to_l2(mock_event.message.tx.nonce).unwrap().is_none(),
+            "Reorged event should not be in pending_message_to_l2"
+        );
+
+        // Nonce metadata must NOT have been written
+        assert!(
+            db.get_l1_txn_hash_by_nonce(mock_event.message.tx.nonce).unwrap().is_none(),
+            "Nonce should NOT be poisoned after dropping a reorged event"
+        );
+
+        // Sync tip should NOT have advanced
+        let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
+        assert_eq!(sync_tip, 99, "Sync tip should NOT advance when dropping a reorged event");
 
         ctx_clone.cancel_global();
         sync_handle.abort();
