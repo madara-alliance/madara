@@ -79,7 +79,7 @@ fn drain_serial_batch(
         }
     }
 
-    let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.db_payload.block_n).collect();
+    let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.close_job_payload.block_n).collect();
     let queue_waits_ms: Vec<_> =
         jobs.iter().map(|job| job.payload.enqueued_at.elapsed().as_secs_f64() * 1000.0).collect();
     let queue_wait_min_ms = queue_waits_ms.iter().copied().fold(f64::INFINITY, f64::min);
@@ -140,8 +140,8 @@ impl FinalizerHandle {
                 let _in_flight_guard =
                     InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker), batch_len);
 
-                let first_block_n = jobs.first().expect("close batch has first job").payload.db_payload.block_n;
-                let last_block_n = jobs.last().expect("close batch has last job").payload.db_payload.block_n;
+                let first_block_n = jobs.first().expect("close batch has first job").payload.close_job_payload.block_n;
+                let last_block_n = jobs.last().expect("close batch has last job").payload.close_job_payload.block_n;
                 for job in &jobs {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
@@ -264,7 +264,7 @@ impl FinalizerHandle {
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
                     metrics.close_queue_wait_last.record(queue_wait.as_secs_f64(), &[]);
 
-                    let block_n = job.payload.db_payload.block_n;
+                    let block_n = job.payload.close_job_payload.block_n;
                     let completion = job.completion;
                     let payload = job.payload;
                     let prepare_fn = Arc::clone(&prepare_fn);
@@ -373,7 +373,7 @@ impl FinalizerHandle {
                     maybe_job = receiver.recv(), if !receiver_closed => {
                         match maybe_job {
                             Some(job) => {
-                                let block_n = job.payload.db_payload.block_n;
+                                let block_n = job.payload.close_job_payload.block_n;
                                 if next_commit_block_n.is_none() {
                                     next_commit_block_n = Some(block_n);
                                 }
@@ -489,7 +489,7 @@ impl FinalizerHandle {
         &self,
         payload: QueuedClosePayload,
     ) -> Result<(ClosePreconfirmedResult, oneshot::Receiver<Result<CloseJobCompletion>>)> {
-        let block_n = payload.db_payload.block_n;
+        let block_n = payload.close_job_payload.block_n;
         let (sender, receiver) = oneshot::channel();
         let job = QueuedCloseJob { payload, completion: sender };
 
@@ -531,7 +531,7 @@ mod tests {
     use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
     use blockifier::bouncer::{BouncerWeights, CasmHashComputationData};
     use blockifier::state::cached_state::CommitmentStateDiff;
-    use mc_db::close_pipeline_contract::CloseJobPayload as DbCloseJobPayload;
+    use mc_db::close_pipeline_contract::CloseJobPayload;
     use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use mp_state_update::StateDiff;
@@ -570,7 +570,7 @@ mod tests {
     fn test_payload_with_boundary(block_n: u64, is_boundary: bool) -> QueuedClosePayload {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         QueuedClosePayload {
-            db_payload: DbCloseJobPayload { block_n },
+            close_job_payload: CloseJobPayload { block_n },
             state: CurrentBlockState::new(backend.into(), block_n),
             block_exec_summary: Box::new(empty_block_exec_summary()),
             state_diff: StateDiff {
@@ -598,7 +598,10 @@ mod tests {
         _metrics: Arc<BlockProductionMetrics>,
         payloads: Vec<QueuedClosePayload>,
     ) -> Vec<Result<CloseJobCompletion>> {
-        payloads.into_iter().map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })).collect()
+        payloads
+            .into_iter()
+            .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
+            .collect()
     }
 
     #[rstest]
@@ -665,11 +668,12 @@ mod tests {
                   -> std::pin::Pin<Box<dyn Future<Output = Vec<Result<CloseJobCompletion>>> + Send>> {
                 let seen_batches = Arc::clone(&seen_batches_clone);
                 Box::pin(async move {
-                    let block_numbers: Vec<_> = payloads.iter().map(|payload| payload.db_payload.block_n).collect();
+                    let block_numbers: Vec<_> =
+                        payloads.iter().map(|payload| payload.close_job_payload.block_n).collect();
                     seen_batches.lock().expect("batch log mutex").push(block_numbers.clone());
                     payloads
                         .into_iter()
-                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n }))
+                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
                         .collect()
                 })
             };
@@ -709,13 +713,13 @@ mod tests {
                   -> std::pin::Pin<Box<dyn Future<Output = Vec<Result<CloseJobCompletion>>> + Send>> {
                 let gate = gate_clone.clone();
                 Box::pin(async move {
-                    if payloads.iter().any(|payload| payload.db_payload.block_n == 0) {
+                    if payloads.iter().any(|payload| payload.close_job_payload.block_n == 0) {
                         // Block until gate is released, simulating in-flight work during shutdown.
                         gate.notified().await;
                     }
                     payloads
                         .into_iter()
-                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n }))
+                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
                         .collect()
                 })
             };
@@ -762,7 +766,7 @@ mod tests {
                 let active_roots = Arc::clone(&active_roots);
                 let max_active_roots = Arc::clone(&max_active_roots);
                 Box::pin(async move {
-                    let block_n = payload.db_payload.block_n;
+                    let block_n = payload.close_job_payload.block_n;
                     let now_active = active_roots.fetch_add(1, Ordering::Relaxed) + 1;
                     max_active_roots.fetch_max(now_active, Ordering::Relaxed);
 

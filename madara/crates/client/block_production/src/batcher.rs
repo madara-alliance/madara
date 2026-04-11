@@ -20,9 +20,6 @@ use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
-const BATCHER_OUTPUT_BACKPRESSURE_INFO_MS: f64 = 50.0;
-const BATCHER_INPUT_WAIT_INFO_MS: f64 = 100.0;
-
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
@@ -33,7 +30,6 @@ pub struct Batcher {
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
-    replay_mode_enabled: bool,
 }
 
 impl Batcher {
@@ -46,7 +42,6 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
-        replay_mode_enabled: bool,
     ) -> Self {
         Self {
             mempool,
@@ -58,7 +53,6 @@ impl Batcher {
             mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
-            replay_mode_enabled,
         }
     }
 
@@ -68,30 +62,12 @@ impl Batcher {
             // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
             // the worker has finished executing its current one.
             let permit_wait_started = Instant::now();
-            let output_capacity_before_wait = self.out.capacity();
             let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
                 // Stop condition: service stopped (ctx), or batch sender closed.
                 return anyhow::Ok(());
             };
-            let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
-            let permit_wait_secs = permit_wait_ms / 1000.0;
+            let permit_wait_secs = permit_wait_started.elapsed().as_secs_f64();
             self.metrics.batcher_output_backpressure_duration.record(permit_wait_secs, &[]);
-            self.metrics.batcher_output_backpressure_last.record(permit_wait_secs, &[]);
-            if self.replay_mode_enabled {
-                if permit_wait_ms >= BATCHER_OUTPUT_BACKPRESSURE_INFO_MS {
-                    tracing::debug!(
-                        "batcher_output_backpressured permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
-                        output_capacity_before_wait,
-                        self.out.capacity()
-                    );
-                } else {
-                    tracing::debug!(
-                        "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
-                        output_capacity_before_wait,
-                        self.out.capacity()
-                    );
-                }
-            }
 
             // We have 3 transactions streams:
             // * bypass inclusion (for admin rpc/chain bootstrapping purposes)
@@ -154,14 +130,13 @@ impl Batcher {
             // This means that when the congestion is very low (mempool empty & no pending l1 msg), when a
             // transaction arrives we can instantly pick it up and send it for execution, ensuring the lowest latency possible.
 
-            let chunk_size = self.batch_size;
-
             let tx_stream = stream::select_with_strategy(
                 bypass_txs_stream,
                 stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
                 |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
             )
-            .try_ready_chunks(chunk_size.max(1));
+            // futures::TryStreamExt::try_ready_chunks panics when capacity is zero, so clamp defensively.
+            .try_ready_chunks(self.batch_size.max(1));
 
             tokio::pin!(tx_stream);
 
@@ -172,6 +147,7 @@ impl Batcher {
                     return anyhow::Ok(());
                 }
                 res = self.mempool_intake_rx.changed() => {
+                    // Intake mode changes require rebuilding the mempool stream with the new paused/running state.
                     if res.is_err() {
                         return anyhow::Ok(());
                     }
@@ -188,28 +164,9 @@ impl Batcher {
             };
 
             if !batch.is_empty() {
-                let batch_wait_ms = batch_wait_started.elapsed().as_secs_f64() * 1000.0;
-                let batch_wait_secs = batch_wait_ms / 1000.0;
+                let batch_wait_secs = batch_wait_started.elapsed().as_secs_f64();
                 self.metrics.batcher_batch_wait_duration.record(batch_wait_secs, &[]);
-                self.metrics.batcher_batch_wait_last.record(batch_wait_secs, &[]);
-                if self.replay_mode_enabled {
-                    let head = self.backend.chain_head_state();
-                    let log_name = if batch_wait_ms >= BATCHER_INPUT_WAIT_INFO_MS {
-                        "batcher_batch_ready_after_wait"
-                    } else {
-                        "batcher_batch_ready"
-                    };
-                    tracing::debug!(
-                        "{} tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
-                        log_name,
-                        batch.len(),
-                        head.confirmed_tip,
-                        head.external_preconfirmed_tip,
-                        head.internal_preconfirmed_tip
-                    );
-                } else {
-                    tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
-                }
+                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
                 permit.send(batch);
             }
         }
