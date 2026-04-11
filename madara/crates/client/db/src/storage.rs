@@ -6,6 +6,7 @@ use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
+use mp_chain_config::StarknetVersion;
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
@@ -229,10 +230,14 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Write a state diff to the global tries.
     /// Returns the new state root and timing information.
+    ///
+    /// `protocol_version` governs whether the `class_trie_root == 0` short-circuit applies
+    /// in state root computation (gated on `< 0.14.0`, matching pathfinder).
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+        protocol_version: StarknetVersion,
     ) -> Result<(Felt, MerklizationTimings)>;
 
     fn flush(&self) -> Result<()>;
