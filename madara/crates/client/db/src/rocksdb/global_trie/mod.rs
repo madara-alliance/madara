@@ -69,7 +69,7 @@ pub fn apply_to_global_trie<'a>(
     state_diffs: impl IntoIterator<Item = &'a StateDiff>,
     last_block_protocol_version: StarknetVersion,
 ) -> Result<(Felt, MerklizationTimings)> {
-    let mut last_trie_roots = None;
+    let mut state_root = None;
     let mut timings = MerklizationTimings::default();
 
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
@@ -113,8 +113,14 @@ pub fn apply_to_global_trie<'a>(
         let (contract_trie_root, contract_trie_timings) = contract_result?;
         let (class_trie_root, class_trie_timings) = class_result?;
 
-        // Keep the trie roots from the last iteration — state root is computed once after the loop.
-        last_trie_roots = Some((contract_trie_root, class_trie_root));
+        // NOTE: We compute the state root inside the loop (rather than only after it) so that
+        // the per-block timing metrics below include the cost of `calculate_state_root`.
+        //
+        // Because we use `last_block_protocol_version` for every iteration, intermediate state
+        // roots may be incorrect if the batch spans a protocol version boundary (e.g. 0.13.x →
+        // 0.14.0). This is harmless today — only the final root is returned and verified — but
+        // should be kept in mind if intermediate roots are ever used in the future.
+        state_root = Some(calculate_state_root(contract_trie_root, class_trie_root, last_block_protocol_version));
 
         // Capture timings
         timings.contract_trie_root = contract_duration;
@@ -129,11 +135,8 @@ pub fn apply_to_global_trie<'a>(
         metrics().apply_to_global_trie_last.record(block_secs, &[]);
     }
 
-    let (contract_trie_root, class_trie_root) =
-        last_trie_roots.context("Applying an empty batch to the global trie")?;
-    let state_root = calculate_state_root(contract_trie_root, class_trie_root, last_block_protocol_version);
-
-    Ok((state_root, timings))
+    let root = state_root.context("Applying an empty batch to the global trie")?;
+    Ok((root, timings))
 }
 
 /// "STARKNET_STATE_V0"
