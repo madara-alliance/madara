@@ -183,6 +183,12 @@ mod tests {
         Felt::ZERO,
         Felt::from_hex_unchecked("0x68bcf9e9257ab6bffd9425833a208aaab6b85649fd21c787a546cb7cb9abf")
     )]
+    #[case::zero_contract_trie_root(
+        Felt::ZERO,
+        Felt::from_hex_unchecked("0x789abc"),
+        // Poseidon(STARKNET_STATE_V0, 0, 0x789abc)
+        Felt::from_hex_unchecked("0x39eb9ca5f6c6dfdd4d91e3d1c03181b3c9bbc2bfe85e0d39b011bcd07cac79a")
+    )]
     #[case::both_zero(Felt::ZERO, Felt::ZERO, Felt::ZERO)]
     fn test_calculate_state_root(
         #[case] contracts_trie_root: Felt,
