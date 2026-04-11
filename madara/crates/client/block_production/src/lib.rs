@@ -1171,7 +1171,7 @@ impl BlockProductionTask {
         self.metrics.close_block_enqueue_duration.record(close_block_enqueue_duration.as_secs_f64(), &[]);
         self.metrics.close_block_enqueue_last.record(close_block_enqueue_duration.as_secs_f64(), &[]);
         let payload = QueuedClosePayload {
-            db_payload: mc_db::close_pipeline_contract::CloseJobPayload { block_n },
+            close_job_payload: mc_db::close_pipeline_contract::CloseJobPayload { block_n },
             state,
             block_exec_summary,
             state_diff,
@@ -1417,7 +1417,7 @@ impl BlockProductionTask {
         payload: QueuedClosePayload,
     ) -> anyhow::Result<ParallelComputedClosePayload> {
         let QueuedClosePayload {
-            db_payload,
+            close_job_payload,
             state,
             block_exec_summary,
             state_diff,
@@ -1544,7 +1544,7 @@ impl BlockProductionTask {
 
         Ok(ParallelComputedClosePayload {
             payload: QueuedClosePayload {
-                db_payload,
+                close_job_payload,
                 state,
                 block_exec_summary,
                 state_diff,
@@ -1969,7 +1969,6 @@ impl BlockProductionTask {
                 batch_sender,
                 bypass_tx_input,
                 self.mempool_intake_rx.clone(),
-                self.replay_mode_enabled,
             )
             .run(),
         );

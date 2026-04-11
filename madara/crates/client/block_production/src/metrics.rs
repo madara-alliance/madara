@@ -40,8 +40,10 @@ pub struct BlockProductionMetrics {
     pub close_block_enqueue_last: Gauge<f64>,
     pub executor_batch_execution_duration: Histogram<f64>,
     pub executor_batch_execution_last: Gauge<f64>,
+    pub executor_wait_for_work_duration: Histogram<f64>,
+    pub executor_close_reason_total: Counter<u64>,
+    pub replay_boundary_spillover_transactions_total: Counter<u64>,
     pub executor_inter_batch_wait_duration: Histogram<f64>,
-    pub executor_inter_batch_wait_last: Gauge<f64>,
     pub executor_to_main_delivery_duration: Histogram<f64>,
     pub executor_to_main_delivery_last: Gauge<f64>,
     pub executor_to_close_queue_duration: Histogram<f64>,
@@ -49,9 +51,7 @@ pub struct BlockProductionMetrics {
     pub executor_finalize_duration: Histogram<f64>,
     pub executor_finalize_last: Gauge<f64>,
     pub batcher_batch_wait_duration: Histogram<f64>,
-    pub batcher_batch_wait_last: Gauge<f64>,
     pub batcher_output_backpressure_duration: Histogram<f64>,
-    pub batcher_output_backpressure_last: Gauge<f64>,
     pub parallel_root_spawn_blocking_queue_duration: Histogram<f64>,
     pub parallel_root_spawn_blocking_queue_last: Gauge<f64>,
     pub parallel_root_compute_duration: Histogram<f64>,
@@ -296,16 +296,29 @@ impl BlockProductionMetrics {
             "Last batch: time spent by executor thread executing batch".to_string(),
             "s".to_string(),
         );
+        let executor_wait_for_work_duration = register_histogram_metric_instrument(
+            &meter,
+            "executor_wait_for_work_duration_seconds".to_string(),
+            "Time spent waiting for the next batch or command before the executor can make progress.".to_string(),
+            "s".to_string(),
+        );
+        let executor_close_reason_total = register_counter_metric_instrument(
+            &meter,
+            "executor_close_reason_total".to_string(),
+            "Number of executor block-close decisions grouped by the reason that triggered closing.".to_string(),
+            "close".to_string(),
+        );
+        let replay_boundary_spillover_transactions_total = register_counter_metric_instrument(
+            &meter,
+            "replay_boundary_spillover_transactions_total".to_string(),
+            "Number of transactions deferred into the next block because a replay boundary capped the current block."
+                .to_string(),
+            "tx".to_string(),
+        );
         let executor_inter_batch_wait_duration = register_histogram_metric_instrument(
             &meter,
             "executor_inter_batch_wait_duration_seconds".to_string(),
             "Time between the previous batch finishing and the next batch starting execution".to_string(),
-            "s".to_string(),
-        );
-        let executor_inter_batch_wait_last = register_gauge_metric_instrument(
-            &meter,
-            "executor_inter_batch_wait_last_seconds".to_string(),
-            "Last batch: time between the previous batch finishing and the next batch starting".to_string(),
             "s".to_string(),
         );
         let executor_to_main_delivery_duration = register_histogram_metric_instrument(
@@ -350,22 +363,10 @@ impl BlockProductionMetrics {
             "Time the batcher waited for input before a batch became ready".to_string(),
             "s".to_string(),
         );
-        let batcher_batch_wait_last = register_gauge_metric_instrument(
-            &meter,
-            "batcher_batch_wait_last_seconds".to_string(),
-            "Last batch: time the batcher waited before a batch became ready".to_string(),
-            "s".to_string(),
-        );
         let batcher_output_backpressure_duration = register_histogram_metric_instrument(
             &meter,
             "batcher_output_backpressure_duration_seconds".to_string(),
             "Time the batcher waited for output channel capacity before it could enqueue a batch".to_string(),
-            "s".to_string(),
-        );
-        let batcher_output_backpressure_last = register_gauge_metric_instrument(
-            &meter,
-            "batcher_output_backpressure_last_seconds".to_string(),
-            "Last batch: time the batcher waited for output channel capacity".to_string(),
             "s".to_string(),
         );
         let parallel_root_spawn_blocking_queue_duration = register_histogram_metric_instrument(
@@ -674,8 +675,10 @@ impl BlockProductionMetrics {
             close_block_enqueue_last,
             executor_batch_execution_duration,
             executor_batch_execution_last,
+            executor_wait_for_work_duration,
+            executor_close_reason_total,
+            replay_boundary_spillover_transactions_total,
             executor_inter_batch_wait_duration,
-            executor_inter_batch_wait_last,
             executor_to_main_delivery_duration,
             executor_to_main_delivery_last,
             executor_to_close_queue_duration,
@@ -683,9 +686,7 @@ impl BlockProductionMetrics {
             executor_finalize_duration,
             executor_finalize_last,
             batcher_batch_wait_duration,
-            batcher_batch_wait_last,
             batcher_output_backpressure_duration,
-            batcher_output_backpressure_last,
             parallel_root_spawn_blocking_queue_duration,
             parallel_root_spawn_blocking_queue_last,
             parallel_root_compute_duration,

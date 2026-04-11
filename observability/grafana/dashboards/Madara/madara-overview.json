@@ -5691,8 +5691,8 @@
     {
       "id": 310,
       "type": "timeseries",
-      "title": "Waits & Handoffs (Latest Block)",
-      "description": "Latest-block waiting and handoff timings from batcher through close enqueue.",
+      "title": "Waits & Handoffs",
+      "description": "Batcher and executor waits use recent p95 latency; downstream handoffs keep their latest-value view.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -5725,8 +5725,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "batcher_batch_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Batcher Wait",
+          "expr": "histogram_quantile(0.95, sum(rate(batcher_batch_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Batcher Wait p95",
           "refId": "A"
         },
         {
@@ -5734,8 +5734,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "batcher_output_backpressure_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Batcher Output Backpressure",
+          "expr": "histogram_quantile(0.95, sum(rate(batcher_output_backpressure_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Batcher Output Backpressure p95",
           "refId": "B"
         },
         {
@@ -5743,8 +5743,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "executor_inter_batch_wait_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Executor Inter-Batch Wait",
+          "expr": "histogram_quantile(0.95, sum(rate(executor_inter_batch_wait_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "Executor Inter-Batch Wait p95",
           "refId": "C"
         },
         {

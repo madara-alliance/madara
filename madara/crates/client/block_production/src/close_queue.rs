@@ -1,14 +1,18 @@
 use crate::CurrentBlockState;
 use anyhow::Result;
 use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
-use mc_db::close_pipeline_contract::CloseJobPayload as DbCloseJobPayload;
+use mc_db::close_pipeline_contract::CloseJobPayload;
 use mc_db::rocksdb::SnapshotRef;
 use mp_state_update::StateDiff;
 use std::time::Instant;
 use tokio::sync::oneshot;
 
+/// Close-job data plus the runtime metadata required by deferred finalization.
+///
+/// The DB payload is augmented with the state, execution summary, and timing
+/// context gathered while block production is still on the hot path.
 pub(crate) struct QueuedClosePayload {
-    pub db_payload: DbCloseJobPayload,
+    pub close_job_payload: CloseJobPayload,
     pub state: CurrentBlockState,
     pub block_exec_summary: Box<BlockExecutionSummary>,
     pub state_diff: StateDiff,
