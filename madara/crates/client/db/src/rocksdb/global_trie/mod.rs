@@ -141,7 +141,10 @@ const STARKNET_STATE_PREFIX: Felt = Felt::from_hex_unchecked("0x535441524b4e4554
 
 /// Computes the global state root from the contract and class trie roots.
 ///
-/// Mirrors pathfinder's `StateCommitment::calculate` (`pathfinder/crates/common/src/lib.rs`):
+/// Implements `calculate_global_state_root` from the Starknet OS
+/// (`starkware/starknet/core/os/state/commitment.cairo` in the sequencer repo).
+/// Pathfinder's `StateCommitment::calculate` (`crates/common/src/lib.rs`) is a
+/// compatible independent implementation used as a cross-reference.
 ///
 /// 1. If both roots are zero, the result is zero (any version).
 /// 2. For `version < 0.14.0` with `class_trie_root == 0`, returns `contract_trie_root`
