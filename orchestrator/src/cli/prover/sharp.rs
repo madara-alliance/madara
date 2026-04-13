@@ -38,18 +38,13 @@ pub struct SharpCliArgs {
     #[arg(required_if_eq("sharp", "true"))]
     pub sharp_server_crt: Option<String>,
 
-    /// The proof layout for Sharp.
-    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT", long, default_value = "small")]
-    pub sharp_proof_layout: Option<String>,
-
     /// The GPS verifier contract address.
     #[arg(env = "MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS", long)]
     #[arg(required_if_eq("sharp", "true"))]
     pub gps_verifier_contract_address: Option<String>,
 
-    /// Settlement layer for Sharp.
-    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER", long)]
-    #[arg(required_if_eq("sharp", "true"))]
+    /// Settlement layer for Sharp. Defaults to "ethereum" since SHARP is L2-only.
+    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER", long, default_value = "ethereum")]
     pub sharp_settlement_layer: Option<String>,
 
     /// Whether to generate offchain proofs (not written on-chain by SHARP).

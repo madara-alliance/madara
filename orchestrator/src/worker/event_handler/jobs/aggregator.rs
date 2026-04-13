@@ -5,7 +5,7 @@ use crate::error::other::OtherError;
 use crate::types::batch::AggregatorBatchStatus;
 use crate::types::constant::DA_SEGMENT_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
@@ -44,7 +44,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
 
         tracing::Span::current().record("batch_id", metadata.batch_num);
-        tracing::Span::current().record("bucket_id", metadata.bucket_id.as_str());
+        if let Some(ref bucket_id) = metadata.bucket_id {
+            tracing::Span::current().record("bucket_id", bucket_id.as_str());
+        }
 
         let external_id = match config.prover_kind() {
             ProverKind::Atlantic => self.process_job_atlantic(&config, &metadata).await?,
@@ -106,10 +108,14 @@ impl AggregatorJobHandler {
         config: &Arc<Config>,
         metadata: &AggregatorMetadata,
     ) -> Result<String, JobError> {
-        debug!(bucket_id = %metadata.bucket_id, "Closing bucket (Atlantic)");
+        let bucket_id = metadata.bucket_id.as_ref().ok_or_else(|| {
+            JobError::Other(OtherError(eyre!("Atlantic aggregator job missing bucket_id in metadata")))
+        })?;
+
+        debug!(bucket_id = %bucket_id, "Closing bucket (Atlantic)");
 
         let external_id =
-            config.prover_client().submit_task(Task::CloseBucket(metadata.bucket_id.clone())).await.map_err(|e| {
+            config.prover_client().submit_task(Task::CloseBucket(bucket_id.clone())).await.map_err(|e| {
                 error!(error = %e, "Failed to submit close bucket task to prover client");
                 JobError::ProverClientError(e)
             })?;
@@ -125,7 +131,9 @@ impl AggregatorJobHandler {
         metadata: &AggregatorMetadata,
     ) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id;
-        let bucket_id = &metadata.bucket_id;
+        let bucket_id = metadata.bucket_id.as_ref().ok_or_else(|| {
+            JobError::Other(OtherError(eyre!("Atlantic aggregator job missing bucket_id in metadata")))
+        })?;
 
         debug!(bucket_id = %bucket_id, "Getting bucket status from prover client (Atlantic)");
 
@@ -233,7 +241,7 @@ impl AggregatorJobHandler {
     async fn process_job_sharp(
         &self,
         config: &Arc<Config>,
-        job: &mut JobItem,
+        _job: &mut JobItem,
         metadata: AggregatorMetadata,
     ) -> Result<String, JobError> {
         let batch_num = metadata.batch_num;
@@ -360,7 +368,7 @@ impl AggregatorJobHandler {
             .prover_client()
             .submit_task(Task::SubmitApplicativeJob(ApplicativeJobInfo {
                 cairo_pie: Box::new(aggregator_output.aggregator_cairo_pie),
-                children_cairo_job_keys: child_job_keys.clone(),
+                children_cairo_job_keys: child_job_keys,
             }))
             .await
             .map_err(|e| {
@@ -370,12 +378,7 @@ impl AggregatorJobHandler {
 
         info!(applicative_job_key = %applicative_key, "Applicative job submitted to SHARP");
 
-        // 7. Update metadata with SHARP-specific fields
-        let mut updated_metadata = metadata;
-        updated_metadata.applicative_job_key = Some(applicative_key.clone());
-        updated_metadata.child_job_keys = Some(child_job_keys);
-        job.metadata.specific = JobSpecificMetadata::Aggregator(updated_metadata);
-
+        // The applicative_key is returned and set as job.external_id by the framework
         Ok(applicative_key)
     }
 
@@ -389,12 +392,16 @@ impl AggregatorJobHandler {
     ) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id;
 
-        let applicative_key = metadata.applicative_job_key.as_ref().ok_or_else(|| {
-            JobError::Other(OtherError(eyre!(
-                "SHARP aggregator job {} has no applicative_job_key in metadata",
-                internal_id
-            )))
-        })?;
+        // The applicative job key is stored as external_id by the framework
+        // (set from the return value of process_job_sharp)
+        let applicative_key: String = job
+            .external_id
+            .unwrap_string()
+            .map_err(|e| {
+                error!(error = %e, "Failed to get SHARP applicative job key from external_id");
+                JobError::Other(OtherError(e))
+            })?
+            .into();
 
         debug!(
             applicative_job_key = %applicative_key,
@@ -403,7 +410,7 @@ impl AggregatorJobHandler {
 
         let task_status = config
             .prover_client()
-            .get_task_status(TaskType::ApplicativeJob, applicative_key, None, false)
+            .get_task_status(TaskType::ApplicativeJob, &applicative_key, None, false)
             .await
             .map_err(|e| {
                 error!(error = %e, "Failed to get applicative job status from SHARP");

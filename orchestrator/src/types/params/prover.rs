@@ -55,9 +55,6 @@ impl TryFrom<RunCmd> for ProverConfig {
                         OrchestratorError::RunCommandError("Sharp RPC node URL is required".to_string())
                     })?,
                     sharp_server_crt,
-                    sharp_proof_layout: sharp_args.sharp_proof_layout.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp proof layout is required".to_string())
-                    })?,
                     gps_verifier_contract_address: sharp_args.gps_verifier_contract_address.ok_or_else(|| {
                         OrchestratorError::RunCommandError("GPS verifier contract address is required".to_string())
                     })?,

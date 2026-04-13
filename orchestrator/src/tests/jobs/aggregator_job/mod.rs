@@ -111,7 +111,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 
     job_item.metadata.specific = JobSpecificMetadata::Aggregator(AggregatorMetadata {
         batch_num: 1,
-        bucket_id: "bucket_id".to_string(),
+        bucket_id: Some("bucket_id".to_string()),
         download_proof: Some(get_batch_artifact_file(1, PROOF_FILE_NAME)),
         cairo_pie_path: get_batch_artifact_file(1, CAIRO_PIE_FILE_NAME),
         program_output_path: get_batch_artifact_file(1, PROGRAM_OUTPUT_FILE_NAME),
@@ -163,7 +163,7 @@ async fn test_process_job() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
-            bucket_id: "bucket_id".to_string(),
+            bucket_id: Some("bucket_id".to_string()),
             batch_num: 1,
             ..Default::default()
         }),

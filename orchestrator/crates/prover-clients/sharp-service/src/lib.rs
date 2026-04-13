@@ -30,7 +30,6 @@ pub struct SharpValidatedArgs {
     pub sharp_user_key: String,
     pub sharp_rpc_node_url: Url,
     pub sharp_server_crt: String,
-    pub sharp_proof_layout: String,
     pub gps_verifier_contract_address: String,
     pub sharp_settlement_layer: String,
     pub sharp_offchain_proof: bool,
