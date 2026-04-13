@@ -11076,6 +11076,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
+ "orchestrator-aggregator-runner",
  "orchestrator-atlantic-service",
  "orchestrator-da-client-interface",
  "orchestrator-ethereum-da-client",
@@ -11112,6 +11113,20 @@ dependencies = [
  "url",
  "utils-mock-atlantic-server",
  "uuid 1.23.0",
+]
+
+[[package]]
+name = "orchestrator-aggregator-runner"
+version = "0.10.0"
+dependencies = [
+ "apollo_starknet_os_program",
+ "cairo-vm",
+ "serde_json",
+ "starknet-types-core 0.2.4",
+ "starknet_os",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -11307,6 +11322,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tracing",

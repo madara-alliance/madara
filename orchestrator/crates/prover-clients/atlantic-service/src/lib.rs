@@ -158,6 +158,9 @@ impl ProverClient for AtlanticProverService {
 
                 Ok(existing_bucket.bucket.id)
             }
+            Task::SubmitApplicativeJob(_) => Err(ProverClientError::TaskInvalid(
+                "SubmitApplicativeJob is not supported by Atlantic. Use CloseBucket instead.".to_string(),
+            )),
         }
     }
 
@@ -234,6 +237,9 @@ impl ProverClient for AtlanticProverService {
                     Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
                 }
             },
+            TaskType::ApplicativeJob => {
+                Err(ProverClientError::TaskInvalid("ApplicativeJob task type is not supported by Atlantic".to_string()))
+            }
         }
     }
     async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError> {

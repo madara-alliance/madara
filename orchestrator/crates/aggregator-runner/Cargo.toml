@@ -1,0 +1,14 @@
+[package]
+name = "orchestrator-aggregator-runner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+starknet_os = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+cairo-vm.workspace = true
+starknet-types-core.workspace = true
+tempfile.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true

@@ -51,4 +51,9 @@ pub struct SharpCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER", long)]
     #[arg(required_if_eq("sharp", "true"))]
     pub sharp_settlement_layer: Option<String>,
+
+    /// Whether to generate offchain proofs (not written on-chain by SHARP).
+    /// Default is false, meaning SHARP will register the fact on-chain.
+    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_OFFCHAIN_PROOF", long, default_value = "false")]
+    pub sharp_offchain_proof: Option<bool>,
 }

@@ -41,6 +41,11 @@ pub struct CreateJobInfo {
     pub dedup_id: String,
 }
 
+pub struct ApplicativeJobInfo {
+    pub cairo_pie: Box<CairoPie>,
+    pub children_cairo_job_keys: Vec<String>,
+}
+
 pub enum Task {
     /// For creating a new job
     CreateJob(CreateJobInfo),
@@ -50,6 +55,10 @@ pub enum Task {
     /// Requires:
     /// 1. Bucket ID
     CloseBucket(String),
+    /// For submitting an applicative (aggregator) job to SHARP.
+    /// The aggregator CairoPIE is produced locally and submitted along with
+    /// the cairo_job_keys of the child jobs it aggregates.
+    SubmitApplicativeJob(ApplicativeJobInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +72,9 @@ pub enum TaskStatus {
 pub enum TaskType {
     Job,
     Bucket,
+    /// An applicative (aggregator) job submitted to SHARP.
+    /// Status semantics differ from regular jobs: Succeeded only when ONCHAIN.
+    ApplicativeJob,
 }
 
 #[derive(Debug, thiserror::Error)]

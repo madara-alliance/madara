@@ -23,6 +23,25 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
             (true, false) => {
                 let sharp_args = run_cmd.sharp_args;
+
+                // Resolve mTLS secrets: _FILE env var takes precedence over direct value
+                let sharp_user_crt = resolve_secret_from_file("MADARA_ORCHESTRATOR_SHARP_USER_CRT")
+                    .map_err(OrchestratorError::RunCommandError)?
+                    .or(sharp_args.sharp_user_crt)
+                    .ok_or_else(|| {
+                        OrchestratorError::RunCommandError("Sharp user certificate is required".to_string())
+                    })?;
+                let sharp_user_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_SHARP_USER_KEY")
+                    .map_err(OrchestratorError::RunCommandError)?
+                    .or(sharp_args.sharp_user_key)
+                    .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key is required".to_string()))?;
+                let sharp_server_crt = resolve_secret_from_file("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT")
+                    .map_err(OrchestratorError::RunCommandError)?
+                    .or(sharp_args.sharp_server_crt)
+                    .ok_or_else(|| {
+                        OrchestratorError::RunCommandError("Sharp server certificate is required".to_string())
+                    })?;
+
                 Ok(Self::Sharp(SharpValidatedArgs {
                     sharp_customer_id: sharp_args.sharp_customer_id.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp customer ID is required".to_string())
@@ -30,18 +49,12 @@ impl TryFrom<RunCmd> for ProverConfig {
                     sharp_url: sharp_args
                         .sharp_url
                         .ok_or_else(|| OrchestratorError::RunCommandError("Sharp URL is required".to_string()))?,
-                    sharp_user_crt: sharp_args.sharp_user_crt.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp user certificate is required".to_string())
-                    })?,
-                    sharp_user_key: sharp_args
-                        .sharp_user_key
-                        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key is required".to_string()))?,
+                    sharp_user_crt,
+                    sharp_user_key,
                     sharp_rpc_node_url: sharp_args.sharp_rpc_node_url.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp RPC node URL is required".to_string())
                     })?,
-                    sharp_server_crt: sharp_args.sharp_server_crt.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp server certificate is required".to_string())
-                    })?,
+                    sharp_server_crt,
                     sharp_proof_layout: sharp_args.sharp_proof_layout.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp proof layout is required".to_string())
                     })?,
@@ -51,6 +64,7 @@ impl TryFrom<RunCmd> for ProverConfig {
                     sharp_settlement_layer: sharp_args.sharp_settlement_layer.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp settlement layer is required".to_string())
                     })?,
+                    sharp_offchain_proof: sharp_args.sharp_offchain_proof.unwrap_or(false),
                 }))
             }
             (false, true) => {

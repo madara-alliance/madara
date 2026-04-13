@@ -128,6 +128,16 @@ pub struct AggregatorMetadata {
     /// Aggregator query ID
     /// This is the query ID of the job created by the prover client itself
     pub aggregator_query_id: Option<String>,
+
+    /// For SHARP: the cairo_job_key of the applicative job submitted to SHARP.
+    /// Set during process_job in the SHARP aggregation flow.
+    #[serde(default)]
+    pub applicative_job_key: Option<String>,
+
+    /// For SHARP: the list of child cairo_job_keys (external_ids from ProofCreation jobs).
+    /// Used to submit the applicative job to SHARP.
+    #[serde(default)]
+    pub child_job_keys: Option<Vec<String>>,
 }
 
 /// Metadata specific to proving jobs.

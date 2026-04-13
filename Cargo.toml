@@ -329,6 +329,7 @@ orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clie
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
 orchestrator = { path = "orchestrator" }
 
 utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
