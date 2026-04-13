@@ -72,20 +72,18 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 
     // Mocking prover client
     let mut prover_client = MockProverClient::new();
-    prover_client.expect_get_aggregator_task_id().returning(|_| Ok("aggregator_task_id".to_string()));
     prover_client
         .expect_get_task_status()
-        .with(eq(TaskType::Bucket), eq("bucket_id".to_string()), eq(None), eq(false))
+        .with(eq(TaskType::Aggregation), eq("bucket_id".to_string()), eq(None), eq(false))
         .times(1)
-        .returning(|_, _, _, _| Ok(TaskStatus::Succeeded)); // Testing for the case when the task is completed
-    prover_client.expect_get_task_artifacts().times(3).returning(move |_, file_name| {
-        if file_name == "pie.cairo0.zip" {
-            // return the actual cairo pie so we can calculate the program output
-            Ok(buffer_bytes.to_vec())
-        } else {
-            // For DA segment and proof files, return dummy content
-            Ok("file_content".to_string().into_bytes().to_vec())
-        }
+        .returning(|_, _, _, _| Ok(TaskStatus::Succeeded));
+    let buffer_bytes_clone = buffer_bytes.clone();
+    prover_client.expect_get_aggregation_artifacts().times(1).returning(move |_, _| {
+        Ok(orchestrator_prover_client_interface::AggregationArtifacts {
+            cairo_pie: Some(buffer_bytes_clone.to_vec()),
+            da_segment: Some("da_segment_content".to_string().into_bytes()),
+            proof: Some("proof_content".to_string().into_bytes()),
+        })
     });
 
     // Mocking database client

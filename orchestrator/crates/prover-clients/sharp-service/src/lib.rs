@@ -12,7 +12,8 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
-    ApplicativeJobInfo, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+    AggregationArtifacts, ApplicativeJobInfo, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus,
+    TaskType,
 };
 use tempfile::NamedTempFile;
 use url::Url;
@@ -42,9 +43,6 @@ pub struct SharpProverService {
 }
 
 /// Encode a CairoPIE as base64 for the SHARP API.
-///
-/// Writes the CairoPIE to a temporary zip file, reads the bytes,
-/// and returns the base64-encoded string.
 fn encode_cairo_pie_base64(
     cairo_pie: &cairo_vm::vm::runners::cairo_pie::CairoPie,
 ) -> Result<String, ProverClientError> {
@@ -70,30 +68,24 @@ impl ProverClient for SharpProverService {
                 );
                 let encoded_pie = encode_cairo_pie_base64(&cairo_pie)?;
                 let cairo_job_key = Uuid::new_v4().to_string();
-
                 self.sharp_client.add_job(&encoded_pie, &cairo_job_key).await?;
-
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
-                    function_type = "cairo_pie",
                     cairo_job_key = %cairo_job_key,
                     "Cairo PIE submitted to SHARP."
                 );
                 Ok(cairo_job_key)
             }
             Task::CreateBucket => {
-                // SHARP has no bucket concept. Return a local UUID for tracking.
                 let bucket_id = Uuid::new_v4().to_string();
                 tracing::debug!(bucket_id = %bucket_id, "Generated local bucket ID (SHARP has no remote buckets)");
                 Ok(bucket_id)
             }
-            Task::CloseBucket(bucket_id) => {
-                // No-op for SHARP. The real aggregation work happens in the aggregator job handler.
-                tracing::debug!(bucket_id = %bucket_id, "CloseBucket is a no-op for SHARP");
-                Ok(bucket_id)
-            }
-            Task::SubmitApplicativeJob(ApplicativeJobInfo { cairo_pie, children_cairo_job_keys }) => {
+            Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
+                "SHARP does not support bucket-based aggregation. Use RunAggregationWithPie.".to_string(),
+            )),
+            Task::RunAggregationWithPie(ApplicativeJobInfo { cairo_pie, children_cairo_job_keys }) => {
                 tracing::info!(
                     log_type = "starting",
                     category = "submit_task",
@@ -103,13 +95,10 @@ impl ProverClient for SharpProverService {
                 );
                 let encoded_pie = encode_cairo_pie_base64(&cairo_pie)?;
                 let cairo_job_key = Uuid::new_v4().to_string();
-
                 self.sharp_client.add_applicative_job(&encoded_pie, &cairo_job_key, &children_cairo_job_keys).await?;
-
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
-                    function_type = "applicative_job",
                     cairo_job_key = %cairo_job_key,
                     "Applicative job submitted to SHARP."
                 );
@@ -126,13 +115,11 @@ impl ProverClient for SharpProverService {
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
+        let res = self.sharp_client.get_job_status(job_key).await?;
+
         match task {
             TaskType::Job => {
                 // For child jobs: Succeeded when validated (PROCESSED, or IN_PROGRESS + validation_done).
-                // This allows the ProofCreation job to complete before the proof is fully on-chain,
-                // since on-chain registration happens at the applicative job level.
-                let res = self.sharp_client.get_job_status(job_key).await?;
-
                 match res.status {
                     CairoJobStatus::Failed => {
                         tracing::error!(cairo_job_key = %job_key, "SHARP child job FAILED");
@@ -165,10 +152,8 @@ impl ProverClient for SharpProverService {
                     }
                 }
             }
-            TaskType::ApplicativeJob => {
+            TaskType::Aggregation => {
                 // For applicative jobs: Succeeded only when ONCHAIN (fact registered).
-                let res = self.sharp_client.get_job_status(job_key).await?;
-
                 match res.status {
                     CairoJobStatus::Onchain => {
                         if cross_verify {
@@ -186,10 +171,7 @@ impl ProverClient for SharpProverService {
                                     )))
                                 }
                             } else {
-                                tracing::debug!(
-                                    cairo_job_key = %job_key,
-                                    "No fact provided for cross-verification, considering successful"
-                                );
+                                tracing::debug!("No fact provided for cross-verification, considering successful");
                                 Ok(TaskStatus::Succeeded)
                             }
                         } else {
@@ -218,11 +200,6 @@ impl ProverClient for SharpProverService {
                     }
                 }
             }
-            TaskType::Bucket => {
-                // SHARP has no remote buckets. Return Processing as a safe default.
-                tracing::debug!("Bucket status check is a no-op for SHARP");
-                Ok(TaskStatus::Processing)
-            }
         }
     }
 
@@ -242,18 +219,13 @@ impl ProverClient for SharpProverService {
         ))))
     }
 
-    async fn get_task_artifacts(&self, _task_id: &str, _file_name: &str) -> Result<Vec<u8>, ProverClientError> {
-        Err(ProverClientError::Internal(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "SHARP does not support remote artifact fetching; artifacts are produced locally",
-        ))))
-    }
-
-    async fn get_aggregator_task_id(&self, _bucket_id: &str) -> Result<String, ProverClientError> {
-        Err(ProverClientError::Internal(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "SHARP does not use remote aggregator task IDs; aggregation is done locally",
-        ))))
+    /// For SHARP, all artifacts are already stored by the handler during process_job.
+    async fn get_aggregation_artifacts(
+        &self,
+        _external_id: &str,
+        _include_proof: bool,
+    ) -> Result<AggregationArtifacts, ProverClientError> {
+        Ok(AggregationArtifacts::default())
     }
 }
 

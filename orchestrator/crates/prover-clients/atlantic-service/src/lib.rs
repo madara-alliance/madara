@@ -15,7 +15,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
-    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+    AggregationArtifacts, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
 use starknet_core::types::Felt;
 use swiftness_proof_parser::{parse, StarkProof};
@@ -143,7 +143,7 @@ impl ProverClient for AtlanticProverService {
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
-            Task::CloseBucket(bucket_id) => {
+            Task::RunAggregation(bucket_id) => {
                 let existing_bucket = self.atlantic_client.get_bucket(&bucket_id).await?;
                 match existing_bucket.bucket.status {
                     AtlanticBucketStatus::Open => {
@@ -158,8 +158,8 @@ impl ProverClient for AtlanticProverService {
 
                 Ok(existing_bucket.bucket.id)
             }
-            Task::SubmitApplicativeJob(_) => Err(ProverClientError::TaskInvalid(
-                "SubmitApplicativeJob is not supported by Atlantic. Use CloseBucket instead.".to_string(),
+            Task::RunAggregationWithPie(_) => Err(ProverClientError::TaskInvalid(
+                "Atlantic does not support PIE-based aggregation. Use RunAggregation.".to_string(),
             )),
         }
     }
@@ -229,7 +229,7 @@ impl ProverClient for AtlanticProverService {
                     }
                 }
             }
-            TaskType::Bucket => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
+            TaskType::Aggregation => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
                 AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::Done => Ok(TaskStatus::Succeeded),
@@ -237,9 +237,6 @@ impl ProverClient for AtlanticProverService {
                     Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
                 }
             },
-            TaskType::ApplicativeJob => {
-                Err(ProverClientError::TaskInvalid("ApplicativeJob task type is not supported by Atlantic".to_string()))
-            }
         }
     }
     async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError> {
@@ -294,19 +291,43 @@ impl ProverClient for AtlanticProverService {
         Ok(atlantic_job_response.atlantic_query_id)
     }
 
+    /// Fetch aggregation artifacts from Atlantic after bucket completion.
+    ///
+    /// Finds the aggregator query ID, then fetches CairoPIE, DA segment,
+    /// and optionally the proof from the Atlantic artifacts endpoint.
+    async fn get_aggregation_artifacts(
+        &self,
+        external_id: &str,
+        include_proof: bool,
+    ) -> Result<AggregationArtifacts, ProverClientError> {
+        // external_id is the bucket_id for Atlantic
+        let aggregator_query_id = self.get_aggregator_task_id(external_id).await?;
+
+        let cairo_pie = self.get_task_artifacts(&aggregator_query_id, constants::CAIRO_PIE_FILE_NAME).await?;
+        let da_segment = self.get_task_artifacts(&aggregator_query_id, constants::DA_SEGMENT_FILE_NAME).await?;
+
+        let proof = if include_proof {
+            Some(self.get_task_artifacts(&aggregator_query_id, constants::PROOF_FILE_NAME).await?)
+        } else {
+            None
+        };
+
+        Ok(AggregationArtifacts { cairo_pie: Some(cairo_pie), da_segment: Some(da_segment), proof })
+    }
+}
+
+/// Private helper methods (not part of the ProverClient trait).
+impl AtlanticProverService {
+    /// Find the aggregator query ID from a bucket.
     async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError> {
         let bucket = self.atlantic_client.get_bucket(bucket_id).await?;
 
-        // Find the aggregator job by its step type (FactHashRegistration)
-        // This is more reliable than using bucket_job_index which depends on num_snos_batches
         Ok(bucket
             .queries
             .iter()
             .find(|query| {
                 matches!(
                     query.step,
-                    // For Mocked queries we search for FactHashRegistration
-                    // For Real queries we search for ProofGenerationAndVerification
                     Some(AtlanticQueryStep::FactHashRegistration)
                         | Some(AtlanticQueryStep::ProofGenerationAndVerification)
                 )
@@ -316,17 +337,7 @@ impl ProverClient for AtlanticProverService {
             .clone())
     }
 
-    /// Fetch artifacts from the Atlantic service.
-    /// It tries to fetch the artifact for the given task ID from the configured artifacts base URL.
-    /// The type of artifacts to be fetched is defined by the `file_name` parameter.
-    ///
-    /// Calls the `get_artifacts` method of `AtlanticClient` defined in `client.rs`
-    /// # Arguments
-    /// `task_id` - the ID of the task for which the artifacts need to be fetched
-    /// `file_name` - the name of the file which is to be fetched
-    ///
-    /// # Returns
-    /// The artifact as a byte array if the request is successful, otherwise an error is returned
+    /// Fetch a single artifact from the Atlantic service by task ID and file name.
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
         let base_url = self.atlantic_client.artifacts_base_url().as_str().trim_end_matches('/');
         Ok(self.atlantic_client.get_artifacts(format!("{}/queries/{}/{}", base_url, task_id, file_name)).await?)

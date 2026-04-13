@@ -332,8 +332,6 @@ impl TestConfigBuilder {
         let (_starknet_rpc_url, starknet_client, starknet_server) =
             implement_client::init_starknet_client(starknet_rpc_url_type, starknet_client_type).await;
 
-        let prover_client = implement_client::init_prover_client(prover_client_type, &params.clone());
-
         let using_actual_queue = matches!(queue_type, ConfigType::Actual);
         let using_actual_database = matches!(database_type, ConfigType::Actual);
         let using_actual_alerts = matches!(alerts_type, ConfigType::Actual);
@@ -397,6 +395,8 @@ impl TestConfigBuilder {
             eth_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
             is_l3: layer.as_ref().map(|l| l.is_l3()).unwrap_or(false),
         };
+
+        let prover_client = implement_client::init_prover_client(prover_client_type, &params);
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),

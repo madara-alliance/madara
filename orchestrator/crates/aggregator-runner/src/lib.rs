@@ -1,10 +1,6 @@
 pub mod error;
 
-use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::types::layout_name::LayoutName;
-use cairo_vm::types::relocatable::MaybeRelocatable;
-use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use cairo_vm::Felt252;
 use error::AggregatorRunnerError;
 use starknet_os::hint_processor::aggregator_hint_processor::{AggregatorInput, DataAvailability};
 use starknet_os::runner::run_aggregator;
@@ -14,8 +10,10 @@ use starknet_types_core::felt::Felt;
 
 /// Input configuration for running the local aggregator.
 pub struct AggregatorRunnerInput {
-    /// The child CairoPIEs to aggregate (one per SNOS batch).
-    pub child_cairo_pies: Vec<CairoPie>,
+    /// Pre-stored program outputs for each child SNOS batch.
+    /// Each element is a `Vec<[u8; 32]>` (bincode-deserialized from S3).
+    /// This avoids loading full CairoPIEs (20-40MB each) into memory.
+    pub child_program_outputs: Vec<Vec<[u8; 32]>>,
     /// Cairo VM layout to use.
     pub layout: LayoutName,
     /// Whether to include full output (typically false for L2).
@@ -33,11 +31,11 @@ pub struct AggregatorRunnerInput {
 /// Output from the local aggregator run.
 pub struct AggregatorRunnerOutput {
     /// The aggregator CairoPIE (to be submitted as an applicative job).
-    pub aggregator_cairo_pie: CairoPie,
+    pub aggregator_cairo_pie: cairo_vm::vm::runners::cairo_pie::CairoPie,
     /// The aggregator program output.
     pub aggregator_output: Vec<Felt>,
     /// The DA segment, serialized as JSON bytes.
-    /// This is read from the temp file where the aggregator writes it.
+    /// Read from the temp file where the aggregator writes it.
     pub da_segment: Vec<u8>,
 }
 
@@ -47,25 +45,26 @@ pub struct AggregatorRunnerOutput {
 /// aggregator PIE itself (unlike Atlantic which does it remotely).
 ///
 /// # Process
-/// 1. Extract program output from each child CairoPIE
-/// 2. Build the bootloader output vector
-/// 3. Run the aggregator program via `starknet_os::runner::run_aggregator`
-/// 4. Read the DA segment from the temp file where the aggregator wrote it
-/// 5. Validate the output CairoPIE
+/// 1. Build the bootloader output vector from pre-stored program outputs
+/// 2. Run the aggregator program via `starknet_os::runner::run_aggregator`
+/// 3. Read the DA segment from the temp file where the aggregator wrote it
+/// 4. Validate the output CairoPIE
 pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRunnerOutput, AggregatorRunnerError> {
-    if input.child_cairo_pies.is_empty() {
-        return Err(AggregatorRunnerError::NoChildPies);
+    if input.child_program_outputs.is_empty() {
+        return Err(AggregatorRunnerError::NoChildOutputs);
     }
 
-    tracing::info!(num_children = input.child_cairo_pies.len(), "Building aggregator input from child CairoPIEs");
+    tracing::info!(
+        num_children = input.child_program_outputs.len(),
+        "Building aggregator input from child program outputs"
+    );
 
-    // 1. Build bootloader output from child CairoPIEs
-    let bootloader_output = build_bootloader_output(&input.child_cairo_pies)?;
+    // 1. Build bootloader output from pre-stored program outputs
+    let bootloader_output = build_bootloader_output(&input.child_program_outputs);
 
     // 2. Create temp file for DA segment output.
     //    The aggregator writes the DA segment to this path during execution.
-    //    TODO: Upstream PR to starknet_os to support in-memory DA segment output,
-    //    avoiding this temp file round-trip.
+    //    TODO: Upstream PR to starknet_os to support in-memory DA segment output.
     let da_temp_file = tempfile::NamedTempFile::new()?;
     let da_path = da_temp_file.path().to_path_buf();
 
@@ -103,78 +102,37 @@ pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRu
     })
 }
 
-/// Build the bootloader_output Vec<Felt> from child CairoPIEs.
+/// Build the bootloader_output Vec<Felt> from pre-stored program outputs.
 ///
 /// Format: `[num_children, output_size_1, program_hash, ...child_1_output..., ...]`
 ///
 /// For each child:
 /// - `output_size` = child output length + 2 (for the size and hash fields)
-/// - `program_hash` = hash of the SNOS program
+/// - `program_hash` = pre-computed SNOS program hash from PROGRAM_HASHES
 /// - followed by the child's program output felts
-fn build_bootloader_output(child_pies: &[CairoPie]) -> Result<Vec<Felt>, AggregatorRunnerError> {
+fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
     // Use the pre-computed OS program hash from the embedded program_hash.json.
-    // This is a LazyLock that loads once on first access - no redundant computation.
+    // This is a LazyLock that loads once on first access.
     let os_program_hash = apollo_starknet_os_program::PROGRAM_HASHES.os;
 
     let mut output = Vec::new();
 
     // Number of children
-    output.push(Felt::from(child_pies.len()));
+    output.push(Felt::from(child_outputs.len()));
 
-    for (idx, pie) in child_pies.iter().enumerate() {
-        tracing::debug!(child_index = idx, "Extracting program output from child CairoPIE");
+    for (idx, child_output) in child_outputs.iter().enumerate() {
+        tracing::debug!(child_index = idx, output_len = child_output.len(), "Adding child program output");
 
-        let child_output = get_program_output_from_pie(pie)?;
         let output_size = child_output.len() + 2; // +2 for output_size and program_hash
-
         output.push(Felt::from(output_size));
         output.push(os_program_hash);
 
-        // Convert child output (Felt252 from cairo-vm) to Felt (from starknet-types-core)
-        for felt252 in child_output {
-            output.push(Felt::from_bytes_be(&felt252.to_bytes_be()));
+        // Convert [u8; 32] → Felt
+        for bytes in child_output {
+            output.push(Felt::from_bytes_be(bytes));
         }
     }
 
     tracing::info!(total_felts = output.len(), "Built bootloader output");
-    Ok(output)
-}
-
-/// Extract program output from a CairoPIE's output builtin segment.
-///
-/// This is the same logic as `orchestrator::worker::utils::fact_info::get_program_output`
-/// with `is_aggregator=false` (child PIEs are not aggregator PIEs).
-fn get_program_output_from_pie(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, AggregatorRunnerError> {
-    let segment_info = cairo_pie
-        .metadata
-        .builtin_segments
-        .get(&BuiltinName::output)
-        .ok_or(AggregatorRunnerError::OutputBuiltinNoSegmentInfo)?;
-
-    let mut output = vec![Felt252::from(0); segment_info.size];
-    let mut insertion_count = 0;
-    let cairo_program_memory = &cairo_pie.memory.0;
-
-    for ((index, offset), value) in cairo_program_memory.iter() {
-        if *index == segment_info.index as usize {
-            match value {
-                MaybeRelocatable::Int(felt) => {
-                    output[*offset] = *felt;
-                    insertion_count += 1;
-                }
-                MaybeRelocatable::RelocatableValue(_) => {
-                    return Err(AggregatorRunnerError::OutputSegmentUnexpectedRelocatable(*offset));
-                }
-            }
-        }
-    }
-
-    if insertion_count != segment_info.size {
-        return Err(AggregatorRunnerError::IncompleteOutputSegment {
-            expected: segment_info.size,
-            found: insertion_count,
-        });
-    }
-
-    Ok(output)
+    output
 }
