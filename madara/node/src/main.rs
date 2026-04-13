@@ -191,7 +191,11 @@ async fn main() -> anyhow::Result<()> {
 
     // If the devnet is running, we set the gas prices to a default value.
     if run_cmd.is_devnet() {
-        run_cmd.l1_sync_params.l1_sync_disabled = true;
+        // Only disable L1 sync if no explicit --l1-endpoint was provided.
+        // This allows devnet + L1 sync for testing L1→L2 messaging flows.
+        if run_cmd.l1_sync_params.l1_endpoint.is_none() {
+            run_cmd.l1_sync_params.l1_sync_disabled = true;
+        }
         run_cmd.l1_sync_params.l1_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.blob_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);

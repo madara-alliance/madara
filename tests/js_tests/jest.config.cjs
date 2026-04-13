@@ -10,5 +10,5 @@ module.exports = {
       },
     ],
   },
-  testMatch: ["**/js_tests/**/*.test.ts"],
+  testMatch: ["**/tests/**/*.test.ts"],
 };
