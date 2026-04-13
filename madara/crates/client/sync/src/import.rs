@@ -94,6 +94,10 @@ pub enum BlockImportError {
 
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
+
+    #[error("Unsupported Starknet version {version} at block {block_n}. Latest supported version is {latest_supported}. Please upgrade Madara.")]
+    UnsupportedStarknetVersion { block_n: u64, version: StarknetVersion, latest_supported: StarknetVersion },
+
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
     InternalDb { context: Cow<'static, str>, error: anyhow::Error },
@@ -165,6 +169,20 @@ impl BlockImporterCtx {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
         }
 
+        // Reject blocks with unsupported Starknet versions.
+        // This is NOT gated by no_check — we always want to stop on unsupported versions
+        // to prevent syncing data that the node cannot correctly process or verify.
+        // Uses the compile-time constant rather than chain config to prevent config overrides
+        // from accidentally allowing unsupported versions.
+        let latest_supported = StarknetVersion::LATEST;
+        if signed_header.header.protocol_version > latest_supported {
+            return Err(BlockImportError::UnsupportedStarknetVersion {
+                block_n: signed_header.header.block_number,
+                version: signed_header.header.protocol_version,
+                latest_supported,
+            });
+        }
+
         // TODO(cchudant): for pre-v0.13.2 blocks, we currently do not check their integrity. Checking them is cumbersome, as it requires us
         // to implement a very big lookup table of all the existing block hashes for pre-v0.13.2 mainnet and sepolia blocks.
         // This is because we cannot check the integrity of receipts and state diffs and a ton of other fields for these older blocks, since
@@ -189,10 +207,14 @@ impl BlockImporterCtx {
         const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
         // First v0.13.2 mainnet block: https://voyager.online/block/671813.
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
+        // First v0.13.2 integration-sepolia block.
+        const INTEGRATION_SEPOLIA_FIRST_V0_13_2: u64 = 35748;
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
             && ((self.backend.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2)
+                || (self.backend.chain_config().chain_id == ChainId::IntegrationSepolia
+                    && block_n < INTEGRATION_SEPOLIA_FIRST_V0_13_2))
         {
             // Skip integrity check.
             return Ok(());

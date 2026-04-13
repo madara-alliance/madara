@@ -35,6 +35,8 @@ permissions:
 jobs:
   build-manual-and-publish:
     runs-on: blacksmith-8vcpu-ubuntu-2204
+    env:
+      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-${{ inputs.image-name }}
     outputs:
       manual-sha: ${{ steps.tag.outputs.manual-sha }}
       manual-latest: ${{ steps.tag.outputs.manual-latest }}
@@ -97,10 +99,14 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: useblacksmith/setup-docker-builder@v1
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
 
       - name: Build Docker Image and Publish
         id: push
         uses: useblacksmith/build-push-action@v2
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
         with:
           context: .
           push: true

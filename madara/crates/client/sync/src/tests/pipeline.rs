@@ -39,7 +39,6 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
 
     TestContext { backend, importer, service_state_sender, service_state_recv, gateway_mock }
 }
-
 #[rstest]
 #[tokio::test]
 /// The pipeline should follow the mock_header_latest.
@@ -86,6 +85,46 @@ async fn test_probed(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 6 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
+    // TODO: Update this value whenever the latest supported Starknet version is bumped.
+    let unsupported_version = "0.14.2".to_string();
+
+    ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
+    ctx.gateway_mock.mock_block_with_starknet_version(2, felt!("0x12"), felt!("0x11"), unsupported_version.clone());
+    ctx.gateway_mock.mock_header_latest(2, felt!("0x12"));
+    ctx.gateway_mock.mock_block_pending_not_found();
+
+    let mut sync = crate::gateway::forward_sync(
+        ctx.backend.clone(),
+        ctx.importer,
+        ctx.gateway_mock.client(),
+        SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
+        ForwardSyncConfig::default(),
+    );
+
+    let task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await });
+
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Starting);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 2 });
+
+    let err = task.await.expect_err("sync should stop on the first unsupported Starknet version");
+    let err = format!("{err:#}");
+    assert!(err.contains(&format!("Unsupported Starknet version {unsupported_version}")), "{err}");
+    assert!(err.contains("Latest supported version is"), "{err}");
+    assert!(err.contains("block 2"), "{err}");
+
+    // The sync aborts as soon as the unsupported block is encountered. Because the block, class,
+    // and state pipelines run independently, earlier blocks may still be in flight and not yet
+    // sealed as confirmed when the error is returned.
+    assert!(ctx.backend.latest_confirmed_block_n().map(|n| n < 2).unwrap_or(true));
+    assert_eq!(ctx.backend.block_view_on_confirmed(2), None);
+    assert!(!ctx.backend.has_preconfirmed_block());
 }
 
 #[rstest]

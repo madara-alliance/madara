@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+CARGO_TARGET_DIR=target cargo build --bin madara --release
 
 RPC_PORT=9944
 
