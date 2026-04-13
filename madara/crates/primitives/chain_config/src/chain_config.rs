@@ -90,8 +90,8 @@ pub mod eth_core_contract_address {
 
 pub mod eth_gps_statement_verifier {
     pub const MAINNET: &str = "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60";
-    pub const SEPOLIA_TESTNET: &str = "0xf294781D719D2F4169cE54469C28908E6FA752C1";
-    pub const SEPOLIA_INTEGRATION: &str = "0x2046B966994Adcb88D83f467a41b75d64C2a619F";
+    pub const SEPOLIA_TESTNET: &str = "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe";
+    pub const SEPOLIA_INTEGRATION: &str = "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe";
 }
 
 pub mod public_key {
@@ -891,7 +891,7 @@ mod tests {
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
-        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
+        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.14.1").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
 
         assert_eq!(

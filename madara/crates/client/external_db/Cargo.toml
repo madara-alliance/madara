@@ -20,7 +20,7 @@ testing = ["mc-db/testing"]
 [dependencies]
 # MongoDB driver
 bson = { workspace = true }
-mongodb = { workspace = true }
+mongodb = "3.1"
 
 # Async runtime
 tokio = { workspace = true, features = ["sync", "time"] }

@@ -439,6 +439,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![TransactionWithReceipt {
                 transaction: Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
                     transaction_hash: Felt::from_hex(
@@ -523,6 +531,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![
                 Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772").unwrap()
             ],
@@ -578,6 +594,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
                 transaction_hash: Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")
                     .unwrap(),
