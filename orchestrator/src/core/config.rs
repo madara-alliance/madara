@@ -266,8 +266,7 @@ impl Config {
                 if layer == Layer::L3 {
                     return Err(OrchestratorError::ConfigError(
                         "SHARP prover is only supported for L2. Use Atlantic for L3.".to_string(),
-                    )
-                    .into());
+                    ));
                 }
                 ProverKind::Sharp
             }
@@ -420,9 +419,7 @@ impl Config {
         da_public_keys: Option<Vec<Felt>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
                 atlantic_params,
                 &params.prover_layout_name,
@@ -618,16 +615,16 @@ impl Config {
     fn load_bouncer_weights_limit(file_path: &Option<std::path::PathBuf>) -> OrchestratorCoreResult<BouncerWeights> {
         match file_path {
             Some(path) => {
-                tracing::info!(file_path = %path.display(), "Loading bouncer weights limit from file");
+                info!(file_path = %path.display(), "Loading bouncer weights limit from file");
 
                 match std::fs::read_to_string(path) {
                     Ok(content) => match serde_json::from_str::<BouncerWeights>(&content) {
                         Ok(weights) => {
-                            tracing::info!("Successfully loaded bouncer weights limit from file");
+                            info!("Successfully loaded bouncer weights limit from file");
                             Ok(weights)
                         }
                         Err(e) => {
-                            tracing::error!(
+                            error!(
                                 error = %e,
                                 file_path = %path.display(),
                                 "Failed to parse bouncer weights limit file, using defaults"
@@ -636,7 +633,7 @@ impl Config {
                         }
                     },
                     Err(e) => {
-                        tracing::error!(
+                        error!(
                             error = %e,
                             file_path = %path.display(),
                             "Failed to read bouncer weights limit file, using defaults"
