@@ -107,6 +107,7 @@ impl Visit for CairoNativeEventVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         match field.name() {
             "message" => {
+                // Remove quotes from Debug formatting.
                 let formatted = format!("{:?}", value);
                 self.message = formatted.trim_matches('"').to_string();
             }
@@ -115,6 +116,8 @@ impl Visit for CairoNativeEventVisitor {
                 self.class_hash = Some(formatted.trim_matches('"').to_string());
             }
             "elapsed" | "duration" | "compile" | "load" | "convert" | "total" => {
+                // Format Duration nicely by removing the surrounding quotes
+                // while preserving the formatted duration string.
                 let formatted = format!("{:?}", value);
                 self.elapsed = Some(formatted.trim_matches('"').to_string());
             }
@@ -166,6 +169,8 @@ impl Visit for CairoNativeEventVisitor {
     }
 }
 
+/// Visitor that collects all fields from a close_block event into a JSON
+/// object.
 #[derive(Default)]
 struct CloseBlockEventVisitor {
     fields: Vec<(String, serde_json::Value)>,
@@ -182,6 +187,8 @@ impl Visit for CloseBlockEventVisitor {
     }
 
     fn record_u128(&mut self, field: &Field, value: u128) {
+        // JSON does not support u128 natively, so convert large values to
+        // strings when they do not fit in u64.
         if value <= u64::MAX as u128 {
             self.fields.push((field.name().to_string(), serde_json::Value::Number((value as u64).into())));
         } else {
@@ -300,6 +307,7 @@ impl CustomFormatter {
         display_fn(|f| {
             let datetime: OffsetDateTime = (*ts).into();
             let local_datetime = datetime.to_offset(self.local_offset);
+            // This allocates a String as part of the time formatting.
             match local_datetime.format(&self.ts_format) {
                 Ok(ts) => {
                     write!(f, "{}{}{}", self.open_bracket_dim, self.dim_style.apply_to(ts), self.closed_bracket_dim)
@@ -365,12 +373,19 @@ impl CustomFormatter {
         let error = visitor.get_error();
         let native_enabled = visitor.get_native_enabled();
 
+        // Darker cyan for the CAIRO_NATIVE prefix to keep it visible but
+        // understated.
         let cairo_native_prefix = Style::new().cyan().dim().apply_to("CAIRO_NATIVE");
+        // Muted styling keeps class_hash metadata less prominent than the main
+        // prefix and message.
         let class_hash_style = Style::new().dim();
         let error_style = Style::new().red();
 
+        // Format: timestamp + CAIRO_NATIVE + optional level prefix + message +
+        // class_hash + native_enabled + optional error + optional timing.
         write!(writer, "{} {}", self.timestamp_fmt(ts), cairo_native_prefix)?;
 
+        // Level prefix is shown for WARN and ERROR only.
         match *level {
             Level::WARN => {
                 write!(writer, " {}", Style::new().yellow().apply_to("WARN"))?;
@@ -378,17 +393,22 @@ impl CustomFormatter {
             Level::ERROR => {
                 write!(writer, " {}", Style::new().red().apply_to("ERROR"))?;
             }
-            _ => {}
+            _ => {} // Other levels do not show an explicit prefix.
         }
 
+        // Message formatting improves clarity by capitalizing and replacing
+        // underscores.
         let formatted_message = Self::format_message(message);
         write!(writer, " {}", formatted_message)?;
 
         if let Some(hash) = class_hash {
+            // class_hash is displayed in full, but with less prominent styling.
+            // Quotes are removed if present from Debug formatting.
             let hash_clean = hash.trim_matches('"');
             write!(writer, " {}", class_hash_style.apply_to(format!("class_hash={}", hash_clean)))?;
         }
 
+        // Display native_enabled when present.
         if let Some(enabled) = native_enabled {
             write!(writer, " {}", class_hash_style.apply_to(format!("native_enabled={}", enabled)))?;
         }
@@ -397,6 +417,8 @@ impl CustomFormatter {
             write!(writer, " {}", error_style.apply_to(format!("error={}", err)))?;
         }
 
+        // Prefer elapsed_ms when available, otherwise fall back to the
+        // formatted Duration string.
         let timing_str = Self::format_timing(elapsed_ms, conversion_ms, load_ms, convert_ms, elapsed);
         if let Some(timing) = timing_str {
             let elapsed_style = Self::get_timing_style(&timing);
@@ -406,6 +428,9 @@ impl CustomFormatter {
         writeln!(writer)
     }
 
+    /// Format timing information from the available metric fields.
+    /// Prefers elapsed_ms and includes a breakdown when component timings are
+    /// present.
     fn format_timing(
         elapsed_ms: Option<u64>,
         conversion_ms: Option<u64>,
@@ -413,12 +438,16 @@ impl CustomFormatter {
         convert_ms: Option<u64>,
         elapsed: Option<&str>,
     ) -> Option<String> {
+        // If elapsed_ms is present, use it as the primary timing value.
         if let Some(total_ms) = elapsed_ms {
             let mut parts = Vec::new();
+
+            // Format the total elapsed time first.
             let total_str =
                 if total_ms >= 1000 { format!("{:.3}s", total_ms as f64 / 1000.0) } else { format!("{}ms", total_ms) };
             parts.push(total_str);
 
+            // Add a breakdown when individual component timings are available.
             let mut breakdown = Vec::new();
             if let Some(load) = load_ms {
                 breakdown.push(format!("load: {}ms", load));
@@ -437,13 +466,19 @@ impl CustomFormatter {
             return Some(parts.join(" "));
         }
 
+        // Fall back to the formatted Duration string when no elapsed_ms value
+        // is available.
         elapsed.map(|s| s.to_string())
     }
 
+    /// Format messages for readability.
     fn format_message(message: &str) -> String {
+        // Remove quotes when the message came through Debug formatting.
         let cleaned = message.trim_matches('"');
+        // Replace underscores with spaces for readability.
         let spaced = cleaned.replace('_', " ");
 
+        // Capitalize the first letter for display.
         if let Some(first) = spaced.chars().next() {
             format!("{}{}", first.to_uppercase(), &spaced[1..])
         } else {
@@ -451,31 +486,40 @@ impl CustomFormatter {
         }
     }
 
+    /// Pick a display style based on the duration value.
+    /// Duration Debug format examples: "15.833µs", "1.732s", "234ms", "123ns".
     fn get_timing_style(timing_str: &str) -> Style {
+        // Parse the timing string to infer the unit and relative severity.
         let timing_clean = timing_str.trim();
 
+        // Handle longer suffixes before the generic seconds suffix.
         if timing_clean.ends_with("ns") || timing_clean.ends_with("µs") || timing_clean.ends_with("us") {
+            // Nanoseconds and microseconds are always treated as fast.
             return Style::new().dim();
         } else if timing_clean.ends_with("ms") {
+            // Millisecond timings become yellow/red when they cross the
+            // relevant thresholds.
             if let Ok(val) = timing_clean.trim_end_matches("ms").trim().parse::<f64>() {
                 if val > 1000.0 {
-                    return Style::new().red();
+                    return Style::new().red(); // Very slow (>1s).
                 } else if val > 100.0 {
-                    return Style::new().yellow();
+                    return Style::new().yellow(); // Slow (>100ms).
                 }
             }
             return Style::new().dim();
         } else if timing_clean.ends_with('s') {
+            // Multi-second timings become yellow/red for slower operations.
             if let Ok(val) = timing_clean.trim_end_matches('s').trim().parse::<f64>() {
                 if val > 5.0 {
-                    return Style::new().red();
+                    return Style::new().red(); // Very slow (>5s).
                 } else if val > 1.0 {
-                    return Style::new().yellow();
+                    return Style::new().yellow(); // Slow (>1s).
                 }
             }
             return Style::new().dim();
         }
 
+        // Default to dim styling for unknown formats.
         Style::new().dim()
     }
 
@@ -490,6 +534,8 @@ impl CustomFormatter {
         let mut visitor = RpcCallEventVisitor::default();
         event.record(&mut visitor);
         let Some(rpc_call_event) = visitor.get() else {
+            // Fall back to the normal formatter when the RPC-specific fields
+            // are not present.
             return self.format_with_target(writer, event, target, ts, level, &Style::new().blue());
         };
 
@@ -509,6 +555,7 @@ impl CustomFormatter {
                 rpc_call_event.method,
                 status_style.apply_to(&rpc_call_event.status),
                 rpc_call_event.res_len,
+                // Conversion from micros u128 to u64 should be safe here.
                 time_style.apply_to(&Duration::from_micros(rpc_call_event.response_time as u64)),
             )
         } else {
@@ -520,11 +567,13 @@ impl CustomFormatter {
                 rpc_call_event.method,
                 status_style.apply_to(&rpc_call_event.status),
                 rpc_call_event.res_len,
+                // Conversion from micros u128 to u64 should be safe here.
                 time_style.apply_to(&Duration::from_micros(rpc_call_event.response_time as u64)),
             )
         }
     }
 
+    /// Format close_block events as JSON for Loki ingestion.
     fn format_close_block(
         &self,
         writer: &mut Writer<'_>,
@@ -536,6 +585,8 @@ impl CustomFormatter {
         let mut visitor = CloseBlockEventVisitor::default();
         event.record(&mut visitor);
 
+        // Build a JSON object with timestamp, level, target, and all captured
+        // fields.
         let datetime: OffsetDateTime = (*ts).into();
         let local_datetime = datetime.to_offset(self.local_offset);
         let timestamp_str = local_datetime
@@ -548,6 +599,7 @@ impl CustomFormatter {
         json_obj.insert("target".to_string(), serde_json::Value::String(target.to_string()));
         json_obj.insert("message".to_string(), serde_json::Value::String(visitor.message.clone()));
 
+        // Add all captured event fields.
         for (key, value) in visitor.fields {
             json_obj.insert(key, value);
         }

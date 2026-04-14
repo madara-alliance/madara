@@ -122,6 +122,8 @@ impl TelemetryService {
             .map(Some)
     }
 
+    /// Initializes local tracing and, when configured, installs the OTEL
+    /// collectors and global providers.
     pub fn setup(&mut self) -> anyhow::Result<()> {
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().event_format(CustomFormatter::new()))
@@ -197,8 +199,10 @@ impl TelemetryService {
     fn init_meter_provider(&self, otel_endpoint: &Url) -> anyhow::Result<SdkMeterProvider> {
         let exporter =
             opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(otel_endpoint.clone()).build()?;
+        // Creates a periodic reader that exports every 5 seconds.
         let reader = PeriodicReader::builder(exporter).with_interval(Duration::from_secs(5)).build();
 
+        // Builds a meter provider with the periodic reader.
         Ok(SdkMeterProvider::builder()
             .with_reader(reader)
             .with_resource(Resource::builder().with_service_name(self.meter_service_name()).build())
@@ -257,6 +261,7 @@ impl ServiceId for TelemetryService {
 }
 
 pub trait GaugeType<T> {
+    /// Registers a new OTEL [Gauge] to the node metrics.
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<T>;
 }
 
@@ -282,6 +287,7 @@ pub fn register_gauge_metric_instrument<T: GaugeType<T> + Display>(
 }
 
 pub trait CounterType<T> {
+    /// Registers a new OTEL [Counter] to the node metrics.
     fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<T>;
 }
 
@@ -307,6 +313,7 @@ pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
 }
 
 pub trait HistogramType<T> {
+    /// Registers a new OTEL [Histogram] to the node metrics.
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<T>;
 }
 
