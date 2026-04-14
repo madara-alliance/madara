@@ -437,6 +437,52 @@ mod tests {
         assert_eq!(hash, expected_hash);
     }
 
+    /// Pins `Header::compute_hash` against a real Starknet 0.14.1 genesis block with:
+    ///   - no transactions / events / receipts
+    ///   - one storage diff at system contract 0x2 (stateful compression init)
+    ///
+    /// Exercises the v1 hash formula (`STARKNET_BLOCK_HASH1`) including the gas-prices sub-hash
+    /// and the `concat_counts` field.
+    #[test]
+    fn test_header_hash_v0_14_1_genesis() {
+        let header = Header {
+            parent_block_hash: Felt::ZERO,
+            block_number: 0,
+            global_state_root: Felt::from_hex_unchecked(
+                "0x68bcf9e9257ab6bffd9425833a208aaab6b85649fd21c787a546cb7cb9abf",
+            ),
+            sequencer_address: Felt::from_hex_unchecked(
+                "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+            ),
+            block_timestamp: BlockTimestamp(1774447484),
+            transaction_count: 0,
+            transaction_commitment: Felt::ZERO,
+            event_count: 0,
+            event_commitment: Felt::ZERO,
+            state_diff_length: Some(1),
+            state_diff_commitment: Some(Felt::from_hex_unchecked(
+                "0x2a3ce358b96a4a26ac9c0ef4f7a8f878a9f3b1a4757e716874cac711617ca87",
+            )),
+            receipt_commitment: Some(Felt::ZERO),
+            protocol_version: StarknetVersion::V0_14_1,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 0x3b9aca27,
+                strk_l1_gas_price: 0x351026c4d376,
+                eth_l1_data_gas_price: 0x1,
+                strk_l1_data_gas_price: 0xe3e7,
+                eth_l2_gas_price: 0x2179e,
+                strk_l2_gas_price: 0x1dcd65000,
+            },
+            l1_da_mode: L1DataAvailabilityMode::Blob,
+        };
+
+        // chain_id is unused for >= 0.7 blocks, pass any value.
+        let hash = header.compute_hash(Felt::ZERO, false);
+        let expected_hash =
+            Felt::from_hex_unchecked("0x2c79e569f5759f7da943af68bc3d21e24fe280a39b9b0cefa2bc4d9a528f80b");
+        assert_eq!(hash, expected_hash);
+    }
+
     fn dummy_header(protocol_version: StarknetVersion) -> Header {
         Header {
             parent_block_hash: Felt::from(1),

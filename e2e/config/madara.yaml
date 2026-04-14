@@ -35,7 +35,7 @@ bouncer_config:
       range_check96: 179
       blake: 3334
 sequencer_address: "0x123"
-eth_core_contract_address: "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+eth_core_contract_address: "0x94099942864ea81ccf197e9d71ac53310b1468d8"
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20

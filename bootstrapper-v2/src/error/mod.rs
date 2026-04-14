@@ -8,9 +8,20 @@ use crate::utils::FileError;
 /// Result type for bootstrapper operations
 pub type BootstrapperResult<T> = Result<T, BootstrapperError>;
 
+/// Configuration validation error
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("l1_token_address is required when deploy_test_contracts is false")]
+    MissingL1TokenAddress,
+}
+
 /// Main error enum for the bootstrapper
 #[derive(Error, Debug)]
 pub enum BootstrapperError {
+    // Configuration errors
+    #[error("Configuration error: {0}")]
+    ConfigError(#[from] ConfigError),
+
     // Dotenvy errors
     #[error("Dotenvy error: {0}")]
     DotenvyError(#[from] dotenvy::Error),

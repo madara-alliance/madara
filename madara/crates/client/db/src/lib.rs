@@ -428,10 +428,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
     /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
     ///
-    /// In addition, all of the associated functions need to be called in a rayon thread pool context. **Do not call
+    /// In addition, all the associated functions need to be called in a rayon thread pool context. **Do not call
     /// them from the tokio pool!**
     // TODO: ensure exclusive access? all of these requirements could be checked relatively cheaply. There are also
-    // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
+    // ways to make the aforementioned logic errors unrepresentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
     }
@@ -830,7 +830,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
         let (global_state_root, merklization_timings) =
-            self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+            self.apply_to_global_trie(block.header.block_number, [&block.state_diff], block.header.protocol_version)?;
 
         // Copy merklization timings
         timings.merklization = merklization_timings.total;
@@ -953,8 +953,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+        protocol_version: mp_chain_config::StarknetVersion,
     ) -> Result<(Felt, rocksdb::global_trie::MerklizationTimings)> {
-        self.inner.db.apply_to_global_trie(start_block_n, state_diffs)
+        self.inner.db.apply_to_global_trie(start_block_n, state_diffs, protocol_version)
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
