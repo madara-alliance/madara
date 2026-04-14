@@ -55,7 +55,7 @@ e2e/
 │   │   └── lifecycle_management.rs  # Graceful shutdown
 │   ├── services/           # Service implementations (13+)
 │   │   ├── anvil/          # L1 Ethereum chain
-│   │   ├── bootstrapper_v2/ # Default contract initialization
+│   │   ├── bootstrapper_v2/  # Default contract initialization
 │   │   ├── bootstrapper/   # Legacy v1 bootstrapper wrapper
 │   │   ├── madara/         # L2 Starknet sequencer
 │   │   ├── pathfinder/     # Starknet full node
@@ -68,8 +68,8 @@ e2e/
 │       └── deposit_withdraw/  # Bridge tests
 └── config/
     ├── madara.yaml         # Madara chain configuration
-    ├── bootstrapper_v2.json # Default bootstrapper config
-    └── bootstrapper.json    # Legacy bootstrapper config
+    ├── bootstrapper_v2.json  # Default bootstrapper config
+    └── bootstrapper.json     # Legacy bootstrapper config
 ```
 
 ### Service Dependencies
@@ -88,16 +88,16 @@ Orchestration (Orchestrator Setup → Runtime)
 
 ### Services Started
 
-| Service      | Purpose                       | Port                                     |
-| ------------ | ----------------------------- | ---------------------------------------- |
-| Anvil        | L1 Ethereum chain             | 8545                                     |
-| MongoDB      | Orchestrator database         | 27017                                    |
-| LocalStack   | AWS S3, SQS, SNS, EventBridge | 4566                                     |
-| Madara       | L2 Starknet sequencer         | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
-| Pathfinder   | Starknet full node            | 9545                                     |
-| Bootstrapper V2 | L1/L2 contract initialization | N/A                                   |
-| Orchestrator | Proof pipeline coordinator    | N/A                                      |
-| Mock Prover  | STARK proof simulator         | 3001                                     |
+| Service         | Purpose                       | Port                                     |
+| --------------- | ----------------------------- | ---------------------------------------- |
+| Anvil           | L1 Ethereum chain             | 8545                                     |
+| MongoDB         | Orchestrator database         | 27017                                    |
+| LocalStack      | AWS S3, SQS, SNS, EventBridge | 4566                                     |
+| Madara          | L2 Starknet sequencer         | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
+| Pathfinder      | Starknet full node            | 9545                                     |
+| Bootstrapper V2 | L1/L2 contract initialization | N/A                                      |
+| Orchestrator    | Proof pipeline coordinator    | N/A                                      |
+| Mock Prover     | STARK proof simulator         | 3001                                     |
 
 ### Configuration Timeouts
 
