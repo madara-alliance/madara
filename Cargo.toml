@@ -4,6 +4,7 @@ members = [
   "orchestrator",
   "e2e",
   "e2e-tests",
+  "bootstrapper-v2",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
   "build-artifacts",
   "test_utils/crates/mock-atlantic-server",
@@ -12,10 +13,10 @@ members = [
 default-members = [
   "madara",
   "orchestrator",
+  "bootstrapper-v2",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
 ]
 resolver = "2"
-exclude = ["bootstrapper-v2"]
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]

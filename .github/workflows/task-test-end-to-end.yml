@@ -50,7 +50,7 @@ jobs:
         run: CARGO_TARGET_DIR=target cargo build --bin orchestrator --release
 
       - name: Build Bootstrapper V2
-        run: CARGO_TARGET_DIR=target cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
+        run: CARGO_TARGET_DIR=target cargo build -p bootstrapper-v2 --bin bootstrapper-v2 --release
 
       - name: Download and extract Pathfinder binary
         run: |

@@ -230,6 +230,12 @@ build-orchestrator: setup-cairo
 	@$(VENV_ACTIVATE) && cargo build --bin orchestrator --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
+.PHONY: build-bootstrapper-v2
+build-bootstrapper-v2:
+	@echo -e "$(DIM)Building Bootstrapper V2...$(RESET)"
+	@cargo build --package bootstrapper-v2 --bin bootstrapper-v2 --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
+
 .PHONY: check
 check:
 	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
@@ -391,7 +397,7 @@ build-e2e-binaries:
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
 	@# Build Bootstrapper V2
 	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p bootstrapper-v2 --bin bootstrapper-v2 --release
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e

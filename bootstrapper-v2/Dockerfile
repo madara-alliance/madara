@@ -81,7 +81,7 @@ COPY build-artifacts build-artifacts
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper-v2/Cargo.toml --release
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build -p bootstrapper-v2 --release
 
 # Step 3: runner
 FROM debian:bookworm-slim AS runner
