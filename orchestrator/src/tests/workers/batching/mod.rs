@@ -569,7 +569,9 @@ fn get_dummy_builtin_weights() -> serde_json::Value {
         state_diff_size: 1000,
         sierra_gas: GasAmount(1_000_000_000),
         proving_gas: GasAmount(1_100_000_000),
-        receipt_l2_gas: GasAmount(2_500_000_000),
+        // Keep the new key explicit without making receipt_l2_gas the dominant split condition
+        // for this batching worker fixture.
+        receipt_l2_gas: GasAmount(0),
     };
 
     serde_json::to_value(response).unwrap()

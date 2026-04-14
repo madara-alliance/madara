@@ -931,8 +931,7 @@ mod tests {
                 )
                 .unwrap();
                 assert_eq!(
-                    Felt::from(*official_hash),
-                    case.expected_regular_hash,
+                    *official_hash, case.expected_regular_hash,
                     "official starknet_api hash mismatch for {}",
                     case.label
                 );

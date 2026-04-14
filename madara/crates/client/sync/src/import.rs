@@ -83,7 +83,7 @@ pub enum BlockImportError {
     #[error("Compiled class hash mismatch for class hash {class_hash:#x}: expected {expected:#x}, got {got:#x}")]
     CompiledClassHash { class_hash: Felt, got: Felt, expected: Felt },
     #[error("Class with hash {class_hash:#x} failed to compile: {error}")]
-    CompilationClassError { class_hash: Felt, error: ClassCompilationError },
+    CompilationClassError { class_hash: Felt, error: Box<ClassCompilationError> },
     #[error("Failed to compute class hash {class_hash:#x}: {error}")]
     ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
@@ -400,7 +400,7 @@ impl BlockImporterCtx {
                 let hashes = sierra
                     .contract_class
                     .compile_to_casm_with_hashes()
-                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
+                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?;
 
                 // Verify compiled class hash based on protocol version
                 // For v0.14.1+: gateway provides BLAKE hash
@@ -430,7 +430,7 @@ impl BlockImporterCtx {
                     compiled: Arc::new((&hashes.casm_class).try_into().map_err(|e| {
                         BlockImportError::CompilationClassError {
                             class_hash,
-                            error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                            error: Box::new(ClassCompilationError::ParsingProgramJsonFailed(e)),
                         }
                     })?),
                 }))

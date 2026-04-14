@@ -156,7 +156,7 @@ fn collect_matching_events(
         }
 
         for event_info in &batch {
-            if !address_filter.matches(&event_info) {
+            if !address_filter.matches(event_info) {
                 continue;
             }
 

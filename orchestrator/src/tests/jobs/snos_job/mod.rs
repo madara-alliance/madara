@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
@@ -81,9 +82,10 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     let storage_client = services.config.storage();
 
-    // starknet sepolia block 0.14.1 first block
-    // link: https://sepolia.voyager.online/block/0x926ef481b290f748064bc2e4eac931fd3a736645d7daa7a731297c315bcf04
-    let block_number = 2934726;
+    // Starknet Sepolia first 0.14.2 block.
+    // Block hash:
+    // 0x16b767c0592b8f5a9b29d42d7c82ec865fcab4d4765343b30dd9eb17b65b785
+    let block_number = 7984520;
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
@@ -111,7 +113,12 @@ async fn test_process_job() -> color_eyre::Result<()> {
         updated_at: Utc::now().round_subsecs(0),
     };
 
-    let result = SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item).await?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(180),
+        SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item),
+    )
+    .await
+    .expect("SNOS test timed out while generating Cairo PIE artifacts")?;
 
     assert_eq!(result, "1"); // expecting "1" because it's the first batch
 

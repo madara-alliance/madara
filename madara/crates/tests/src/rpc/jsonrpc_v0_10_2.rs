@@ -557,12 +557,13 @@ mod test_rpc_jsonrpc_v0_10_2 {
             .expect("sample chain should contain a multi-address pagination regression case");
         let expected_token =
             expected_first_page_token(&filtered_events, 2).expect("regression case should span more than one page");
+        let expected_first_page_events = filtered_events[..2].to_vec();
 
         let first_page =
             rpc_result(madara, "starknet_getEvents", event_filter_params(Some(json!(addresses)), None, 2)).await;
         assert_eq!(
             first_page.get("events").and_then(Value::as_array),
-            Some(&filtered_events[..2]),
+            Some(&expected_first_page_events),
             "first page should match the first filtered events",
         );
         assert_eq!(first_page.get("continuation_token").and_then(Value::as_str), Some(expected_token.as_str()));
