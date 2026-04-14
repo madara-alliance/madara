@@ -235,11 +235,6 @@ impl MadaraSetup {
         Ok(())
     }
 
-    /// Get a class hash by name
-    pub fn get_class_hash(&self, name: &MadaraClass) -> Option<&Felt> {
-        self.classes.get(name)
-    }
-
     /// Get a class hash by name, returning an error if not found
     fn require_class_hash(&self, name: &MadaraClass) -> Result<&Felt, MadaraError> {
         self.classes.get(name).ok_or_else(|| MadaraError::ClassHashNotFound(format!("{:?}", name)))
@@ -255,11 +250,6 @@ impl MadaraSetup {
         &mut self,
     ) -> Result<&mut SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>, MadaraError> {
         self.account.as_mut().ok_or(MadaraError::AccountNotInitialized)
-    }
-
-    /// Get an address by name
-    pub fn get_address(&self, name: &DeployedContract) -> Option<&Felt> {
-        self.addresses.get(name)
     }
 
     /// Insert a class hash
