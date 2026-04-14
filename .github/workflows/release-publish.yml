@@ -38,17 +38,3 @@ jobs:
       attestations: write
       id-token: write
     secrets: inherit
-
-  build-and-publish-bootstrapper:
-    uses: ./.github/workflows/task-build-and-publish-release.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper/Dockerfile
-      release-tag: ${{ github.event.release.tag_name }}
-      is-prerelease: ${{ github.event.release.prerelease }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
