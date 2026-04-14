@@ -40,6 +40,10 @@ impl AddressScanFilter {
             .map(|addresses| addresses.contains(&event_info.event.from_address))
             .unwrap_or(true)
     }
+
+    fn requires_local_resume(&self) -> bool {
+        self.allowed_addresses.is_some() && self.db_from_address.is_none()
+    }
 }
 
 /// Returns events matching the filter with pagination support.
@@ -62,8 +66,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     let requested_continuation_token = parse_continuation_token(continuation_token, from_block_n)?;
     let events_infos = collect_matching_events(
         &view,
-        requested_continuation_token.block_number,
-        requested_continuation_token.event_n as usize,
+        &requested_continuation_token,
         to_block_n,
         keys,
         chunk_size,
@@ -115,15 +118,18 @@ fn parse_continuation_token(
 
 fn collect_matching_events(
     view: &MadaraStateView,
-    from_block_n: u64,
-    from_event_n: usize,
+    requested_continuation_token: &ContinuationToken,
     to_block_n: u64,
     keys: Option<Vec<Vec<Felt>>>,
     chunk_size: usize,
     address_filter: AddressScanFilter,
 ) -> StarknetRpcResult<Vec<EventWithInfo>> {
-    let mut scan_block = from_block_n;
-    let mut scan_event_n = from_event_n;
+    let requested_event_n = usize::try_from(requested_continuation_token.event_n)
+        .map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?;
+    let mut scan_block = requested_continuation_token.block_number;
+    let mut scan_event_n = if address_filter.requires_local_resume() { 0 } else { requested_event_n };
+    let mut remaining_matches_to_skip_in_requested_block =
+        if address_filter.requires_local_resume() { requested_event_n } else { 0 };
     let mut events_infos = Vec::with_capacity(chunk_size + 1);
 
     while events_infos.len() <= chunk_size {
@@ -142,25 +148,55 @@ fn collect_matching_events(
             break;
         }
 
-        if let Some(last) = batch.last() {
-            scan_block = last.block_number;
-            scan_event_n =
-                usize::try_from(last.event_index_in_block + 1).map_err(|_| StarknetRpcApiError::InternalServerError)?;
-        }
-
-        for event_info in batch {
+        for event_info in &batch {
             if !address_filter.matches(&event_info) {
                 continue;
             }
 
-            events_infos.push(event_info);
+            if remaining_matches_to_skip_in_requested_block > 0 {
+                if event_info.block_number != requested_continuation_token.block_number {
+                    return Err(StarknetRpcApiError::InvalidContinuationToken);
+                }
+
+                remaining_matches_to_skip_in_requested_block -= 1;
+                continue;
+            }
+
+            events_infos.push(event_info.clone());
             if events_infos.len() > chunk_size {
                 break;
             }
         }
+
+        (scan_block, scan_event_n) = advance_scan_cursor(&batch, scan_block, scan_event_n)?;
+    }
+
+    if remaining_matches_to_skip_in_requested_block > 0 {
+        return Err(StarknetRpcApiError::InvalidContinuationToken);
     }
 
     Ok(events_infos)
+}
+
+fn advance_scan_cursor(
+    batch: &[EventWithInfo],
+    scan_block: u64,
+    scan_event_n: usize,
+) -> StarknetRpcResult<(u64, usize)> {
+    let Some(last_block_number) = batch.last().map(|event_info| event_info.block_number) else {
+        return Ok((scan_block, scan_event_n));
+    };
+
+    let events_in_last_block =
+        batch.iter().rev().take_while(|event_info| event_info.block_number == last_block_number).count();
+
+    let next_event_n = if last_block_number == scan_block {
+        scan_event_n.checked_add(events_in_last_block).ok_or(StarknetRpcApiError::InternalServerError)?
+    } else {
+        events_in_last_block
+    };
+
+    Ok((last_block_number, next_event_n))
 }
 
 fn build_events_chunk(
@@ -181,4 +217,79 @@ fn build_events_chunk(
 
 fn empty_events_chunk() -> EventsChunk {
     EventsChunk { events: vec![], continuation_token: None }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    fn dummy_event(block_number: u64, event_index_in_block: u64) -> EventWithInfo {
+        EventWithInfo {
+            event: mp_receipt::Event { from_address: Felt::ZERO, keys: vec![], data: vec![] },
+            block_number,
+            block_hash: None,
+            transaction_hash: Felt::ZERO,
+            transaction_index: 0,
+            event_index_in_block,
+            in_preconfirmed: false,
+        }
+    }
+
+    #[rstest]
+    #[case(&[(7, 0), (7, 2), (7, 5)], 2, ContinuationToken { block_number: 7, event_n: 0 }, Some(ContinuationToken { block_number: 7, event_n: 2 }))]
+    #[case(&[(7, 0), (8, 0), (8, 1)], 2, ContinuationToken { block_number: 7, event_n: 0 }, Some(ContinuationToken { block_number: 8, event_n: 1 }))]
+    #[case(&[(7, 0), (7, 2)], 2, ContinuationToken { block_number: 7, event_n: 0 }, None)]
+    fn build_events_chunk_tracks_filtered_offsets_per_block(
+        #[case] raw_positions: &[(u64, u64)],
+        #[case] page_size: usize,
+        #[case] previous_token: ContinuationToken,
+        #[case] expected: Option<ContinuationToken>,
+    ) {
+        let events_infos = raw_positions
+            .iter()
+            .copied()
+            .map(|(block_number, event_index)| dummy_event(block_number, event_index))
+            .collect::<Vec<_>>();
+
+        let continuation_token = continuation_token_from_page(&events_infos, page_size, &previous_token);
+
+        assert_eq!(continuation_token, expected);
+    }
+
+    #[rstest]
+    #[case(&[(4, 0), (4, 0)], 4, 0, (4, 2))]
+    #[case(&[(0, 0), (0, 1), (4, 0)], 0, 0, (4, 1))]
+    #[case(&[(4, 5), (4, 9)], 4, 2, (4, 4))]
+    fn advance_scan_cursor_counts_matching_events_instead_of_reusing_event_index(
+        #[case] raw_positions: &[(u64, u64)],
+        #[case] scan_block: u64,
+        #[case] scan_event_n: usize,
+        #[case] expected: (u64, usize),
+    ) {
+        let batch = raw_positions
+            .iter()
+            .copied()
+            .map(|(block_number, event_index)| dummy_event(block_number, event_index))
+            .collect::<Vec<_>>();
+
+        let next_cursor =
+            advance_scan_cursor(&batch, scan_block, scan_event_n).expect("cursor advancement should succeed");
+
+        assert_eq!(next_cursor, expected);
+    }
+
+    #[rstest]
+    fn build_events_chunk_truncates_page_but_preserves_filtered_offset() {
+        let chunk = build_events_chunk(
+            vec![dummy_event(7, 0), dummy_event(7, 2), dummy_event(7, 5)],
+            2,
+            &ContinuationToken { block_number: 7, event_n: 0 },
+        );
+
+        assert_eq!(chunk.events.len(), 2);
+        assert_eq!(chunk.events[0].event_index, 0);
+        assert_eq!(chunk.events[1].event_index, 2);
+        assert_eq!(chunk.continuation_token.as_deref(), Some("7-2"));
+    }
 }

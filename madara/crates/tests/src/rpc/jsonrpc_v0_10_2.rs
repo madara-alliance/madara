@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod test_rpc_jsonrpc_v0_10_2 {
     use crate::{MadaraCmd, MadaraCmdBuilder};
+    use rstest::rstest;
     use serde_json::{json, Map, Value};
     use tokio::sync::OnceCell;
 
@@ -60,6 +61,20 @@ mod test_rpc_jsonrpc_v0_10_2 {
         if let Some(address) = address {
             filter.insert("address".to_string(), address);
         }
+        if let Some(token) = continuation_token {
+            filter.insert("continuation_token".to_string(), Value::String(token.to_owned()));
+        }
+
+        Value::Object(Map::from_iter([("filter".to_string(), Value::Object(filter))]))
+    }
+
+    fn block_event_filter_params(block_number: u64, continuation_token: Option<&str>, chunk_size: u64) -> Value {
+        let mut filter = Map::new();
+        filter.insert("from_block".to_string(), json!({"block_number": block_number}));
+        filter.insert("to_block".to_string(), json!({"block_number": block_number}));
+        filter.insert("keys".to_string(), json!([[]]));
+        filter.insert("chunk_size".to_string(), Value::from(chunk_size));
+
         if let Some(token) = continuation_token {
             filter.insert("continuation_token".to_string(), Value::String(token.to_owned()));
         }
@@ -141,6 +156,58 @@ mod test_rpc_jsonrpc_v0_10_2 {
             ],
             "continuation_token": "6-0"
         })
+    }
+
+    fn expected_first_page_token(filtered_events: &[Value], page_size: usize) -> Option<String> {
+        if filtered_events.len() <= page_size {
+            return None;
+        }
+
+        let next_block_number =
+            filtered_events[page_size].get("block_number").and_then(Value::as_u64).expect("missing next block number");
+        let already_consumed_in_next_block = filtered_events[..page_size]
+            .iter()
+            .rev()
+            .take_while(|event| event.get("block_number").and_then(Value::as_u64) == Some(next_block_number))
+            .count();
+
+        Some(format!("{next_block_number}-{already_consumed_in_next_block}"))
+    }
+
+    fn select_multi_address_regression_case(unfiltered_events: &[Value]) -> Option<(Vec<String>, Vec<Value>)> {
+        let mut unique_addresses = Vec::new();
+        for event in unfiltered_events {
+            let address = event.get("from_address")?.as_str()?.to_owned();
+            if !unique_addresses.contains(&address) {
+                unique_addresses.push(address);
+            }
+        }
+
+        for i in 0..unique_addresses.len() {
+            for j in (i + 1)..unique_addresses.len() {
+                let addresses = vec![unique_addresses[i].clone(), unique_addresses[j].clone()];
+                let filtered_events = unfiltered_events
+                    .iter()
+                    .filter(|event| {
+                        event
+                            .get("from_address")
+                            .and_then(Value::as_str)
+                            .is_some_and(|from_address| addresses.iter().any(|address| address == from_address))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                if filtered_events.len() < 3 {
+                    continue;
+                }
+
+                if expected_first_page_token(&filtered_events, 2).is_some() {
+                    return Some((addresses, filtered_events));
+                }
+            }
+        }
+
+        None
     }
 
     #[tokio::test]
@@ -388,6 +455,49 @@ mod test_rpc_jsonrpc_v0_10_2 {
     }
 
     #[tokio::test]
+    async fn test_raw_simulate_transactions_return_initial_reads_v0_10_2() {
+        let madara = get_madara().await;
+        let response = rpc_response(
+            madara,
+            "starknet_simulateTransactions",
+            json!({
+                "block_id": {"block_number": 19},
+                "transactions": [],
+                "simulation_flags": ["RETURN_INITIAL_READS"]
+            }),
+        )
+        .await;
+
+        let error = response.get("error").expect("expected simulate to return error");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(41));
+        assert_eq!(error.get("message").and_then(|value| value.as_str()), Some("Transaction execution error"));
+        let execution_error = error
+            .get("data")
+            .and_then(|value| value.get("execution_error"))
+            .and_then(|value| value.as_str())
+            .expect("missing execution_error");
+        assert!(execution_error.contains("Unsupported protocol version"));
+    }
+
+    #[tokio::test]
+    async fn test_raw_simulate_transactions_invalid_simulation_flags_v0_10_2() {
+        let madara = get_madara().await;
+        let response = rpc_response(
+            madara,
+            "starknet_simulateTransactions",
+            json!({
+                "block_id": {"block_number": 19},
+                "transactions": [],
+                "simulation_flags": ["UNKNOWN_FLAG"]
+            }),
+        )
+        .await;
+
+        let error = response.get("error").expect("expected simulation_flags error");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(-32602));
+    }
+
+    #[tokio::test]
     async fn test_raw_get_events_address_array_v0_10_2() {
         let madara = get_madara().await;
         let result =
@@ -430,5 +540,60 @@ mod test_rpc_jsonrpc_v0_10_2 {
         .await;
 
         assert_eq!(result, expected_events_second_page());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_raw_get_events_multi_address_pagination_uses_filtered_offsets_v0_10_2() {
+        let madara = get_madara().await;
+        let unfiltered = rpc_result(madara, "starknet_getEvents", event_filter_params(None, None, 100)).await;
+        let unfiltered_events = unfiltered
+            .get("events")
+            .and_then(Value::as_array)
+            .cloned()
+            .expect("unfiltered getEvents response should contain an events array");
+
+        let (addresses, filtered_events) = select_multi_address_regression_case(&unfiltered_events)
+            .expect("sample chain should contain a multi-address pagination regression case");
+        let expected_token =
+            expected_first_page_token(&filtered_events, 2).expect("regression case should span more than one page");
+
+        let first_page =
+            rpc_result(madara, "starknet_getEvents", event_filter_params(Some(json!(addresses)), None, 2)).await;
+        assert_eq!(
+            first_page.get("events").and_then(Value::as_array),
+            Some(&filtered_events[..2]),
+            "first page should match the first filtered events",
+        );
+        assert_eq!(first_page.get("continuation_token").and_then(Value::as_str), Some(expected_token.as_str()));
+
+        let second_page = rpc_result(
+            madara,
+            "starknet_getEvents",
+            event_filter_params(Some(json!(addresses)), Some(expected_token.as_str()), 2),
+        )
+        .await;
+        assert_eq!(
+            second_page.get("events").and_then(Value::as_array).and_then(|events| events.first()),
+            Some(&filtered_events[2]),
+            "the next page should resume from the first excluded matching event",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_raw_get_events_same_block_page_does_not_duplicate_last_event_v0_10_2() {
+        let madara = get_madara().await;
+        let result = rpc_result(madara, "starknet_getEvents", block_event_filter_params(4, None, 20)).await;
+
+        assert_eq!(
+            result.get("events").and_then(Value::as_array),
+            expected_events_second_page().get("events").and_then(Value::as_array),
+            "same-block pagination should return each matching event once",
+        );
+        assert!(
+            result.get("continuation_token").is_none() || result.get("continuation_token").is_some_and(Value::is_null),
+            "single-block result should not advertise another page: {result:?}"
+        );
     }
 }
