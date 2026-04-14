@@ -81,10 +81,7 @@ pub static ACCOUNT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(
             return None;
         }
 
-        match parse_felt(trimmed) {
-            Ok(felt) => Some(felt),
-            Err(_e) => None,
-        }
+        parse_felt(trimmed).ok()
     }
     Err(_) => None,
 });
@@ -101,10 +98,7 @@ pub static ERC20_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(EN
             return None;
         }
 
-        match parse_felt(trimmed) {
-            Ok(felt) => Some(felt),
-            Err(_e) => None,
-        }
+        parse_felt(trimmed).ok()
     }
     Err(_) => None,
 });
@@ -121,10 +115,7 @@ pub static PARACLEAR_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::va
             return None;
         }
 
-        match parse_felt(trimmed) {
-            Ok(felt) => Some(felt),
-            Err(_e) => None,
-        }
+        parse_felt(trimmed).ok()
     }
     Err(_) => None,
 });
@@ -142,10 +133,7 @@ pub static PARACLEAR_ORACLE_CLASS_HASH: Lazy<Option<Felt>> =
                 return None;
             }
 
-            match parse_felt(trimmed) {
-                Ok(felt) => Some(felt),
-                Err(_e) => None,
-            }
+            parse_felt(trimmed).ok()
         }
         Err(_) => None,
     });
@@ -163,10 +151,7 @@ pub static ASSETS_MANAGER_CLASS_HASH: Lazy<Option<Felt>> =
                 return None;
             }
 
-            match parse_felt(trimmed) {
-                Ok(felt) => Some(felt),
-                Err(_e) => None,
-            }
+            parse_felt(trimmed).ok()
         }
         Err(_) => None,
     });

@@ -82,11 +82,10 @@ fn test_update_token_balance_writes_delta() {
 
     let base = storage_key_for_map2("Paraclear_token_asset_balance", account.0, token.0);
     set_storage(&mut state, contract, base, token.0);
-    set_storage(&mut state, contract, storage_key_with_offset(base, 1), felt(1 * 100_000_000u64));
+    set_storage(&mut state, contract, storage_key_with_offset(base, 1), felt(100_000_000u64));
 
     let mut ctx = crate::ExecutionContext::new();
-    paraclear::update_token_balance_for_test(&mut ctx, &state, contract, account, token, -1 * 100_000_000)
-        .expect("update");
+    paraclear::update_token_balance_for_test(&mut ctx, &state, contract, account, token, -100_000_000).expect("update");
 
     let result = ctx.build_result();
     let updates = result.state_diff.storage_updates.get(&contract).expect("updates");
@@ -200,7 +199,7 @@ fn test_create_perpetual_balance_inserts_new() {
         market,
         5 * SCALE,
         2 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
     )
     .expect("upsert");
@@ -215,7 +214,7 @@ fn test_create_perpetual_balance_inserts_new() {
     assert_eq!(updates.get(&base).copied(), Some(market));
     assert_eq!(updates.get(&storage_key_with_offset(base, 1)).copied(), Some(i128_to_felt(5 * SCALE)));
     assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), Some(i128_to_felt(2 * SCALE)));
-    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), Some(i128_to_felt(1 * SCALE)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), Some(i128_to_felt(SCALE)));
     assert_eq!(updates.get(&storage_key_with_offset(base, 4)).copied(), Some(felt(0)));
     assert_eq!(updates.get(&storage_key_with_offset(base, 5)).copied(), Some(felt(0)));
     assert_eq!(updates.get(&tail_key).copied(), Some(market));
@@ -275,7 +274,7 @@ fn test_remove_perpetual_balance_unlinks() {
 
     let base1 = storage_key_for_map2("Paraclear_perpetual_asset_balance", account.0, market1);
     set_storage(&mut state, contract, base1, market1);
-    set_storage(&mut state, contract, storage_key_with_offset(base1, 1), i128_to_felt(1 * SCALE));
+    set_storage(&mut state, contract, storage_key_with_offset(base1, 1), i128_to_felt(SCALE));
     set_storage(&mut state, contract, storage_key_with_offset(base1, 2), i128_to_felt(2 * SCALE));
     set_storage(&mut state, contract, storage_key_with_offset(base1, 3), i128_to_felt(3 * SCALE));
     set_storage(&mut state, contract, storage_key_with_offset(base1, 4), felt(0));
@@ -331,7 +330,7 @@ fn test_upsert_total_realized_pnl_and_funding_writes() {
         contract,
         market,
         account,
-        1 * SCALE,
+        SCALE,
         2 * SCALE,
         0,
     )

@@ -46,6 +46,10 @@ starknet_api = { workspace = true }
 
 [dev-dependencies]
 rstest.workspace = true
+proptest = { workspace = true }
+serde_json = { workspace = true }
+mc-rust-exec = { path = ".", features = ["testing"] }
 
 [features]
 default = []
+testing = []

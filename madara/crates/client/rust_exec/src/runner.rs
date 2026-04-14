@@ -21,6 +21,7 @@ pub struct ExecutionVerificationResult {
 }
 
 /// Execute the transaction in Rust and verify against a Blockifier result.
+#[allow(clippy::too_many_arguments)]
 pub fn execute_and_verify_with_timestamp<S: StateReader>(
     state: &S,
     contract_address: ContractAddress,

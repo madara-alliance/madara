@@ -12,6 +12,7 @@ use super::super::fixtures::{
     set_token_balance_amount_only, set_token_name, short_str, SCALE,
 };
 
+#[allow(clippy::too_many_arguments)]
 fn setup_perp_env(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -84,6 +85,7 @@ fn set_perp_balance(
     state.set_storage(contract, storage_key_with_offset(base, 5), felt(0));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_trade(
     maker: ContractAddress,
     taker: ContractAddress,
@@ -129,10 +131,10 @@ fn build_trade(
     }
 }
 
-fn events_with_selector<'a>(
-    events: &'a [crate::types::Event],
+fn events_with_selector(
+    events: &[crate::types::Event],
     selector: starknet_types_core::felt::Felt,
-) -> Vec<&'a crate::types::Event> {
+) -> Vec<&crate::types::Event> {
     events.iter().filter(|event| event.keys.first() == Some(&selector)).collect()
 }
 
@@ -155,7 +157,7 @@ fn test_settle_perp_success_long() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -206,7 +208,7 @@ fn test_settle_perp_success_short() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -257,7 +259,7 @@ fn test_settle_perp_reduce_only_rejects_increase() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -312,7 +314,7 @@ fn test_settle_perp_maker_risky() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         10_000_000,
         false,
@@ -368,7 +370,7 @@ fn test_settle_perp_taker_risky() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         10_000_000,
         false,
@@ -424,7 +426,7 @@ fn test_settle_perp_fee_v2_path() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -500,7 +502,7 @@ fn test_settle_perp_fee_v1_path() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -564,7 +566,7 @@ fn test_settle_perp_option_asset_kind() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         true,
@@ -615,7 +617,7 @@ fn test_settle_perp_emits_perpetual_balance_update() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -667,7 +669,7 @@ fn test_settle_perp_emits_trade_settled() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -719,7 +721,7 @@ fn test_settle_perp_emits_fee_events() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         0,
         0,
         false,
@@ -773,7 +775,7 @@ fn test_settle_perp_funding_applied() {
         settlement_token,
         settlement_name,
         100 * SCALE,
-        1 * SCALE,
+        SCALE,
         2 * SCALE,
         0,
         false,
@@ -784,7 +786,7 @@ fn test_settle_perp_funding_applied() {
     set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 5000 * SCALE);
     set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 5000 * SCALE);
 
-    set_perp_balance(&mut state, contract, maker, market, 10 * SCALE, 0, 1 * SCALE);
+    set_perp_balance(&mut state, contract, maker, market, 10 * SCALE, 0, SCALE);
 
     let trade = build_trade(
         maker,
@@ -808,4 +810,74 @@ fn test_settle_perp_funding_applied() {
     assert_eq!(events.len(), 2);
     let maker_event = events.iter().find(|event| event.data[0] == maker.0).expect("maker event");
     assert_ne!(maker_event.data[8], felt(0));
+}
+
+// ── Balance verification after settlement ──────────────────────────────────
+
+#[test]
+fn test_settle_perp_verifies_state_diff_balances() {
+    // Ported from Cairo test_settle_trade_v3_with_pending_transfers_disabled:
+    // Verify actual perpetual position and settlement token balance values in state diff.
+    //
+    // Setup: new positions, maker buys (side=1), taker sells (side=2)
+    //   size=2, price=800, mark_price=100, settlement_price=1, funding_index=0
+    //   After trade:
+    //     maker: perp amount=+2, cost = 2*800 / settlement_price = 1600
+    //     taker: perp amount=-2, cost = -2*800 / settlement_price = -1600
+    //     (no realized PnL on new positions, no funding)
+    let mut state = MockStateReader::new();
+    let contract = addr(0x2200);
+    let assets_manager = addr(0x2201);
+    let oracle = addr(0x2202);
+    let market = felt(0xdef);
+    let settlement_token = addr(0x2203);
+    let settlement_name = short_str("USDC");
+
+    setup_perp_env(
+        &mut state, contract, assets_manager, oracle, market,
+        settlement_token, settlement_name,
+        100 * SCALE, // mark_price
+        SCALE,       // settlement_price
+        0,           // funding_index
+        SCALE / 10,  // imf_base (10%)
+        false,       // not option
+    );
+
+    let maker = addr(0x3201);
+    let taker = addr(0x3202);
+    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 50_000 * SCALE);
+    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 50_000 * SCALE);
+
+    let trade = build_trade(
+        maker, taker, market,
+        felt(1), felt(2), // maker buys, taker sells
+        2 * SCALE, 800 * SCALE,
+        false, false,
+        OrderCategory::Unspecified, OrderCategory::Unspecified,
+    );
+
+    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
+    let selector = function_selector("settle_trade_v3");
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+    assert_eq!(result.call_result.retdata, vec![felt(1)], "trade should succeed");
+
+    // Check state diff for perpetual positions.
+    let updates = result.state_diff.storage_updates.get(&contract).expect("updates");
+    let update_map: std::collections::HashMap<_, _> = updates.iter().map(|(k, v)| (*k, *v)).collect();
+
+    // Maker perp balance: amount=+2*SCALE (bought)
+    let maker_perp_key = storage_key_for_map2("Paraclear_perpetual_asset_balance", maker.0, market);
+    let maker_perp_amount = update_map.get(&storage_key_with_offset(maker_perp_key, 1));
+    assert_eq!(maker_perp_amount, Some(&i128_to_felt(2 * SCALE)), "maker perp amount should be +2");
+
+    // Taker perp balance: amount=-2*SCALE (sold)
+    let taker_perp_key = storage_key_for_map2("Paraclear_perpetual_asset_balance", taker.0, market);
+    let taker_perp_amount = update_map.get(&storage_key_with_offset(taker_perp_key, 1));
+    assert_eq!(taker_perp_amount, Some(&i128_to_felt(-2 * SCALE)), "taker perp amount should be -2");
+
+    // Verify events emitted.
+    let perp_events = events_with_selector(&result.call_result.events, event_selector("PerpetualAssetBalanceUpdateV3"));
+    assert_eq!(perp_events.len(), 2, "expected 2 PerpetualAssetBalanceUpdateV3 events");
+    let trade_events = events_with_selector(&result.call_result.events, event_selector("TradeSettled"));
+    assert_eq!(trade_events.len(), 1, "expected 1 TradeSettled event");
 }

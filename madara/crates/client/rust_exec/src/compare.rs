@@ -15,10 +15,7 @@ static IGNORE_FEE_MISMATCH: Lazy<bool> = Lazy::new(|| {
     if value.is_empty() {
         return false;
     }
-    match value.to_ascii_lowercase().as_str() {
-        "0" | "false" | "no" | "off" => false,
-        _ => true,
-    }
+    !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
 });
 
 fn felt_hex(f: Felt) -> String {
@@ -96,6 +93,7 @@ fn parse_hex_bigint(s: &str) -> Option<BigInt> {
     BigInt::parse_bytes(hex.as_bytes(), 16)
 }
 
+#[allow(clippy::type_complexity)]
 fn should_ignore_fee_mismatch(
     rust_maps: &StateMaps,
     block_maps: &StateMaps,

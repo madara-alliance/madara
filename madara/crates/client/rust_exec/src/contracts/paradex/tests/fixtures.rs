@@ -67,6 +67,7 @@ pub fn set_spot_asset_substorage(
     set_storage(state, contract, storage_key_with_offset(base, 3), quote_asset);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_future_asset_direct(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -90,6 +91,7 @@ pub fn set_future_asset_direct(
     set_storage(state, contract, storage_key_with_offset(base, 7), imf_shift);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_option_asset_direct(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -325,11 +327,7 @@ pub fn encode_order_v3_for_test(order: &OrderV3) -> Vec<Felt> {
 }
 
 pub fn encode_trade_request_v3_for_test(trade: &TradeRequestV3) -> Vec<Felt> {
-    let mut data = Vec::new();
-    data.push(trade.id);
-    data.push(trade.size);
-    data.push(trade.price);
-    data.push(trade.traded_at);
+    let mut data = vec![trade.id, trade.size, trade.price, trade.traded_at];
     data.extend(encode_order_v3_for_test(&trade.maker_order));
     data.extend(encode_order_v3_for_test(&trade.taker_order));
     data

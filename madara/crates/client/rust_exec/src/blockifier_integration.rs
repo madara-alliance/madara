@@ -149,7 +149,7 @@ impl<'a, S: BlockifierStateReader> StateReader for RustExecStateAdapter<'a, S> {
         Ok(value)
     }
 
-    fn get_nonce_at(&self, contract: ContractAddress) -> Result<crate::types::Nonce, crate::StateError> {
+    fn get_nonce_at(&self, contract: ContractAddress) -> Result<Nonce, crate::StateError> {
         let starknet_contract = ApiContractAddress::try_from(contract.0)
             .map_err(|e| crate::StateError::InvalidAddress(format!("Invalid contract address: {e}")))?;
 
@@ -158,7 +158,7 @@ impl<'a, S: BlockifierStateReader> StateReader for RustExecStateAdapter<'a, S> {
             .get_nonce_at(starknet_contract)
             .map_err(|e| crate::StateError::BackendError(format!("Blockifier cached state read error: {e}")))?;
 
-        Ok(crate::types::Nonce(nonce.0))
+        Ok(Nonce(nonce.0))
     }
 
     fn get_class_hash_at(&self, contract: ContractAddress) -> Result<Option<Felt>, crate::StateError> {
@@ -236,6 +236,7 @@ pub struct RustExecutionFailure {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum RustExecutionOutcome {
     Executed(RustExecutionData),
     Skipped { reason: RustExecutionSkipReason, tx_hash: Felt, block_timestamp: u64 },
@@ -724,6 +725,7 @@ fn generate_call_label(class_hash: Felt, entry_point_selector: Felt) -> String {
     format!("{}.{}", contract_name, function_name)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn verify_call_with_call_info<S: StateReader>(
     state: &S,
     contract_address: Felt,
@@ -915,7 +917,7 @@ fn execute_full_invoke_transaction<S: StateReader>(
         sender_address: ContractAddress(sender_address),
         calls: { parse_calls_from_invoke_calldata(calldata).unwrap_or_default() },
         signature: tx.signature().0.to_vec(),
-        nonce: Nonce(Felt::from(nonce_value)),
+        nonce: Nonce(nonce_value),
         fee_type,
         resource_bounds,
     };

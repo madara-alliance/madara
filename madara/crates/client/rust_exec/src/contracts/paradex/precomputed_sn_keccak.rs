@@ -20,10 +20,7 @@ static PRECOMPUTED_SN_KECCAK_ENABLED: Lazy<bool> = Lazy::new(|| {
     if value.is_empty() {
         return false;
     }
-    match value.to_ascii_lowercase().as_str() {
-        "0" | "false" | "no" | "off" => false,
-        _ => true,
-    }
+    !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
 });
 
 const PRECOMPUTED_VALUES: &[&str] = &[

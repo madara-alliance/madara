@@ -106,6 +106,9 @@ pub fn get_base_token_asset(
     market: Felt,
 ) -> Result<NamedToken, ExecutionError> {
     let spot = read_spot_asset(ctx, state, contract, market)?;
+    if spot.base_token_address.0 == Felt::ZERO {
+        return Err(ExecutionError::ExecutionFailed("Spot: asset not found".to_string()));
+    }
     Ok(NamedToken { token_address: spot.base_token_address, token_name: spot.base_token_name })
 }
 

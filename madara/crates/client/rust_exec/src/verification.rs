@@ -342,6 +342,7 @@ pub fn verify_execution(
 /// Comprehensive verification including all state changes.
 ///
 /// This is the enhanced entry point that checks everything.
+#[allow(clippy::too_many_arguments)]
 pub fn verify_execution_comprehensive(
     rust_result: &ExecutionResult,
     blockifier_storage: &[(Felt, Vec<(Felt, Felt)>)],

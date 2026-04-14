@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 // `settle_trade_v3`. They are a temporary bridge until rust-exec produces receipts/resources
 // natively with full fidelity.
 
-pub const SETTLE_TRADE_V3_FIXED_FEE_AMOUNT: u128 = 0x2639_288b_e94;
+pub const SETTLE_TRADE_V3_FIXED_FEE_AMOUNT: u128 = 0x0263_9288_be94;
 pub const SETTLE_TRADE_V3_FIXED_L1_GAS: u64 = 0;
 pub const SETTLE_TRADE_V3_FIXED_L1_DATA_GAS: u64 = 576;
 pub const SETTLE_TRADE_V3_FIXED_L2_GAS: u64 = 25_696_375;

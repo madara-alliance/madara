@@ -75,6 +75,7 @@ fn class_hash_cached<S: StateReader>(
     value
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_transaction_execution_info<S: StateReader>(
     state: &S,
     sender_address: Felt,

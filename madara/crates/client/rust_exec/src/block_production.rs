@@ -80,7 +80,7 @@ fn rust_bouncer_delta(
     let (sierra_gas, proving_gas) = constants::settle_trade_v3_bouncer_gas(is_first);
     let message_resources = MessageResources::new(tx_execution_summary.l2_to_l1_payload_lengths.clone(), None);
     let l1_gas = usize::try_from(message_resources.get_starknet_gas_cost().l1_gas.0).unwrap_or(usize::MAX);
-    let n_events = usize::try_from(tx_execution_summary.event_summary.n_events).unwrap_or(usize::MAX);
+    let n_events = tx_execution_summary.event_summary.n_events;
 
     BouncerWeights {
         l1_gas,
@@ -100,7 +100,7 @@ fn log_hash_agg(tx_hash: Felt, outcome: &RustExecutionOutcome, hash_stats: hash_
         RustExecutionOutcome::Failed(_) => "Failed",
     };
 
-    tracing::info!(
+    tracing::debug!(
         "rust_exec_hash_total tx={:#x} outcome={} pedersen_calls={} pedersen_hits={} pedersen_misses={} \
 poseidon_calls={} sn_keccak_calls={} sn_keccak_hits={} sn_keccak_misses={} key_cache_hits={} key_cache_misses={} \
 ctx_reads_total={} ctx_read_cache_hits={} ctx_write_hits={} ctx_backend_reads={} cached_state_reads_total={} \
@@ -126,7 +126,7 @@ cached_state_cache_hits={} cached_state_cache_misses={}",
     );
 
     let total_unique = hash_stats.pedersen_inputs + hash_stats.poseidon_inputs + hash_stats.sn_keccak_inputs;
-    tracing::info!(
+    tracing::debug!(
         "rust_exec_hash_unique tx={:#x} pedersen_inputs={} poseidon_inputs={} sn_keccak_inputs={} total_unique={}",
         tx_hash,
         hash_stats.pedersen_inputs,
@@ -143,7 +143,7 @@ fn log_storage_agg(tx_hash: Felt, outcome: &RustExecutionOutcome, ctx_stats: sto
         RustExecutionOutcome::Failed(_) => "Failed",
     };
 
-    tracing::info!(
+    tracing::debug!(
         "rust_exec_storage_total tx={:#x} outcome={} ctx_reads_total={} ctx_read_cache_hits={} \
 ctx_write_cache_hits={} ctx_backend_reads={} ctx_read_cache_us={} ctx_write_cache_us={} \
 ctx_backend_us={} ctx_writes_total={} ctx_write_us={} cached_state_reads_total={} \
@@ -185,7 +185,7 @@ backend_read_us={}",
         .saturating_add(0);
     let total_unique_writes = ctx_stats.ctx_write_unique;
 
-    tracing::info!(
+    tracing::debug!(
         "rust_exec_storage_unique tx={:#x} ctx_read_cache_unique={} ctx_write_cache_unique={} \
 ctx_backend_unique={} ctx_write_unique={} cached_state_unique_reads={} \
 cached_state_unique_writes={} layered_unique_reads={} backend_unique_reads={} \
@@ -234,8 +234,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
             if options.update_bouncer {
                 let ps = phase_state.as_deref_mut().expect("rust phase state missing");
                 let bouncer = executor.bouncer.lock().expect("Bouncer lock poisoned");
-                let projected_current =
-                    ps.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
+                let projected_current = ps.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
                 let is_first = ps.first_tx_in_block;
                 let (sierra_gas, proving_gas) = constants::settle_trade_v3_bouncer_gas(is_first);
                 let min_tx_delta = BouncerWeights {
@@ -327,7 +326,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     phase_state.first_tx_in_block = false;
                     phase_state.projected_bouncer_weights = Some(projected_next);
                     let current_weights = bouncer.get_bouncer_weights();
-                    tracing::info!(
+                    tracing::debug!(
                         tx_hash = format_args!("{:#x}", tx_hash),
                         tx_summary = ?tx_execution_summary,
                         tx_builtin_counters = ?tx_builtin_counters,
@@ -388,7 +387,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
 /// - Runs rust-exec against the executor's current `CachedState`.
 /// - Applies the rust-exec produced state diff to that `CachedState`.
 /// - Produces a `TransactionExecutionInfo` (receipt/call-info) and `StateMaps` (tx diff).
-/// - Uses hardcoded fee/resources for `settle_trade_v3` (see [`crate::constants`]).
+/// - Uses hardcoded fee/resources for `settle_trade_v3` (see [`constants`]).
 /// - Updates the executor bouncer with a hardcoded delta (sierra/proving gas).
 ///
 /// If the bouncer cannot fit a tx, execution stops early and returns fewer results than `txs.len()`

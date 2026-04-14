@@ -17,4 +17,5 @@ mod paraclear_spot;
 mod paraclear_storage_keys;
 mod paraclear_timing;
 mod paraclear_trace;
+mod paraclear_validation;
 mod precomputed_sn_keccak;

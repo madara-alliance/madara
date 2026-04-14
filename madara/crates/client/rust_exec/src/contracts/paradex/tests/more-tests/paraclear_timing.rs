@@ -8,6 +8,7 @@ use starknet_types_core::felt::Felt;
 
 use super::super::fixtures::{addr, felt, i128_to_felt, SCALE};
 
+#[allow(clippy::too_many_arguments)]
 fn build_trade(
     maker: ContractAddress,
     taker: ContractAddress,

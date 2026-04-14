@@ -143,7 +143,7 @@ impl InnerTiming {
 }
 
 thread_local! {
-    static INNER_TIMING: RefCell<Option<InnerTiming>> = RefCell::new(None);
+    static INNER_TIMING: RefCell<Option<InnerTiming>> = const { RefCell::new(None) };
 }
 
 struct InnerTimingGuard {
@@ -319,7 +319,7 @@ fn resolve_token_balance_base<S: StateReader>(
 }
 
 fn perp_balance_inner_base(account: ContractAddress) -> Felt {
-    pedersen_hash(&*PERP_BALANCE_BASE, &account.0)
+    pedersen_hash(&PERP_BALANCE_BASE, &account.0)
 }
 
 fn perp_balance_base_from_inner(inner: Felt, market: Felt) -> StorageKey {
@@ -327,7 +327,7 @@ fn perp_balance_base_from_inner(inner: Felt, market: Felt) -> StorageKey {
 }
 
 fn token_balance_inner_base(account: ContractAddress) -> Felt {
-    pedersen_hash(&*TOKEN_BALANCE_BASE, &account.0)
+    pedersen_hash(&TOKEN_BALANCE_BASE, &account.0)
 }
 
 fn token_balance_base_from_inner(inner: Felt, token: ContractAddress) -> StorageKey {
@@ -558,9 +558,13 @@ pub fn execute_with_timestamp<S: StateReader>(
         return Err(ExecutionError::ExecutionFailed("settlement_token_price is zero".to_string()));
     }
 
+    // Read insurance fund address (exempt from risk checks, matching Cairo).
+    let insurance_fund_address =
+        ContractAddress(ctx.storage_read(state, contract, *layout::PARACLEAR_LIQUIDATION_INSURANCE_FUND_BASE)?);
+
     // Dispatch by asset kind.
     if asset_kind == assets_manager::asset_kind_spot() {
-        settle_spot(state, contract, &trade, settlement_token_price, caller, &mut ctx)?;
+        settle_spot(state, contract, &trade, settlement_token_price, caller, insurance_fund_address, &mut ctx)?;
     } else {
         settle_perpetual(
             state,
@@ -570,6 +574,7 @@ pub fn execute_with_timestamp<S: StateReader>(
             oracle_address,
             asset_kind,
             caller,
+            insurance_fund_address,
             &mut ctx,
         )?;
     }
@@ -580,12 +585,14 @@ pub fn execute_with_timestamp<S: StateReader>(
     Ok(ctx.build_result())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn settle_spot<S: StateReader>(
     state: &S,
     contract: ContractAddress,
     trade: &TradeRequestV3,
     settlement_token_price: Felt,
     caller: ContractAddress,
+    insurance_fund_address: ContractAddress,
     ctx: &mut ExecutionContext,
 ) -> Result<(), ExecutionError> {
     time_inner(InnerTimingField::SettleSpot, || {
@@ -657,42 +664,48 @@ fn settle_spot<S: StateReader>(
         let taker_fee_settlement = div_128_scaled(taker_fee, settlement_token_price_i128)?;
         let taker_fee_commission_settlement = div_128_scaled(taker_fee_commission, settlement_token_price_i128)?;
 
-        if is_risky_after_trade_loaded(
-            ctx,
-            state,
-            contract,
-            trade.maker_order.account,
-            settlement_token_address,
-            RiskOverrides::spot(
-                spot_asset.token_address,
-                maker_base_before,
-                maker_base_before + maker_base_delta,
-                maker_updated_settlement,
-            ),
-            maker_fee,
-            maker_state.clone(),
-        )? {
+        // Ignore health check for insurance fund (matching Cairo).
+        if trade.maker_order.account != insurance_fund_address
+            && is_risky_after_trade_loaded(
+                ctx,
+                state,
+                contract,
+                trade.maker_order.account,
+                settlement_token_address,
+                RiskOverrides::spot(
+                    spot_asset.token_address,
+                    maker_base_before,
+                    maker_base_before + maker_base_delta,
+                    maker_updated_settlement,
+                ),
+                maker_fee,
+                maker_state.clone(),
+            )?
+        {
             emit_settle_trade_failed(ctx, ErrorCodes::trade_order_risky(), Errors::trade_order_risky_maker(), trade);
             ctx.set_retdata(vec![Felt::ZERO]);
             ctx.fail("maker risky".to_string());
             return Ok(());
         }
 
-        if is_risky_after_trade_loaded(
-            ctx,
-            state,
-            contract,
-            trade.taker_order.account,
-            settlement_token_address,
-            RiskOverrides::spot(
-                spot_asset.token_address,
-                taker_base_before,
-                taker_base_before + taker_base_delta,
-                taker_updated_settlement,
-            ),
-            taker_fee,
-            taker_state.clone(),
-        )? {
+        // Ignore health check for insurance fund (matching Cairo).
+        if trade.taker_order.account != insurance_fund_address
+            && is_risky_after_trade_loaded(
+                ctx,
+                state,
+                contract,
+                trade.taker_order.account,
+                settlement_token_address,
+                RiskOverrides::spot(
+                    spot_asset.token_address,
+                    taker_base_before,
+                    taker_base_before + taker_base_delta,
+                    taker_updated_settlement,
+                ),
+                taker_fee,
+                taker_state.clone(),
+            )?
+        {
             emit_settle_trade_failed(ctx, ErrorCodes::trade_order_risky(), Errors::trade_order_risky_taker(), trade);
             ctx.set_retdata(vec![Felt::ZERO]);
             ctx.fail("taker risky".to_string());
@@ -732,7 +745,7 @@ fn settle_spot<S: StateReader>(
             maker_quote_delta,
         )?;
 
-        let (maker_after_fee, taker_after_fee) = fee_payments(
+        let (_maker_after_fee, _taker_after_fee) = fee_payments(
             ctx,
             state,
             contract,
@@ -769,12 +782,13 @@ fn settle_spot<S: StateReader>(
             Felt::ZERO,
         );
 
+        // Emit pre-fee settlement balance (matching Cairo's updated_amount).
         emit_token_balance_update(
             ctx,
             trade.maker_order.account,
             settlement_token_address,
             i128_to_felt(maker_settlement_before),
-            i128_to_felt(maker_after_fee),
+            i128_to_felt(maker_updated_settlement),
             Felt::ZERO,
         );
         emit_token_balance_update(
@@ -782,7 +796,7 @@ fn settle_spot<S: StateReader>(
             trade.taker_order.account,
             settlement_token_address,
             i128_to_felt(taker_settlement_before),
-            i128_to_felt(taker_after_fee),
+            i128_to_felt(taker_updated_settlement),
             Felt::ZERO,
         );
 
@@ -792,6 +806,7 @@ fn settle_spot<S: StateReader>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn settle_perpetual<S: StateReader>(
     state: &S,
     contract: ContractAddress,
@@ -800,6 +815,7 @@ fn settle_perpetual<S: StateReader>(
     oracle_address: ContractAddress,
     asset_kind: Felt,
     caller: ContractAddress,
+    insurance_fund_address: ContractAddress,
     ctx: &mut ExecutionContext,
 ) -> Result<(), ExecutionError> {
     time_inner(InnerTimingField::SettlePerpetual, || {
@@ -933,23 +949,26 @@ fn settle_perpetual<S: StateReader>(
         let taker_settlement_after = taker_settlement_before + taker_realized_funding + taker_realized_pnl;
 
         {
-            if is_risky_after_trade_loaded(
-                ctx,
-                state,
-                contract,
-                trade.maker_order.account,
-                settlement_token_address,
-                RiskOverrides::perp(
-                    market,
-                    felt_to_i128(maker_balance.amount)?,
-                    felt_to_i128(maker_updated.amount)?,
-                    maker_updated.cost,
-                    maker_updated.cached_funding,
-                    maker_settlement_after,
-                ),
-                maker_fee,
-                maker_state.clone(),
-            )? {
+            // Ignore health check for insurance fund (matching Cairo).
+            if trade.maker_order.account != insurance_fund_address
+                && is_risky_after_trade_loaded(
+                    ctx,
+                    state,
+                    contract,
+                    trade.maker_order.account,
+                    settlement_token_address,
+                    RiskOverrides::perp(
+                        market,
+                        felt_to_i128(maker_balance.amount)?,
+                        felt_to_i128(maker_updated.amount)?,
+                        maker_updated.cost,
+                        maker_updated.cached_funding,
+                        maker_settlement_after,
+                    ),
+                    maker_fee,
+                    maker_state.clone(),
+                )?
+            {
                 emit_settle_trade_failed(
                     ctx,
                     ErrorCodes::trade_order_risky(),
@@ -961,23 +980,26 @@ fn settle_perpetual<S: StateReader>(
                 return Ok(());
             }
 
-            if is_risky_after_trade_loaded(
-                ctx,
-                state,
-                contract,
-                trade.taker_order.account,
-                settlement_token_address,
-                RiskOverrides::perp(
-                    market,
-                    felt_to_i128(taker_balance.amount)?,
-                    felt_to_i128(taker_updated.amount)?,
-                    taker_updated.cost,
-                    taker_updated.cached_funding,
-                    taker_settlement_after,
-                ),
-                taker_fee,
-                taker_state.clone(),
-            )? {
+            // Ignore health check for insurance fund (matching Cairo).
+            if trade.taker_order.account != insurance_fund_address
+                && is_risky_after_trade_loaded(
+                    ctx,
+                    state,
+                    contract,
+                    trade.taker_order.account,
+                    settlement_token_address,
+                    RiskOverrides::perp(
+                        market,
+                        felt_to_i128(taker_balance.amount)?,
+                        felt_to_i128(taker_updated.amount)?,
+                        taker_updated.cost,
+                        taker_updated.cached_funding,
+                        taker_settlement_after,
+                    ),
+                    taker_fee,
+                    taker_state.clone(),
+                )?
+            {
                 emit_settle_trade_failed(
                     ctx,
                     ErrorCodes::trade_order_risky(),
@@ -1033,7 +1055,7 @@ fn settle_perpetual<S: StateReader>(
             )?;
         }
 
-        let (maker_after_fee, taker_after_fee) = {
+        let (_maker_after_fee, _taker_after_fee) = {
             fee_payments(
                 ctx,
                 state,
@@ -1090,12 +1112,13 @@ fn settle_perpetual<S: StateReader>(
                 settlement_token_price,
             );
 
+            // Emit pre-fee settlement balance (matching Cairo's updated_amount).
             emit_token_balance_update(
                 ctx,
                 trade.maker_order.account,
                 settlement_token_address,
                 i128_to_felt(maker_settlement_before),
-                i128_to_felt(maker_after_fee),
+                i128_to_felt(maker_settlement_after),
                 Felt::ZERO,
             );
             emit_token_balance_update(
@@ -1103,7 +1126,7 @@ fn settle_perpetual<S: StateReader>(
                 trade.taker_order.account,
                 settlement_token_address,
                 i128_to_felt(taker_settlement_before),
-                i128_to_felt(taker_after_fee),
+                i128_to_felt(taker_settlement_after),
                 Felt::ZERO,
             );
 
@@ -1179,36 +1202,36 @@ fn decode_order_v3(input: &[Felt]) -> Result<(OrderV3, &[Felt]), ExecutionError>
     ))
 }
 
-#[cfg(test)]
-pub(crate) fn decode_order_v3_for_test(input: &[Felt]) -> Result<(OrderV3, &[Felt]), ExecutionError> {
+#[cfg(any(test, feature = "testing"))]
+pub fn decode_order_v3_for_test(input: &[Felt]) -> Result<(OrderV3, &[Felt]), ExecutionError> {
     decode_order_v3(input)
 }
 
-#[cfg(test)]
-pub(crate) fn decode_order_category_for_test(input: &[Felt]) -> Result<(OrderCategory, &[Felt]), ExecutionError> {
+#[cfg(any(test, feature = "testing"))]
+pub fn decode_order_category_for_test(input: &[Felt]) -> Result<(OrderCategory, &[Felt]), ExecutionError> {
     decode_order_category(input)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 #[allow(dead_code)]
-pub(crate) fn encode_trade_request_v3_for_test(trade: &TradeRequestV3) -> Vec<Felt> {
+pub fn encode_trade_request_v3_for_test(trade: &TradeRequestV3) -> Vec<Felt> {
     encode_trade_request_v3(trade)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 #[allow(dead_code)]
-pub(crate) fn encode_order_v3_for_test(order: &OrderV3) -> Vec<Felt> {
+pub fn encode_order_v3_for_test(order: &OrderV3) -> Vec<Felt> {
     encode_order_v3(order)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 #[allow(dead_code)]
-pub(crate) fn encode_order_category_for_test(cat: &OrderCategory) -> Vec<Felt> {
+pub fn encode_order_category_for_test(cat: &OrderCategory) -> Vec<Felt> {
     encode_order_category(cat)
 }
 
-#[cfg(test)]
-pub(crate) fn perp_map_key_for_test(mode: u8, name: &str, key: Felt) -> StorageKey {
+#[cfg(any(test, feature = "testing"))]
+pub fn perp_map_key_for_test(mode: u8, name: &str, key: Felt) -> StorageKey {
     let mode = match mode {
         0 => PerpStorageMode::LegacyPedersen,
         1 => PerpStorageMode::LegacyPoseidon,
@@ -1292,6 +1315,7 @@ pub(crate) fn read_perpetual_balance_fields_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn upsert_perpetual_balance_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1343,6 +1367,7 @@ pub(crate) fn remove_perpetual_balance_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn upsert_total_realized_pnl_and_funding_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1381,6 +1406,7 @@ pub(crate) fn apply_referral_discount_for_test(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn is_risky_after_trade_spot_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1405,6 +1431,7 @@ pub(crate) fn is_risky_after_trade_spot_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn is_risky_after_trade_perp_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1467,6 +1494,7 @@ pub(crate) fn unrealized_funding_pnl_for_test(
     amount: i128,
     cached_funding: i128,
     funding_index: i128,
+    settlement_token_price: i128,
 ) -> Result<i128, ExecutionError> {
     let balance = PerpetualBalance {
         market: Felt::ZERO,
@@ -1476,7 +1504,7 @@ pub(crate) fn unrealized_funding_pnl_for_test(
         prev: Felt::ZERO,
         next: Felt::ZERO,
     };
-    unrealized_funding_pnl(&balance, funding_index)
+    unrealized_funding_pnl(&balance, funding_index, settlement_token_price)
 }
 
 #[cfg(test)]
@@ -1512,6 +1540,7 @@ pub(crate) fn get_asset_value_for_test(token_amounts: &[i128], token_prices: &[i
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn margin_requirement_and_total_upnl_for_test(
     token_amounts: &[i128],
     token_prices: &[i128],
@@ -1705,6 +1734,7 @@ pub(crate) fn read_max_pending_transfer_executions_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_pending_transfer_for_test<S: StateReader>(
     state: &S,
     ctx: &mut ExecutionContext,
@@ -1839,7 +1869,7 @@ fn read_contract_address<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
     contract: ContractAddress,
-    key: crate::types::StorageKey,
+    key: StorageKey,
 ) -> Result<ContractAddress, ExecutionError> {
     let value = ctx.storage_read(state, contract, key)?;
     Ok(ContractAddress(value))
@@ -2372,6 +2402,7 @@ fn remove_perpetual_balance<S: StateReader>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn upsert_total_realized_pnl_and_funding<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2572,6 +2603,7 @@ fn i128_to_felt(value: i128) -> Felt {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn is_risky_after_trade_from_state<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2681,6 +2713,7 @@ fn is_risky_after_trade_from_state<S: StateReader>(
     Ok(true)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn is_risky_after_trade_loaded<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2826,6 +2859,7 @@ fn load_token_balances<S: StateReader>(
     })
 }
 
+#[allow(clippy::type_complexity)]
 fn load_perp_balances_and_prices<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3061,7 +3095,7 @@ fn margin_requirement_and_total_upnl(
                     let funding_index = state.perp_funding_indices[i];
                     let settlement_price = state.settlement_token_price;
                     total_upnl += unrealized_pnl(balance, mark_price, settlement_price)?;
-                    total_upnl += unrealized_funding_pnl(balance, funding_index)?;
+                    total_upnl += unrealized_funding_pnl(balance, funding_index, settlement_price)?;
 
                     let current_value_abs = abs_128(get_value(balance, mark_price)?);
                     let margin_fraction = state.perp_imf_base[i];
@@ -3090,7 +3124,7 @@ fn margin_requirement_and_total_upnl(
                     let funding_index = state.perp_funding_indices[i];
                     let settlement_price = state.settlement_token_price;
                     total_upnl += unrealized_pnl(balance, mark_price, settlement_price)?;
-                    total_upnl += unrealized_funding_pnl(balance, funding_index)?;
+                    total_upnl += unrealized_funding_pnl(balance, funding_index, settlement_price)?;
                 }
             }
         }
@@ -3138,11 +3172,17 @@ fn unrealized_pnl(
     Ok(current_value - previous_value)
 }
 
-fn unrealized_funding_pnl(balance: &PerpetualBalance, funding_index: i128) -> Result<i128, ExecutionError> {
+fn unrealized_funding_pnl(
+    balance: &PerpetualBalance,
+    funding_index: i128,
+    settlement_token_price: i128,
+) -> Result<i128, ExecutionError> {
     let cached_funding = felt_to_i128(balance.cached_funding)?;
     let funding_diff = cached_funding - funding_index;
     let amount = felt_to_i128(balance.amount)?;
-    mul_128_scaled(funding_diff, amount)
+    let pnl = mul_128_scaled(funding_diff, amount)?;
+    // Convert from USDC to USD (matching Cairo's unrealized_funding_pnl)
+    mul_128_scaled(pnl, settlement_token_price)
 }
 
 const MULTIPLIER: i128 = 100_000_000;
@@ -3219,6 +3259,7 @@ fn base_fee_spot<S: StateReader>(
     mul3_128_scaled(trade_size, trade_price, fee_rate)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn base_fee_perp<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3373,6 +3414,7 @@ fn read_max_pending_transfer_executions<S: StateReader>(
     felt_to_u64(value)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_pending_transfer<S: StateReader>(
     state: &S,
     ctx: &mut ExecutionContext,
@@ -3399,6 +3441,7 @@ fn add_pending_transfer<S: StateReader>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fee_payments<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3543,6 +3586,7 @@ fn emit_token_balance_update(
     ctx.emit_event(vec![selector], vec![account.0, token_address.0, prev_amount, updated_amount, is_liquidation]);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_perpetual_balance_update(
     ctx: &mut ExecutionContext,
     account: ContractAddress,
@@ -3612,11 +3656,7 @@ fn emit_settle_trade_failed(ctx: &mut ExecutionContext, error_code: Felt, error_
 }
 
 fn encode_trade_request_v3(trade: &TradeRequestV3) -> Vec<Felt> {
-    let mut data = Vec::new();
-    data.push(trade.id);
-    data.push(trade.size);
-    data.push(trade.price);
-    data.push(trade.traded_at);
+    let mut data = vec![trade.id, trade.size, trade.price, trade.traded_at];
     data.extend(encode_order_v3(&trade.maker_order));
     data.extend(encode_order_v3(&trade.taker_order));
     data
@@ -3780,4 +3820,65 @@ fn buy_side() -> Felt {
 
 fn sell_side() -> Felt {
     Felt::from(2u64)
+}
+
+// ── Test-only wrappers for internal math/utility functions ──────────────────
+// These follow the same pattern as decode_order_v3_for_test (line 1182).
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub const MULTIPLIER_FOR_TEST: i128 = MULTIPLIER;
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn buy_side_for_test() -> Felt {
+    buy_side()
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn sell_side_for_test() -> Felt {
+    sell_side()
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn felt_to_i128_for_test(value: Felt) -> Result<i128, ExecutionError> {
+    felt_to_i128(value)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn i128_to_felt_for_test(value: i128) -> Felt {
+    i128_to_felt(value)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn mul_128_scaled_for_test(a: i128, b: i128) -> Result<i128, ExecutionError> {
+    mul_128_scaled(a, b)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn div_128_scaled_for_test(a: i128, b: i128) -> Result<i128, ExecutionError> {
+    div_128_scaled(a, b)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn mul3_128_scaled_for_test(a: i128, b: i128, c: i128) -> Result<i128, ExecutionError> {
+    mul3_128_scaled(a, b, c)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn abs_128_for_test(value: i128) -> i128 {
+    abs_128(value)
+}
+
+#[cfg(any(test, feature = "testing"))]
+#[allow(dead_code)]
+pub fn validate_trade_basic_for_test(trade: &TradeRequestV3) -> Result<(), ExecutionError> {
+    validate_trade_basic(trade)
 }

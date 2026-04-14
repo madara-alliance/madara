@@ -138,8 +138,7 @@ pub fn sn_keccak(data: &[u8]) -> Felt {
     // Mask to 250 bits (Starknet's modification)
     // Clear the top 6 bits of the first byte
     result[0] &= 0x03;
-    let felt = Felt::from_bytes_be_slice(&result);
-    felt
+    Felt::from_bytes_be_slice(&result)
 }
 
 /// Compute Cairo's keccak for u64 words and return the low/high u128 limbs.
@@ -187,8 +186,7 @@ pub fn cairo_keccak_u64_words(words: &[u64], n_bytes: usize) -> (u128, u128) {
 
     let low = (state[1] as u128) << 64 | state[0] as u128;
     let high = (state[3] as u128) << 64 | state[2] as u128;
-    let out = (low, high);
-    out
+    (low, high)
 }
 
 /// Compute Cairo's keccak for u64 words, mask to 250 bits, and return Felt.
@@ -340,8 +338,7 @@ pub fn storage_key_for_storage_node_member_pedersen(node: &str, member: &str) ->
 /// This is the hash function used by Cairo 1.0 for storage key computation.
 pub fn poseidon_hash_many(values: &[Felt]) -> Felt {
     hash_agg::record_poseidon_call(values);
-    let out = Poseidon::hash_array(values);
-    out
+    Poseidon::hash_array(values)
 }
 
 pub fn pedersen_hash(left: &Felt, right: &Felt) -> Felt {
