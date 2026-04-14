@@ -56,9 +56,20 @@ impl TryFrom<EmittedEvent> for MessageToL2WithMetadata {
             })
         })?;
 
+        let block_hash = event
+            .block_hash
+            .ok_or_else(|| {
+                SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                    message: "Unable to get block hash from event".to_string(),
+                    event_id: "MessageSent".to_string(),
+                })
+            })?
+            .to_bytes_be();
+
         Ok(Self {
             l1_transaction_hash: event.transaction_hash.to_u256(),
             l1_block_number: block_number,
+            l1_block_hash: block_hash,
             message: L1HandlerTransactionWithFee::new(
                 L1HandlerTransaction {
                     version: Felt::ZERO,

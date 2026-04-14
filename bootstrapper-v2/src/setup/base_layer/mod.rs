@@ -11,7 +11,19 @@ pub trait BaseLayerSetupTrait {
     /// It should be called before the base layer setup.
     async fn init(&mut self) -> Result<(), BaseLayerError>;
     async fn setup(&mut self) -> Result<(), BaseLayerError>;
-    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError>;
+
+    /// Complete post-Madara setup on the base layer:
+    /// 1. Set L2 bridge addresses on L1 bridges
+    /// 2. Enroll token bridge on Manager
+    /// 3. Poll for enrolled L2 fee token
+    /// 4. Verify/update config hash on CoreContract
+    ///
+    /// This absorbs all L1 finalization logic that depends on L2 deployment results.
+    async fn post_madara_setup(
+        &mut self,
+        madara_addresses_path: &str,
+        madara_setup: &mut crate::setup::madara::MadaraSetup,
+    ) -> Result<(), BaseLayerError>;
 }
 
 #[derive(thiserror::Error, Debug)]

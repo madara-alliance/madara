@@ -45,24 +45,11 @@ impl<'a> BootstrapAccount<'a> {
 
     // A felt representation of the string 'BOOTSTRAP'.
     pub async fn bootstrap_declare(&self) -> Result<(), MadaraError> {
-        let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA)
-                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?,
-        )
-        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?;
-
-        let contract_casm_artifact: CompiledClass = serde_json::from_reader(
-            std::fs::File::open(BOOTSTRAP_ACCOUNT_CASM)
-                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_CASM.to_string()))?,
-        )
-        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_CASM.to_string()))?;
+        let contract_artifact: SierraClass = crate::utils::read_json_file(BOOTSTRAP_ACCOUNT_SIERRA)?;
+        let contract_casm_artifact: CompiledClass = crate::utils::read_json_file(BOOTSTRAP_ACCOUNT_CASM)?;
 
         // Check if already declared
-        if self
-            .provider
-            .get_class(BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed), contract_artifact.class_hash()?)
-            .await
-            .is_ok()
+        if self.provider.get_class(BlockId::Tag(BlockTag::PreConfirmed), contract_artifact.class_hash()?).await.is_ok()
         {
             log::info!("OpenZeppelin Account contract already declared, skipping declaration.");
             return Ok(());
@@ -103,11 +90,7 @@ impl<'a> BootstrapAccount<'a> {
         private_key: &str,
     ) -> Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>, MadaraError> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
-        let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA)
-                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?,
-        )
-        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?;
+        let contract_artifact: SierraClass = crate::utils::read_json_file(BOOTSTRAP_ACCOUNT_SIERRA)?;
 
         // Get the class hash
         let class_hash = contract_artifact.class_hash()?;

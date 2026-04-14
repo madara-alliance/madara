@@ -1,5 +1,6 @@
 pub mod anvil;
 pub mod bootstrapper;
+pub mod bootstrapper_v2;
 pub mod constants;
 pub mod docker;
 pub mod helpers;

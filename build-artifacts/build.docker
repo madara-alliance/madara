@@ -25,7 +25,7 @@ RUN apt-get -y update && apt-get install -y \
   wget \
   curl \
   git
-ENV STARKGATE_REV="45941888479663ac93e898cd7f8504fa9066c54c"
+ENV STARKGATE_REV="v2.1.1"
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV COMPILE_SIERRA=".downloads/cairo/bin/starknet-sierra-compile"
 
@@ -235,7 +235,12 @@ ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 COPY bootstrapper-v2/contracts/ethereum/ .
 COPY --from=starkgate-latest $STARKGATE_DIR/starkware/ ./src/starkware/
 COPY --from=starkgate-latest $STARKGATE_DIR/third_party/ ./src/third_party/
-RUN forge install --no-git && forge build
+# Use forge build with a deterministic library address for AccessControl.
+# AccessControl has a public function which makes it an external library requiring linking.
+# We use address 0x0000000000000000000000000000000000000001 as a placeholder since the
+# actual library is never deployed separately — it's only needed to produce linked bytecode
+# for the sol!() macro at compile time.
+RUN forge install --no-git && forge build --libraries src/starkware/solidity/libraries/AccessControl.sol:AccessControl:0x0000000000000000000000000000000000000001
 
 
 # =========================================================================== #
