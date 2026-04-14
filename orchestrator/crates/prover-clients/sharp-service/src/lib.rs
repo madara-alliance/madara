@@ -42,8 +42,9 @@ pub struct SharpProverService {
     fact_checker: FactChecker,
 }
 
-/// Encode a CairoPIE as base64 for the SHARP API.
-fn encode_cairo_pie_base64(
+/// Encode a [`CairoPie`] struct via the temp-file dance.
+/// Used for individual child jobs where we receive a PIE by value.
+fn encode_cairo_pie_from_struct(
     cairo_pie: &cairo_vm::vm::runners::cairo_pie::CairoPie,
 ) -> Result<String, ProverClientError> {
     let temp_file = NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
@@ -66,7 +67,7 @@ impl ProverClient for SharpProverService {
                     function_type = "cairo_pie",
                     "Submitting Cairo PIE to SHARP."
                 );
-                let encoded_pie = encode_cairo_pie_base64(&cairo_pie)?;
+                let encoded_pie = encode_cairo_pie_from_struct(&cairo_pie)?;
                 let cairo_job_key = Uuid::new_v4().to_string();
                 self.sharp_client.add_job(&encoded_pie, &cairo_job_key).await?;
                 tracing::info!(
@@ -85,7 +86,7 @@ impl ProverClient for SharpProverService {
             Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
                 "SHARP does not support bucket-based aggregation. Use RunAggregationWithPie.".to_string(),
             )),
-            Task::RunAggregationWithPie(ApplicativeJobInfo { cairo_pie, children_cairo_job_keys }) => {
+            Task::RunAggregationWithPie(ApplicativeJobInfo { cairo_pie_zip_bytes, children_cairo_job_keys }) => {
                 tracing::info!(
                     log_type = "starting",
                     category = "submit_task",
@@ -93,7 +94,9 @@ impl ProverClient for SharpProverService {
                     num_children = children_cairo_job_keys.len(),
                     "Submitting applicative job to SHARP."
                 );
-                let encoded_pie = encode_cairo_pie_base64(&cairo_pie)?;
+                // Bytes are already zipped — just base64-encode them directly.
+                let encoded_pie = general_purpose::STANDARD.encode(&cairo_pie_zip_bytes);
+                drop(cairo_pie_zip_bytes); // release the zip bytes now that we have the base64 string
                 let cairo_job_key = Uuid::new_v4().to_string();
                 self.sharp_client.add_applicative_job(&encoded_pie, &cairo_job_key, &children_cairo_job_keys).await?;
                 tracing::info!(

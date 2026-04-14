@@ -53,8 +53,12 @@ pub struct CreateJobInfo {
 }
 
 /// Information for submitting a pre-built aggregator CairoPIE (SHARP applicative job).
+///
+/// `cairo_pie_zip_bytes` contains the already-zipped CairoPIE bytes. The handler
+/// produces these in a single pass and passes them through, so the prover
+/// implementation does not need to re-serialize the PIE.
 pub struct ApplicativeJobInfo {
-    pub cairo_pie: Box<CairoPie>,
+    pub cairo_pie_zip_bytes: bytes::Bytes,
     pub children_cairo_job_keys: Vec<String>,
 }
 

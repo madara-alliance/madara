@@ -282,21 +282,9 @@ impl AggregatorJobHandler {
 
         info!("Local aggregator completed, storing artifacts");
 
-        // 3. Store aggregator CairoPIE
-        let pie_temp = tempfile::NamedTempFile::new().map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-        aggregator_output
-            .aggregator_cairo_pie
-            .write_zip_file(pie_temp.path(), true)
-            .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-        let pie_bytes = std::fs::read(pie_temp.path()).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-        config.storage().put_data(bytes::Bytes::from(pie_bytes.clone()), &metadata.cairo_pie_path).await?;
-
-        // 4. Store DA segment
-        config.storage().put_data(bytes::Bytes::from(aggregator_output.da_segment), &metadata.da_segment_path).await?;
-
-        // 5. Compute and store program output
-        let agg_pie = CairoPie::from_bytes(&pie_bytes).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-        let fact_info = get_fact_info(&agg_pie, None, true)?;
+        // 3. Compute program output FROM THE PIE BEFORE WE DROP IT.
+        //    Doing this first lets us avoid re-parsing the PIE from bytes later.
+        let fact_info = get_fact_info(&aggregator_output.aggregator_cairo_pie, None, true)?;
         AggregatorJobHandler::store_program_output(
             config,
             batch_num,
@@ -305,12 +293,25 @@ impl AggregatorJobHandler {
         )
         .await?;
 
-        // 6. Submit applicative job to SHARP
+        // 4. Store DA segment (moves the bytes out of aggregator_output).
+        config.storage().put_data(bytes::Bytes::from(aggregator_output.da_segment), &metadata.da_segment_path).await?;
+
+        // 5. Convert PIE -> zip bytes via shared helper. The helper consumes
+        //    the PIE and drops it before buffering the zip bytes, so peak
+        //    memory is ~one copy rather than two.
+        let pie_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(aggregator_output.aggregator_cairo_pie)
+            .await
+            .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
+
+        // 6. Store the zip bytes to S3. `Bytes::clone()` is an Arc clone, no copy.
+        config.storage().put_data(pie_bytes.clone(), &metadata.cairo_pie_path).await?;
+
+        // 7. Submit applicative job to SHARP with the same bytes (no re-encoding in the prover).
         info!(num_children = child_job_keys.len(), "Submitting applicative job to SHARP");
         let applicative_key = config
             .prover_client()
             .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
-                cairo_pie: Box::new(aggregator_output.aggregator_cairo_pie),
+                cairo_pie_zip_bytes: pie_bytes,
                 children_cairo_job_keys: child_job_keys,
             }))
             .await
