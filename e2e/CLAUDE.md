@@ -55,19 +55,21 @@ e2e/
 │   │   └── lifecycle_management.rs  # Graceful shutdown
 │   ├── services/           # Service implementations (13+)
 │   │   ├── anvil/          # L1 Ethereum chain
+│   │   ├── bootstrapper_v2/ # Default contract initialization
+│   │   ├── bootstrapper/   # Legacy v1 bootstrapper wrapper
 │   │   ├── madara/         # L2 Starknet sequencer
 │   │   ├── pathfinder/     # Starknet full node
 │   │   ├── mongodb/        # Orchestrator database
 │   │   ├── localstack/     # AWS services mock
 │   │   ├── orchestrator/   # Proof pipeline
-│   │   ├── bootstrapper/   # Contract initialization
 │   │   └── ...
 │   └── tests/              # Test implementations
 │       ├── setup.rs        # rstest fixture
 │       └── deposit_withdraw/  # Bridge tests
 └── config/
     ├── madara.yaml         # Madara chain configuration
-    └── bootstrapper.json   # Contract addresses
+    ├── bootstrapper_v2.json # Default bootstrapper config
+    └── bootstrapper.json    # Legacy bootstrapper config
 ```
 
 ### Service Dependencies
@@ -75,9 +77,9 @@ e2e/
 ```text
 Infrastructure (MongoDB, LocalStack)
          ↓
-L1 Setup (Anvil → Mock Verifier Deployer → Bootstrapper)
+L1 Setup (Anvil → Mock Verifier Deployer → Bootstrapper V2)
          ↓
-L2 Setup (Madara → Bootstrapper)
+L2 Setup (Madara → Bootstrapper V2)
          ↓
 Full Node Syncing (Pathfinder catches Madara)
          ↓
@@ -93,7 +95,7 @@ Orchestration (Orchestrator Setup → Runtime)
 | LocalStack   | AWS S3, SQS, SNS, EventBridge | 4566                                     |
 | Madara       | L2 Starknet sequencer         | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
 | Pathfinder   | Starknet full node            | 9545                                     |
-| Bootstrapper | L1/L2 contract initialization | N/A                                      |
+| Bootstrapper V2 | L1/L2 contract initialization | N/A                                   |
 | Orchestrator | Proof pipeline coordinator    | N/A                                      |
 | Mock Prover  | STARK proof simulator         | 3001                                     |
 
@@ -171,7 +173,7 @@ L1_ACCOUNT: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 - Timeouts are in `setup/config.rs`
 - Service ports in `services/constants.rs`
 - Chain config in `config/madara.yaml`
-- Contract addresses in `config/bootstrapper.json`
+- Bootstrapper config in `config/bootstrapper_v2.json`
 
 ---
 

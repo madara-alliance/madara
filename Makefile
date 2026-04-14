@@ -535,14 +535,16 @@ run-mock-atlantic-server:
 	fi; \
 	$$CMD
 
-.PHONY: setup-bootstrapper
-setup-bootstrapper:
-	@echo -e "$(DIM)Setting up bootstrapper...$(RESET)"
-	@cp -r ./build-artifacts/bootstrapper/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
-	@cp -r ./build-artifacts/bootstrapper/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
-	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
-	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
-	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
+.PHONY: setup-bootstrapper setup-bootstrapper-v2
+setup-bootstrapper: setup-bootstrapper-v2
+
+setup-bootstrapper-v2:
+	@echo -e "$(DIM)Setting up bootstrapper-v2 artifacts...$(RESET)"
+	@cp -r ./build-artifacts/bootstrapper-v2/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
+	@cp -r ./build-artifacts/bootstrapper-v2/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
+	@cp -r ./build-artifacts/bootstrapper-v2/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
+	@cp -r ./build-artifacts/bootstrapper-v2/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
+	@echo -e "$(PASS)Bootstrapper v2 setup complete!$(RESET)"
 
 # ============================================================================ #
 #                          LLVM 19 SETUP FOR CAIRO NATIVE                       #

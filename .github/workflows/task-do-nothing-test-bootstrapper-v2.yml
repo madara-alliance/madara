@@ -1,0 +1,14 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Tests (Bootstrapper V2)
+
+on:
+  workflow_call:
+
+jobs:
+  test-bootstrapper-v2:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+
+    steps:
+      - name: Stub
+        run: exit 0

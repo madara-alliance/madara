@@ -16,7 +16,7 @@ on:
         type: boolean
         default: true
       build-bootstrapper:
-        description: "Build Bootstrapper V1 image (archived, unmaintained)"
+        description: "Build Bootstrapper image (archived, unmaintained)"
         required: true
         type: boolean
         default: false

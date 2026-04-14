@@ -11,7 +11,7 @@ sol!(
     #[sol(rpc)]
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     Factory,
-    "../build-artifacts/bootstrapper/solidity/out/Factory.sol/Factory.json"
+    "../build-artifacts/bootstrapper-v2/solidity/out/Factory.sol/Factory.json"
 );
 
 // Manager contract for token enrollment

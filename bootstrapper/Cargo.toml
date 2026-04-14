@@ -2,14 +2,14 @@
 name = "bootstrapper"
 version = "0.1.0"
 edition = "2021"
-description = "Legacy Madara bootstrapper v1 (deprecated; use bootstrapper-v2)"
+description = "Legacy Madara bootstrapper (deprecated; use bootstrapper-v2)"
 publish = false
 
 [package.metadata.lifecycle]
 status = "archived"
 maintenance = "unmaintained"
 replacement = "bootstrapper-v2"
-notes = "Legacy bootstrapper v1 is kept in-repo for reference only and is no longer part of the active monorepo workflow."
+notes = "Legacy bootstrapper is kept in-repo for reference only and is no longer part of the active monorepo workflow."
 
 # Make this package explicitly standalone (not part of the parent workspace)
 [workspace]

@@ -43,7 +43,7 @@ use crate::utils::banner::BANNER;
 use crate::utils::{hexstring_to_address, save_to_json, JsonValueType};
 
 const LEGACY_BOOTSTRAPPER_WARNING: &str =
-    "bootstrapper v1 is archived and unmaintained; use bootstrapper-v2 instead. This binary is kept for reference only.";
+    "bootstrapper is archived and unmaintained; use bootstrapper-v2 instead. This binary is kept for reference only.";
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum BootstrapMode {

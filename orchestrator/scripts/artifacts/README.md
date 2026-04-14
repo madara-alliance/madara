@@ -13,5 +13,5 @@ Starknet
 4. /starknet/new_eth_bridge.sierra.json - from SN Sepolia
 5. /starknet/new_eth_token.sierra.json - from SN Sepolia
 
-TODO: move this code to the bootstrapper + build contracts from source
+TODO: move this code to bootstrapper-v2 and build contracts from source
 in the repo itself

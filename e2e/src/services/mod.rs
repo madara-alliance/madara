@@ -1,6 +1,8 @@
 pub mod anvil;
-pub mod bootstrapper;
 pub mod bootstrapper_v2;
+pub use bootstrapper_v2 as bootstrapper;
+#[path = "bootstrapper/mod.rs"]
+pub mod bootstrapper_legacy;
 pub mod constants;
 pub mod docker;
 pub mod helpers;

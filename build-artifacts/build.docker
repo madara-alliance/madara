@@ -280,7 +280,7 @@ WORKDIR starkgate_latest
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
-ENV BASE_CHAIN_FACTORY_DIR="bootstrapper/contracts/ethereum"
+ENV BASE_CHAIN_FACTORY_DIR="bootstrapper-v2/contracts/ethereum"
 
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra ./cairo/erc20.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm ./cairo/erc20.casm.json
@@ -300,7 +300,7 @@ COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json ./solidity/
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json ./solidity/ethBridgeEIC.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/ConfigureSingleBridgeEIC.json ./solidity/configure_single_bridge_eic.json
 
-WORKDIR ../bootstrapper
+WORKDIR ../bootstrapper-v2
 ENV BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY="/contracts"
 ENV BOOTSTRAPPER_DIR_MADARA_FACTORY="/contracts"
 

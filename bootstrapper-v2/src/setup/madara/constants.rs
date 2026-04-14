@@ -18,18 +18,18 @@ pub const ERC20_CASM: &str = "../build-artifacts/starkgate_latest/cairo/ERC20_07
 
 // EIC artifacts
 pub const EIC_SIERRA: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_EIC.contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_EIC.contract_class.json";
 pub const EIC_CASM: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_EIC.compiled_contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_EIC.compiled_contract_class.json";
 
 // Universal Deployer artifacts
 pub const UNIVERSAL_DEPLOYER_SIERRA: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json";
 pub const UNIVERSAL_DEPLOYER_CASM: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json";
 
 // Madara Factory artifacts
 pub const MADARA_FACTORY_SIERRA: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_MadaraFactory.contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_MadaraFactory.contract_class.json";
 pub const MADARA_FACTORY_CASM: &str =
-    "../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_MadaraFactory.compiled_contract_class.json";
+    "../build-artifacts/bootstrapper-v2/cairo/target/dev/madara_factory_contracts_MadaraFactory.compiled_contract_class.json";

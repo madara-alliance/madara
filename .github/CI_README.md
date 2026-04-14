@@ -17,7 +17,7 @@ The workflow system is built around 3 phases:
 
 1. **Artifact and database updates**: run on pull requests with a specific label, automatically updates build-time version info.
 2. **Syntax checks**: makes sure that the changes follow clear style guidelines (prettier, clippy, taplo).
-3. **Compilation checks**: makes sure that each target in the repository can compile (madara, orchestrator, bootstrapper).
+3. **Compilation checks**: makes sure that each active target in the repository can compile (madara, orchestrator, bootstrapper-v2).
 4. **Unit tests**: runs a battery of tests against each target to make sure that nothing breaks.
 
 > [!TIP]
