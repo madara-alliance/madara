@@ -72,6 +72,8 @@ RUST_LOG=debug cargo run -- \
 - `ethereum/factory.rs`: Factory contract deployment and setup
 - `ethereum/implementation_contracts.rs`: Contract artifact mappings
 - `ethereum/constants.rs`: Artifact paths
+- `ethereum/config_hash.rs`: Dynamic config hash computation with DA public keys support
+- `ethereum/error.rs`: `EthereumError` enum with specialized error types
 - `starknet.rs`: Placeholder for Starknet-as-base-layer support
 
 **`setup/madara/`** - L2 setup logic
@@ -97,11 +99,11 @@ RUST_LOG=debug cargo run -- \
 **Base Layer (L1 - Ethereum):**
 
 ```text
-1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge)
+1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge, EthBridgeEIC)
 2. Deploy Factory contract with implementation references
 3. Call Factory.setup() → BaseLayerContractsDeployed event
 4. Extract addresses: CoreContract, Manager, Registry, MultiBridge, EthBridge
-5. Post-Madara: Update L2 bridge addresses via setL2Bridge()
+5. Post-Madara
 ```
 
 **Madara (L2 - StarkNet):**
@@ -113,7 +115,17 @@ RUST_LOG=debug cargo run -- \
 4. Deploy UniversalDeployer (UDC)
 5. Deploy MadaraFactory with class hashes and L1 bridge addresses
 6. Call MadaraFactory.deploy_bridges()
-7. Extract addresses: L2 ETH Token, L2 ETH Bridge, L2 Token Bridge
+7. Extract addresses: L2 ETH Token, L2 ETH Bridge, L2 Token Bridge, L2 Fee Token
+```
+
+**Post-Madara Setup (L1 finalization):**
+
+```text
+1. Call setL2Bridge() on L1 bridges to set L2 bridge addresses
+2. Call enrollTokenBridge() to register token bridge
+3. Poll L2 for enrolled token (300s timeout, 5s interval)
+4. Validate fee token matches configured value
+5. Update config hash with actual deployed fee token address
 ```
 
 ## Configuration
@@ -126,6 +138,8 @@ RUST_LOG=debug cargo run -- \
     "layer": "ETHEREUM",
     "rpc_url": "http://localhost:8545",
     "implementation_addresses": {},
+    "deploy_test_contracts": true,
+    "l1_token_address": "0x...",
     "core_contract_init_data": {
       "programHash": "0x1",
       "aggregatorProgramHash": "0x0",
@@ -136,6 +150,12 @@ RUST_LOG=debug cargo run -- \
         "blockNumber": "0x0",
         "blockHash": "0x0"
       }
+    },
+    "config_hash_config": {
+      "version": "StarknetOsConfig3",
+      "madara_chain_id": "MADARA_DEVNET",
+      "madara_fee_token": "0x...",
+      "da_public_keys": []
     }
   },
   "madara": {
@@ -144,13 +164,27 @@ RUST_LOG=debug cargo run -- \
 }
 ```
 
+**Config fields:**
+
+- `deploy_test_contracts`: If true, deploys mock L1 token for testing (default: false)
+- `l1_token_address`: Required if `deploy_test_contracts` is false
+- `config_hash_config`: Configuration for dynamic config hash computation
+  - `version`: Config hash version (optional, defaults to StarknetOsConfig3)
+  - `madara_chain_id`: Chain ID (supports hex or ASCII string format)
+  - `madara_fee_token`: Fee token address on L2
+  - `da_public_keys`: Optional array of DA public keys
+
 ### Environment Variables
 
+Environment variables can be set directly or via a `.env` file (dotenvy integration).
+
 ```text
-BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments
-MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments
+BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments (required for both setup-base and setup-madara)
+MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments (required for setup-madara)
 RUST_LOG=info                    # Logging level
 ```
+
+**Note:** `setup-madara` requires both `BASE_LAYER_PRIVATE_KEY` and `MADARA_PRIVATE_KEY` as it performs post-Madara setup on L1.
 
 ### Output Files
 
@@ -163,11 +197,17 @@ RUST_LOG=info                    # Logging level
     "ethTokenBridge": "0x...",
     "manager": "0x...",
     "registry": "0x...",
-    "tokenBridge": "0x..."
+    "tokenBridge": "0x...",
+    "l1Token": "0x..."
   },
   "implementation_addresses": {
     "baseLayerFactory": "0x...",
-    ...
+    "coreContract": "0x...",
+    "ethBridge": "0x...",
+    "ethBridgeEIC": "0x...",
+    "manager": "0x...",
+    "multiBridge": "0x...",
+    "registry": "0x..."
   }
 }
 ```
@@ -180,6 +220,7 @@ RUST_LOG=info                    # Logging level
     "l2_eth_bridge": "0x...",
     "l2_eth_token": "0x...",
     "l2_token_bridge": "0x...",
+    "l2_fee_token": "0x...",
     "madara_factory": "0x...",
     "universal_deployer": "0x..."
   },
@@ -197,6 +238,8 @@ RUST_LOG=info                    # Logging level
 Located in `contracts/ethereum/`:
 
 - `Factory.sol`: Orchestrates atomic deployment
+- `ConfigureSingleBridgeEIC.sol`: EIC for bridge configuration
+- `STRKMock.sol`: Mock token for testing (when `deploy_test_contracts` is true)
 - Implementation contracts from StarkGate
 
 ### L2 Contracts (Cairo)
@@ -209,11 +252,17 @@ Located in `contracts/madara/`:
 
 ## Important Implementation Notes
 
+### Configuration Validation
+
+- `l1_token_address` is required when `deploy_test_contracts` is false
+- Config validation occurs at startup and returns `ConfigError::MissingL1TokenAddress` if invalid
+- `DeployedAddresses::from_file()` utility reads address files with validation
+
 ### When Working with Base Layer Setup
 
 - Implementation contracts can be pre-deployed and addresses provided in config
 - Factory.setup() waits for BaseLayerContractsDeployed event (5min timeout)
-- Post-Madara setup updates L2 bridge addresses on L1
+- Post-Madara setup updates L2 bridge addresses on L1 and polls for fee token enrollment
 
 ### When Working with Madara Setup
 
@@ -233,9 +282,10 @@ Located in `contracts/madara/`:
 **Key Dependencies:**
 
 - `alloy` (1.0.25): Ethereum interactions
-- `starknet-rust` (0.17.0): StarkNet interactions
+- `starknet-rust` (0.18.0): StarkNet interactions
 - `clap` (4.5.45): CLI parsing
 - `tokio` (1.40.0): Async runtime
 - `serde/serde_json`: Serialization
+- `dotenvy`: Environment variable loading from `.env` files
 
 **Rust Toolchain:** 1.89 (specified in rust-toolchain.toml)
