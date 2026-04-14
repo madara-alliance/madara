@@ -27,9 +27,9 @@ pub struct RpcMetrics {
 }
 
 impl RpcMetrics {
-    // `calls_started` only carries the `method` label because the outcome is
-    // not known yet at the time it is incremented. `calls_finished` and
-    // `calls_time` additionally carry `success` so failed calls can be
+    // `calls_started` and `calls_time` only carry the `method` label because
+    // they track invocation and latency independent of outcome.
+    // `calls_finished` additionally carries `success` so failed calls can be
     // distinguished from successful ones in dashboards.
     fn call_started_labels(method: &str) -> [KeyValue; 1] {
         [KeyValue::new("method", method.to_string())]
@@ -131,7 +131,7 @@ impl RpcMetrics {
 
         let labels = Self::call_completed_labels(req.method_name(), rp.is_success());
 
-        self.calls_time.record(millis as f64, &labels);
+        self.calls_time.record(millis as f64, &Self::call_started_labels(req.method_name()));
         self.calls_finished.add(1, &labels);
     }
 }

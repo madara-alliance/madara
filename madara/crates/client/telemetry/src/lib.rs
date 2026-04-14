@@ -28,8 +28,9 @@ pub use sysinfo::*;
 #[derive(Debug, Clone)]
 pub struct TelemetryConfig {
     /// Logical name reported as `service.name` to the OTEL collector. Used as
-    /// the prefix for the per-signal service names (e.g. `madara` becomes
-    /// `madara_meter_service`, `madara_trace_service`, `madara_logs_service`).
+    /// the prefix for the per-signal service names (e.g.
+    /// `madara_analytics` becomes `madara_analytics_meter_service`,
+    /// `madara_analytics_trace_service`, `madara_analytics_logs_service`).
     pub service_name: String,
     /// OTLP/gRPC endpoint of the OTEL collector to export to. When `None`, the
     /// service falls back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT`
@@ -53,7 +54,7 @@ pub struct TelemetryConfig {
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
-            service_name: "madara".into(),
+            service_name: "madara_analytics".into(),
             collection_endpoint: None,
             export_metrics: true,
             export_traces: false,

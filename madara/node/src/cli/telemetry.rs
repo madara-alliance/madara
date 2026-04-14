@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 fn default_service_name() -> String {
-    "madara".into()
+    "madara_analytics".into()
 }
 
 fn default_metrics_export() -> bool {
@@ -65,7 +65,7 @@ mod tests {
     fn telemetry_params_use_new_defaults() {
         let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
 
-        assert_eq!(run_cmd.telemetry_params.otel_service_name, "madara");
+        assert_eq!(run_cmd.telemetry_params.otel_service_name, "madara_analytics");
         assert_eq!(run_cmd.telemetry_params.otel_collector_endpoint, None);
         assert!(run_cmd.telemetry_params.otel_export_metrics);
         assert!(!run_cmd.telemetry_params.otel_export_traces);
