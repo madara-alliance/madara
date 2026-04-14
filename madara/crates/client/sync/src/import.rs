@@ -606,22 +606,28 @@ impl BlockImporterCtx {
 
         tracing::debug!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
 
-        let (got, _timings) =
-            self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
-                BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
+        // Fetch the last block's protocol version for version-gated state root computation.
+        let last_block_info = self
+            .backend
+            .db
+            .get_block_info(last_block_n)?
+            .context("Block header can't be found for protocol version lookup")?;
+        let protocol_version = last_block_info.header.protocol_version;
+
+        let (got, _timings) = self
+            .backend
+            .write_access()
+            .apply_to_global_trie(block_range.start, state_diffs, protocol_version)
+            .map_err(|error| BlockImportError::InternalDb {
+                error,
+                context: "Applying state diff to global trie".into(),
             })?;
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {
-            let expected = self
-                .backend
-                .db
-                .get_block_info(last_block_n)? // Raw get
-                .context("Block header can't be found")?
-                .header
-                .global_state_root;
+            let expected = last_block_info.header.global_state_root;
 
             if expected != got {
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
@@ -655,8 +661,10 @@ mod tests {
     /// produces the expected results or errors.
     #[rstest]
     #[case::success(
-            // A non-zero global state root
-            felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"),
+            // Global state root: Poseidon(STARKNET_STATE_V0, contract_trie_root, 0)
+            // because default protocol_version is LATEST (>= 0.14.0), class_trie_root is zero,
+            // and the >= 0.14.0 formula always hashes.
+            felt!("0x34d3e676a44c29cff0939ab2285ec02ffc3efd9eb548d85f59a6c7dd544e64d"),
             // A non-empty state diff with deployed contracts and storage changes
             StateDiff {
                 deployed_contracts: vec![(DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") })],
