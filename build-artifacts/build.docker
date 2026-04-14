@@ -300,7 +300,7 @@ COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json ./solidity/
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json ./solidity/ethBridgeEIC.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/ConfigureSingleBridgeEIC.json ./solidity/configure_single_bridge_eic.json
 
-WORKDIR ../bootstrapper-v2
+WORKDIR ../bootstrapper
 ENV BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY="/contracts"
 ENV BOOTSTRAPPER_DIR_MADARA_FACTORY="/contracts"
 

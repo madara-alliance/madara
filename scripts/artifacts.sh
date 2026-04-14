@@ -7,7 +7,6 @@ cleanup_artifacts() {
   rm -rf "./build-artifacts/starkgate_latest"
   rm -rf "./build-artifacts/starkgate_legacy"
   rm -rf "./build-artifacts/bootstrapper"
-  rm -rf "./build-artifacts/bootstrapper-v2"
 }
 
 export_artifacts() {
@@ -27,8 +26,7 @@ if [ -d "./build-artifacts/argent" ] ||
   [ -d "./build-artifacts/orchestrator_tests" ] ||
   [ -d "./build-artifacts/starkgate_latest" ] ||
   [ -d "./build-artifacts/starkgate_legacy" ] ||
-  [ -d "./build-artifacts/bootstrapper" ] ||
-  [ -d "./build-artifacts/bootstrapper-v2" ]; then
+  [ -d "./build-artifacts/bootstrapper" ]; then
   echo -e "\033[2;3;37martifacts already exists, do you want to remove it?\033[0m \033[1;32m[y/N] \033[0m"
   read -r ans
   case "$ans" in
