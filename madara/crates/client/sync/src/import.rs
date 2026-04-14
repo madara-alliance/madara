@@ -112,43 +112,6 @@ impl BlockImportError {
     }
 }
 
-fn canonical_compiled_class_hash_fields(uses_blake: bool, canonical_hash: Felt) -> (Option<Felt>, Option<Felt>) {
-    if uses_blake {
-        (None, Some(canonical_hash))
-    } else {
-        (Some(canonical_hash), None)
-    }
-}
-
-#[allow(clippy::result_large_err)]
-fn resolve_compiled_class_hash_fields(
-    no_check: bool,
-    uses_blake: bool,
-    class_hash: Felt,
-    gateway_hash: Felt,
-    computed_poseidon_hash: Felt,
-    computed_blake_hash: Felt,
-) -> Result<(Option<Felt>, Option<Felt>), BlockImportError> {
-    if !no_check && uses_blake && computed_blake_hash != gateway_hash {
-        return Err(BlockImportError::CompiledClassHash {
-            class_hash,
-            got: gateway_hash,
-            expected: computed_blake_hash,
-        });
-    }
-
-    if !uses_blake && computed_poseidon_hash != gateway_hash {
-        tracing::debug!(
-            class_hash = %format!("{class_hash:#x}"),
-            gateway_hash = %format!("{gateway_hash:#x}"),
-            computed_poseidon_hash = %format!("{computed_poseidon_hash:#x}"),
-            "Retaining gateway-provided historical compiled_class_hash for Sierra class",
-        );
-    }
-
-    Ok(canonical_compiled_class_hash_fields(uses_blake, gateway_hash))
-}
-
 /// Shared verification & saving logic between gateway and (yet-to-be-merged) p2p.
 #[derive(Clone)]
 pub struct BlockImporter {
@@ -191,7 +154,6 @@ pub struct BlockImporterCtx {
     backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
 }
-#[allow(clippy::result_large_err)]
 impl BlockImporterCtx {
     // HEADERS
 
@@ -440,17 +402,23 @@ impl BlockImporterCtx {
                     .compile_to_casm_with_hashes()
                     .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
 
-                // Verify compiled class hash only for BLAKE-era classes. Historical Sierra declarations
-                // can carry gateway-provided Poseidon compiled hashes that do not round-trip through the
-                // latest local compiler, so we keep the gateway hash as canonical storage for pre-v0.14.1.
-                let (stored_poseidon, stored_blake) = resolve_compiled_class_hash_fields(
-                    self.config.no_check,
-                    uses_blake,
-                    class_hash,
-                    gateway_hash,
-                    hashes.poseidon_hash,
-                    hashes.blake_hash,
-                )?;
+                // Verify compiled class hash based on protocol version
+                // For v0.14.1+: gateway provides BLAKE hash
+                // For pre-v0.14.1: gateway provides Poseidon hash
+                let expected_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
+                if !self.config.no_check && expected_hash != gateway_hash {
+                    return Err(BlockImportError::CompiledClassHash {
+                        class_hash,
+                        got: gateway_hash,
+                        expected: expected_hash,
+                    });
+                }
+
+                // Store:
+                // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
+                // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
+                let (stored_poseidon, stored_blake) =
+                    if uses_blake { (None, Some(hashes.blake_hash)) } else { (Some(hashes.poseidon_hash), None) };
 
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
@@ -666,9 +634,7 @@ impl BlockImporterCtx {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_compiled_class_hash_fields, BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig,
-    };
+    use super::{BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig};
     use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
     use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
@@ -787,70 +753,6 @@ mod tests {
                 &BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash),
             )
             .unwrap();
-    }
-
-    #[test]
-    fn historical_sierra_classes_keep_gateway_poseidon_hash() {
-        let class_hash = felt!("0x123");
-        let gateway_hash = felt!("0x7e2");
-        let computed_poseidon_hash = felt!("0x5ca");
-        let computed_blake_hash = felt!("0xbeef");
-
-        let stored = resolve_compiled_class_hash_fields(
-            false,
-            false,
-            class_hash,
-            gateway_hash,
-            computed_poseidon_hash,
-            computed_blake_hash,
-        )
-        .unwrap();
-
-        assert_eq!(stored, (Some(gateway_hash), None));
-    }
-
-    #[test]
-    fn blake_era_sierra_classes_require_local_hash_match() {
-        let class_hash = felt!("0x123");
-        let gateway_hash = felt!("0x456");
-        let computed_poseidon_hash = felt!("0x789");
-        let computed_blake_hash = felt!("0xabc");
-
-        let err = resolve_compiled_class_hash_fields(
-            false,
-            true,
-            class_hash,
-            gateway_hash,
-            computed_poseidon_hash,
-            computed_blake_hash,
-        )
-        .unwrap_err();
-
-        assert_matches!(
-            err,
-            BlockImportError::CompiledClassHash { class_hash: got_class_hash, got, expected }
-                if got_class_hash == class_hash && got == gateway_hash && expected == computed_blake_hash
-        );
-    }
-
-    #[test]
-    fn blake_era_sierra_classes_store_gateway_hash_when_verified() {
-        let class_hash = felt!("0x123");
-        let gateway_hash = felt!("0xabc");
-        let computed_poseidon_hash = felt!("0x789");
-        let computed_blake_hash = gateway_hash;
-
-        let stored = resolve_compiled_class_hash_fields(
-            false,
-            true,
-            class_hash,
-            gateway_hash,
-            computed_poseidon_hash,
-            computed_blake_hash,
-        )
-        .unwrap();
-
-        assert_eq!(stored, (None, Some(gateway_hash)));
     }
 
     // Negative tests: we insert some errors and see if we correctly catch them.

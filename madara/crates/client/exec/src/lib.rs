@@ -195,6 +195,12 @@ pub enum Error {
     CallContract(#[from] CallContractError),
     #[error("Internal error: {0:#}")]
     Internal(#[from] anyhow::Error),
+    #[error("Unsupported Starknet version {version}: {error}")]
+    UnsupportedStarknetVersion {
+        version: StarknetVersion,
+        #[source]
+        error: starknet_api::StarknetApiError,
+    },
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
 }
@@ -284,5 +290,53 @@ pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {
                 is_declared,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::state_maps_to_initial_reads;
+    use blockifier::state::cached_state::StateMaps;
+    use starknet_api::{
+        core::{ClassHash, ContractAddress, Nonce},
+        state::StorageKey,
+    };
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn state_maps_to_initial_reads_preserves_all_sections() {
+        let contract_address = ContractAddress::from(7_u16);
+        let storage_key = StorageKey::from(9_u32);
+        let storage_value = Felt::from(11_u64);
+        let nonce = Nonce(Felt::from(13_u64));
+        let class_hash = ClassHash(Felt::from(15_u64));
+        let declared_class_hash = ClassHash(Felt::from(17_u64));
+
+        let state_maps = StateMaps {
+            storage: [((contract_address, storage_key), storage_value)].into_iter().collect(),
+            nonces: [(contract_address, nonce)].into_iter().collect(),
+            class_hashes: [(contract_address, class_hash)].into_iter().collect(),
+            compiled_class_hashes: Default::default(),
+            declared_contracts: [(declared_class_hash, true)].into_iter().collect(),
+        };
+
+        let initial_reads = state_maps_to_initial_reads(state_maps);
+
+        assert_eq!(initial_reads.storage.len(), 1);
+        assert_eq!(initial_reads.storage[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.storage[0].key, Felt::from(storage_key));
+        assert_eq!(initial_reads.storage[0].value, storage_value);
+
+        assert_eq!(initial_reads.nonces.len(), 1);
+        assert_eq!(initial_reads.nonces[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.nonces[0].nonce, nonce.0);
+
+        assert_eq!(initial_reads.class_hashes.len(), 1);
+        assert_eq!(initial_reads.class_hashes[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.class_hashes[0].class_hash, Felt::from(class_hash));
+
+        assert_eq!(initial_reads.declared_contracts.len(), 1);
+        assert_eq!(initial_reads.declared_contracts[0].class_hash, Felt::from(declared_class_hash));
+        assert!(initial_reads.declared_contracts[0].is_declared);
     }
 }

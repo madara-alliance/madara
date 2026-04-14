@@ -97,7 +97,9 @@ pub trait StarknetReadRpcApi {
     #[method(name = "getClass")]
     fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<MaybeDeprecatedContractClass>;
 
-    /// Returns all events matching the given filter (v0.10.2: supports multiple addresses)
+    /// Returns all events matching the given filter (v0.10.2: supports multiple addresses).
+    /// Multi-address queries are filtered in memory because the DB index only supports a single
+    /// `from_address`.
     #[method(name = "getEvents")]
     fn get_events(&self, filter: EventFilterWithPageRequest) -> RpcResult<EventsChunk>;
 

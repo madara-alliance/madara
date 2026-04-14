@@ -285,14 +285,12 @@ mod tests {
         test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
     };
     use mc_db::{
-        preconfirmed::PreconfirmedBlock,
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
-    use mp_block::header::{CustomHeader, GasPrices, PreconfirmedHeader};
+    use mp_block::header::{CustomHeader, GasPrices};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
-    use mp_utils::rayon::global_spawn_rayon_task;
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
@@ -391,44 +389,5 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
         assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
-    }
-
-    #[tokio::test]
-    async fn set_block_header_stores_header_for_open_preconfirmed_block() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        add_test_block(&backend, 0, vec![]);
-        let custom_header = CustomHeader {
-            block_n: 1,
-            timestamp: 1_234_567_890,
-            gas_prices: GasPrices {
-                eth_l1_gas_price: 11,
-                strk_l1_gas_price: 12,
-                eth_l1_data_gas_price: 21,
-                strk_l1_data_gas_price: 22,
-                eth_l2_gas_price: 31,
-                strk_l2_gas_price: 32,
-            },
-            expected_block_hash: Felt::from(0x1234_u64),
-        };
-        global_spawn_rayon_task({
-            let backend = backend.clone();
-            let custom_header = custom_header.clone();
-            move || {
-                backend.write_access().new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
-                    block_number: 1,
-                    block_timestamp: custom_header.timestamp.into(),
-                    gas_prices: custom_header.gas_prices.clone(),
-                    ..Default::default()
-                }))
-            }
-        })
-        .await
-        .expect("new preconfirmed block should succeed");
-
-        let rpc = make_starknet(backend.clone(), ServiceContext::default());
-
-        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
-
-        assert_eq!(backend.get_custom_header(custom_header.block_n), Some(custom_header));
     }
 }

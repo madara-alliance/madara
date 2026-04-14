@@ -168,9 +168,10 @@ impl From<mc_exec::Error> for SubmitTransactionError {
             E::Reexecution(_) | E::FeeEstimation(_) | E::MessageFeeEstimation(_) | E::CallContract(_) => {
                 rejected(ValidateFailure, format!("{value:#}"))
             }
-            E::UnsupportedProtocolVersion(_) | E::Internal(_) | E::InvalidSequencerAddress(_) => {
-                Internal(anyhow::anyhow!(value))
-            }
+            E::UnsupportedProtocolVersion(_)
+            | E::UnsupportedStarknetVersion { .. }
+            | E::Internal(_)
+            | E::InvalidSequencerAddress(_) => Internal(anyhow::anyhow!(value)),
         }
     }
 }

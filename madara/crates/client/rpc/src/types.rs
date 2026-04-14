@@ -39,6 +39,8 @@ pub fn continuation_token_from_page(
     page_size: usize,
     previous_token: &ContinuationToken,
 ) -> Option<ContinuationToken> {
+    // Continuation tokens track the offset among matching events, not the raw event index inside
+    // the block. This matters when an API-level filter excludes some events from the DB batch.
     if events_infos.len() <= page_size {
         return None;
     }
@@ -48,11 +50,15 @@ pub fn continuation_token_from_page(
         events_infos.iter().rev().take_while(|event| event.block_number == last_block_number).count();
 
     if number_of_events_in_last_block < events_infos.len() {
+        // The extra event spills into a later block, so resume from the count of matching events
+        // already returned in that block.
         Some(ContinuationToken {
             block_number: last_block_number,
             event_n: number_of_events_in_last_block.saturating_sub(1) as u64,
         })
     } else {
+        // All fetched events are still in the same block; keep the block number and advance by
+        // the number of matching events returned for this page.
         Some(ContinuationToken {
             block_number: previous_token.block_number,
             event_n: previous_token.event_n + page_size as u64,

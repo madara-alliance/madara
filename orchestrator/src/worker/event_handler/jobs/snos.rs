@@ -22,7 +22,6 @@ use generate_pie::generate_pie;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
-use generate_pie::utils::load_versioned_constants;
 use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -102,13 +101,6 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
-        let versioned_constants_path =
-            config.snos_config().versioned_constants_path.as_ref().map(|path| path.to_string_lossy().into_owned());
-        let versioned_constants = load_versioned_constants(versioned_constants_path.as_deref()).map_err(|e| {
-            error!(error = %e, "Failed to load versioned constants for SNOS");
-            SnosError::SnosExecutionError { internal_id, message: e }
-        })?;
-
         // Get DA public keys (already parsed as Felt values in config)
         let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
 
@@ -120,7 +112,7 @@ impl JobHandlerTrait for SnosJobHandler {
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
-            versioned_constants,
+            versioned_constants: config.snos_config().versioned_constants.clone(),
             public_keys,
         };
 

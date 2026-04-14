@@ -569,7 +569,7 @@ fn get_dummy_builtin_weights() -> serde_json::Value {
         state_diff_size: 1000,
         sierra_gas: GasAmount(1_000_000_000),
         proving_gas: GasAmount(1_100_000_000),
-        ..BouncerWeights::default()
+        receipt_l2_gas: GasAmount(2_500_000_000),
     };
 
     serde_json::to_value(response).unwrap()

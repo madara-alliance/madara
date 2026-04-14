@@ -1,3 +1,4 @@
+use crate::cli::snos::parse_constants;
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockClient, MockLockClient};
@@ -42,7 +43,6 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use starknet_core::types::Felt;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use url::Url;
@@ -742,15 +742,15 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
-    let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
+    let versioned_constants = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
         .expect("Couldn't get versioned constants path")
-        .map(PathBuf::from);
+        .map(|path| parse_constants(&path).expect("Failed to parse versioned constants path"));
 
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
-        versioned_constants_path,
+        versioned_constants,
     };
 
     let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();

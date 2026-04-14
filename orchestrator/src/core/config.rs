@@ -635,7 +635,7 @@ impl Config {
             sierra_gas: GasAmount(100_000_000), // 100M sierra gas
             n_txs: 10_000,                      // 10K transactions
             proving_gas: GasAmount(50_000_000), // 50M proving gas
-            ..BouncerWeights::default()
+            receipt_l2_gas: GasAmount(2_500_000_000),
         }
     }
 }

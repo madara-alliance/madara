@@ -26,9 +26,9 @@ fn block_context(
         BlockInfo {
             block_number: BlockNumber(block_info.block_number()),
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
-            starknet_version: protocol_version.to_blockifier().map_err(|e| {
-                Error::Internal(anyhow::anyhow!("unsupported Starknet version {protocol_version}: {e}"))
-            })?,
+            starknet_version: protocol_version
+                .to_blockifier()
+                .map_err(|error| Error::UnsupportedStarknetVersion { version: *protocol_version, error })?,
             sequencer_address: ContractAddress::try_from(*block_info.sequencer_address())
                 .map_err(|_| Error::InvalidSequencerAddress(*block_info.sequencer_address()))?,
             gas_prices: block_info.gas_prices().into(),

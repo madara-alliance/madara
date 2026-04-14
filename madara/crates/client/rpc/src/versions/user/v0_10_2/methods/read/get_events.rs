@@ -42,6 +42,8 @@ impl AddressScanFilter {
     }
 
     fn requires_local_resume(&self) -> bool {
+        // The DB index only supports a single from_address. Multi-address queries therefore fetch
+        // a broader batch and resume pagination after applying the in-memory address filter.
         self.allowed_addresses.is_some() && self.db_from_address.is_none()
     }
 }
@@ -53,6 +55,9 @@ impl AddressScanFilter {
 /// - Array of addresses: Filter events from any of the addresses in the array
 /// - Empty array: Match all addresses (no filter)
 /// - None: Match all addresses (no filter)
+///
+/// Multi-address filters fall back to an in-memory address check because the backing DB filter
+/// only supports a single `from_address`. Pagination still operates on matching events only.
 pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let view = starknet.backend.view_on_latest();
     let EventFilterWithPageRequest { address, from_block, keys, to_block, chunk_size, continuation_token } = filter;
@@ -124,6 +129,8 @@ fn collect_matching_events(
     chunk_size: usize,
     address_filter: AddressScanFilter,
 ) -> StarknetRpcResult<Vec<EventWithInfo>> {
+    // For multi-address scans, the continuation token offset refers to the number of matching
+    // events already returned from the requested block, not the raw DB event index.
     let requested_event_n = usize::try_from(requested_continuation_token.event_n)
         .map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?;
     let mut scan_block = requested_continuation_token.block_number;
@@ -191,8 +198,11 @@ fn advance_scan_cursor(
         batch.iter().rev().take_while(|event_info| event_info.block_number == last_block_number).count();
 
     let next_event_n = if last_block_number == scan_block {
+        // Continue scanning within the same block after the last DB event we examined.
         scan_event_n.checked_add(events_in_last_block).ok_or(StarknetRpcApiError::InternalServerError)?
     } else {
+        // We crossed into a later block, so resume at the number of DB events already consumed
+        // from that block in the current batch.
         events_in_last_block
     };
 
@@ -204,6 +214,8 @@ fn build_events_chunk(
     chunk_size: usize,
     requested_continuation_token: &ContinuationToken,
 ) -> EventsChunk {
+    // `events_infos` may contain one extra matching event so we can emit the next continuation
+    // token without losing the filtered offset inside the block.
     let continuation_token = continuation_token_from_page(&events_infos, chunk_size, requested_continuation_token);
     if continuation_token.is_some() {
         events_infos.truncate(chunk_size);
