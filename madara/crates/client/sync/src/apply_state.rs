@@ -5,7 +5,7 @@ use crate::{
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
 };
 use anyhow::Context;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 use tokio::sync::Mutex;
@@ -181,8 +181,20 @@ impl ApplyStateSteps {
                 // latest_block is block_range.end (exclusive), so actual last processed block is latest_block - 1
                 // This ensures fallback DB queries in contract_state_leaf_hash fetch state at the correct block number
                 let trie_block_number = latest_block.saturating_sub(1);
-                let (global_state_root, _timings) =
-                    backend.write_access().apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
+
+                // Fetch protocol version for version-gated state root computation.
+                let protocol_version = backend
+                    .db
+                    .get_block_info(trie_block_number)?
+                    .context("Block header can't be found for protocol version lookup in snap sync")?
+                    .header
+                    .protocol_version;
+
+                let (global_state_root, _timings) = backend.write_access().apply_to_global_trie(
+                    trie_block_number,
+                    [accumulated_state_diff].iter(),
+                    protocol_version,
+                )?;
 
                 let block_number = &latest_block.checked_sub(1);
                 backend.write_latest_applied_trie_update(block_number)?;

@@ -21,6 +21,7 @@ use blockifier::bouncer::BouncerWeights;
 use bonsai_trie::id::BasicId;
 
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
+use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
@@ -625,9 +626,11 @@ impl MadaraStorageWrite for RocksDBStorage {
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+        protocol_version: StarknetVersion,
     ) -> Result<(Felt, MerklizationTimings)> {
         tracing::debug!("Applying state diff to global trie start_block_n={start_block_n}");
-        apply_to_global_trie(self, start_block_n, state_diffs).context("Applying state diff to global trie")
+        apply_to_global_trie(self, start_block_n, state_diffs, protocol_version)
+            .context("Applying state diff to global trie")
     }
 
     fn flush(&self) -> Result<()> {
@@ -651,7 +654,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn get_state_root_hash(&self) -> Result<Felt> {
-        get_state_root(self)
+        // This method has no callers outside the trait definition. Use LATEST as default.
+        // If pre-0.14.0 chains need this, thread the version through the trait method.
+        get_state_root(self, StarknetVersion::LATEST)
     }
 
     /// Reverts the blockchain state to a specific block hash during a chain reorganization.
