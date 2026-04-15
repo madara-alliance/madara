@@ -38,6 +38,19 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}
 
+      - name: Run make artifacts
+        run: yes | make artifacts
+
+      - name: Compress artifacts
+        run: |
+          tar \
+            --exclude archive.docker \
+            --exclude build.docker \
+            --exclude cairo_artifacts \
+            --exclude Cargo.toml \
+            --exclude src \
+            -czvf artifacts.tar.gz build-artifacts/
+
       # Build Madara
       - name: Cargo build
         run: |
