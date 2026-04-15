@@ -90,8 +90,7 @@ async fn test_probed(mut ctx: TestContext) {
 #[rstest]
 #[tokio::test]
 async fn test_stop_sync_on_unsupported_starknet_version(mut ctx: TestContext) {
-    // TODO: Update this value whenever the latest supported Starknet version is bumped.
-    let unsupported_version = "0.14.2".to_string();
+    let unsupported_version = "0.14.3".to_string();
 
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
     ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));

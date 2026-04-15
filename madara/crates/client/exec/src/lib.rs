@@ -37,7 +37,7 @@
 //! This allows block production to continue even while previous blocks are being saved to db
 //! asynchronously.
 //!
-//! ```no_run
+//! ```ignore
 //! let state_adapter = LayeredStateAdapter::new(backend.clone())?;
 //! let executor = backend.new_executor_for_block_production(state_adapter, block_info)?;
 //! ```
@@ -48,7 +48,7 @@
 //! operates on top of the pending block to ensure transactions are valid before adding them
 //! to the mempool.
 //!
-//! ```no_run
+//! ```ignore
 //! let validator = backend.new_transaction_validator()?;
 //! ```
 //!
@@ -60,7 +60,7 @@
 //! - **Block Start**: For tracing transaction execution without seeing state changes
 //! - **Block End**: For estimating fees and simulating transactions with full state visibility
 //!
-//! ```no_run
+//! ```ignore
 //! let exec_context = ExecutionContext::new_at_block_start(backend.clone(), block_info)?;
 //! let exec_context = ExecutionContext::new_at_block_end(backend.clone(), block_info)?;
 //! ```
