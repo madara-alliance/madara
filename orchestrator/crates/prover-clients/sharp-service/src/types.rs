@@ -8,7 +8,6 @@ pub enum CairoJobStatus {
     NotCreated,
     InProgress,
     Processed,
-    Onchain,
     Invalid,
     Failed,
 }
@@ -19,6 +18,22 @@ pub enum InvalidReason {
     #[default]
     Unknown,
     InvalidCairoPieFileFormat,
+}
+
+/// Body of `POST /v1/gateway/add_job`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharpAddJobRequest<'a> {
+    /// Base64-encoded CairoPIE zip bytes.
+    pub cairo_pie_encoded: &'a str,
+}
+
+/// Body of `POST /v1/gateway/add_applicative_job`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharpAddApplicativeJobRequest<'a> {
+    /// Base64-encoded aggregator CairoPIE zip bytes.
+    pub cairo_pie_encoded: &'a str,
+    /// Child cairo_job_keys this applicative job aggregates, in applicative order.
+    pub children_cairo_job_keys: &'a [String],
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

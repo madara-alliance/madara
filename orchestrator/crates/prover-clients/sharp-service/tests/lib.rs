@@ -79,7 +79,6 @@ async fn prover_client_submit_task_works() {
 #[case(CairoJobStatus::NotCreated)]
 #[case(CairoJobStatus::Processed)]
 #[ignore]
-#[case(CairoJobStatus::Onchain)]
 #[tokio::test]
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -121,7 +120,6 @@ fn get_task_status_expectation(cairo_job_status: &CairoJobStatus) -> TaskStatus 
         CairoJobStatus::InProgress => TaskStatus::Processing, // validation_done: false
         CairoJobStatus::NotCreated => TaskStatus::Processing,
         CairoJobStatus::Processed => TaskStatus::Succeeded, // validated
-        CairoJobStatus::Onchain => TaskStatus::Succeeded,   // also validated
     }
 }
 
@@ -160,12 +158,6 @@ fn get_task_status_sharp_response(cairo_job_status: &CairoJobStatus) -> serde_js
             {
                 "status": "PROCESSED",
                 "validation_done": false
-            }
-        ),
-        CairoJobStatus::Onchain => json!(
-            {
-                "status": "ONCHAIN",
-                "validation_done": true
             }
         ),
     }

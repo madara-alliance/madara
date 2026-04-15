@@ -3,10 +3,7 @@ mod constants;
 pub mod error;
 pub mod types;
 
-use std::str::FromStr;
-
 use crate::types::CairoJobStatus;
-use alloy::primitives::B256;
 use async_trait::async_trait;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -39,6 +36,7 @@ pub struct SharpValidatedArgs {
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
 pub struct SharpProverService {
     sharp_client: SharpClient,
+    #[allow(unused)]
     fact_checker: FactChecker,
 }
 
@@ -115,8 +113,8 @@ impl ProverClient for SharpProverService {
         &self,
         task: TaskType,
         job_key: &str,
-        fact: Option<String>,
-        cross_verify: bool,
+        _fact: Option<String>,
+        _cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         let res = self.sharp_client.get_job_status(job_key).await?;
 
@@ -136,7 +134,8 @@ impl ProverClient for SharpProverService {
                         tracing::warn!(cairo_job_key = %job_key, "SHARP child job UNKNOWN");
                         Ok(TaskStatus::Failed(format!("Job not found: {}", job_key)))
                     }
-                    CairoJobStatus::Processed | CairoJobStatus::Onchain => {
+                    CairoJobStatus::Processed => {
+                        // TODO: Check that the fact is registered here since OnChain status is not present on SHARP
                         tracing::info!(cairo_job_key = %job_key, status = ?res.status, "SHARP child job validated");
                         Ok(TaskStatus::Succeeded)
                     }
@@ -158,30 +157,6 @@ impl ProverClient for SharpProverService {
             TaskType::Aggregation => {
                 // For applicative jobs: Succeeded only when ONCHAIN (fact registered).
                 match res.status {
-                    CairoJobStatus::Onchain => {
-                        if cross_verify {
-                            if let Some(fact_str) = fact {
-                                let fact = B256::from_str(&fact_str)
-                                    .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-                                if self.fact_checker.is_valid(&fact).await? {
-                                    tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN, fact verified");
-                                    Ok(TaskStatus::Succeeded)
-                                } else {
-                                    tracing::error!(cairo_job_key = %job_key, "Applicative job ONCHAIN but fact invalid");
-                                    Ok(TaskStatus::Failed(format!(
-                                        "Fact {} is not valid or not registered",
-                                        hex::encode(fact)
-                                    )))
-                                }
-                            } else {
-                                tracing::debug!("No fact provided for cross-verification, considering successful");
-                                Ok(TaskStatus::Succeeded)
-                            }
-                        } else {
-                            tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN");
-                            Ok(TaskStatus::Succeeded)
-                        }
-                    }
                     CairoJobStatus::Failed => {
                         tracing::error!(cairo_job_key = %job_key, "Applicative job FAILED");
                         Ok(TaskStatus::Failed(res.error_log.unwrap_or_default()))
@@ -196,6 +171,33 @@ impl ProverClient for SharpProverService {
                     CairoJobStatus::Unknown => {
                         tracing::warn!(cairo_job_key = %job_key, "Applicative job UNKNOWN");
                         Ok(TaskStatus::Failed(format!("Applicative job not found: {}", job_key)))
+                    }
+                    CairoJobStatus::Processed => {
+                        // if cross_verify {
+                        //     if let Some(fact_str) = fact {
+                        //         let fact = B256::from_str(&fact_str)
+                        //             .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                        //         if self.fact_checker.is_valid(&fact).await? {
+                        //             tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN, fact verified");
+                        //             Ok(TaskStatus::Succeeded)
+                        //         } else {
+                        //             tracing::error!(cairo_job_key = %job_key, "Applicative job ONCHAIN but fact invalid");
+                        //             Ok(TaskStatus::Failed(format!(
+                        //                 "Fact {} is not valid or not registered",
+                        //                 hex::encode(fact)
+                        //             )))
+                        //         }
+                        //     } else {
+                        //         tracing::debug!("No fact provided for cross-verification, considering successful");
+                        //         Ok(TaskStatus::Succeeded)
+                        //     }
+                        // } else {
+                        //     tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN");
+                        //     Ok(TaskStatus::Succeeded)
+                        // }
+                        // TODO: Check that the fact is registered here since OnChain status is not present on SHARP
+                        tracing::info!(cairo_job_key = %job_key, "Applicative job processed");
+                        Ok(TaskStatus::Succeeded)
                     }
                     _ => {
                         tracing::debug!(cairo_job_key = %job_key, status = ?res.status, "Applicative job still processing");

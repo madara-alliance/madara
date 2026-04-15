@@ -1,11 +1,11 @@
 use orchestrator_utils::http_client::HttpClient;
+use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Certificate, Identity, Method, StatusCode};
-use serde_json::json;
 use url::Url;
 
 use crate::constants::SHARP_PROGRAM_HASH_FUNCTION;
 use crate::error::SharpError;
-use crate::types::{SharpAddJobResponse, SharpGetStatusResponse};
+use crate::types::{SharpAddApplicativeJobRequest, SharpAddJobRequest, SharpAddJobResponse, SharpGetStatusResponse};
 use crate::SharpValidatedArgs;
 
 /// SHARP Gateway API async wrapper.
@@ -49,9 +49,7 @@ impl SharpClient {
     /// Submit a child CairoPIE for proving. The `cairo_pie_b64` should be the
     /// base64-encoded bytes of the CairoPIE zip file.
     pub async fn add_job(&self, cairo_pie_b64: &str, cairo_job_key: &str) -> Result<SharpAddJobResponse, SharpError> {
-        let body = json!({
-            "cairo_pie_encoded": cairo_pie_b64,
-        });
+        let body = SharpAddJobRequest { cairo_pie_encoded: cairo_pie_b64 };
 
         let response = self
             .client
@@ -59,9 +57,10 @@ impl SharpClient {
             .method(Method::POST)
             .path("add_job")
             .query_param("cairo_job_key", cairo_job_key)
-            .query_param("offchain_proof", &self.offchain_proof.to_string())
+            .query_param("offchain_proof", "true") // TODO: don't hardcode it
             .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
-            .body(&serde_json::to_string(&body).map_err(|e| SharpError::SerializationError(e.into()))?)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+            .body(body)
             .map_err(|e| SharpError::SerializationError(e.into()))?
             .send()
             .await
@@ -69,7 +68,14 @@ impl SharpClient {
 
         match response.status() {
             StatusCode::OK => response.json().await.map_err(SharpError::AddJobFailure),
-            code => Err(SharpError::SharpService(code)),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
     }
 
@@ -84,10 +90,7 @@ impl SharpClient {
         cairo_job_key: &str,
         children_cairo_job_keys: &[String],
     ) -> Result<SharpAddJobResponse, SharpError> {
-        let body = json!({
-            "cairo_pie_encoded": cairo_pie_b64,
-            "children_cairo_job_keys": children_cairo_job_keys,
-        });
+        let body = SharpAddApplicativeJobRequest { cairo_pie_encoded: cairo_pie_b64, children_cairo_job_keys };
 
         let response = self
             .client
@@ -97,7 +100,8 @@ impl SharpClient {
             .query_param("cairo_job_key", cairo_job_key)
             .query_param("offchain_proof", &self.offchain_proof.to_string())
             .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
-            .body(&serde_json::to_string(&body).map_err(|e| SharpError::SerializationError(e.into()))?)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+            .body(body)
             .map_err(|e| SharpError::SerializationError(e.into()))?
             .send()
             .await
@@ -105,7 +109,14 @@ impl SharpClient {
 
         match response.status() {
             StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
-            code => Err(SharpError::SharpService(code)),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
     }
 
@@ -125,7 +136,14 @@ impl SharpClient {
 
         match response.status() {
             StatusCode::OK => response.json().await.map_err(SharpError::GetJobStatusFailure),
-            code => Err(SharpError::SharpService(code)),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
     }
 
@@ -145,7 +163,14 @@ impl SharpClient {
 
         match response.status() {
             StatusCode::OK => response.text().await.map_err(SharpError::GetProofFailure),
-            code => Err(SharpError::SharpService(code)),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
     }
 

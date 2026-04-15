@@ -16,8 +16,8 @@ pub enum SharpError {
     #[error("Failed to get proof of a SHARP job: {0}")]
     GetProofFailure(#[source] reqwest::Error),
 
-    #[error("SHARP service returned an error {0}")]
-    SharpService(StatusCode),
+    #[error("SHARP service returned {status} for {url}")]
+    SharpService { status: StatusCode, url: String },
 
     #[error("Failed to parse job key: {0}")]
     JobKeyParse(uuid::Error),
