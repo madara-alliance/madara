@@ -101,8 +101,10 @@ pub struct AggregatorMetadata {
     // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
-    /// Bucker ID received from the prover client
-    pub bucket_id: String,
+    /// Bucket ID received from the prover client (Atlantic only).
+    /// `None` for provers without a bucket concept (SHARP, Mock).
+    #[serde(default)]
+    pub bucket_id: Option<String>,
 
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.

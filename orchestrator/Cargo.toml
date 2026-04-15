@@ -54,10 +54,12 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
+orchestrator-aggregator-runner = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
+orchestrator-mock-service = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }

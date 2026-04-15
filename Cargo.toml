@@ -325,10 +325,12 @@ orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlem
 orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
+orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-mock-service = { path = "orchestrator/crates/prover-clients/mock-service" }
 orchestrator = { path = "orchestrator" }
 
 utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }

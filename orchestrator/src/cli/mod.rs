@@ -153,6 +153,9 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
 
+    #[clap(flatten)]
+    pub mock_args: prover::mock::MockCliArgs,
+
     // SNOS
     #[clap(flatten)]
     pub snos_args: snos::SNOSCliArgs,
