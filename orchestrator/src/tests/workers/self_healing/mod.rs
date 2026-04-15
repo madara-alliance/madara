@@ -135,6 +135,7 @@ async fn test_job_type_specific_timeouts() -> Result<(), Box<dyn Error>> {
         max_concurrent_created_snos_jobs: 100,
         max_concurrent_snos_jobs: None,
         max_concurrent_proving_jobs: None,
+        max_concurrent_aggregator_jobs: None,
         snos_job_timeout_seconds: 3600,           // 1 hour
         proving_job_timeout_seconds: 1800,        // 30 minutes
         proof_registration_timeout_seconds: 1800, // 30 minutes

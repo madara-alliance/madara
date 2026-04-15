@@ -19,8 +19,6 @@ use orchestrator_prover_client_interface::{
 use url::Url;
 use uuid::Uuid;
 
-pub const MOCK_SETTINGS_NAME: &str = "mock";
-
 #[derive(Debug, Clone)]
 pub struct MockValidatedArgs {
     /// When `Some`, the aggregator fact hash is registered on this contract during
