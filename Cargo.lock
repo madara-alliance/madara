@@ -11081,6 +11081,7 @@ dependencies = [
  "orchestrator-da-client-interface",
  "orchestrator-ethereum-da-client",
  "orchestrator-ethereum-settlement-client",
+ "orchestrator-gps-fact-checker",
  "orchestrator-mock-service",
  "orchestrator-prover-client-interface",
  "orchestrator-settlement-client-interface",

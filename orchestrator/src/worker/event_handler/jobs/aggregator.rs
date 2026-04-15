@@ -16,7 +16,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use orchestrator_aggregator_runner::AggregatorFelt;
+use orchestrator_aggregator_runner::{AggregatorFelt, PROGRAM_HASHES};
 use orchestrator_prover_client_interface::{ApplicativeJobInfo, Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
@@ -289,7 +289,8 @@ impl AggregatorJobHandler {
         info!("Local aggregator completed, storing artifacts");
 
         // 3. Compute fact info from PIE (program output + fact hash for on-chain registration).
-        let fact_info = get_fact_info(&aggregator_output.aggregator_cairo_pie, None, true)?;
+        let fact_info =
+            get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
         let fact: [u8; 32] = fact_info.fact.0;
 
         // Stamp the fact hex into the aggregator metadata so `verify_job` can pass it to

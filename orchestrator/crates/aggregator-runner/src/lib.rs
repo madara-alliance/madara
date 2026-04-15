@@ -8,6 +8,10 @@ use starknet_os::runner::run_aggregator;
 pub use starknet_types_core::felt::Felt as AggregatorFelt;
 use starknet_types_core::felt::Felt;
 
+// Re-export the pre-computed program hashes so the orchestrator can consume them
+// without pulling `apollo_starknet_os_program` directly.
+pub use apollo_starknet_os_program::PROGRAM_HASHES;
+
 /// Input configuration for running the local aggregator.
 pub struct AggregatorRunnerInput {
     /// Pre-stored program outputs for each child SNOS batch.
@@ -113,7 +117,7 @@ pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRu
 fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
     // Use the pre-computed OS program hash from the embedded program_hash.json.
     // This is a LazyLock that loads once on first access.
-    let os_program_hash = apollo_starknet_os_program::PROGRAM_HASHES.os;
+    let os_program_hash = PROGRAM_HASHES.os;
 
     let mut output = Vec::new();
 

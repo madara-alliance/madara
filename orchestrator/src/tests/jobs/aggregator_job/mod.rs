@@ -1,3 +1,5 @@
+mod local_agg_e2e;
+
 use super::super::common::default_job_item;
 use crate::core::client::database::MockDatabaseClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
