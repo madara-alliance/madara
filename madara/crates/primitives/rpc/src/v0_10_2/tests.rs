@@ -223,26 +223,28 @@ fn sample_transaction_trace() -> TransactionTrace {
 
 #[test]
 fn test_simulate_transactions_response_without_initial_reads() {
-    let response = SimulateTransactionsResponse {
-        simulated_transactions: vec![SimulateTransactionsResult {
+    let response = SimulateTransactionsResponse::new(
+        vec![SimulateTransactionsResult {
             fee_estimation: sample_fee_estimate(),
             transaction_trace: sample_transaction_trace(),
         }],
-        initial_reads: None,
-    };
+        None,
+    );
 
-    assert!(response.initial_reads.is_none());
-    assert_eq!(response.simulated_transactions.len(), 1);
+    let SimulateTransactionsResponse::SimulatedTransactions(simulated_transactions) = response else {
+        panic!("expected legacy array response");
+    };
+    assert_eq!(simulated_transactions.len(), 1);
 }
 
 #[test]
 fn test_simulate_transactions_response_with_initial_reads() {
-    let response = SimulateTransactionsResponse {
-        simulated_transactions: vec![SimulateTransactionsResult {
+    let response = SimulateTransactionsResponse::new(
+        vec![SimulateTransactionsResult {
             fee_estimation: sample_fee_estimate(),
             transaction_trace: sample_transaction_trace(),
         }],
-        initial_reads: Some(InitialReads {
+        Some(InitialReads {
             storage: vec![InitialStorageRead {
                 contract_address: Felt::from_hex("0x1").unwrap(),
                 key: Felt::from_hex("0x2").unwrap(),
@@ -252,20 +254,23 @@ fn test_simulate_transactions_response_with_initial_reads() {
             class_hashes: vec![],
             declared_contracts: vec![],
         }),
-    };
+    );
 
-    let reads = response.initial_reads.expect("initial_reads should be present");
+    let SimulateTransactionsResponse::SimulatedTransactionsWithInitialReads { initial_reads: reads, .. } = response
+    else {
+        panic!("expected response with initial_reads");
+    };
     assert_eq!(reads.storage.len(), 1);
 }
 
 #[test]
 fn test_simulate_transactions_response_serialization_top_level_initial_reads() {
-    let response = SimulateTransactionsResponse {
-        simulated_transactions: vec![SimulateTransactionsResult {
+    let response = SimulateTransactionsResponse::new(
+        vec![SimulateTransactionsResult {
             fee_estimation: sample_fee_estimate(),
             transaction_trace: sample_transaction_trace(),
         }],
-        initial_reads: Some(InitialReads {
+        Some(InitialReads {
             storage: vec![InitialStorageRead {
                 contract_address: Felt::from_hex("0x1").unwrap(),
                 key: Felt::from_hex("0x2").unwrap(),
@@ -275,7 +280,7 @@ fn test_simulate_transactions_response_serialization_top_level_initial_reads() {
             class_hashes: vec![],
             declared_contracts: vec![],
         }),
-    };
+    );
 
     let value = serde_json::to_value(&response).unwrap();
     assert!(value.get("initial_reads").is_some());
@@ -285,6 +290,20 @@ fn test_simulate_transactions_response_serialization_top_level_initial_reads() {
         .and_then(|entry| entry.as_array())
         .expect("simulated_transactions should be an array");
     assert!(items[0].get("initial_reads").is_none());
+}
+
+#[test]
+fn test_simulate_transactions_response_serialization_without_initial_reads_is_legacy_array() {
+    let response = SimulateTransactionsResponse::new(
+        vec![SimulateTransactionsResult {
+            fee_estimation: sample_fee_estimate(),
+            transaction_trace: sample_transaction_trace(),
+        }],
+        None,
+    );
+
+    let value = serde_json::to_value(&response).unwrap();
+    assert!(value.is_array());
 }
 
 // ============================================================================
@@ -302,26 +321,28 @@ fn test_trace_block_transactions_result_without_initial_reads() {
 
 #[test]
 fn test_trace_block_transactions_response_without_initial_reads() {
-    let response = TraceBlockTransactionsResponse {
-        traces: vec![TraceBlockTransactionsResult {
+    let response = TraceBlockTransactionsResponse::new(
+        vec![TraceBlockTransactionsResult {
             trace_root: sample_transaction_trace(),
             transaction_hash: Felt::from_hex("0x123").unwrap(),
         }],
-        initial_reads: None,
-    };
+        None,
+    );
 
-    assert!(response.initial_reads.is_none());
-    assert_eq!(response.traces.len(), 1);
+    let TraceBlockTransactionsResponse::Traces(traces) = response else {
+        panic!("expected legacy array response");
+    };
+    assert_eq!(traces.len(), 1);
 }
 
 #[test]
 fn test_trace_block_transactions_response_with_initial_reads() {
-    let response = TraceBlockTransactionsResponse {
-        traces: vec![TraceBlockTransactionsResult {
+    let response = TraceBlockTransactionsResponse::new(
+        vec![TraceBlockTransactionsResult {
             trace_root: sample_transaction_trace(),
             transaction_hash: Felt::from_hex("0x123").unwrap(),
         }],
-        initial_reads: Some(InitialReads {
+        Some(InitialReads {
             storage: vec![InitialStorageRead {
                 contract_address: Felt::from_hex("0x1").unwrap(),
                 key: Felt::from_hex("0x2").unwrap(),
@@ -331,10 +352,26 @@ fn test_trace_block_transactions_response_with_initial_reads() {
             class_hashes: vec![],
             declared_contracts: vec![],
         }),
-    };
+    );
 
-    let reads = response.initial_reads.expect("initial_reads should be present");
+    let TraceBlockTransactionsResponse::TracesWithInitialReads { initial_reads: reads, .. } = response else {
+        panic!("expected response with initial_reads");
+    };
     assert_eq!(reads.storage.len(), 1);
+}
+
+#[test]
+fn test_trace_block_transactions_response_serialization_without_initial_reads_is_legacy_array() {
+    let response = TraceBlockTransactionsResponse::new(
+        vec![TraceBlockTransactionsResult {
+            trace_root: sample_transaction_trace(),
+            transaction_hash: Felt::from_hex("0x123").unwrap(),
+        }],
+        None,
+    );
+
+    let value = serde_json::to_value(&response).unwrap();
+    assert!(value.is_array());
 }
 
 // ============================================================================

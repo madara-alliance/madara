@@ -113,14 +113,30 @@ pub struct SimulateTransactionsResult {
 
 /// Result of simulating multiple transactions (NEW in v0.10.2)
 ///
-/// Contains the results for each simulated transaction plus optional aggregate initial reads.
+/// Uses the legacy array shape unless RETURN_INITIAL_READS is requested.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SimulateTransactionsResponse {
-    /// Results for each simulated transaction
-    pub simulated_transactions: Vec<SimulateTransactionsResult>,
-    /// Aggregate initial reads for all transactions (only present when RETURN_INITIAL_READS flag is set)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_reads: Option<InitialReads>,
+#[serde(untagged)]
+pub enum SimulateTransactionsResponse {
+    /// Legacy response shape when no initial reads were requested.
+    SimulatedTransactions(Vec<SimulateTransactionsResult>),
+    /// Response shape when RETURN_INITIAL_READS is requested.
+    SimulatedTransactionsWithInitialReads {
+        /// Results for each simulated transaction.
+        simulated_transactions: Vec<SimulateTransactionsResult>,
+        /// Aggregate initial reads for all transactions.
+        initial_reads: InitialReads,
+    },
+}
+
+impl SimulateTransactionsResponse {
+    pub fn new(simulated_transactions: Vec<SimulateTransactionsResult>, initial_reads: Option<InitialReads>) -> Self {
+        match initial_reads {
+            Some(initial_reads) => {
+                Self::SimulatedTransactionsWithInitialReads { simulated_transactions, initial_reads }
+            }
+            None => Self::SimulatedTransactions(simulated_transactions),
+        }
+    }
 }
 
 /// A single pair of transaction hash and corresponding trace (MODIFIED in v0.10.2)
@@ -134,12 +150,26 @@ pub struct TraceBlockTransactionsResult {
 
 /// Response from traceBlockTransactions (NEW in v0.10.2)
 ///
-/// Contains the traces for all transactions plus optional aggregate initial reads.
+/// Uses the legacy array shape unless RETURN_INITIAL_READS is requested.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TraceBlockTransactionsResponse {
-    /// Traces for each transaction in the block
-    pub traces: Vec<TraceBlockTransactionsResult>,
-    /// Aggregate initial reads for all transactions (only present when RETURN_INITIAL_READS flag is set)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_reads: Option<InitialReads>,
+#[serde(untagged)]
+pub enum TraceBlockTransactionsResponse {
+    /// Legacy response shape when no initial reads were requested.
+    Traces(Vec<TraceBlockTransactionsResult>),
+    /// Response shape when RETURN_INITIAL_READS is requested.
+    TracesWithInitialReads {
+        /// Traces for each transaction in the block.
+        traces: Vec<TraceBlockTransactionsResult>,
+        /// Aggregate initial reads for the traced block.
+        initial_reads: InitialReads,
+    },
+}
+
+impl TraceBlockTransactionsResponse {
+    pub fn new(traces: Vec<TraceBlockTransactionsResult>, initial_reads: Option<InitialReads>) -> Self {
+        match initial_reads {
+            Some(initial_reads) => Self::TracesWithInitialReads { traces, initial_reads },
+            None => Self::Traces(traces),
+        }
+    }
 }

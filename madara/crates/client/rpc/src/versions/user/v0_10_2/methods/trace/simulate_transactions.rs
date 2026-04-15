@@ -82,5 +82,5 @@ pub async fn simulate_transactions(
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
-    Ok(SimulateTransactionsResponse { simulated_transactions, initial_reads })
+    Ok(SimulateTransactionsResponse::new(simulated_transactions, initial_reads))
 }

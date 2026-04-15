@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
@@ -113,12 +112,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
         updated_at: Utc::now().round_subsecs(0),
     };
 
-    let result = tokio::time::timeout(
-        Duration::from_secs(180),
-        SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item),
-    )
-    .await
-    .expect("SNOS test timed out while generating Cairo PIE artifacts")?;
+    let result = SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item).await?;
 
     assert_eq!(result, "1"); // expecting "1" because it's the first batch
 

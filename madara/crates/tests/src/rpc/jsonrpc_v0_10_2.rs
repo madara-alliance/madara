@@ -585,16 +585,30 @@ mod test_rpc_jsonrpc_v0_10_2 {
     #[tokio::test]
     async fn test_raw_get_events_same_block_page_does_not_duplicate_last_event_v0_10_2() {
         let madara = get_madara().await;
-        let result = rpc_result(madara, "starknet_getEvents", block_event_filter_params(4, None, 20)).await;
+        let full_page = rpc_result(madara, "starknet_getEvents", block_event_filter_params(4, None, 20)).await;
+        let first_page = rpc_result(madara, "starknet_getEvents", block_event_filter_params(4, None, 2)).await;
+        let continuation_token = first_page
+            .get("continuation_token")
+            .and_then(Value::as_str)
+            .expect("same-block first page should produce a continuation token");
+        let second_page =
+            rpc_result(madara, "starknet_getEvents", block_event_filter_params(4, Some(continuation_token), 2)).await;
+
+        let mut combined_events =
+            first_page.get("events").and_then(Value::as_array).cloned().expect("first page should contain events");
+        combined_events.extend(
+            second_page.get("events").and_then(Value::as_array).cloned().expect("second page should contain events"),
+        );
 
         assert_eq!(
-            result.get("events").and_then(Value::as_array),
-            expected_events_second_page().get("events").and_then(Value::as_array),
+            Some(&combined_events),
+            full_page.get("events").and_then(Value::as_array),
             "same-block pagination should return each matching event once",
         );
         assert!(
-            result.get("continuation_token").is_none() || result.get("continuation_token").is_some_and(Value::is_null),
-            "single-block result should not advertise another page: {result:?}"
+            second_page.get("continuation_token").is_none()
+                || second_page.get("continuation_token").is_some_and(Value::is_null),
+            "single-block result should not advertise another page: {second_page:?}"
         );
     }
 }

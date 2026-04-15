@@ -84,5 +84,5 @@ pub async fn trace_block_transactions(
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
-    Ok(TraceBlockTransactionsResponse { traces, initial_reads })
+    Ok(TraceBlockTransactionsResponse::new(traces, initial_reads))
 }

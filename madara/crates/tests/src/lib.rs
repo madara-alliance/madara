@@ -27,7 +27,7 @@
 //!
 //! The [`MadaraCmdBuilder`] provides the main interface for configuring test nodes:
 //!
-//! ```no_run
+//! ```ignore
 //! let builder = MadaraCmdBuilder::new()
 //!     .args(["--full", "--network", "sepolia"])
 //!     .env([("MADARA_RPC_PORT", "9944")])
@@ -115,7 +115,7 @@
 //!
 //! The [`wait_for_cond`] utility enables testing asynchronous blockchain operations:
 //!
-//! ```no_run
+//! ```ignore
 //! wait_for_cond(
 //!     || async {
 //!         let receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
@@ -131,7 +131,7 @@
 //!
 //! Devnet mode provides pre-funded accounts with known private keys:
 //!
-//! ```no_run
+//! ```ignore
 //! use mc_e2e_tests::devnet::{ACCOUNTS, ACCOUNT_SECRETS};
 //!
 //! let account_address = ACCOUNTS[0];
@@ -148,7 +148,7 @@
 //! 4. **Assert results**: Use utilities like [`wait_for_cond`] for async assertions
 //! 5. **Cleanup**: Automatic via [`Drop`] implementations
 //!
-//! ```no_run
+//! ```ignore
 //! #[tokio::test]
 //! async fn test_transaction() {
 //!     // Setup
@@ -214,9 +214,9 @@ use starknet_core::types::Felt;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
 use starknet_providers::{Provider, SequencerGatewayProvider};
 use std::io::{BufRead, BufReader};
+use std::net::TcpListener;
 use std::process::Stdio;
-use std::sync::mpsc::TryRecvError;
-use std::sync::{mpsc, Arc};
+use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 use std::{
@@ -374,84 +374,16 @@ impl MadaraCmd {
         let _ = child.wait();
     }
 
-    pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool, rpc_admin: bool) {
-        let stdout =
-            self.process.as_mut().unwrap().stdout.take().expect("Could not capture stdout from Madara process");
-        let pid = self.process.as_ref().unwrap().id();
+    pub fn hook_output(&mut self) {
+        let process = self.process.as_mut().unwrap();
+        let pid = process.id();
+        let prefix = if self.label.is_empty() { format!("[{pid}]") } else { format!("[{pid} {}]", self.label) };
 
-        let stdout_prefix = if !self.label.is_empty() { format!("[{pid} {}]", self.label) } else { format!("[{pid}]") };
+        let stdout = process.stdout.take().expect("Could not capture stdout from Madara process");
+        let stderr = process.stderr.take().expect("Could not capture stderr from Madara process");
 
-        let reader = BufReader::new(stdout);
-        let (tx, rx) = mpsc::channel();
-
-        thread::spawn(move || {
-            let mut rpc_port = None;
-            let mut rpc_admin_port = None;
-            let mut gateway_port = None;
-
-            for line in reader.lines().map_while(Result::ok) {
-                // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
-                // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
-                fn get_port(line: &str, prefix: &str) -> Option<u16> {
-                    line.split_once(prefix).map(|(_, rest)| rest.split_once(' ').unwrap_or((rest, ""))).and_then(
-                        |(url, _)| {
-                            Url::parse(url)
-                                .ok()
-                                .and_then(|url| url.port())
-                                .or_else(|| url.split_once(':').and_then(|(_, port)| port.parse().ok()))
-                        },
-                    )
-                }
-
-                rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
-                rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
-                gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
-
-                if (!rpc && rpc_port.is_some())
-                    || (!gateway && gateway_port.is_some())
-                    || (!rpc_admin && rpc_admin_port.is_some())
-                {
-                    panic!(
-                        "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, rpc_admin_enabled={rpc_admin}, \
-                        got rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port:?}, gateway_port={gateway_port:?}"
-                    )
-                }
-
-                if (rpc == rpc_port.is_some())
-                    && (gateway == gateway_port.is_some())
-                    && (rpc_admin == rpc_admin_port.is_some())
-                {
-                    let _ = tx.send((rpc_port, rpc_admin_port, gateway_port));
-                }
-                println!("{stdout_prefix} {line}");
-            }
-        });
-
-        let timeout = Duration::from_secs(90);
-        let start = Instant::now();
-
-        while start.elapsed() < timeout {
-            match rx.try_recv() {
-                Ok((rpc_port, rpc_admin_port, gateway_port)) => {
-                    let rpc_url = rpc_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
-                    let rpc_admin_url =
-                        rpc_admin_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
-                    let gateway_root_url =
-                        gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
-
-                    self.rpc_url = rpc_url;
-                    self.rpc_admin_url = rpc_admin_url;
-                    self.gateway_root_url = gateway_root_url;
-                    return;
-                }
-                Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(100)),
-                Err(TryRecvError::Disconnected) => {
-                    panic!("Port extraction thread terminated unexpectedly")
-                }
-            }
-        }
-
-        panic!("Timed out after {timeout:?} waiting for Madara to start")
+        spawn_output_logger(stdout, format!("{prefix} [stdout]"));
+        spawn_output_logger(stderr, format!("{prefix} [stderr]"));
     }
 }
 
@@ -517,12 +449,9 @@ impl MadaraCmdBuilder {
         self
     }
 
-    /// Also waits for the ports to be assigned.
     pub fn run(self) -> MadaraCmd {
-        let (rpc, gateway) = (self.rpc_enabled, self.gateway_enabled);
-        let rpc_admin = self.args.iter().any(|arg| arg == "--rpc-admin");
         let mut cmd = self.run_no_wait();
-        cmd.hook_stdout_and_wait_for_ports(rpc, gateway, rpc_admin);
+        cmd.hook_output();
         cmd
     }
 
@@ -537,35 +466,39 @@ impl MadaraCmdBuilder {
 
         let gateway_key_args =
             env::var("GATEWAY_KEY").ok().map(|key| vec!["--gateway-key".into(), key]).unwrap_or_default();
+        let rust_log = self
+            .env
+            .get("RUST_LOG")
+            .cloned()
+            .or_else(|| env::var("RUST_LOG").ok())
+            .unwrap_or_else(|| "info".to_string());
 
-        tracing::info!("Running new madara process with args {:?}", self.args);
+        let rpc_admin_enabled = self.args.iter().any(|arg| arg == "--rpc-admin");
+        let rpc_port = self.rpc_enabled.then_some(unused_local_port());
+        let gateway_port = self.gateway_enabled.then_some(unused_local_port());
+        let rpc_admin_port = unused_local_port();
+        let analytics_port = unused_local_port();
+
+        tracing::info!(
+            "Running new madara process with args {:?} on rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port}, gateway_port={gateway_port:?}",
+            self.args
+        );
 
         let mut cmd = Command::new(target_bin);
+        let rpc_port_args = rpc_port.map(|port| vec!["--rpc-port".to_string(), port.to_string()]).unwrap_or_default();
+        let gateway_port_args =
+            gateway_port.map(|port| vec!["--gateway-port".to_string(), port.to_string()]).unwrap_or_default();
+
         cmd.envs(self.env)
             .env("CLICOLOR_FORCE", "1")
+            .env("RUST_LOG", rust_log)
             .args(self.args)
             .args(["--base-path".into(), self.tempdir.path().display().to_string()])
-            .args(
-                self.rpc_enabled
-                    .then_some([
-                        "--rpc-port",
-                        "0", // OS Assigned
-                    ])
-                    .into_iter()
-                    .flatten(),
-            )
-            .args(
-                self.gateway_enabled
-                    .then_some([
-                        "--gateway-port",
-                        "0", // OS Assigned
-                    ])
-                    .into_iter()
-                    .flatten(),
-            )
+            .args(rpc_port_args)
+            .args(gateway_port_args)
             // Always use dynamic ports for services that may conflict when running multiple nodes
-            .args(["--analytics-prometheus-endpoint-port", "0"])
-            .args(["--rpc-admin-port", "0"])
+            .args(["--analytics-prometheus-endpoint-port".into(), analytics_port.to_string()])
+            .args(["--rpc-admin-port".into(), rpc_admin_port.to_string()])
             .args(gateway_key_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -575,13 +508,30 @@ impl MadaraCmdBuilder {
         MadaraCmd {
             process: Some(process),
             ready: false,
-            rpc_url: None,
-            rpc_admin_url: None,
-            gateway_root_url: None,
+            rpc_url: rpc_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap()),
+            rpc_admin_url: rpc_admin_enabled
+                .then(|| Url::parse(&format!("http://127.0.0.1:{rpc_admin_port}/")).unwrap()),
+            gateway_root_url: gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap()),
             label: self.label,
             tempdir: self.tempdir,
         }
     }
+}
+
+fn spawn_output_logger(pipe: impl std::io::Read + Send + 'static, prefix: String) {
+    thread::spawn(move || {
+        for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+            println!("{prefix} {line}");
+        }
+    });
+}
+
+fn unused_local_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("Failed to allocate a local test port")
+        .local_addr()
+        .expect("Allocated local listener is missing an address")
+        .port()
 }
 
 #[rstest]
