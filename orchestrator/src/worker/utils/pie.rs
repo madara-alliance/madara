@@ -37,7 +37,11 @@ pub async fn tempfile_to_bytes_streaming(tmp_file: &mut NamedTempFile) -> Result
     let mut chunk = vec![0; BYTE_CHUNK_SIZE];
     let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
 
-    while let Ok(n) = file.read(&mut chunk).await {
+    // Propagate I/O errors instead of treating them like EOF — a transient failure
+    // mid-read on a large PIE would otherwise silently truncate the bytes we hand
+    // back, surfacing later as a confusing parse error.
+    loop {
+        let n = file.read(&mut chunk).await?;
         if n == 0 {
             break;
         }
