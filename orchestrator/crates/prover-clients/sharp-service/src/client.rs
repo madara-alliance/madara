@@ -1,5 +1,3 @@
-use base64::engine::general_purpose;
-use base64::Engine;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::{Certificate, Identity, Method, StatusCode};
 use serde_json::json;
@@ -24,15 +22,10 @@ impl SharpClient {
     /// The base URL should include the gateway path prefix, e.g.
     /// `http://host:9511/v1/gateway`.
     pub fn new_with_args(url: Url, sharp_params: &SharpValidatedArgs) -> Self {
-        let cert = general_purpose::STANDARD
-            .decode(sharp_params.sharp_user_crt.clone())
-            .expect("Failed to decode certificate");
-        let key = general_purpose::STANDARD
-            .decode(sharp_params.sharp_user_key.clone())
-            .expect("Failed to decode sharp user key");
-        let server_cert = general_purpose::STANDARD
-            .decode(sharp_params.sharp_server_crt.clone())
-            .expect("Failed to decode sharp server certificate");
+        // Cert/key fields carry raw PEM content (read from *_FILE paths by config).
+        let cert = sharp_params.sharp_user_crt.as_bytes();
+        let key = sharp_params.sharp_user_key.as_bytes();
+        let server_cert = sharp_params.sharp_server_crt.as_bytes();
 
         let customer_id = sharp_params.sharp_customer_id.clone();
 

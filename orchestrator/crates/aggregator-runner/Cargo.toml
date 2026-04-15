@@ -12,3 +12,6 @@ starknet_os = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-a
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

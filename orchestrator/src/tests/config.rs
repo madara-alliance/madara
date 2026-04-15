@@ -28,6 +28,8 @@ use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 
+use base64::engine::general_purpose;
+use base64::Engine;
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
@@ -48,6 +50,14 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
+
+/// Decode a historically base64-wrapped PEM from a test env var into raw PEM.
+fn pem_from_env(name: &str) -> String {
+    let b64 = get_env_var_or_panic(name);
+    let bytes = general_purpose::STANDARD.decode(b64).expect("invalid base64 in test env");
+    String::from_utf8(bytes).expect("PEM env content is not utf-8")
+}
+
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
@@ -880,11 +890,13 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
         sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_URL"),
-        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        // Test envs are historical base64-wrapped PEMs; SharpValidatedArgs now holds
+        // raw PEM, so decode at the test boundary.
+        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
         sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"),
-        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
+        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
         sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
         sharp_offchain_proof: false,
