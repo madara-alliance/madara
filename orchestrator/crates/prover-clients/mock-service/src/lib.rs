@@ -11,6 +11,7 @@
 //!   verifies via `isValid`. The `task_id` is intentionally unused on the aggregation path.
 
 use alloy::primitives::{Address, B256};
+use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
 use orchestrator_gps_fact_checker::{FactCheckerError, FactRegistrar};
 use orchestrator_prover_client_interface::{
@@ -26,7 +27,10 @@ pub struct MockValidatedArgs {
     /// (assume the settlement core contract points at an always-true verifier stub).
     pub verifier_address: Option<Address>,
     pub ethereum_rpc_url: Url,
-    pub ethereum_private_key: String,
+    /// Pre-parsed signer. Parsed once at CLI validation time (`TryFrom<RunCmd> for
+    /// ProverConfig`), so `FactRegistrar::new` can stay infallible. `PrivateKeySigner`'s
+    /// `Debug` impl redacts the secret.
+    pub ethereum_signer: PrivateKeySigner,
 }
 
 pub struct MockProverService {
@@ -39,7 +43,7 @@ impl MockProverService {
     pub fn new_with_args(args: &MockValidatedArgs) -> Self {
         let fact_registrar = args
             .verifier_address
-            .map(|addr| FactRegistrar::new(args.ethereum_rpc_url.clone(), &args.ethereum_private_key, addr));
+            .map(|addr| FactRegistrar::new(args.ethereum_rpc_url.clone(), args.ethereum_signer.clone(), addr));
         Self { fact_registrar }
     }
 }

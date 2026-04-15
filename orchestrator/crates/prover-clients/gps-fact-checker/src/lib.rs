@@ -129,8 +129,7 @@ pub struct FactRegistrar {
 }
 
 impl FactRegistrar {
-    pub fn new(rpc_url: Url, ethereum_private_key: &str, verifier_address: Address) -> Self {
-        let signer: PrivateKeySigner = ethereum_private_key.parse().expect("Failed to parse private key");
+    pub fn new(rpc_url: Url, signer: PrivateKeySigner, verifier_address: Address) -> Self {
         let wallet = EthereumWallet::from(signer);
         let provider = Arc::new(ProviderBuilder::new().wallet(wallet).connect_http(rpc_url));
         Self { verifier_address, provider }

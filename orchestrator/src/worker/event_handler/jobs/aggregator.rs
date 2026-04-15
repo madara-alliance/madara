@@ -35,10 +35,11 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
     /// Process the aggregator job.
     ///
-    /// - **Atlantic**: closes the bucket via `RunAggregation(bucket_id)`.
-    /// - **SHARP**: runs aggregator locally, stores artifacts, submits applicative job.
-    /// - **Mock**: runs aggregator locally (same as SHARP), optionally registers the fact
-    ///   hash on an L1 `MockGpsVerifier` via the prover service.
+    /// - **Atlantic / SHARP**: closes the bucket via `RunAggregation(bucket_id)`.
+    ///   (SHARP's future local-aggregation + applicative-job path lives on the
+    ///   `feat/sharp-integration` branch; this branch keeps SHARP on the bucket path.)
+    /// - **Mock**: runs the aggregator locally, stores artifacts, then optionally
+    ///   registers the fact hash on an L1 `MockGpsVerifier` via the prover service.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "{:?} job {} processing started", JobType::Aggregator, internal_id);
@@ -51,18 +52,16 @@ impl JobHandlerTrait for AggregatorJobHandler {
         }
 
         let external_id = match config.prover_kind() {
-            ProverKind::Atlantic => {
-                let bucket_id = metadata
-                    .bucket_id
-                    .as_ref()
-                    .ok_or_else(|| JobError::Other(OtherError(eyre!("Atlantic aggregator job missing bucket_id"))))?;
+            ProverKind::Atlantic | ProverKind::Sharp => {
+                let bucket_id = metadata.bucket_id.as_ref().ok_or_else(|| {
+                    JobError::Other(OtherError(eyre!("{:?} aggregator job missing bucket_id", config.prover_kind())))
+                })?;
                 config.prover_client().submit_task(Task::RunAggregation(bucket_id.clone())).await.map_err(|e| {
                     error!(error = %e, "Failed to close bucket");
                     JobError::ProverClientError(e)
                 })?
             }
-            ProverKind::Sharp => self.process_job_local_agg(&config, job, false).await?,
-            ProverKind::Mock => self.process_job_local_agg(&config, job, true).await?,
+            ProverKind::Mock => self.process_job_local_agg(&config, job).await?,
         };
 
         config
@@ -186,25 +185,21 @@ impl JobHandlerTrait for AggregatorJobHandler {
 }
 
 // =============================================================================
-// Local-aggregation path shared by SHARP and Mock
+// Local-aggregation path (Mock prover only on this branch; SHARP will join once
+// `feat/sharp-integration` lands).
 // =============================================================================
 
 impl AggregatorJobHandler {
-    /// Run the aggregator locally and submit the resulting PIE to the prover.
+    /// Run the aggregator locally and submit the resulting PIE to the Mock prover.
     ///
-    /// When `include_fact_hash` is `true` (Mock), the aggregator PIE's fact hash is
-    /// computed via `get_fact_info` and threaded into `ApplicativeJobInfo.fact_hash`
-    /// so the mock prover can register it on the L1 `MockGpsVerifier`. SHARP ignores
-    /// it (SHARP computes the fact server-side from the PIE bytes).
-    async fn process_job_local_agg(
-        &self,
-        config: &Arc<Config>,
-        job: &mut JobItem,
-        include_fact_hash: bool,
-    ) -> Result<String, JobError> {
+    /// Computes the aggregator PIE's fact hash via `get_fact_info`, stamps the hex
+    /// into `metadata.ensure_on_chain_registration` (so `verify_job` can cross-check
+    /// `isValid` on-chain), then threads the fact into `ApplicativeJobInfo.fact_hash`
+    /// so the mock prover can register it on the L1 `MockGpsVerifier`.
+    async fn process_job_local_agg(&self, config: &Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
         let batch_num = metadata.batch_num;
-        info!(batch_num = %batch_num, include_fact_hash, "Running local aggregation");
+        info!(batch_num = %batch_num, "Running local aggregation for Mock prover");
 
         // 1. Fetch program outputs and child job keys from DB + storage.
         let snos_batches = config.database().get_snos_batches_by_aggregator_index(batch_num).await?;
@@ -293,17 +288,19 @@ impl AggregatorJobHandler {
 
         info!("Local aggregator completed, storing artifacts");
 
-        // 3. Compute fact info from PIE (covers program output and, for Mock, the fact hash).
+        // 3. Compute fact info from PIE (program output + fact hash for on-chain registration).
         let fact_info = get_fact_info(&aggregator_output.aggregator_cairo_pie, None, true)?;
-        let fact_hash: Option<[u8; 32]> = if include_fact_hash { Some(fact_info.fact.0) } else { None };
+        let fact: [u8; 32] = fact_info.fact.0;
 
-        // Persist the fact hex in the aggregator metadata so `verify_job` can pass it to
-        // the prover's `get_task_status` for an on-chain `isValid` cross-check. Mock only.
+        // Stamp the fact hex into the aggregator metadata so `verify_job` can pass it to
+        // the prover's `get_task_status` for an on-chain `isValid` cross-check.
+        //
+        // Safe to mutate `job.metadata` in-place: the job framework persists
+        // `job.metadata.clone()` immediately after `process_job` returns (see
+        // worker/event_handler/service.rs), so this survives into `verify_job`.
         let mut metadata = metadata;
-        if let Some(fact) = fact_hash {
-            metadata.ensure_on_chain_registration = Some(format!("0x{}", hex::encode(fact)));
-            job.metadata.specific = JobSpecificMetadata::Aggregator(metadata.clone());
-        }
+        metadata.ensure_on_chain_registration = Some(format!("0x{}", hex::encode(fact)));
+        job.metadata.specific = JobSpecificMetadata::Aggregator(metadata.clone());
 
         AggregatorJobHandler::store_program_output(
             config,
@@ -331,7 +328,7 @@ impl AggregatorJobHandler {
             .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
                 cairo_pie_zip_bytes: pie_bytes,
                 children_cairo_job_keys: child_job_keys,
-                fact_hash,
+                fact_hash: Some(fact),
             }))
             .await
             .map_err(|e| {

@@ -153,6 +153,10 @@ impl TryFrom<RunCmd> for ProverConfig {
         let ethereum_private_key = eth_args.ethereum_private_key.clone().ok_or_else(|| {
             OrchestratorError::RunCommandError("Mock prover requires Ethereum private key".to_string())
         })?;
+        // Parse once here so malformed keys surface as a clean CLI validation error
+        let ethereum_signer: alloy::signers::local::PrivateKeySigner = ethereum_private_key
+            .parse()
+            .map_err(|e| OrchestratorError::RunCommandError(format!("Invalid Ethereum private key: {e}")))?;
 
         let verifier_address = match run_cmd.mock_args.mock_verifier_address {
             Some(s) => Some(Address::from_str(&s).map_err(|e| {
@@ -161,6 +165,6 @@ impl TryFrom<RunCmd> for ProverConfig {
             None => None,
         };
 
-        Ok(Self::Mock(MockValidatedArgs { verifier_address, ethereum_rpc_url, ethereum_private_key }))
+        Ok(Self::Mock(MockValidatedArgs { verifier_address, ethereum_rpc_url, ethereum_signer }))
     }
 }
