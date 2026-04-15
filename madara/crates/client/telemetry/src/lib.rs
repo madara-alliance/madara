@@ -235,14 +235,34 @@ impl Service for TelemetryService {
             ctx.cancelled().await;
 
             if let Some(provider) = providers {
-                if let Some(logger_provider) = provider.logger_provider {
-                    logger_provider.shutdown()?;
+                let mut first_shutdown_error = None;
+
+                // Attempt all provider shutdowns so one exporter failure does
+                // not prevent the remaining buffered telemetry from flushing.
+                if let Some(tracer_provider) = provider.tracer_provider {
+                    if let Err(err) = tracer_provider.shutdown() {
+                        first_shutdown_error.get_or_insert_with(|| {
+                            anyhow::Error::new(err).context("Shutting down OTEL tracer provider")
+                        });
+                    }
                 }
                 if let Some(meter_provider) = provider.meter_provider {
-                    meter_provider.shutdown()?;
+                    if let Err(err) = meter_provider.shutdown() {
+                        first_shutdown_error.get_or_insert_with(|| {
+                            anyhow::Error::new(err).context("Shutting down OTEL meter provider")
+                        });
+                    }
                 }
-                if let Some(tracer_provider) = provider.tracer_provider {
-                    tracer_provider.shutdown()?;
+                if let Some(logger_provider) = provider.logger_provider {
+                    if let Err(err) = logger_provider.shutdown() {
+                        first_shutdown_error.get_or_insert_with(|| {
+                            anyhow::Error::new(err).context("Shutting down OTEL logger provider")
+                        });
+                    }
+                }
+
+                if let Some(err) = first_shutdown_error {
+                    return Err(err);
                 }
             }
 
