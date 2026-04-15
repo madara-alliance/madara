@@ -30,8 +30,8 @@ impl SharpClient {
         let customer_id = sharp_params.sharp_customer_id.clone();
 
         let identity =
-            Identity::from_pkcs8_pem(&cert, &key).expect("Failed to build the identity from certificate and key");
-        let certificate = Certificate::from_pem(server_cert.as_slice()).expect("Failed to add root certificate");
+            Identity::from_pkcs8_pem(cert, key).expect("Failed to build the identity from certificate and key");
+        let certificate = Certificate::from_pem(server_cert).expect("Failed to add root certificate");
 
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
