@@ -3,7 +3,10 @@ mod constants;
 pub mod error;
 pub mod types;
 
+use std::str::FromStr;
+
 use crate::types::CairoJobStatus;
+use alloy::primitives::B256;
 use async_trait::async_trait;
 use base64::engine::general_purpose;
 use base64::Engine;
@@ -34,7 +37,6 @@ pub struct SharpValidatedArgs {
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
 pub struct SharpProverService {
     sharp_client: SharpClient,
-    #[allow(unused)]
     fact_checker: FactChecker,
 }
 
@@ -134,12 +136,12 @@ impl ProverClient for SharpProverService {
         }
     }
 
-    #[tracing::instrument(skip(self), ret, err)]
+    #[tracing::instrument(skip(self, fact), ret, err)]
     async fn get_task_status(
         &self,
         task: TaskType,
         job_key: &str,
-        _fact: Option<String>,
+        fact: Option<String>,
         _cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         let res = self.sharp_client.get_job_status(job_key).await?;
@@ -198,9 +200,22 @@ impl ProverClient for SharpProverService {
                         Ok(TaskStatus::Failed(format!("Applicative job not found: {}", job_key)))
                     }
                     CairoJobStatus::Processed => {
-                        // TODO: Since SHARP does not tell us if the fact is registered or not, we need to check this manually by making a call on chain
-                        tracing::info!(cairo_job_key = %job_key, "Applicative job processed");
-                        Ok(TaskStatus::Succeeded)
+                        // SHARP doesn't have an ONCHAIN status — we must cross-verify
+                        // that the fact was actually registered on the GPS verifier.
+                        if let Some(fact_str) = &fact {
+                            let fact = B256::from_str(fact_str)
+                                .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                            if self.fact_checker.is_valid(&fact).await? {
+                                tracing::info!(cairo_job_key = %job_key, fact = %fact_str, "Applicative job processed and fact verified on-chain");
+                                Ok(TaskStatus::Succeeded)
+                            } else {
+                                tracing::debug!(cairo_job_key = %job_key, fact = %fact_str, "Applicative job processed but fact not yet on-chain");
+                                Ok(TaskStatus::Processing)
+                            }
+                        } else {
+                            tracing::info!(cairo_job_key = %job_key, "Applicative job processed (no fact to cross-verify)");
+                            Ok(TaskStatus::Succeeded)
+                        }
                     }
                     _ => {
                         tracing::debug!(cairo_job_key = %job_key, status = ?res.status, "Applicative job still processing");

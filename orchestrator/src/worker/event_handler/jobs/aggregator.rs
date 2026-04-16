@@ -60,7 +60,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     JobError::ProverClientError(e)
                 })?
             }
-            ProverKind::Sharp => self.process_job_sharp(&config, &metadata).await?,
+            ProverKind::Sharp => self.process_job_sharp(&config, job).await?,
             ProverKind::Mock => self.process_job_local_agg(&config, job).await?,
         };
 
@@ -190,7 +190,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
 impl AggregatorJobHandler {
     /// Run the aggregator locally and submit the applicative job to SHARP.
-    async fn process_job_sharp(&self, config: &Arc<Config>, metadata: &AggregatorMetadata) -> Result<String, JobError> {
+    async fn process_job_sharp(&self, config: &Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+        let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
         let batch_num = metadata.batch_num;
         info!(batch_num = %batch_num, "Running local aggregation for SHARP");
 
@@ -280,6 +281,13 @@ impl AggregatorJobHandler {
         // Use the applicative-bootloader-wrapped aggregator hash, same as the Mock path.
         let fact_info =
             get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
+
+        // Stamp the fact hex so verify_job can pass it to get_task_status for on-chain
+        // cross-verification. Same pattern as the Mock path.
+        let mut metadata = metadata;
+        metadata.ensure_on_chain_registration = Some(format!("0x{}", hex::encode(fact_info.fact.0)));
+        job.metadata.specific = JobSpecificMetadata::Aggregator(metadata.clone());
+
         AggregatorJobHandler::store_program_output(
             config,
             batch_num,
