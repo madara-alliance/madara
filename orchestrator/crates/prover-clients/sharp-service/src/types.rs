@@ -5,12 +5,11 @@ use serde::{Deserialize, Serialize};
 pub enum CairoJobStatus {
     #[default]
     Unknown,
+    NotCreated,
     InProgress,
     Processed,
     Invalid,
     Failed,
-    NotCreated,
-    Onchain,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -21,15 +20,26 @@ pub enum InvalidReason {
     InvalidCairoPieFileFormat,
 }
 
+/// Body of `POST /v1/gateway/add_job`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharpAddJobRequest<'a> {
+    /// Base64-encoded CairoPIE zip bytes.
+    pub cairo_pie_encoded: &'a str,
+}
+
+/// Body of `POST /v1/gateway/add_applicative_job`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharpAddApplicativeJobRequest<'a> {
+    /// Base64-encoded aggregator CairoPIE zip bytes.
+    pub cairo_pie_encoded: &'a str,
+    /// Child cairo_job_keys this applicative job aggregates, in applicative order.
+    pub children_cairo_job_keys: &'a [String],
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SharpAddJobResponse {
     pub code: Option<String>,
     pub message: Option<String>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct SharpGetProofResponse {
-    pub code: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Deserialize)]
@@ -41,15 +51,7 @@ pub struct SharpGetStatusResponse {
     pub validation_done: Option<bool>,
 }
 
-/// **IMPORTANT NOTE: THIS IS A MOCK RESPONSE FOR E2E TEST**
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct SharpCreateBucketResponse {
-    pub code: String,
-    pub bucket_id: String,
-}
-
-/// **IMPORTANT NOTE: THIS IS A MOCK RESPONSE FOR E2E TEST**
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct SharpGetAggTaskIdResponse {
-    pub task_id: String,
+#[derive(Default, Debug, Clone, Deserialize)]
+pub struct SharpGetProofResponse {
+    pub code: Option<String>,
 }
