@@ -4,11 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+apollo_starknet_os_program.workspace = true
 cairo-vm.workspace = true
 serde_json.workspace = true
 starknet-types-core.workspace = true
-starknet_os = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+starknet_os.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

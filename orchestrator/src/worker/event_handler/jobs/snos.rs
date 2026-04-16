@@ -4,7 +4,6 @@ use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::BYTE_CHUNK_SIZE;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -13,7 +12,6 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
-use bytes::Bytes;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
@@ -32,7 +30,6 @@ use url::Url;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
 
 /// Delay before retrying when SNOS RPC is unavailable (in seconds)
@@ -252,8 +249,7 @@ impl SnosJobHandler {
 
         // Store Cairo Pie
         {
-            let cairo_pie_zip_bytes = self
-                .cairo_pie_to_zip_bytes(cairo_pie)
+            let cairo_pie_zip_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(cairo_pie)
                 .await
                 .map_err(|e| SnosError::CairoPieUnserializable { internal_id, message: e.to_string() })?;
             data_storage
@@ -284,38 +280,5 @@ impl SnosJobHandler {
         }
 
         Ok(())
-    }
-
-    /// Converts the [CairoPie] input as a zip file and returns it as [Bytes].
-    async fn cairo_pie_to_zip_bytes(&self, cairo_pie: CairoPie) -> Result<Bytes> {
-        let mut cairo_pie_zipfile = NamedTempFile::new()?;
-        cairo_pie.write_zip_file(cairo_pie_zipfile.path(), true)?;
-        drop(cairo_pie); // Drop cairo_pie to release the memory
-        let cairo_pie_zip_bytes = self.tempfile_to_bytes_streaming(&mut cairo_pie_zipfile).await?;
-        cairo_pie_zipfile.close()?;
-        Ok(cairo_pie_zip_bytes)
-    }
-
-    /// Converts a [NamedTempFile] to [Bytes].
-    /// This function reads the file in chunks and appends them to the buffer.
-    /// This is useful when the file is too large to be read in one go.
-    async fn tempfile_to_bytes_streaming(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
-        use tokio::io::AsyncReadExt;
-
-        let file_size = tmp_file.as_file().metadata()?.len() as usize;
-        let mut buffer = Vec::with_capacity(file_size);
-
-        let mut chunk = vec![0; BYTE_CHUNK_SIZE];
-
-        let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
-
-        while let Ok(n) = file.read(&mut chunk).await {
-            if n == 0 {
-                break;
-            }
-            buffer.extend_from_slice(&chunk[..n]);
-        }
-
-        Ok(Bytes::from(buffer))
     }
 }

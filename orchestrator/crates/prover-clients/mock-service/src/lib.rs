@@ -23,8 +23,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct MockValidatedArgs {
     /// When `Some`, the aggregator fact hash is registered on this contract during
-    /// `submit_task(RunAggregationWithPie)`. When `None`, fact registration is skipped
-    /// (assume the settlement core contract points at an always-true verifier stub).
+    /// `submit_task(RunAggregationWithPie)`. When `None` (i.e. `MADARA_ORCHESTRATOR_MOCK_VERIFIER_ADDRESS`
+    /// is not set), fact registration is skipped entirely — the operator must ensure the
+    /// settlement core contract's verifier is an always-true stub, otherwise state updates
+    /// will fail the `isValid(fact)` check.
     pub verifier_address: Option<Address>,
     pub ethereum_rpc_url: Url,
     /// Pre-parsed signer. Parsed once at CLI validation time (`TryFrom<RunCmd> for
@@ -131,8 +133,9 @@ impl ProverClient for MockProverService {
         Err(ProverClientError::TaskInvalid("Mock prover does not support L2 queries".to_string()))
     }
 
-    /// Mock aggregates locally in the handler; artifacts are already written to storage
-    /// before this point, so we have nothing to return.
+    /// Mock runs the aggregator locally in `process_job_local_agg`, which stores the
+    /// CairoPIE, DA segment, and program output to S3 before returning. Nothing left
+    /// to fetch here, so all fields are `None`.
     async fn get_aggregation_artifacts(
         &self,
         _external_id: &str,

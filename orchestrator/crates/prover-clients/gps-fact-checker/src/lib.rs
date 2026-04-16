@@ -58,7 +58,7 @@ impl FromStr for SettlementLayer {
 }
 
 pub struct FactChecker {
-    fact_registry: Option<GpsVerifier::GpsVerifierInstance<ReadProvider>>,
+    gps_verifier: Option<GpsVerifier::GpsVerifierInstance<ReadProvider>>,
     settlement_layer: SettlementLayer,
 }
 
@@ -76,23 +76,23 @@ impl FactChecker {
         match settlement_layer {
             SettlementLayer::Ethereum => {
                 let provider = ProviderBuilder::new().connect_http(rpc_url);
-                let fact_registry = GpsVerifier::new(
+                let gps_verifier = GpsVerifier::new(
                     Address::from_str(gps_verifier_contract_address.as_str())
                         .expect("Invalid GPS verifier contract address"),
                     provider,
                 );
-                Self { fact_registry: Some(fact_registry), settlement_layer }
+                Self { gps_verifier: Some(gps_verifier), settlement_layer }
             }
-            SettlementLayer::Starknet => Self { fact_registry: None, settlement_layer },
+            SettlementLayer::Starknet => Self { gps_verifier: None, settlement_layer },
         }
     }
 
     pub async fn is_valid(&self, fact: &B256) -> Result<bool, FactCheckerError> {
         match self.settlement_layer {
             SettlementLayer::Ethereum => {
-                let fact_registry =
-                    self.fact_registry.as_ref().expect("Fact registry should be initialized for Ethereum");
-                fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)
+                let gps_verifier =
+                    self.gps_verifier.as_ref().expect("Fact registry should be initialized for Ethereum");
+                gps_verifier.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)
             }
             SettlementLayer::Starknet => {
                 // TODO:L3 Implement actual Starknet fact checking
