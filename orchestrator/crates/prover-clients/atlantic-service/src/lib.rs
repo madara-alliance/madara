@@ -169,8 +169,8 @@ impl ProverClient for AtlanticProverService {
     /// # Arguments
     /// task - specifies the task type which can be a job or a bucket
     /// job_key - job ID
-    /// fact - optional fact string to verify
-    /// cross_verify - boolean to specify if we should cross verify the fact calculated and registered
+    /// fact - optional fact string; when present (and a fact_checker is configured),
+    ///        cross-verifies the fact on-chain before returning Succeeded
     ///
     /// # Returns
     /// Status of the task
@@ -179,7 +179,6 @@ impl ProverClient for AtlanticProverService {
         task: TaskType,
         job_key: &str,
         fact: Option<String>,
-        cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             TaskType::Job => {
@@ -187,32 +186,12 @@ impl ProverClient for AtlanticProverService {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::Done => {
-                        if !cross_verify {
-                            tracing::debug!("Skipping cross-verification as it's disabled");
-                            return Ok(TaskStatus::Succeeded);
-                        }
-                        match &self.fact_checker {
-                            None => {
-                                tracing::debug!("There is no Fact check registered");
-                                Ok(TaskStatus::Succeeded)
-                            }
-                            Some(fact_checker) => {
-                                tracing::debug!("Fact check registered");
-                                // Cross-verification is enabled
-                                let fact_str = match fact {
-                                    Some(f) => f,
-                                    None => {
-                                        return Ok(TaskStatus::Failed(
-                                            "Cross verification enabled but no fact provided".to_string(),
-                                        ));
-                                    }
-                                };
-
+                        // Cross-verify on-chain if both a fact and a fact_checker are available.
+                        match (&self.fact_checker, fact) {
+                            (Some(fact_checker), Some(fact_str)) => {
                                 let fact = B256::from_str(&fact_str)
                                     .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-
                                 tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
-
                                 if fact_checker.is_valid(&fact).await? {
                                     Ok(TaskStatus::Succeeded)
                                 } else {
@@ -221,6 +200,10 @@ impl ProverClient for AtlanticProverService {
                                         hex::encode(fact)
                                     )))
                                 }
+                            }
+                            _ => {
+                                tracing::debug!("No fact or no fact checker — skipping cross-verification");
+                                Ok(TaskStatus::Succeeded)
                             }
                         }
                     }

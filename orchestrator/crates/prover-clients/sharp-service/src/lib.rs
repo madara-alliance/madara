@@ -142,7 +142,6 @@ impl ProverClient for SharpProverService {
         task: TaskType,
         job_key: &str,
         fact: Option<String>,
-        _cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         let res = self.sharp_client.get_job_status(job_key).await?;
 

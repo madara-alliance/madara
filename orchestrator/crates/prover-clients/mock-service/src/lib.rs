@@ -99,7 +99,6 @@ impl ProverClient for MockProverService {
         task: TaskType,
         _task_id: &str,
         fact: Option<String>,
-        _cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             TaskType::Job => Ok(TaskStatus::Succeeded),

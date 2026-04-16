@@ -89,18 +89,11 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             })?
             .into();
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
-        // Determine if we need on-chain verification
-        let (cross_verify, fact) = match &proving_metadata.ensure_on_chain_registration {
-            Some(fact_str) => (true, Some(fact_str.clone())),
-            None => (false, None),
-        };
+        let fact = proving_metadata.ensure_on_chain_registration.clone();
 
         debug!(%task_id, "Getting task status from prover client");
-        let task_status = config
-            .prover_client()
-            .get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify)
-            .await
-            .inspect_err(|e| {
+        let task_status =
+            config.prover_client().get_task_status(TaskType::Job, &task_id, fact.clone()).await.inspect_err(|e| {
                 error!(
                     error = %e,
                     "Failed to get task status from prover client for job {}",

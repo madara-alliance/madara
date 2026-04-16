@@ -96,12 +96,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
         // unset or used differently, so passing it through is safe either way.
         let fact = metadata.ensure_on_chain_registration.clone();
         let task_status =
-            config.prover_client().get_task_status(TaskType::Aggregation, &external_id, fact, false).await.map_err(
-                |e| {
-                    error!(error = %e, "Failed to get aggregation status");
-                    JobError::Other(OtherError(eyre!("Prover Client Error: {}", e)))
-                },
-            )?;
+            config.prover_client().get_task_status(TaskType::Aggregation, &external_id, fact).await.map_err(|e| {
+                error!(error = %e, "Failed to get aggregation status");
+                JobError::Other(OtherError(eyre!("Prover Client Error: {}", e)))
+            })?;
 
         match task_status {
             TaskStatus::Processing => {
