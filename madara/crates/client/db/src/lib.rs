@@ -462,10 +462,65 @@ impl<D> MadaraBackend<D> {
     pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
         self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
     }
+}
 
-    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+impl<D: MadaraStorage> MadaraBackend<D> {
+    pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
+        let replacement_preconfirmed = {
+            let chain_tip = self.chain_tip.borrow();
+            tracing::info!(
+                target: "custom_header",
+                block_n = custom_header.block_n,
+                timestamp = custom_header.timestamp,
+                gas_prices = ?custom_header.gas_prices,
+                expected_block_hash = ?custom_header.expected_block_hash,
+                chain_tip = ?*chain_tip,
+                "storing custom header"
+            );
+
+            chain_tip.as_preconfirmed().and_then(|preconfirmed| {
+                if preconfirmed.header.block_number != custom_header.block_n {
+                    return None;
+                }
+
+                tracing::warn!(
+                    target: "custom_header",
+                    incoming_block_n = custom_header.block_n,
+                    incoming_timestamp = custom_header.timestamp,
+                    incoming_gas_prices = ?custom_header.gas_prices,
+                    live_preconfirmed_block_n = preconfirmed.header.block_number,
+                    live_preconfirmed_timestamp = preconfirmed.header.block_timestamp.0,
+                    live_preconfirmed_gas_prices = ?preconfirmed.header.gas_prices,
+                    "set_custom_header called while a live in-memory preconfirmed block already exists"
+                );
+
+                let content = preconfirmed.content.borrow().clone();
+                let mut updated_header = preconfirmed.header.clone();
+                updated_header.block_timestamp = custom_header.timestamp.into();
+                updated_header.gas_prices = custom_header.gas_prices.clone();
+
+                Some(PreconfirmedBlock::new_with_content(
+                    updated_header,
+                    content.executed_transactions().cloned(),
+                    content.candidate_transactions().cloned(),
+                ))
+            })
+        };
+
+        if let Some(preconfirmed) = replacement_preconfirmed {
+            tracing::info!(
+                target: "custom_header",
+                block_n = preconfirmed.header.block_number,
+                timestamp = preconfirmed.header.block_timestamp.0,
+                gas_prices = ?preconfirmed.header.gas_prices,
+                "replacing live in-memory preconfirmed block header from custom header"
+            );
+            self.write_access().new_preconfirmed(preconfirmed)?;
+        }
+
         let mut guard = self.custom_headers.lock().expect("Poisoned lock");
         guard.insert(custom_header.block_n, custom_header);
+        Ok(())
     }
 }
 
@@ -853,6 +908,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                consumed_timestamp = header.timestamp,
+                consumed_gas_prices = ?header.gas_prices,
+                block_timestamp = block.header.block_timestamp.0,
+                block_gas_prices = ?block.header.gas_prices,
+                "consuming custom header during block close"
+            );
             let is_valid = header.is_block_hash_as_expected(&block_hash);
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);

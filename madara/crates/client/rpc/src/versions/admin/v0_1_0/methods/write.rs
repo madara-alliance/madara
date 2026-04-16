@@ -272,7 +272,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        self.backend.set_custom_header(custom_block_headers);
+        self.backend.set_custom_header(custom_block_headers).map_err(StarknetRpcApiError::from)?;
 
         Ok(())
     }

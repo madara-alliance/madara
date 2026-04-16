@@ -62,7 +62,20 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         // TODO: cache the preconfirmed fake blocks.
         let block = match &*chain_tip {
             // Real preconfirmed block.
-            ChainTip::Preconfirmed(block) => block.clone(),
+            ChainTip::Preconfirmed(block) => {
+                if let Some(custom_header) = self.get_custom_header(block.header.block_number) {
+                    tracing::warn!(
+                        target: "custom_header",
+                        block_n = block.header.block_number,
+                        live_preconfirmed_timestamp = block.header.block_timestamp.0,
+                        live_preconfirmed_gas_prices = ?block.header.gas_prices,
+                        stored_custom_timestamp = custom_header.timestamp,
+                        stored_custom_gas_prices = ?custom_header.gas_prices,
+                        "returning existing in-memory preconfirmed block while a custom header is still stored"
+                    );
+                }
+                block.clone()
+            }
             // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
             ChainTip::Confirmed(parent_block_number) => {
                 let parent_block_info = self
@@ -75,6 +88,13 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
                         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
                         let gas_prices = custom_header.gas_prices;
+                        tracing::info!(
+                            target: "custom_header",
+                            block_n = parent_block_number + 1,
+                            timestamp = custom_header.timestamp,
+                            gas_prices = ?gas_prices,
+                            "building fake preconfirmed block from stored custom header"
+                        );
                         (block_timestamp, gas_prices)
                     } else {
                         let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
