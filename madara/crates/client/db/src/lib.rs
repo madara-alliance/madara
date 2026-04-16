@@ -741,6 +741,17 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             return Ok(());
         }
 
+        let transaction_count = current_preconfirmed.transaction_count();
+        if transaction_count != 0 {
+            ensure!(
+                current_preconfirmed.header.block_timestamp.0 == custom_header.timestamp
+                    && current_preconfirmed.header.gas_prices == custom_header.gas_prices,
+                "Cannot change custom header for block {} after PRE_CONFIRMED has transactions",
+                custom_header.block_n
+            );
+            return Ok(());
+        }
+
         let updated_header = PreconfirmedHeader {
             block_number: current_preconfirmed.header.block_number,
             sequencer_address: current_preconfirmed.header.sequencer_address,

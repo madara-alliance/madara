@@ -275,14 +275,31 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         let block_n = custom_block_headers.block_n;
         let timestamp = custom_block_headers.timestamp;
         let expected_block_hash = custom_block_headers.expected_block_hash;
-        let updated_live_preconfirmed =
-            self.backend.preconfirmed_block().is_some_and(|block| block.header.block_number == block_n);
+        let (updated_live_preconfirmed, should_refresh_executor) = self
+            .backend
+            .preconfirmed_block()
+            .map(|block| {
+                (
+                    block.header.block_number == block_n,
+                    block.header.block_number == block_n && block.transaction_count() == 0,
+                )
+            })
+            .unwrap_or((false, false));
 
         self.backend
             .write_access()
-            .set_custom_header(custom_block_headers)
+            .set_custom_header(custom_block_headers.clone())
             .context("Staging custom block header")
             .map_err(StarknetRpcApiError::from)?;
+
+        if should_refresh_executor {
+            if let Some(block_prod_handle) = &self.block_prod_handle {
+                block_prod_handle
+                    .refresh_current_block_header(custom_block_headers)
+                    .await
+                    .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })?;
+            }
+        }
 
         tracing::info!(
             target: "rpc::admin",
@@ -290,6 +307,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             timestamp,
             expected_block_hash = format!("{expected_block_hash:#x}"),
             updated_live_preconfirmed,
+            refreshed_executor = should_refresh_executor,
             "staged custom block header"
         );
 
