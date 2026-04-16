@@ -31,14 +31,27 @@ impl SharpClient {
 
         let customer_id = sharp_params.sharp_customer_id.clone();
 
+        // rustls wants cert + key combined in a single PEM buffer.
+        let mut combined_pem = Vec::with_capacity(cert.len() + key.len() + 1);
+        combined_pem.extend_from_slice(cert);
+        if !cert.ends_with(b"\n") {
+            combined_pem.push(b'\n');
+        }
+        combined_pem.extend_from_slice(key);
         let identity =
-            Identity::from_pkcs8_pem(cert, key).expect("Failed to build the identity from certificate and key");
+            Identity::from_pem(&combined_pem).expect("Failed to build the identity from certificate and key");
         let certificate = Certificate::from_pem(server_cert).expect("Failed to add root certificate");
 
+        // Force rustls: macOS native-tls (SecureTransport) doesn't reliably honor
+        // add_root_certificate() for self-signed certs. rustls works consistently
+        // across platforms. The server cert must have CA:TRUE for rustls to accept it
+        // as a trust anchor (grab it from the live server if needed:
+        // `openssl s_client -connect <host>:443 -showcerts </dev/null | openssl x509 -out server.crt`).
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
             .identity(identity)
             .add_root_certificate(certificate)
+            .use_rustls_tls()
             .default_query_param("customer_id", customer_id.as_str())
             .build()
             .expect("Failed to build HTTP client");
