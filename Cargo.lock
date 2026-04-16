@@ -11298,7 +11298,11 @@ dependencies = [
  "mockall 0.13.1",
  "orchestrator-gps-fact-checker",
  "orchestrator-utils",
+ "reqwest 0.12.26",
+ "serde_json",
  "thiserror 2.0.17",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -11318,8 +11322,6 @@ dependencies = [
 name = "orchestrator-sharp-service"
 version = "0.10.0"
 dependencies = [
- "alloy",
- "alloy-primitives 0.8.26",
  "async-trait",
  "base64 0.22.1",
  "cairo-vm",
@@ -11327,13 +11329,6 @@ dependencies = [
  "dotenvy",
  "hex",
  "httpmock 0.8.2",
- "lazy_static",
- "log",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "orchestrator-gps-fact-checker",
  "orchestrator-prover-client-interface",
  "orchestrator-utils",
@@ -11345,9 +11340,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "url",
  "uuid 1.23.0",
 ]

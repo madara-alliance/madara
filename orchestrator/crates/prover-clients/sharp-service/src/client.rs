@@ -1,9 +1,10 @@
+use orchestrator_prover_client_interface::retry::{retry_with_exponential_backoff, RetryConfig};
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Certificate, Identity, Method, StatusCode};
 use url::Url;
 
-use crate::constants::SHARP_PROGRAM_HASH_FUNCTION;
+use crate::constants::{APPLICATIVE_JOB_OFFCHAIN_PROOF, CHILD_JOB_OFFCHAIN_PROOF, SHARP_PROGRAM_HASH_FUNCTION};
 use crate::error::SharpError;
 use crate::types::{SharpAddApplicativeJobRequest, SharpAddJobRequest, SharpAddJobResponse, SharpGetStatusResponse};
 use crate::SharpValidatedArgs;
@@ -11,9 +12,11 @@ use crate::SharpValidatedArgs;
 /// SHARP Gateway API async wrapper.
 ///
 /// Communicates with SHARP's `/v1/gateway/` endpoints using mTLS.
+/// All HTTP calls are automatically retried with exponential backoff
+/// for transient errors (connection failures, timeouts, 5xx responses).
 pub struct SharpClient {
     client: HttpClient,
-    offchain_proof: bool,
+    retry_config: RetryConfig,
 }
 
 impl SharpClient {
@@ -22,7 +25,6 @@ impl SharpClient {
     /// The base URL should include the gateway path prefix, e.g.
     /// `http://host:9511/v1/gateway`.
     pub fn new_with_args(url: Url, sharp_params: &SharpValidatedArgs) -> Self {
-        // Cert/key fields carry raw PEM content (read from *_FILE paths by config).
         let cert = sharp_params.sharp_user_crt.as_bytes();
         let key = sharp_params.sharp_user_key.as_bytes();
         let server_cert = sharp_params.sharp_server_crt.as_bytes();
@@ -41,7 +43,7 @@ impl SharpClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        Self { client, offchain_proof: sharp_params.sharp_offchain_proof }
+        Self { client, retry_config: RetryConfig::default() }
     }
 
     /// POST /add_job
@@ -51,39 +53,40 @@ impl SharpClient {
     pub async fn add_job(&self, cairo_pie_b64: &str, cairo_job_key: &str) -> Result<SharpAddJobResponse, SharpError> {
         let body = SharpAddJobRequest { cairo_pie_encoded: cairo_pie_b64 };
 
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .path("add_job")
-            .query_param("cairo_job_key", cairo_job_key)
-            .query_param("offchain_proof", "true") // TODO: don't hardcode it
-            .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .body(body)
-            .map_err(|e| SharpError::SerializationError(e.into()))?
-            .send()
-            .await
-            .map_err(SharpError::AddJobFailure)?;
+        retry_with_exponential_backoff("sharp_add_job", cairo_job_key, self.retry_config, || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::POST)
+                .path("add_job")
+                .query_param("cairo_job_key", cairo_job_key)
+                .query_param("offchain_proof", CHILD_JOB_OFFCHAIN_PROOF)
+                .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .body(&body)
+                .map_err(|e| SharpError::SerializationError(e.into()))?
+                .send()
+                .await
+                .map_err(SharpError::AddJobFailure)?;
 
-        match response.status() {
-            StatusCode::OK => response.json().await.map_err(SharpError::AddJobFailure),
-            code => {
-                let url = response.url().to_string();
-                // Read and log body at debug level (responses can be large;
-                // don't let them pollute error messages / logs at higher levels).
-                let body = response.text().await.unwrap_or_default();
-                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                Err(SharpError::SharpService { status: code, url })
+            match response.status() {
+                StatusCode::OK => response.json().await.map_err(SharpError::AddJobFailure),
+                code => {
+                    let url = response.url().to_string();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                    Err(SharpError::SharpService { status: code, url })
+                }
             }
-        }
+        })
+        .await
+        .map(|s| s.value)
+        .map_err(|f| f.error)
     }
 
     /// POST /add_applicative_job
     ///
     /// Submit an applicative (aggregator) job that combines results from child jobs.
-    /// The `cairo_pie_b64` is the base64-encoded aggregator PIE, and
-    /// `children_cairo_job_keys` lists the child job keys in applicative order.
     pub async fn add_applicative_job(
         &self,
         cairo_pie_b64: &str,
@@ -92,86 +95,95 @@ impl SharpClient {
     ) -> Result<SharpAddJobResponse, SharpError> {
         let body = SharpAddApplicativeJobRequest { cairo_pie_encoded: cairo_pie_b64, children_cairo_job_keys };
 
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .path("add_applicative_job")
-            .query_param("cairo_job_key", cairo_job_key)
-            .query_param("offchain_proof", &self.offchain_proof.to_string())
-            .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .body(body)
-            .map_err(|e| SharpError::SerializationError(e.into()))?
-            .send()
-            .await
-            .map_err(SharpError::AddApplicativeJobFailure)?;
+        retry_with_exponential_backoff("sharp_add_applicative_job", cairo_job_key, self.retry_config, || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::POST)
+                .path("add_applicative_job")
+                .query_param("cairo_job_key", cairo_job_key)
+                .query_param("offchain_proof", APPLICATIVE_JOB_OFFCHAIN_PROOF)
+                .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .body(&body)
+                .map_err(|e| SharpError::SerializationError(e.into()))?
+                .send()
+                .await
+                .map_err(SharpError::AddApplicativeJobFailure)?;
 
-        match response.status() {
-            StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
-            code => {
-                let url = response.url().to_string();
-                // Read and log body at debug level (responses can be large;
-                // don't let them pollute error messages / logs at higher levels).
-                let body = response.text().await.unwrap_or_default();
-                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                Err(SharpError::SharpService { status: code, url })
+            match response.status() {
+                StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
+                code => {
+                    let url = response.url().to_string();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                    Err(SharpError::SharpService { status: code, url })
+                }
             }
-        }
+        })
+        .await
+        .map(|s| s.value)
+        .map_err(|f| f.error)
     }
 
     /// GET /get_status
     ///
     /// Query the current status of a job.
     pub async fn get_job_status(&self, cairo_job_key: &str) -> Result<SharpGetStatusResponse, SharpError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::GET)
-            .path("get_status")
-            .query_param("cairo_job_key", cairo_job_key)
-            .send()
-            .await
-            .map_err(SharpError::GetJobStatusFailure)?;
+        retry_with_exponential_backoff("sharp_get_status", cairo_job_key, self.retry_config, || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::GET)
+                .path("get_status")
+                .query_param("cairo_job_key", cairo_job_key)
+                .send()
+                .await
+                .map_err(SharpError::GetJobStatusFailure)?;
 
-        match response.status() {
-            StatusCode::OK => response.json().await.map_err(SharpError::GetJobStatusFailure),
-            code => {
-                let url = response.url().to_string();
-                // Read and log body at debug level (responses can be large;
-                // don't let them pollute error messages / logs at higher levels).
-                let body = response.text().await.unwrap_or_default();
-                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                Err(SharpError::SharpService { status: code, url })
+            match response.status() {
+                StatusCode::OK => response.json().await.map_err(SharpError::GetJobStatusFailure),
+                code => {
+                    let url = response.url().to_string();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                    Err(SharpError::SharpService { status: code, url })
+                }
             }
-        }
+        })
+        .await
+        .map(|s| s.value)
+        .map_err(|f| f.error)
     }
 
     /// GET /get_proof
     ///
     /// Retrieve the proof for a completed offchain job.
     pub async fn get_proof(&self, cairo_job_key: &str) -> Result<String, SharpError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::GET)
-            .path("get_proof")
-            .query_param("cairo_job_key", cairo_job_key)
-            .send()
-            .await
-            .map_err(SharpError::GetProofFailure)?;
+        retry_with_exponential_backoff("sharp_get_proof", cairo_job_key, self.retry_config, || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::GET)
+                .path("get_proof")
+                .query_param("cairo_job_key", cairo_job_key)
+                .send()
+                .await
+                .map_err(SharpError::GetProofFailure)?;
 
-        match response.status() {
-            StatusCode::OK => response.text().await.map_err(SharpError::GetProofFailure),
-            code => {
-                let url = response.url().to_string();
-                // Read and log body at debug level (responses can be large;
-                // don't let them pollute error messages / logs at higher levels).
-                let body = response.text().await.unwrap_or_default();
-                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                Err(SharpError::SharpService { status: code, url })
+            match response.status() {
+                StatusCode::OK => response.text().await.map_err(SharpError::GetProofFailure),
+                code => {
+                    let url = response.url().to_string();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                    Err(SharpError::SharpService { status: code, url })
+                }
             }
-        }
+        })
+        .await
+        .map(|s| s.value)
+        .map_err(|f| f.error)
     }
 
     /// GET /is_alive

@@ -50,8 +50,3 @@ pub struct SharpGetStatusResponse {
     pub error_log: Option<String>,
     pub validation_done: Option<bool>,
 }
-
-#[derive(Default, Debug, Clone, Deserialize)]
-pub struct SharpGetProofResponse {
-    pub code: Option<String>,
-}

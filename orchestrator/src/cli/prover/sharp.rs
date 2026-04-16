@@ -54,9 +54,4 @@ pub struct SharpCliArgs {
     /// Settlement layer for Sharp. Defaults to "ethereum" since SHARP is L2-only.
     #[arg(env = "MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER", long, default_value = "ethereum")]
     pub sharp_settlement_layer: Option<String>,
-
-    /// Whether to generate offchain proofs (not written on-chain by SHARP).
-    /// Default is false, meaning SHARP will register the fact on-chain.
-    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_OFFCHAIN_PROOF", long, default_value = "false")]
-    pub sharp_offchain_proof: Option<bool>,
 }

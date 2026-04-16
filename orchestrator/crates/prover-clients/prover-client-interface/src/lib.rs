@@ -1,3 +1,6 @@
+pub mod http;
+pub mod retry;
+
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use mockall::automock;

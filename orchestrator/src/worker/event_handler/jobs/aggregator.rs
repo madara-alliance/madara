@@ -4,9 +4,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::AggregatorBatchStatus;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{
-    AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata, SnosMetadata,
-};
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
@@ -236,11 +234,6 @@ impl AggregatorJobHandler {
                     )))
                 })?;
 
-            let proving_metadata: ProvingMetadata = proving_job.metadata.specific.try_into().inspect_err(|e| {
-                error!(error = %e, "Invalid metadata for ProofCreation job");
-            })?;
-            let _ = proving_metadata;
-
             let job_key: String = proving_job
                 .external_id
                 .unwrap_string()
@@ -284,8 +277,9 @@ impl AggregatorJobHandler {
 
         info!("Local aggregator completed, storing artifacts");
 
-        // Compute the program output from the PIE before it is dropped by zip serialization.
-        let fact_info = get_fact_info(&aggregator_output.aggregator_cairo_pie, None, true)?;
+        // Use the applicative-bootloader-wrapped aggregator hash, same as the Mock path.
+        let fact_info =
+            get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
         AggregatorJobHandler::store_program_output(
             config,
             batch_num,
@@ -303,12 +297,13 @@ impl AggregatorJobHandler {
         config.storage().put_data(pie_bytes.clone(), &metadata.cairo_pie_path).await?;
 
         info!(num_children = child_job_keys.len(), "Submitting applicative job to SHARP");
+        let fact: [u8; 32] = fact_info.fact.0;
         let external_id = config
             .prover_client()
             .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
                 cairo_pie_zip_bytes: pie_bytes,
                 children_cairo_job_keys: child_job_keys,
-                fact_hash: None,
+                fact_hash: Some(fact),
             }))
             .await
             .map_err(|e| {
@@ -376,10 +371,6 @@ impl AggregatorJobHandler {
                         snos_batch.index
                     )))
                 })?;
-
-            let _proving_metadata: ProvingMetadata = proving_job.metadata.specific.try_into().inspect_err(|e| {
-                error!(error = %e, "Invalid metadata for ProofCreation job");
-            })?;
 
             let job_key: String = proving_job
                 .external_id

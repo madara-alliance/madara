@@ -14,7 +14,6 @@ use orchestrator_prover_client_interface::{
 };
 use tempfile::NamedTempFile;
 use url::Url;
-use uuid::Uuid;
 
 use crate::client::SharpClient;
 
@@ -30,7 +29,6 @@ pub struct SharpValidatedArgs {
     pub sharp_server_crt: String,
     pub gps_verifier_contract_address: String,
     pub sharp_settlement_layer: String,
-    pub sharp_offchain_proof: bool,
 }
 
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
@@ -58,15 +56,24 @@ impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
     async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         match task {
-            Task::CreateJob(CreateJobInfo { cairo_pie, .. }) => {
+            Task::CreateJob(CreateJobInfo { cairo_pie, dedup_id, .. }) => {
                 tracing::info!(
                     log_type = "starting",
                     category = "submit_task",
                     function_type = "cairo_pie",
                     "Submitting Cairo PIE to SHARP."
                 );
+                // Use the orchestrator's dedup_id as the cairo_job_key so retries
+                // hit the same SHARP server-side job instead of creating duplicates.
+                let cairo_job_key = dedup_id;
+
+                // Idempotency: if SHARP already knows this key and it hasn't failed,
+                // skip re-submission.
+                if let Some(existing) = self.check_existing_job(&cairo_job_key).await? {
+                    return Ok(existing);
+                }
+
                 let encoded_pie = encode_cairo_pie_from_struct(&cairo_pie)?;
-                let cairo_job_key = Uuid::new_v4().to_string();
                 self.sharp_client.add_job(&encoded_pie, &cairo_job_key).await?;
                 tracing::info!(
                     log_type = "completed",
@@ -77,7 +84,7 @@ impl ProverClient for SharpProverService {
                 Ok(cairo_job_key)
             }
             Task::CreateBucket => {
-                let bucket_id = Uuid::new_v4().to_string();
+                let bucket_id = uuid::Uuid::new_v4().to_string();
                 tracing::debug!(bucket_id = %bucket_id, "Generated local bucket ID (SHARP has no remote buckets)");
                 Ok(bucket_id)
             }
@@ -85,19 +92,36 @@ impl ProverClient for SharpProverService {
                 "SHARP does not support bucket-based aggregation. Use RunAggregationWithPie.".to_string(),
             )),
             Task::RunAggregationWithPie(ApplicativeJobInfo {
-                cairo_pie_zip_bytes, children_cairo_job_keys, ..
+                cairo_pie_zip_bytes,
+                children_cairo_job_keys,
+                fact_hash,
             }) => {
+                // Use the fact hash (hex) as the cairo_job_key — deterministic for the
+                // same aggregation, and recommended by the SHARP team as the natural
+                // idempotency key for applicative jobs.
+                let cairo_job_key = match fact_hash {
+                    Some(fact) => format!("0x{}", hex::encode(fact)),
+                    None => {
+                        return Err(ProverClientError::TaskInvalid(
+                            "fact_hash is required for SHARP applicative jobs".to_string(),
+                        ))
+                    }
+                };
                 tracing::info!(
                     log_type = "starting",
                     category = "submit_task",
                     function_type = "applicative_job",
                     num_children = children_cairo_job_keys.len(),
+                    cairo_job_key = %cairo_job_key,
                     "Submitting applicative job to SHARP."
                 );
-                // Bytes are already zipped — just base64-encode them directly.
+
+                // Idempotency: skip if already submitted.
+                if let Some(existing) = self.check_existing_job(&cairo_job_key).await? {
+                    return Ok(existing);
+                }
+
                 let encoded_pie = general_purpose::STANDARD.encode(&cairo_pie_zip_bytes);
-                drop(cairo_pie_zip_bytes); // release the zip bytes now that we have the base64 string
-                let cairo_job_key = Uuid::new_v4().to_string();
                 self.sharp_client.add_applicative_job(&encoded_pie, &cairo_job_key, &children_cairo_job_keys).await?;
                 tracing::info!(
                     log_type = "completed",
@@ -122,7 +146,6 @@ impl ProverClient for SharpProverService {
 
         match task {
             TaskType::Job => {
-                // For child jobs: Succeeded when validated (PROCESSED, or IN_PROGRESS + validation_done).
                 match res.status {
                     CairoJobStatus::Failed => {
                         tracing::error!(cairo_job_key = %job_key, "SHARP child job FAILED");
@@ -137,8 +160,8 @@ impl ProverClient for SharpProverService {
                         Ok(TaskStatus::Failed(format!("Job not found: {}", job_key)))
                     }
                     CairoJobStatus::Processed => {
-                        // TODO: Check that the fact is registered here since OnChain status is not present on SHARP
-                        tracing::info!(cairo_job_key = %job_key, status = ?res.status, "SHARP child job validated");
+                        // We don't need to verify the fact on chain since child job's fact is not registered
+                        tracing::info!(cairo_job_key = %job_key, "SHARP child job validated");
                         Ok(TaskStatus::Succeeded)
                     }
                     CairoJobStatus::InProgress => {
@@ -175,29 +198,7 @@ impl ProverClient for SharpProverService {
                         Ok(TaskStatus::Failed(format!("Applicative job not found: {}", job_key)))
                     }
                     CairoJobStatus::Processed => {
-                        // if cross_verify {
-                        //     if let Some(fact_str) = fact {
-                        //         let fact = B256::from_str(&fact_str)
-                        //             .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-                        //         if self.fact_checker.is_valid(&fact).await? {
-                        //             tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN, fact verified");
-                        //             Ok(TaskStatus::Succeeded)
-                        //         } else {
-                        //             tracing::error!(cairo_job_key = %job_key, "Applicative job ONCHAIN but fact invalid");
-                        //             Ok(TaskStatus::Failed(format!(
-                        //                 "Fact {} is not valid or not registered",
-                        //                 hex::encode(fact)
-                        //             )))
-                        //         }
-                        //     } else {
-                        //         tracing::debug!("No fact provided for cross-verification, considering successful");
-                        //         Ok(TaskStatus::Succeeded)
-                        //     }
-                        // } else {
-                        //     tracing::info!(cairo_job_key = %job_key, "Applicative job ONCHAIN");
-                        //     Ok(TaskStatus::Succeeded)
-                        // }
-                        // TODO: Check that the fact is registered here since OnChain status is not present on SHARP
+                        // TODO: Since SHARP does not tell us if the fact is registered or not, we need to check this manually by making a call on chain
                         tracing::info!(cairo_job_key = %job_key, "Applicative job processed");
                         Ok(TaskStatus::Succeeded)
                     }
@@ -226,13 +227,21 @@ impl ProverClient for SharpProverService {
         ))))
     }
 
-    /// For SHARP, all artifacts are already stored by the handler during process_job.
+    /// SHAPR does not create the aggregator PIE, so it can't return it.
+    /// PIE + DA artifacts are stored by the handler during process_job.
+    /// Proof can optionally be fetched if `include_proof` is true.
     async fn get_aggregation_artifacts(
         &self,
-        _external_id: &str,
-        _include_proof: bool,
+        external_id: &str,
+        include_proof: bool,
     ) -> Result<AggregationArtifacts, ProverClientError> {
-        Ok(AggregationArtifacts::default())
+        let proof = if include_proof {
+            let proof_json = self.get_proof(external_id).await?;
+            Some(proof_json.into_bytes())
+        } else {
+            None
+        };
+        Ok(AggregationArtifacts { cairo_pie: None, da_segment: None, proof })
     }
 }
 
@@ -262,5 +271,24 @@ impl SharpProverService {
             sharp_params.sharp_settlement_layer.clone(),
         );
         Self::new(sharp_client, fact_checker)
+    }
+
+    /// Check if a job with the given key already exists on SHARP.
+    ///
+    /// Returns `Some(key)` to short-circuit submission if the job is already known
+    /// (any state — including Failed). A Failed job will surface through
+    /// `get_task_status` → `TaskStatus::Failed`, letting the operator investigate
+    /// rather than silently retrying with the same inputs.
+    ///
+    /// Returns `None` only when SHARP reports `Unknown` (job not found).
+    async fn check_existing_job(&self, cairo_job_key: &str) -> Result<Option<String>, ProverClientError> {
+        let res = self.sharp_client.get_job_status(cairo_job_key).await?;
+        match res.status {
+            CairoJobStatus::Unknown => Ok(None),
+            status => {
+                tracing::info!(cairo_job_key = %cairo_job_key, status = ?status, "Job already exists on SHARP, skipping submission");
+                Ok(Some(cairo_job_key.to_string()))
+            }
+        }
     }
 }

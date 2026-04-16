@@ -57,6 +57,11 @@ impl TryFrom<RunCmd> for ProverConfig {
         }
 
         if run_cmd.sharp_args.sharp {
+            if run_cmd.layer == Layer::L3 {
+                return Err(OrchestratorError::RunCommandError(
+                    "SHARP prover is L2-only (fact registration happens on L1)".to_string(),
+                ));
+            }
             let sharp_args = run_cmd.sharp_args;
 
             let user_crt_path = sharp_args.sharp_user_crt_file.ok_or_else(|| {
@@ -88,7 +93,6 @@ impl TryFrom<RunCmd> for ProverConfig {
                 sharp_settlement_layer: sharp_args.sharp_settlement_layer.ok_or_else(|| {
                     OrchestratorError::RunCommandError("Sharp settlement layer is required".to_string())
                 })?,
-                sharp_offchain_proof: sharp_args.sharp_offchain_proof.unwrap_or(false),
             }));
         }
 

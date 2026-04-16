@@ -1,4 +1,4 @@
-use alloy::primitives::hex::FromHexError;
+use orchestrator_prover_client_interface::retry::RetryableRequestError;
 use orchestrator_prover_client_interface::ProverClientError;
 use reqwest::StatusCode;
 
@@ -19,20 +19,39 @@ pub enum SharpError {
     #[error("SHARP service returned {status} for {url}")]
     SharpService { status: StatusCode, url: String },
 
-    #[error("Failed to parse job key: {0}")]
-    JobKeyParse(uuid::Error),
-
-    #[error("Failed to parse fact: {0}")]
-    FactParse(FromHexError),
-
-    #[error("Failed to encode PIE")]
-    PieEncode(String),
-
     #[error("Failed to serialize body")]
     SerializationError(#[source] std::io::Error),
 
     #[error("Other error: {0}")]
     Other(#[from] color_eyre::eyre::Error),
+}
+
+impl RetryableRequestError for SharpError {
+    fn is_retryable(&self) -> bool {
+        match self {
+            // Network-level transient failures (timeout, connection refused, DNS, etc.)
+            SharpError::AddJobFailure(e)
+            | SharpError::AddApplicativeJobFailure(e)
+            | SharpError::GetJobStatusFailure(e)
+            | SharpError::GetProofFailure(e) => e.is_timeout() || e.is_connect() || e.is_request(),
+            // Infrastructure HTTP errors (5xx) are retryable; 4xx are not.
+            SharpError::SharpService { status, .. } => status.is_server_error(),
+            // Serialization + catch-all: non-retryable.
+            SharpError::SerializationError(_) | SharpError::Other(_) => false,
+        }
+    }
+
+    fn error_type(&self) -> &'static str {
+        match self {
+            SharpError::AddJobFailure(_) => "add_job_failure",
+            SharpError::AddApplicativeJobFailure(_) => "add_applicative_job_failure",
+            SharpError::GetJobStatusFailure(_) => "get_job_status_failure",
+            SharpError::GetProofFailure(_) => "get_proof_failure",
+            SharpError::SharpService { .. } => "sharp_service_error",
+            SharpError::SerializationError(_) => "serialization_error",
+            SharpError::Other(_) => "other",
+        }
+    }
 }
 
 impl From<SharpError> for ProverClientError {
