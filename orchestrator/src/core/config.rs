@@ -65,12 +65,8 @@ macro_rules! versions {
                 }
             }
 
-            pub fn supported() -> &'static [StarknetVersion] {
-                &[$(Self::$variant),*]
-            }
-
             pub fn is_supported(&self) -> bool {
-                Self::supported().contains(self)
+                *self == SUPPORTED_STARKNET_VERSION
             }
         }
 
@@ -119,9 +115,13 @@ macro_rules! versions {
     }
 }
 
-// Add more versions here whenever necessary. Follow the following rules:
-// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
-// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+// All known Starknet versions. The enum is needed for parsing block versions from RPC
+// responses and for version comparisons in compression/DA encoding logic.
+// When a new Starknet version is released, add it here and update SUPPORTED_STARKNET_VERSION.
+//
+// Rules:
+// 1. Versions must be ordered (e.g., 0.15.0 must come after 0.14.0)
+// 2. Update SUPPORTED_STARKNET_VERSION below when bumping the supported version
 versions!(
     (V0_13_2, "0.13.2"),
     (V0_13_3, "0.13.3"),
@@ -131,11 +131,15 @@ versions!(
     (V0_14_1, "0.14.1")
 );
 
+/// The single Starknet version supported by this orchestrator build.
+/// Any block with a different version will be rejected during batching.
+/// When upgrading, update this constant and add the new variant to the `versions!` macro above.
+pub const SUPPORTED_STARKNET_VERSION: StarknetVersion = StarknetVersion::V0_14_1;
+
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_feeder_gateway_url: Url,
-    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
@@ -255,7 +259,6 @@ impl Config {
                 .madara_feeder_gateway_url
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
-            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),

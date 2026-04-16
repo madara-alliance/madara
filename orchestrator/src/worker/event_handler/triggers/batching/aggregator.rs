@@ -1,7 +1,7 @@
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
-use crate::core::config::{Config, ConfigParam, StarknetVersion};
+use crate::core::config::{Config, ConfigParam, StarknetVersion, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
@@ -167,8 +167,16 @@ impl AggregatorHandler {
             tracing::warn!(
                 block_num = %block_num,
                 version = %current_block_starknet_version,
-                "Block's Starknet version is not supported, skipping batching"
+                supported = %SUPPORTED_STARKNET_VERSION,
+                "Block has unsupported Starknet version. Closing current batch and halting aggregator batching. \
+                 Manual intervention required — update orchestrator to support version {} and redeploy.",
+                current_block_starknet_version,
             );
+            // Close the current batch if it has blocks, so they get processed
+            if let NonEmpty(mut non_empty) = state {
+                non_empty.close();
+                return Ok(BlockProcessingResult::NotBatched(NonEmpty(non_empty)));
+            }
             return Ok(BlockProcessingResult::NotBatched(state));
         }
 

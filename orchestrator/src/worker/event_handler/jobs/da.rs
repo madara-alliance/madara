@@ -1,5 +1,5 @@
 use crate::compression::blob::da_word;
-use crate::core::config::Config;
+use crate::core::config::{Config, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -92,6 +92,13 @@ impl DAJobHandler {
         state_update: StateUpdate,
         config: Arc<Config>,
     ) -> Result<Vec<Felt>, JobError> {
+        // Use the max supported version from the hardcoded config rather than fetching from Madara.
+        // This is safe because:
+        // 1. Blocks reaching DA have already passed the version gate in aggregator/SNOS batching
+        // 2. Version bumps are controlled — they require an orchestrator code change and redeploy
+        // 3. Avoids an extra RPC call to Madara per DA job
+        let block_version = SUPPORTED_STARKNET_VERSION;
+
         let mut state_diff = state_update.state_diff;
         Self::refactor_state_update(&mut state_diff);
 
@@ -127,7 +134,7 @@ impl DAJobHandler {
                 nonce = Some(get_current_nonce_result);
             }
             let da_word =
-                da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, config.params.madara_version)?;
+                da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, block_version)?;
             blob_data.push(address);
             blob_data.push(da_word);
 
@@ -342,7 +349,6 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
-    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -424,7 +430,6 @@ pub mod test {
         let services = TestConfigBuilder::new()
             .configure_starknet_client(provider.into())
             .configure_da_client(da_client.into())
-            .configure_madara_version(StarknetVersion::V0_13_2)
             .build()
             .await;
 
