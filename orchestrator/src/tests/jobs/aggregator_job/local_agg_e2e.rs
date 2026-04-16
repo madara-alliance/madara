@@ -59,6 +59,7 @@ const SNOS_PIE_FILES: [&str; 2] = ["snos_paradex_40001.zip", "snos_paradex_40002
 /// Expected aggregator fact hash when the two SNOS PIEs above are aggregated.
 /// Pinning this value turns any drift in `run_local_aggregator` or `get_fact_info` into
 /// a loud test failure.
+/// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x9ded3dc8e7533ccb23b13bb1619584ce2a2caac2340d93dafc0c9968710c14c1
 const EXPECTED_AGG_FACT: &str = "0x69aa6a55c93fe351d0498981f3777a1c70e7bec5ed21b3252e4d347a53cc7dd6";
 
 #[rstest]
