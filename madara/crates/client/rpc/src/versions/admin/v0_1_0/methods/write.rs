@@ -272,7 +272,26 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        self.backend.set_custom_header(custom_block_headers);
+        let block_n = custom_block_headers.block_n;
+        let timestamp = custom_block_headers.timestamp;
+        let expected_block_hash = custom_block_headers.expected_block_hash;
+        let updated_live_preconfirmed =
+            self.backend.preconfirmed_block().is_some_and(|block| block.header.block_number == block_n);
+
+        self.backend
+            .write_access()
+            .set_custom_header(custom_block_headers)
+            .context("Staging custom block header")
+            .map_err(StarknetRpcApiError::from)?;
+
+        tracing::info!(
+            target: "rpc::admin",
+            block_n,
+            timestamp,
+            expected_block_hash = format!("{expected_block_hash:#x}"),
+            updated_live_preconfirmed,
+            "staged custom block header"
+        );
 
         Ok(())
     }
@@ -285,10 +304,11 @@ mod tests {
         test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
     };
     use mc_db::{
+        preconfirmed::PreconfirmedBlock,
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
-    use mp_block::header::{CustomHeader, GasPrices};
+    use mp_block::header::{BlockTimestamp, CustomHeader, GasPrices, PreconfirmedHeader};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
@@ -385,6 +405,51 @@ mod tests {
 
         let preconfirmed =
             backend.block_view_on_preconfirmed_or_fake().expect("fake preconfirmed block should always be available");
+
+        assert_eq!(preconfirmed.block_number(), custom_header.block_n);
+        assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
+        assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+    }
+
+    #[tokio::test]
+    async fn set_block_header_updates_live_preconfirmed_view() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        add_test_block(&backend, 0, vec![]);
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: 1,
+                block_timestamp: BlockTimestamp(111),
+                gas_prices: GasPrices {
+                    eth_l1_gas_price: 1,
+                    strk_l1_gas_price: 2,
+                    eth_l1_data_gas_price: 3,
+                    strk_l1_data_gas_price: 4,
+                    eth_l2_gas_price: 5,
+                    strk_l2_gas_price: 6,
+                },
+                ..Default::default()
+            }))
+            .expect("preconfirmed block should be created");
+
+        let rpc = make_starknet(backend.clone(), ServiceContext::default());
+        let custom_header = CustomHeader {
+            block_n: 1,
+            timestamp: 1_234_567_890,
+            gas_prices: GasPrices {
+                eth_l1_gas_price: 11,
+                strk_l1_gas_price: 12,
+                eth_l1_data_gas_price: 21,
+                strk_l1_data_gas_price: 22,
+                eth_l2_gas_price: 31,
+                strk_l2_gas_price: 32,
+            },
+            expected_block_hash: Felt::from(0x1234_u64),
+        };
+
+        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
+
+        let preconfirmed = backend.block_view_on_preconfirmed().expect("live preconfirmed block should be present");
 
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);

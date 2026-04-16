@@ -193,11 +193,24 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
     let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header(block_n) {
+        tracing::info!(
+            target: "block_production::custom_header",
+            block_n,
+            timestamp = custom_header.timestamp,
+            eth_l1_gas_price = custom_header.gas_prices.eth_l1_gas_price,
+            strk_l1_gas_price = custom_header.gas_prices.strk_l1_gas_price,
+            eth_l1_data_gas_price = custom_header.gas_prices.eth_l1_data_gas_price,
+            strk_l1_data_gas_price = custom_header.gas_prices.strk_l1_data_gas_price,
+            eth_l2_gas_price = custom_header.gas_prices.eth_l2_gas_price,
+            strk_l2_gas_price = custom_header.gas_prices.strk_l2_gas_price,
+            "using staged custom header for execution context"
+        );
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
         let gas_prices = custom_header.gas_prices;
         (block_timestamp, gas_prices)
     } else {
+        tracing::debug!(target: "block_production::custom_header", block_n, "no staged custom header for execution context");
         let l1_gas_quote = backend
             .get_last_l1_gas_quote()
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;

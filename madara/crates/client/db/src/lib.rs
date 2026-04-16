@@ -122,7 +122,7 @@ use crate::sync_status::SyncStatusCell;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
-use mp_block::header::CustomHeader;
+use mp_block::header::{CustomHeader, PreconfirmedHeader};
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -726,6 +726,33 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
 
         block.append(executed.iter().cloned(), replace_candidates);
+
+        Ok(())
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) -> Result<()> {
+        self.inner.set_custom_header(custom_header.clone());
+
+        let Some(current_preconfirmed) = self.inner.preconfirmed_block() else {
+            return Ok(());
+        };
+
+        if current_preconfirmed.header.block_number != custom_header.block_n {
+            return Ok(());
+        }
+
+        let updated_header = PreconfirmedHeader {
+            block_number: current_preconfirmed.header.block_number,
+            sequencer_address: current_preconfirmed.header.sequencer_address,
+            block_timestamp: custom_header.timestamp.into(),
+            protocol_version: current_preconfirmed.header.protocol_version,
+            gas_prices: custom_header.gas_prices,
+            l1_da_mode: current_preconfirmed.header.l1_da_mode,
+        };
+
+        let replacement = current_preconfirmed.clone_with_header(updated_header);
+
+        self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(replacement)))?;
 
         Ok(())
     }
