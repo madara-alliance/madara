@@ -93,6 +93,10 @@ enum WaitTxBatchOutcome {
     Batch(BatchToExecute),
 }
 
+fn summarize_batch_txs(txs: &[blockifier::transaction::transaction_execution::Transaction]) -> Vec<String> {
+    txs.iter().map(|tx| format!("{:#x}:{}", tx.tx_hash().to_felt(), tx_type_to_label(tx.tx_type()))).collect()
+}
+
 impl ExecutorThread {
     pub fn new(
         backend: Arc<MadaraBackend>,
@@ -420,9 +424,32 @@ impl ExecutorThread {
             let exec_duration = exec_start_time.elapsed();
 
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
-            let block_full = blockifier_results.len() < to_exec.len();
+            let requested_count = to_exec.len();
+            let executed_count = blockifier_results.len();
+            let block_full = executed_count < requested_count;
+            let requested_batch_summary = block_full.then(|| summarize_batch_txs(&to_exec.txs));
 
-            let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // Remove the used txs.
+            let executed_txs = to_exec.remove_n_front(executed_count); // Remove the used txs.
+
+            if let Some(requested_batch_summary) = requested_batch_summary {
+                let executed_batch_summary = summarize_batch_txs(&executed_txs.txs);
+                let deferred_batch_summary = summarize_batch_txs(&to_exec.txs);
+                let bouncer_weights =
+                    execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights();
+
+                tracing::warn!(
+                    block_number = execution_state.exec_ctx.block_number,
+                    requested_count,
+                    executed_count,
+                    deferred_count = to_exec.len(),
+                    exec_duration_ms = exec_duration.as_millis(),
+                    requested_batch = ?requested_batch_summary,
+                    executed_batch = ?executed_batch_summary,
+                    deferred_batch = ?deferred_batch_summary,
+                    bouncer_weights = ?bouncer_weights,
+                    "Partial batch execution returned fewer results than requested"
+                );
+            }
 
             let mut stats = ExecutionStats::default();
             stats.n_batches += 1;
@@ -500,10 +527,21 @@ impl ExecutorThread {
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
             if force_close || block_full || block_time_deadline_reached {
-                tracing::debug!(
-                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
-                    execution_state.exec_ctx.block_number,
-                );
+                if block_full {
+                    tracing::warn!(
+                        block_number = execution_state.exec_ctx.block_number,
+                        force_close,
+                        block_time_deadline_reached,
+                        deferred_count = to_exec.len(),
+                        deferred_batch = ?summarize_batch_txs(&to_exec.txs),
+                        "Closing block after partial batch execution"
+                    );
+                } else {
+                    tracing::debug!(
+                        "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
+                        execution_state.exec_ctx.block_number,
+                    );
+                }
                 let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
