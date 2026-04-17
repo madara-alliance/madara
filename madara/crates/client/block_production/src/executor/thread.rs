@@ -4,7 +4,6 @@ use crate::metrics::BlockProductionMetrics;
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
-use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
@@ -136,23 +135,45 @@ impl ExecutorThread {
         // Should be fine, as we optimistically try_recv above and we should only hit this when we actually have to wait.
         // nb.2: use an async block here, as timeout_at needs a runtime to be available on creation.
         self.wait_rt.block_on(async {
-            tokio::select! {
-                Some(cmd) = self.commands.recv() => {
-                    tracing::debug!("Got cmd {cmd:?}.");
-                    WaitTxBatchOutcome::Command(cmd)
-                }
-                _ = OptionFuture::from(deadline.map(tokio::time::sleep_until)) => {
-                    tracing::debug!("Waiting for batch timed out.");
-                    WaitTxBatchOutcome::Batch(Default::default())
-                }
-                el = self.incoming_batches.recv() => match el {
-                    Some(el) => {
-                        tracing::debug!("Got new batch with {} transactions.", el.len());
-                        WaitTxBatchOutcome::Batch(el)
+            match deadline {
+                Some(deadline) => {
+                    tokio::select! {
+                        Some(cmd) = self.commands.recv() => {
+                            tracing::debug!("Got cmd {cmd:?}.");
+                            WaitTxBatchOutcome::Command(cmd)
+                        }
+                        _ = tokio::time::sleep_until(deadline) => {
+                            tracing::debug!("Waiting for batch timed out.");
+                            WaitTxBatchOutcome::Batch(Default::default())
+                        }
+                        el = self.incoming_batches.recv() => match el {
+                            Some(el) => {
+                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                WaitTxBatchOutcome::Batch(el)
+                            }
+                            None => {
+                                tracing::debug!("Batch channel closed.");
+                                WaitTxBatchOutcome::Exit
+                            }
+                        }
                     }
-                    None => {
-                        tracing::debug!("Batch channel closed.");
-                        WaitTxBatchOutcome::Exit
+                }
+                None => {
+                    tokio::select! {
+                        Some(cmd) = self.commands.recv() => {
+                            tracing::debug!("Got cmd {cmd:?}.");
+                            WaitTxBatchOutcome::Command(cmd)
+                        }
+                        el = self.incoming_batches.recv() => match el {
+                            Some(el) => {
+                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                WaitTxBatchOutcome::Batch(el)
+                            }
+                            None => {
+                                tracing::debug!("Batch channel closed.");
+                                WaitTxBatchOutcome::Exit
+                            }
+                        }
                     }
                 }
             }
