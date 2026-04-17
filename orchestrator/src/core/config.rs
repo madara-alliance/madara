@@ -50,23 +50,45 @@ use crate::{
 use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
-/// Starknet versions supported by the service
+/// Starknet versions supported by the service.
+///
+/// The last entry in the list is automatically exposed as
+/// [`SUPPORTED_STARKNET_VERSION`] — the single version this orchestrator build
+/// is pinned to for DA encoding and batching. To bump the supported version,
+/// simply append a new variant at the end of the list.
 macro_rules! versions {
-    ($(($variant:ident, $version:expr)),* $(,)?) => {
+    // Entry point: forward all items to the token-munching helper.
+    ($(($variant:ident, $version:expr)),+ $(,)?) => {
+        versions!(@munch [] $(($variant, $version)),+);
+    };
+
+    // Recursive case: shift the first item into the accumulator and continue.
+    (@munch [$($accum:tt)*] ($v:ident, $s:expr), $($rest:tt)+) => {
+        versions!(@munch [$($accum)* ($v, $s),] $($rest)+);
+    };
+
+    // Terminal case: one entry remains — that is the latest supported version.
+    (@munch [$(($variant:ident, $version:expr),)*] ($last_v:ident, $last_s:expr)) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         pub enum StarknetVersion {
-            $($variant),*
+            $($variant,)*
+            $last_v,
         }
 
         impl StarknetVersion {
             pub fn to_string(&self) -> &'static str {
                 match self {
-                    $(Self::$variant => $version),*
+                    $(Self::$variant => $version,)*
+                    Self::$last_v => $last_s,
                 }
             }
 
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant,)* Self::$last_v]
+            }
+
             pub fn is_supported(&self) -> bool {
-                *self == SUPPORTED_STARKNET_VERSION
+                Self::supported().contains(self)
             }
         }
 
@@ -76,15 +98,9 @@ macro_rules! versions {
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
                     $($version => Ok(Self::$variant),)*
+                    $last_s => Ok(Self::$last_v),
                     _ => Err(format!("Unknown version: {}", s)),
                 }
-            }
-        }
-
-        /// Making 0.13.3 as the default version for now
-        impl Default for StarknetVersion {
-            fn default() -> Self {
-                Self::V0_13_3
             }
         }
 
@@ -112,16 +128,20 @@ macro_rules! versions {
                 StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
-    }
+
+        /// The single Starknet version supported by this orchestrator build.
+        /// Automatically derived from the last entry of the `versions!` list —
+        /// used for DA blob encoding decisions and enforced during batching.
+        pub const SUPPORTED_STARKNET_VERSION: StarknetVersion = StarknetVersion::$last_v;
+    };
 }
 
 // All known Starknet versions. The enum is needed for parsing block versions from RPC
 // responses and for version comparisons in compression/DA encoding logic.
-// When a new Starknet version is released, add it here and update SUPPORTED_STARKNET_VERSION.
 //
 // Rules:
 // 1. Versions must be ordered (e.g., 0.15.0 must come after 0.14.0)
-// 2. Update SUPPORTED_STARKNET_VERSION below when bumping the supported version
+// 2. The last entry is automatically the supported version — to bump, append a new entry.
 versions!(
     (V0_13_2, "0.13.2"),
     (V0_13_3, "0.13.3"),
@@ -130,11 +150,6 @@ versions!(
     (V0_14_0, "0.14.0"),
     (V0_14_1, "0.14.1")
 );
-
-/// The single Starknet version supported by this orchestrator build.
-/// Any block with a different version will be rejected during batching.
-/// When upgrading, update this constant and add the new variant to the `versions!` macro above.
-pub const SUPPORTED_STARKNET_VERSION: StarknetVersion = StarknetVersion::V0_14_1;
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {

@@ -1,5 +1,5 @@
 use crate::compression::blob::da_word;
-use crate::core::config::{Config, SUPPORTED_STARKNET_VERSION};
+use crate::core::config::{Config, StarknetVersion, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -87,18 +87,29 @@ impl DAJobHandler {
         biguint_vec
     }
 
+    /// Build blob data for the single Starknet version this orchestrator build is
+    /// pinned to. Production callers should use this entry point — it is safe
+    /// because blocks reaching DA have already passed the version gate in
+    /// aggregator/SNOS batching, version bumps are controlled (require a code
+    /// change and redeploy), and it avoids an extra RPC call to Madara per DA job.
     pub async fn state_update_to_blob_data(
         block_no: u64,
         state_update: StateUpdate,
         config: Arc<Config>,
     ) -> Result<Vec<Felt>, JobError> {
-        // Use the max supported version from the hardcoded config rather than fetching from Madara.
-        // This is safe because:
-        // 1. Blocks reaching DA have already passed the version gate in aggregator/SNOS batching
-        // 2. Version bumps are controlled — they require an orchestrator code change and redeploy
-        // 3. Avoids an extra RPC call to Madara per DA job
-        let block_version = SUPPORTED_STARKNET_VERSION;
+        Self::state_update_to_blob_data_with_version(block_no, state_update, config, SUPPORTED_STARKNET_VERSION).await
+    }
 
+    /// Internal helper that performs the actual blob encoding for an explicit
+    /// Starknet version. Kept separate from [`Self::state_update_to_blob_data`]
+    /// so tests can exercise legacy encodings (e.g. pre-0.13.3) against recorded
+    /// reference blobs without affecting the pinned production path.
+    pub(crate) async fn state_update_to_blob_data_with_version(
+        block_no: u64,
+        state_update: StateUpdate,
+        config: Arc<Config>,
+        block_version: StarknetVersion,
+    ) -> Result<Vec<Felt>, JobError> {
         let mut state_diff = state_update.state_diff;
         Self::refactor_state_update(&mut state_diff);
 
@@ -133,8 +144,7 @@ impl DAJobHandler {
 
                 nonce = Some(get_current_nonce_result);
             }
-            let da_word =
-                da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, block_version)?;
+            let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, block_version)?;
             blob_data.push(address);
             blob_data.push(da_word);
 
@@ -349,6 +359,7 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -365,8 +376,16 @@ pub mod test {
     use starknet::providers::JsonRpcClient;
     use url::Url;
 
-    /// Tests `state_update_to_blob_data` conversion with different state update files and block
-    /// numbers. Mocks DA client and storage client interactions for the test environment.
+    /// Legacy DA encoding test — **covers pre-0.13.3 blocks only**.
+    ///
+    /// The reference blobs under `test_data/test_blob/` were generated on-chain
+    /// against pre-0.13.3 Starknet versions, which route through
+    /// `build_da_word_pre_v0_13_3`. Production code paths are pinned to
+    /// `SUPPORTED_STARKNET_VERSION` (currently V0_14_1) via
+    /// [`DAJobHandler::state_update_to_blob_data`], so this test calls the
+    /// internal helper with `StarknetVersion::V0_13_2` to keep asserting
+    /// encoder behaviour against those historical fixtures.
+    /// Mocks DA client and storage client interactions for the test environment.
     /// Compares the generated blob data against expected values to ensure correctness.
     /// Verifies the data integrity by checking that the parsed state diffs match the expected
     /// diffs.
@@ -436,9 +455,14 @@ pub mod test {
         get_nonce_attached(&server, nonce_file_path);
 
         let state_update = read_state_update_from_file(state_update_file_path).expect("issue while reading");
-        let blob_data = DAJobHandler::state_update_to_blob_data(block_no, state_update, services.config)
-            .await
-            .expect("issue while converting state update to blob data");
+        let blob_data = DAJobHandler::state_update_to_blob_data_with_version(
+            block_no,
+            state_update,
+            services.config,
+            StarknetVersion::V0_13_2,
+        )
+        .await
+        .expect("issue while converting state update to blob data");
         let blob_data_biguint = DAJobHandler::convert_to_biguint(blob_data);
 
         let original_blob_data = serde::parse_file_to_blob_data(file_path);
