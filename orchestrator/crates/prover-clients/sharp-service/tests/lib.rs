@@ -40,6 +40,11 @@ async fn prover_client_submit_task_works() {
             }
     );
     let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
+    // check_existing_job calls get_status before add_job; return UNKNOWN so submission proceeds.
+    server.mock(|when, then| {
+        when.path_includes("/get_status").query_param("customer_id", customer_id.as_str());
+        then.status(200).body(r#"{"status":"UNKNOWN"}"#);
+    });
     let sharp_add_job_call = server.mock(|when, then| {
         when.path_includes("/add_job").query_param("customer_id", customer_id.as_str());
         then.status(200).body(serde_json::to_vec(&sharp_response).unwrap());
