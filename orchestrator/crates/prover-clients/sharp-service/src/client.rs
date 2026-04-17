@@ -1,49 +1,37 @@
-use base64::engine::general_purpose;
-use base64::Engine;
-use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::HttpClient;
+use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Certificate, Identity, Method, StatusCode};
-use tracing::debug;
 use url::Url;
-use uuid::Uuid;
 
+use crate::constants::SHARP_PROGRAM_HASH_FUNCTION;
 use crate::error::SharpError;
-use crate::types::{SharpAddJobResponse, SharpCreateBucketResponse, SharpGetAggTaskIdResponse, SharpGetStatusResponse};
+use crate::types::{SharpAddApplicativeJobRequest, SharpAddJobRequest, SharpAddJobResponse, SharpGetStatusResponse};
 use crate::SharpValidatedArgs;
 
-/// SHARP API async wrapper
+/// SHARP Gateway API async wrapper.
+///
+/// Communicates with SHARP's `/v1/gateway/` endpoints using mTLS.
 pub struct SharpClient {
     client: HttpClient,
+    offchain_proof: bool,
 }
 
 impl SharpClient {
-    /// We need to set up the client with the provided certificates.
-    /// We need to have three secrets :
-    /// - base64(SHARP_USER_CRT)
-    /// - base64(SHARP_USER_KEY)
-    /// - base64(SHARP_SERVER_CRT)
+    /// Create a new SHARP client with mTLS certificates.
     ///
-    /// You can run this command in terminal to convert a file output into base64
-    /// and then copy it and paste it into .env file :
-    ///
-    /// `cat <file_name> | base64`
+    /// The base URL should include the gateway path prefix, e.g.
+    /// `http://host:9511/v1/gateway`.
     pub fn new_with_args(url: Url, sharp_params: &SharpValidatedArgs) -> Self {
-        // Getting the cert files from the .env and then decoding it from base64
-        let cert = general_purpose::STANDARD
-            .decode(sharp_params.sharp_user_crt.clone())
-            .expect("Failed to decode certificate");
-        let key = general_purpose::STANDARD
-            .decode(sharp_params.sharp_user_key.clone())
-            .expect("Failed to decode sharp user key");
-        let server_cert = general_purpose::STANDARD
-            .decode(sharp_params.sharp_server_crt.clone())
-            .expect("Failed to decode sharp server certificate");
+        // Cert/key fields carry raw PEM content (read from *_FILE paths by config).
+        let cert = sharp_params.sharp_user_crt.as_bytes();
+        let key = sharp_params.sharp_user_key.as_bytes();
+        let server_cert = sharp_params.sharp_server_crt.as_bytes();
 
         let customer_id = sharp_params.sharp_customer_id.clone();
 
         let identity =
-            Identity::from_pkcs8_pem(&cert, &key).expect("Failed to build the identity from certificate and key");
-        let certificate = Certificate::from_pem(server_cert.as_slice()).expect("Failed to add root certificate");
+            Identity::from_pkcs8_pem(cert, key).expect("Failed to build the identity from certificate and key");
+        let certificate = Certificate::from_pem(server_cert).expect("Failed to add root certificate");
 
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
@@ -53,125 +41,152 @@ impl SharpClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        Self { client }
+        Self { client, offchain_proof: sharp_params.sharp_offchain_proof }
     }
 
-    pub async fn add_job(
-        &self,
-        encoded_pie: &str,
-        proof_layout: LayoutName,
-    ) -> Result<(SharpAddJobResponse, Uuid), SharpError> {
-        let cairo_key = Uuid::new_v4();
-
-        let proof_layout = match proof_layout {
-            LayoutName::dynamic => "dynamic",
-            _ => proof_layout.to_str(),
-        };
+    /// POST /add_job
+    ///
+    /// Submit a child CairoPIE for proving. The `cairo_pie_b64` should be the
+    /// base64-encoded bytes of the CairoPIE zip file.
+    pub async fn add_job(&self, cairo_pie_b64: &str, cairo_job_key: &str) -> Result<SharpAddJobResponse, SharpError> {
+        let body = SharpAddJobRequest { cairo_pie_encoded: cairo_pie_b64 };
 
         let response = self
             .client
             .request()
             .method(Method::POST)
             .path("add_job")
-            .query_param("cairo_job_key", &cairo_key.to_string())
-            .query_param("offchain_proof", "true")
-            .query_param("proof_layout", proof_layout)
-            .body(encoded_pie)
+            .query_param("cairo_job_key", cairo_job_key)
+            .query_param("offchain_proof", "true") // TODO: don't hardcode it
+            .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+            .body(body)
             .map_err(|e| SharpError::SerializationError(e.into()))?
             .send()
             .await
             .map_err(SharpError::AddJobFailure)?;
 
         match response.status() {
-            StatusCode::OK => {
-                let result = response.json().await.map_err(SharpError::AddJobFailure)?;
-                Ok((result, cairo_key))
+            StatusCode::OK => response.json().await.map_err(SharpError::AddJobFailure),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
             }
-            code => Err(SharpError::SharpService(code)),
         }
     }
 
-    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
-    pub async fn create_bucket(&self) -> Result<SharpCreateBucketResponse, SharpError> {
+    /// POST /add_applicative_job
+    ///
+    /// Submit an applicative (aggregator) job that combines results from child jobs.
+    /// The `cairo_pie_b64` is the base64-encoded aggregator PIE, and
+    /// `children_cairo_job_keys` lists the child job keys in applicative order.
+    pub async fn add_applicative_job(
+        &self,
+        cairo_pie_b64: &str,
+        cairo_job_key: &str,
+        children_cairo_job_keys: &[String],
+    ) -> Result<SharpAddJobResponse, SharpError> {
+        let body = SharpAddApplicativeJobRequest { cairo_pie_encoded: cairo_pie_b64, children_cairo_job_keys };
+
         let response = self
             .client
             .request()
             .method(Method::POST)
-            .path("create_bucket")
+            .path("add_applicative_job")
+            .query_param("cairo_job_key", cairo_job_key)
+            .query_param("offchain_proof", &self.offchain_proof.to_string())
+            .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+            .body(body)
+            .map_err(|e| SharpError::SerializationError(e.into()))?
             .send()
             .await
-            .map_err(SharpError::CloseBucketFailure)?;
+            .map_err(SharpError::AddApplicativeJobFailure)?;
 
-        match response.status().is_success() {
-            true => response.json().await.map_err(SharpError::CreateBucketFailure),
-            false => Err(SharpError::SharpService(response.status())),
+        match response.status() {
+            StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
     }
 
-    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
-    pub async fn close_bucket(&self, bucket_id: &str) -> Result<(), SharpError> {
+    /// GET /get_status
+    ///
+    /// Query the current status of a job.
+    pub async fn get_job_status(&self, cairo_job_key: &str) -> Result<SharpGetStatusResponse, SharpError> {
         let response = self
             .client
             .request()
-            .method(Method::POST)
-            .path("close_bucket")
-            .query_param("bucket_id", bucket_id)
-            .send()
-            .await
-            .map_err(SharpError::CloseBucketFailure)?;
-
-        match response.status().is_success() {
-            true => Ok(()),
-            false => Err(SharpError::SharpService(response.status())),
-        }
-    }
-
-    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
-    pub async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<SharpGetAggTaskIdResponse, SharpError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .path("aggregator_task_id")
-            .query_param("bucket_id", bucket_id)
-            .send()
-            .await
-            .map_err(SharpError::CreateBucketFailure)?;
-
-        match response.status().is_success() {
-            true => response.json().await.map_err(SharpError::CreateBucketFailure),
-            false => Err(SharpError::SharpService(response.status())),
-        }
-    }
-
-    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
-    pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, SharpError> {
-        debug!("Getting artifacts from {}", artifact_path);
-        let client = reqwest::Client::new();
-        let response = client.get(&artifact_path).send().await.map_err(SharpError::GetJobArtifactsFailure)?;
-
-        if response.status().is_success() {
-            let response_text = response.bytes().await.map_err(SharpError::GetJobArtifactsFailure)?;
-            Ok(response_text.to_vec())
-        } else {
-            Err(SharpError::SharpService(response.status()))
-        }
-    }
-
-    pub async fn get_job_status(&self, job_key: &Uuid) -> Result<SharpGetStatusResponse, SharpError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
+            .method(Method::GET)
             .path("get_status")
-            .query_param("cairo_job_key", &job_key.to_string())
+            .query_param("cairo_job_key", cairo_job_key)
             .send()
             .await
             .map_err(SharpError::GetJobStatusFailure)?;
 
         match response.status() {
             StatusCode::OK => response.json().await.map_err(SharpError::GetJobStatusFailure),
-            code => Err(SharpError::SharpService(code)),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
         }
+    }
+
+    /// GET /get_proof
+    ///
+    /// Retrieve the proof for a completed offchain job.
+    pub async fn get_proof(&self, cairo_job_key: &str) -> Result<String, SharpError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::GET)
+            .path("get_proof")
+            .query_param("cairo_job_key", cairo_job_key)
+            .send()
+            .await
+            .map_err(SharpError::GetProofFailure)?;
+
+        match response.status() {
+            StatusCode::OK => response.text().await.map_err(SharpError::GetProofFailure),
+            code => {
+                let url = response.url().to_string();
+                // Read and log body at debug level (responses can be large;
+                // don't let them pollute error messages / logs at higher levels).
+                let body = response.text().await.unwrap_or_default();
+                tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                Err(SharpError::SharpService { status: code, url })
+            }
+        }
+    }
+
+    /// GET /is_alive
+    ///
+    /// Health check endpoint.
+    pub async fn is_alive(&self) -> Result<bool, SharpError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::GET)
+            .path("is_alive")
+            .send()
+            .await
+            .map_err(SharpError::GetJobStatusFailure)?;
+
+        Ok(response.status().is_success())
     }
 }

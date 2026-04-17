@@ -93,6 +93,16 @@ Targets:
   - test-orchestrator       Run unit tests with coverage report
   - test                    Run all tests (e2e and unit)
 
+  [ LOCAL DEV DEPENDENCIES ]
+
+  Start/stop localstack and mongodb docker containers for local orchestrator runs.
+  Uses the same LocalStack SHA as CI / E2E to keep behavior consistent.
+
+  - dev-deps-up        Start localstack + mongodb containers
+  - dev-deps-down      Stop and remove localstack + mongodb containers
+  - dev-localstack-up  Start localstack only
+  - dev-mongo-up       Start mongodb only
+
   [ OTHER COMMANDS ]
 
   - help               Show this help message
@@ -118,6 +128,15 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 CARGO_TARGET_DIR ?= target
 AWS_REGION ?= us-east-1
 PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-aarch64-apple-darwin.tar.gz
+
+# Local dev dependencies (localstack + mongodb). Same SHA used by CI / E2E.
+LOCALSTACK_IMAGE     := localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+LOCALSTACK_CONTAINER := orchestrator-localstack
+LOCALSTACK_PORT      := 4566
+LOCALSTACK_SERVICES  := iam,s3,eventbridge,events,sqs,sns
+MONGO_IMAGE          := mongo@sha256:474f5c3bf0e355bb97dafda730e725169a4d51c5578abf7be9ec7ad3fdee4481
+MONGO_CONTAINER      := orchestrator-mongo
+MONGO_PORT           := 27017
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -537,6 +556,50 @@ setup-bootstrapper:
 	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
 	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
 	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
+
+# ============================================================================ #
+#                         LOCAL DEV DEPENDENCIES                               #
+# ============================================================================ #
+
+.PHONY: dev-localstack-up
+dev-localstack-up:
+	@echo -e "$(DIM)Starting localstack ($(LOCALSTACK_CONTAINER))...$(RESET)"
+	@if docker ps -a --format '{{.Names}}' | grep -q "^$(LOCALSTACK_CONTAINER)$$"; then \
+		echo -e "$(INFO)Container exists — starting if stopped$(RESET)"; \
+		docker start $(LOCALSTACK_CONTAINER) > /dev/null; \
+	else \
+		docker run -d \
+			--name $(LOCALSTACK_CONTAINER) \
+			-p $(LOCALSTACK_PORT):4566 \
+			-e SERVICES=$(LOCALSTACK_SERVICES) \
+			$(LOCALSTACK_IMAGE) > /dev/null; \
+	fi
+	@echo -e "$(PASS)✅ localstack listening on :$(LOCALSTACK_PORT) (services: $(LOCALSTACK_SERVICES))$(RESET)"
+
+.PHONY: dev-mongo-up
+dev-mongo-up:
+	@echo -e "$(DIM)Starting mongodb ($(MONGO_CONTAINER))...$(RESET)"
+	@if docker ps -a --format '{{.Names}}' | grep -q "^$(MONGO_CONTAINER)$$"; then \
+		echo -e "$(INFO)Container exists — starting if stopped$(RESET)"; \
+		docker start $(MONGO_CONTAINER) > /dev/null; \
+	else \
+		docker run -d \
+			--name $(MONGO_CONTAINER) \
+			-p $(MONGO_PORT):27017 \
+			$(MONGO_IMAGE) > /dev/null; \
+	fi
+	@echo -e "$(PASS)✅ mongodb listening on :$(MONGO_PORT)$(RESET)"
+
+.PHONY: dev-deps-up
+dev-deps-up: dev-localstack-up dev-mongo-up
+	@echo -e "$(PASS)✅ Local dev dependencies ready$(RESET)"
+
+.PHONY: dev-deps-down
+dev-deps-down:
+	@echo -e "$(DIM)Stopping local dev dependencies...$(RESET)"
+	@docker rm -f $(LOCALSTACK_CONTAINER) > /dev/null 2>&1 || true
+	@docker rm -f $(MONGO_CONTAINER) > /dev/null 2>&1 || true
+	@echo -e "$(PASS)✅ Stopped and removed localstack + mongodb containers$(RESET)"
 
 # ============================================================================ #
 #                          LLVM 19 SETUP FOR CAIRO NATIVE                       #

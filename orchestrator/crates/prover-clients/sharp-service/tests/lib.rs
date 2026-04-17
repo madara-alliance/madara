@@ -1,8 +1,8 @@
-use cairo_vm::types::layout_name::LayoutName;
+use base64::engine::general_purpose;
+use base64::Engine;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
-// ProverClient
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, TaskType};
 use orchestrator_prover_client_interface::{Task, TaskStatus};
 use orchestrator_sharp_service::types::CairoJobStatus;
@@ -16,6 +16,14 @@ use crate::constants::{TEST_FACT, TEST_JOB_ID};
 
 mod constants;
 
+/// Fixture envs are historical base64-wrapped PEMs; `SharpValidatedArgs` now
+/// expects raw PEM, so decode at the test boundary.
+fn pem_from_env(name: &str) -> String {
+    let b64 = get_env_var_or_panic(name);
+    let bytes = general_purpose::STANDARD.decode(b64).expect("invalid base64 in test env");
+    String::from_utf8(bytes).expect("PEM env content is not utf-8")
+}
+
 #[rstest]
 #[tokio::test]
 async fn prover_client_submit_task_works() {
@@ -24,17 +32,17 @@ async fn prover_client_submit_task_works() {
     let sharp_params = SharpValidatedArgs {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
         sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL")).unwrap(),
-        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
         sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL")).unwrap(),
-        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
-        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
         sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
+        sharp_offchain_proof: false,
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).unwrap();
 
@@ -71,7 +79,6 @@ async fn prover_client_submit_task_works() {
 #[case(CairoJobStatus::NotCreated)]
 #[case(CairoJobStatus::Processed)]
 #[ignore]
-#[case(CairoJobStatus::Onchain)]
 #[tokio::test]
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -79,17 +86,17 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
     let sharp_params = SharpValidatedArgs {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
         sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL")).unwrap(),
-        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
         sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL")).unwrap(),
-        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
-        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
         sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
+        sharp_offchain_proof: false,
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
     let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
 
     let sharp_add_job_call = server.mock(|when, then| {
@@ -105,12 +112,14 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
 }
 
 fn get_task_status_expectation(cairo_job_status: &CairoJobStatus) -> TaskStatus {
+    // For TaskType::Job (child jobs), SHARP returns Succeeded when validated
     match cairo_job_status {
         CairoJobStatus::Failed => TaskStatus::Failed("Sharp task failed".to_string()),
-        CairoJobStatus::Invalid => TaskStatus::Failed("Task is invalid: InvalidCairoPieFileFormat".to_string()),
-        CairoJobStatus::Unknown => TaskStatus::Failed("".to_string()),
-        CairoJobStatus::InProgress | CairoJobStatus::NotCreated | CairoJobStatus::Processed => TaskStatus::Processing,
-        CairoJobStatus::Onchain => TaskStatus::Failed(format!("Fact {} is not valid or not registered", TEST_FACT)),
+        CairoJobStatus::Invalid => TaskStatus::Failed("Job is invalid: InvalidCairoPieFileFormat".to_string()),
+        CairoJobStatus::Unknown => TaskStatus::Failed(format!("Job not found: {}", TEST_JOB_ID)),
+        CairoJobStatus::InProgress => TaskStatus::Processing, // validation_done: false
+        CairoJobStatus::NotCreated => TaskStatus::Processing,
+        CairoJobStatus::Processed => TaskStatus::Succeeded, // validated
     }
 }
 
@@ -130,7 +139,7 @@ fn get_task_status_sharp_response(cairo_job_status: &CairoJobStatus) -> serde_js
         ),
         CairoJobStatus::Unknown => json!(
             {
-                "status" : "FAILED"
+                "status" : "UNKNOWN"
             }
         ),
         CairoJobStatus::InProgress => json!(
@@ -149,12 +158,6 @@ fn get_task_status_sharp_response(cairo_job_status: &CairoJobStatus) -> serde_js
             {
                 "status": "PROCESSED",
                 "validation_done": false
-            }
-        ),
-        CairoJobStatus::Onchain => json!(
-            {
-                "status": "ONCHAIN",
-                "validation_done": true
             }
         ),
     }

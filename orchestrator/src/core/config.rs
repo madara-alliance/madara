@@ -50,6 +50,13 @@ use crate::{
 use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
+/// Identifies which proving backend is in use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProverKind {
+    Sharp,
+    Atlantic,
+}
+
 /// Starknet versions supported by the service
 macro_rules! versions {
     ($(($variant:ident, $version:expr)),* $(,)?) => {
@@ -159,6 +166,8 @@ pub struct ConfigParam {
 /// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
+    /// Identifies which proving backend is in use
+    prover_kind: ProverKind,
     /// The orchestrator config
     pub params: ConfigParam,
     /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
@@ -208,6 +217,8 @@ impl Config {
     ) -> Self {
         Self {
             layer,
+            // Default to Atlantic in tests unless explicitly overridden
+            prover_kind: ProverKind::Atlantic,
             params,
             chain_details,
             madara_rpc_client,
@@ -248,6 +259,19 @@ impl Config {
         let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
 
         let layer = run_cmd.layer.clone();
+
+        // SHARP is only supported for L2
+        let prover_kind = match &prover_config {
+            ProverConfig::Sharp(_) => {
+                if layer == Layer::L3 {
+                    return Err(OrchestratorError::ConfigError(
+                        "SHARP prover is only supported for L2. Use Atlantic for L3.".to_string(),
+                    ));
+                }
+                ProverKind::Sharp
+            }
+            ProverConfig::Atlantic(_) => ProverKind::Atlantic,
+        };
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
@@ -306,6 +330,7 @@ impl Config {
 
         Ok(Self {
             layer,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
@@ -325,6 +350,11 @@ impl Config {
     /// Returns the layer of the config
     pub fn layer(&self) -> &Layer {
         &self.layer
+    }
+
+    /// Returns which proving backend is in use
+    pub fn prover_kind(&self) -> ProverKind {
+        self.prover_kind
     }
 
     /// Returns the chain details fetched from the node at startup
@@ -389,9 +419,7 @@ impl Config {
         da_public_keys: Option<Vec<Felt>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
                 atlantic_params,
                 &params.prover_layout_name,
@@ -587,16 +615,16 @@ impl Config {
     fn load_bouncer_weights_limit(file_path: &Option<std::path::PathBuf>) -> OrchestratorCoreResult<BouncerWeights> {
         match file_path {
             Some(path) => {
-                tracing::info!(file_path = %path.display(), "Loading bouncer weights limit from file");
+                info!(file_path = %path.display(), "Loading bouncer weights limit from file");
 
                 match std::fs::read_to_string(path) {
                     Ok(content) => match serde_json::from_str::<BouncerWeights>(&content) {
                         Ok(weights) => {
-                            tracing::info!("Successfully loaded bouncer weights limit from file");
+                            info!("Successfully loaded bouncer weights limit from file");
                             Ok(weights)
                         }
                         Err(e) => {
-                            tracing::error!(
+                            error!(
                                 error = %e,
                                 file_path = %path.display(),
                                 "Failed to parse bouncer weights limit file, using defaults"
@@ -605,7 +633,7 @@ impl Config {
                         }
                     },
                     Err(e) => {
-                        tracing::error!(
+                        error!(
                             error = %e,
                             file_path = %path.display(),
                             "Failed to read bouncer weights limit file, using defaults"

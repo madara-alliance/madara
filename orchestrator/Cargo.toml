@@ -32,6 +32,7 @@ aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sns = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
+base64 = { workspace = true }
 bincode = { workspace = true }
 blockifier = { workspace = true }
 bytes.workspace = true
@@ -54,6 +55,7 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
+orchestrator-aggregator-runner = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }

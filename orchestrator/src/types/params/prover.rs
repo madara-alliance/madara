@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use orchestrator_atlantic_service::AtlanticValidatedArgs;
@@ -23,6 +25,25 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
             (true, false) => {
                 let sharp_args = run_cmd.sharp_args;
+
+                // mTLS material is file-only. clap already enforced presence via
+                // required_if_eq, so these Options must be Some here.
+                let user_crt_path = sharp_args.sharp_user_crt_file.ok_or_else(|| {
+                    OrchestratorError::RunCommandError("Sharp user certificate file is required".to_string())
+                })?;
+                let user_key_path = sharp_args
+                    .sharp_user_key_file
+                    .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key file is required".to_string()))?;
+                let server_crt_path = sharp_args.sharp_server_crt_file.ok_or_else(|| {
+                    OrchestratorError::RunCommandError("Sharp server certificate file is required".to_string())
+                })?;
+
+                // Read the PEM files eagerly so wrong paths fail at startup rather
+                // than at first SHARP request.
+                let sharp_user_crt = read_pem_file("Sharp user certificate", &user_crt_path)?;
+                let sharp_user_key = read_pem_file("Sharp user key", &user_key_path)?;
+                let sharp_server_crt = read_pem_file("Sharp server certificate", &server_crt_path)?;
+
                 Ok(Self::Sharp(SharpValidatedArgs {
                     sharp_customer_id: sharp_args.sharp_customer_id.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp customer ID is required".to_string())
@@ -30,27 +51,19 @@ impl TryFrom<RunCmd> for ProverConfig {
                     sharp_url: sharp_args
                         .sharp_url
                         .ok_or_else(|| OrchestratorError::RunCommandError("Sharp URL is required".to_string()))?,
-                    sharp_user_crt: sharp_args.sharp_user_crt.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp user certificate is required".to_string())
-                    })?,
-                    sharp_user_key: sharp_args
-                        .sharp_user_key
-                        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key is required".to_string()))?,
+                    sharp_user_crt,
+                    sharp_user_key,
                     sharp_rpc_node_url: sharp_args.sharp_rpc_node_url.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp RPC node URL is required".to_string())
                     })?,
-                    sharp_server_crt: sharp_args.sharp_server_crt.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp server certificate is required".to_string())
-                    })?,
-                    sharp_proof_layout: sharp_args.sharp_proof_layout.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp proof layout is required".to_string())
-                    })?,
+                    sharp_server_crt,
                     gps_verifier_contract_address: sharp_args.gps_verifier_contract_address.ok_or_else(|| {
                         OrchestratorError::RunCommandError("GPS verifier contract address is required".to_string())
                     })?,
                     sharp_settlement_layer: sharp_args.sharp_settlement_layer.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp settlement layer is required".to_string())
                     })?,
+                    sharp_offchain_proof: sharp_args.sharp_offchain_proof.unwrap_or(false),
                 }))
             }
             (false, true) => {
@@ -111,4 +124,12 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
         }
     }
+}
+
+/// Read a PEM file eagerly at startup so misconfigurations fail fast.
+/// Returns the raw UTF-8 content (PEM is ASCII).
+fn read_pem_file(label: &str, path: &Path) -> Result<String, OrchestratorError> {
+    std::fs::read_to_string(path).map_err(|e| {
+        OrchestratorError::RunCommandError(format!("Failed to read {} file at {}: {}", label, path.display(), e))
+    })
 }

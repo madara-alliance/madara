@@ -101,8 +101,10 @@ pub struct AggregatorMetadata {
     // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
-    /// Bucker ID received from the prover client
-    pub bucket_id: String,
+    /// Bucket ID received from the prover client (Atlantic only).
+    /// `None` for SHARP since it has no bucket concept.
+    #[serde(default)]
+    pub bucket_id: Option<String>,
 
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
@@ -125,9 +127,6 @@ pub struct AggregatorMetadata {
     pub snos_output_path: String,
     /// Path to the program output file
     pub program_output_path: String,
-    /// Aggregator query ID
-    /// This is the query ID of the job created by the prover client itself
-    pub aggregator_query_id: Option<String>,
 }
 
 /// Metadata specific to proving jobs.
