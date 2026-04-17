@@ -141,17 +141,19 @@ async fn handle_block_settlement_status(
             }
         }
     } else {
-        snos_batch_response = block_jobs.iter().find_map(|job| match &job.metadata.specific {
-            JobSpecificMetadata::Snos(metadata) => Some(SettlementSnosBatchResponse {
-                index: metadata.snos_batch_index,
-                aggregator_batch_index: None,
-                start_block: metadata.start_block,
-                end_block: metadata.end_block,
-                status: derive_snos_batch_status_from_job(job.status.clone()),
-                created_at: job.created_at,
-                updated_at: job.updated_at,
-            }),
-            _ => None,
+        snos_batch_response = block_snos_batch.as_ref().map(snapshot_snos_batch).or_else(|| {
+            block_jobs.iter().find_map(|job| match &job.metadata.specific {
+                JobSpecificMetadata::Snos(metadata) => Some(SettlementSnosBatchResponse {
+                    index: metadata.snos_batch_index,
+                    aggregator_batch_index: None,
+                    start_block: metadata.start_block,
+                    end_block: metadata.end_block,
+                    status: derive_snos_batch_status_from_job(job.status.clone()),
+                    created_at: job.created_at,
+                    updated_at: job.updated_at,
+                }),
+                _ => None,
+            })
         });
     }
 

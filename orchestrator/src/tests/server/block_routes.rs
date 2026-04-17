@@ -239,3 +239,64 @@ async fn test_get_block_settlement_status_without_aggregator_uses_job_status(
     assert_eq!(data.block_jobs.len(), 1);
     assert_eq!(data.block_jobs[0].id, snos_job.id);
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_settlement_status_without_aggregator_prefers_snos_batch_snapshot(
+    #[future] setup_blocks_server: (SocketAddr, Arc<Config>),
+) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 305;
+    let now = Utc::now().round_subsecs(0);
+
+    let mut snos_batch = build_snos_batch(52, None, 300);
+    snos_batch.end_block = 309;
+    snos_batch.num_blocks = 10;
+    snos_batch.status = SnosBatchStatus::Closed;
+    snos_batch.created_at = now - Duration::minutes(20);
+    snos_batch.updated_at = now - Duration::minutes(15);
+
+    let mut snos_job = build_job_item(JobType::SnosRun, JobStatus::Completed, snos_batch.index);
+    if let JobSpecificMetadata::Snos(metadata) = &mut snos_job.metadata.specific {
+        metadata.snos_batch_index = snos_batch.index;
+        metadata.start_block = snos_batch.start_block;
+        metadata.end_block = snos_batch.end_block;
+        metadata.num_blocks = snos_batch.num_blocks;
+    } else {
+        panic!("Unexpected metadata type for SNOS job");
+    }
+    snos_job.created_at = now - Duration::minutes(5);
+    snos_job.updated_at = now - Duration::minutes(1);
+
+    config.database().create_snos_batch(snos_batch.clone()).await.unwrap();
+    config.database().create_job(snos_job.clone()).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/settlement-status/{}", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockSettlementStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let data = response_body.data.expect("missing settlement status payload");
+    let returned_snos_batch = data.snos_batch.expect("missing snos batch response");
+    assert_eq!(returned_snos_batch.index, snos_batch.index);
+    assert_eq!(returned_snos_batch.start_block, snos_batch.start_block);
+    assert_eq!(returned_snos_batch.end_block, snos_batch.end_block);
+    assert_eq!(returned_snos_batch.status, SnosBatchStatus::Closed);
+    assert_eq!(returned_snos_batch.created_at, snos_batch.created_at);
+    assert_eq!(returned_snos_batch.updated_at, snos_batch.updated_at);
+    assert_ne!(returned_snos_batch.created_at, snos_job.created_at);
+    assert_ne!(returned_snos_batch.updated_at, snos_job.updated_at);
+    assert!(data.aggregator_batch.is_none());
+    assert_eq!(data.block_jobs.len(), 1);
+    assert_eq!(data.block_jobs[0].id, snos_job.id);
+}

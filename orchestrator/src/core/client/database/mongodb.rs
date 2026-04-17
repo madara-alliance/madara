@@ -263,7 +263,8 @@ impl MongoDbClient {
                 .map(Bson::Document)
                 .collect::<Vec<_>>();
 
-            self.database
+            let command_result = self
+                .database
                 .run_command(
                     doc! {
                         "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
@@ -273,9 +274,59 @@ impl MongoDbClient {
                     None,
                 )
                 .await?;
+
+            Self::ensure_bulk_update_command_succeeded(&command_result)?;
         }
 
         Ok(())
+    }
+
+    fn ensure_bulk_update_command_succeeded(command_result: &Document) -> Result<(), DatabaseError> {
+        if let Some(Bson::Array(write_errors)) = command_result.get("writeErrors") {
+            if !write_errors.is_empty() {
+                let write_error_details =
+                    write_errors.iter().map(Self::format_bulk_update_write_error).collect::<Vec<_>>().join("; ");
+
+                return Err(DatabaseError::UpdateFailed(format!(
+                    "Failed to upsert block batch lookups: {write_error_details}"
+                )));
+            }
+        }
+
+        if let Some(Bson::Document(write_concern_error)) = command_result.get("writeConcernError") {
+            let message = write_concern_error
+                .get_str("errmsg")
+                .map(str::to_owned)
+                .unwrap_or_else(|_| write_concern_error.to_string());
+
+            return Err(DatabaseError::UpdateFailed(format!(
+                "Failed to upsert block batch lookups due to write concern error: {message}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn format_bulk_update_write_error(write_error: &Bson) -> String {
+        match write_error {
+            Bson::Document(write_error_document) => {
+                let index = write_error_document
+                    .get_i32("index")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let code = write_error_document
+                    .get_i32("code")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let message = write_error_document
+                    .get_str("errmsg")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|_| write_error_document.to_string());
+
+                format!("update {index} (code {code}): {message}")
+            }
+            _ => write_error.to_string(),
+        }
     }
 
     async fn unset_block_batch_lookup_range_fields(
@@ -1763,7 +1814,7 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mongodb::bson::doc;
+    use mongodb::bson::{doc, Bson};
     use mongodb::options::ClientOptions;
     use serde::{Deserialize, Serialize};
     use std::env;
@@ -1815,5 +1866,39 @@ mod tests {
         // find_one (should be None)
         let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
         assert_eq!(found, None);
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_accepts_successful_response() {
+        assert!(MongoDbClient::ensure_bulk_update_command_succeeded(&doc! { "ok": 1 }).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_rejects_write_errors() {
+        let error = MongoDbClient::ensure_bulk_update_command_succeeded(&doc! {
+            "ok": 1,
+            "writeErrors": [Bson::Document(doc! {
+                "index": 3,
+                "code": 11000,
+                "errmsg": "duplicate key error",
+            })],
+        })
+        .expect_err("expected write error to fail command");
+
+        assert!(error.to_string().contains("duplicate key error"));
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_rejects_write_concern_error() {
+        let error = MongoDbClient::ensure_bulk_update_command_succeeded(&doc! {
+            "ok": 1,
+            "writeConcernError": {
+                "code": 64,
+                "errmsg": "waiting for replication timed out",
+            },
+        })
+        .expect_err("expected write concern error to fail command");
+
+        assert!(error.to_string().contains("waiting for replication timed out"));
     }
 }
