@@ -3,7 +3,9 @@ use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
-use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
+use mongodb::bson::serde_helpers::{
+    chrono_datetime_as_bson_datetime, chrono_datetime_as_bson_datetime_optional, uuid_1_as_binary,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -357,6 +359,11 @@ pub struct BlockBatchLookup {
     /// Aggregator batch containing this block, when available.
     #[serde(default)]
     pub aggregator_batch_index: Option<u64>,
+
+    /// Timestamp when the lookup row was created.
+    #[serde(default)]
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime_optional"))]
+    pub created_at: Option<DateTime<Utc>>,
 
     /// Timestamp when the lookup row was last refreshed.
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]

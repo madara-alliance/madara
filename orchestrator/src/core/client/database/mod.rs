@@ -69,6 +69,17 @@ pub trait DatabaseClient: Send + Sync {
         job_type: &JobType,
     ) -> Result<Option<JobItem>, DatabaseError>;
 
+    /// Get jobs by their internal IDs and type
+    ///
+    /// # Arguments
+    /// * `internal_ids` - Internal identifiers of the jobs
+    /// * `job_type` - The type of job to search for
+    async fn get_jobs_by_internal_ids_and_type(
+        &self,
+        internal_ids: Vec<u64>,
+        job_type: &JobType,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+
     /// Update a job in the database
     ///
     /// # Arguments

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -13,10 +14,10 @@ use super::super::types::{
 };
 use crate::core::config::Config;
 use crate::server::error::BlockRouteError;
-use crate::types::batch::{AggregatorBatch, SnosBatch};
+use crate::types::batch::{AggregatorBatch, SnosBatch, SnosBatchStatus};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::JobSpecificMetadata;
-use crate::types::jobs::types::JobType;
+use crate::types::jobs::types::{JobStatus, JobType};
 
 #[instrument(skip(config), fields(block_number = %block_number))]
 async fn handle_block_to_batch(Path(block_number): Path<u64>, State(config): State<Arc<Config>>) -> BlockRouteResult {
@@ -96,15 +97,22 @@ async fn handle_block_settlement_status(
                 .find(|snos_batch| snos_batch.start_block <= block_number && snos_batch.end_block >= block_number)
         });
 
+        let proof_jobs_by_internal_id = config
+            .database()
+            .get_jobs_by_internal_ids_and_type(
+                snos_batches.iter().map(|snos_batch| snos_batch.index).collect(),
+                &JobType::ProofCreation,
+            )
+            .await
+            .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?
+            .into_iter()
+            .map(|job| (job.internal_id, job))
+            .collect::<HashMap<_, _>>();
+
         if let Some(block_snos_batch) = matching_snos_batch {
             snos_batch_response = Some(snapshot_snos_batch(block_snos_batch));
 
-            if let Some(proof_job) = config
-                .database()
-                .get_job_by_internal_id_and_type(block_snos_batch.index, &JobType::ProofCreation)
-                .await
-                .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?
-            {
+            if let Some(proof_job) = proof_jobs_by_internal_id.get(&block_snos_batch.index).cloned() {
                 push_job_if_missing(&mut block_jobs, proof_job);
             }
         }
@@ -128,13 +136,8 @@ async fn handle_block_settlement_status(
         }
 
         for snos_batch in &snos_batches {
-            if let Some(job) = config
-                .database()
-                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
-                .await
-                .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?
-            {
-                aggregator_proof_jobs.push(snapshot_job(&job));
+            if let Some(job) = proof_jobs_by_internal_id.get(&snos_batch.index) {
+                aggregator_proof_jobs.push(snapshot_job(job));
             }
         }
     } else {
@@ -144,7 +147,7 @@ async fn handle_block_settlement_status(
                 aggregator_batch_index: None,
                 start_block: metadata.start_block,
                 end_block: metadata.end_block,
-                status: crate::types::batch::SnosBatchStatus::Completed,
+                status: derive_snos_batch_status_from_job(job.status.clone()),
                 created_at: job.created_at,
                 updated_at: job.updated_at,
             }),
@@ -209,6 +212,13 @@ fn snapshot_aggregator_batch(batch: &AggregatorBatch) -> SettlementAggregatorBat
         status: batch.status.clone(),
         created_at: batch.created_at,
         updated_at: batch.updated_at,
+    }
+}
+
+fn derive_snos_batch_status_from_job(job_status: JobStatus) -> SnosBatchStatus {
+    match job_status {
+        JobStatus::Completed => SnosBatchStatus::Completed,
+        _ => SnosBatchStatus::SnosJobCreated,
     }
 }
 

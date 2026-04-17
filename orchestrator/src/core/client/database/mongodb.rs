@@ -30,6 +30,8 @@ use std::time::Instant;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+const BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE: usize = 1000;
+
 pub trait ToDocument {
     fn to_document(&self) -> Result<Document, DatabaseError>;
 }
@@ -235,22 +237,40 @@ impl MongoDbClient {
             return Ok(());
         }
 
-        let collection = self.get_block_batch_lookup_collection();
-        let options = UpdateOptions::builder().upsert(true).build();
         let now = Utc::now().round_subsecs(0);
 
-        for block_number in start_block..=end_block {
-            let mut set_doc = fields_to_set.clone();
-            set_doc.insert("updated_at", Bson::DateTime(now.into()));
+        for chunk_start in (start_block..=end_block).step_by(BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE) {
+            let chunk_end = (chunk_start.saturating_add(BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE as u64).saturating_sub(1))
+                .min(end_block);
+            let updates = (chunk_start..=chunk_end)
+                .map(|block_number| {
+                    let mut set_doc = fields_to_set.clone();
+                    set_doc.insert("updated_at", Bson::DateTime(now.into()));
 
-            collection
-                .update_one(
-                    doc! { "block_number": block_number as i64 },
                     doc! {
-                        "$set": set_doc,
-                        "$setOnInsert": { "block_number": block_number as i64 },
+                        "q": { "block_number": block_number as i64 },
+                        "u": {
+                            "$set": set_doc,
+                            "$setOnInsert": {
+                                "block_number": block_number as i64,
+                                "created_at": Bson::DateTime(now.into()),
+                            },
+                        },
+                        "upsert": true,
+                        "multi": false,
+                    }
+                })
+                .map(Bson::Document)
+                .collect::<Vec<_>>();
+
+            self.database
+                .run_command(
+                    doc! {
+                        "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
+                        "updates": Bson::Array(updates),
+                        "ordered": false,
                     },
-                    Some(options.clone()),
+                    None,
                 )
                 .await?;
         }
@@ -636,6 +656,32 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
+    }
+
+    async fn get_jobs_by_internal_ids_and_type(
+        &self,
+        internal_ids: Vec<u64>,
+        job_type: &JobType,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        if internal_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let start = Instant::now();
+        let internal_ids =
+            internal_ids.into_iter().map(|internal_id| Bson::Int64(internal_id as i64)).collect::<Vec<_>>();
+        let filter = doc! {
+            "internal_id": { "$in": internal_ids },
+            "job_type": bson::to_bson(&job_type)?,
+        };
+        let options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
+
+        let jobs = self.get_job_collection().find(filter, options).await?.try_collect::<Vec<JobItem>>().await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_internal_ids_and_type")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
     }
 
     async fn update_job(&self, current_job: &JobItem, update: JobItemUpdates) -> Result<JobItem, DatabaseError> {

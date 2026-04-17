@@ -193,3 +193,49 @@ async fn test_get_block_settlement_status_for_batched_block(#[future] setup_bloc
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_block.id));
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_other_batch.id));
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_settlement_status_without_aggregator_uses_job_status(
+    #[future] setup_blocks_server: (SocketAddr, Arc<Config>),
+) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 205;
+
+    let mut snos_job = build_job_item(JobType::SnosRun, JobStatus::PendingVerification, 42);
+    if let JobSpecificMetadata::Snos(metadata) = &mut snos_job.metadata.specific {
+        metadata.snos_batch_index = 42;
+        metadata.start_block = 200;
+        metadata.end_block = 209;
+        metadata.num_blocks = 10;
+    } else {
+        panic!("Unexpected metadata type for SNOS job");
+    }
+
+    config.database().create_job(snos_job.clone()).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/settlement-status/{}", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockSettlementStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let data = response_body.data.expect("missing settlement status payload");
+    let snos_batch = data.snos_batch.expect("missing snos batch response");
+    assert_eq!(snos_batch.index, 42);
+    assert_eq!(snos_batch.start_block, 200);
+    assert_eq!(snos_batch.end_block, 209);
+    assert_eq!(snos_batch.status, SnosBatchStatus::SnosJobCreated);
+    assert!(data.aggregator_batch.is_none());
+    assert_eq!(data.block_jobs.len(), 1);
+    assert_eq!(data.block_jobs[0].id, snos_job.id);
+}

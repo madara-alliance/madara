@@ -916,11 +916,13 @@ async fn test_get_block_batch_lookup() {
     assert_eq!(first_lookup.block_number, 102);
     assert_eq!(first_lookup.aggregator_batch_index, Some(aggregator_batch.index));
     assert_eq!(first_lookup.snos_batch_index, Some(first_snos_batch.index));
+    assert!(first_lookup.created_at.is_some());
 
     let second_lookup = database_client.get_block_batch_lookup(107).await.unwrap().unwrap();
     assert_eq!(second_lookup.block_number, 107);
     assert_eq!(second_lookup.aggregator_batch_index, Some(aggregator_batch.index));
     assert_eq!(second_lookup.snos_batch_index, Some(second_snos_batch.index));
+    assert!(second_lookup.created_at.is_some());
 
     let missing_lookup = database_client.get_block_batch_lookup(500).await.unwrap();
     assert!(missing_lookup.is_none());
@@ -958,6 +960,7 @@ async fn test_get_block_batch_lookup_after_batch_updates() {
     assert_eq!(lookup.block_number, 103);
     assert_eq!(lookup.aggregator_batch_index, Some(aggregator_batch.index));
     assert_eq!(lookup.snos_batch_index, Some(snos_batch.index));
+    assert!(lookup.created_at.is_some());
 }
 
 /// Test for `get_aggregator_batches_by_status` operation in database trait.

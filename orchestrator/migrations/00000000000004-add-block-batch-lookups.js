@@ -86,6 +86,7 @@ async function rebuildLookupField(db, collectionName, targetField) {
               },
               $setOnInsert: {
                 block_number: blockNumberLong,
+                created_at: now,
               },
             },
             upsert: true,
