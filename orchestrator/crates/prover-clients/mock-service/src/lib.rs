@@ -82,8 +82,13 @@ impl ProverClient for MockProverService {
             )),
 
             Task::RunAggregationWithPie(ApplicativeJobInfo { fact_hash, .. }) => {
-                match (&self.fact_registrar, fact_hash) {
-                    (Some(registrar), Some(fact)) => {
+                let fact = fact_hash.ok_or_else(|| {
+                    ProverClientError::TaskInvalid("fact_hash is required for Mock aggregation".to_string())
+                })?;
+
+                match &self.fact_registrar {
+                    Some(registrar) => {
+                        // Verifier configured: register the fact on-chain.
                         let start = Instant::now();
                         let result = registrar.ensure_registered(fact).await;
                         let duration = start.elapsed().as_secs_f64();
@@ -109,8 +114,8 @@ impl ProverClient for MockProverService {
                             }
                         }
                     }
-                    // No verifier configured or no fact produced — nothing to register.
-                    _ => Ok(format!("{:#x}", B256::ZERO)),
+                    // No verifier configured: return the fact hash as the external id.
+                    None => Ok(format!("0x{}", hex::encode(fact))),
                 }
             }
         }

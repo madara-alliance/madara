@@ -14,7 +14,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use orchestrator_aggregator_runner::{AggregatorFelt, PROGRAM_HASHES};
+use orchestrator_aggregator_runner::{AggregatorFelt, AggregatorRunnerOutput, PROGRAM_HASHES};
 use orchestrator_prover_client_interface::{ApplicativeJobInfo, Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
@@ -37,12 +37,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Process the aggregator job.
     ///
     /// - **Atlantic**: closes the bucket via `RunAggregation(bucket_id)`.
-    /// - **SHARP**: runs the aggregator locally via [`process_job_sharp`], stores
-    ///   artifacts, then submits `Task::RunAggregationWithPie` as an applicative job.
-    /// - **Mock**: runs the aggregator locally via [`process_job_local_agg`], stores
-    ///   artifacts (PIE, DA segment, program output) to S3, then submits
-    ///   `Task::RunAggregationWithPie` — which optionally registers the fact hash on
-    ///   an L1 `MockGpsVerifier` via the prover service.
+    /// - **SHARP / Mock**: both use the shared [`run_and_submit_with_local_aggregation`]
+    ///   path — runs the aggregator locally, stores artifacts (PIE, DA segment, program
+    ///   output) to S3, then submits `Task::RunAggregationWithPie`. SHARP submits an
+    ///   applicative job; Mock optionally registers the fact hash on an L1 `MockGpsVerifier`.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "{:?} job {} processing started", JobType::Aggregator, internal_id);
@@ -65,8 +63,14 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     JobError::ProverClientError(e)
                 })?
             }
-            ProverKind::Sharp => self.process_job_sharp(&config, job).await?,
-            ProverKind::Mock => self.process_job_local_agg(&config, job).await?,
+            ProverKind::Sharp | ProverKind::Mock => {
+                let prover_label = match config.prover_kind() {
+                    ProverKind::Sharp => "sharp",
+                    ProverKind::Mock => "mock",
+                    _ => unreachable!(),
+                };
+                self.run_and_submit_with_local_aggregation(&config, job, prover_label).await?
+            }
         };
 
         config
@@ -191,288 +195,102 @@ impl JobHandlerTrait for AggregatorJobHandler {
 }
 
 // =============================================================================
-// SHARP-specific process_job logic
+// Local aggregation path (shared by SHARP and Mock)
 // =============================================================================
 
 impl AggregatorJobHandler {
-    /// Run the aggregator locally and submit the applicative job to SHARP.
-    async fn process_job_sharp(&self, config: &Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
-        let batch_num = metadata.batch_num;
-        info!(batch_num = %batch_num, "Running local aggregation for SHARP");
-
-        // 1. Fetch program outputs and child job keys from DB + storage.
-        let snos_batches = config.database().get_snos_batches_by_aggregator_index(batch_num).await?;
-
-        let mut child_program_outputs = Vec::new();
-        let mut child_job_keys = Vec::new();
-
-        for snos_batch in &snos_batches {
-            let snos_job = config
-                .database()
-                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::SnosRun)
-                .await?
-                .ok_or_else(|| {
-                    JobError::Other(OtherError(eyre!("SNOS job not found for batch index {}", snos_batch.index)))
-                })?;
-
-            let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().inspect_err(|e| {
-                error!(error = %e, "Invalid metadata type for SNOS job");
-            })?;
-
-            let output_path = snos_metadata.program_output_path.ok_or_else(|| {
-                JobError::Other(OtherError(eyre!("SNOS job {} has no program_output_path", snos_batch.index)))
-            })?;
-
-            debug!(snos_batch_index = snos_batch.index, path = %output_path, "Fetching program output");
-            let output_bytes = config.storage().get_data(&output_path).await?;
-            let program_output: Vec<[u8; 32]> = bincode::deserialize(&output_bytes)
-                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to deserialize program output: {}", e))))?;
-            child_program_outputs.push(program_output);
-
-            let proving_job = config
-                .database()
-                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
-                .await?
-                .ok_or_else(|| {
-                    JobError::Other(OtherError(eyre!(
-                        "ProofCreation job not found for SNOS batch {}",
-                        snos_batch.index
-                    )))
-                })?;
-
-            let job_key: String = proving_job
-                .external_id
-                .unwrap_string()
-                .map_err(|e| {
-                    error!(error = %e, "ProofCreation job has invalid external_id");
-                    JobError::Other(OtherError(e))
-                })?
-                .into();
-            child_job_keys.push(job_key);
-        }
-
-        info!(num_children = child_program_outputs.len(), "Collected program outputs, running aggregator");
-
-        // 2. Run local aggregator.
-        let chain_details = config.chain_details();
-        let chain_id = AggregatorFelt::from_hex(&format!("0x{}", hex::encode(&chain_details.chain_id)))
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse chain_id: {}", e))))?;
-        let fee_token_address = AggregatorFelt::from_hex(chain_details.strk_fee_token_address.as_str())
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse fee_token_address: {}", e))))?;
-        let da_public_keys = config
-            .params
-            .da_public_keys
-            .as_ref()
-            .map(|keys| keys.iter().map(|f| AggregatorFelt::from_bytes_be(&f.to_bytes_be())).collect::<Vec<_>>());
-
-        MetricsRecorder::record_aggregator_child_count("sharp", child_program_outputs.len());
-        let agg_start = Instant::now();
-        let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
-            orchestrator_aggregator_runner::AggregatorRunnerInput {
-                child_program_outputs,
-                layout: LayoutName::all_cairo,
-                full_output: false,
-                debug_mode: false,
-                chain_id,
-                fee_token_address,
-                da_public_keys,
-            },
-        )
-        .map_err(|e| {
-            MetricsRecorder::record_aggregator_run("sharp", agg_start.elapsed().as_secs_f64(), false);
-            error!(error = %e, "Local aggregator failed");
-            JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
-        })?;
-        MetricsRecorder::record_aggregator_run("sharp", agg_start.elapsed().as_secs_f64(), true);
-
-        info!("Local aggregator completed, storing artifacts");
-
-        // Use the applicative-bootloader-wrapped aggregator hash, same as the Mock path.
-        let fact_info =
-            get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
-
-        // Stamp the fact hex so verify_job can pass it to get_task_status for on-chain
-        // cross-verification. Same pattern as the Mock path.
-        let mut metadata = metadata;
-        metadata.ensure_on_chain_registration = Some(format!("0x{}", hex::encode(fact_info.fact.0)));
-        job.metadata.specific = JobSpecificMetadata::Aggregator(metadata.clone());
-
-        AggregatorJobHandler::store_program_output(
-            config,
-            batch_num,
-            fact_info.program_output,
-            &metadata.program_output_path,
-        )
-        .await?;
-
-        config.storage().put_data(bytes::Bytes::from(aggregator_output.da_segment), &metadata.da_segment_path).await?;
-
-        let pie_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(aggregator_output.aggregator_cairo_pie)
-            .await
-            .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-
-        config.storage().put_data(pie_bytes.clone(), &metadata.cairo_pie_path).await?;
-
-        info!(num_children = child_job_keys.len(), "Submitting applicative job to SHARP");
-        let fact: [u8; 32] = fact_info.fact.0;
-        let external_id = config
-            .prover_client()
-            .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
-                cairo_pie_zip_bytes: pie_bytes,
-                children_cairo_job_keys: child_job_keys,
-                fact_hash: Some(fact),
-            }))
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Failed to submit applicative job");
-                JobError::ProverClientError(e)
-            })?;
-
-        info!(external_id = %external_id, "Applicative job submitted to SHARP");
-        Ok(external_id)
-    }
-}
-
-// =============================================================================
-// Mock-specific local aggregation path
-// =============================================================================
-
-impl AggregatorJobHandler {
-    /// Run the aggregator locally and submit the resulting PIE to the Mock prover.
+    /// Run the aggregator locally and submit the resulting PIE to the prover.
     ///
-    /// Computes the aggregator PIE's fact hash via `get_fact_info`, stamps the hex
-    /// into `metadata.ensure_on_chain_registration` (so `verify_job` can cross-check
-    /// `isValid` on-chain), then threads the fact into `ApplicativeJobInfo.fact_hash`
-    /// so the mock prover can register it on the L1 `MockGpsVerifier`.
-    async fn process_job_local_agg(&self, config: &Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+    /// Steps:
+    /// 1. Load child program outputs + proof-creation job keys from DB/storage.
+    /// 2. Run the local aggregator (`starknet_os::runner::run_aggregator`).
+    /// 3. Compute the fact hash using `PROGRAM_HASHES.aggregator_with_prefix`.
+    /// 4. Stamp the fact hex into `metadata.ensure_on_chain_registration` so
+    ///    `verify_job` can pass it to `get_task_status` for on-chain cross-check.
+    /// 5. Persist program output, DA segment, and CairoPIE zip to storage.
+    /// 6. Submit `Task::RunAggregationWithPie` to the prover.
+    ///
+    /// The `prover_label` ("sharp" / "mock") is used in logs and metrics only.
+    ///
+    /// Safe to mutate `job.metadata` in-place: the job framework persists
+    /// `job.metadata.clone()` immediately after `process_job` returns (see
+    /// `worker/event_handler/service.rs`), so it survives into `verify_job`.
+    async fn run_and_submit_with_local_aggregation(
+        &self,
+        config: &Arc<Config>,
+        job: &mut JobItem,
+        prover_label: &str,
+    ) -> Result<String, JobError> {
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
         let batch_num = metadata.batch_num;
-        info!(batch_num = %batch_num, "Running local aggregation for Mock prover");
+        info!(batch_num = %batch_num, prover = prover_label, "Running local aggregation");
 
-        // 1. Fetch program outputs and child job keys from DB + storage.
-        let snos_batches = config.database().get_snos_batches_by_aggregator_index(batch_num).await?;
+        // 1. Load children.
+        let (child_program_outputs, child_job_keys) = self.fetch_child_outputs_and_job_keys(batch_num, config).await?;
+        info!(num_children = child_program_outputs.len(), prover = prover_label, "Collected program outputs");
 
-        let mut child_program_outputs = Vec::new();
-        let mut child_job_keys = Vec::new();
+        // 2. Run aggregator.
+        let aggregator_output = self.run_local_aggregator(child_program_outputs, config, prover_label).await?;
+        info!(prover = prover_label, "Local aggregator completed");
 
-        for snos_batch in &snos_batches {
-            let snos_job = config
-                .database()
-                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::SnosRun)
-                .await?
-                .ok_or_else(|| {
-                    JobError::Other(OtherError(eyre!("SNOS job not found for batch index {}", snos_batch.index)))
-                })?;
-
-            let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().inspect_err(|e| {
-                error!(error = %e, "Invalid metadata type for SNOS job");
-            })?;
-
-            let output_path = snos_metadata.program_output_path.ok_or_else(|| {
-                JobError::Other(OtherError(eyre!("SNOS job {} has no program_output_path", snos_batch.index)))
-            })?;
-
-            debug!(snos_batch_index = snos_batch.index, path = %output_path, "Fetching program output");
-            let output_bytes = config.storage().get_data(&output_path).await?;
-            let program_output: Vec<[u8; 32]> = bincode::deserialize(&output_bytes)
-                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to deserialize program output: {}", e))))?;
-            child_program_outputs.push(program_output);
-
-            let proving_job = config
-                .database()
-                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
-                .await?
-                .ok_or_else(|| {
-                    JobError::Other(OtherError(eyre!(
-                        "ProofCreation job not found for SNOS batch {}",
-                        snos_batch.index
-                    )))
-                })?;
-
-            let job_key: String = proving_job
-                .external_id
-                .unwrap_string()
-                .map_err(|e| {
-                    error!(error = %e, "ProofCreation job has invalid external_id");
-                    JobError::Other(OtherError(e))
-                })?
-                .into();
-            child_job_keys.push(job_key);
-        }
-
-        info!(num_children = child_program_outputs.len(), "Collected program outputs, running aggregator");
-
-        // 2. Run local aggregator.
-        let chain_details = config.chain_details();
-        let chain_id = AggregatorFelt::from_hex(&format!("0x{}", hex::encode(&chain_details.chain_id)))
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse chain_id: {}", e))))?;
-        let fee_token_address = AggregatorFelt::from_hex(chain_details.strk_fee_token_address.as_str())
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse fee_token_address: {}", e))))?;
-        let da_public_keys = config
-            .params
-            .da_public_keys
-            .as_ref()
-            .map(|keys| keys.iter().map(|f| AggregatorFelt::from_bytes_be(&f.to_bytes_be())).collect::<Vec<_>>());
-
-        MetricsRecorder::record_aggregator_child_count("mock", child_program_outputs.len());
-        let agg_start = Instant::now();
-        let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
-            orchestrator_aggregator_runner::AggregatorRunnerInput {
-                child_program_outputs,
-                layout: LayoutName::all_cairo,
-                full_output: false,
-                debug_mode: false,
-                chain_id,
-                fee_token_address,
-                da_public_keys,
-            },
-        )
-        .map_err(|e| {
-            MetricsRecorder::record_aggregator_run("mock", agg_start.elapsed().as_secs_f64(), false);
-            error!(error = %e, "Local aggregator failed");
-            JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
-        })?;
-        MetricsRecorder::record_aggregator_run("mock", agg_start.elapsed().as_secs_f64(), true);
-
-        info!("Local aggregator completed, storing artifacts");
-
-        // 3. Compute fact info from PIE (program output + fact hash for on-chain registration).
+        // 3. Compute fact hash.
         let fact_info =
             get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
         let fact: [u8; 32] = fact_info.fact.0;
 
-        // Stamp the fact hex into the aggregator metadata so `verify_job` can pass it to
-        // the prover's `get_task_status` for an on-chain `isValid` cross-check.
-        //
-        // Safe to mutate `job.metadata` in-place: the job framework persists
-        // `job.metadata.clone()` immediately after `process_job` returns (see
-        // worker/event_handler/service.rs), so this survives into `verify_job`.
+        // 4. Stamp fact into metadata for verify_job.
         let mut metadata = metadata;
         metadata.ensure_on_chain_registration = Some(format!("0x{}", hex::encode(fact)));
         job.metadata.specific = JobSpecificMetadata::Aggregator(metadata.clone());
 
-        AggregatorJobHandler::store_program_output(
-            config,
-            batch_num,
-            fact_info.program_output,
-            &metadata.program_output_path,
-        )
-        .await?;
+        // 5. Persist artifacts.
+        let pie_bytes = self
+            .store_aggregation_artifacts(config, &metadata, batch_num, fact_info.program_output, aggregator_output)
+            .await?;
 
-        // 4. Store DA segment.
+        // 6. Submit to prover.
+        self.submit_aggregation_to_prover(config, pie_bytes, child_job_keys, fact, prover_label).await
+    }
+}
+
+// =============================================================================
+// Artifact storage + prover submission helpers
+// =============================================================================
+
+impl AggregatorJobHandler {
+    /// Persist program output, DA segment, and CairoPIE zip to storage.
+    /// Returns the PIE zip bytes (needed by `submit_aggregation_to_prover`).
+    async fn store_aggregation_artifacts(
+        &self,
+        config: &Arc<Config>,
+        metadata: &AggregatorMetadata,
+        batch_num: u64,
+        program_output: Vec<Felt>,
+        aggregator_output: AggregatorRunnerOutput,
+    ) -> Result<bytes::Bytes, JobError> {
+        AggregatorJobHandler::store_program_output(config, batch_num, program_output, &metadata.program_output_path)
+            .await?;
+
         config.storage().put_data(bytes::Bytes::from(aggregator_output.da_segment), &metadata.da_segment_path).await?;
 
-        // 5. Convert PIE -> zip bytes (consumed/dropped before bytes are buffered).
         let pie_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(aggregator_output.aggregator_cairo_pie)
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-
-        // 6. Persist zip to storage.
         config.storage().put_data(pie_bytes.clone(), &metadata.cairo_pie_path).await?;
 
-        // 7. Submit to prover.
-        info!(num_children = child_job_keys.len(), "Submitting aggregator PIE to prover");
+        Ok(pie_bytes)
+    }
+
+    /// Submit `Task::RunAggregationWithPie` to the configured prover.
+    async fn submit_aggregation_to_prover(
+        &self,
+        config: &Arc<Config>,
+        pie_bytes: bytes::Bytes,
+        child_job_keys: Vec<String>,
+        fact: [u8; 32],
+        prover_label: &str,
+    ) -> Result<String, JobError> {
+        info!(num_children = child_job_keys.len(), prover = prover_label, "Submitting applicative job");
         let external_id = config
             .prover_client()
             .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
@@ -482,11 +300,11 @@ impl AggregatorJobHandler {
             }))
             .await
             .map_err(|e| {
-                error!(error = %e, "Failed to submit aggregator PIE");
+                error!(error = %e, prover = prover_label, "Failed to submit applicative job");
                 JobError::ProverClientError(e)
             })?;
 
-        info!(external_id = %external_id, "Aggregator PIE submitted");
+        info!(external_id = %external_id, prover = prover_label, "Applicative job submitted");
         Ok(external_id)
     }
 }
@@ -511,5 +329,102 @@ impl AggregatorJobHandler {
             .await
             .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id: batch_index, message: e.to_string() })?;
         Ok(())
+    }
+
+    async fn fetch_child_outputs_and_job_keys(
+        &self,
+        batch_num: u64,
+        config: &Arc<Config>,
+    ) -> Result<(Vec<Vec<[u8; 32]>>, Vec<String>), JobError> {
+        let snos_batches = config.database().get_snos_batches_by_aggregator_index(batch_num).await?;
+
+        let mut child_program_outputs = Vec::new();
+        let mut child_job_keys = Vec::new();
+
+        for snos_batch in &snos_batches {
+            let snos_job = config
+                .database()
+                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::SnosRun)
+                .await?
+                .ok_or_else(|| {
+                    JobError::Other(OtherError(eyre!("SNOS job not found for batch index {}", snos_batch.index)))
+                })?;
+
+            let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().inspect_err(|e| {
+                error!(error = %e, "Invalid metadata type for SNOS job");
+            })?;
+
+            let output_path = snos_metadata.program_output_path.ok_or_else(|| {
+                JobError::Other(OtherError(eyre!("SNOS job {} has no program_output_path", snos_batch.index)))
+            })?;
+
+            debug!(snos_batch_index = snos_batch.index, path = %output_path, "Fetching program output");
+            let output_bytes = config.storage().get_data(&output_path).await?;
+            let program_output: Vec<[u8; 32]> = bincode::deserialize(&output_bytes)
+                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to deserialize program output: {}", e))))?;
+            child_program_outputs.push(program_output);
+
+            let proving_job = config
+                .database()
+                .get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation)
+                .await?
+                .ok_or_else(|| {
+                    JobError::Other(OtherError(eyre!(
+                        "ProofCreation job not found for SNOS batch {}",
+                        snos_batch.index
+                    )))
+                })?;
+
+            let job_key: String = proving_job
+                .external_id
+                .unwrap_string()
+                .map_err(|e| {
+                    error!(error = %e, "ProofCreation job has invalid external_id");
+                    JobError::Other(OtherError(e))
+                })?
+                .into();
+            child_job_keys.push(job_key);
+        }
+
+        Ok((child_program_outputs, child_job_keys))
+    }
+
+    async fn run_local_aggregator(
+        &self,
+        child_program_outputs: Vec<Vec<[u8; 32]>>,
+        config: &Arc<Config>,
+        prover_label: &str,
+    ) -> Result<AggregatorRunnerOutput, JobError> {
+        let chain_details = config.chain_details();
+        let chain_id = AggregatorFelt::from_hex(&format!("0x{}", hex::encode(&chain_details.chain_id)))
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse chain_id: {}", e))))?;
+        let fee_token_address = AggregatorFelt::from_hex(chain_details.strk_fee_token_address.as_str())
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse fee_token_address: {}", e))))?;
+        let da_public_keys = config
+            .params
+            .da_public_keys
+            .as_ref()
+            .map(|keys| keys.iter().map(|f| AggregatorFelt::from_bytes_be(&f.to_bytes_be())).collect::<Vec<_>>());
+
+        MetricsRecorder::record_aggregator_child_count(prover_label, child_program_outputs.len());
+        let agg_start = Instant::now();
+        let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
+            orchestrator_aggregator_runner::AggregatorRunnerInput {
+                child_program_outputs,
+                layout: LayoutName::all_cairo,
+                full_output: false,
+                debug_mode: false,
+                chain_id,
+                fee_token_address,
+                da_public_keys,
+            },
+        )
+        .map_err(|e| {
+            MetricsRecorder::record_aggregator_run(prover_label, agg_start.elapsed().as_secs_f64(), false);
+            error!(error = %e, "Local aggregator failed");
+            JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
+        })?;
+        MetricsRecorder::record_aggregator_run(prover_label, agg_start.elapsed().as_secs_f64(), true);
+        Ok(aggregator_output)
     }
 }
