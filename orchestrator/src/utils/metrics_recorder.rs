@@ -295,4 +295,18 @@ impl MetricsRecorder {
     pub fn record_cleanup_failure(reason: &str) {
         ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", reason.to_string())]);
     }
+
+    // Local aggregation metrics (SHARP / Mock paths)
+
+    pub fn record_aggregator_run(prover: &str, duration_seconds: f64, success: bool) {
+        let attrs = [KeyValue::new("prover", prover.to_string()), KeyValue::new("success", success.to_string())];
+        ORCHESTRATOR_METRICS.aggregator_local_run_duration.record(duration_seconds, &attrs);
+        ORCHESTRATOR_METRICS.aggregator_local_run_total.add(1.0, &attrs);
+    }
+
+    pub fn record_aggregator_child_count(prover: &str, count: usize) {
+        ORCHESTRATOR_METRICS
+            .aggregator_child_count
+            .record(count as f64, &[KeyValue::new("prover", prover.to_string())]);
+    }
 }

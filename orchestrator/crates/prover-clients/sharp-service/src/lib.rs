@@ -1,6 +1,7 @@
 pub mod client;
 mod constants;
 pub mod error;
+pub mod metrics;
 pub mod types;
 
 use std::str::FromStr;
@@ -72,6 +73,7 @@ impl ProverClient for SharpProverService {
                 // Idempotency: if SHARP already knows this key and it hasn't failed,
                 // skip re-submission.
                 if let Some(existing) = self.check_existing_job(&cairo_job_key).await? {
+                    metrics::SHARP_METRICS.record_idempotency_hit("cairo_pie");
                     return Ok(existing);
                 }
 
@@ -120,6 +122,7 @@ impl ProverClient for SharpProverService {
 
                 // Idempotency: skip if already submitted.
                 if let Some(existing) = self.check_existing_job(&cairo_job_key).await? {
+                    metrics::SHARP_METRICS.record_idempotency_hit("applicative_job");
                     return Ok(existing);
                 }
 
@@ -144,6 +147,11 @@ impl ProverClient for SharpProverService {
         fact: Option<String>,
     ) -> Result<TaskStatus, ProverClientError> {
         let res = self.sharp_client.get_job_status(job_key).await?;
+        let task_label = match task {
+            TaskType::Job => "job",
+            TaskType::Aggregation => "aggregation",
+        };
+        metrics::SHARP_METRICS.record_job_status(task_label, &format!("{:?}", res.status));
 
         match task {
             TaskType::Job => {

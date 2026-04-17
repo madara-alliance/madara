@@ -60,6 +60,10 @@ pub struct OrchestratorMetrics {
     pub atlantic_api_errors_total: Counter<f64>,
     pub atlantic_api_retries_total: Counter<f64>,
     pub atlantic_data_transfer_bytes: Counter<f64>,
+    // Local aggregation metrics (SHARP / Mock paths)
+    pub aggregator_local_run_duration: Gauge<f64>,
+    pub aggregator_local_run_total: Counter<f64>,
+    pub aggregator_child_count: Gauge<f64>,
     // Storage cleanup metrics
     pub cleanup_runs_total: Counter<f64>,
     pub cleanup_jobs_attempted: Counter<f64>,
@@ -331,6 +335,28 @@ impl Metrics for OrchestratorMetrics {
             "bytes".to_string(),
         );
 
+        // Local aggregation metrics (SHARP / Mock paths)
+        let aggregator_local_run_duration = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_duration".to_string(),
+            "Duration of local aggregator runs".to_string(),
+            "s".to_string(),
+        );
+
+        let aggregator_local_run_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_total".to_string(),
+            "Total number of local aggregator runs".to_string(),
+            "runs".to_string(),
+        );
+
+        let aggregator_child_count = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_child_count".to_string(),
+            "Number of children aggregated per run".to_string(),
+            "children".to_string(),
+        );
+
         // Storage cleanup metrics
         let cleanup_runs_total = register_counter_metric_instrument(
             &orchestrator_meter,
@@ -395,6 +421,9 @@ impl Metrics for OrchestratorMetrics {
             sla_breach_count,
             job_age_p99,
             batch_creation_total,
+            aggregator_local_run_duration,
+            aggregator_local_run_total,
+            aggregator_child_count,
             job_status_tracker,
             atlantic_api_call_duration,
             atlantic_api_calls_total,

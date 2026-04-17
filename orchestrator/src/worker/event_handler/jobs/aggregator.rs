@@ -18,7 +18,10 @@ use orchestrator_aggregator_runner::{AggregatorFelt, PROGRAM_HASHES};
 use orchestrator_prover_client_interface::{ApplicativeJobInfo, Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
+
+use crate::utils::metrics_recorder::MetricsRecorder;
 
 pub struct AggregatorJobHandler;
 
@@ -263,6 +266,8 @@ impl AggregatorJobHandler {
             .as_ref()
             .map(|keys| keys.iter().map(|f| AggregatorFelt::from_bytes_be(&f.to_bytes_be())).collect::<Vec<_>>());
 
+        MetricsRecorder::record_aggregator_child_count("sharp", child_program_outputs.len());
+        let agg_start = Instant::now();
         let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
             orchestrator_aggregator_runner::AggregatorRunnerInput {
                 child_program_outputs,
@@ -275,9 +280,11 @@ impl AggregatorJobHandler {
             },
         )
         .map_err(|e| {
+            MetricsRecorder::record_aggregator_run("sharp", agg_start.elapsed().as_secs_f64(), false);
             error!(error = %e, "Local aggregator failed");
             JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
         })?;
+        MetricsRecorder::record_aggregator_run("sharp", agg_start.elapsed().as_secs_f64(), true);
 
         info!("Local aggregator completed, storing artifacts");
 
@@ -408,6 +415,8 @@ impl AggregatorJobHandler {
             .as_ref()
             .map(|keys| keys.iter().map(|f| AggregatorFelt::from_bytes_be(&f.to_bytes_be())).collect::<Vec<_>>());
 
+        MetricsRecorder::record_aggregator_child_count("mock", child_program_outputs.len());
+        let agg_start = Instant::now();
         let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
             orchestrator_aggregator_runner::AggregatorRunnerInput {
                 child_program_outputs,
@@ -420,9 +429,11 @@ impl AggregatorJobHandler {
             },
         )
         .map_err(|e| {
+            MetricsRecorder::record_aggregator_run("mock", agg_start.elapsed().as_secs_f64(), false);
             error!(error = %e, "Local aggregator failed");
             JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
         })?;
+        MetricsRecorder::record_aggregator_run("mock", agg_start.elapsed().as_secs_f64(), true);
 
         info!("Local aggregator completed, storing artifacts");
 

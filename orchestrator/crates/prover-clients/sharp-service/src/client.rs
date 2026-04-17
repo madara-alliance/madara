@@ -1,4 +1,6 @@
-use orchestrator_prover_client_interface::retry::{retry_with_exponential_backoff, RetryConfig};
+use std::time::Instant;
+
+use orchestrator_prover_client_interface::retry::{retry_with_exponential_backoff, RetryConfig, RetryableRequestError};
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Certificate, Identity, Method, StatusCode};
@@ -6,6 +8,7 @@ use url::Url;
 
 use crate::constants::{APPLICATIVE_JOB_OFFCHAIN_PROOF, CHILD_JOB_OFFCHAIN_PROOF, SHARP_PROGRAM_HASH_FUNCTION};
 use crate::error::SharpError;
+use crate::metrics::SHARP_METRICS;
 use crate::types::{SharpAddApplicativeJobRequest, SharpAddJobRequest, SharpAddJobResponse, SharpGetStatusResponse};
 use crate::SharpValidatedArgs;
 
@@ -58,8 +61,9 @@ impl SharpClient {
     /// base64-encoded bytes of the CairoPIE zip file.
     pub async fn add_job(&self, cairo_pie_b64: &str, cairo_job_key: &str) -> Result<SharpAddJobResponse, SharpError> {
         let body = SharpAddJobRequest { cairo_pie_encoded: cairo_pie_b64 };
+        let start = Instant::now();
 
-        retry_with_exponential_backoff("sharp_add_job", cairo_job_key, self.retry_config, || async {
+        let result = retry_with_exponential_backoff("sharp_add_job", cairo_job_key, self.retry_config, || async {
             let response = self
                 .client
                 .request()
@@ -85,9 +89,15 @@ impl SharpClient {
                 }
             }
         })
-        .await
-        .map(|s| s.value)
-        .map_err(|f| f.error)
+        .await;
+
+        let duration = start.elapsed().as_secs_f64();
+        match &result {
+            Ok(s) => SHARP_METRICS.record_success("add_job", duration, s.outcome.retry_count()),
+            Err(f) => SHARP_METRICS.record_failure("add_job", duration, f.error.error_type(), f.outcome.retry_count()),
+        }
+
+        result.map(|s| s.value).map_err(|f| f.error)
     }
 
     /// POST /add_applicative_job
@@ -100,43 +110,58 @@ impl SharpClient {
         children_cairo_job_keys: &[String],
     ) -> Result<SharpAddJobResponse, SharpError> {
         let body = SharpAddApplicativeJobRequest { cairo_pie_encoded: cairo_pie_b64, children_cairo_job_keys };
+        let start = Instant::now();
 
-        retry_with_exponential_backoff("sharp_add_applicative_job", cairo_job_key, self.retry_config, || async {
-            let response = self
-                .client
-                .request()
-                .method(Method::POST)
-                .path("add_applicative_job")
-                .query_param("cairo_job_key", cairo_job_key)
-                .query_param("offchain_proof", APPLICATIVE_JOB_OFFCHAIN_PROOF)
-                .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
-                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                .body(&body)
-                .map_err(|e| SharpError::SerializationError(e.into()))?
-                .send()
-                .await
-                .map_err(SharpError::AddApplicativeJobFailure)?;
+        let result =
+            retry_with_exponential_backoff("sharp_add_applicative_job", cairo_job_key, self.retry_config, || async {
+                let response = self
+                    .client
+                    .request()
+                    .method(Method::POST)
+                    .path("add_applicative_job")
+                    .query_param("cairo_job_key", cairo_job_key)
+                    .query_param("offchain_proof", APPLICATIVE_JOB_OFFCHAIN_PROOF)
+                    .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
+                    .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                    .body(&body)
+                    .map_err(|e| SharpError::SerializationError(e.into()))?
+                    .send()
+                    .await
+                    .map_err(SharpError::AddApplicativeJobFailure)?;
 
-            match response.status() {
-                StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
-                code => {
-                    let url = response.url().to_string();
-                    let body = response.text().await.unwrap_or_default();
-                    tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                    Err(SharpError::SharpService { status: code, url })
+                match response.status() {
+                    StatusCode::OK => response.json().await.map_err(SharpError::AddApplicativeJobFailure),
+                    code => {
+                        let url = response.url().to_string();
+                        let body = response.text().await.unwrap_or_default();
+                        tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
+                        Err(SharpError::SharpService { status: code, url })
+                    }
                 }
-            }
-        })
-        .await
-        .map(|s| s.value)
-        .map_err(|f| f.error)
+            })
+            .await;
+
+        let duration = start.elapsed().as_secs_f64();
+        match &result {
+            Ok(s) => SHARP_METRICS.record_success("add_applicative_job", duration, s.outcome.retry_count()),
+            Err(f) => SHARP_METRICS.record_failure(
+                "add_applicative_job",
+                duration,
+                f.error.error_type(),
+                f.outcome.retry_count(),
+            ),
+        }
+
+        result.map(|s| s.value).map_err(|f| f.error)
     }
 
     /// GET /get_status
     ///
     /// Query the current status of a job.
     pub async fn get_job_status(&self, cairo_job_key: &str) -> Result<SharpGetStatusResponse, SharpError> {
-        retry_with_exponential_backoff("sharp_get_status", cairo_job_key, self.retry_config, || async {
+        let start = Instant::now();
+
+        let result = retry_with_exponential_backoff("sharp_get_status", cairo_job_key, self.retry_config, || async {
             let response = self
                 .client
                 .request()
@@ -157,16 +182,26 @@ impl SharpClient {
                 }
             }
         })
-        .await
-        .map(|s| s.value)
-        .map_err(|f| f.error)
+        .await;
+
+        let duration = start.elapsed().as_secs_f64();
+        match &result {
+            Ok(s) => SHARP_METRICS.record_success("get_status", duration, s.outcome.retry_count()),
+            Err(f) => {
+                SHARP_METRICS.record_failure("get_status", duration, f.error.error_type(), f.outcome.retry_count())
+            }
+        }
+
+        result.map(|s| s.value).map_err(|f| f.error)
     }
 
     /// GET /get_proof
     ///
     /// Retrieve the proof for a completed offchain job.
     pub async fn get_proof(&self, cairo_job_key: &str) -> Result<String, SharpError> {
-        retry_with_exponential_backoff("sharp_get_proof", cairo_job_key, self.retry_config, || async {
+        let start = Instant::now();
+
+        let result = retry_with_exponential_backoff("sharp_get_proof", cairo_job_key, self.retry_config, || async {
             let response = self
                 .client
                 .request()
@@ -187,9 +222,17 @@ impl SharpClient {
                 }
             }
         })
-        .await
-        .map(|s| s.value)
-        .map_err(|f| f.error)
+        .await;
+
+        let duration = start.elapsed().as_secs_f64();
+        match &result {
+            Ok(s) => SHARP_METRICS.record_success("get_proof", duration, s.outcome.retry_count()),
+            Err(f) => {
+                SHARP_METRICS.record_failure("get_proof", duration, f.error.error_type(), f.outcome.retry_count())
+            }
+        }
+
+        result.map(|s| s.value).map_err(|f| f.error)
     }
 
     /// GET /is_alive
