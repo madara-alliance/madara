@@ -8,7 +8,6 @@ use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
-use mp_block::header::CustomHeader;
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
@@ -250,62 +249,6 @@ impl ExecutorThread {
         }))
     }
 
-    fn refresh_current_block_header(
-        &mut self,
-        state: &mut ExecutorThreadState,
-        custom_header: &CustomHeader,
-        previous_l2_gas_used: u128,
-        block_empty: bool,
-    ) -> Result<(), super::ExecutorCommandError> {
-        let ExecutorThreadState::Executing(execution_state) = state else {
-            return Ok(());
-        };
-
-        if execution_state.exec_ctx.block_number != custom_header.block_n {
-            return Ok(());
-        }
-
-        if !block_empty || !execution_state.declared_classes.is_empty() {
-            return Err(super::ExecutorCommandError::BlockAlreadyHasTransactions(custom_header.block_n));
-        }
-
-        tracing::info!(
-            target: "custom_header",
-            block_n = custom_header.block_n,
-            timestamp = custom_header.timestamp,
-            gas_prices = ?custom_header.gas_prices,
-            "refreshing active execution context for current block from custom header"
-        );
-
-        let block_state = execution_state.executor.block_state.take().ok_or_else(|| {
-            super::ExecutorCommandError::Internal(format!(
-                "Cannot recreate execution context for block {}: executor state already taken",
-                custom_header.block_n
-            ))
-        })?;
-        let consumed_l1_to_l2_nonces = mem::take(&mut execution_state.consumed_l1_to_l2_nonces);
-        let new_state = ExecutorStateNewBlock { state_adaptor: block_state.state, consumed_l1_to_l2_nonces };
-
-        *execution_state = self.create_execution_state(new_state, previous_l2_gas_used).map_err(|error| {
-            super::ExecutorCommandError::Internal(format!(
-                "Cannot recreate execution context for block {}: {error:#}",
-                custom_header.block_n
-            ))
-        })?;
-
-        tracing::info!(
-            target: "custom_header",
-            block_n = execution_state.exec_ctx.block_number,
-            timestamp = execution_state.exec_ctx.block_timestamp.duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or_default(),
-            gas_prices = ?execution_state.exec_ctx.gas_prices,
-            "active execution context refreshed from custom header"
-        );
-
-        Ok(())
-    }
-
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
@@ -342,12 +285,6 @@ impl ExecutorThread {
                         super::ExecutorCommand::CloseBlock(callback) => {
                             force_close = true;
                             let _ = callback.send(Ok(()));
-                            Default::default()
-                        }
-                        super::ExecutorCommand::RefreshCurrentBlockHeader { custom_header, callback } => {
-                            let result =
-                                self.refresh_current_block_header(&mut state, &custom_header, l2_gas_consumed_block, block_empty);
-                            let _ = callback.send(result);
                             Default::default()
                         }
                     },

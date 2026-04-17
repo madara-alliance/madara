@@ -462,85 +462,41 @@ impl<D> MadaraBackend<D> {
     pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
         self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
     }
+
+    pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        let initial_len = guard.len();
+        guard.retain(|stored_block_n, _| *stored_block_n > block_n);
+        initial_len.saturating_sub(guard.len())
+    }
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
-        let replacement_preconfirmed_result: Result<Option<PreconfirmedBlock>> = {
-            let chain_tip = self.chain_tip.borrow();
+        let chain_tip = self.chain_tip.borrow();
+        tracing::info!(
+            target: "custom_header",
+            block_n = custom_header.block_n,
+            timestamp = custom_header.timestamp,
+            gas_prices = ?custom_header.gas_prices,
+            expected_block_hash = ?custom_header.expected_block_hash,
+            chain_tip = ?*chain_tip,
+            "storing custom header"
+        );
+        drop(chain_tip);
+
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
             tracing::info!(
                 target: "custom_header",
                 block_n = custom_header.block_n,
-                timestamp = custom_header.timestamp,
-                gas_prices = ?custom_header.gas_prices,
-                expected_block_hash = ?custom_header.expected_block_hash,
-                chain_tip = ?*chain_tip,
-                "storing custom header"
+                previous_timestamp = previous.timestamp,
+                previous_gas_prices = ?previous.gas_prices,
+                new_timestamp = custom_header.timestamp,
+                new_gas_prices = ?custom_header.gas_prices,
+                "replacing staged custom header for block"
             );
-
-            match chain_tip.as_preconfirmed() {
-                Some(preconfirmed) if preconfirmed.header.block_number == custom_header.block_n => {
-                    let live_tx_count = preconfirmed.transaction_count();
-
-                    tracing::warn!(
-                        target: "custom_header",
-                        incoming_block_n = custom_header.block_n,
-                        incoming_timestamp = custom_header.timestamp,
-                        incoming_gas_prices = ?custom_header.gas_prices,
-                        live_preconfirmed_block_n = preconfirmed.header.block_number,
-                        live_preconfirmed_timestamp = preconfirmed.header.block_timestamp.0,
-                        live_preconfirmed_gas_prices = ?preconfirmed.header.gas_prices,
-                        live_preconfirmed_tx_count = live_tx_count,
-                        "set_custom_header called while a live in-memory preconfirmed block already exists"
-                    );
-
-                    if live_tx_count > 0 {
-                        ensure!(
-                            preconfirmed.header.block_timestamp.0 == custom_header.timestamp
-                                && preconfirmed.header.gas_prices == custom_header.gas_prices,
-                            "cannot update live preconfirmed header for block {} after {} transaction(s)",
-                            custom_header.block_n,
-                            live_tx_count
-                        );
-
-                        tracing::info!(
-                            target: "custom_header",
-                            block_n = custom_header.block_n,
-                            live_preconfirmed_tx_count = live_tx_count,
-                            "live in-memory preconfirmed block already has transactions; keeping existing header"
-                        );
-                        Ok(None)
-                    } else {
-                        let content = preconfirmed.content.borrow().clone();
-                        let mut updated_header = preconfirmed.header.clone();
-                        updated_header.block_timestamp = custom_header.timestamp.into();
-                        updated_header.gas_prices = custom_header.gas_prices.clone();
-
-                        Ok(Some(PreconfirmedBlock::new_with_content(
-                            updated_header,
-                            content.executed_transactions().cloned(),
-                            content.candidate_transactions().cloned(),
-                        )))
-                    }
-                }
-                _ => Ok(None),
-            }
-        };
-        let replacement_preconfirmed = replacement_preconfirmed_result?;
-
-        if let Some(preconfirmed) = replacement_preconfirmed {
-            tracing::info!(
-                target: "custom_header",
-                block_n = preconfirmed.header.block_number,
-                timestamp = preconfirmed.header.block_timestamp.0,
-                gas_prices = ?preconfirmed.header.gas_prices,
-                "replacing live in-memory preconfirmed block header from custom header"
-            );
-            self.write_access().new_preconfirmed(preconfirmed)?;
         }
-
-        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
-        guard.insert(custom_header.block_n, custom_header);
         Ok(())
     }
 }
@@ -942,6 +898,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
+        }
+        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
+        if cleared_headers > 0 {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                cleared_headers,
+                "cleared staged custom headers through closed block"
+            );
         }
 
         // Save the block.
