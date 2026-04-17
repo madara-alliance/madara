@@ -172,3 +172,90 @@ impl ProverClient for MockProverService {
         Ok(AggregationArtifacts::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::signers::local::PrivateKeySigner;
+    use rstest::rstest;
+    use std::str::FromStr;
+
+    // --- parse_fact_hex ---
+
+    #[rstest]
+    #[case::with_0x_prefix(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+    )]
+    #[case::without_prefix(
+        "0000000000000000000000000000000000000000000000000000000000000002",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]
+    )]
+    fn test_parse_fact_hex_valid(#[case] input: &str, #[case] expected: [u8; 32]) {
+        assert_eq!(parse_fact_hex(input).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::too_short("0x0011")]
+    #[case::too_long("0x000000000000000000000000000000000000000000000000000000000000000001")]
+    #[case::invalid_chars("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    #[case::empty("")]
+    fn test_parse_fact_hex_invalid(#[case] input: &str) {
+        assert!(parse_fact_hex(input).is_err());
+    }
+
+    // --- No-verifier path ---
+
+    fn mock_service_without_verifier() -> MockProverService {
+        let signer =
+            PrivateKeySigner::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let args = MockValidatedArgs {
+            verifier_address: None,
+            ethereum_rpc_url: "http://localhost:8545".parse().unwrap(),
+            ethereum_signer: signer,
+        };
+        MockProverService::new_with_args(&args)
+    }
+
+    #[tokio::test]
+    async fn no_verifier_submit_returns_fact_hash_as_id() {
+        let service = mock_service_without_verifier();
+        let fact = [0xABu8; 32];
+        let result = service
+            .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
+                cairo_pie_zip_bytes: bytes::Bytes::new(),
+                children_cairo_job_keys: vec![],
+                fact_hash: Some(fact),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result, format!("0x{}", hex::encode(fact)));
+    }
+
+    #[tokio::test]
+    async fn no_verifier_submit_errors_without_fact() {
+        let service = mock_service_without_verifier();
+        let result = service
+            .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
+                cairo_pie_zip_bytes: bytes::Bytes::new(),
+                children_cairo_job_keys: vec![],
+                fact_hash: None,
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn no_verifier_get_task_status_succeeds() {
+        let service = mock_service_without_verifier();
+        let status = service.get_task_status(TaskType::Aggregation, "any-id", None).await.unwrap();
+        assert_eq!(status, TaskStatus::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn child_job_always_succeeds() {
+        let service = mock_service_without_verifier();
+        let status = service.get_task_status(TaskType::Job, "any-id", None).await.unwrap();
+        assert_eq!(status, TaskStatus::Succeeded);
+    }
+}

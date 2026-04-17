@@ -114,7 +114,7 @@ pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRu
 /// - `output_size` = child output length + 2 (for the size and hash fields)
 /// - `program_hash` = pre-computed SNOS program hash from PROGRAM_HASHES
 /// - followed by the child's program output felts
-fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
+pub(crate) fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
     // Use the pre-computed OS program hash from the embedded program_hash.json.
     // This is a LazyLock that loads once on first access.
     let os_program_hash = PROGRAM_HASHES.os;
@@ -139,4 +139,60 @@ fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
 
     tracing::info!(total_felts = output.len(), "Built bootloader output");
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_input_returns_error() {
+        let input = AggregatorRunnerInput {
+            child_program_outputs: vec![],
+            layout: LayoutName::all_cairo,
+            full_output: false,
+            debug_mode: false,
+            chain_id: Felt::ZERO,
+            fee_token_address: Felt::ZERO,
+            da_public_keys: None,
+        };
+        if let Err(AggregatorRunnerError::NoChildOutputs) = run_local_aggregator(input) {
+            // expected
+        } else {
+            panic!("Expected NoChildOutputs error for empty input");
+        }
+    }
+
+    #[test]
+    fn bootloader_output_layout_single_child() {
+        let child = vec![[1u8; 32], [2u8; 32]];
+        let output = build_bootloader_output(std::slice::from_ref(&child));
+
+        // Layout: [num_children, output_size, program_hash, child_felt_0, child_felt_1]
+        assert_eq!(output.len(), 5, "1 header + (1 size + 1 hash + 2 felts)");
+        assert_eq!(output[0], Felt::from(1u64), "num_children should be 1");
+        assert_eq!(output[1], Felt::from(4u64), "output_size should be child.len() + 2 = 4");
+        assert_eq!(output[2], PROGRAM_HASHES.os, "second element should be OS program hash");
+        assert_eq!(output[3], Felt::from_bytes_be(&child[0]));
+        assert_eq!(output[4], Felt::from_bytes_be(&child[1]));
+    }
+
+    #[test]
+    fn bootloader_output_layout_two_children() {
+        let child_a = vec![[0xAA; 32]];
+        let child_b = vec![[0xBB; 32], [0xCC; 32], [0xDD; 32]];
+        let output = build_bootloader_output(&[child_a, child_b]);
+
+        // Layout: [num_children,
+        //          size_a, hash, a_0,
+        //          size_b, hash, b_0, b_1, b_2]
+        assert_eq!(output.len(), 9);
+        assert_eq!(output[0], Felt::from(2u64), "num_children should be 2");
+        // Child A
+        assert_eq!(output[1], Felt::from(3u64), "child_a size = 1 + 2");
+        assert_eq!(output[2], PROGRAM_HASHES.os);
+        // Child B
+        assert_eq!(output[4], Felt::from(5u64), "child_b size = 3 + 2");
+        assert_eq!(output[5], PROGRAM_HASHES.os);
+    }
 }

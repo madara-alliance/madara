@@ -15,3 +15,8 @@ orchestrator-utils.workspace = true
 tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+rstest.workspace = true
+tokio.workspace = true
