@@ -6,7 +6,7 @@ pub mod types;
 
 use std::str::FromStr;
 
-use crate::types::CairoJobStatus;
+use crate::types::{CairoJobStatus, SharpGetStatusResponse};
 use alloy::primitives::B256;
 use async_trait::async_trait;
 use base64::engine::general_purpose;
@@ -153,84 +153,35 @@ impl ProverClient for SharpProverService {
         };
         metrics::SHARP_METRICS.record_job_status(task_label, &format!("{:?}", res.status));
 
-        match task {
-            TaskType::Job => {
-                match res.status {
-                    CairoJobStatus::Failed => {
-                        tracing::error!(cairo_job_key = %job_key, "SHARP child job FAILED");
-                        Ok(TaskStatus::Failed(res.error_log.unwrap_or_default()))
-                    }
-                    CairoJobStatus::Invalid => {
-                        tracing::warn!(cairo_job_key = %job_key, "SHARP child job INVALID");
-                        Ok(TaskStatus::Failed(format!("Job is invalid: {:?}", res.invalid_reason.unwrap_or_default())))
-                    }
-                    CairoJobStatus::Unknown => {
-                        tracing::warn!(cairo_job_key = %job_key, "SHARP child job UNKNOWN");
-                        Ok(TaskStatus::Failed(format!("Job not found: {}", job_key)))
-                    }
-                    CairoJobStatus::Processed => {
-                        // We don't need to verify the fact on chain since child job's fact is not registered
-                        tracing::info!(cairo_job_key = %job_key, "SHARP child job validated");
-                        Ok(TaskStatus::Succeeded)
-                    }
-                    CairoJobStatus::InProgress => {
-                        if res.validation_done == Some(true) {
-                            tracing::info!(cairo_job_key = %job_key, "SHARP child job validated (IN_PROGRESS + validation_done)");
-                            Ok(TaskStatus::Succeeded)
-                        } else {
-                            tracing::debug!(cairo_job_key = %job_key, "SHARP child job still in progress");
-                            Ok(TaskStatus::Processing)
-                        }
-                    }
-                    CairoJobStatus::NotCreated => {
-                        tracing::debug!(cairo_job_key = %job_key, "SHARP child job not yet created");
-                        Ok(TaskStatus::Processing)
-                    }
-                }
+        // For aggregation + Processed: cross-verify the fact on-chain before
+        // calling the pure mapper. This is the only async / side-effecting step.
+        let fact_verified_on_chain = if task == TaskType::Aggregation && res.status == CairoJobStatus::Processed {
+            if let Some(fact_str) = &fact {
+                let fact =
+                    B256::from_str(fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                Some(self.fact_checker.is_valid(&fact).await?)
+            } else {
+                None
             }
-            TaskType::Aggregation => {
-                // For applicative jobs: Succeeded only when ONCHAIN (fact registered).
-                match res.status {
-                    CairoJobStatus::Failed => {
-                        tracing::error!(cairo_job_key = %job_key, "Applicative job FAILED");
-                        Ok(TaskStatus::Failed(res.error_log.unwrap_or_default()))
-                    }
-                    CairoJobStatus::Invalid => {
-                        tracing::warn!(cairo_job_key = %job_key, "Applicative job INVALID");
-                        Ok(TaskStatus::Failed(format!(
-                            "Applicative job is invalid: {:?}",
-                            res.invalid_reason.unwrap_or_default()
-                        )))
-                    }
-                    CairoJobStatus::Unknown => {
-                        tracing::warn!(cairo_job_key = %job_key, "Applicative job UNKNOWN");
-                        Ok(TaskStatus::Failed(format!("Applicative job not found: {}", job_key)))
-                    }
-                    CairoJobStatus::Processed => {
-                        // SHARP doesn't have an ONCHAIN status — we must cross-verify
-                        // that the fact was actually registered on the GPS verifier.
-                        if let Some(fact_str) = &fact {
-                            let fact = B256::from_str(fact_str)
-                                .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-                            if self.fact_checker.is_valid(&fact).await? {
-                                tracing::info!(cairo_job_key = %job_key, fact = %fact_str, "Applicative job processed and fact verified on-chain");
-                                Ok(TaskStatus::Succeeded)
-                            } else {
-                                tracing::debug!(cairo_job_key = %job_key, fact = %fact_str, "Applicative job processed but fact not yet on-chain");
-                                Ok(TaskStatus::Processing)
-                            }
-                        } else {
-                            tracing::info!(cairo_job_key = %job_key, "Applicative job processed (no fact to cross-verify)");
-                            Ok(TaskStatus::Succeeded)
-                        }
-                    }
-                    _ => {
-                        tracing::debug!(cairo_job_key = %job_key, status = ?res.status, "Applicative job still processing");
-                        Ok(TaskStatus::Processing)
-                    }
-                }
+        } else {
+            None
+        };
+
+        let status = map_sharp_status(&task, job_key, &res, fact_verified_on_chain);
+
+        match &status {
+            TaskStatus::Succeeded => {
+                tracing::info!(cairo_job_key = %job_key, task_type = task_label, "Job succeeded");
+            }
+            TaskStatus::Processing => {
+                tracing::debug!(cairo_job_key = %job_key, task_type = task_label, sharp_status = ?res.status, "Job still processing");
+            }
+            TaskStatus::Failed(err) => {
+                tracing::warn!(cairo_job_key = %job_key, task_type = task_label, error = %err, "Job failed");
             }
         }
+
+        Ok(status)
     }
 
     async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError> {
@@ -264,6 +215,56 @@ impl ProverClient for SharpProverService {
             None
         };
         Ok(AggregationArtifacts { cairo_pie: None, da_segment: None, proof })
+    }
+}
+
+/// Pure status-mapping logic: maps a SHARP `CairoJobStatus` + `TaskType` to
+/// the orchestrator's `TaskStatus`.
+///
+/// `fact_verified_on_chain` is only relevant for `Aggregation + Processed`:
+/// - `Some(true)` → fact confirmed on GPS verifier → `Succeeded`
+/// - `Some(false)` → fact not yet on-chain → `Processing`
+/// - `None` → no fact provided, skip cross-check → `Succeeded`
+///
+/// Extracted as a free function so it can be unit-tested without a live SHARP
+/// client or fact checker.
+pub fn map_sharp_status(
+    task: &TaskType,
+    job_key: &str,
+    res: &SharpGetStatusResponse,
+    fact_verified_on_chain: Option<bool>,
+) -> TaskStatus {
+    match task {
+        TaskType::Job => match res.status {
+            CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
+            CairoJobStatus::Invalid => {
+                TaskStatus::Failed(format!("Job is invalid: {:?}", res.invalid_reason.clone().unwrap_or_default()))
+            }
+            CairoJobStatus::Unknown => TaskStatus::Failed(format!("Job not found: {}", job_key)),
+            CairoJobStatus::Processed => TaskStatus::Succeeded,
+            CairoJobStatus::InProgress => {
+                if res.validation_done == Some(true) {
+                    TaskStatus::Succeeded
+                } else {
+                    TaskStatus::Processing
+                }
+            }
+            CairoJobStatus::NotCreated => TaskStatus::Processing,
+        },
+        TaskType::Aggregation => match res.status {
+            CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
+            CairoJobStatus::Invalid => TaskStatus::Failed(format!(
+                "Applicative job is invalid: {:?}",
+                res.invalid_reason.clone().unwrap_or_default()
+            )),
+            CairoJobStatus::Unknown => TaskStatus::Failed(format!("Applicative job not found: {}", job_key)),
+            CairoJobStatus::Processed => match fact_verified_on_chain {
+                Some(true) => TaskStatus::Succeeded,
+                Some(false) => TaskStatus::Processing,
+                None => TaskStatus::Succeeded,
+            },
+            _ => TaskStatus::Processing,
+        },
     }
 }
 

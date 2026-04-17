@@ -11,8 +11,6 @@ use rstest::rstest;
 use serde_json::json;
 use url::Url;
 
-use crate::constants::{TEST_FACT, TEST_JOB_ID};
-
 mod constants;
 
 #[rstest]
@@ -61,93 +59,70 @@ async fn prover_client_submit_task_works() {
     sharp_add_job_call.assert();
 }
 
+// =============================================================================
+// Unit tests for the pure status-mapping function (no SHARP client needed)
+// =============================================================================
+
+use orchestrator_sharp_service::map_sharp_status;
+use orchestrator_sharp_service::types::{InvalidReason, SharpGetStatusResponse};
+
+fn status_response(status: CairoJobStatus) -> SharpGetStatusResponse {
+    SharpGetStatusResponse { status, invalid_reason: None, error_log: None, validation_done: None }
+}
+
+// --- Child job (TaskType::Job) mapping ---
+
 #[rstest]
-#[case(CairoJobStatus::Failed)]
-#[case(CairoJobStatus::Invalid)]
-#[case(CairoJobStatus::Unknown)]
-#[case(CairoJobStatus::InProgress)]
-#[case(CairoJobStatus::NotCreated)]
-#[case(CairoJobStatus::Processed)]
-#[ignore]
-#[tokio::test]
-async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
-    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
-
-    let sharp_params = SharpValidatedArgs {
-        sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
-        sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL")).unwrap(),
-        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
-        sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL")).unwrap(),
-        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
-        gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
-        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
-    };
-
-    let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
-    let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
-
-    let sharp_add_job_call = server.mock(|when, then| {
-        when.path_includes("/get_status").query_param("customer_id", customer_id.as_str());
-        then.status(200).body(serde_json::to_vec(&get_task_status_sharp_response(&cairo_job_status)).unwrap());
-    });
-
-    let task_status =
-        sharp_service.get_task_status(TaskType::Job, TEST_JOB_ID, Some(TEST_FACT.to_string())).await.unwrap();
-    assert_eq!(task_status, get_task_status_expectation(&cairo_job_status), "Cairo Job Status assertion failed");
-
-    sharp_add_job_call.assert();
+#[case::failed(CairoJobStatus::Failed, TaskStatus::Failed(String::new()))]
+#[case::invalid(CairoJobStatus::Invalid, TaskStatus::Failed("Job is invalid: Unknown".to_string()))]
+#[case::unknown(CairoJobStatus::Unknown, TaskStatus::Failed("Job not found: test-key".to_string()))]
+#[case::processed(CairoJobStatus::Processed, TaskStatus::Succeeded)]
+#[case::not_created(CairoJobStatus::NotCreated, TaskStatus::Processing)]
+#[case::in_progress(CairoJobStatus::InProgress, TaskStatus::Processing)]
+fn test_map_sharp_status_child_job(#[case] cairo_status: CairoJobStatus, #[case] expected: TaskStatus) {
+    let res = status_response(cairo_status);
+    assert_eq!(map_sharp_status(&TaskType::Job, "test-key", &res, None), expected);
 }
 
-fn get_task_status_expectation(cairo_job_status: &CairoJobStatus) -> TaskStatus {
-    // For TaskType::Job (child jobs), SHARP returns Succeeded when validated
-    match cairo_job_status {
-        CairoJobStatus::Failed => TaskStatus::Failed("Sharp task failed".to_string()),
-        CairoJobStatus::Invalid => TaskStatus::Failed("Job is invalid: InvalidCairoPieFileFormat".to_string()),
-        CairoJobStatus::Unknown => TaskStatus::Failed(format!("Job not found: {}", TEST_JOB_ID)),
-        CairoJobStatus::InProgress => TaskStatus::Processing, // validation_done: false
-        CairoJobStatus::NotCreated => TaskStatus::Processing,
-        CairoJobStatus::Processed => TaskStatus::Succeeded, // validated
-    }
+#[rstest]
+#[case::in_progress_validation_done(
+    SharpGetStatusResponse { status: CairoJobStatus::InProgress, validation_done: Some(true), ..Default::default() },
+    TaskStatus::Succeeded
+)]
+#[case::failed_with_error_log(
+    SharpGetStatusResponse { status: CairoJobStatus::Failed, error_log: Some("pie decoding failed".to_string()), ..Default::default() },
+    TaskStatus::Failed("pie decoding failed".to_string())
+)]
+#[case::invalid_with_reason(
+    SharpGetStatusResponse { status: CairoJobStatus::Invalid, invalid_reason: Some(InvalidReason::InvalidCairoPieFileFormat), ..Default::default() },
+    TaskStatus::Failed("Job is invalid: InvalidCairoPieFileFormat".to_string())
+)]
+fn test_child_job_edge_cases(#[case] res: SharpGetStatusResponse, #[case] expected: TaskStatus) {
+    assert_eq!(map_sharp_status(&TaskType::Job, "test-key", &res, None), expected);
 }
 
-fn get_task_status_sharp_response(cairo_job_status: &CairoJobStatus) -> serde_json::Value {
-    match cairo_job_status {
-        CairoJobStatus::Failed => json!(
-            {
-                "status" : "FAILED",
-                "error_log" : "Sharp task failed"
-            }
-        ),
-        CairoJobStatus::Invalid => json!(
-            {
-                "status": "INVALID",
-                "invalid_reason": "INVALID_CAIRO_PIE_FILE_FORMAT",
-                "error_log": "The Cairo PIE file has a wrong format. Deserialization ended with exception: Invalid prefix for zip file.."}
-        ),
-        CairoJobStatus::Unknown => json!(
-            {
-                "status" : "UNKNOWN"
-            }
-        ),
-        CairoJobStatus::InProgress => json!(
-            {
-                "status": "IN_PROGRESS",
-                "validation_done": false
-            }
-        ),
-        CairoJobStatus::NotCreated => json!(
-            {
-                "status": "NOT_CREATED",
-                "validation_done": false
-            }
-        ),
-        CairoJobStatus::Processed => json!(
-            {
-                "status": "PROCESSED",
-                "validation_done": false
-            }
-        ),
-    }
+// --- Aggregation (TaskType::Aggregation) mapping ---
+
+#[rstest]
+#[case::failed(CairoJobStatus::Failed, None, TaskStatus::Failed(String::new()))]
+#[case::invalid(CairoJobStatus::Invalid, None, TaskStatus::Failed("Applicative job is invalid: Unknown".to_string()))]
+#[case::unknown(CairoJobStatus::Unknown, None, TaskStatus::Failed("Applicative job not found: agg-key".to_string()))]
+#[case::in_progress(CairoJobStatus::InProgress, None, TaskStatus::Processing)]
+#[case::not_created(CairoJobStatus::NotCreated, None, TaskStatus::Processing)]
+fn test_map_sharp_status_aggregation(
+    #[case] cairo_status: CairoJobStatus,
+    #[case] fact_verified: Option<bool>,
+    #[case] expected: TaskStatus,
+) {
+    let res = status_response(cairo_status);
+    assert_eq!(map_sharp_status(&TaskType::Aggregation, "agg-key", &res, fact_verified), expected);
+}
+
+#[rstest]
+#[case::fact_verified(Some(true), TaskStatus::Succeeded)]
+#[case::fact_not_yet_on_chain(Some(false), TaskStatus::Processing)]
+#[case::no_fact_provided(None, TaskStatus::Succeeded)]
+fn test_aggregation_processed_with_fact_check(#[case] fact_verified: Option<bool>, #[case] expected: TaskStatus) {
+    let res = status_response(CairoJobStatus::Processed);
+    assert_eq!(map_sharp_status(&TaskType::Aggregation, "agg-key", &res, fact_verified), expected);
 }
