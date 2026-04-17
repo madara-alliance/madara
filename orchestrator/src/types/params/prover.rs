@@ -68,7 +68,13 @@ impl TryFrom<RunCmd> for ProverConfig {
             return validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic);
         }
 
-        validate_mock(run_cmd.mock_args, &run_cmd.ethereum_settlement_args, run_cmd.layer).map(ProverConfig::Mock)
+        validate_mock(
+            run_cmd.mock_args,
+            &run_cmd.ethereum_settlement_args,
+            run_cmd.layer,
+            run_cmd.store_audit_artifacts,
+        )
+        .map(ProverConfig::Mock)
     }
 }
 
@@ -164,9 +170,15 @@ fn validate_mock(
     args: MockCliArgs,
     eth_args: &EthereumSettlementCliArgs,
     layer: Layer,
+    store_audit_artifacts: bool,
 ) -> Result<MockValidatedArgs, OrchestratorError> {
     if layer == Layer::L3 {
         return Err(OrchestratorError::RunCommandError("Mock prover is L2-only".to_string()));
+    }
+    if store_audit_artifacts {
+        return Err(OrchestratorError::RunCommandError(
+            "Mock prover does not produce proofs; --store-audit-artifacts is not supported with --mock".to_string(),
+        ));
     }
 
     let ethereum_rpc_url = eth_args

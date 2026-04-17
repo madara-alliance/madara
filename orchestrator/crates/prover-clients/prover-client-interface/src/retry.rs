@@ -119,7 +119,8 @@ where
                     return Err(RetryFailure { error, outcome });
                 }
 
-                let delay = config.base_delay.saturating_mul(1u32 << (attempt - 1).min(31));
+                let remaining = config.timeout.saturating_sub(outcome.elapsed);
+                let delay = config.base_delay.saturating_mul(1u32 << (attempt - 1).min(31)).min(remaining);
                 warn!(
                     operation = operation_name,
                     attempt = attempt,

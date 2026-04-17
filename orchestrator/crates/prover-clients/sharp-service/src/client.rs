@@ -31,15 +31,8 @@ impl SharpClient {
 
         let customer_id = sharp_params.sharp_customer_id.clone();
 
-        // rustls wants cert + key combined in a single PEM buffer.
-        let mut combined_pem = Vec::with_capacity(cert.len() + key.len() + 1);
-        combined_pem.extend_from_slice(cert);
-        if !cert.ends_with(b"\n") {
-            combined_pem.push(b'\n');
-        }
-        combined_pem.extend_from_slice(key);
-        let identity =
-            Identity::from_pem(&combined_pem).expect("Failed to build the identity from certificate and key");
+        let identity = Identity::from_pem(&combine_cert_and_key_pem(cert, key))
+            .expect("Failed to build the identity from certificate and key");
         let certificate = Certificate::from_pem(server_cert).expect("Failed to add root certificate");
 
         // Force rustls: macOS native-tls (SecureTransport) doesn't reliably honor
@@ -214,4 +207,18 @@ impl SharpClient {
 
         Ok(response.status().is_success())
     }
+}
+
+/// Combine a PEM-encoded certificate and private key into a single buffer.
+///
+/// rustls's `Identity::from_pem` requires cert + key in one contiguous PEM,
+/// unlike native-tls which accepts them separately via `Identity::from_pkcs8_pem`.
+fn combine_cert_and_key_pem(cert: &[u8], key: &[u8]) -> Vec<u8> {
+    let mut combined = Vec::with_capacity(cert.len() + key.len() + 1);
+    combined.extend_from_slice(cert);
+    if !cert.ends_with(b"\n") {
+        combined.push(b'\n');
+    }
+    combined.extend_from_slice(key);
+    combined
 }

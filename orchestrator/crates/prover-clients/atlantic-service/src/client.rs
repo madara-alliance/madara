@@ -109,7 +109,7 @@ impl AtlanticClient {
     /// Retries network-level errors (timeouts, incomplete messages, connection issues)
     /// Does NOT retry API-level errors (4xx, 5xx with proper Atlantic responses) - fast fail
     ///
-    // TODO(@prakhar): Replace this inline retry logic with the shared
+    // TODO(@prakhar, 2026-04-16): Replace this inline retry logic with the shared
     // `retry_with_exponential_backoff` from `prover-client-interface/src/retry.rs`
     // (same as SHARP now uses). Requires implementing `RetryableRequestError` for
     // `AtlanticError` and deleting `transport.rs` in favor of the shared `http.rs`.

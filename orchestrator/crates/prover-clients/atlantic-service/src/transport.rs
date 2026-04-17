@@ -3,7 +3,7 @@
 //! This module provides HTTP transport utilities for the Atlantic API client:
 //! authentication header and error classification.
 //!
-//! TODO(@prakhar): The `HttpResponseClassifier` here is a duplicate of
+//! TODO(@prakhar, 2026-04-16): The `HttpResponseClassifier` here is a duplicate of
 //! `prover-client-interface/src/http.rs`. Once Atlantic's `retry_request` is migrated
 //! to the shared `retry_with_exponential_backoff`, this file can be deleted entirely.
 //! # Components

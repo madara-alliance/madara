@@ -24,8 +24,6 @@ use crate::types::Layer;
 use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
-use base64::engine::general_purpose;
-use base64::Engine;
 use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
@@ -51,12 +49,7 @@ use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
 
-/// Decode a historically base64-wrapped PEM fixture into raw PEM text.
-fn pem_from_env(name: &str) -> String {
-    let b64 = get_env_var_or_panic(name);
-    let bytes = general_purpose::STANDARD.decode(b64).expect("invalid base64 in test env");
-    String::from_utf8(bytes).expect("PEM env content is not utf-8")
-}
+use orchestrator_utils::test_utils::pem_from_env;
 
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.

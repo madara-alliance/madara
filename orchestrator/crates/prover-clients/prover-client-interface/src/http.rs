@@ -61,61 +61,25 @@ impl HttpResponseClassifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn classifies_gateway_404_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::NOT_FOUND, "404 page not found"));
-    }
-
-    #[test]
-    fn classifies_502_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::BAD_GATEWAY, "502 Bad Gateway"));
-    }
-
-    #[test]
-    fn classifies_503_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "503 Service Unavailable"
-        ));
-    }
-
-    #[test]
-    fn classifies_504_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::GATEWAY_TIMEOUT, "504 Gateway Timeout"));
-    }
-
-    #[test]
-    fn classifies_weird_json_encoded_404_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::NOT_FOUND, r#"{"0":"4","1":"0","2":"4"}"#));
-    }
-
-    #[test]
-    fn keeps_real_json_404_as_api_error() {
-        assert!(!HttpResponseClassifier::is_infrastructure_error(
-            StatusCode::NOT_FOUND,
-            r#"{"error": "bucket not found"}"#
-        ));
-    }
-
-    #[test]
-    fn keeps_structured_json_404_as_api_error() {
-        assert!(!HttpResponseClassifier::is_infrastructure_error(
-            StatusCode::NOT_FOUND,
-            r#"{"status": "not_found", "code": 404}"#
-        ));
-    }
-
-    #[test]
-    fn classifies_plain_text_404_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::NOT_FOUND, "Not Found"));
-    }
-
-    #[test]
-    fn classifies_html_404_as_infrastructure() {
-        assert!(HttpResponseClassifier::is_infrastructure_error(
-            StatusCode::NOT_FOUND,
-            "<html><body>404 Not Found</body></html>"
-        ));
+    #[rstest]
+    // Infrastructure errors — should be retried
+    #[case::gateway_404("404 page not found", StatusCode::NOT_FOUND, true)]
+    #[case::bad_gateway("502 Bad Gateway", StatusCode::BAD_GATEWAY, true)]
+    #[case::service_unavailable("503 Service Unavailable", StatusCode::SERVICE_UNAVAILABLE, true)]
+    #[case::gateway_timeout("504 Gateway Timeout", StatusCode::GATEWAY_TIMEOUT, true)]
+    #[case::nginx_json_404(r#"{"0":"4","1":"0","2":"4"}"#, StatusCode::NOT_FOUND, true)]
+    #[case::plain_text_404("Not Found", StatusCode::NOT_FOUND, true)]
+    #[case::html_404("<html><body>404 Not Found</body></html>", StatusCode::NOT_FOUND, true)]
+    // API errors — should NOT be retried
+    #[case::json_bucket_404(r#"{"error": "bucket not found"}"#, StatusCode::NOT_FOUND, false)]
+    #[case::json_structured_404(r#"{"status": "not_found", "code": 404}"#, StatusCode::NOT_FOUND, false)]
+    fn test_http_response_classification(#[case] body: &str, #[case] status: StatusCode, #[case] expected_infra: bool) {
+        assert_eq!(
+            HttpResponseClassifier::is_infrastructure_error(status, body),
+            expected_infra,
+            "status={status}, body={body:?}"
+        );
     }
 }
