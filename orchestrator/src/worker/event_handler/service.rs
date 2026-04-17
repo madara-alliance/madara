@@ -33,8 +33,6 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use orchestrator_utils::layer::Layer;
-use starknet::core::types::BlockId;
-use starknet::providers::Provider;
 use tracing::{debug, error, info, warn, Span};
 
 pub struct JobHandlerService;
@@ -513,11 +511,6 @@ impl JobHandlerService {
                 // Check SLA compliance (example: 5 minute SLA)
                 MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
 
-                // Emit SLA stage durations (T1/T2/T3/total) when StateTransition completes
-                if job.job_type == JobType::StateTransition {
-                    Self::record_sla_stages(&job, &config).await;
-                }
-
                 config
                     .database()
                     .update_job(
@@ -877,135 +870,6 @@ impl JobHandlerService {
                     "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
                 );
                 internal_id as f64
-            }
-        }
-    }
-
-    /// Computes and emits SLA stage durations when StateTransition completes.
-    /// Excludes Atlantic processing time by measuring only orchestrator-controlled segments.
-    ///
-    /// For each SNOS batch we compute max/min T1 using only its start_block and end_block
-    /// timestamps (T1 within a SNOS batch is monotonically decreasing by block number),
-    /// then take the global max/min across all SNOS batches to get the aggregator's
-    /// worst/best T1. This gives exact extremes with only 2 RPC calls per SNOS batch.
-    ///
-    /// T1 = block production → block's SNOS batch's ProofCreation submitted to Atlantic
-    ///      (emitted twice per agg batch: global max and global min)
-    /// T2 = last proof returned from Atlantic → aggregation starts (once per agg batch)
-    /// T3 = aggregation completed → settlement completed (once per agg batch)
-    /// Total = T1 + T2 + T3 (emitted twice: max_total and min_total)
-    async fn record_sla_stages(job: &JobItem, config: &Arc<Config>) {
-        let id = job.internal_id;
-
-        let Some(st_completed) = job.metadata.common.verification_completed_at else {
-            warn!(internal_id = id, "SLA: StateTransition missing verification_completed_at");
-            return;
-        };
-
-        // Fetch aggregator job
-        let Ok(Some(agg_job)) = config.database().get_job_by_internal_id_and_type(id, &JobType::Aggregator).await
-        else {
-            warn!(internal_id = id, "SLA: Aggregator job not found");
-            return;
-        };
-        let (Some(agg_v_started), Some(agg_v_completed)) =
-            (agg_job.metadata.common.verification_started_at, agg_job.metadata.common.verification_completed_at)
-        else {
-            warn!(internal_id = id, "SLA: Aggregator job missing verification timestamps");
-            return;
-        };
-
-        // Fetch SNOS batches
-        let Ok(snos_batches) = config.database().get_snos_batches_by_aggregator_index(id).await else {
-            warn!(internal_id = id, "SLA: Failed to look up SNOS batches");
-            return;
-        };
-
-        // Collect (start_block, end_block, proof_started_at) per SNOS batch
-        // and track latest proof returned for T2
-        let mut snos_proof_data: Vec<(u64, u64, chrono::DateTime<Utc>)> = Vec::new();
-        let mut last_proof_returned: Option<chrono::DateTime<Utc>> = None;
-        for snos_batch in &snos_batches {
-            if let Ok(Some(proof_job)) =
-                config.database().get_job_by_internal_id_and_type(snos_batch.index, &JobType::ProofCreation).await
-            {
-                if let (Some(vs), Some(vc)) = (
-                    proof_job.metadata.common.verification_started_at,
-                    proof_job.metadata.common.verification_completed_at,
-                ) {
-                    snos_proof_data.push((snos_batch.start_block, snos_batch.end_block, vs));
-                    last_proof_returned = Some(last_proof_returned.map_or(vc, |e: chrono::DateTime<Utc>| e.max(vc)));
-                }
-            }
-        }
-
-        let Some(last_returned) = last_proof_returned else {
-            warn!(internal_id = id, "SLA: Missing ProofCreation timestamps");
-            return;
-        };
-
-        // T2 and T3 are constant for the whole aggregator batch
-        let t2 = agg_v_started.signed_duration_since(last_returned).num_seconds() as f64;
-        let t3 = st_completed.signed_duration_since(agg_v_completed).num_seconds() as f64;
-
-        // For each SNOS batch, fetch start_block and end_block timestamps in parallel (2 * N calls)
-        let block_fetches: Vec<_> = snos_proof_data
-            .iter()
-            .flat_map(|(start, end, _)| vec![*start, *end])
-            .map(|block_num| Self::fetch_block_timestamp(block_num, config))
-            .collect();
-        let timestamps = futures::future::join_all(block_fetches).await;
-
-        // Compute max/min T1 across all SNOS batches
-        let mut max_t1: Option<f64> = None;
-        let mut min_t1: Option<f64> = None;
-        for (i, (_, _, proof_started)) in snos_proof_data.iter().enumerate() {
-            let start_ts = timestamps[i * 2];
-            let end_ts = timestamps[i * 2 + 1];
-            // Max T1 for this SNOS batch = proof_started - start_block_ts (oldest block)
-            if let Some(ts) = start_ts {
-                let t1 = proof_started.signed_duration_since(ts).num_seconds() as f64;
-                max_t1 = Some(max_t1.map_or(t1, |m| m.max(t1)));
-            }
-            // Min T1 for this SNOS batch = proof_started - end_block_ts (newest block)
-            if let Some(ts) = end_ts {
-                let t1 = proof_started.signed_duration_since(ts).num_seconds() as f64;
-                min_t1 = Some(min_t1.map_or(t1, |m| m.min(t1)));
-            }
-        }
-
-        let (Some(max_t1), Some(min_t1)) = (max_t1, min_t1) else {
-            warn!(internal_id = id, "SLA: Failed to fetch any block timestamps from Madara RPC");
-            return;
-        };
-
-        let max_total = max_t1 + t2 + t3;
-        let min_total = min_t1 + t2 + t3;
-
-        MetricsRecorder::record_sla_stage_duration("t1", max_t1);
-        MetricsRecorder::record_sla_stage_duration("t1", min_t1);
-        MetricsRecorder::record_sla_stage_duration("t2", t2);
-        MetricsRecorder::record_sla_stage_duration("t3", t3);
-        MetricsRecorder::record_sla_stage_duration("total", max_total);
-        MetricsRecorder::record_sla_stage_duration("total", min_total);
-
-        info!(max_t1, min_t1, t2, t3, max_total, min_total, internal_id = id, "SLA stages recorded");
-    }
-
-    /// Fetches the L2 block timestamp from Madara RPC for a given block number.
-    /// Returns `None` if the block is pending or the RPC call fails.
-    async fn fetch_block_timestamp(block_number: u64, config: &Arc<Config>) -> Option<chrono::DateTime<Utc>> {
-        match config.madara_rpc_client().get_block_with_tx_hashes(BlockId::Number(block_number)).await {
-            Ok(starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block)) => {
-                chrono::DateTime::from_timestamp(block.timestamp as i64, 0)
-            }
-            Ok(starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
-                warn!(block_number, "Block is still pending, cannot get timestamp for SLA");
-                None
-            }
-            Err(e) => {
-                warn!(error = ?e, block_number, "Failed to fetch block timestamp from Madara RPC");
-                None
             }
         }
     }

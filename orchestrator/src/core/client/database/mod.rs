@@ -3,7 +3,8 @@ pub mod error;
 pub mod mongodb;
 
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
@@ -340,6 +341,9 @@ pub trait DatabaseClient: Send + Sync {
     /// * `block_number` - The block number to search for
     async fn get_aggregator_batch_for_block(&self, block_number: u64)
         -> Result<Option<AggregatorBatch>, DatabaseError>;
+
+    /// Get the reverse lookup entry for a specific block number.
+    async fn get_block_batch_lookup(&self, block_number: u64) -> Result<Option<BlockBatchLookup>, DatabaseError>;
 
     /// Get the first SNOS batch in an Aggregator batch
     async fn get_start_snos_batch_for_aggregator(

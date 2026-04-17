@@ -204,16 +204,6 @@ impl MetricsRecorder {
         }
     }
 
-    // =============================================================================
-    // SLA Stage Duration Metrics
-    // =============================================================================
-
-    /// Record SLA stage duration (orchestrator-only processing time)
-    /// stage: "t1", "t2", "t3", or "total"
-    pub fn record_sla_stage_duration(stage: &str, duration_seconds: f64) {
-        ORCHESTRATOR_METRICS.sla_stage_duration.record(duration_seconds, &[KeyValue::new("stage", stage.to_string())]);
-    }
-
     /// Record orphaned job detection
     pub fn record_orphaned_job(job: &JobItem) {
         let attributes = [KeyValue::new("operation_job_type", format!("{:?}", job.job_type))];

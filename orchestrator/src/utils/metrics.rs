@@ -44,7 +44,6 @@ pub struct OrchestratorMetrics {
     pub active_jobs_count: Gauge<f64>,
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
-    pub sla_stage_duration: Histogram<f64>,
     pub job_age_p99: Gauge<f64>,
     pub batch_creation_total: Counter<f64>,
     // Job Status Tracking
@@ -257,13 +256,6 @@ impl Metrics for OrchestratorMetrics {
             String::from(JOBS_COLLECTION),
         );
 
-        let sla_stage_duration = register_histogram_metric_instrument(
-            &orchestrator_meter,
-            "sla_stage_duration".to_string(),
-            "Orchestrator-only processing duration per SLA stage (t1/t2/t3/total)".to_string(),
-            "s".to_string(),
-        );
-
         let job_age_p99 = register_gauge_metric_instrument(
             &orchestrator_meter,
             "job_age_p99".to_string(),
@@ -401,7 +393,6 @@ impl Metrics for OrchestratorMetrics {
             job_parallelism_factor,
             active_jobs_count,
             sla_breach_count,
-            sla_stage_duration,
             job_age_p99,
             batch_creation_total,
             job_status_tracker,

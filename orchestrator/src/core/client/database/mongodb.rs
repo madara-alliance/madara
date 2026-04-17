@@ -1,11 +1,12 @@
 use super::error::DatabaseError;
 use crate::core::client::database::constant::{
-    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
+    AGGREGATOR_BATCHES_COLLECTION, BLOCK_BATCH_LOOKUPS_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
 use crate::core::client::database::DatabaseClient;
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
@@ -164,6 +165,21 @@ impl MongoDbClient {
         snos_collection.create_indexes(snos_indexes, None).await?;
         info!("Created indexes for SNOS batch collection");
 
+        // Create indexes for per-block batch lookup collection
+        let block_lookup_collection = self.get_block_batch_lookup_collection();
+
+        let block_lookup_indexes = vec![
+            IndexModel::builder()
+                .keys(doc! { "block_number": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            IndexModel::builder().keys(doc! { "snos_batch_index": 1 }).build(),
+            IndexModel::builder().keys(doc! { "aggregator_batch_index": 1 }).build(),
+        ];
+
+        block_lookup_collection.create_indexes(block_lookup_indexes, None).await?;
+        info!("Created indexes for block batch lookup collection");
+
         Ok(())
     }
 
@@ -193,6 +209,10 @@ impl MongoDbClient {
         self.database.collection(SNOS_BATCHES_COLLECTION)
     }
 
+    fn get_block_batch_lookup_collection(&self) -> Collection<BlockBatchLookup> {
+        self.database.collection(BLOCK_BATCH_LOOKUPS_COLLECTION)
+    }
+
     pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
@@ -203,6 +223,169 @@ impl MongoDbClient {
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
         self.get_collection(LOCKS_COLLECTION)
+    }
+
+    async fn upsert_block_batch_lookup_range(
+        &self,
+        start_block: u64,
+        end_block: u64,
+        fields_to_set: Document,
+    ) -> Result<(), DatabaseError> {
+        if start_block > end_block || fields_to_set.is_empty() {
+            return Ok(());
+        }
+
+        let collection = self.get_block_batch_lookup_collection();
+        let options = UpdateOptions::builder().upsert(true).build();
+        let now = Utc::now().round_subsecs(0);
+
+        for block_number in start_block..=end_block {
+            let mut set_doc = fields_to_set.clone();
+            set_doc.insert("updated_at", Bson::DateTime(now.into()));
+
+            collection
+                .update_one(
+                    doc! { "block_number": block_number as i64 },
+                    doc! {
+                        "$set": set_doc,
+                        "$setOnInsert": { "block_number": block_number as i64 },
+                    },
+                    Some(options.clone()),
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn unset_block_batch_lookup_range_fields(
+        &self,
+        start_block: u64,
+        end_block: u64,
+        fields_to_unset: &[&str],
+    ) -> Result<(), DatabaseError> {
+        if start_block > end_block || fields_to_unset.is_empty() {
+            return Ok(());
+        }
+
+        let mut unset_doc = Document::new();
+        for field in fields_to_unset {
+            unset_doc.insert(*field, "");
+        }
+
+        self.get_block_batch_lookup_collection()
+            .update_many(
+                doc! {
+                    "block_number": {
+                        "$gte": start_block as i64,
+                        "$lte": end_block as i64,
+                    }
+                },
+                doc! {
+                    "$unset": unset_doc,
+                    "$set": { "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()) },
+                },
+                None,
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn sync_aggregator_batch_lookup(
+        &self,
+        previous_batch: Option<&AggregatorBatch>,
+        updated_batch: &AggregatorBatch,
+    ) -> Result<(), DatabaseError> {
+        if let Some(previous_batch) = previous_batch {
+            if previous_batch.start_block == updated_batch.start_block
+                && previous_batch.end_block == updated_batch.end_block
+            {
+                return Ok(());
+            }
+
+            if previous_batch.start_block == updated_batch.start_block {
+                if previous_batch.end_block < updated_batch.end_block {
+                    return self
+                        .upsert_block_batch_lookup_range(
+                            previous_batch.end_block.saturating_add(1),
+                            updated_batch.end_block,
+                            doc! { "aggregator_batch_index": updated_batch.index as i64 },
+                        )
+                        .await;
+                }
+
+                self.unset_block_batch_lookup_range_fields(
+                    updated_batch.end_block.saturating_add(1),
+                    previous_batch.end_block,
+                    &["aggregator_batch_index"],
+                )
+                .await?;
+                return Ok(());
+            }
+
+            self.unset_block_batch_lookup_range_fields(
+                previous_batch.start_block,
+                previous_batch.end_block,
+                &["aggregator_batch_index"],
+            )
+            .await?;
+        }
+
+        self.upsert_block_batch_lookup_range(
+            updated_batch.start_block,
+            updated_batch.end_block,
+            doc! { "aggregator_batch_index": updated_batch.index as i64 },
+        )
+        .await
+    }
+
+    async fn sync_snos_batch_lookup(
+        &self,
+        previous_batch: Option<&SnosBatch>,
+        updated_batch: &SnosBatch,
+    ) -> Result<(), DatabaseError> {
+        if let Some(previous_batch) = previous_batch {
+            if previous_batch.start_block == updated_batch.start_block
+                && previous_batch.end_block == updated_batch.end_block
+            {
+                return Ok(());
+            }
+
+            if previous_batch.start_block == updated_batch.start_block {
+                if previous_batch.end_block < updated_batch.end_block {
+                    return self
+                        .upsert_block_batch_lookup_range(
+                            previous_batch.end_block.saturating_add(1),
+                            updated_batch.end_block,
+                            doc! { "snos_batch_index": updated_batch.index as i64 },
+                        )
+                        .await;
+                }
+
+                self.unset_block_batch_lookup_range_fields(
+                    updated_batch.end_block.saturating_add(1),
+                    previous_batch.end_block,
+                    &["snos_batch_index"],
+                )
+                .await?;
+                return Ok(());
+            }
+
+            self.unset_block_batch_lookup_range_fields(
+                previous_batch.start_block,
+                previous_batch.end_block,
+                &["snos_batch_index"],
+            )
+            .await?;
+        }
+
+        self.upsert_block_batch_lookup_range(
+            updated_batch.start_block,
+            updated_batch.end_block,
+            doc! { "snos_batch_index": updated_batch.index as i64 },
+        )
+        .await
     }
 
     /// find_one - Find one document in a collection
@@ -868,6 +1051,7 @@ impl DatabaseClient for MongoDbClient {
         update: &AggregatorBatchUpdates,
     ) -> Result<AggregatorBatch, DatabaseError> {
         let start = Instant::now();
+        let previous_batch = self.get_aggregator_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -904,7 +1088,9 @@ impl DatabaseClient for MongoDbClient {
             "$set": non_null_updates
         };
 
-        self.update_aggregator_batch(filter, update, options, start, batch.index).await
+        let updated_batch = self.update_aggregator_batch(filter, update, options, start, batch.index).await?;
+        self.sync_aggregator_batch_lookup(previous_batch.as_ref(), &updated_batch).await?;
+        Ok(updated_batch)
     }
 
     async fn update_aggregator_batch(
@@ -973,6 +1159,7 @@ impl DatabaseClient for MongoDbClient {
 
                 let attributes = [KeyValue::new("db_operation_name", "create_batch")];
                 MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+                self.sync_aggregator_batch_lookup(None, &batch).await?;
                 Ok(batch)
             }
             Err(err) => {
@@ -992,6 +1179,7 @@ impl DatabaseClient for MongoDbClient {
             Ok(_) => {
                 let duration = start.elapsed();
                 tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
+                self.sync_snos_batch_lookup(None, &batch).await?;
                 Ok(batch)
             }
             Err(err) => {
@@ -1010,6 +1198,7 @@ impl DatabaseClient for MongoDbClient {
         update: &SnosBatchUpdates,
     ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
+        let previous_batch = self.get_snos_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -1052,6 +1241,7 @@ impl DatabaseClient for MongoDbClient {
                 let attributes = [KeyValue::new("db_operation_name", "update_or_create_snos_batch")];
                 let duration = start.elapsed();
                 MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+                self.sync_snos_batch_lookup(previous_batch.as_ref(), &updated_batch).await?;
                 Ok(updated_batch)
             }
             None => {
@@ -1067,12 +1257,31 @@ impl DatabaseClient for MongoDbClient {
         block_number: u64,
     ) -> Result<Option<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
-            "start_block": { "$lte": block_number as i64 },
-            "end_block": { "$gte": block_number as i64 }
-        };
+        let batch = match self.get_block_batch_lookup(block_number).await? {
+            Some(lookup) => match lookup.aggregator_batch_index {
+                Some(aggregator_batch_index) => {
+                    self.get_aggregator_batch_collection()
+                        .find_one(doc! { "index": aggregator_batch_index as i64 }, None)
+                        .await?
+                }
+                None => {
+                    let filter = doc! {
+                        "start_block": { "$lte": block_number as i64 },
+                        "end_block": { "$gte": block_number as i64 }
+                    };
 
-        let batch = self.get_aggregator_batch_collection().find_one(filter, None).await?;
+                    self.get_aggregator_batch_collection().find_one(filter, None).await?
+                }
+            },
+            None => {
+                let filter = doc! {
+                    "start_block": { "$lte": block_number as i64 },
+                    "end_block": { "$gte": block_number as i64 }
+                };
+
+                self.get_aggregator_batch_collection().find_one(filter, None).await?
+            }
+        };
 
         debug!("Retrieved aggregator batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batch_for_block")];
@@ -1080,6 +1289,20 @@ impl DatabaseClient for MongoDbClient {
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
+    }
+
+    async fn get_block_batch_lookup(&self, block_number: u64) -> Result<Option<BlockBatchLookup>, DatabaseError> {
+        let start = Instant::now();
+        let lookup = self
+            .get_block_batch_lookup_collection()
+            .find_one(doc! { "block_number": block_number as i64 }, None)
+            .await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_block_batch_lookup")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
+        Ok(lookup)
     }
 
     async fn get_start_snos_batch_for_aggregator(
