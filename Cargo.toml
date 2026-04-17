@@ -126,10 +126,10 @@ blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLL
   "node_api",
 ] }
 starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4" }
-cairo-lang-starknet-classes = "=2.16.0"
-cairo-lang-utils = "=2.16.0"
-casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.16.0" }
-casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.16.0" }
+cairo-lang-starknet-classes = "=2.17.0"
+cairo-lang-utils = "=2.17.0"
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0" }
 cairo-vm = "=3.2.0"
 cairo-native = "0.9.0-rc.2"
 alloy = { version = "1.1.0", features = [
@@ -316,8 +316,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-# TODO(mohit, 2026-04-14): switch to a tagged SNOS release once one includes these changes.
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "815185b259c7bc5e8f0ff78490cfccc8cc046c68" }
+# SNOS 0.14.2 line with Cairo 2.17 support needed for Sierra 1.8 declares during replay.
+generate-pie = { git = "https://github.com/karnotxyz/snos.git", rev = "4c7db2a4779531574bf5d2fc4cfeca93a3f8645c" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
