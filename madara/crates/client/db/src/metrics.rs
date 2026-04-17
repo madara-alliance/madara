@@ -1,4 +1,4 @@
-use mc_analytics::{register_gauge_metric_instrument, register_histogram_metric_instrument};
+use mc_telemetry::{register_gauge_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::metrics::{Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use std::sync::LazyLock;

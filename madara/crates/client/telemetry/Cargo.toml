@@ -1,6 +1,6 @@
 [package]
 name = "mc-telemetry"
-description = "Madara client telemetry service"
+description = "Madara client OpenTelemetry service"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,18 +12,29 @@ homepage.workspace = true
 targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
-
-# Madara
 mp-utils = { workspace = true }
 
-# Other
-anyhow.workspace = true
-async-trait.workspace = true
-chrono = "0.4.35"
-futures = { workspace = true }
-reqwest = { workspace = true }
-reqwest-websocket = "0.3.0"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+console = "0.15"
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+  "grpc-tonic",
+  "metrics",
+  "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry-stdout = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 serde_json = { workspace = true }
 sysinfo = "0.30.12"
-tokio = { workspace = true }
+time = { workspace = true, features = ["formatting", "local-offset", "macros"] }
 tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url = { workspace = true }
+
+[dev-dependencies]
+mp-utils = { workspace = true }

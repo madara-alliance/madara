@@ -93,7 +93,6 @@ cargo fmt -- --check
 - `mc-gateway-client`: Gateway client abstraction
 - `mc-class-exec`: Cairo Native execution support
 - `mc-telemetry`: Observability and metrics
-- `mc-analytics`: Metrics collection
 - `mc-devnet`: Development network support
 - `mc-submit-tx`: Transaction submission routing
 
@@ -121,7 +120,7 @@ Key services run concurrently:
 - **Mempool**: 4 coordinated queues with dynamic scoring
 - **RPC**: User port (9944) + Admin port (9943, localhost-only)
 - **Gateway Server**: Feeder gateway endpoints (sequencer-only)
-- **Telemetry**: WebSocket broadcast with verbosity levels
+- **Telemetry**: OpenTelemetry metrics, traces, and logs setup
 
 ### Database Architecture (`mc-db`)
 
