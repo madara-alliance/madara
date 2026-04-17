@@ -466,7 +466,7 @@ impl<D> MadaraBackend<D> {
 
 impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
-        let replacement_preconfirmed = {
+        let replacement_preconfirmed_result: Result<Option<PreconfirmedBlock>> = {
             let chain_tip = self.chain_tip.borrow();
             tracing::info!(
                 target: "custom_header",
@@ -478,34 +478,55 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                 "storing custom header"
             );
 
-            chain_tip.as_preconfirmed().and_then(|preconfirmed| {
-                if preconfirmed.header.block_number != custom_header.block_n {
-                    return None;
+            match chain_tip.as_preconfirmed() {
+                Some(preconfirmed) if preconfirmed.header.block_number == custom_header.block_n => {
+                    let live_tx_count = preconfirmed.transaction_count();
+
+                    tracing::warn!(
+                        target: "custom_header",
+                        incoming_block_n = custom_header.block_n,
+                        incoming_timestamp = custom_header.timestamp,
+                        incoming_gas_prices = ?custom_header.gas_prices,
+                        live_preconfirmed_block_n = preconfirmed.header.block_number,
+                        live_preconfirmed_timestamp = preconfirmed.header.block_timestamp.0,
+                        live_preconfirmed_gas_prices = ?preconfirmed.header.gas_prices,
+                        live_preconfirmed_tx_count = live_tx_count,
+                        "set_custom_header called while a live in-memory preconfirmed block already exists"
+                    );
+
+                    if live_tx_count > 0 {
+                        ensure!(
+                            preconfirmed.header.block_timestamp.0 == custom_header.timestamp
+                                && preconfirmed.header.gas_prices == custom_header.gas_prices,
+                            "cannot update live preconfirmed header for block {} after {} transaction(s)",
+                            custom_header.block_n,
+                            live_tx_count
+                        );
+
+                        tracing::info!(
+                            target: "custom_header",
+                            block_n = custom_header.block_n,
+                            live_preconfirmed_tx_count = live_tx_count,
+                            "live in-memory preconfirmed block already has transactions; keeping existing header"
+                        );
+                        Ok(None)
+                    } else {
+                        let content = preconfirmed.content.borrow().clone();
+                        let mut updated_header = preconfirmed.header.clone();
+                        updated_header.block_timestamp = custom_header.timestamp.into();
+                        updated_header.gas_prices = custom_header.gas_prices.clone();
+
+                        Ok(Some(PreconfirmedBlock::new_with_content(
+                            updated_header,
+                            content.executed_transactions().cloned(),
+                            content.candidate_transactions().cloned(),
+                        )))
+                    }
                 }
-
-                tracing::warn!(
-                    target: "custom_header",
-                    incoming_block_n = custom_header.block_n,
-                    incoming_timestamp = custom_header.timestamp,
-                    incoming_gas_prices = ?custom_header.gas_prices,
-                    live_preconfirmed_block_n = preconfirmed.header.block_number,
-                    live_preconfirmed_timestamp = preconfirmed.header.block_timestamp.0,
-                    live_preconfirmed_gas_prices = ?preconfirmed.header.gas_prices,
-                    "set_custom_header called while a live in-memory preconfirmed block already exists"
-                );
-
-                let content = preconfirmed.content.borrow().clone();
-                let mut updated_header = preconfirmed.header.clone();
-                updated_header.block_timestamp = custom_header.timestamp.into();
-                updated_header.gas_prices = custom_header.gas_prices.clone();
-
-                Some(PreconfirmedBlock::new_with_content(
-                    updated_header,
-                    content.executed_transactions().cloned(),
-                    content.candidate_transactions().cloned(),
-                ))
-            })
+                _ => Ok(None),
+            }
         };
+        let replacement_preconfirmed = replacement_preconfirmed_result?;
 
         if let Some(preconfirmed) = replacement_preconfirmed {
             tracing::info!(

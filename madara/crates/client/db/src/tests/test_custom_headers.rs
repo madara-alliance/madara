@@ -2,6 +2,7 @@
 
 use crate::MadaraBackend;
 use crate::preconfirmed::PreconfirmedBlock;
+use crate::test_utils::{devnet_account_address, invoke_v3, validated_transaction};
 use mp_block::header::{CustomHeader, GasPrices};
 use mp_block::PreconfirmedHeader;
 use mp_chain_config::ChainConfig;
@@ -90,4 +91,45 @@ fn custom_header_updates_live_preconfirmed_header_when_block_is_already_open() {
 
     let stored = backend.get_custom_header(replacement.block_n).expect("custom header should remain staged");
     assert_custom_header_eq(&stored, &replacement);
+}
+
+#[test]
+fn custom_header_rejects_rewriting_live_preconfirmed_header_once_transactions_exist() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let original_header = PreconfirmedHeader {
+        block_number: 0,
+        block_timestamp: 111_u64.into(),
+        gas_prices: GasPrices {
+            eth_l1_gas_price: 1,
+            strk_l1_gas_price: 2,
+            eth_l1_data_gas_price: 3,
+            strk_l1_data_gas_price: 4,
+            eth_l2_gas_price: 5,
+            strk_l2_gas_price: 6,
+        },
+        ..Default::default()
+    };
+    let candidate_tx = validated_transaction(
+        invoke_v3(devnet_account_address(), Felt::from(1_u64)).into(),
+        Felt::from(0xdead_u64),
+        devnet_account_address(),
+        None,
+    );
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new_with_content(original_header.clone(), [], [Arc::new(candidate_tx)]))
+        .unwrap();
+
+    let replacement = sample_custom_header(0, 9);
+    let error = backend
+        .set_custom_header(replacement.clone())
+        .expect_err("late header change should be rejected once transactions exist");
+    assert!(error
+        .to_string()
+        .contains("cannot update live preconfirmed header for block 0 after 1 transaction(s)"));
+
+    let preconfirmed = backend.block_view_on_preconfirmed().expect("live preconfirmed block should exist");
+    assert_eq!(preconfirmed.block().header.block_timestamp.0, original_header.block_timestamp.0);
+    assert_eq!(preconfirmed.block().header.gas_prices, original_header.gas_prices);
+    assert!(backend.get_custom_header(replacement.block_n).is_none(), "rejected header must not be staged");
 }
