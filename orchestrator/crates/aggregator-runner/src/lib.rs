@@ -68,7 +68,7 @@ pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRu
 
     // 2. Create temp file for DA segment output.
     //    The aggregator writes the DA segment to this path during execution.
-    //    TODO: Upstream PR to starknet_os to support in-memory DA segment output.
+    //    TODO(@prakhar, 2026-04-16): Upstream PR to starknet_os to support in-memory DA segment output.
     let da_temp_file = tempfile::NamedTempFile::new()?;
     let da_path = da_temp_file.path().to_path_buf();
 

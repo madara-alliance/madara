@@ -319,6 +319,8 @@ impl AtlanticProverService {
             .clone())
     }
 
+    /// Download a single artifact (proof, PIE, DA segment, etc.) from Atlantic's
+    /// storage bucket for the given task.
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
         let base_url = self.atlantic_client.artifacts_base_url().as_str().trim_end_matches('/');
         Ok(self.atlantic_client.get_artifacts(format!("{}/queries/{}/{}", base_url, task_id, file_name)).await?)

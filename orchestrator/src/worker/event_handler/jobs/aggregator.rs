@@ -34,10 +34,12 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Process the aggregator job.
     ///
     /// - **Atlantic**: closes the bucket via `RunAggregation(bucket_id)`.
-    /// - **SHARP**: runs the aggregator locally, stores artifacts, then submits an
-    ///   applicative job via `RunAggregationWithPie`.
-    /// - **Mock**: runs the aggregator locally, stores artifacts, then optionally
-    ///   registers the fact hash on an L1 `MockGpsVerifier` via the prover service.
+    /// - **SHARP**: runs the aggregator locally via [`process_job_sharp`], stores
+    ///   artifacts, then submits `Task::RunAggregationWithPie` as an applicative job.
+    /// - **Mock**: runs the aggregator locally via [`process_job_local_agg`], stores
+    ///   artifacts (PIE, DA segment, program output) to S3, then submits
+    ///   `Task::RunAggregationWithPie` — which optionally registers the fact hash on
+    ///   an L1 `MockGpsVerifier` via the prover service.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "{:?} job {} processing started", JobType::Aggregator, internal_id);
@@ -107,7 +109,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // Atlantic returns bytes; SHARP/Mock return empty (already stored during process_job).
+                // Atlantic: returns CairoPIE + DA segment bytes (fetched from remote storage).
+                // SHARP / Mock: returns empty — artifacts (PIE, DA segment, program output)
+                // were already written to S3 during process_job by the local aggregation path.
+                // Empty is safe here; the `if let Some(..)` guards below handle both cases.
                 let artifacts = config
                     .prover_client()
                     .get_aggregation_artifacts(&external_id, metadata.download_proof.is_some())
