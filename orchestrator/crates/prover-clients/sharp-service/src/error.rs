@@ -1,3 +1,4 @@
+use orchestrator_prover_client_interface::http::HttpResponseClassifier;
 use orchestrator_prover_client_interface::retry::RetryableRequestError;
 use orchestrator_prover_client_interface::ProverClientError;
 use reqwest::StatusCode;
@@ -17,7 +18,7 @@ pub enum SharpError {
     GetProofFailure(#[source] reqwest::Error),
 
     #[error("SHARP service returned {status} for {url}")]
-    SharpService { status: StatusCode, url: String },
+    SharpService { status: StatusCode, url: String, body: String },
 
     #[error("Failed to serialize body")]
     SerializationError(#[source] std::io::Error),
@@ -34,8 +35,12 @@ impl RetryableRequestError for SharpError {
             | SharpError::AddApplicativeJobFailure(e)
             | SharpError::GetJobStatusFailure(e)
             | SharpError::GetProofFailure(e) => e.is_timeout() || e.is_connect() || e.is_request(),
-            // Infrastructure HTTP errors (5xx) are retryable; 4xx are not.
-            SharpError::SharpService { status, .. } => status.is_server_error(),
+            // 5xx is always retryable. For other status codes, inspect the body to
+            // distinguish infrastructure errors (LB/gateway HTML pages, nginx 404s)
+            // from real SHARP API errors.
+            SharpError::SharpService { status, body, .. } => {
+                status.is_server_error() || HttpResponseClassifier::is_infrastructure_error(*status, body)
+            }
             // Serialization + catch-all: non-retryable.
             SharpError::SerializationError(_) | SharpError::Other(_) => false,
         }

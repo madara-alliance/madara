@@ -85,7 +85,7 @@ impl SharpClient {
                     let url = response.url().to_string();
                     let body = response.text().await.unwrap_or_default();
                     tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                    Err(SharpError::SharpService { status: code, url })
+                    Err(SharpError::SharpService { status: code, url, body })
                 }
             }
         })
@@ -135,7 +135,7 @@ impl SharpClient {
                         let url = response.url().to_string();
                         let body = response.text().await.unwrap_or_default();
                         tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                        Err(SharpError::SharpService { status: code, url })
+                        Err(SharpError::SharpService { status: code, url, body })
                     }
                 }
             })
@@ -178,7 +178,7 @@ impl SharpClient {
                     let url = response.url().to_string();
                     let body = response.text().await.unwrap_or_default();
                     tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                    Err(SharpError::SharpService { status: code, url })
+                    Err(SharpError::SharpService { status: code, url, body })
                 }
             }
         })
@@ -218,7 +218,7 @@ impl SharpClient {
                     let url = response.url().to_string();
                     let body = response.text().await.unwrap_or_default();
                     tracing::debug!(status = %code, url = %url, body = %body, "SHARP non-2xx response");
-                    Err(SharpError::SharpService { status: code, url })
+                    Err(SharpError::SharpService { status: code, url, body })
                 }
             }
         })
