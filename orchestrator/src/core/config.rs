@@ -104,6 +104,15 @@ macro_rules! versions {
             }
         }
 
+        /// Aligned with [`SUPPORTED_STARKNET_VERSION`] so `#[derive(Default)]`
+        /// on structs embedding `StarknetVersion` (e.g. batch metadata) yields
+        /// the single version this build actually supports.
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                SUPPORTED_STARKNET_VERSION
+            }
+        }
+
         impl std::fmt::Display for StarknetVersion {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.to_string())
