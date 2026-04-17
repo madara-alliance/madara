@@ -95,6 +95,9 @@ pub struct OrchestratorConfig {
     min_block_to_process: Option<u64>,
     madara_version: String,
 
+    // Admin
+    admin_enabled: bool,
+
     environment_vars: Vec<(String, String)>,
     additional_args: Vec<String>,
 }
@@ -126,7 +129,8 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version: "0.14.0".to_string(),
+            madara_version: "0.14.1".to_string(),
+            admin_enabled: false,
             logs: (false, true),
         }
     }
@@ -289,7 +293,10 @@ impl OrchestratorConfig {
             command.arg("--port").arg(port.to_string());
         }
 
-        // TODO: might wanna remove it ?
+        if self.admin_enabled {
+            command.arg("--admin-enabled");
+        }
+
         if self.mongodb {
             command.arg("--mongodb");
             command.arg("--mongodb-database-name").arg(self.database_name());
@@ -428,6 +435,11 @@ impl OrchestratorConfigBuilder {
 
     pub fn madara_version(mut self, version: &str) -> Self {
         self.config.madara_version = version.to_string();
+        self
+    }
+
+    pub fn admin_enabled(mut self, enabled: bool) -> Self {
+        self.config.admin_enabled = enabled;
         self
     }
 

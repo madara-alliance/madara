@@ -110,6 +110,16 @@ pub trait SettlementLayerProvider: Send + Sync {
     /// * Block timestamp in seconds
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError>;
 
+    /// Return the canonical block hash at the given block number, or `None` if no block exists
+    /// at that height.
+    ///
+    /// Used by the message sync worker to detect L1 reorgs: when a `LogMessageToL2` event is
+    /// received, its `l1_block_hash` is captured at observation time. Before processing the
+    /// message, the worker calls this function with the event's block number — if the returned
+    /// canonical hash differs from the observed hash, the event's block was reorged out and the
+    /// message must be discarded.
+    async fn get_block_n_hash(&self, l1_block_n: u64) -> Result<Option<[u8; 32]>, SettlementClientError>;
+
     // ============================================================
     // Stream Implementations :
     // ============================================================

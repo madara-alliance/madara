@@ -359,6 +359,20 @@ impl SettlementLayerProvider for StarknetClient {
         }
     }
 
+    async fn get_block_n_hash(&self, l1_block_n: u64) -> Result<Option<[u8; 32]>, SettlementClientError> {
+        let block = self.provider.get_block_with_tx_hashes(BlockId::Number(l1_block_n)).await.map_err(
+            |e| -> SettlementClientError {
+                StarknetClientError::Provider(format!("Failed to get block #{l1_block_n}: {e}")).into()
+            },
+        )?;
+
+        match block {
+            MaybePreConfirmedBlockWithTxHashes::Block(b) => Ok(Some(b.block_hash.to_bytes_be())),
+            // Pre-confirmed blocks aren't yet on-chain — they have no canonical hash.
+            MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => Ok(None),
+        }
+    }
+
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,

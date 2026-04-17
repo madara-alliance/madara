@@ -16,7 +16,12 @@ on:
         type: boolean
         default: true
       build-bootstrapper:
-        description: "Build Bootstrapper image"
+        description: "Build Bootstrapper V1 image (deprecated)"
+        required: true
+        type: boolean
+        default: false
+      build-bootstrapper-v2:
+        description: "Build Bootstrapper V2 image"
         required: true
         type: boolean
         default: true
@@ -54,6 +59,19 @@ jobs:
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-and-publish-bootstrapper-v2:
+    if: ${{ inputs.build-bootstrapper-v2 }}
+    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    with:
+      image-name: bootstrapper-v2
+      image-file: ./bootstrapper-v2/Dockerfile
     permissions:
       contents: read
       packages: write
