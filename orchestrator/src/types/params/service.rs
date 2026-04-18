@@ -17,6 +17,7 @@ pub struct ServiceParams {
     pub state_transition_timeout_seconds: u64,
     pub aggregator_job_timeout_seconds: u64,
     pub snos_job_buffer_size: u64,
+    pub aggregator_job_buffer_size: u64,
     pub max_priority_queue_size: usize,
 }
 
@@ -56,6 +57,7 @@ impl From<ServiceCliArgs> for ServiceParams {
             state_transition_timeout_seconds: args.state_transition_timeout_seconds,
             aggregator_job_timeout_seconds: args.aggregator_job_timeout_seconds,
             snos_job_buffer_size: args.snos_job_buffer_size,
+            aggregator_job_buffer_size: args.aggregator_job_buffer_size,
             max_priority_queue_size: args.max_priority_queue_size,
         }
     }
