@@ -1899,19 +1899,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-tungstenite"
-version = "0.25.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cca750b12e02c389c1694d35c16539f88b8bbaa5945934fdc1b41a776688589"
-dependencies = [
- "futures-io",
- "futures-util",
- "log",
- "pin-project-lite",
- "tungstenite 0.21.0",
-]
-
-[[package]]
 name = "async_io_stream"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9300,7 +9287,6 @@ dependencies = [
  "lazy_static",
  "librocksdb-sys",
  "m-proc-macros",
- "mc-analytics",
  "mc-block-production",
  "mc-class-exec",
  "mc-db",
@@ -9451,35 +9437,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-analytics"
-version = "0.10.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "console",
- "futures",
- "http-body-util",
- "hyper 1.8.1",
- "hyper-util",
- "mp-utils",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "prometheus",
- "serde_json",
- "time",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "mc-block-production"
 version = "0.10.0"
 dependencies = [
@@ -9492,13 +9449,13 @@ dependencies = [
  "futures",
  "lazy_static",
  "m-cairo-test-contracts",
- "mc-analytics",
  "mc-db",
  "mc-devnet",
  "mc-exec",
  "mc-mempool",
  "mc-settlement-client",
  "mc-submit-tx",
+ "mc-telemetry",
  "mockall 0.13.1",
  "mp-block",
  "mp-chain-config",
@@ -9541,7 +9498,7 @@ dependencies = [
  "dashmap 6.1.0",
  "lazy_static",
  "m-cairo-test-contracts",
- "mc-analytics",
+ "mc-telemetry",
  "mp-class",
  "mp-convert",
  "opentelemetry",
@@ -9575,8 +9532,8 @@ dependencies = [
  "libc",
  "librocksdb-sys",
  "m-cairo-test-contracts",
- "mc-analytics",
  "mc-class-exec",
+ "mc-telemetry",
  "mp-block",
  "mp-bloom-filter",
  "mp-chain-config",
@@ -9708,9 +9665,9 @@ dependencies = [
  "blockifier",
  "cairo-vm",
  "itertools 0.13.0",
- "mc-analytics",
  "mc-class-exec",
  "mc-db",
+ "mc-telemetry",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -9855,10 +9812,10 @@ dependencies = [
  "dashmap 6.1.0",
  "futures",
  "lazy_static",
- "mc-analytics",
  "mc-db",
  "mc-devnet",
  "mc-exec",
+ "mc-telemetry",
  "mockall 0.13.1",
  "mp-block",
  "mp-chain-config",
@@ -9945,11 +9902,11 @@ dependencies = [
  "httpmock 0.7.0",
  "lazy_static",
  "m-cairo-test-contracts",
- "mc-analytics",
  "mc-db",
  "mc-e2e-tests",
  "mc-mempool",
  "mc-submit-tx",
+ "mc-telemetry",
  "mockall 0.13.1",
  "mp-block",
  "mp-chain-config",
@@ -10023,10 +9980,10 @@ dependencies = [
  "futures",
  "httpmock 0.7.0",
  "m-cairo-test-contracts",
- "mc-analytics",
  "mc-db",
  "mc-gateway-client",
  "mc-settlement-client",
+ "mc-telemetry",
  "mp-block",
  "mp-bloom-filter",
  "mp-chain-config",
@@ -10065,15 +10022,22 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
- "futures",
+ "console",
  "mp-utils",
- "reqwest 0.12.26",
- "reqwest-websocket",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry-stdout",
+ "opentelemetry_sdk",
  "serde_json",
  "sysinfo",
- "tokio",
+ "time",
  "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -10461,7 +10425,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
- "mc-analytics",
+ "mc-telemetry",
  "mp-chain-config",
  "mp-convert",
  "mp-receipt",
@@ -12317,21 +12281,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prometheus"
-version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d33c28a30771f7f96db69893f78b857f7450d7e0237e9c8fc6427a81bae7ed1"
-dependencies = [
- "cfg-if",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot 0.12.5",
- "protobuf",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "proptest"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12424,12 +12373,6 @@ checksum = "9091c90b0a32608e984ff2fa4091273cbdd755d54935c51d520887f4a1dbd5b0"
 dependencies = [
  "prost 0.12.6",
 ]
-
-[[package]]
-name = "protobuf"
-version = "2.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "quanta"
@@ -12927,23 +12870,6 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "reqwest-websocket"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f577b873973670ae646078b04ca30fc5af08f40af0160af3242684c12d575983"
-dependencies = [
- "async-tungstenite",
- "futures-util",
- "reqwest 0.12.26",
- "thiserror 1.0.69",
- "tokio",
- "tokio-util",
- "tracing",
- "tungstenite 0.21.0",
  "web-sys",
 ]
 
@@ -15568,7 +15494,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.4",
- "tungstenite 0.26.2",
+ "tungstenite",
  "webpki-roots 0.26.11",
 ]
 
@@ -16008,25 +15934,6 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "tungstenite"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ef1a641ea34f399a848dea702823bbecfb4c486f911735368f1f137cb8257e1"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.4.0",
- "httparse",
- "log",
- "rand 0.8.5",
- "sha1",
- "thiserror 1.0.69",
- "url",
- "utf-8",
-]
 
 [[package]]
 name = "tungstenite"
