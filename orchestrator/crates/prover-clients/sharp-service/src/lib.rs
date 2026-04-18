@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
-    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+    AggregationArtifacts, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
 use uuid::Uuid;
 
@@ -71,10 +71,13 @@ impl ProverClient for SharpProverService {
                 let response = self.sharp_client.create_bucket().await?;
                 Ok(response.bucket_id.to_string())
             }
-            Task::CloseBucket(bucket_id) => {
+            Task::RunAggregation(bucket_id) => {
                 self.sharp_client.close_bucket(&bucket_id).await?;
                 Ok(bucket_id)
             }
+            Task::RunAggregationWithPie(_) => Err(ProverClientError::TaskInvalid(
+                "SHARP bucket-mode service does not support PIE-based aggregation on this branch.".to_string(),
+            )),
         }
     }
 
@@ -187,6 +190,21 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
+    async fn get_aggregation_artifacts(
+        &self,
+        _external_id: &str,
+        _include_proof: bool,
+    ) -> Result<AggregationArtifacts, ProverClientError> {
+        // The old bucket-mode SHARP service is not actively used on this branch.
+        // Returning empty artifacts keeps the compile passing; the proper SHARP path
+        // lives on the `feat/sharp-integration` branch.
+        Ok(AggregationArtifacts::default())
+    }
+}
+
+/// Private helpers (not part of the ProverClient trait).
+impl SharpProverService {
+    #[allow(dead_code)]
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
         Ok(self
             .sharp_client
@@ -194,6 +212,7 @@ impl ProverClient for SharpProverService {
             .await?)
     }
 
+    #[allow(dead_code)]
     async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError> {
         Ok(self.sharp_client.get_aggregator_task_id(bucket_id).await?.task_id)
     }

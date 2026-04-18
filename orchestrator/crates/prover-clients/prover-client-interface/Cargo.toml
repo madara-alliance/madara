@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+bytes.workspace = true
 cairo-vm.workspace = true
 mockall.workspace = true
 orchestrator-gps-fact-checker.workspace = true

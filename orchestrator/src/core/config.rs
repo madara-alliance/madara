@@ -12,6 +12,7 @@ use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+use orchestrator_mock_service::MockProverService;
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
@@ -156,10 +157,16 @@ pub struct ConfigParam {
     pub da_public_keys: Option<Vec<Felt>>,
 }
 
+// Re-export so downstream modules can `use crate::core::config::ProverKind;`.
+pub use crate::types::params::prover::ProverKind;
+
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
+    /// Which prover backend is active. Stored so handlers can branch on it
+    /// without plumbing the full `ProverConfig` around.
+    prover_kind: ProverKind,
     /// The orchestrator config
     pub params: ConfigParam,
     /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
@@ -209,6 +216,7 @@ impl Config {
     ) -> Self {
         Self {
             layer,
+            prover_kind: ProverKind::Atlantic,
             params,
             chain_details,
             madara_rpc_client,
@@ -242,6 +250,7 @@ impl Config {
 
         let prover_config =
             ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
+        let prover_kind = prover_config.kind();
         let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
@@ -307,6 +316,7 @@ impl Config {
 
         Ok(Self {
             layer,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
@@ -331,6 +341,11 @@ impl Config {
     /// Returns the chain details fetched from the node at startup
     pub fn chain_details(&self) -> &ChainDetails {
         &self.chain_details
+    }
+
+    /// Which prover backend is active.
+    pub fn prover_kind(&self) -> ProverKind {
+        self.prover_kind
     }
 
     pub(crate) async fn build_database_client(
@@ -400,6 +415,7 @@ impl Config {
                 fee_token_address,
                 da_public_keys,
             )),
+            ProverConfig::Mock(mock_params) => Box::new(MockProverService::new_with_args(mock_params)),
         }
     }
 
@@ -434,7 +450,7 @@ impl Config {
                     info!("Mock Atlantic server started successfully");
                 }
             }
-            ProverConfig::Sharp(_) => {
+            ProverConfig::Sharp(_) | ProverConfig::Mock(_) => {
                 tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }

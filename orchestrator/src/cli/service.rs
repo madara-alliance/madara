@@ -36,6 +36,11 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
 
+    /// The maximum number of aggregator jobs to process concurrently.
+    /// Relevant when the aggregator runs locally (SHARP / Mock paths).
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS", long)]
+    pub max_concurrent_aggregator_jobs: Option<usize>,
+
     /// Timeout in seconds for SNOS jobs stuck in LockedForProcessing status.
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
     pub snos_job_timeout_seconds: u64,
