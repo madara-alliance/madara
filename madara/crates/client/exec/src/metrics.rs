@@ -3,7 +3,7 @@
 //! This module provides execution time tracking for individual transactions.
 //! Metrics are exported via OpenTelemetry (OTEL) for integration with Prometheus/OTLP.
 
-use mc_analytics::{
+use mc_telemetry::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
 };
 use opentelemetry::metrics::{Counter, Gauge, Histogram};
