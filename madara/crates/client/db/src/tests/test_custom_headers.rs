@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use crate::MadaraBackend;
 use crate::preconfirmed::PreconfirmedBlock;
+use crate::MadaraBackend;
 use mp_block::header::{CustomHeader, GasPrices};
 use mp_block::PreconfirmedHeader;
 use mp_chain_config::ChainConfig;
