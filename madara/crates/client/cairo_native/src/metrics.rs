@@ -43,7 +43,7 @@
 //!
 //! OTEL instruments are thread-safe and can be called from any thread concurrently.
 
-use mc_analytics::{
+use mc_telemetry::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
 };
 use opentelemetry::metrics::{Counter, Gauge, Histogram};

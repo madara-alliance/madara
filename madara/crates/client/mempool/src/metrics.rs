@@ -1,5 +1,5 @@
 use crate::inner::MempoolStateSummary;
-use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument};
+use mc_telemetry::{register_counter_metric_instrument, register_gauge_metric_instrument};
 use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 

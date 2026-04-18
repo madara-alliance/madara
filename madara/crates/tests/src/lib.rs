@@ -546,6 +546,37 @@ fn madara_help_shows() {
 
 #[rstest]
 #[tokio::test]
+async fn madara_starts_without_otel_endpoint() {
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+    let mut node = MadaraCmdBuilder::new()
+        .args(["--devnet", "--no-l1-sync", "--l1-gas-price", "0", "--blob-gas-price", "0"])
+        .run();
+    node.wait_for_ready().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn madara_starts_with_otel_endpoint() {
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+    let mut node = MadaraCmdBuilder::new()
+        .args([
+            "--devnet",
+            "--no-l1-sync",
+            "--l1-gas-price",
+            "0",
+            "--blob-gas-price",
+            "0",
+            "--otel-collector-endpoint",
+            "http://127.0.0.1:4317",
+        ])
+        .run();
+    node.wait_for_ready().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
