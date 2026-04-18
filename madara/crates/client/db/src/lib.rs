@@ -122,7 +122,7 @@ use crate::sync_status::SyncStatusCell;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
-use mp_block::header::{CustomHeader, PreconfirmedHeader};
+use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -463,9 +463,41 @@ impl<D> MadaraBackend<D> {
         self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
     }
 
-    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+    pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
         let mut guard = self.custom_headers.lock().expect("Poisoned lock");
-        guard.insert(custom_header.block_n, custom_header);
+        let initial_len = guard.len();
+        guard.retain(|stored_block_n, _| *stored_block_n > block_n);
+        initial_len.saturating_sub(guard.len())
+    }
+}
+
+impl<D: MadaraStorage> MadaraBackend<D> {
+    pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
+        let chain_tip = self.chain_tip.borrow();
+        tracing::info!(
+            target: "custom_header",
+            block_n = custom_header.block_n,
+            timestamp = custom_header.timestamp,
+            gas_prices = ?custom_header.gas_prices,
+            expected_block_hash = ?custom_header.expected_block_hash,
+            chain_tip = ?*chain_tip,
+            "storing custom header"
+        );
+        drop(chain_tip);
+
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
+            tracing::info!(
+                target: "custom_header",
+                block_n = custom_header.block_n,
+                previous_timestamp = previous.timestamp,
+                previous_gas_prices = ?previous.gas_prices,
+                new_timestamp = custom_header.timestamp,
+                new_gas_prices = ?custom_header.gas_prices,
+                "replacing staged custom header for block"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -730,44 +762,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(())
     }
 
-    pub fn set_custom_header(&self, custom_header: CustomHeader) -> Result<()> {
-        self.inner.set_custom_header(custom_header.clone());
-
-        let Some(current_preconfirmed) = self.inner.preconfirmed_block() else {
-            return Ok(());
-        };
-
-        if current_preconfirmed.header.block_number != custom_header.block_n {
-            return Ok(());
-        }
-
-        let transaction_count = current_preconfirmed.transaction_count();
-        if transaction_count != 0 {
-            ensure!(
-                current_preconfirmed.header.block_timestamp.0 == custom_header.timestamp
-                    && current_preconfirmed.header.gas_prices == custom_header.gas_prices,
-                "Cannot change custom header for block {} after PRE_CONFIRMED has transactions",
-                custom_header.block_n
-            );
-            return Ok(());
-        }
-
-        let updated_header = PreconfirmedHeader {
-            block_number: current_preconfirmed.header.block_number,
-            sequencer_address: current_preconfirmed.header.sequencer_address,
-            block_timestamp: custom_header.timestamp.into(),
-            protocol_version: current_preconfirmed.header.protocol_version,
-            gas_prices: custom_header.gas_prices,
-            l1_da_mode: current_preconfirmed.header.l1_da_mode,
-        };
-
-        let replacement = current_preconfirmed.clone_with_header(updated_header);
-
-        self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(replacement)))?;
-
-        Ok(())
-    }
-
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
     ///
     /// When `state_diff` is provided, this function uses an optimized path that skips the expensive
@@ -891,10 +885,28 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                consumed_timestamp = header.timestamp,
+                consumed_gas_prices = ?header.gas_prices,
+                block_timestamp = block.header.block_timestamp.0,
+                block_gas_prices = ?block.header.gas_prices,
+                "consuming custom header during block close"
+            );
             let is_valid = header.is_block_hash_as_expected(&block_hash);
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
+        }
+        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
+        if cleared_headers > 0 {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                cleared_headers,
+                "cleared staged custom headers through closed block"
+            );
         }
 
         // Save the block.

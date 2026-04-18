@@ -5,7 +5,6 @@ use blockifier::blockifier::transaction_executor::{
     BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult,
 };
 use mc_db::MadaraBackend;
-use mp_block::header::CustomHeader;
 use std::{any::Any, panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
@@ -30,21 +29,12 @@ pub struct ExecutorThreadHandle {
 pub enum ExecutorCommandError {
     #[error("Executor not running")]
     ChannelClosed,
-    #[error("Cannot refresh block header for block {0}: transactions have already been executed")]
-    BlockAlreadyHasTransactions(u64),
-    #[error("{0}")]
-    Internal(String),
 }
 
 #[derive(Debug)]
 pub enum ExecutorCommand {
     /// Force close the current block.
     CloseBlock(oneshot::Sender<Result<(), ExecutorCommandError>>),
-    /// Refresh the execution context of the current block after a custom header update.
-    RefreshCurrentBlockHeader {
-        custom_header: CustomHeader,
-        callback: oneshot::Sender<Result<(), ExecutorCommandError>>,
-    },
 }
 
 #[derive(Debug)]

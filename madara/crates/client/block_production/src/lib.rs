@@ -761,11 +761,30 @@ impl BlockProductionTask {
 
                 // Check if pre-confirmed block exists (it shouldn't at this point)
                 // Create new preconfirmed block
+                let preconfirmed_header = exec_ctx.into_header();
+                tracing::info!(
+                    target: "custom_header",
+                    block_n = preconfirmed_header.block_number,
+                    timestamp = preconfirmed_header.block_timestamp.0,
+                    gas_prices = ?preconfirmed_header.gas_prices,
+                    "creating new in-memory preconfirmed block from execution context"
+                );
+
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
-                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
+                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(preconfirmed_header))
                 })
                 .await?;
+
+                if let Some(preconfirmed) = self.backend.chain_tip.borrow().as_preconfirmed() {
+                    tracing::info!(
+                        target: "custom_header",
+                        block_n = preconfirmed.header.block_number,
+                        timestamp = preconfirmed.header.block_timestamp.0,
+                        gas_prices = ?preconfirmed.header.gas_prices,
+                        "new in-memory preconfirmed block is now live"
+                    );
+                }
 
                 self.current_state =
                     Some(TaskState::Executing(CurrentBlockState::new(self.backend.clone(), new_block_n)));

@@ -4,11 +4,9 @@ use crate::metrics::BlockProductionMetrics;
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
-use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
-use mp_block::header::CustomHeader;
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
@@ -94,10 +92,6 @@ enum WaitTxBatchOutcome {
     Batch(BatchToExecute),
 }
 
-fn summarize_batch_txs(txs: &[blockifier::transaction::transaction_execution::Transaction]) -> Vec<String> {
-    txs.iter().map(|tx| format!("{:#x}:{}", tx.tx_hash().to_felt(), tx_type_to_label(tx.tx_type()))).collect()
-}
-
 impl ExecutorThread {
     pub fn new(
         backend: Arc<MadaraBackend>,
@@ -141,23 +135,45 @@ impl ExecutorThread {
         // Should be fine, as we optimistically try_recv above and we should only hit this when we actually have to wait.
         // nb.2: use an async block here, as timeout_at needs a runtime to be available on creation.
         self.wait_rt.block_on(async {
-            tokio::select! {
-                Some(cmd) = self.commands.recv() => {
-                    tracing::debug!("Got cmd {cmd:?}.");
-                    WaitTxBatchOutcome::Command(cmd)
-                }
-                _ = OptionFuture::from(deadline.map(tokio::time::sleep_until)) => {
-                    tracing::debug!("Waiting for batch timed out.");
-                    WaitTxBatchOutcome::Batch(Default::default())
-                }
-                el = self.incoming_batches.recv() => match el {
-                    Some(el) => {
-                        tracing::debug!("Got new batch with {} transactions.", el.len());
-                        WaitTxBatchOutcome::Batch(el)
+            match deadline {
+                Some(deadline) => {
+                    tokio::select! {
+                        Some(cmd) = self.commands.recv() => {
+                            tracing::debug!("Got cmd {cmd:?}.");
+                            WaitTxBatchOutcome::Command(cmd)
+                        }
+                        _ = tokio::time::sleep_until(deadline) => {
+                            tracing::debug!("Waiting for batch timed out.");
+                            WaitTxBatchOutcome::Batch(Default::default())
+                        }
+                        el = self.incoming_batches.recv() => match el {
+                            Some(el) => {
+                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                WaitTxBatchOutcome::Batch(el)
+                            }
+                            None => {
+                                tracing::debug!("Batch channel closed.");
+                                WaitTxBatchOutcome::Exit
+                            }
+                        }
                     }
-                    None => {
-                        tracing::debug!("Batch channel closed.");
-                        WaitTxBatchOutcome::Exit
+                }
+                None => {
+                    tokio::select! {
+                        Some(cmd) = self.commands.recv() => {
+                            tracing::debug!("Got cmd {cmd:?}.");
+                            WaitTxBatchOutcome::Command(cmd)
+                        }
+                        el = self.incoming_batches.recv() => match el {
+                            Some(el) => {
+                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                WaitTxBatchOutcome::Batch(el)
+                            }
+                            None => {
+                                tracing::debug!("Batch channel closed.");
+                                WaitTxBatchOutcome::Exit
+                            }
+                        }
                     }
                 }
             }
@@ -254,62 +270,6 @@ impl ExecutorThread {
         }))
     }
 
-    fn refresh_current_block_header(
-        &mut self,
-        state: &mut ExecutorThreadState,
-        custom_header: &CustomHeader,
-        previous_l2_gas_used: u128,
-        block_empty: bool,
-    ) -> Result<(), super::ExecutorCommandError> {
-        let ExecutorThreadState::Executing(execution_state) = state else {
-            return Ok(());
-        };
-
-        if execution_state.exec_ctx.block_number != custom_header.block_n {
-            return Ok(());
-        }
-
-        if !block_empty || !execution_state.declared_classes.is_empty() {
-            return Err(super::ExecutorCommandError::BlockAlreadyHasTransactions(custom_header.block_n));
-        }
-
-        tracing::info!(
-            target: "custom_header",
-            block_n = custom_header.block_n,
-            timestamp = custom_header.timestamp,
-            gas_prices = ?custom_header.gas_prices,
-            "refreshing active execution context for current block from custom header"
-        );
-
-        let block_state = execution_state.executor.block_state.take().ok_or_else(|| {
-            super::ExecutorCommandError::Internal(format!(
-                "Cannot recreate execution context for block {}: executor state already taken",
-                custom_header.block_n
-            ))
-        })?;
-        let consumed_l1_to_l2_nonces = mem::take(&mut execution_state.consumed_l1_to_l2_nonces);
-        let new_state = ExecutorStateNewBlock { state_adaptor: block_state.state, consumed_l1_to_l2_nonces };
-
-        *execution_state = self.create_execution_state(new_state, previous_l2_gas_used).map_err(|error| {
-            super::ExecutorCommandError::Internal(format!(
-                "Cannot recreate execution context for block {}: {error:#}",
-                custom_header.block_n
-            ))
-        })?;
-
-        tracing::info!(
-            target: "custom_header",
-            block_n = execution_state.exec_ctx.block_number,
-            timestamp = execution_state.exec_ctx.block_timestamp.duration_since(std::time::UNIX_EPOCH)
-                .map(|duration| duration.as_secs())
-                .unwrap_or_default(),
-            gas_prices = ?execution_state.exec_ctx.gas_prices,
-            "active execution context refreshed from custom header"
-        );
-
-        Ok(())
-    }
-
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
@@ -346,16 +306,6 @@ impl ExecutorThread {
                         super::ExecutorCommand::CloseBlock(callback) => {
                             force_close = true;
                             let _ = callback.send(Ok(()));
-                            Default::default()
-                        }
-                        super::ExecutorCommand::RefreshCurrentBlockHeader { custom_header, callback } => {
-                            let result = self.refresh_current_block_header(
-                                &mut state,
-                                &custom_header,
-                                l2_gas_consumed_block,
-                                block_empty,
-                            );
-                            let _ = callback.send(result);
                             Default::default()
                         }
                     },
@@ -491,34 +441,9 @@ impl ExecutorThread {
             let exec_duration = exec_start_time.elapsed();
 
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
-            let requested_count = to_exec.len();
-            let executed_count = blockifier_results.len();
-            let block_full = executed_count < requested_count;
-            let requested_batch_summary = block_full.then(|| summarize_batch_txs(&to_exec.txs));
+            let block_full = blockifier_results.len() < to_exec.len();
 
-            let executed_txs = to_exec.remove_n_front(executed_count); // Remove the used txs.
-
-            if let Some(requested_batch_summary) = requested_batch_summary {
-                let executed_batch_summary = summarize_batch_txs(&executed_txs.txs);
-                let deferred_batch_summary = summarize_batch_txs(&to_exec.txs);
-                let bouncer_weights = {
-                    let bouncer = execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned");
-                    *bouncer.get_bouncer_weights()
-                };
-
-                tracing::warn!(
-                    block_number = execution_state.exec_ctx.block_number,
-                    requested_count,
-                    executed_count,
-                    deferred_count = to_exec.len(),
-                    exec_duration_ms = exec_duration.as_millis(),
-                    requested_batch = ?requested_batch_summary,
-                    executed_batch = ?executed_batch_summary,
-                    deferred_batch = ?deferred_batch_summary,
-                    bouncer_weights = ?bouncer_weights,
-                    "Partial batch execution returned fewer results than requested"
-                );
-            }
+            let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // Remove the used txs.
 
             let mut stats = ExecutionStats::default();
             stats.n_batches += 1;
@@ -573,11 +498,10 @@ impl ExecutorThread {
 
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
-            let bouncer_weights = {
-                let bouncer = execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned");
-                *bouncer.get_bouncer_weights()
-            };
-            tracing::debug!("Weights: {:?}", bouncer_weights);
+            tracing::debug!(
+                "Weights: {:?}",
+                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
+            );
             tracing::debug!("Block now full: {:?}", block_full);
             if let Some(block_state) = execution_state.executor.block_state.as_mut() {
                 block_state.state.evict_read_cache_if_needed();
@@ -597,21 +521,10 @@ impl ExecutorThread {
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
             if force_close || block_full || block_time_deadline_reached {
-                if block_full {
-                    tracing::warn!(
-                        block_number = execution_state.exec_ctx.block_number,
-                        force_close,
-                        block_time_deadline_reached,
-                        deferred_count = to_exec.len(),
-                        deferred_batch = ?summarize_batch_txs(&to_exec.txs),
-                        "Closing block after partial batch execution"
-                    );
-                } else {
-                    tracing::debug!(
-                        "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
-                        execution_state.exec_ctx.block_number,
-                    );
-                }
+                tracing::debug!(
+                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
+                    execution_state.exec_ctx.block_number,
+                );
                 let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
