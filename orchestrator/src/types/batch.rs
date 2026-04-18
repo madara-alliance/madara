@@ -3,7 +3,9 @@ use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
-use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
+use mongodb::bson::serde_helpers::{
+    chrono_datetime_as_bson_datetime, chrono_datetime_as_bson_datetime_optional, uuid_1_as_binary,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -337,6 +339,33 @@ pub struct SnosBatch {
     pub created_at: DateTime<Utc>,
 
     /// Timestamp when the batch was last updated
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Reverse lookup entry for per-block batch membership.
+///
+/// This materializes the batch relationships needed by alerting and route
+/// lookups so we do not have to repeatedly scan block ranges at read time.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct BlockBatchLookup {
+    /// Concrete block number represented by this lookup row.
+    pub block_number: u64,
+
+    /// SNOS batch containing this block, when available.
+    #[serde(default)]
+    pub snos_batch_index: Option<u64>,
+
+    /// Aggregator batch containing this block, when available.
+    #[serde(default)]
+    pub aggregator_batch_index: Option<u64>,
+
+    /// Timestamp when the lookup row was created.
+    #[serde(default)]
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime_optional"))]
+    pub created_at: Option<DateTime<Utc>>,
+
+    /// Timestamp when the lookup row was last refreshed.
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
 }
