@@ -835,6 +835,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
         aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
+        aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,
     };
 
