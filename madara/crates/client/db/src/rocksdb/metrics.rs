@@ -23,7 +23,7 @@
 use crate::rocksdb::column::ALL_COLUMNS;
 use crate::rocksdb::RocksDBStorage;
 use anyhow::Context;
-use mc_analytics::register_gauge_metric_instrument;
+use mc_telemetry::register_gauge_metric_instrument;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use rocksdb::perf::MemoryUsageBuilder;

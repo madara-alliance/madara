@@ -477,7 +477,6 @@ impl MadaraCmdBuilder {
         let rpc_port = self.rpc_enabled.then_some(unused_local_port());
         let gateway_port = self.gateway_enabled.then_some(unused_local_port());
         let rpc_admin_port = unused_local_port();
-        let analytics_port = unused_local_port();
 
         tracing::info!(
             "Running new madara process with args {:?} on rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port}, gateway_port={gateway_port:?}",
@@ -497,7 +496,6 @@ impl MadaraCmdBuilder {
             .args(rpc_port_args)
             .args(gateway_port_args)
             // Always use dynamic ports for services that may conflict when running multiple nodes
-            .args(["--analytics-prometheus-endpoint-port".into(), analytics_port.to_string()])
             .args(["--rpc-admin-port".into(), rpc_admin_port.to_string()])
             .args(gateway_key_args)
             .stdout(Stdio::piped())
@@ -542,6 +540,37 @@ fn madara_help_shows() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Madara: High performance Starknet sequencer/full-node"), "stdout: {stdout}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn madara_starts_without_otel_endpoint() {
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+    let mut node = MadaraCmdBuilder::new()
+        .args(["--devnet", "--no-l1-sync", "--l1-gas-price", "0", "--blob-gas-price", "0"])
+        .run();
+    node.wait_for_ready().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn madara_starts_with_otel_endpoint() {
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+    let mut node = MadaraCmdBuilder::new()
+        .args([
+            "--devnet",
+            "--no-l1-sync",
+            "--l1-gas-price",
+            "0",
+            "--blob-gas-price",
+            "0",
+            "--otel-collector-endpoint",
+            "http://127.0.0.1:4317",
+        ])
+        .run();
+    node.wait_for_ready().await;
 }
 
 #[rstest]

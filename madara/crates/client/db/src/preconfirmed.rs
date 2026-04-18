@@ -149,6 +149,13 @@ impl PreconfirmedBlock {
         });
     }
 
+    /// Clone the preconfirmed block while replacing only the header.
+    /// This preserves executed/candidate transactions when a replay lane updates the
+    /// canonical header metadata after the block already exists in memory.
+    pub fn clone_with_header(&self, header: PreconfirmedHeader) -> Self {
+        Self { header, content: tokio::sync::watch::Sender::new(self.content.borrow().clone()) }
+    }
+
     /// Get the total number of transactions (executed + candidates) in this preconfirmed block.
     pub fn transaction_count(&self) -> usize {
         let content = self.content.borrow();
