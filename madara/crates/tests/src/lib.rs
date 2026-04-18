@@ -477,7 +477,6 @@ impl MadaraCmdBuilder {
         let rpc_port = self.rpc_enabled.then_some(unused_local_port());
         let gateway_port = self.gateway_enabled.then_some(unused_local_port());
         let rpc_admin_port = unused_local_port();
-        let analytics_port = unused_local_port();
 
         tracing::info!(
             "Running new madara process with args {:?} on rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port}, gateway_port={gateway_port:?}",
@@ -497,7 +496,6 @@ impl MadaraCmdBuilder {
             .args(rpc_port_args)
             .args(gateway_port_args)
             // Always use dynamic ports for services that may conflict when running multiple nodes
-            .args(["--analytics-prometheus-endpoint-port".into(), analytics_port.to_string()])
             .args(["--rpc-admin-port".into(), rpc_admin_port.to_string()])
             .args(gateway_key_args)
             .stdout(Stdio::piped())
