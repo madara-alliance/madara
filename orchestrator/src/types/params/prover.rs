@@ -157,9 +157,17 @@ fn validate_mock(
         .ethereum_rpc_url
         .clone()
         .ok_or_else(|| OrchestratorError::RunCommandError("Mock prover requires Ethereum RPC URL".to_string()))?;
-    let ethereum_private_key = eth_args
-        .ethereum_private_key
-        .clone()
+
+    // Prefer the `_FILE` variant when set. This lets deployments keep a dummy
+    // value in `MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY` (e.g. "0x123" to
+    // satisfy other consumers) while sourcing the real key from a mounted
+    // file — typical AWS Secrets Manager / CSI Secrets Store setup.
+    // `resolve_secret_from_file` also trims trailing whitespace, which
+    // avoids the common `Invalid Ethereum private key: odd number of digits`
+    // error when the secret file ends with `\n`.
+    let ethereum_private_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")
+        .map_err(OrchestratorError::RunCommandError)?
+        .or_else(|| eth_args.ethereum_private_key.clone())
         .ok_or_else(|| OrchestratorError::RunCommandError("Mock prover requires Ethereum private key".to_string()))?;
     // Parse once here so malformed keys surface as a clean CLI validation error
     let ethereum_signer: alloy::signers::local::PrivateKeySigner = ethereum_private_key
