@@ -9,12 +9,11 @@ use clap::Args;
 /// skipped (assumes the settlement core contract points at an always-true verifier stub).
 ///
 /// Ethereum RPC + private key are reused from the Ethereum settlement config.
+///
+/// Selection of this prover is now via the top-level `--prover` arg /
+/// `MADARA_ORCHESTRATOR_PROVER=mock` env. There is no `--mock` flag.
 #[derive(Debug, Clone, Args)]
 pub struct MockCliArgs {
-    /// Use the Mock prover.
-    #[arg(long)]
-    pub mock: bool,
-
     /// Optional L1 address of a deployed `MockGpsVerifier`. When set, the mock prover sends
     /// `registerFact(bytes32)` txs during aggregator processing.
     #[arg(env = "MADARA_ORCHESTRATOR_MOCK_VERIFIER_ADDRESS", long)]

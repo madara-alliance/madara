@@ -23,7 +23,13 @@ pub enum ProverConfig {
 ///
 /// Prefer this over matching `ProverConfig` directly when the handler only needs
 /// to know *which* prover is active, not its full validated config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Also used by clap as the typed value of the `--prover` / `MADARA_ORCHESTRATOR_PROVER`
+/// argument. `rename_all = "snake_case"` makes the accepted values lower-cased
+/// (`sharp`, `atlantic`, `mock`), which matches the strings used by `required_if_eq`
+/// on the per-prover CLI structs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[clap(rename_all = "snake_case")]
 pub enum ProverKind {
     Sharp,
     Atlantic,
@@ -43,30 +49,17 @@ impl ProverConfig {
 impl TryFrom<RunCmd> for ProverConfig {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let selected = [run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic, run_cmd.mock_args.mock]
-            .iter()
-            .filter(|&&x| x)
-            .count();
-        if selected > 1 {
-            return Err(OrchestratorError::RunCommandError(
-                "Only one of --sharp, --atlantic, --mock may be selected".to_string(),
-            ));
+        // Prover selection comes from the single typed `--prover` arg
+        // (env: `MADARA_ORCHESTRATOR_PROVER`). Clap validates the enum value at
+        // parse time, so "exactly one of sharp/atlantic/mock" is already
+        // guaranteed — we just dispatch to the right per-prover validator,
+        // which in turn checks that its required sub-envs are present.
+        match run_cmd.prover {
+            ProverKind::Sharp => validate_sharp(run_cmd.sharp_args).map(ProverConfig::Sharp),
+            ProverKind::Atlantic => validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic),
+            ProverKind::Mock => validate_mock(run_cmd.mock_args, &run_cmd.ethereum_settlement_args, run_cmd.layer)
+                .map(ProverConfig::Mock),
         }
-        if selected == 0 {
-            return Err(OrchestratorError::RunCommandError(
-                "Must select one of --sharp, --atlantic, --mock".to_string(),
-            ));
-        }
-
-        if run_cmd.sharp_args.sharp {
-            return validate_sharp(run_cmd.sharp_args).map(ProverConfig::Sharp);
-        }
-
-        if run_cmd.atlantic_args.atlantic {
-            return validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic);
-        }
-
-        validate_mock(run_cmd.mock_args, &run_cmd.ethereum_settlement_args, run_cmd.layer).map(ProverConfig::Mock)
     }
 }
 
