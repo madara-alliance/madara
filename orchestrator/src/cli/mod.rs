@@ -1,4 +1,5 @@
 use crate::core::config::StarknetVersion;
+use crate::types::params::prover::ProverKind;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
@@ -86,12 +87,6 @@ pub enum Commands {
           .requires("provider")
     ),
     group(
-        ArgGroup::new("prover")
-            .args(&["sharp", "atlantic", "mock"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
         ArgGroup::new("settlement_layer")
             .args(&["settle_on_ethereum", "settle_on_starknet"])
             .required(true)
@@ -146,7 +141,13 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub starknet_settlement_args: settlement::starknet::StarknetSettlementCliArgs,
 
-    // Prover
+    // Prover: single enum selects which backend to use. The per-prover struct
+    // below that matches the selection is validated in `TryFrom<RunCmd> for
+    // ProverConfig` — the others are ignored. Accepted values: sharp, atlantic,
+    // mock (case-insensitive).
+    #[arg(env = "MADARA_ORCHESTRATOR_PROVER", long, value_enum)]
+    pub prover: ProverKind,
+
     #[clap(flatten)]
     pub sharp_args: prover::sharp::SharpCliArgs,
 
