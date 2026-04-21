@@ -37,13 +37,24 @@ impl JobTrigger for AggregatorJobTrigger {
 
         info!("Creating max {} {:?} jobs", max_to_create, JobType::Aggregator);
 
-        // Fetch up to `max_to_create` closed batches — no point pulling more
-        // than we can legitimately turn into jobs this tick.
+        // Convert the `u64` cap to the `i64` Mongo expects.
+        // A misconfigured `aggregator_job_buffer_size` above `i64::MAX` would
+        // silently wrap to a negative limit with `as i64`; use `try_into` so
+        // it fails loudly instead.
+        let batch_fetch_limit: i64 = max_to_create.try_into().map_err(|_| {
+            color_eyre::eyre::eyre!(
+                "aggregator_job_buffer_size resolved to {} (> i64::MAX); refusing to query with a wrapped negative limit",
+                max_to_create
+            )
+        })?;
+
+        // Fetch up to `batch_fetch_limit` closed batches — no point pulling
+        // more than we can legitimately turn into jobs this tick.
         let closed_batches = config
             .database()
             .get_aggregator_batches_by_status(
                 AggregatorBatchStatus::Closed,
-                Some(max_to_create as i64),
+                Some(batch_fetch_limit),
                 Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
