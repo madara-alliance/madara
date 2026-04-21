@@ -50,23 +50,41 @@ use crate::{
 use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
-/// Starknet versions supported by the service
+/// Starknet versions supported by the service.
+///
+/// The last entry in the list is automatically exposed as
+/// [`SUPPORTED_STARKNET_VERSION`] — the single version this orchestrator build
+/// is pinned to for DA encoding and batching. To bump the supported version,
+/// simply append a new variant at the end of the list.
 macro_rules! versions {
-    ($(($variant:ident, $version:expr)),* $(,)?) => {
+    // Entry point: forward all items to the token-munching helper.
+    ($(($variant:ident, $version:expr)),+ $(,)?) => {
+        versions!(@munch [] $(($variant, $version)),+);
+    };
+
+    // Recursive case: shift the first item into the accumulator and continue.
+    (@munch [$($accum:tt)*] ($v:ident, $s:expr), $($rest:tt)+) => {
+        versions!(@munch [$($accum)* ($v, $s),] $($rest)+);
+    };
+
+    // Terminal case: one entry remains — that is the latest supported version.
+    (@munch [$(($variant:ident, $version:expr),)*] ($last_v:ident, $last_s:expr)) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         pub enum StarknetVersion {
-            $($variant),*
+            $($variant,)*
+            $last_v,
         }
 
         impl StarknetVersion {
             pub fn to_string(&self) -> &'static str {
                 match self {
-                    $(Self::$variant => $version),*
+                    $(Self::$variant => $version,)*
+                    Self::$last_v => $last_s,
                 }
             }
 
             pub fn supported() -> &'static [StarknetVersion] {
-                &[$(Self::$variant),*]
+                &[$(Self::$variant,)* Self::$last_v]
             }
 
             pub fn is_supported(&self) -> bool {
@@ -80,15 +98,18 @@ macro_rules! versions {
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
                     $($version => Ok(Self::$variant),)*
+                    $last_s => Ok(Self::$last_v),
                     _ => Err(format!("Unknown version: {}", s)),
                 }
             }
         }
 
-        /// Making 0.13.3 as the default version for now
+        /// Aligned with [`SUPPORTED_STARKNET_VERSION`] so `#[derive(Default)]`
+        /// on structs embedding `StarknetVersion` (e.g. batch metadata) yields
+        /// the single version this build actually supports.
         impl Default for StarknetVersion {
             fn default() -> Self {
-                Self::V0_13_3
+                SUPPORTED_STARKNET_VERSION
             }
         }
 
@@ -116,12 +137,20 @@ macro_rules! versions {
                 StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
-    }
+
+        /// The single Starknet version supported by this orchestrator build.
+        /// Automatically derived from the last entry of the `versions!` list —
+        /// used for DA blob encoding decisions and enforced during batching.
+        pub const SUPPORTED_STARKNET_VERSION: StarknetVersion = StarknetVersion::$last_v;
+    };
 }
 
-// Add more versions here whenever necessary. Follow the following rules:
-// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
-// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+// All known Starknet versions. The enum is needed for parsing block versions from RPC
+// responses and for version comparisons in compression/DA encoding logic.
+//
+// Rules:
+// 1. Versions must be ordered (e.g., 0.15.0 must come after 0.14.0)
+// 2. The last entry is automatically the supported version — to bump, append a new entry.
 versions!(
     (V0_13_2, "0.13.2"),
     (V0_13_3, "0.13.3"),
@@ -135,7 +164,6 @@ versions!(
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_feeder_gateway_url: Url,
-    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
@@ -255,7 +283,6 @@ impl Config {
                 .madara_feeder_gateway_url
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
-            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),

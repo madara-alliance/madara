@@ -1,4 +1,4 @@
-use crate::core::config::{Config, ConfigParam, StarknetVersion};
+use crate::core::config::{Config, ConfigParam, StarknetVersion, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
@@ -126,8 +126,16 @@ impl SnosHandler {
             warn!(
                 block_num = %block_num,
                 version = %block_version,
-                "Block's Starknet version is not supported, skipping batching"
+                supported = %SUPPORTED_STARKNET_VERSION,
+                "Block has unsupported Starknet version. Closing current batch and halting SNOS batching. \
+                 Manual intervention required — update orchestrator to support version {} and redeploy.",
+                block_version,
             );
+            // Close the current batch if it has blocks, so they get processed
+            if let SnosState::NonEmpty(mut non_empty) = state {
+                non_empty.close();
+                return Ok(BlockProcessingResult::NotBatched(SnosState::NonEmpty(non_empty)));
+            }
             return Ok(BlockProcessingResult::NotBatched(state));
         }
 
