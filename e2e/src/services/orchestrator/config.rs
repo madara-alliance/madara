@@ -331,12 +331,14 @@ impl OrchestratorConfig {
         command.arg("--madara-version").arg(&self.madara_version);
         command.arg("--disable-peerdas");
 
-        // Add prover flags
+        // Prover selection is now a single enum arg; exactly one of the
+        // `self.sharp` / `self.atlantic` booleans is expected to be set by
+        // upstream builders. Translate to the new `--prover <kind>` form.
         if self.sharp {
-            command.arg("--sharp");
+            command.arg("--prover").arg("sharp");
         }
         if self.atlantic {
-            command.arg("--atlantic");
+            command.arg("--prover").arg("atlantic");
             if let Some(service_url) = self.atlantic_service_url() {
                 command.arg("--atlantic-service-url").arg(service_url.to_string());
             }
