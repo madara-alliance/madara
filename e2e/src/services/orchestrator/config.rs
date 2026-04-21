@@ -331,16 +331,32 @@ impl OrchestratorConfig {
         command.arg("--madara-version").arg(&self.madara_version);
         command.arg("--disable-peerdas");
 
-        // Prover selection is now a single enum arg; exactly one of the
-        // `self.sharp` / `self.atlantic` booleans is expected to be set by
-        // upstream builders. Translate to the new `--prover <kind>` form.
-        if self.sharp {
-            command.arg("--prover").arg("sharp");
-        }
-        if self.atlantic {
-            command.arg("--prover").arg("atlantic");
-            if let Some(service_url) = self.atlantic_service_url() {
-                command.arg("--atlantic-service-url").arg(service_url.to_string());
+        // Prover selection is a single enum arg on the orchestrator side.
+        // Translate exactly one of the mutually-exclusive `self.sharp` /
+        // `self.atlantic` booleans into `--prover <kind>`.
+        //
+        // We match exhaustively and panic on invalid combinations here rather
+        // than emitting bad args and letting the orchestrator sort it out:
+        // - `(true, true)` would emit both `--prover sharp` and `--prover atlantic`;
+        //   clap silently takes the last one (atlantic), hiding the misconfig.
+        // - `(false, false)` emits nothing; the orchestrator then fails at
+        //   startup with a generic "required arg missing" that's harder to
+        //   trace back to the test harness.
+        match (self.sharp, self.atlantic) {
+            (true, false) => {
+                command.arg("--prover").arg("sharp");
+            }
+            (false, true) => {
+                command.arg("--prover").arg("atlantic");
+                if let Some(service_url) = self.atlantic_service_url() {
+                    command.arg("--atlantic-service-url").arg(service_url.to_string());
+                }
+            }
+            (true, true) => {
+                panic!("OrchestratorConfig: both `sharp` and `atlantic` are set; select exactly one prover")
+            }
+            (false, false) => {
+                panic!("OrchestratorConfig: no prover selected; set either `sharp` or `atlantic` before running")
             }
         }
 
