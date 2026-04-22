@@ -140,3 +140,83 @@ fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Felt> {
     tracing::info!(total_felts = output.len(), "Built bootloader output");
     output
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a `[u8; 32]` with explicit high (index 0) and low (index 31) bytes
+    /// so we can distinguish big-endian and little-endian Felt decoding.
+    fn bytes32(high: u8, low: u8) -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b[0] = high;
+        b[31] = low;
+        b
+    }
+
+    #[test]
+    fn empty_children_emits_only_count() {
+        let out = build_bootloader_output(&[]);
+        // Spec: with no children the bootloader still emits the count (= 0)
+        // and nothing else. Pins that we never produce a stray header.
+        assert_eq!(out, vec![Felt::from(0u64)]);
+    }
+
+    #[test]
+    fn single_child_layout() {
+        let child = vec![bytes32(0, 0x11), bytes32(0, 0x22), bytes32(0, 0x33)];
+        let out = build_bootloader_output(std::slice::from_ref(&child));
+
+        // Layout: [num_children, output_size, program_hash, ..child_output]
+        // with output_size = child_len + 2 (for the size and hash fields).
+        assert_eq!(out.len(), 1 + 2 + child.len());
+        assert_eq!(out[0], Felt::from(1u64), "num_children");
+        assert_eq!(out[1], Felt::from(5u64), "output_size = child_len + 2");
+        assert_eq!(out[2], PROGRAM_HASHES.os, "program_hash = PROGRAM_HASHES.os");
+        assert_eq!(out[3], Felt::from_bytes_be(&child[0]));
+        assert_eq!(out[4], Felt::from_bytes_be(&child[1]));
+        assert_eq!(out[5], Felt::from_bytes_be(&child[2]));
+    }
+
+    #[test]
+    fn multiple_children_header_layout() {
+        let child_a = vec![bytes32(0, 0xA1), bytes32(0, 0xA2)]; // len 2
+        let child_b = vec![bytes32(0, 0xB1), bytes32(0, 0xB2), bytes32(0, 0xB3), bytes32(0, 0xB4)]; // len 4
+
+        let out = build_bootloader_output(&[child_a.clone(), child_b.clone()]);
+
+        // 1 (count) + (2 header + 2 body) + (2 header + 4 body) = 11 felts
+        assert_eq!(out.len(), 11);
+        assert_eq!(out[0], Felt::from(2u64), "num_children");
+
+        // child_a header + body
+        assert_eq!(out[1], Felt::from(4u64), "child_a output_size = 2 + 2");
+        assert_eq!(out[2], PROGRAM_HASHES.os);
+        assert_eq!(out[3], Felt::from_bytes_be(&child_a[0]));
+        assert_eq!(out[4], Felt::from_bytes_be(&child_a[1]));
+
+        // child_b header + body
+        assert_eq!(out[5], Felt::from(6u64), "child_b output_size = 4 + 2");
+        assert_eq!(out[6], PROGRAM_HASHES.os);
+        assert_eq!(out[7], Felt::from_bytes_be(&child_b[0]));
+        assert_eq!(out[8], Felt::from_bytes_be(&child_b[1]));
+        assert_eq!(out[9], Felt::from_bytes_be(&child_b[2]));
+        assert_eq!(out[10], Felt::from_bytes_be(&child_b[3]));
+    }
+
+    #[test]
+    fn child_felt_encoding_big_endian() {
+        // With high byte = 0x01 and low byte = 0xFF the BE and LE Felt values
+        // differ, so a regression from `from_bytes_be` to `from_bytes_le`
+        // would make this assertion fail loudly.
+        let bytes = bytes32(0x01, 0xFF);
+        let out = build_bootloader_output(&[vec![bytes]]);
+
+        let expected_be = Felt::from_bytes_be(&bytes);
+        let expected_le = Felt::from_bytes_le(&bytes);
+        assert_ne!(expected_be, expected_le, "sentinel: BE and LE must differ for this input");
+
+        assert_eq!(out[3], expected_be, "child felt must be big-endian decoded");
+        assert_ne!(out[3], expected_le, "child felt must not be little-endian decoded");
+    }
+}
