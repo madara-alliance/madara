@@ -1,4 +1,3 @@
-use crate::core::config::StarknetVersion;
 use crate::types::params::prover::ProverKind;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
