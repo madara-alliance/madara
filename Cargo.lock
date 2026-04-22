@@ -11040,10 +11040,13 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
+ "orchestrator-aggregator-runner",
  "orchestrator-atlantic-service",
  "orchestrator-da-client-interface",
  "orchestrator-ethereum-da-client",
  "orchestrator-ethereum-settlement-client",
+ "orchestrator-gps-fact-checker",
+ "orchestrator-mock-service",
  "orchestrator-prover-client-interface",
  "orchestrator-settlement-client-interface",
  "orchestrator-sharp-service",
@@ -11076,6 +11079,21 @@ dependencies = [
  "url",
  "utils-mock-atlantic-server",
  "uuid 1.23.0",
+]
+
+[[package]]
+name = "orchestrator-aggregator-runner"
+version = "0.10.0"
+dependencies = [
+ "apollo_starknet_os_program",
+ "cairo-vm",
+ "serde_json",
+ "starknet-types-core 0.2.4",
+ "starknet_os",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -11220,10 +11238,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchestrator-mock-service"
+version = "0.10.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "hex",
+ "orchestrator-gps-fact-checker",
+ "orchestrator-prover-client-interface",
+ "tracing",
+ "url",
+ "uuid 1.23.0",
+]
+
+[[package]]
 name = "orchestrator-prover-client-interface"
 version = "0.10.0"
 dependencies = [
  "async-trait",
+ "bytes",
  "cairo-vm",
  "mockall 0.13.1",
  "orchestrator-gps-fact-checker",

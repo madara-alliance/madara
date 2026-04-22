@@ -8,26 +8,53 @@ use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetada
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::JobTrigger;
+use crate::worker::event_handler::triggers::{calculate_jobs_to_create, JobTrigger};
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 pub struct AggregatorJobTrigger;
 
 #[async_trait]
 impl JobTrigger for AggregatorJobTrigger {
-    /// 1. Fetch all the batches for which the status is Closed
-    /// 2. Check if all the child jobs for this batch are Completed
-    /// 3. Create the Aggregator job for all such Batches and update the Batch status
+    /// 1. Gate creation on the aggregator buffer size: if the
+    ///    `[oldest-incomplete, latest]` internal_id window is already at
+    ///    `aggregator_job_buffer_size`, skip — we'd otherwise pile up Created
+    ///    jobs behind a stalled lower-block aggregator and block sequential
+    ///    state updates.
+    /// 2. Fetch up to `max_to_create` batches with status Closed
+    /// 3. Check if all the child jobs for each batch are Completed
+    /// 4. Create the Aggregator job for all such batches and update the batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Get all the closed batches
+        let buffer_size = config.service_config().aggregator_job_buffer_size;
+        let max_to_create = calculate_jobs_to_create(&config, JobType::Aggregator, buffer_size).await?;
+
+        if max_to_create == 0 {
+            debug!(buffer_size = %buffer_size, "Aggregator job buffer is full, no new jobs to create. Returning safely.");
+            return Ok(());
+        }
+
+        info!("Creating max {} {:?} jobs", max_to_create, JobType::Aggregator);
+
+        // Convert the `u64` cap to the `i64` Mongo expects.
+        // A misconfigured `aggregator_job_buffer_size` above `i64::MAX` would
+        // silently wrap to a negative limit with `as i64`; use `try_into` so
+        // it fails loudly instead.
+        let batch_fetch_limit: i64 = max_to_create.try_into().map_err(|_| {
+            color_eyre::eyre::eyre!(
+                "aggregator_job_buffer_size resolved to {} (> i64::MAX); refusing to query with a wrapped negative limit",
+                max_to_create
+            )
+        })?;
+
+        // Fetch up to `batch_fetch_limit` closed batches — no point pulling
+        // more than we can legitimately turn into jobs this tick.
         let closed_batches = config
             .database()
             .get_aggregator_batches_by_status(
                 AggregatorBatchStatus::Closed,
-                Some(10),
+                Some(batch_fetch_limit),
                 Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
@@ -57,7 +84,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
-                    bucket_id: batch.bucket_id,
+                    bucket_id: Some(batch.bucket_id),
                     download_proof: if config.params.store_audit_artifacts {
                         Some(get_batch_artifact_file(batch.index, PROOF_FILE_NAME))
                     } else {

@@ -800,6 +800,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS")
+        .expect("Couldn't get max concurrent aggregator jobs");
+    let max_concurrent_aggregator_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
     let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
@@ -810,6 +815,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        max_concurrent_aggregator_jobs,
         snos_job_timeout_seconds: 3600,           // 1 hour for SNOS jobs
         proving_job_timeout_seconds: 1800,        // 30 minutes for proving jobs
         proof_registration_timeout_seconds: 1800, // 30 minutes for proof registration
@@ -817,6 +823,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
         aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
+        aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,
     };
 

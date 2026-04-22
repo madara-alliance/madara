@@ -36,6 +36,11 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
 
+    /// The maximum number of aggregator jobs to process concurrently.
+    /// Relevant when the aggregator runs locally (SHARP / Mock paths).
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS", long)]
+    pub max_concurrent_aggregator_jobs: Option<usize>,
+
     /// Timeout in seconds for SNOS jobs stuck in LockedForProcessing status.
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
     pub snos_job_timeout_seconds: u64,
@@ -64,6 +69,15 @@ pub struct ServiceCliArgs {
     /// New jobs are created when the buffer drops below this size.
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_BUFFER_SIZE", long, default_value = "50")]
     pub snos_job_buffer_size: u64,
+
+    /// Target number of aggregator jobs to maintain in the [oldest-incomplete, latest]
+    /// window. Caps creation — not processing concurrency (see
+    /// `--max-concurrent-aggregator-jobs`). Needed because state updates must
+    /// run in strict batch-index order, so a stalled lower-batch aggregator
+    /// would otherwise let an unbounded pile of higher-batch Created jobs
+    /// accumulate behind it.
+    #[arg(env = "MADARA_ORCHESTRATOR_AGGREGATOR_JOB_BUFFER_SIZE", long, default_value = "5")]
+    pub aggregator_job_buffer_size: u64,
 
     /// Maximum number of messages allowed in the priority queue. Must be greater than 0.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", long, default_value = "20", value_parser = parse_positive_usize)]
