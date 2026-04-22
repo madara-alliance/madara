@@ -1,8 +1,10 @@
 use once_cell::sync::Lazy;
 use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge};
+use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry::KeyValue;
-use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
+use orchestrator_utils::metrics::lib::{
+    register_counter_metric_instrument, register_histogram_metric_instrument, Metrics,
+};
 use orchestrator_utils::register_metric;
 
 register_metric!(SHARP_METRICS, SharpMetrics);
@@ -15,7 +17,7 @@ register_metric!(SHARP_METRICS, SharpMetrics);
 /// - `error_type`: error variant name when `success=false`, `"none"` otherwise
 pub struct SharpMetrics {
     /// Duration of SHARP API calls in seconds.
-    pub api_duration_seconds: Gauge<f64>,
+    pub api_duration_seconds: Histogram<f64>,
     /// Total number of SHARP API calls.
     pub api_calls_total: Counter<f64>,
     /// Total number of retry attempts across all calls.
@@ -33,7 +35,7 @@ impl Metrics for SharpMetrics {
         let meter = global::meter("sharp_service");
 
         Self {
-            api_duration_seconds: register_gauge_metric_instrument(
+            api_duration_seconds: register_histogram_metric_instrument(
                 &meter,
                 "sharp_api_duration_seconds".to_string(),
                 "Duration of SHARP API calls".to_string(),

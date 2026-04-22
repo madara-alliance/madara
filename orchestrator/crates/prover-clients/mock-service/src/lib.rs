@@ -99,7 +99,7 @@ impl ProverClient for MockProverService {
                                 if tx_hash == B256::ZERO {
                                     metrics::MOCK_METRICS.fact_already_registered_total.add(1.0, &[]);
                                 } else {
-                                    metrics::MOCK_METRICS.fact_registered_total.add(1.0, &[]);
+                                    metrics::MOCK_METRICS.fact_newly_registered_total.add(1.0, &[]);
                                 }
                                 tracing::info!(
                                     tx_hash = %tx_hash,

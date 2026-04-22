@@ -2266,9 +2266,19 @@
       },
       "targets": [
         {
-          "expr": "avg by (operation) (sharp_api_duration_seconds_seconds{service_name=\"${namespace}\"})",
-          "legendFormat": "{{operation}}",
+          "expr": "histogram_quantile(0.50, sum by (operation, le) (rate(sharp_api_duration_seconds_seconds_bucket{service_name=\"${namespace}\"}[5m])))",
+          "legendFormat": "{{operation}} p50",
           "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (operation, le) (rate(sharp_api_duration_seconds_seconds_bucket{service_name=\"${namespace}\"}[5m])))",
+          "legendFormat": "{{operation}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (operation, le) (rate(sharp_api_duration_seconds_seconds_bucket{service_name=\"${namespace}\"}[5m])))",
+          "legendFormat": "{{operation}} p99",
+          "refId": "C"
         }
       ],
       "title": "SHARP API Duration",
@@ -2874,7 +2884,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(mock_fact_registered_total_facts_total{service_name=\"${namespace}\"}[1h]))",
+          "expr": "sum(increase(mock_fact_newly_registered_total_facts_total{service_name=\"${namespace}\"}[1h]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -2941,6 +2951,67 @@
         }
       ],
       "title": "Facts Already On-Chain (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 87
+      },
+      "id": 124,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(mock_fact_registration_errors_total_errors_total{service_name=\"${namespace}\"}[1h]))",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Registration Errors (1h)",
       "type": "stat"
     }
   ],
