@@ -70,6 +70,15 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_BUFFER_SIZE", long, default_value = "50")]
     pub snos_job_buffer_size: u64,
 
+    /// Target number of aggregator jobs to maintain in the [oldest-incomplete, latest]
+    /// window. Caps creation — not processing concurrency (see
+    /// `--max-concurrent-aggregator-jobs`). Needed because state updates must
+    /// run in strict batch-index order, so a stalled lower-batch aggregator
+    /// would otherwise let an unbounded pile of higher-batch Created jobs
+    /// accumulate behind it.
+    #[arg(env = "MADARA_ORCHESTRATOR_AGGREGATOR_JOB_BUFFER_SIZE", long, default_value = "5")]
+    pub aggregator_job_buffer_size: u64,
+
     /// Maximum number of messages allowed in the priority queue. Must be greater than 0.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", long, default_value = "20", value_parser = parse_positive_usize)]
     pub max_priority_queue_size: usize,

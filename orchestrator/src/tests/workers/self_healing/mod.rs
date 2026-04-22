@@ -143,6 +143,7 @@ async fn test_job_type_specific_timeouts() -> Result<(), Box<dyn Error>> {
         state_transition_timeout_seconds: 2700,   // 45 minutes
         aggregator_job_timeout_seconds: 1800,     // 30 minutes
         snos_job_buffer_size: 50,
+        aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,
     };
 

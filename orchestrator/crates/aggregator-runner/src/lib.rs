@@ -145,6 +145,23 @@ pub(crate) fn build_bootloader_output(child_outputs: &[Vec<[u8; 32]>]) -> Vec<Fe
 mod tests {
     use super::*;
 
+    /// Build a `[u8; 32]` with explicit high (index 0) and low (index 31) bytes
+    /// so we can distinguish big-endian and little-endian Felt decoding.
+    fn bytes32(high: u8, low: u8) -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b[0] = high;
+        b[31] = low;
+        b
+    }
+
+    #[test]
+    fn empty_children_emits_only_count() {
+        let out = build_bootloader_output(&[]);
+        // Spec: with no children the bootloader still emits the count (= 0)
+        // and nothing else. Pins that we never produce a stray header.
+        assert_eq!(out, vec![Felt::from(0u64)]);
+    }
+
     #[test]
     fn empty_input_returns_error() {
         let input = AggregatorRunnerInput {
@@ -194,5 +211,21 @@ mod tests {
         // Child B
         assert_eq!(output[4], Felt::from(5u64), "child_b size = 3 + 2");
         assert_eq!(output[5], PROGRAM_HASHES.os);
+    }
+
+    #[test]
+    fn bootloader_child_felt_encoding_big_endian() {
+        // With high byte = 0x01 and low byte = 0xFF the BE and LE Felt values
+        // differ, so a regression from `from_bytes_be` to `from_bytes_le`
+        // would make this assertion fail loudly.
+        let bytes = bytes32(0x01, 0xFF);
+        let out = build_bootloader_output(&[vec![bytes]]);
+
+        let expected_be = Felt::from_bytes_be(&bytes);
+        let expected_le = Felt::from_bytes_le(&bytes);
+        assert_ne!(expected_be, expected_le, "sentinel: BE and LE must differ for this input");
+
+        assert_eq!(out[3], expected_be, "child felt must be big-endian decoded");
+        assert_ne!(out[3], expected_le, "child felt must not be little-endian decoded");
     }
 }
