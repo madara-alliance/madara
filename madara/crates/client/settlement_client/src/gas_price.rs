@@ -1,7 +1,7 @@
 use crate::error::SettlementClientError;
 use crate::SettlementLayerProvider;
-use mc_analytics::register_gauge_metric_instrument;
 use mc_db::MadaraBackend;
+use mc_telemetry::register_gauge_metric_instrument;
 use mp_block::L1GasQuote;
 use mp_convert::FixedPoint;
 use mp_oracle::Oracle;

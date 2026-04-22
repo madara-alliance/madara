@@ -5,7 +5,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam, StarknetVersion};
+use crate::core::config::{Config, ConfigParam};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
@@ -139,8 +139,6 @@ pub struct TestConfigBuilder {
     min_block_to_process: Option<u64>,
     /// Maximum block to process
     max_block_to_process: Option<Option<u64>>,
-    /// Madara version
-    madara_version: Option<StarknetVersion>,
     /// Layer
     layer: Option<Layer>,
     /// Madara Feeder Gateway URL
@@ -211,7 +209,6 @@ impl TestConfigBuilder {
             api_server_type: ConfigType::default(),
             min_block_to_process: None,
             max_block_to_process: None,
-            madara_version: None,
             layer: None,
             madara_feeder_gateway_url: None,
             max_blocks_per_snos_batch: None,
@@ -283,11 +280,6 @@ impl TestConfigBuilder {
         self
     }
 
-    pub fn configure_madara_version(mut self, madara_version: StarknetVersion) -> TestConfigBuilder {
-        self.madara_version = Some(madara_version);
-        self
-    }
-
     pub fn configure_layer(mut self, layer: Layer) -> TestConfigBuilder {
         self.layer = Some(layer);
         self
@@ -326,7 +318,6 @@ impl TestConfigBuilder {
             api_server_type,
             min_block_to_process,
             max_block_to_process,
-            madara_version,
             layer,
             madara_feeder_gateway_url,
             max_blocks_per_snos_batch,
@@ -375,9 +366,6 @@ impl TestConfigBuilder {
         }
         if let Some(max_block_to_process) = max_block_to_process {
             params.orchestrator_params.service_config.max_block_to_process = max_block_to_process;
-        }
-        if let Some(madara_version) = madara_version {
-            params.orchestrator_params.madara_version = madara_version;
         }
         if let Some(madara_feeder_gateway_url) = madara_feeder_gateway_url {
             params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_feeder_gateway_url).unwrap();
@@ -858,11 +846,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"), // Use same URL as fallback for tests
         ))
         .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"),
-        madara_version: StarknetVersion::from_str(&get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_MADARA_VERSION",
-            "0.13.4",
-        ))
-        .unwrap_or_default(),
         snos_config,
         batching_config,
         service_config,

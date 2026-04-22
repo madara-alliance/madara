@@ -1,12 +1,3 @@
-/// The operating system part of the current target triplet.
-pub const TARGET_OS: &str = include_str!(concat!(env!("OUT_DIR"), "/target_os.txt"));
-
-/// The CPU ISA architecture part of the current target triplet.
-pub const TARGET_ARCH: &str = include_str!(concat!(env!("OUT_DIR"), "/target_arch.txt"));
-
-/// The environment part of the current target triplet.
-pub const TARGET_ENV: &str = include_str!(concat!(env!("OUT_DIR"), "/target_env.txt"));
-
 pub struct SysInfo {
     pub core_count: Option<u64>,
     pub cpu: Option<String>,
