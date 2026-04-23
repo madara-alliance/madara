@@ -86,7 +86,7 @@ pub enum Commands {
     ),
     group(
         ArgGroup::new("prover")
-            .args(&["sharp", "atlantic"])
+            .args(&["sharp", "atlantic", "mock"])
             .required(true)
             .multiple(false)
     ),
@@ -151,6 +151,9 @@ pub struct RunCmd {
 
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
+
+    #[clap(flatten)]
+    pub mock_args: prover::mock::MockCliArgs,
 
     // SNOS
     #[clap(flatten)]

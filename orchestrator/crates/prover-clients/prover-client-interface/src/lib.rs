@@ -29,8 +29,19 @@ pub trait ProverClient: Send + Sync {
         fact: &str,
         n_steps: Option<usize>,
     ) -> Result<String, ProverClientError>;
-    async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError>;
-    async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError>;
+
+    /// Fetch aggregation artifacts after aggregation status is Succeeded.
+    ///
+    /// For provers that aggregate remotely (e.g. Atlantic), this fetches CairoPIE, DA segment,
+    /// and optionally the proof from the remote service.
+    ///
+    /// For provers that aggregate locally (e.g. SHARP, Mock), artifacts are already stored by
+    /// the handler during `process_job`, so this returns all `None`.
+    async fn get_aggregation_artifacts(
+        &self,
+        external_id: &str,
+        include_proof: bool,
+    ) -> Result<AggregationArtifacts, ProverClientError>;
 }
 
 pub struct CreateJobInfo {
@@ -41,15 +52,42 @@ pub struct CreateJobInfo {
     pub dedup_id: String,
 }
 
+/// Information for submitting a pre-built aggregator CairoPIE (SHARP applicative job,
+/// or Mock's fact registration).
+pub struct ApplicativeJobInfo {
+    pub cairo_pie_zip_bytes: bytes::Bytes,
+    pub children_cairo_job_keys: Vec<String>,
+    /// The fact hash for this aggregator PIE, computed by the handler via `get_fact_info`.
+    /// Used by the Mock prover to register on an L1 `MockGpsVerifier`. SHARP ignores it
+    /// (SHARP computes the fact server-side).
+    pub fact_hash: Option<[u8; 32]>,
+}
+
+/// Artifacts returned by a prover after aggregation completes.
+///
+/// Fields are `Some` when the prover fetches them from a remote source (Atlantic).
+/// Fields are `None` when artifacts were already stored locally by the handler (SHARP / Mock).
+#[derive(Default)]
+pub struct AggregationArtifacts {
+    pub cairo_pie: Option<Vec<u8>>,
+    pub da_segment: Option<Vec<u8>>,
+    pub proof: Option<Vec<u8>>,
+}
+
 pub enum Task {
-    /// For creating a new job
+    /// Submit a child CairoPIE for proving.
     CreateJob(CreateJobInfo),
-    /// For creating a new bucket
+    /// Create a new bucket (Atlantic) or generate a local tracking ID (SHARP / Mock).
     CreateBucket,
-    /// For closing a bucket
-    /// Requires:
-    /// 1. Bucket ID
-    CloseBucket(String),
+    /// Trigger aggregation for a batch.
+    ///
+    /// **Atlantic**: closes the bucket and returns the bucket ID.
+    RunAggregation(String),
+    /// Submit a pre-built aggregator CairoPIE.
+    ///
+    /// **SHARP**: submitted as an applicative job with child job keys.
+    /// **Mock**: used to compute the fact hash, optionally registered on L1.
+    RunAggregationWithPie(ApplicativeJobInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,8 +99,15 @@ pub enum TaskStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskType {
+    /// A regular proving job (child job).
     Job,
-    Bucket,
+    /// An aggregation task.
+    ///
+    /// For Atlantic, this polls the bucket status.
+    /// For SHARP, this polls the applicative job status.
+    /// For Mock, this polls the `registerFact` tx receipt (or succeeds immediately if
+    /// on-chain registration is disabled).
+    Aggregation,
 }
 
 #[derive(Debug, thiserror::Error)]
