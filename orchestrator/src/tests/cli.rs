@@ -53,24 +53,26 @@ fn baseline() -> Vec<&'static str> {
 }
 
 /// Required-when-sharp sub-args that `required_if_eq("prover", "sharp")` enforces.
+/// Cert material is file-path only on the SHARP path — dummy paths are fine
+/// here because `try_parse_from` doesn't open the files (that happens later
+/// in `validate_sharp`). `--sharp-settlement-layer` has a default so it's
+/// not required.
 fn sharp_required_args() -> Vec<&'static str> {
     vec![
         "--sharp-customer-id",
         "test-customer",
         "--sharp-url",
         "http://sharp.example/",
-        "--sharp-user-crt",
-        "dummy-crt",
-        "--sharp-user-key",
-        "dummy-key",
+        "--sharp-user-crt-file",
+        "/tmp/dummy-crt.pem",
+        "--sharp-user-key-file",
+        "/tmp/dummy-key.pem",
         "--sharp-rpc-node-url",
         "http://rpc.example/",
-        "--sharp-server-crt",
-        "dummy-server-crt",
+        "--sharp-server-crt-file",
+        "/tmp/dummy-server-crt.pem",
         "--gps-verifier-contract-address",
         "0x0000000000000000000000000000000000000000",
-        "--sharp-settlement-layer",
-        "ethereum",
     ]
 }
 
