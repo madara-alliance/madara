@@ -48,6 +48,27 @@ impl TransactionWithHash {
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
+
+    pub fn from_broadcasted_v0_10_2(
+        tx: mp_rpc::v0_10_2::BroadcastedTxn,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+        class_hash: Option<Felt>,
+    ) -> Self {
+        let is_query = tx.is_query();
+        let transaction: Transaction = match tx {
+            mp_rpc::v0_10_2::BroadcastedTxn::Invoke(tx) => Transaction::Invoke(tx.into()),
+            mp_rpc::v0_10_2::BroadcastedTxn::Declare(tx) => {
+                Transaction::Declare(DeclareTransaction::from_broadcasted_v0_8(
+                    tx,
+                    class_hash.expect("Class hash must be provided for DeclareTransaction"),
+                ))
+            }
+            mp_rpc::v0_10_2::BroadcastedTxn::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
+        };
+        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
+        Self { hash, transaction }
+    }
 }
 
 impl From<mp_rpc::v0_7_1::BroadcastedInvokeTxn> for InvokeTransaction {

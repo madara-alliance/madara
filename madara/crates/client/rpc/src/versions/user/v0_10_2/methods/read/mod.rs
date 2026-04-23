@@ -17,6 +17,7 @@ use mp_rpc::v0_10_2::{
 
 // v0.10.2 specific implementation
 mod common;
+pub mod estimate_fee;
 pub mod get_block_with_receipts;
 pub mod get_block_with_txs;
 pub mod get_events;
@@ -65,7 +66,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
         simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>> {
-        V0_9_0Impl::estimate_fee(self, request.into_iter().map(Into::into).collect(), simulation_flags, block_id).await
+        Ok(estimate_fee::estimate_fee(self, request, simulation_flags, block_id).await?)
     }
 
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<MessageFeeEstimate> {
