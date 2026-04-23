@@ -64,6 +64,13 @@ pub struct OrchestratorMetrics {
     pub aggregator_local_run_duration: Gauge<f64>,
     pub aggregator_local_run_total: Counter<f64>,
     pub aggregator_child_count: Gauge<f64>,
+    /// Failures per stage of `run_and_submit_with_local_aggregation`, labeled
+    /// by `prover`, `stage` (load_children/run_aggregator/fact_hash/
+    /// store_artifacts/submit_prover), and bounded `error_type`.
+    pub aggregator_local_run_failures_total: Counter<f64>,
+    pub aggregator_program_output_bytes: Gauge<f64>,
+    pub aggregator_da_segment_bytes: Gauge<f64>,
+    pub aggregator_pie_zip_bytes: Gauge<f64>,
     // Storage cleanup metrics
     pub cleanup_runs_total: Counter<f64>,
     pub cleanup_jobs_attempted: Counter<f64>,
@@ -357,6 +364,34 @@ impl Metrics for OrchestratorMetrics {
             "children".to_string(),
         );
 
+        let aggregator_local_run_failures_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_failures_total".to_string(),
+            "Failures per stage of local aggregator runs".to_string(),
+            "errors".to_string(),
+        );
+
+        let aggregator_program_output_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_program_output_bytes".to_string(),
+            "Serialized program output size per aggregator run".to_string(),
+            "bytes".to_string(),
+        );
+
+        let aggregator_da_segment_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_da_segment_bytes".to_string(),
+            "DA segment size per aggregator run".to_string(),
+            "bytes".to_string(),
+        );
+
+        let aggregator_pie_zip_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_pie_zip_bytes".to_string(),
+            "Aggregator CairoPIE zip size per run".to_string(),
+            "bytes".to_string(),
+        );
+
         // Storage cleanup metrics
         let cleanup_runs_total = register_counter_metric_instrument(
             &orchestrator_meter,
@@ -424,6 +459,10 @@ impl Metrics for OrchestratorMetrics {
             aggregator_local_run_duration,
             aggregator_local_run_total,
             aggregator_child_count,
+            aggregator_local_run_failures_total,
+            aggregator_program_output_bytes,
+            aggregator_da_segment_bytes,
+            aggregator_pie_zip_bytes,
             job_status_tracker,
             atlantic_api_call_duration,
             atlantic_api_calls_total,

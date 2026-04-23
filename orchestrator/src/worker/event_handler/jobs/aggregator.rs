@@ -226,16 +226,23 @@ impl AggregatorJobHandler {
         info!(batch_num = %batch_num, prover = prover_label, "Running local aggregation");
 
         // 1. Load children.
-        let (child_program_outputs, child_job_keys) = self.fetch_child_outputs_and_job_keys(batch_num, config).await?;
+        let (child_program_outputs, child_job_keys) =
+            self.fetch_child_outputs_and_job_keys(batch_num, config).await.inspect_err(|e| {
+                MetricsRecorder::record_aggregator_failure(prover_label, "load_children", error_label(e))
+            })?;
         info!(num_children = child_program_outputs.len(), prover = prover_label, "Collected program outputs");
 
         // 2. Run aggregator.
-        let aggregator_output = self.run_local_aggregator(child_program_outputs, config, prover_label).await?;
+        let aggregator_output =
+            self.run_local_aggregator(child_program_outputs, config, prover_label).await.inspect_err(|e| {
+                MetricsRecorder::record_aggregator_failure(prover_label, "run_aggregator", error_label(e))
+            })?;
         info!(prover = prover_label, "Local aggregator completed");
 
         // 3. Compute fact hash.
         let fact_info =
-            get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)?;
+            get_fact_info(&aggregator_output.aggregator_cairo_pie, Some(PROGRAM_HASHES.aggregator_with_prefix), true)
+                .inspect_err(|_| MetricsRecorder::record_aggregator_failure(prover_label, "fact_hash", "fact"))?;
         let fact: [u8; 32] = fact_info.fact.0;
 
         // 4. Stamp fact into metadata for verify_job.
@@ -245,11 +252,37 @@ impl AggregatorJobHandler {
 
         // 5. Persist artifacts.
         let pie_bytes = self
-            .store_aggregation_artifacts(config, &metadata, batch_num, fact_info.program_output, aggregator_output)
-            .await?;
+            .store_aggregation_artifacts(
+                config,
+                &metadata,
+                batch_num,
+                fact_info.program_output,
+                aggregator_output,
+                prover_label,
+            )
+            .await
+            .inspect_err(|e| {
+                MetricsRecorder::record_aggregator_failure(prover_label, "store_artifacts", error_label(e))
+            })?;
 
         // 6. Submit to prover.
-        self.submit_aggregation_to_prover(config, pie_bytes, child_job_keys, fact, prover_label).await
+        self.submit_aggregation_to_prover(config, pie_bytes, child_job_keys, fact, prover_label)
+            .await
+            .inspect_err(|e| MetricsRecorder::record_aggregator_failure(prover_label, "submit_prover", error_label(e)))
+    }
+}
+
+/// Bounded classifier for the `error_type` label on
+/// `aggregator_local_run_failures_total`. Keep the set small — unbounded
+/// labels blow up Prometheus cardinality.
+fn error_label(err: &JobError) -> &'static str {
+    match err {
+        JobError::DatabaseError(_) => "database",
+        JobError::StorageError(_) => "storage",
+        JobError::ProverClientError(_) => "prover",
+        JobError::SnosJobError(_) => "snos",
+        JobError::FactError(_) => "fact",
+        _ => "other",
     }
 }
 
@@ -267,7 +300,13 @@ impl AggregatorJobHandler {
         batch_num: u64,
         program_output: Vec<Felt>,
         aggregator_output: AggregatorRunnerOutput,
+        prover_label: &str,
     ) -> Result<bytes::Bytes, JobError> {
+        // Sizes reported before bincode/zip framing overhead; close enough
+        // for trend tracking and avoids serializing twice.
+        let program_output_bytes = program_output.len() * 32;
+        let da_segment_bytes = aggregator_output.da_segment.len();
+
         AggregatorJobHandler::store_program_output(config, batch_num, program_output, &metadata.program_output_path)
             .await?;
 
@@ -277,6 +316,13 @@ impl AggregatorJobHandler {
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
         config.storage().put_data(pie_bytes.clone(), &metadata.cairo_pie_path).await?;
+
+        MetricsRecorder::record_aggregator_artifact_sizes(
+            prover_label,
+            program_output_bytes,
+            da_segment_bytes,
+            pie_bytes.len(),
+        );
 
         Ok(pie_bytes)
     }
@@ -420,7 +466,6 @@ impl AggregatorJobHandler {
             },
         )
         .map_err(|e| {
-            MetricsRecorder::record_aggregator_run(prover_label, agg_start.elapsed().as_secs_f64(), false);
             error!(error = %e, "Local aggregator failed");
             JobError::Other(OtherError(eyre!("Aggregator runner failed: {}", e)))
         })?;

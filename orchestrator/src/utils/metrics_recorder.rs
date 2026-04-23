@@ -309,4 +309,27 @@ impl MetricsRecorder {
             .aggregator_child_count
             .record(count as f64, &[KeyValue::new("prover", prover.to_string())]);
     }
+
+    pub fn record_aggregator_failure(prover: &str, stage: &str, error_type: &str) {
+        ORCHESTRATOR_METRICS.aggregator_local_run_failures_total.add(
+            1.0,
+            &[
+                KeyValue::new("prover", prover.to_string()),
+                KeyValue::new("stage", stage.to_string()),
+                KeyValue::new("error_type", error_type.to_string()),
+            ],
+        );
+    }
+
+    pub fn record_aggregator_artifact_sizes(
+        prover: &str,
+        program_output_bytes: usize,
+        da_segment_bytes: usize,
+        pie_zip_bytes: usize,
+    ) {
+        let attrs = [KeyValue::new("prover", prover.to_string())];
+        ORCHESTRATOR_METRICS.aggregator_program_output_bytes.record(program_output_bytes as f64, &attrs);
+        ORCHESTRATOR_METRICS.aggregator_da_segment_bytes.record(da_segment_bytes as f64, &attrs);
+        ORCHESTRATOR_METRICS.aggregator_pie_zip_bytes.record(pie_zip_bytes as f64, &attrs);
+    }
 }
