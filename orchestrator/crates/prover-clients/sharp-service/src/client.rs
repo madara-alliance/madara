@@ -34,20 +34,35 @@ impl SharpClient {
 
         let customer_id = sharp_params.sharp_customer_id.clone();
 
-        let identity = Identity::from_pem(&combine_cert_and_key_pem(cert, key))
-            .expect("Failed to build the identity from certificate and key");
+        let identity =
+            Identity::from_pkcs8_pem(cert, key).expect("Failed to build the identity from certificate and key");
         let certificate = Certificate::from_pem(server_cert).expect("Failed to add root certificate");
 
-        // Force rustls: macOS native-tls (SecureTransport) doesn't reliably honor
-        // add_root_certificate() for self-signed certs. rustls works consistently
-        // across platforms. The server cert must have CA:TRUE for rustls to accept it
-        // as a trust anchor (grab it from the live server if needed:
-        // `openssl s_client -connect <host>:443 -showcerts </dev/null | openssl x509 -out server.crt`).
+        // Use reqwest's default TLS backend (native-tls): OpenSSL on Linux,
+        // SecureTransport on macOS. rustls rejects SHARP's server cert with
+        // `CaUsedAsEndEntity` — the server presents a single self-signed cert
+        // with `CA:TRUE` (RFC 5280 says CA certs shouldn't serve as end-entities).
+        // Native-tls is lenient enough to accept it.
+        //
+        // Linux: `add_root_certificate(certificate)` below registers the server
+        // cert as a trust anchor in OpenSSL's in-memory `X509_STORE`. This is
+        // reliable and needs no extra setup.
+        //
+        // macOS: reqwest's native-tls wrapper routes `add_root_certificate` through
+        // an ephemeral keychain that SecureTransport does *not* reliably honor for
+        // self-signed roots — handshake fails with `errSecNotTrusted (-67843)`.
+        // Add the cert to your login keychain once (system trust store takes over):
+        //
+        //     security add-trusted-cert -d -r trustRoot \
+        //       -k ~/Library/Keychains/login.keychain-db \
+        //       <path to sharp.crt>
+        //
+        // After that, the `add_root_certificate` call below is effectively a
+        // no-op on macOS, and SecureTransport validates against the keychain.
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
             .identity(identity)
             .add_root_certificate(certificate)
-            .use_rustls_tls()
             .default_query_param("customer_id", customer_id.as_str())
             .build()
             .expect("Failed to build HTTP client");
@@ -250,18 +265,4 @@ impl SharpClient {
 
         Ok(response.status().is_success())
     }
-}
-
-/// Combine a PEM-encoded certificate and private key into a single buffer.
-///
-/// rustls's `Identity::from_pem` requires cert + key in one contiguous PEM,
-/// unlike native-tls which accepts them separately via `Identity::from_pkcs8_pem`.
-fn combine_cert_and_key_pem(cert: &[u8], key: &[u8]) -> Vec<u8> {
-    let mut combined = Vec::with_capacity(cert.len() + key.len() + 1);
-    combined.extend_from_slice(cert);
-    if !cert.ends_with(b"\n") {
-        combined.push(b'\n');
-    }
-    combined.extend_from_slice(key);
-    combined
 }
