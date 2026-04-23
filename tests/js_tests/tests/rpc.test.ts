@@ -14,7 +14,7 @@ import {
 import { createSpecRegistry } from "../src/spec/spec-registry";
 
 // Load fixture JSONs
-const FIXTURE_DIR = path.resolve(__dirname, "../fixtures/v0_10_0");
+const FIXTURE_DIR = path.resolve(__dirname, "../fixtures/v0_10_2");
 const stateSetup: StateSetup = JSON.parse(
   fs.readFileSync(path.join(FIXTURE_DIR, "state_setup.json"), "utf-8"),
 );
@@ -41,7 +41,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-describe("Starknet RPC v0.10.0", () => {
+describe("Starknet RPC v0.10.2", () => {
   // ---- Phase 0: Spec Registry ----
   describe("Spec Registry", () => {
     it("should download and compile OpenRPC spec validators", async () => {
@@ -225,6 +225,82 @@ describe("Starknet RPC v0.10.0", () => {
         await runAssertion(assertion, ctx);
       });
     }
+  });
+
+  describe("v0.10.2 Response Flags", () => {
+    it("getTransactionByHash accepts INCLUDE_PROOF_FACTS for invoke-v3 transactions", async () => {
+      const invoke = ctx.results.get("invoke_increase_42");
+      expect(invoke?.transaction_hash).toBeDefined();
+
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const result = await rpcCaller.call("starknet_getTransactionByHash", {
+        transaction_hash: invoke!.transaction_hash,
+        response_flags: ["INCLUDE_PROOF_FACTS"],
+      });
+
+      expect(result.type).toBe("INVOKE");
+      expect(result.version).toBe("0x3");
+      expect(
+        result.proof_facts === undefined || Array.isArray(result.proof_facts),
+      ).toBe(true);
+    });
+
+    it("getBlockWithTxs accepts INCLUDE_PROOF_FACTS on the current protocol path", async () => {
+      const invokeBlock = ctx.results.get("invoke_increase_100");
+      expect(invokeBlock?.block_number).toBeDefined();
+
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const result = await rpcCaller.call("starknet_getBlockWithTxs", {
+        block_id: { block_number: invokeBlock!.block_number },
+        response_flags: ["INCLUDE_PROOF_FACTS"],
+      });
+
+      expect(Array.isArray(result.transactions)).toBe(true);
+      expect(result.transactions.length).toBeGreaterThanOrEqual(2);
+      for (const tx of result.transactions) {
+        expect(tx.type).toBe("INVOKE");
+        expect(tx.version).toBe("0x3");
+        expect(tx.proof_facts === undefined || Array.isArray(tx.proof_facts)).toBe(
+          true,
+        );
+      }
+    });
+
+    it("getBlockWithReceipts accepts INCLUDE_PROOF_FACTS on the current protocol path", async () => {
+      const invokeBlock = ctx.results.get("invoke_increase_100");
+      expect(invokeBlock?.block_number).toBeDefined();
+
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const result = await rpcCaller.call("starknet_getBlockWithReceipts", {
+        block_id: { block_number: invokeBlock!.block_number },
+        response_flags: ["INCLUDE_PROOF_FACTS"],
+      });
+
+      expect(Array.isArray(result.transactions)).toBe(true);
+      expect(result.transactions.length).toBeGreaterThanOrEqual(2);
+      for (const item of result.transactions) {
+        expect(item.transaction.type).toBe("INVOKE");
+        expect(item.transaction.version).toBe("0x3");
+        expect(
+          item.transaction.proof_facts === undefined ||
+            Array.isArray(item.transaction.proof_facts),
+        ).toBe(true);
+      }
+    });
+
+    it("rejects unknown response flags with Invalid params", async () => {
+      const invoke = ctx.results.get("invoke_increase_42");
+      expect(invoke?.transaction_hash).toBeDefined();
+
+      const rpcCaller = new RpcCaller(ctx.rpcUrl);
+      const envelope = await rpcCaller.rawCall("starknet_getTransactionByHash", {
+        transaction_hash: invoke!.transaction_hash,
+        response_flags: ["UNKNOWN_FLAG"],
+      });
+
+      expect(envelope.error).toBeDefined();
+      expect(envelope.error!.code).toBe(-32602);
+    });
   });
 
   // ---- Phase 3: Error Case Assertions ----

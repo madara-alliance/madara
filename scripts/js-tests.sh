@@ -22,7 +22,7 @@ if [ -n "$ANVIL_PID" ]; then
     --rpc-external           \
     --rpc-admin              \
     --devnet                 \
-    --preset devnet          \
+    --chain-config-path madara/crates/tests/test_devnet.yaml \
     --l1-gas-price 0         \
     --blob-gas-price 0       \
     --strk-per-eth 1         \
@@ -37,7 +37,7 @@ else
     --rpc-external           \
     --rpc-admin              \
     --devnet                 \
-    --preset devnet          \
+    --chain-config-path madara/crates/tests/test_devnet.yaml \
     --l1-gas-price 0         \
     --blob-gas-price 0       \
     --strk-per-eth 1         \
