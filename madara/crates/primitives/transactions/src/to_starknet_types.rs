@@ -192,55 +192,6 @@ fn include_empty_invoke_proof_facts(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tests::{dummy_tx_invoke_v3, dummy_tx_invoke_v3_with_proof_facts};
-    use starknet_types_core::felt::Felt;
-
-    fn invoke_v3_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> Option<Vec<Felt>> {
-        let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)) = txn else {
-            panic!("expected invoke v3 transaction");
-        };
-        tx.proof_facts
-    }
-
-    #[test]
-    fn rpc_v0_10_2_include_proof_facts_returns_empty_for_missing_facts() {
-        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
-
-        let rpc_tx = tx.to_rpc_v0_10_2(true);
-        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
-
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), Some(vec![]));
-        assert_eq!(json.get("proof_facts"), Some(&serde_json::json!([])));
-    }
-
-    #[test]
-    fn rpc_v0_10_2_without_include_proof_facts_omits_missing_facts() {
-        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
-
-        let rpc_tx = tx.to_rpc_v0_10_2(false);
-        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
-
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), None);
-        assert_eq!(json.get("proof_facts"), None);
-    }
-
-    #[test]
-    fn rpc_v0_10_2_include_proof_facts_preserves_present_facts() {
-        let tx = dummy_tx_invoke_v3_with_proof_facts();
-        let proof_facts = tx.proof_facts.clone();
-        let expected_json = serde_json::to_value(&proof_facts).expect("proof facts should serialize");
-
-        let rpc_tx = Transaction::Invoke(InvokeTransaction::V3(tx)).to_rpc_v0_10_2(true);
-        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
-
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), proof_facts);
-        assert_eq!(json.get("proof_facts"), Some(&expected_json));
-    }
-}
-
 impl L1HandlerTransaction {
     pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::L1HandlerTxn {
         mp_rpc::v0_7_1::L1HandlerTxn {
@@ -410,5 +361,54 @@ impl DeployAccountTransactionV3 {
             signature: self.signature,
             tip: self.tip,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{dummy_tx_invoke_v3, dummy_tx_invoke_v3_with_proof_facts};
+    use starknet_types_core::felt::Felt;
+
+    fn invoke_v3_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> Option<Vec<Felt>> {
+        let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)) = txn else {
+            panic!("expected invoke v3 transaction");
+        };
+        tx.proof_facts
+    }
+
+    #[test]
+    fn rpc_v0_10_2_include_proof_facts_returns_empty_for_missing_facts() {
+        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
+
+        let rpc_tx = tx.to_rpc_v0_10_2(true);
+        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
+
+        assert_eq!(invoke_v3_proof_facts(rpc_tx), Some(vec![]));
+        assert_eq!(json.get("proof_facts"), Some(&serde_json::json!([])));
+    }
+
+    #[test]
+    fn rpc_v0_10_2_without_include_proof_facts_omits_missing_facts() {
+        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
+
+        let rpc_tx = tx.to_rpc_v0_10_2(false);
+        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
+
+        assert_eq!(invoke_v3_proof_facts(rpc_tx), None);
+        assert_eq!(json.get("proof_facts"), None);
+    }
+
+    #[test]
+    fn rpc_v0_10_2_include_proof_facts_preserves_present_facts() {
+        let tx = dummy_tx_invoke_v3_with_proof_facts();
+        let proof_facts = tx.proof_facts.clone();
+        let expected_json = serde_json::to_value(&proof_facts).expect("proof facts should serialize");
+
+        let rpc_tx = Transaction::Invoke(InvokeTransaction::V3(tx)).to_rpc_v0_10_2(true);
+        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
+
+        assert_eq!(invoke_v3_proof_facts(rpc_tx), proof_facts);
+        assert_eq!(json.get("proof_facts"), Some(&expected_json));
     }
 }

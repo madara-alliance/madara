@@ -172,13 +172,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
-        Ok(get_storage_proof::get_storage_proof(
-            self,
-            block_id,
-            class_hashes,
-            contract_addresses,
-            contracts_storage_keys,
-        )?)
+        get_storage_proof::get_storage_proof(self, block_id, class_hashes, contract_addresses, contracts_storage_keys)
     }
 
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value> {
