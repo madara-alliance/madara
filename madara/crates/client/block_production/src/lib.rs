@@ -762,7 +762,7 @@ impl BlockProductionTask {
                 // Check if pre-confirmed block exists (it shouldn't at this point)
                 // Create new preconfirmed block
                 let preconfirmed_header = exec_ctx.into_header();
-                tracing::info!(
+                tracing::debug!(
                     target: "custom_header",
                     block_n = preconfirmed_header.block_number,
                     timestamp = preconfirmed_header.block_timestamp.0,
@@ -777,7 +777,7 @@ impl BlockProductionTask {
                 .await?;
 
                 if let Some(preconfirmed) = self.backend.chain_tip.borrow().as_preconfirmed() {
-                    tracing::info!(
+                    tracing::debug!(
                         target: "custom_header",
                         block_n = preconfirmed.header.block_number,
                         timestamp = preconfirmed.header.block_timestamp.0,

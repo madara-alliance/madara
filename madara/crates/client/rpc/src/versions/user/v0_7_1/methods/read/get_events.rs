@@ -36,7 +36,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     if keys.as_ref().map(|k| k.iter().map(|pattern| pattern.len()).sum()).unwrap_or(0) > MAX_EVENTS_KEYS {
         return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
-    if chunk_size > MAX_EVENTS_CHUNK_SIZE {
+    if chunk_size == 0 || chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 

@@ -872,6 +872,17 @@ mod tests {
     }
 
     #[test]
+    fn test_dummy_invoke_v3_with_proof_facts_has_snos_shape() {
+        let tx = dummy_tx_invoke_v3_with_proof_facts();
+        let proof_facts = tx.proof_facts.expect("dummy proof facts should be present");
+
+        assert_eq!(proof_facts, dummy_snos_proof_facts());
+        assert_eq!(proof_facts[0], Felt::from_hex_unchecked("0x50524f4f4630"));
+        assert_eq!(proof_facts[1], Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"));
+        assert_eq!(proof_facts[3], Felt::from_hex_unchecked("0x5649525455414c5f534e4f5330"));
+    }
+
+    #[test]
     fn test_tx_is_l1_handler() {
         let tx: Transaction = L1HandlerTransaction::default().into();
         assert!(tx.is_l1_handler());
@@ -1110,6 +1121,25 @@ mod tests {
             fee_data_availability_mode: DataAvailabilityMode::L2,
             proof_facts: None,
         }
+    }
+
+    pub(crate) fn dummy_snos_proof_facts() -> Vec<Felt> {
+        vec![
+            Felt::from_hex_unchecked("0x50524f4f4630"),
+            Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
+            Felt::from_hex_unchecked("0x602b02cff498684fae3d66016137978fdad45a5036878a57257689d4f3f6ccb"),
+            Felt::from_hex_unchecked("0x5649525455414c5f534e4f5330"),
+            Felt::from_hex_unchecked("0x4e20"),
+            Felt::from_hex_unchecked("0x1234"),
+            Felt::from_hex_unchecked("0xabcdef"),
+            Felt::ZERO,
+        ]
+    }
+
+    pub(crate) fn dummy_tx_invoke_v3_with_proof_facts() -> InvokeTransactionV3 {
+        let mut tx = dummy_tx_invoke_v3();
+        tx.proof_facts = Some(dummy_snos_proof_facts());
+        tx
     }
 
     pub(crate) fn dummy_l1_handler() -> L1HandlerTransaction {

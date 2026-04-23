@@ -124,6 +124,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case(&[0], 2, ContinuationToken { block_number: 0, event_n: 0 }, None)]
     #[case(&[0, 0, 0], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 0, event_n: 2 }))]
     #[case(&[0, 0, 4], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 4, event_n: 0 }))]
     #[case(&[4, 6, 6], 2, ContinuationToken { block_number: 0, event_n: 2 }, Some(ContinuationToken { block_number: 6, event_n: 1 }))]

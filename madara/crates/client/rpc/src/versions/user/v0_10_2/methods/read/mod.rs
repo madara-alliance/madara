@@ -209,10 +209,7 @@ mod tests {
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
 
-    fn add_block_with_invoke_v3_proof_facts(backend: &Arc<MadaraBackend>) -> (Felt, Vec<Felt>) {
-        let tx_hash = Felt::from_hex_unchecked("0x111");
-        let proof_facts = vec![Felt::from_hex_unchecked("0xabc")];
-
+    fn add_block_with_invoke_v3(backend: &Arc<MadaraBackend>, tx_hash: Felt, proof_facts: Option<Vec<Felt>>) {
         let _block_hash = backend
             .write_access()
             .add_full_block_with_classes(
@@ -245,7 +242,7 @@ mod tests {
                             account_deployment_data: vec![],
                             nonce_data_availability_mode: DataAvailabilityMode::L1,
                             fee_data_availability_mode: DataAvailabilityMode::L1,
-                            proof_facts: Some(proof_facts.clone()),
+                            proof_facts,
                         })),
                         receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: tx_hash,
@@ -263,8 +260,21 @@ mod tests {
             )
             .unwrap()
             .block_hash;
+    }
+
+    fn add_block_with_invoke_v3_proof_facts(backend: &Arc<MadaraBackend>) -> (Felt, Vec<Felt>) {
+        let tx_hash = Felt::from_hex_unchecked("0x111");
+        let proof_facts = vec![Felt::from_hex_unchecked("0xabc")];
+
+        add_block_with_invoke_v3(backend, tx_hash, Some(proof_facts.clone()));
 
         (tx_hash, proof_facts)
+    }
+
+    fn add_block_with_invoke_v3_without_proof_facts(backend: &Arc<MadaraBackend>) -> Felt {
+        let tx_hash = Felt::from_hex_unchecked("0x112");
+        add_block_with_invoke_v3(backend, tx_hash, None);
+        tx_hash
     }
 
     fn assert_proof_facts(tx: &TxnWithHashAndProofFacts, expected: Option<&[Felt]>) {
@@ -324,5 +334,24 @@ mod tests {
             panic!("expected invoke v3 transaction");
         };
         assert_eq!(tx.proof_facts.as_deref(), Some(proof_facts.as_slice()));
+    }
+
+    #[rstest]
+    fn test_response_flags_include_proof_facts_returns_empty_for_missing_facts(
+        rpc_test_setup: (Arc<MadaraBackend>, Starknet),
+    ) {
+        let (backend, rpc) = rpc_test_setup;
+        let tx_hash = add_block_with_invoke_v3_without_proof_facts(&backend);
+
+        let no_flags = StarknetReadRpcApiV0_10_2Server::get_transaction_by_hash(&rpc, tx_hash, None).unwrap();
+        assert_proof_facts(&no_flags, None);
+
+        let with_flags = StarknetReadRpcApiV0_10_2Server::get_transaction_by_hash(
+            &rpc,
+            tx_hash,
+            Some(vec![ResponseFlag::IncludeProofFacts]),
+        )
+        .unwrap();
+        assert_proof_facts(&with_flags, Some(&[]));
     }
 }

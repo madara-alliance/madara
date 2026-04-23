@@ -114,6 +114,7 @@ impl ExecutorThread {
     }
     /// Returns None when the channel is closed.
     /// We want to close down the thread in that case.
+    /// When `deadline` is `None`, this waits indefinitely for a batch or command.
     fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
             return WaitTxBatchOutcome::Batch(batch);

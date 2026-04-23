@@ -85,7 +85,7 @@ fn validate_filter_limits(chunk_size: usize, keys: Option<&[Vec<Felt>]>) -> Star
     if keys.map(|patterns| patterns.iter().map(|pattern| pattern.len()).sum::<usize>()).unwrap_or(0) > MAX_EVENTS_KEYS {
         return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
-    if chunk_size > MAX_EVENTS_CHUNK_SIZE {
+    if chunk_size == 0 || chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
@@ -303,5 +303,11 @@ mod tests {
         assert_eq!(chunk.events[0].event_index, 0);
         assert_eq!(chunk.events[1].event_index, 2);
         assert_eq!(chunk.continuation_token.as_deref(), Some("7-2"));
+    }
+
+    #[test]
+    fn validate_filter_limits_rejects_zero_chunk_size() {
+        let err = validate_filter_limits(0, None).expect_err("zero-sized event pages should be rejected");
+        assert_eq!(err, StarknetRpcApiError::PageSizeTooBig);
     }
 }
