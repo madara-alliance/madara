@@ -161,7 +161,9 @@ impl ProverClient for SharpProverService {
                     B256::from_str(fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
                 Some(self.fact_checker.is_valid(&fact).await?)
             } else {
-                None
+                return Err(ProverClientError::TaskInvalid(String::from(
+                    "Fact required for checking aggregator job status for SHARP prover",
+                )));
             }
         } else {
             None
