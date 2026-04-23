@@ -100,7 +100,6 @@ pub struct OrchestratorConfig {
     // Block Processing
     max_block_to_process: Option<u64>,
     min_block_to_process: Option<u64>,
-    madara_version: String,
 
     // Admin
     admin_enabled: bool,
@@ -135,7 +134,6 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version: "0.14.1".to_string(),
             admin_enabled: false,
             logs: (false, true),
         }
@@ -329,7 +327,6 @@ impl OrchestratorConfig {
             command.arg("--da-on-starknet");
         }
 
-        command.arg("--madara-version").arg(&self.madara_version);
         command.arg("--disable-peerdas");
 
         // Prover selection mirrors the orchestrator CLI: a single `--prover <kind>` arg.
@@ -439,11 +436,6 @@ impl OrchestratorConfigBuilder {
     /// Set the port
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = Some(port);
-        self
-    }
-
-    pub fn madara_version(mut self, version: &str) -> Self {
-        self.config.madara_version = version.to_string();
         self
     }
 

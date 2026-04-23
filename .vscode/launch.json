@@ -48,9 +48,7 @@
         "--settle-on-ethereum",
         "--prover",
         "atlantic",
-        "--da-on-ethereum",
-        "--madara-version",
-        "0.13.3"
+        "--da-on-ethereum"
       ],
       // Working folder for execution. Change as necessary if program requires a different value:
       "cwd": "${workspaceFolder}",
