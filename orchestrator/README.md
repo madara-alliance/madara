@@ -322,7 +322,7 @@ Run mode executes the orchestrator's job processing workflow. Example command:
 
 ```bash
 RUST_LOG=info cargo run --release --bin orchestrator run \
-    --sharp \
+    --prover sharp \
     --aws \
     --settle-on-ethereum \
     --aws-s3 \
@@ -334,9 +334,10 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
 
 ### Command Line Options
 
-1. **Prover Services** (choose one):
-   - `--atlantic`: Use Atlantic prover
-   - `--sharp`: Use SHARP prover
+1. **Prover Services** — select one via `--prover <kind>` / `MADARA_ORCHESTRATOR_PROVER`:
+   - `atlantic`: Use Atlantic prover
+   - `sharp`: Use SHARP prover
+   - `mock`: Use the in-tree mock prover (dev / mocknet only)
 
 2. **Settlement Layer** (choose one):
    - `--settle-on-ethereum`: Use Ethereum

@@ -46,7 +46,8 @@
         "--aws-sqs",
         "--aws-sns",
         "--settle-on-ethereum",
-        "--atlantic",
+        "--prover",
+        "atlantic",
         "--da-on-ethereum",
         "--madara-version",
         "0.13.3"

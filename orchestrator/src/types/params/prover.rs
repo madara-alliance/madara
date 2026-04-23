@@ -25,7 +25,13 @@ pub enum ProverConfig {
 ///
 /// Prefer this over matching `ProverConfig` directly when the handler only needs
 /// to know *which* prover is active, not its full validated config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Also used by clap as the typed value of the `--prover` / `MADARA_ORCHESTRATOR_PROVER`
+/// argument. `rename_all = "snake_case"` makes the accepted values lower-cased
+/// (`sharp`, `atlantic`, `mock`), which matches the strings used by `required_if_eq`
+/// on the per-prover CLI structs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[clap(rename_all = "snake_case")]
 pub enum ProverKind {
     Sharp,
     Atlantic,
@@ -45,36 +51,22 @@ impl ProverConfig {
 impl TryFrom<RunCmd> for ProverConfig {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let selected = [run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic, run_cmd.mock_args.mock]
-            .iter()
-            .filter(|&&x| x)
-            .count();
-        if selected > 1 {
-            return Err(OrchestratorError::RunCommandError(
-                "Only one of --sharp, --atlantic, --mock may be selected".to_string(),
-            ));
+        // Prover selection comes from the single typed `--prover` arg
+        // (env: `MADARA_ORCHESTRATOR_PROVER`). Clap validates the enum value at
+        // parse time, so "exactly one of sharp/atlantic/mock" is already
+        // guaranteed — we just dispatch to the right per-prover validator,
+        // which in turn checks that its required sub-envs are present.
+        match run_cmd.prover {
+            ProverKind::Sharp => validate_sharp(run_cmd.sharp_args, run_cmd.layer).map(ProverConfig::Sharp),
+            ProverKind::Atlantic => validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic),
+            ProverKind::Mock => validate_mock(
+                run_cmd.mock_args,
+                &run_cmd.ethereum_settlement_args,
+                run_cmd.layer,
+                run_cmd.store_audit_artifacts,
+            )
+            .map(ProverConfig::Mock),
         }
-        if selected == 0 {
-            return Err(OrchestratorError::RunCommandError(
-                "Must select one of --sharp, --atlantic, --mock".to_string(),
-            ));
-        }
-
-        if run_cmd.sharp_args.sharp {
-            return validate_sharp(run_cmd.sharp_args, run_cmd.layer).map(ProverConfig::Sharp);
-        }
-
-        if run_cmd.atlantic_args.atlantic {
-            return validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic);
-        }
-
-        validate_mock(
-            run_cmd.mock_args,
-            &run_cmd.ethereum_settlement_args,
-            run_cmd.layer,
-            run_cmd.store_audit_artifacts,
-        )
-        .map(ProverConfig::Mock)
     }
 }
 
@@ -185,9 +177,17 @@ fn validate_mock(
         .ethereum_rpc_url
         .clone()
         .ok_or_else(|| OrchestratorError::RunCommandError("Mock prover requires Ethereum RPC URL".to_string()))?;
-    let ethereum_private_key = eth_args
-        .ethereum_private_key
-        .clone()
+
+    // Prefer the `_FILE` variant when set. This lets deployments keep a dummy
+    // value in `MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY` (e.g. "0x123" to
+    // satisfy other consumers) while sourcing the real key from a mounted
+    // file — typical AWS Secrets Manager / CSI Secrets Store setup.
+    // `resolve_secret_from_file` also trims trailing whitespace, which
+    // avoids the common `Invalid Ethereum private key: odd number of digits`
+    // error when the secret file ends with `\n`.
+    let ethereum_private_key = resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")
+        .map_err(OrchestratorError::RunCommandError)?
+        .or_else(|| eth_args.ethereum_private_key.clone())
         .ok_or_else(|| OrchestratorError::RunCommandError("Mock prover requires Ethereum private key".to_string()))?;
     // Parse once here so malformed keys surface as a clean CLI validation error
     let ethereum_signer: alloy::signers::local::PrivateKeySigner = ethereum_private_key

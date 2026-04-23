@@ -24,7 +24,8 @@ spec:
           imagePullPolicy: Always
           args:
             - run
-            - --atlantic
+            - --prover
+            - atlantic
             - --aws
             - --settle-on-ethereum
             - --aws-s3
