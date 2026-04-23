@@ -1,4 +1,4 @@
-use crate::versions::user::common::convert_storage_keys_for_v0_8_1;
+use crate::versions::user::common::{convert_storage_keys_for_v0_8_1, validate_storage_proof_block_id};
 use crate::versions::user::v0_8_1::methods::read::get_storage_proof as v0_8_1_get_storage_proof;
 use crate::Starknet;
 use crate::StarknetRpcApiError;
@@ -14,6 +14,7 @@ pub fn get_storage_proof(
     contract_addresses: Option<Vec<Felt>>,
     contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
 ) -> RpcResult<GetStorageProofResult> {
+    validate_storage_proof_block_id(&block_id)?;
     // Convert StorageKey to Felt for v0.8.1 compatibility
     let contracts_storage_keys_v0_8_1 = convert_storage_keys_for_v0_8_1(contracts_storage_keys)?;
     let block_view = starknet.resolve_view_on(block_id)?;

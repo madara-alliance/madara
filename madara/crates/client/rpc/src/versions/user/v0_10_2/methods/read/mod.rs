@@ -379,4 +379,24 @@ mod tests {
         assert_eq!(err.code(), ErrorCode::InvalidParams.code());
         assert_eq!(err.message(), "Invalid storage key: not-a-felt");
     }
+
+    #[rstest]
+    fn test_get_storage_proof_preconfirmed_block_id_returns_invalid_params(
+        rpc_test_setup: (Arc<MadaraBackend>, Starknet),
+    ) {
+        let (backend, rpc) = rpc_test_setup;
+        add_block_with_invoke_v3_without_proof_facts(&backend);
+
+        let err = StarknetReadRpcApiV0_10_2Server::get_storage_proof(
+            &rpc,
+            BlockId::Tag(mp_rpc::v0_10_0::BlockTag::PreConfirmed),
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code(), ErrorCode::InvalidParams.code());
+        assert_eq!(err.message(), "Invalid params");
+    }
 }

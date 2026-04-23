@@ -498,6 +498,16 @@ mod test_rpc_jsonrpc_v0_10_2 {
     }
 
     #[tokio::test]
+    async fn test_raw_get_storage_proof_rejects_preconfirmed_block_id_v0_10_2() {
+        let madara = get_madara().await;
+        let response = rpc_response(madara, "starknet_getStorageProof", json!({"block_id": "pre_confirmed"})).await;
+
+        let error = response.get("error").expect("expected getStorageProof to reject pre_confirmed");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(-32602));
+        assert_eq!(error.get("message").and_then(|value| value.as_str()), Some("Invalid params"));
+    }
+
+    #[tokio::test]
     async fn test_raw_get_events_address_array_v0_10_2() {
         let madara = get_madara().await;
         let result =

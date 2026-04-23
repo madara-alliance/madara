@@ -1,9 +1,18 @@
 use jsonrpsee::core::RpcResult;
-use jsonrpsee::types::{ErrorCode, ErrorObjectOwned};
+use jsonrpsee::types::{error::INVALID_PARAMS_CODE, ErrorCode, ErrorObjectOwned};
 use mp_convert::Felt;
+use mp_rpc::v0_10_0::{BlockId, BlockTag};
 
 fn invalid_storage_key_error(key: &str) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(ErrorCode::InvalidParams.code(), format!("Invalid storage key: {key}"), None::<()>)
+}
+
+pub(crate) fn validate_storage_proof_block_id(block_id: &BlockId) -> RpcResult<()> {
+    if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
+        return Err(ErrorObjectOwned::owned(INVALID_PARAMS_CODE, "Invalid params", None::<()>));
+    }
+
+    Ok(())
 }
 
 pub(crate) fn convert_storage_keys_for_v0_8_1(
@@ -31,10 +40,25 @@ pub(crate) fn convert_storage_keys_for_v0_8_1(
 
 #[cfg(test)]
 mod tests {
-    use super::convert_storage_keys_for_v0_8_1;
+    use super::{convert_storage_keys_for_v0_8_1, validate_storage_proof_block_id};
     use jsonrpsee::types::ErrorCode;
+    use mp_rpc::v0_10_0::{BlockId, BlockTag};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn validate_storage_proof_block_id_rejects_pre_confirmed() {
+        let error = validate_storage_proof_block_id(&BlockId::Tag(BlockTag::PreConfirmed))
+            .expect_err("pre_confirmed should be rejected for getStorageProof");
+
+        assert_eq!(error.code(), ErrorCode::InvalidParams.code());
+        assert_eq!(error.message(), "Invalid params");
+    }
+
+    #[test]
+    fn validate_storage_proof_block_id_accepts_latest() {
+        assert!(validate_storage_proof_block_id(&BlockId::Tag(BlockTag::Latest)).is_ok());
+    }
 
     #[test]
     fn convert_storage_keys_for_v0_8_1_accepts_none() {
