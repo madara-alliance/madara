@@ -30,6 +30,14 @@ pub enum AWSEventBridgeType {
     Schedule,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[strum(serialize_all = "lowercase")]
+pub enum ProverKind {
+    Sharp,
+    Atlantic,
+    Mock,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
     #[error("Repository root not found")]
@@ -85,9 +93,8 @@ pub struct OrchestratorConfig {
 
     da_on_starknet: bool,
 
-    // Prover (exclusive)
-    sharp: bool,
-    atlantic: bool,
+    // Prover — single enum mirrors the orchestrator CLI's `--prover`.
+    prover: Option<ProverKind>,
     atlantic_service_url: Option<Url>,
 
     // Block Processing
@@ -123,8 +130,7 @@ impl Default for OrchestratorConfig {
             da_on_ethereum: false,
             ethereum_rpc_url: None,
             da_on_starknet: false,
-            sharp: false,
-            atlantic: false,
+            prover: None,
             atlantic_service_url: None,
 
             max_block_to_process: None,
@@ -214,9 +220,9 @@ impl OrchestratorConfig {
         self.da_on_starknet
     }
 
-    /// Check if SHARP is enabled
-    pub fn is_sharp_enabled(&self) -> bool {
-        self.sharp
+    /// Get the selected prover (if any)
+    pub fn prover(&self) -> Option<ProverKind> {
+        self.prover
     }
 
     /// Check if MongoDB is enabled
@@ -227,11 +233,6 @@ impl OrchestratorConfig {
     /// Get the MongoDB connection string
     pub fn mongodb_connection_url(&self) -> Option<&Url> {
         self.mongodb_connection_url.as_ref()
-    }
-
-    /// Check if Atlantic is enabled
-    pub fn is_atlantic_enabled(&self) -> bool {
-        self.atlantic
     }
 
     /// Get the Atlantic service URL
@@ -331,33 +332,23 @@ impl OrchestratorConfig {
         command.arg("--madara-version").arg(&self.madara_version);
         command.arg("--disable-peerdas");
 
-        // Prover selection is a single enum arg on the orchestrator side.
-        // Translate exactly one of the mutually-exclusive `self.sharp` /
-        // `self.atlantic` booleans into `--prover <kind>`.
-        //
-        // We match exhaustively and panic on invalid combinations here rather
-        // than emitting bad args and letting the orchestrator sort it out:
-        // - `(true, true)` would emit both `--prover sharp` and `--prover atlantic`;
-        //   clap silently takes the last one (atlantic), hiding the misconfig.
-        // - `(false, false)` emits nothing; the orchestrator then fails at
-        //   startup with a generic "required arg missing" that's harder to
-        //   trace back to the test harness.
-        match (self.sharp, self.atlantic) {
-            (true, false) => {
-                command.arg("--prover").arg("sharp");
+        // Prover selection mirrors the orchestrator CLI: a single `--prover <kind>` arg.
+        // Panic on `None` so test-harness misconfigs surface here instead of as a
+        // generic "required arg missing" from the orchestrator at startup.
+        match self.prover {
+            Some(ProverKind::Sharp) => {
+                command.arg("--prover").arg(ProverKind::Sharp.to_string());
             }
-            (false, true) => {
-                command.arg("--prover").arg("atlantic");
+            Some(ProverKind::Atlantic) => {
+                command.arg("--prover").arg(ProverKind::Atlantic.to_string());
                 if let Some(service_url) = self.atlantic_service_url() {
                     command.arg("--atlantic-service-url").arg(service_url.to_string());
                 }
             }
-            (true, true) => {
-                panic!("OrchestratorConfig: both `sharp` and `atlantic` are set; select exactly one prover")
+            Some(ProverKind::Mock) => {
+                command.arg("--prover").arg(ProverKind::Mock.to_string());
             }
-            (false, false) => {
-                panic!("OrchestratorConfig: no prover selected; set either `sharp` or `atlantic` before running")
-            }
+            None => panic!("OrchestratorConfig: no prover selected; call `.prover(..)` on the builder"),
         }
 
         if let Some(max_block) = self.max_block_to_process {
@@ -403,7 +394,7 @@ impl OrchestratorConfigBuilder {
         Self::new()
             .layer(Layer::L2)
             .mode(OrchestratorMode::Run)
-            .atlantic(true)
+            .prover(ProverKind::Atlantic)
             .event_bridge_type(AWSEventBridgeType::Rule)
             .settle_on_ethereum(true)
             .da_on_ethereum(true)
@@ -417,7 +408,7 @@ impl OrchestratorConfigBuilder {
         Self::new()
             .layer(Layer::L3)
             .mode(OrchestratorMode::Run)
-            .atlantic(true)
+            .prover(ProverKind::Atlantic)
             .event_bridge_type(AWSEventBridgeType::Rule)
             .settle_on_starknet(true)
             .da_on_starknet(true)
@@ -549,15 +540,9 @@ impl OrchestratorConfigBuilder {
         self
     }
 
-    /// Enable/disable SHARP prover
-    pub fn sharp(mut self, enabled: bool) -> Self {
-        self.config.sharp = enabled;
-        self
-    }
-
-    /// Enable/disable Atlantic prover
-    pub fn atlantic(mut self, enabled: bool) -> Self {
-        self.config.atlantic = enabled;
+    /// Select the prover (Sharp / Atlantic / Mock).
+    pub fn prover(mut self, kind: ProverKind) -> Self {
+        self.config.prover = Some(kind);
         self
     }
 

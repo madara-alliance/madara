@@ -143,8 +143,8 @@ pub struct RunCmd {
     // Prover: single enum selects which backend to use. The per-prover struct
     // below that matches the selection is validated in `TryFrom<RunCmd> for
     // ProverConfig` — the others are ignored. Accepted values: sharp, atlantic,
-    // mock (case-insensitive).
-    #[arg(env = "MADARA_ORCHESTRATOR_PROVER", long, value_enum)]
+    // mock (case-insensitive via `ignore_case = true`).
+    #[arg(env = "MADARA_ORCHESTRATOR_PROVER", long, value_enum, ignore_case = true)]
     pub prover: ProverKind,
 
     #[clap(flatten)]
