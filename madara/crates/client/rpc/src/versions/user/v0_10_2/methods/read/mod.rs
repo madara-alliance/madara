@@ -189,6 +189,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
 mod tests {
     use super::*;
     use crate::test_utils::rpc_test_setup;
+    use jsonrpsee::types::ErrorCode;
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
@@ -353,5 +354,28 @@ mod tests {
         )
         .unwrap();
         assert_proof_facts(&with_flags, Some(&[]));
+    }
+
+    #[rstest]
+    fn test_get_storage_proof_invalid_storage_key_returns_invalid_params(
+        rpc_test_setup: (Arc<MadaraBackend>, Starknet),
+    ) {
+        let (backend, rpc) = rpc_test_setup;
+        add_block_with_invoke_v3_without_proof_facts(&backend);
+
+        let err = StarknetReadRpcApiV0_10_2Server::get_storage_proof(
+            &rpc,
+            BlockId::Number(0),
+            None,
+            None,
+            Some(vec![ContractStorageKeysItem {
+                contract_address: Felt::ONE,
+                storage_keys: vec!["not-a-felt".to_string()],
+            }]),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code(), ErrorCode::InvalidParams.code());
+        assert_eq!(err.message(), "Invalid storage key: not-a-felt");
     }
 }

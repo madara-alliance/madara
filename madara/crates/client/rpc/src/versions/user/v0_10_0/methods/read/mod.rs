@@ -142,10 +142,9 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
-        let block_view = self.resolve_view_on(block_id)?;
-
         // Convert StorageKey to Felt for v0.8.1 compatibility
         let contracts_storage_keys_v0_8_1 = convert_storage_keys_for_v0_8_1(contracts_storage_keys)?;
+        let block_view = self.resolve_view_on(block_id)?;
 
         V0_8_1Impl::get_storage_proof(
             self,
