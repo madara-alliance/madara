@@ -260,9 +260,9 @@ describe("Starknet RPC v0.10.2", () => {
       for (const tx of result.transactions) {
         expect(tx.type).toBe("INVOKE");
         expect(tx.version).toBe("0x3");
-        expect(tx.proof_facts === undefined || Array.isArray(tx.proof_facts)).toBe(
-          true,
-        );
+        expect(
+          tx.proof_facts === undefined || Array.isArray(tx.proof_facts),
+        ).toBe(true);
       }
     });
 
@@ -293,10 +293,13 @@ describe("Starknet RPC v0.10.2", () => {
       expect(invoke?.transaction_hash).toBeDefined();
 
       const rpcCaller = new RpcCaller(ctx.rpcUrl);
-      const envelope = await rpcCaller.rawCall("starknet_getTransactionByHash", {
-        transaction_hash: invoke!.transaction_hash,
-        response_flags: ["UNKNOWN_FLAG"],
-      });
+      const envelope = await rpcCaller.rawCall(
+        "starknet_getTransactionByHash",
+        {
+          transaction_hash: invoke!.transaction_hash,
+          response_flags: ["UNKNOWN_FLAG"],
+        },
+      );
 
       expect(envelope.error).toBeDefined();
       expect(envelope.error!.code).toBe(-32602);
