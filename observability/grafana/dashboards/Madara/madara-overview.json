@@ -4159,9 +4159,45 @@
           "expr": "rate(cairo_native_cache_disk_load_error_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Disk Load Error/s",
           "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(cairo_native_cache_metadata_missing_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Metadata Missing/s",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(cairo_native_cache_metadata_invalid_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Metadata Invalid/s",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(cairo_native_cache_host_mismatch_mismatch_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Host Mismatch/s",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(cairo_native_cache_metadata_write_error_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Metadata Write Error/s",
+          "refId": "G"
         }
       ],
-      "title": "Cache Errors",
+      "title": "Cache Errors & Metadata Guards",
       "type": "timeseries"
     },
     {
