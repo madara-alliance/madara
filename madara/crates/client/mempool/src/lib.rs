@@ -238,7 +238,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             return Ok(());
         }
         for res in self.backend.get_saved_mempool_transactions() {
-            let tx = res.context("Getting mempool transactions")?;
+            let tx = match res {
+                Ok(tx) => tx,
+                Err(err) => {
+                    tracing::warn!("Skipping saved mempool transaction that could not be loaded: {err:#}");
+                    continue;
+                }
+            };
             let is_new_tx = false; // do not trigger metrics update and db update.
             if let Err(err) = self.add_tx(tx, is_new_tx).await {
                 match err {
@@ -341,11 +347,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         if removed.is_empty() {
             return;
         }
-        if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.hash)) {
-                tracing::error!("Could not remove mempool transactions from database: {err:#}");
-            }
-        }
+        self.remove_saved_txs_by_hashes(removed.iter().map(|tx| tx.hash));
 
         for tx in removed {
             if let dashmap::Entry::Occupied(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
@@ -353,6 +355,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     entry.remove();
                     self.watch_transaction_status.publish(&tx.hash, None);
                 }
+            }
+        }
+    }
+
+    fn remove_saved_txs_by_hashes(&self, tx_hashes: impl IntoIterator<Item = Felt>) {
+        if self.config.save_to_db {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(tx_hashes) {
+                tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
         }
     }
@@ -497,6 +507,15 @@ pub(crate) mod tests {
         )
     }
 
+    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
+        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
+    }
+
+    fn write_invalid_saved_mempool_tx(backend: &mc_db::MadaraBackend) {
+        let cf = backend.db.inner_db().cf_handle("mempool_transactions").expect("mempool column should exist");
+        backend.db.inner_db().put_cf(&cf, b"invalid-key", b"invalid-value").expect("writing invalid row should work");
+    }
+
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
@@ -507,6 +526,38 @@ pub(crate) mod tests {
         assert_matches::assert_matches!(result, Ok(()));
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_accept_persists_and_remove_clears_saved_tx(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+
+        assert_matches::assert_matches!(mempool.accept_tx(tx_account.clone()).await, Ok(()));
+        let saved = saved_mempool_txs(&backend);
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].hash, tx_account.hash);
+
+        mempool.on_txs_removed(std::slice::from_ref(&tx_account));
+
+        assert!(saved_mempool_txs(&backend).is_empty());
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_load_skips_invalid_saved_transaction(#[future] backend: Arc<mc_db::MadaraBackend>) {
+        let backend = backend.await;
+        write_invalid_saved_mempool_tx(&backend);
+        let mempool = Mempool::new(backend, MempoolConfig::default());
+
+        assert_matches::assert_matches!(mempool.load_txs_from_db().await, Ok(()));
+        assert!(mempool.is_empty().await);
     }
 
     /// This test makes sure that taking a transaction from the mempool works as

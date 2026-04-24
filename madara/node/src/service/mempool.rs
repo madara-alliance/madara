@@ -18,7 +18,7 @@ impl MempoolService {
         Self {
             mempool: Arc::new(Mempool::new(
                 Arc::clone(&backend),
-                MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving, external_outbox },
+                MempoolConfig { save_to_db: run_cmd.should_save_mempool_to_db(), external_outbox },
             )),
         }
     }
