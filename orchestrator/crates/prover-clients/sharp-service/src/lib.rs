@@ -151,7 +151,7 @@ impl ProverClient for SharpProverService {
             TaskType::Job => "job",
             TaskType::Aggregation => "aggregation",
         };
-        metrics::SHARP_METRICS.record_job_status(task_label, &format!("{:?}", res.status));
+        metrics::SHARP_METRICS.record_job_status(task_label, res.status.as_label());
 
         // For aggregation + Processed: cross-verify the fact on-chain before
         // calling the pure mapper. This is the only async / side-effecting step.
@@ -244,6 +244,12 @@ pub fn map_sharp_status(
             }
             CairoJobStatus::Unknown => TaskStatus::Failed(format!("Job not found: {}", job_key)),
             CairoJobStatus::Processed => TaskStatus::Succeeded,
+            // SHARP's `validation_done=true` at `InProgress` is the gateway's
+            // "request validated, terminal state not yet flushed" signal.
+            // We mark this as Completed so that Aggregator request can be sent ASAP
+            // so that they can start building the tree.
+            // SHARP team mentioned that we an send Applicative job as soon as child
+            // jobs are validated.
             CairoJobStatus::InProgress => {
                 if res.validation_done == Some(true) {
                     TaskStatus::Succeeded

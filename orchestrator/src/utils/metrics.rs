@@ -342,7 +342,15 @@ impl Metrics for OrchestratorMetrics {
             "bytes".to_string(),
         );
 
-        // Local aggregation metrics (SHARP / Mock paths)
+        // Local aggregation metrics (SHARP / Mock paths).
+        //
+        // TODO(@prakhar, 2026-04-24): migrate the per-run gauges in this block
+        // (`aggregator_local_run_duration`, `aggregator_child_count`,
+        // `aggregator_program_output_bytes`, `aggregator_da_segment_bytes`,
+        // `aggregator_pie_zip_bytes`) to histograms so Grafana can compute
+        // p50/p95/p99 over runs. Gauges only retain the last value per label
+        // set, which makes distributional queries impossible. Fold this into
+        // the same sweep that migrates `atlantic_api_call_duration`.
         let aggregator_local_run_duration = register_gauge_metric_instrument(
             &orchestrator_meter,
             "aggregator_local_run_duration".to_string(),

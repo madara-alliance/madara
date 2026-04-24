@@ -12,6 +12,24 @@ pub enum CairoJobStatus {
     Failed,
 }
 
+impl CairoJobStatus {
+    /// Bounded, stable label for Prometheus metrics.
+    ///
+    /// Decoupled from `Debug` so a variant rename (routine refactor) can't
+    /// silently change the metric label surface and break Grafana queries
+    /// / alerts built on these strings.
+    pub fn as_label(&self) -> &'static str {
+        match self {
+            CairoJobStatus::Unknown => "unknown",
+            CairoJobStatus::NotCreated => "not_created",
+            CairoJobStatus::InProgress => "in_progress",
+            CairoJobStatus::Processed => "processed",
+            CairoJobStatus::Invalid => "invalid",
+            CairoJobStatus::Failed => "failed",
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum InvalidReason {

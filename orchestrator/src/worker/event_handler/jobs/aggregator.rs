@@ -63,13 +63,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     JobError::ProverClientError(e)
                 })?
             }
-            ProverKind::Sharp | ProverKind::Mock => {
-                let prover_label = match config.prover_kind() {
-                    ProverKind::Sharp => "sharp",
-                    ProverKind::Mock => "mock",
-                    _ => unreachable!(),
-                };
-                self.run_and_submit_with_local_aggregation(&config, job, prover_label).await?
+            kind @ (ProverKind::Sharp | ProverKind::Mock) => {
+                self.run_and_submit_with_local_aggregation(&config, job, kind.label()).await?
             }
         };
 

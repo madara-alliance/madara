@@ -48,6 +48,17 @@ impl ProverConfig {
     }
 }
 
+impl ProverKind {
+    /// Bounded, stable label for logs and Prometheus metrics.
+    pub fn label(self) -> &'static str {
+        match self {
+            ProverKind::Sharp => "sharp",
+            ProverKind::Atlantic => "atlantic",
+            ProverKind::Mock => "mock",
+        }
+    }
+}
+
 impl TryFrom<RunCmd> for ProverConfig {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
