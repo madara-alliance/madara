@@ -115,6 +115,34 @@ async fn test_same_version_opens_without_migration() {
     assert!(matches!(runner.check_status().unwrap(), MigrationStatus::NoMigrationNeeded));
 }
 
+#[tokio::test]
+async fn test_migration_from_v12_clears_native_cache_directory() {
+    let (temp_dir, chain_config, native_config) = setup_test_env();
+    let native_cache_dir = temp_dir.path().join("native_classes");
+    fs::create_dir_all(&native_cache_dir).unwrap();
+    fs::write(native_cache_dir.join("0x1.so"), b"native").unwrap();
+    fs::write(native_cache_dir.join("0x1.so.meta.json"), b"metadata").unwrap();
+    fs::write(temp_dir.path().join(DB_VERSION_FILE), "12").unwrap();
+
+    let backend = MadaraBackend::open_rocksdb(
+        temp_dir.path(),
+        chain_config,
+        Default::default(),
+        RocksDBConfig::default(),
+        native_config,
+    )
+    .expect("v12 database should migrate");
+
+    assert!(!native_cache_dir.exists(), "Native cache directory should be cleared during v12→v13 migration");
+
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
+    let version = runner.read_version_file().unwrap();
+    assert_eq!(version, expected_db_version);
+
+    drop(backend);
+}
+
 // =============================================================================
 // Version Mismatch Tests (parameterized)
 // =============================================================================

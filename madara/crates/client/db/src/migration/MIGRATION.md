@@ -141,6 +141,9 @@ impl MigrationContext {
     /// Get a reference to the RocksDB instance
     pub fn db(&self) -> &DB;
 
+    /// Get the Madara base path that owns db/ and sidecar runtime directories
+    pub fn base_path(&self) -> &Path;
+
     /// Get the source version (migrating FROM)
     pub fn from_version(&self) -> u32;
 
