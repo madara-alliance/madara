@@ -4,29 +4,35 @@ use starknet::providers::{JsonRpcClient, Provider};
 use std::sync::Arc;
 
 #[derive(Debug)]
-pub struct BlockHashMismatch {
-    pub block_number: u64,
-    pub madara_hash: String,
-    pub reference_hash: String,
+pub enum ReplayBoundsError {
+    HashMismatch { block_number: u64, madara_hash: String, reference_hash: String },
+    FetchFailed { block_number: u64, source: String, error: String },
+    BlockPending { block_number: u64, source: String },
 }
 
-impl std::fmt::Display for BlockHashMismatch {
+impl std::fmt::Display for ReplayBoundsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Replay bounds: block hash mismatch at block #{}: madara={}, reference={}",
-            self.block_number, self.madara_hash, self.reference_hash
-        )
+        match self {
+            Self::HashMismatch { block_number, madara_hash, reference_hash } => {
+                write!(f, "block hash mismatch at #{block_number}: madara={madara_hash}, reference={reference_hash}")
+            }
+            Self::FetchFailed { block_number, source, error } => {
+                write!(f, "failed to fetch block #{block_number} from {source}: {error}")
+            }
+            Self::BlockPending { block_number, source } => {
+                write!(f, "block #{block_number} is still pending on {source}")
+            }
+        }
     }
 }
 
 /// Validates that the block hash from the Madara (replay) node matches the reference node.
-/// Returns Ok(()) on match, Err(BlockHashMismatch) on mismatch.
+/// Fails closed: RPC errors and pending blocks halt batching rather than silently passing.
 pub async fn validate_block_hash(
     madara_client: &Arc<JsonRpcClient<HttpTransport>>,
     reference_client: &Arc<JsonRpcClient<HttpTransport>>,
     block_number: u64,
-) -> Result<(), BlockHashMismatch> {
+) -> Result<(), ReplayBoundsError> {
     let block_id = BlockId::Number(block_number);
 
     let (madara_result, reference_result) = tokio::join!(
@@ -37,24 +43,24 @@ pub async fn validate_block_hash(
     let madara_hash = match madara_result {
         Ok(MaybePreConfirmedBlockWithTxHashes::Block(block)) => block.block_hash,
         Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
-            tracing::warn!(block_number, "Replay bounds: block is still pending on Madara node");
-            return Ok(());
+            return Err(ReplayBoundsError::BlockPending { block_number, source: "madara".into() });
         }
         Err(e) => {
-            tracing::error!(block_number, error = %e, "Replay bounds: failed to fetch block from Madara node");
-            return Ok(());
+            return Err(ReplayBoundsError::FetchFailed { block_number, source: "madara".into(), error: e.to_string() });
         }
     };
 
     let reference_hash = match reference_result {
         Ok(MaybePreConfirmedBlockWithTxHashes::Block(block)) => block.block_hash,
         Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
-            tracing::warn!(block_number, "Replay bounds: block is still pending on reference node");
-            return Ok(());
+            return Err(ReplayBoundsError::BlockPending { block_number, source: "reference".into() });
         }
         Err(e) => {
-            tracing::error!(block_number, error = %e, "Replay bounds: failed to fetch block from reference node");
-            return Ok(());
+            return Err(ReplayBoundsError::FetchFailed {
+                block_number,
+                source: "reference".into(),
+                error: e.to_string(),
+            });
         }
     };
 
@@ -62,7 +68,7 @@ pub async fn validate_block_hash(
         tracing::debug!(block_number, hash = %madara_hash, "Replay bounds: block hash validated");
         Ok(())
     } else {
-        Err(BlockHashMismatch {
+        Err(ReplayBoundsError::HashMismatch {
             block_number,
             madara_hash: format!("{madara_hash:#x}"),
             reference_hash: format!("{reference_hash:#x}"),

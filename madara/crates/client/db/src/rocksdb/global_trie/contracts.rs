@@ -88,9 +88,8 @@ pub fn contract_trie_root_staged(
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
-            let storage_root = contract_storage_trie
-                .root_hash_staged(&contract_address.to_bytes_be())
-                .map_err(WrappedBonsaiError)?;
+            let storage_root =
+                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
@@ -105,8 +104,7 @@ pub fn contract_trie_root_staged(
         contract_trie.insert(super::bonsai_identifier::CONTRACT, &k, &v).map_err(WrappedBonsaiError)?;
     }
 
-    let root_hash =
-        contract_trie.root_hash_staged(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
+    let root_hash = contract_trie.root_hash_staged(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie staged root computed");
 

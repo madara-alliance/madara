@@ -843,10 +843,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.protocol_version,
             block.header.block_number,
         )?;
-        let merklization_duration = merklization_start.elapsed();
-        let merklization_secs = merklization_duration.as_secs_f64();
-        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
-        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
@@ -873,7 +869,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                     block.header.block_number, custom.expected_block_hash, block_hash,
                 );
                 tracing::error!("{msg}");
-                eprintln!("{msg}");
+                #[allow(clippy::print_stderr)]
+                {
+                    eprintln!("{msg}");
+                }
                 std::process::exit(1);
             }
         }
@@ -882,6 +881,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let contract_trie_root_duration = staged_tries.contract_trie_root_duration;
         let class_trie_root_duration = staged_tries.class_trie_root_duration;
         let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
+
+        // Record total merklization duration (Phase 1 + Phase 2) to match the sync path's
+        // apply_to_global_trie metric which also covers both compute and commit.
+        let merklization_duration = merklization_start.elapsed();
+        let merklization_secs = merklization_duration.as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
+        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
 
         // Record per-trie root metrics (histogram + gauge)
         let contract_root_secs = contract_trie_root_duration.as_secs_f64();

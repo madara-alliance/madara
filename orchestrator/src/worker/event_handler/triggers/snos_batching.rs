@@ -2,10 +2,10 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::worker::event_handler::triggers::batching::replay_bounds;
 use crate::worker::event_handler::triggers::batching::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
 };
-use crate::worker::event_handler::triggers::batching::replay_bounds;
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
 use orchestrator_utils::layer::Layer;
@@ -97,20 +97,10 @@ impl JobTrigger for SnosBatchingTrigger {
                 };
 
                 if let Some(ref_client) = config.replay_bounds_client() {
-                    if let Err(e) = replay_bounds::validate_block_hash(
-                        config.madara_rpc_client(),
-                        ref_client,
-                        block_num,
-                    )
-                    .await
+                    if let Err(e) =
+                        replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
                     {
-                        error!(
-                            block_num,
-                            madara_hash = %e.madara_hash,
-                            reference_hash = %e.reference_hash,
-                            "Replay bounds: block hash mismatch, stopping SNOS batching at block {}",
-                            block_num
-                        );
+                        error!(block_num, "Replay bounds: {}, stopping SNOS batching", e);
                         break;
                     }
                 }
