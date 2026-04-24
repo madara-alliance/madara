@@ -55,6 +55,8 @@ pub mod bonsai_identifier {
 pub struct StagedGlobalTries {
     contract: StagedContractTries,
     class: StagedClassTrie,
+    pub contract_trie_root_duration: Duration,
+    pub class_trie_root_duration: Duration,
 }
 
 impl StagedGlobalTries {
@@ -73,18 +75,28 @@ pub fn compute_global_trie_staged(
     last_block_protocol_version: StarknetVersion,
     block_number: u64,
 ) -> Result<(Felt, StagedGlobalTries)> {
-    let (contract_result, class_result) = rayon::join(
+    let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
         || {
-            contracts::contract_trie_root_staged(
+            let start = Instant::now();
+            let result = contracts::contract_trie_root_staged(
                 backend,
                 &state_diff.deployed_contracts,
                 &state_diff.replaced_classes,
                 &state_diff.nonces,
                 &state_diff.storage_diffs,
                 block_number,
-            )
+            );
+            (result, start.elapsed())
         },
-        || classes::class_trie_root_staged(backend, &state_diff.declared_classes, &state_diff.migrated_compiled_classes),
+        || {
+            let start = Instant::now();
+            let result = classes::class_trie_root_staged(
+                backend,
+                &state_diff.declared_classes,
+                &state_diff.migrated_compiled_classes,
+            );
+            (result, start.elapsed())
+        },
     );
 
     let (contract_trie_root, staged_contracts) = contract_result?;
@@ -92,7 +104,15 @@ pub fn compute_global_trie_staged(
 
     let state_root = calculate_state_root(contract_trie_root, class_trie_root, last_block_protocol_version);
 
-    Ok((state_root, StagedGlobalTries { contract: staged_contracts, class: staged_classes }))
+    Ok((
+        state_root,
+        StagedGlobalTries {
+            contract: staged_contracts,
+            class: staged_classes,
+            contract_trie_root_duration: contract_duration,
+            class_trie_root_duration: class_duration,
+        },
+    ))
 }
 
 /// Update the global tries and compute the state root for the last block in the batch.

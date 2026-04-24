@@ -860,28 +860,41 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        // Validate block hash against custom header expectation BEFORE persisting anything.
-        if let Some(custom) = self.inner.get_custom_header() {
+        // Atomically check and clear the custom header to avoid TOCTOU races.
+        let maybe_custom = {
+            let mut guard = self.inner.custom_header.lock().expect("Poisoned lock");
+            guard.take()
+        };
+        if let Some(custom) = maybe_custom {
             if !custom.is_block_hash_as_expected(&block_hash) {
-                tracing::error!(
-                    block_n = block.header.block_number,
-                    expected = %custom.expected_block_hash,
-                    computed = %block_hash,
-                    "Block hash mismatch: computed block hash does not match expected. \
-                     No data has been persisted. Shutting down."
+                let msg = format!(
+                    "Block hash mismatch at block #{}: expected={}, computed={}. \
+                     No data has been persisted. Shutting down.",
+                    block.header.block_number, custom.expected_block_hash, block_hash,
                 );
+                tracing::error!("{msg}");
+                eprintln!("{msg}");
                 std::process::exit(1);
             }
         }
 
-        // Hash check passed (or no custom header). Consume the custom header.
-        self.inner.get_custom_header_with_clear(true);
-
         // Phase 2: Persist the staged trie changes to RocksDB.
+        let contract_trie_root_duration = staged_tries.contract_trie_root_duration;
+        let class_trie_root_duration = staged_tries.class_trie_root_duration;
         let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
+
+        // Record per-trie root metrics (histogram + gauge)
+        let contract_root_secs = contract_trie_root_duration.as_secs_f64();
+        let class_root_secs = class_trie_root_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_root_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_root_secs, &[]);
+        metrics().class_trie_root_duration.record(class_root_secs, &[]);
+        metrics().class_trie_root_last.record(class_root_secs, &[]);
 
         // Record merklization timings
         timings.merklization = merklization_duration;
+        timings.contract_trie_root = contract_trie_root_duration;
+        timings.class_trie_root = class_trie_root_duration;
         timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
         timings.contract_trie_commit = contract_trie_timings.trie_commit;
         timings.class_trie_commit = class_trie_timings.trie_commit;
