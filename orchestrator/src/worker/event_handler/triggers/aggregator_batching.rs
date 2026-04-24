@@ -4,6 +4,7 @@ use crate::error::job::JobError;
 use crate::worker::event_handler::triggers::batching::aggregator::{
     AggregatorBatchConfig, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
+use crate::worker::event_handler::triggers::batching::replay_bounds;
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
 use starknet::providers::Provider;
@@ -61,6 +62,25 @@ impl JobTrigger for AggregatorBatchingTrigger {
             let mut state = state_handler.load_batch_state().await?;
 
             for block_num in start_block..=end_block {
+                if let Some(ref_client) = config.replay_bounds_client() {
+                    if let Err(e) = replay_bounds::validate_block_hash(
+                        config.madara_rpc_client(),
+                        ref_client,
+                        block_num,
+                    )
+                    .await
+                    {
+                        error!(
+                            block_num,
+                            madara_hash = %e.madara_hash,
+                            reference_hash = %e.reference_hash,
+                            "Replay bounds: block hash mismatch, stopping aggregator batching at block {}",
+                            block_num
+                        );
+                        break;
+                    }
+                }
+
                 match batching_handler.include_block(block_num, state).await? {
                     BlockProcessingResult::Accumulated(updated_state) => {
                         state = AggregatorState::NonEmpty(updated_state);
