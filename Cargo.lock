@@ -3131,7 +3131,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/madara-alliance/bonsai-trie?branch=update-starknet-types-core#43829efc8edc61b2e85dd9ec46459b7b9a1c4f1c"
+source = "git+https://github.com/madara-alliance/bonsai-trie?branch=feat%2Froot-hash-staged#5068696e6fb5aa4f26f970d104e7fcea0eb7d23c"
 dependencies = [
  "bitvec",
  "derive_more 0.99.20",

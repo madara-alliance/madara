@@ -834,16 +834,19 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
         metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        let (global_state_root, merklization_timings) =
-            self.apply_to_global_trie(block.header.block_number, [&block.state_diff], block.header.protocol_version)?;
-
-        // Copy merklization timings
-        timings.merklization = merklization_timings.total;
-        timings.contract_trie_root = merklization_timings.contract_trie_root;
-        timings.class_trie_root = merklization_timings.class_trie_root;
-        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
-        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
-        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
+        // Phase 1: Compute the global state root from staged (uncommitted) trie changes.
+        // Nothing is persisted to disk yet — if the custom header hash check fails,
+        // the staged tries are dropped and the DB remains untouched.
+        let merklization_start = Instant::now();
+        let (global_state_root, staged_tries) = self.inner.db.compute_global_trie_staged(
+            &block.state_diff,
+            block.header.protocol_version,
+            block.header.block_number,
+        )?;
+        let merklization_duration = merklization_start.elapsed();
+        let merklization_secs = merklization_duration.as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
+        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
@@ -857,12 +860,31 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
-            let is_valid = header.is_block_hash_as_expected(&block_hash);
-            if !is_valid {
-                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+        // Validate block hash against custom header expectation BEFORE persisting anything.
+        if let Some(custom) = self.inner.get_custom_header() {
+            if !custom.is_block_hash_as_expected(&block_hash) {
+                tracing::error!(
+                    block_n = block.header.block_number,
+                    expected = %custom.expected_block_hash,
+                    computed = %block_hash,
+                    "Block hash mismatch: computed block hash does not match expected. \
+                     No data has been persisted. Shutting down."
+                );
+                std::process::exit(1);
             }
         }
+
+        // Hash check passed (or no custom header). Consume the custom header.
+        self.inner.get_custom_header_with_clear(true);
+
+        // Phase 2: Persist the staged trie changes to RocksDB.
+        let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
+
+        // Record merklization timings
+        timings.merklization = merklization_duration;
+        timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
+        timings.contract_trie_commit = contract_trie_timings.trie_commit;
+        timings.class_trie_commit = class_trie_timings.trie_commit;
 
         // Save the block.
 
