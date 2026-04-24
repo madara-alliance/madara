@@ -7,8 +7,16 @@ edition.workspace = true
 alloy = { workspace = true, features = ["full"] }
 async-trait.workspace = true
 hex.workspace = true
+once_cell.workspace = true
+opentelemetry = { workspace = true, features = ["metrics"] }
 orchestrator-gps-fact-checker.workspace = true
 orchestrator-prover-client-interface.workspace = true
+orchestrator-utils.workspace = true
 tracing.workspace = true
 url.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+rstest.workspace = true
+tokio.workspace = true

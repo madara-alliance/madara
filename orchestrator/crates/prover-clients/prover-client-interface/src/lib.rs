@@ -1,3 +1,6 @@
+pub mod http;
+pub mod retry;
+
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use mockall::automock;
@@ -20,7 +23,6 @@ pub trait ProverClient: Send + Sync {
         task: TaskType,
         task_id: &str,
         fact: Option<String>,
-        cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError>;
     async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError>;
     async fn submit_l2_query(

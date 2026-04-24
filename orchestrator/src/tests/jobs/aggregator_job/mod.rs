@@ -76,9 +76,9 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
     prover_client
         .expect_get_task_status()
-        .with(eq(TaskType::Aggregation), eq("bucket_id".to_string()), eq(None), eq(false))
+        .with(eq(TaskType::Aggregation), eq("bucket_id".to_string()), eq(None))
         .times(1)
-        .returning(|_, _, _, _| Ok(TaskStatus::Succeeded));
+        .returning(|_, _, _| Ok(TaskStatus::Succeeded));
     let buffer_bytes_clone = buffer_bytes.clone();
     prover_client.expect_get_aggregation_artifacts().times(1).returning(move |_, _| {
         Ok(orchestrator_prover_client_interface::AggregationArtifacts {

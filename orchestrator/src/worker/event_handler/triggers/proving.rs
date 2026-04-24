@@ -54,8 +54,12 @@ impl JobTrigger for ProvingJobTrigger {
                                     continue;
                                 }
                                 Some(start_snos_batch) => (
-                                    None,
-                                    None,
+                                    if config.params.store_audit_artifacts {
+                                        Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME))
+                                    } else {
+                                        None
+                                    },
+                                    None, // We don't check the on-chain registration of snos fact when using AR
                                     Some(batch.bucket_id),
                                     Some(snos_metadata.snos_batch_index - start_snos_batch.index + 1),
                                 ),

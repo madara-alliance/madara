@@ -9,5 +9,11 @@ bytes.workspace = true
 cairo-vm.workspace = true
 mockall.workspace = true
 orchestrator-gps-fact-checker.workspace = true
-orchestrator-utils.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true

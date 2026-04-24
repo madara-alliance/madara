@@ -10,6 +10,10 @@
 //! - `get_task_status`: receives the fact (hex) via the trait's `fact` parameter and
 //!   verifies via `isValid`. The `task_id` is intentionally unused on the aggregation path.
 
+pub mod metrics;
+
+use std::time::Instant;
+
 use alloy::primitives::{Address, B256};
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
@@ -78,18 +82,40 @@ impl ProverClient for MockProverService {
             )),
 
             Task::RunAggregationWithPie(ApplicativeJobInfo { fact_hash, .. }) => {
-                match (&self.fact_registrar, fact_hash) {
-                    (Some(registrar), Some(fact)) => {
-                        let tx_hash = registrar.ensure_registered(fact).await.map_err(registrar_err)?;
-                        tracing::info!(
-                            tx_hash = %tx_hash,
-                            fact = %hex::encode(fact),
-                            "Mock: fact registered on-chain"
-                        );
-                        Ok(format!("{:#x}", tx_hash))
+                let fact = fact_hash.ok_or_else(|| {
+                    ProverClientError::TaskInvalid("fact_hash is required for Mock aggregation".to_string())
+                })?;
+
+                match &self.fact_registrar {
+                    Some(registrar) => {
+                        // Verifier configured: register the fact on-chain.
+                        let start = Instant::now();
+                        let result = registrar.ensure_registered(fact).await;
+                        let duration = start.elapsed().as_secs_f64();
+
+                        match result {
+                            Ok(tx_hash) => {
+                                metrics::MOCK_METRICS.fact_registration_duration_seconds.record(duration, &[]);
+                                if tx_hash == B256::ZERO {
+                                    metrics::MOCK_METRICS.fact_already_registered_total.add(1.0, &[]);
+                                } else {
+                                    metrics::MOCK_METRICS.fact_newly_registered_total.add(1.0, &[]);
+                                }
+                                tracing::info!(
+                                    tx_hash = %tx_hash,
+                                    fact = %hex::encode(fact),
+                                    "Mock: fact registered on-chain"
+                                );
+                                Ok(format!("{:#x}", tx_hash))
+                            }
+                            Err(e) => {
+                                metrics::MOCK_METRICS.fact_registration_errors_total.add(1.0, &[]);
+                                Err(registrar_err(e))
+                            }
+                        }
                     }
-                    // No verifier configured or no fact produced — nothing to register.
-                    _ => Ok(format!("{:#x}", B256::ZERO)),
+                    // No verifier configured: return the fact hash as the external id.
+                    None => Ok(format!("0x{}", hex::encode(fact))),
                 }
             }
         }
@@ -101,14 +127,16 @@ impl ProverClient for MockProverService {
         task: TaskType,
         _task_id: &str,
         fact: Option<String>,
-        _cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             TaskType::Job => Ok(TaskStatus::Succeeded),
             TaskType::Aggregation => match (&self.fact_registrar, fact) {
                 (Some(registrar), Some(fact_hex)) => {
                     let fact_bytes = parse_fact_hex(&fact_hex)?;
-                    if registrar.is_registered(fact_bytes).await.map_err(registrar_err)? {
+                    let start = Instant::now();
+                    let is_valid = registrar.is_registered(fact_bytes).await.map_err(registrar_err)?;
+                    metrics::MOCK_METRICS.is_valid_check_duration_seconds.record(start.elapsed().as_secs_f64(), &[]);
+                    if is_valid {
                         Ok(TaskStatus::Succeeded)
                     } else {
                         Ok(TaskStatus::Failed(format!("fact {fact_hex} not registered on mock verifier")))
@@ -142,5 +170,92 @@ impl ProverClient for MockProverService {
         _include_proof: bool,
     ) -> Result<AggregationArtifacts, ProverClientError> {
         Ok(AggregationArtifacts::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::signers::local::PrivateKeySigner;
+    use rstest::rstest;
+    use std::str::FromStr;
+
+    // --- parse_fact_hex ---
+
+    #[rstest]
+    #[case::with_0x_prefix(
+        "0x0000000000000000000000000000000000000000000000000000000000000001",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+    )]
+    #[case::without_prefix(
+        "0000000000000000000000000000000000000000000000000000000000000002",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]
+    )]
+    fn test_parse_fact_hex_valid(#[case] input: &str, #[case] expected: [u8; 32]) {
+        assert_eq!(parse_fact_hex(input).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::too_short("0x0011")]
+    #[case::too_long("0x000000000000000000000000000000000000000000000000000000000000000001")]
+    #[case::invalid_chars("0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")]
+    #[case::empty("")]
+    fn test_parse_fact_hex_invalid(#[case] input: &str) {
+        assert!(parse_fact_hex(input).is_err());
+    }
+
+    // --- No-verifier path ---
+
+    fn mock_service_without_verifier() -> MockProverService {
+        let signer =
+            PrivateKeySigner::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+        let args = MockValidatedArgs {
+            verifier_address: None,
+            ethereum_rpc_url: "http://localhost:8545".parse().unwrap(),
+            ethereum_signer: signer,
+        };
+        MockProverService::new_with_args(&args)
+    }
+
+    #[tokio::test]
+    async fn no_verifier_submit_returns_fact_hash_as_id() {
+        let service = mock_service_without_verifier();
+        let fact = [0xABu8; 32];
+        let result = service
+            .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
+                cairo_pie_zip_bytes: bytes::Bytes::new(),
+                children_cairo_job_keys: vec![],
+                fact_hash: Some(fact),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result, format!("0x{}", hex::encode(fact)));
+    }
+
+    #[tokio::test]
+    async fn no_verifier_submit_errors_without_fact() {
+        let service = mock_service_without_verifier();
+        let result = service
+            .submit_task(Task::RunAggregationWithPie(ApplicativeJobInfo {
+                cairo_pie_zip_bytes: bytes::Bytes::new(),
+                children_cairo_job_keys: vec![],
+                fact_hash: None,
+            }))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn no_verifier_get_task_status_succeeds() {
+        let service = mock_service_without_verifier();
+        let status = service.get_task_status(TaskType::Aggregation, "any-id", None).await.unwrap();
+        assert_eq!(status, TaskStatus::Succeeded);
+    }
+
+    #[tokio::test]
+    async fn child_job_always_succeeds() {
+        let service = mock_service_without_verifier();
+        let status = service.get_task_status(TaskType::Job, "any-id", None).await.unwrap();
+        assert_eq!(status, TaskStatus::Succeeded);
     }
 }

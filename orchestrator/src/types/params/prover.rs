@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::cli::prover::atlantic::AtlanticCliArgs;
 use crate::cli::prover::mock::MockCliArgs;
 use crate::cli::prover::sharp::SharpCliArgs;
@@ -46,6 +48,17 @@ impl ProverConfig {
     }
 }
 
+impl ProverKind {
+    /// Bounded, stable label for logs and Prometheus metrics.
+    pub fn label(self) -> &'static str {
+        match self {
+            ProverKind::Sharp => "sharp",
+            ProverKind::Atlantic => "atlantic",
+            ProverKind::Mock => "mock",
+        }
+    }
+}
+
 impl TryFrom<RunCmd> for ProverConfig {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
@@ -55,15 +68,36 @@ impl TryFrom<RunCmd> for ProverConfig {
         // guaranteed — we just dispatch to the right per-prover validator,
         // which in turn checks that its required sub-envs are present.
         match run_cmd.prover {
-            ProverKind::Sharp => validate_sharp(run_cmd.sharp_args).map(ProverConfig::Sharp),
+            ProverKind::Sharp => validate_sharp(run_cmd.sharp_args, run_cmd.layer).map(ProverConfig::Sharp),
             ProverKind::Atlantic => validate_atlantic(run_cmd.atlantic_args, run_cmd.layer).map(ProverConfig::Atlantic),
-            ProverKind::Mock => validate_mock(run_cmd.mock_args, &run_cmd.ethereum_settlement_args, run_cmd.layer)
-                .map(ProverConfig::Mock),
+            ProverKind::Mock => validate_mock(
+                run_cmd.mock_args,
+                &run_cmd.ethereum_settlement_args,
+                run_cmd.layer,
+                run_cmd.store_audit_artifacts,
+            )
+            .map(ProverConfig::Mock),
         }
     }
 }
 
-fn validate_sharp(args: SharpCliArgs) -> Result<SharpValidatedArgs, OrchestratorError> {
+fn validate_sharp(args: SharpCliArgs, layer: Layer) -> Result<SharpValidatedArgs, OrchestratorError> {
+    if layer == Layer::L3 {
+        return Err(OrchestratorError::RunCommandError(
+            "SHARP prover is L2-only (fact registration happens on L1)".to_string(),
+        ));
+    }
+
+    let user_crt_path = args
+        .sharp_user_crt_file
+        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user certificate file is required".to_string()))?;
+    let user_key_path = args
+        .sharp_user_key_file
+        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key file is required".to_string()))?;
+    let server_crt_path = args
+        .sharp_server_crt_file
+        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp server certificate file is required".to_string()))?;
+
     Ok(SharpValidatedArgs {
         sharp_customer_id: args
             .sharp_customer_id
@@ -71,21 +105,12 @@ fn validate_sharp(args: SharpCliArgs) -> Result<SharpValidatedArgs, Orchestrator
         sharp_url: args
             .sharp_url
             .ok_or_else(|| OrchestratorError::RunCommandError("Sharp URL is required".to_string()))?,
-        sharp_user_crt: args
-            .sharp_user_crt
-            .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user certificate is required".to_string()))?,
-        sharp_user_key: args
-            .sharp_user_key
-            .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key is required".to_string()))?,
+        sharp_user_crt: read_pem_file("Sharp user certificate", &user_crt_path)?,
+        sharp_user_key: read_pem_file("Sharp user key", &user_key_path)?,
         sharp_rpc_node_url: args
             .sharp_rpc_node_url
             .ok_or_else(|| OrchestratorError::RunCommandError("Sharp RPC node URL is required".to_string()))?,
-        sharp_server_crt: args
-            .sharp_server_crt
-            .ok_or_else(|| OrchestratorError::RunCommandError("Sharp server certificate is required".to_string()))?,
-        sharp_proof_layout: args
-            .sharp_proof_layout
-            .ok_or_else(|| OrchestratorError::RunCommandError("Sharp proof layout is required".to_string()))?,
+        sharp_server_crt: read_pem_file("Sharp server certificate", &server_crt_path)?,
         gps_verifier_contract_address: args.gps_verifier_contract_address.ok_or_else(|| {
             OrchestratorError::RunCommandError("GPS verifier contract address is required".to_string())
         })?,
@@ -148,9 +173,15 @@ fn validate_mock(
     args: MockCliArgs,
     eth_args: &EthereumSettlementCliArgs,
     layer: Layer,
+    store_audit_artifacts: bool,
 ) -> Result<MockValidatedArgs, OrchestratorError> {
     if layer == Layer::L3 {
         return Err(OrchestratorError::RunCommandError("Mock prover is L2-only".to_string()));
+    }
+    if store_audit_artifacts {
+        return Err(OrchestratorError::RunCommandError(
+            "Mock prover does not produce proofs; --store-audit-artifacts is not supported with --mock".to_string(),
+        ));
     }
 
     let ethereum_rpc_url = eth_args
@@ -182,4 +213,11 @@ fn validate_mock(
     };
 
     Ok(MockValidatedArgs { verifier_address, ethereum_rpc_url, ethereum_signer })
+}
+
+/// Read PEM content eagerly so invalid paths fail at startup instead of on first request.
+fn read_pem_file(label: &str, path: &Path) -> Result<String, OrchestratorError> {
+    std::fs::read_to_string(path).map_err(|e| {
+        OrchestratorError::RunCommandError(format!("Failed to read {} file at {}: {}", label, path.display(), e))
+    })
 }
