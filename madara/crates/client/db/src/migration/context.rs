@@ -1,6 +1,7 @@
 //! Migration context provided to each migration function.
 
 use rocksdb::{DBWithThreadMode, MultiThreaded};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -25,13 +26,14 @@ pub type ProgressCallback = Box<dyn Fn(MigrationProgress) + Send + Sync>;
 /// Context provided to each migration function.
 pub struct MigrationContext<'a> {
     db: &'a DB,
+    base_path: PathBuf,
     progress_callback: Option<ProgressCallback>,
     abort_flag: Arc<AtomicBool>,
 }
 
 impl<'a> MigrationContext<'a> {
-    pub fn new(db: &'a DB, abort_flag: Arc<AtomicBool>) -> Self {
-        Self { db, progress_callback: None, abort_flag }
+    pub fn new(db: &'a DB, base_path: &Path, abort_flag: Arc<AtomicBool>) -> Self {
+        Self { db, base_path: base_path.to_path_buf(), progress_callback: None, abort_flag }
     }
 
     pub fn with_progress_callback(mut self, callback: ProgressCallback) -> Self {
@@ -41,6 +43,10 @@ impl<'a> MigrationContext<'a> {
 
     pub fn db(&self) -> &DB {
         self.db
+    }
+
+    pub fn base_path(&self) -> &Path {
+        &self.base_path
     }
 
     pub fn report_progress(&self, progress: MigrationProgress) {
