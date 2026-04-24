@@ -159,7 +159,7 @@ pub struct MiscellaneousArgs {
 /// to the respective argument structs. These implementations are used to validate the command line arguments
 /// and convert them to the respective argument structs.
 /// Since we have only one Cloud Provider (AWS) for now, we are not using the provider-based implementation.
-/// e.g : I like how we are handling `match (run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic)`
+/// e.g : prover selection is a single `run_cmd.prover` enum (see `ProverKind`).
 impl TryFrom<SetupCmd> for MiscellaneousArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {

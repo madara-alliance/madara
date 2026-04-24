@@ -149,6 +149,16 @@ impl FactRegistrar {
     /// - If it is already registered, returns `B256::ZERO` (no tx was sent).
     /// - Otherwise submits `registerFact(fact)`, waits for the receipt, and
     ///   cross-checks via `isValid` before returning the tx hash.
+    ///
+    // TODO(@prakhar, 2026-04-22): reuse the state-update underpriced-retry +
+    // gas-bump path here. Currently this does a bare `.send()` via alloy's
+    // default `GasFiller`, so any `replacement transaction underpriced`
+    // rejection fails the whole aggregator job. The state-update flow in
+    // `orchestrator-ethereum-settlement-client` (`update_state_with_blobs`)
+    // already handles this by escalating the EIP-1559 multiplier up to
+    // `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR`. Factor that loop
+    // out into a shared helper and call it here; the same env should
+    // govern both paths.
     pub async fn ensure_registered(&self, fact: [u8; 32]) -> Result<B256, FactCheckerError> {
         if self.is_registered(fact).await? {
             return Ok(B256::ZERO);

@@ -32,6 +32,7 @@ aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sns = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
+base64 = { workspace = true }
 bincode = { workspace = true }
 blockifier = { workspace = true }
 bytes.workspace = true
