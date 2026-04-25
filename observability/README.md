@@ -43,13 +43,13 @@ This directory contains configuration files for monitoring a Madara node using O
 
 ## Prerequisites
 
-1. **Madara Node** running with Prometheus metrics enabled:
+1. **Madara Node** running with OTEL export enabled:
 
    ```bash
-   cargo run --release -- --network <network> --analytics-prometheus-endpoint
+   cargo run --release -- --network <network> --otel-collector-endpoint http://localhost:4317
    ```
 
-   This exposes metrics at `http://localhost:9464/metrics`
+   The node exports telemetry to the local OpenTelemetry Collector over OTLP.
 
 2. **Docker & Docker Compose**
 
@@ -144,23 +144,34 @@ The stack also includes 4 Orchestrator-specific dashboards:
 ### Madara CLI Options
 
 ```bash
-# Enable Prometheus endpoint (required)
---analytics-prometheus-endpoint
+# OTEL service name (default: madara)
+--otel-service-name <NAME>
 
-# Listen on external interface (0.0.0.0 instead of localhost)
---analytics-prometheus-endpoint-external
+# OTEL collector endpoint
+--otel-collector-endpoint <URL>
 
-# Custom port (default: 9464)
---analytics-prometheus-endpoint-port <PORT>
+# Enable trace export
+--otel-export-traces
 
-# Service name for metrics (default: madara_analytics)
---analytics-service-name <NAME>
+# Enable log export
+--otel-export-logs
 ```
+
+Madara-specific environment variables:
+
+- `MADARA_OTEL_SERVICE_NAME`
+- `MADARA_OTEL_COLLECTOR_ENDPOINT`
+- `MADARA_OTEL_EXPORT_METRICS`
+- `MADARA_OTEL_EXPORT_TRACES`
+- `MADARA_OTEL_EXPORT_LOGS`
+
+If `MADARA_OTEL_COLLECTOR_ENDPOINT` is unset, Madara also respects the standard
+`OTEL_EXPORTER_OTLP_ENDPOINT` environment variable as a fallback.
 
 ### Multi-Node Monitoring
 
 Multiple Madara nodes can send metrics to the same OTel Collector via OTLP.
-Configure each node with appropriate service name labels using the `--analytics-service-name` CLI option to distinguish them in dashboards.
+Configure each node with appropriate service name labels using the `--otel-service-name` CLI option to distinguish them in dashboards.
 
 ### Prometheus Scrape Configuration
 

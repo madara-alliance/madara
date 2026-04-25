@@ -117,7 +117,7 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
 AWS_REGION ?= us-east-1
-PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.3/pathfinder-aarch64-apple-darwin.tar.gz
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -489,18 +489,18 @@ setup-l3-localstack:
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.14.0 2>&1
+	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover atlantic --da-on-ethereum 2>&1
 
 
 .PHONY: run-orchestrator-l3
 run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet --madara-version 0.14.0 2>&1
+	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --mock-atlantic-server --da-on-starknet 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
-	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --da-on-starknet' 2>&1
 
 # Run the mock Atlantic server with enhanced CLI
 # Usage: make run-mock-atlantic-server

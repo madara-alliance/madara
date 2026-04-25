@@ -5,7 +5,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam, StarknetVersion};
+use crate::core::config::{Config, ConfigParam};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
@@ -48,6 +48,9 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
+
+use orchestrator_utils::test_utils::pem_from_env;
+
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
@@ -136,8 +139,6 @@ pub struct TestConfigBuilder {
     min_block_to_process: Option<u64>,
     /// Maximum block to process
     max_block_to_process: Option<Option<u64>>,
-    /// Madara version
-    madara_version: Option<StarknetVersion>,
     /// Layer
     layer: Option<Layer>,
     /// Madara Feeder Gateway URL
@@ -208,7 +209,6 @@ impl TestConfigBuilder {
             api_server_type: ConfigType::default(),
             min_block_to_process: None,
             max_block_to_process: None,
-            madara_version: None,
             layer: None,
             madara_feeder_gateway_url: None,
             max_blocks_per_snos_batch: None,
@@ -280,11 +280,6 @@ impl TestConfigBuilder {
         self
     }
 
-    pub fn configure_madara_version(mut self, madara_version: StarknetVersion) -> TestConfigBuilder {
-        self.madara_version = Some(madara_version);
-        self
-    }
-
     pub fn configure_layer(mut self, layer: Layer) -> TestConfigBuilder {
         self.layer = Some(layer);
         self
@@ -323,7 +318,6 @@ impl TestConfigBuilder {
             api_server_type,
             min_block_to_process,
             max_block_to_process,
-            madara_version,
             layer,
             madara_feeder_gateway_url,
             max_blocks_per_snos_batch,
@@ -372,9 +366,6 @@ impl TestConfigBuilder {
         }
         if let Some(max_block_to_process) = max_block_to_process {
             params.orchestrator_params.service_config.max_block_to_process = max_block_to_process;
-        }
-        if let Some(madara_version) = madara_version {
-            params.orchestrator_params.madara_version = madara_version;
         }
         if let Some(madara_feeder_gateway_url) = madara_feeder_gateway_url {
             params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_feeder_gateway_url).unwrap();
@@ -812,6 +803,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS")
+        .expect("Couldn't get max concurrent aggregator jobs");
+    let max_concurrent_aggregator_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
     let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
@@ -822,6 +818,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        max_concurrent_aggregator_jobs,
         snos_job_timeout_seconds: 3600,           // 1 hour for SNOS jobs
         proving_job_timeout_seconds: 1800,        // 30 minutes for proving jobs
         proof_registration_timeout_seconds: 1800, // 30 minutes for proof registration
@@ -829,6 +826,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
         aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
+        aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,
     };
 
@@ -848,11 +846,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"), // Use same URL as fallback for tests
         ))
         .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"),
-        madara_version: StarknetVersion::from_str(&get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_MADARA_VERSION",
-            "0.13.4",
-        ))
-        .unwrap_or_default(),
         snos_config,
         batching_config,
         service_config,
@@ -880,12 +873,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
         sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_URL"),
-        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
         sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"),
-        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
-        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
         sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     });

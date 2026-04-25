@@ -2,6 +2,7 @@
 pub const CAIRO_PIE_FILE_NAME: &str = "pie.cairo0.zip";
 pub const SNOS_OUTPUT_FILE_NAME: &str = "snos_output.json";
 pub const PROOF_FILE_NAME: &str = "proof.json";
+pub const DA_SEGMENT_FILE_NAME: &str = "da_blob.json";
 
 // Aggregator job configurations
 pub(crate) const AGGREGATOR_USE_KZG_DA: bool = true;

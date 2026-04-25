@@ -1,4 +1,4 @@
-use crate::core::config::StarknetVersion;
+use crate::types::params::prover::ProverKind;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
@@ -86,12 +86,6 @@ pub enum Commands {
           .requires("provider")
     ),
     group(
-        ArgGroup::new("prover")
-            .args(&["sharp", "atlantic"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
         ArgGroup::new("settlement_layer")
             .args(&["settle_on_ethereum", "settle_on_starknet"])
             .required(true)
@@ -146,12 +140,21 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub starknet_settlement_args: settlement::starknet::StarknetSettlementCliArgs,
 
-    // Prover
+    // Prover: single enum selects which backend to use. The per-prover struct
+    // below that matches the selection is validated in `TryFrom<RunCmd> for
+    // ProverConfig` — the others are ignored. Accepted values: sharp, atlantic,
+    // mock (case-insensitive via `ignore_case = true`).
+    #[arg(env = "MADARA_ORCHESTRATOR_PROVER", long, value_enum, ignore_case = true)]
+    pub prover: ProverKind,
+
     #[clap(flatten)]
     pub sharp_args: prover::sharp::SharpCliArgs,
 
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
+
+    #[clap(flatten)]
+    pub mock_args: prover::mock::MockCliArgs,
 
     // SNOS
     #[clap(flatten)]
@@ -174,9 +177,6 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_DA_PUBLIC_KEYS", long, value_delimiter = ',', value_parser = parse_da_public_key)]
     pub da_public_keys: Option<Vec<Felt>>,
-
-    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
-    pub madara_version: StarknetVersion,
 
     // Service
     #[clap(flatten)]

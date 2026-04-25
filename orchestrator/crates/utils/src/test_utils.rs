@@ -8,7 +8,22 @@ use tempfile::TempDir;
 use tracing::{debug, info, warn};
 use url::Url;
 
+use base64::engine::general_purpose;
+use base64::Engine;
+
+use crate::env_utils::get_env_var_or_panic;
+
 pub const TEST_DATA_BASE_URL_ENV: &str = "MADARA_ORCHESTRATOR_TEST_DATA_BASE_URL";
+
+/// Decode a base64-wrapped PEM env var into raw PEM text.
+///
+/// Many test fixtures store PEM certs/keys as base64 in env vars (historical convention).
+/// This helper decodes them for use in `SharpValidatedArgs` and similar structs.
+pub fn pem_from_env(name: &str) -> String {
+    let b64 = get_env_var_or_panic(name);
+    let bytes = general_purpose::STANDARD.decode(b64).expect("invalid base64 in test env");
+    String::from_utf8(bytes).expect("PEM env content is not utf-8")
+}
 
 /// Simple test data setup function
 /// Downloads files from the given URLs and optionally decompresses them per file
