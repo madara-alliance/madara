@@ -50,7 +50,7 @@ fn build_aggregator_job(batch_index: u64, status: JobStatus) -> JobItem {
             },
             specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                 batch_num: batch_index,
-                bucket_id: format!("bucket-{}", batch_index),
+                bucket_id: Some(format!("bucket-{}", batch_index)),
                 ..Default::default()
             }),
         },
