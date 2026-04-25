@@ -40,12 +40,6 @@ pub enum BaseLayerError {
     #[error("Failed to deploy Factory: {0}")]
     FailedToDeployFactory(#[source] anyhow::Error),
 
-    #[error("Failed to read base layer output file: {0}")]
-    FailedToReadBaseLayerOutput(#[source] std::io::Error),
-
-    #[error("Failed to read madara output file: {0}")]
-    FailedToReadMadaraOutput(#[source] std::io::Error),
-
     #[error("Key {0} not found in the json string")]
     KeyNotFound(String),
 }

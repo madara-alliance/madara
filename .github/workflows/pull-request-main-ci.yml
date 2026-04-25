@@ -165,25 +165,26 @@ jobs:
   #   secrets: inherit
 
   # ========================================================================= #
-  #                                BOOTSTRAPPER                               #
+  #                              BOOTSTRAPPER V2                              #
   # ========================================================================= #
 
-  # Deprecating bootstrapper V1
-  check-bootstrapper:
+  # Bootstrapper V2 checks are intentionally stubbed in PR CI.
+  # Full validation happens through E2E and nightly flows.
+  check-bootstrapper-v2:
     needs: lint-code-style
-    uses: ./.github/workflows/task-do-nothing-check-bootstrapper.yml
+    uses: ./.github/workflows/task-do-nothing-check-bootstrapper-v2.yml
     secrets: inherit
 
-  # Deprecating bootstrapper V1
-  #  build-bootstrapper:
+  # Bootstrapper V2 checks are intentionally stubbed in PR CI.
+  #  build-bootstrapper-v2:
   #    needs: lint-code-style
-  #    uses: ./.github/workflows/task-build-bootstrapper.yml
+  #    uses: ./.github/workflows/task-build-bootstrapper-v2.yml
   #    secrets: inherit
 
-  # Deprecating bootstrapper V1
-  test-bootstrapper:
+  # Bootstrapper V2 checks are intentionally stubbed in PR CI.
+  test-bootstrapper-v2:
     if: github.event.pull_request.draft == false
-    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper-v2.yml
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #
@@ -200,7 +201,7 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
-  build-nightly-and-publish-bootstrapper:
+  build-nightly-and-publish-bootstrapper-v2:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 

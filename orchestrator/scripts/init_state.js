@@ -383,7 +383,7 @@ async function transfer(
 // and relaying them. I am not sure what's exactly happening here
 // because the contracts we're working with arne't open source and are
 // fetched from Sepolia directly
-// TODO: we should move this to Madara bootstrapper
+// TODO: we should move this to bootstrapper-v2
 async function upgradeETHToken(
   l2_eth_token_address,
   starknet_account_private_key,
@@ -508,7 +508,7 @@ async function upgradeETHToken(
 // and relaying them. I am not sure what's exactly happening here
 // because the contracts we're working with arne't open source and are
 // fetched from Sepolia directly
-// TODO: we should move this to Madara bootstrapper
+// TODO: we should move this to bootstrapper-v2
 async function upgradeETHBridge(
   l2_eth_bridge_address,
   starknet_account_private_key,

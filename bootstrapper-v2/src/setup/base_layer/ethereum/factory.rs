@@ -2,8 +2,6 @@ use alloy::{primitives::Address, sol};
 use futures_util::StreamExt;
 pub use Factory::BaseLayerContracts;
 use Factory::{CoreContractInitData, FactoryInstance, ImplementationContracts};
-pub use Manager::ManagerInstance;
-pub use Starknet::StarknetInstance;
 
 use crate::setup::base_layer::{ethereum::error::EthereumError, BaseLayerError};
 

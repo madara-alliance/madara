@@ -108,7 +108,7 @@ impl BootstrapperV2Service {
     /// Update values in the config file
     /// Supports dot-notation for nested paths (e.g., "base_layer.core_contract_init_data.verifier")
     pub fn update_config_file(key: &str, value: &str) -> Result<(), BootstrapperV2Error> {
-        let bootstrapper_config_file = get_file_path(BOOTSTRAPPER_V2_CONFIG);
+        let bootstrapper_config_file = get_file_path(BOOTSTRAPPER_CONFIG);
         let mut config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(bootstrapper_config_file.clone())
                 .map_err(BootstrapperV2Error::ConfigReadWriteError)?,

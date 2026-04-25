@@ -6,13 +6,12 @@ use std::sync::Arc;
 
 // Import all the services we've created
 use crate::services::anvil::AnvilService;
-use crate::services::bootstrapper_v2::{BootstrapperV2Error, BootstrapperV2Service};
+use crate::services::bootstrapper::{BootstrapperV2Error, BootstrapperV2Service};
 use crate::services::mock_verifier::MockVerifierDeployerService;
 
 pub use super::config::*;
 use crate::services::constants::{
-    BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, DATA_DIR,
-    ORCHESTRATOR_DATABASE_NAME,
+    BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT, DATA_DIR, ORCHESTRATOR_DATABASE_NAME,
 };
 use crate::services::localstack::LocalstackService;
 use crate::services::madara::{MadaraError, MadaraService};
@@ -422,7 +421,7 @@ impl ServiceManager {
         println!("🥳 Base layer bootstrapper finished with {}", status);
 
         // Log the deployed addresses
-        self.log_addresses_file(BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, "Base layer")?;
+        self.log_addresses_file(BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT, "Base layer")?;
 
         // Update madara config with the deployed core contract address
         self.update_madara_config_with_core_contract()?;
@@ -431,11 +430,11 @@ impl ServiceManager {
     }
 
     fn update_madara_config_with_core_contract(&self) -> Result<(), SetupError> {
-        use crate::services::constants::{BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, DATA_DIR, MADARA_CONFIG};
+        use crate::services::constants::{BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT, DATA_DIR, MADARA_CONFIG};
         use crate::services::helpers::get_file_path;
 
         // Read the deployed addresses from base_addresses.json
-        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT));
         let addresses_content = std::fs::read_to_string(&addresses_path)
             .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
         let addresses: serde_json::Value = serde_json::from_str(&addresses_content)
@@ -484,7 +483,7 @@ impl ServiceManager {
         println!("🥳 Madara bootstrapper finished with {}", status);
 
         // Log the deployed addresses
-        self.log_addresses_file(BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, "Madara")?;
+        self.log_addresses_file(BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT, "Madara")?;
 
         Ok(())
     }
@@ -515,11 +514,11 @@ impl ServiceManager {
 
     /// Get orchestrator config with the core contract address from bootstrapper output
     fn get_orchestrator_config_with_core_contract(&self) -> Result<OrchestratorConfig, SetupError> {
-        use crate::services::constants::{BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, DATA_DIR};
+        use crate::services::constants::{BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT, DATA_DIR};
         use crate::services::helpers::get_file_path;
 
         // Read the deployed addresses from base_addresses.json
-        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT));
         let addresses_content = std::fs::read_to_string(&addresses_path)
             .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
         let addresses: serde_json::Value = serde_json::from_str(&addresses_content)

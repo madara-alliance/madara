@@ -241,7 +241,7 @@ Pre-compiled smart contracts in JSON format.
 
 ```text
 build-artifacts/
-├── bootstrapper/       # MadaraFactory, EIC, Solidity contracts
+├── bootstrapper-v2/    # Default bootstrapper artifacts (MadaraFactory, EIC, Solidity contracts)
 ├── argent/             # Argent wallet (sierra.json, casm.json)
 ├── braavos/            # Braavos wallet
 ├── js_tests/           # Compiled JS test contracts
