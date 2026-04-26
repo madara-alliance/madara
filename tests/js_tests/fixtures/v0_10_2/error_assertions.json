@@ -1,0 +1,81 @@
+{
+  "version": "0.10.2",
+  "assertions": [
+    {
+      "id": "unknown_method_returns_32601",
+      "method": "starknet_thisMethodDoesNotExist",
+      "params": {},
+      "expected_error": { "code": -32601 },
+      "description": "Unknown method must return JSON-RPC Method not found"
+    },
+    {
+      "id": "invalid_params_getBlockWithTxs",
+      "method": "starknet_getBlockWithTxs",
+      "params": { "bad": "payload" },
+      "expected_error": { "code": -32602 },
+      "description": "Known method with invalid params must return Invalid params"
+    },
+    {
+      "id": "invalid_params_getTransactionByHash",
+      "method": "starknet_getTransactionByHash",
+      "params": {},
+      "expected_error": { "code": -32602 },
+      "description": "Missing required transaction_hash param"
+    },
+    {
+      "id": "block_not_found",
+      "method": "starknet_getBlockWithTxHashes",
+      "params": { "block_id": { "block_number": 999999 } },
+      "expected_error": { "code": 24 },
+      "description": "Non-existent block number returns BLOCK_NOT_FOUND (code 24)"
+    },
+    {
+      "id": "tx_hash_not_found",
+      "method": "starknet_getTransactionByHash",
+      "params": {
+        "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000dead"
+      },
+      "expected_error": { "code": 29 },
+      "description": "Non-existent tx hash returns TXN_HASH_NOT_FOUND (code 29)"
+    },
+    {
+      "id": "contract_not_found",
+      "method": "starknet_getClassHashAt",
+      "params": {
+        "block_id": "latest",
+        "contract_address": "0x0000000000000000000000000000000000000000000000000000000000dead"
+      },
+      "expected_error": { "code": 20 },
+      "description": "Non-existent contract returns CONTRACT_NOT_FOUND (code 20)"
+    },
+    {
+      "id": "class_hash_not_found",
+      "method": "starknet_getClass",
+      "params": {
+        "block_id": "latest",
+        "class_hash": "0x0000000000000000000000000000000000000000000000000000000000dead"
+      },
+      "expected_error": { "code": 28 },
+      "description": "Non-existent class hash returns CLASS_HASH_NOT_FOUND (code 28)"
+    },
+    {
+      "id": "invalid_tx_index",
+      "method": "starknet_getTransactionByBlockIdAndIndex",
+      "params": {
+        "block_id": { "block_number": 0 },
+        "index": 999
+      },
+      "expected_error": { "code": 27 },
+      "description": "Out-of-range tx index returns INVALID_TXN_INDEX (code 27)"
+    },
+    {
+      "id": "messages_status_unknown_l1_hash",
+      "method": "starknet_getMessagesStatus",
+      "params": {
+        "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
+      },
+      "expected_error": { "code": 29 },
+      "description": "Unknown L1 tx hash returns TXN_HASH_NOT_FOUND (code 29)"
+    }
+  ]
+}

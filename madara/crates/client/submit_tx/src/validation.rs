@@ -16,22 +16,26 @@ use mc_db::{MadaraBackend, MadaraBlockView};
 use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_mempool::{MempoolInsertionError, TxInsertionError};
+use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
-use mp_convert::ToFelt;
+use mp_convert::{Felt, ToFelt};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedTxn, ClassAndTxnHash,
+    ContractAndTxnHash,
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
-    IntoStarknetApiExt, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError,
+    IntoStarknetApiExt, InvokeTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError,
+    Transaction,
 };
 use starknet_api::{
-    executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
-    transaction::TransactionVersion,
+    executable_transaction::{
+        AccountTransaction as ApiAccountTransaction, InvokeTransaction as ApiInvokeTransaction, TransactionType,
+    },
+    transaction::{TransactionHash, TransactionVersion},
 };
-use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, fmt, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
@@ -60,6 +64,7 @@ impl From<TransactionPreValidationError> for SubmitTransactionError {
         match err {
             E::InvalidNonce { .. } => rejected(InvalidTransactionNonce, format!("{err:#}")),
             E::StateError(err) => err.into(),
+            err @ E::InvalidProofFacts(_) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::TransactionFeeError(_) => rejected(ValidateFailure, format!("{err:#}")),
         }
     }
@@ -163,9 +168,10 @@ impl From<mc_exec::Error> for SubmitTransactionError {
             E::Reexecution(_) | E::FeeEstimation(_) | E::MessageFeeEstimation(_) | E::CallContract(_) => {
                 rejected(ValidateFailure, format!("{value:#}"))
             }
-            E::UnsupportedProtocolVersion(_) | E::Internal(_) | E::InvalidSequencerAddress(_) => {
-                Internal(anyhow::anyhow!(value))
-            }
+            E::UnsupportedProtocolVersion(_)
+            | E::UnsupportedStarknetVersion { .. }
+            | E::Internal(_)
+            | E::InvalidSequencerAddress(_) => Internal(anyhow::anyhow!(value)),
         }
     }
 }
@@ -448,16 +454,23 @@ impl SubmitTransaction for TransactionValidator {
             .into());
         }
 
-        let arrived_at = TxTimestamp::now();
-        let tx = BroadcastedTxn::Invoke(tx);
-        let (api_tx, class) = tx.into_starknet_api(
-            self.backend.chain_config().chain_id.to_felt(),
-            self.backend.chain_config().latest_protocol_version,
-        )?;
+        let chain_id = self.backend.chain_config().chain_id.to_felt();
+        let starknet_version = self.backend.chain_config().latest_protocol_version;
+        if starknet_version >= StarknetVersion::V0_14_0 && tx.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion.into());
+        }
 
-        let res = AddInvokeTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
-        self.accept_tx(api_tx, class, arrived_at).await?;
-        Ok(res)
+        let arrived_at = TxTimestamp::now();
+        let invoke: InvokeTransaction = tx.into();
+        let transaction = Transaction::Invoke(invoke.clone());
+        let hash = transaction.compute_hash(chain_id, starknet_version, false);
+        let api_tx = ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+            tx: invoke.try_into().map_err(ToBlockifierError::from)?,
+            tx_hash: TransactionHash(hash),
+        });
+
+        self.accept_tx(api_tx, None, arrived_at).await?;
+        Ok(AddInvokeTransactionResult { transaction_hash: hash })
     }
 
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {

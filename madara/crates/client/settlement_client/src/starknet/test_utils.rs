@@ -50,7 +50,7 @@ pub struct TestContext {
 }
 
 pub async fn get_test_context() -> TestContext {
-    let cmd = mc_e2e_tests::MadaraCmdBuilder::new()
+    let mut cmd = mc_e2e_tests::MadaraCmdBuilder::new()
         .args([
             "--devnet",
             "--chain-config-path",
@@ -61,6 +61,8 @@ pub async fn get_test_context() -> TestContext {
         ])
         .label("settlement_layer")
         .run();
+    cmd.wait_for_ready().await;
+    cmd.wait_for_sync_to(0).await;
 
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_str(DEPLOYER_PRIVATE_KEY).unwrap()));
     let mut account = SingleOwnerAccount::new(

@@ -176,15 +176,16 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 
     let get_applications = |resource| {
         res.non_optional_call_infos()
-            .map(|call| call.resources.builtin_instance_counter.get(resource).map(|el| *el as u64))
+            .map(|call| call.resources.vm_resources.builtin_instance_counter.get(resource).map(|el| *el as u64))
             .sum::<Option<_>>()
             .unwrap_or_default()
     };
 
-    let memory_holes = res.non_optional_call_infos().map(|call| call.resources.n_memory_holes as u64).sum();
+    let memory_holes =
+        res.non_optional_call_infos().map(|call| call.resources.vm_resources.n_memory_holes as u64).sum();
 
     let execution_resources = ExecutionResources {
-        steps: res.non_optional_call_infos().map(|call| call.resources.n_steps as u64).sum(),
+        steps: res.non_optional_call_infos().map(|call| call.resources.vm_resources.n_steps as u64).sum(),
         memory_holes,
         range_check_builtin_applications: get_applications(&BuiltinName::range_check),
         pedersen_builtin_applications: get_applications(&BuiltinName::pedersen),

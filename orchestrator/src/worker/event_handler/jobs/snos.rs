@@ -24,7 +24,6 @@ use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
-use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 use url::Url;
 
@@ -52,14 +51,7 @@ pub trait ChainDetailsExt {
 
 impl ChainDetailsExt for ChainDetails {
     fn to_chain_config(&self) -> ChainConfig {
-        ChainConfig {
-            chain_id: ChainId::Other(self.chain_id.clone()),
-            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.strk_fee_token_address))
-                .expect("Invalid STRK fee token address"),
-            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.eth_fee_token_address))
-                .expect("Invalid ETH fee token address"),
-            is_l3: self.is_l3,
-        }
+        ChainConfig::new(&self.chain_id, &self.strk_fee_token_address, &self.eth_fee_token_address, self.is_l3)
     }
 }
 
@@ -106,9 +98,6 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
-        // Use pre-loaded versioned constants from config (loaded at startup)
-        let versioned_constants = config.snos_config().versioned_constants.clone();
-
         // Get DA public keys (already parsed as Felt values in config)
         let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
 
@@ -120,7 +109,7 @@ impl JobHandlerTrait for SnosJobHandler {
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
-            versioned_constants,
+            versioned_constants: config.snos_config().versioned_constants.clone(),
             public_keys,
         };
 

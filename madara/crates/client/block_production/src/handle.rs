@@ -6,9 +6,9 @@ use mc_submit_tx::{
     TransactionValidator, TransactionValidatorConfig,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};

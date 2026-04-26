@@ -35,6 +35,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         view: &MadaraBlockView<D>,
         iter: impl IntoIterator<Item = (usize, Felt)>,
         removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
+        confirmed_tx_hashes: &mut Vec<Felt>,
     ) -> anyhow::Result<()> {
         let is_on_l1 = view.is_on_l1();
         for (tx_index, tx_hash) in iter {
@@ -65,6 +66,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     )
                 }
             } else {
+                confirmed_tx_hashes.push(tx_hash);
                 self.set_transaction_status(
                     tx_hash,
                     Some(TransactionStatus::Confirmed {
@@ -98,6 +100,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             let mut removed: HashMap<Felt, Arc<ValidatedTransaction>> = HashMap::new();
             let mut put_back_into_mempool = true; // Whether to drop the txs or re-add them into mempool.
             let mut nonce_updates: HashMap<Felt, Felt> = HashMap::new();
+            let mut confirmed_tx_hashes = Vec::new();
 
             tokio::select! {
                 biased;
@@ -129,6 +132,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         current_head,
                         preconfirmed.get_block_info().tx_hashes[previous_num_txs..].iter().cloned().enumerate(),
                         &mut removed,
+                        &mut confirmed_tx_hashes,
                     )?;
                     // Candidate transactions.
                     self.update_block_transaction_statuses(
@@ -137,6 +141,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                             (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)
                         }),
                         &mut removed,
+                        &mut confirmed_tx_hashes,
                     )?;
 
                     // Mark the nonces from the state diff for update.
@@ -183,6 +188,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                                 &new_head,
                                 confirmed.get_block_info()?.tx_hashes.iter().cloned().enumerate(),
                                 &mut removed,
+                                &mut confirmed_tx_hashes,
                             )?;
 
                             // Mark the nonces from the state diff for update.
@@ -196,6 +202,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                                 &new_head,
                                 preconfirmed.get_block_info().tx_hashes.iter().cloned().enumerate(),
                                 &mut removed,
+                                &mut confirmed_tx_hashes,
                             )?;
                             // Candidate transactions.
                             self.update_block_transaction_statuses(
@@ -204,6 +211,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                                     (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)
                                 }),
                                 &mut removed,
+                                &mut confirmed_tx_hashes,
                             )?;
 
                             // Mark the nonces from the state diff for update.
@@ -229,6 +237,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         &new_head_on_l1,
                         new_head_on_l1.get_block_info()?.tx_hashes().iter().cloned().enumerate(),
                         &mut removed,
+                        &mut confirmed_tx_hashes,
                     )?;
                 }
 
@@ -244,10 +253,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 removed.len()
             );
 
+            self.remove_saved_txs_by_hashes(confirmed_tx_hashes);
+
             // Update nonces
+            let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
             if !nonce_updates.is_empty() {
                 let mut guard = self.inner.write().await;
-                let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
                 for (contract_address, account_nonce) in nonce_updates {
                     guard.update_account_nonce(
                         &contract_address.try_into().context("Invalid contract address")?,
@@ -257,6 +268,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
                 self.metrics.record_mempool_state(&guard.summary());
             }
+            self.on_txs_removed(&removed_txs);
 
             // Update the mempool with the modifications.
             for (tx_hash, tx) in removed {

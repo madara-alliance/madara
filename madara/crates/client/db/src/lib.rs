@@ -310,18 +310,18 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
-    /// Custom header used during block replay to ensure deterministic execution.
+    /// Custom headers used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
-    /// from the original block to reproduce the expected block hash. This field stores
-    /// header overrides that are applied during transaction validation and execution,
-    /// along with the expected block hash to validate against after block creation.
+    /// from the original block to reproduce the expected block hash. These per-block
+    /// overrides are applied during transaction validation and execution, along with the
+    /// expected block hash to validate against after block creation.
     /// # Important Notes
-    /// - Custom header is different for each block and must be set per block
+    /// - Custom headers are keyed by block number because replay can prepare future blocks ahead of time
     /// - **Must verify** that the block number matches before use
-    /// - **Must clear** after use to prevent reuse across different blocks
+    /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
-    pub custom_header: Mutex<Option<CustomHeader>>,
+    pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -372,7 +372,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
-            custom_header: Mutex::new(None),
+            custom_headers: Mutex::new(Default::default()),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -447,30 +447,57 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-    pub fn get_custom_header(&self) -> Option<CustomHeader> {
-        self.get_custom_header_with_clear(false)
-    }
-
-    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        let result = guard.clone();
-
-        if clear {
-            *guard = None;
-        }
-
-        result
-    }
-
-    pub fn set_custom_header(&self, custom_header: CustomHeader) {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        *guard = Some(custom_header);
-    }
-
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
     /// Must be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
+    }
+}
+
+impl<D> MadaraBackend<D> {
+    pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        self.custom_headers.lock().expect("Poisoned lock").get(&block_n).cloned()
+    }
+
+    pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
+    }
+
+    pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        let initial_len = guard.len();
+        guard.retain(|stored_block_n, _| *stored_block_n > block_n);
+        initial_len.saturating_sub(guard.len())
+    }
+}
+
+impl<D: MadaraStorage> MadaraBackend<D> {
+    pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
+        let chain_tip = self.chain_tip.borrow();
+        tracing::info!(
+            target: "custom_header",
+            block_n = custom_header.block_n,
+            timestamp = custom_header.timestamp,
+            gas_prices = ?custom_header.gas_prices,
+            expected_block_hash = ?custom_header.expected_block_hash,
+            chain_tip = ?*chain_tip,
+            "storing custom header"
+        );
+        drop(chain_tip);
+
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
+            tracing::info!(
+                target: "custom_header",
+                block_n = custom_header.block_n,
+                previous_timestamp = previous.timestamp,
+                previous_gas_prices = ?previous.gas_prices,
+                new_timestamp = custom_header.timestamp,
+                new_gas_prices = ?custom_header.gas_prices,
+                "replacing staged custom header for block"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -857,11 +884,29 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                consumed_timestamp = header.timestamp,
+                consumed_gas_prices = ?header.gas_prices,
+                block_timestamp = block.header.block_timestamp.0,
+                block_gas_prices = ?block.header.gas_prices,
+                "consuming custom header during block close"
+            );
             let is_valid = header.is_block_hash_as_expected(&block_hash);
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
+        }
+        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
+        if cleared_headers > 0 {
+            tracing::info!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                cleared_headers,
+                "cleared staged custom headers through closed block"
+            );
         }
 
         // Save the block.

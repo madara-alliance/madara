@@ -64,8 +64,9 @@ impl StarknetVersion {
     pub const V0_13_5: StarknetVersion = StarknetVersion([0, 13, 5, 0]);
     pub const V0_14_0: StarknetVersion = StarknetVersion([0, 14, 0, 0]);
     pub const V0_14_1: StarknetVersion = StarknetVersion([0, 14, 1, 0]);
+    pub const V0_14_2: StarknetVersion = StarknetVersion([0, 14, 2, 0]);
     /// The latest version supported by orchestrator.
-    pub const LATEST: StarknetVersion = Self::V0_14_1;
+    pub const LATEST: StarknetVersion = Self::V0_14_2;
 
     pub fn is_pre_v0_7(&self) -> bool {
         *self < Self::V0_7_0
@@ -88,6 +89,15 @@ impl StarknetVersion {
     /// Starting from v0.14.1, newly declared classes use BLAKE hash instead of Poseidon.
     pub fn uses_blake_compiled_class_hash(&self) -> bool {
         *self >= Self::V0_14_1
+    }
+
+    pub fn to_blockifier(self) -> Result<starknet_api::block::StarknetVersion, starknet_api::StarknetApiError> {
+        let mut parsed = vec![self.0[0], self.0[1], self.0[2]];
+        if self.0[3] != 0 {
+            parsed.push(self.0[3]);
+        }
+
+        starknet_api::block::StarknetVersion::try_from(parsed)
     }
 
     /// Attempts to derive a `StarknetVersion` from a mainnet block number.
@@ -150,6 +160,7 @@ impl FromStr for StarknetVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_starknet_version_string_3() {
@@ -195,5 +206,16 @@ mod tests {
         assert!(version_2 < version_3);
         assert!(version_3 < version_4);
         assert!(version_4 < version_5);
+    }
+
+    #[rstest]
+    #[case(StarknetVersion::V0_14_2, Some("0.14.2"))]
+    #[case(StarknetVersion::new(1, 2, 3, 4), None)]
+    fn test_starknet_version_to_blockifier(#[case] version: StarknetVersion, #[case] expected: Option<&str>) {
+        let blockifier_version = version.to_blockifier();
+        match expected {
+            Some(expected) => assert_eq!(blockifier_version.unwrap().to_string(), expected),
+            None => assert!(blockifier_version.is_err()),
+        }
     }
 }

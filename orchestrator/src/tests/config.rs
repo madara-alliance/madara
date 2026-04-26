@@ -1,3 +1,4 @@
+use crate::cli::snos::parse_constants;
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockClient, MockLockClient};
@@ -24,7 +25,6 @@ use crate::types::Layer;
 use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
-use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 
@@ -43,7 +43,6 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use starknet_core::types::Felt;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use url::Url;
@@ -734,13 +733,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
-    let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
+    let versioned_constants = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
         .expect("Couldn't get versioned constants path")
-        .map(PathBuf::from);
-
-    let versioned_constants = versioned_constants_path
-        .as_ref()
-        .map(|path| VersionedConstants::from_path(path).expect("Invalid versioned constant file"));
+        .map(|path| parse_constants(&path).expect("Failed to parse versioned constants path"));
 
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))

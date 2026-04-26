@@ -135,8 +135,11 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
 
             let max_receive_count = policy_json
                 .get("maxReceiveCount")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<u32>().ok())
+                .and_then(|v| {
+                    v.as_u64()
+                        .and_then(|n| u32::try_from(n).ok())
+                        .or_else(|| v.as_str().and_then(|s| s.parse::<u32>().ok()))
+                })
                 .expect("Should have maxReceiveCount in policy");
 
             assert_eq!(

@@ -2,6 +2,7 @@
 # This version number is used to track breaking changes to the chain config format.
 # Current version: 1
 config_version: 1
+# 0.14.2 example values below are aligned with StarkWare sequencer tag APOLLO-0.14.2-RC.4.
 
 # Human readable chain name, for displaying to the console.
 chain_name: "Starknet Mainnet"
@@ -22,7 +23,7 @@ parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b156
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 
 # Most recent Starknet version supported
-latest_protocol_version: "0.13.2"
+latest_protocol_version: "0.14.2"
 
 # /!\ Only used for block production.
 # Target time interval between blocks, in seconds
@@ -55,20 +56,22 @@ bouncer_config:
     # Maximum number of transactions per block
     n_txs: 600
     # Maximum proving gas
-    proving_gas: 5500000000
-  blake_weight: 5263
+    proving_gas: 5000000000
+    # Maximum L2 gas charged by receipts
+    receipt_l2_gas: 5800000000
   builtin_weights:
     gas_costs:
-      pedersen: 4769
-      range_check: 70
-      ecdsa: 1666666
-      ecop: 714875
+      pedersen: 3000
+      range_check: 90
+      ecdsa: 2000000
+      ecop: 857850
       bitwise: 583
-      keccak: 510707
+      keccak: 600000
       poseidon: 10000
-      add_mod: 312
-      mul_mod: 604
-      range_check96: 56
+      add_mod: 2000
+      mul_mod: 2000
+      range_check96: 179
+      blake: 3334
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

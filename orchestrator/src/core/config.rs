@@ -158,7 +158,8 @@ versions!(
     (V0_13_4, "0.13.4"),
     (V0_13_5, "0.13.5"),
     (V0_14_0, "0.14.0"),
-    (V0_14_1, "0.14.1")
+    (V0_14_1, "0.14.1"),
+    (V0_14_2, "0.14.2")
 );
 
 #[derive(Debug, Clone)]
@@ -675,6 +676,7 @@ impl Config {
             sierra_gas: GasAmount(100_000_000), // 100M sierra gas
             n_txs: 10_000,                      // 10K transactions
             proving_gas: GasAmount(50_000_000), // 50M proving gas
+            receipt_l2_gas: GasAmount(2_500_000_000),
         }
     }
 }

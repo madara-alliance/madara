@@ -30,7 +30,7 @@ macro_rules! impl_bucket_element_trait {
                 elms.chunks(bit_length.n_elems_in_felt())
                     .map(|chunk| {
                         felt_from_bits_le_bytes_be(
-                            &(chunk.iter().flat_map(|elem| elem.0.as_ref()).copied().collect::<Vec<_>>()),
+                            &(chunk.iter().flat_map(|elem| elem.0[..].iter().copied()).collect::<Vec<_>>()),
                         )
                         .map_err(|e| {
                             eyre!(

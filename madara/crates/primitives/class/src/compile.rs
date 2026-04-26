@@ -219,12 +219,12 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra.extract_sierra_program().map_err(|e| {
+        let extracted_program = sierra.extract_sierra_program(false).map_err(|e| {
             ClassCompilationError::ExtractSierraProgramFailed(format!("Failed to extract Sierra program: {}", e))
         })?;
 
         let executor = AotContractExecutor::new_into(
-            &program,
+            &extracted_program.program,
             &sierra.entry_points_by_type,
             sierra_version,
             path,
@@ -467,9 +467,13 @@ mod v2 {
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
+        let extracted_program = sierra_class
+            .extract_sierra_program(false)
+            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
 
         let casm_class = CasmContractClass::from_contract_class(
             sierra_class,
+            extracted_program,
             /* add_pythonic_hints */ true,
             /* max_bytecode_size */ usize::MAX,
         )
@@ -538,44 +542,32 @@ fn felt_to_big_uint(value: &Felt) -> BigUint {
 
 #[cfg(test)]
 mod tests {
-    use crate::ContractClass;
-    use starknet_core::types::BlockId;
-    use starknet_core::types::BlockTag;
-    use starknet_providers::Url;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use crate::test_utils::{
+        fetch_contract_class, fetch_sierra_class, MAINNET_FEEDER_GATEWAY_URL, SEPOLIA_FEEDER_GATEWAY_URL,
+    };
+    use crate::{ContractClass, SierraClassInfo};
+    use rstest::rstest;
     use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     async fn test_compressed_legacy_class_to_blockifier() {
-        let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gateway.alpha-mainnet.starknet.io/gateway").unwrap(),
-            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
-            starknet_core::chain_id::MAINNET,
-        );
-        let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
-        let _class: ContractClass =
-            provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
+        let class = fetch_contract_class(
+            MAINNET_FEEDER_GATEWAY_URL,
+            "0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918",
+        )
+        .await;
+        assert!(matches!(class, ContractClass::Legacy(_)));
     }
 
     #[tokio::test]
     async fn test_flattened_sierra_class_to_blockifier() {
-        let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gateway.alpha-mainnet.starknet.io/gateway").unwrap(),
-            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
-            starknet_core::chain_id::MAINNET,
-        );
-
-        let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
+        let class_hash = "0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253";
         let expected_compiled_class_hash =
-            Felt::from_hex_unchecked("0x3b3c33049515b020e435d5803b2b8a6915398cbcd8f79ca545a04c286c5084b");
-        let class: ContractClass = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
+            Felt::from_hex_unchecked("0xa4499a08975491756e59cfaaea8d4099e41b809d673b535dac5712d8600053");
+        let sierra = fetch_sierra_class(MAINNET_FEEDER_GATEWAY_URL, class_hash).await;
 
-        if let ContractClass::Sierra(sierra) = class {
-            let (compiled_class_hash, _casm_definition) = sierra.compile_to_casm().unwrap();
-            assert_eq!(compiled_class_hash, expected_compiled_class_hash);
-        } else {
-            panic!("Not a Sierra contract");
-        }
+        let (compiled_class_hash, _casm_definition) = sierra.compile_to_casm().unwrap();
+        assert_eq!(compiled_class_hash, expected_compiled_class_hash);
     }
 
     /// Test that BLAKE compiled class hash (SNIP-34) matches real migrated values from Sepolia.
@@ -584,77 +576,58 @@ mod tests {
     /// Block: https://sepolia.voyager.online/block/0x926ef481b290f748064bc2e4eac931fd3a736645d7daa7a731297c315bcf04
     ///
     /// The class_hash is the Sierra class hash, and compiled_class_hash is the new BLAKE hash.
+    #[rstest]
+    #[case(
+        "0x345354e2d801833068de73d1a2028e2f619f71045dd5229e79469fa7f598038",
+        "0x4ba630be0cd6cdb8d4407bf7c4715b0780e63f890b26b032e8eccaf9c7338e2"
+    )]
+    #[case(
+        "0x2f6d77cb0bca422706a91858dff62975aef4b8214520aadb1f0b39c51f5fde",
+        "0x1fa60b7af141c3514c8c193b76dec4a14e54a2474e0d85a053fe61b431edaf3"
+    )]
+    #[case(
+        "0xe824b9f2aa225812cf230d276784b99f182ec95066d84be90cd1682e4ad069",
+        "0x292e005a8cd53053cdf4667d74e96da648a5fdac00bfb2616a2051631cc62b6"
+    )]
+    #[case(
+        "0x9524a94b41c4440a16fd96d7c1ef6ad6f44c1c013e96662734502cd4ee9b1f",
+        "0x75a59a0cd1985dd66a3fd9d634f0e0287916cd8e0fff3f2bd80d69498b09367"
+    )]
+    #[case(
+        "0x76791ef97c042f81fbf352ad95f39a22554ee8d7927b2ce3c681f3418b5206a",
+        "0x538d6278bead12c526309ac2c4e33666008f36fe2195f4ae828a61d350586a"
+    )]
+    #[case(
+        "0x5431265f9d2416426da800a23ddd3fe33db8e2b9fe96dbc48588ac3ac70c091",
+        "0x42a545401aaa2b157a445cef59070d47e05e68b84ab669f2dd1fcea307780c6"
+    )]
+    #[case(
+        "0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f",
+        "0x294a323246c017d00a98f11942e1e38d562c97bc79426742110a14ce497e9b5"
+    )]
     #[tokio::test]
-    async fn test_blake_compiled_class_hash() {
-        // Use Sepolia testnet gateway
-        let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gateway.alpha-sepolia.starknet.io/gateway").unwrap(),
-            Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway").unwrap(),
-            starknet_core::chain_id::SEPOLIA,
+    async fn test_sepolia_blake_compiled_class_hash_matches_expected(
+        #[case] class_hash_hex: &str,
+        #[case] expected_blake_hash_hex: &str,
+    ) {
+        let expected_blake_hash = Felt::from_hex_unchecked(expected_blake_hash_hex);
+        let sierra = fetch_sierra_class(SEPOLIA_FEEDER_GATEWAY_URL, class_hash_hex).await;
+
+        let (_poseidon_hash, casm_class) = sierra.compile_to_casm().unwrap();
+        let blake_hash = super::v2::compute_blake_compiled_class_hash(&casm_class).unwrap();
+
+        assert_eq!(
+            blake_hash, expected_blake_hash,
+            "BLAKE hash mismatch! Expected: {:#x}, Got: {:#x}",
+            expected_blake_hash, blake_hash
         );
 
-        // Real migrated classes from Sepolia after SNIP-34 activation
-        // Format: (class_hash, expected_blake_compiled_class_hash)
-        let test_cases = [
-            (
-                "0x345354e2d801833068de73d1a2028e2f619f71045dd5229e79469fa7f598038",
-                "0x4ba630be0cd6cdb8d4407bf7c4715b0780e63f890b26b032e8eccaf9c7338e2",
-            ),
-            (
-                "0x2f6d77cb0bca422706a91858dff62975aef4b8214520aadb1f0b39c51f5fde",
-                "0x1fa60b7af141c3514c8c193b76dec4a14e54a2474e0d85a053fe61b431edaf3",
-            ),
-            (
-                "0xe824b9f2aa225812cf230d276784b99f182ec95066d84be90cd1682e4ad069",
-                "0x292e005a8cd53053cdf4667d74e96da648a5fdac00bfb2616a2051631cc62b6",
-            ),
-            (
-                "0x9524a94b41c4440a16fd96d7c1ef6ad6f44c1c013e96662734502cd4ee9b1f",
-                "0x75a59a0cd1985dd66a3fd9d634f0e0287916cd8e0fff3f2bd80d69498b09367",
-            ),
-            (
-                "0x76791ef97c042f81fbf352ad95f39a22554ee8d7927b2ce3c681f3418b5206a",
-                "0x538d6278bead12c526309ac2c4e33666008f36fe2195f4ae828a61d350586a",
-            ),
-            (
-                "0x5431265f9d2416426da800a23ddd3fe33db8e2b9fe96dbc48588ac3ac70c091",
-                "0x42a545401aaa2b157a445cef59070d47e05e68b84ab669f2dd1fcea307780c6",
-            ),
-            (
-                "0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f",
-                "0x294a323246c017d00a98f11942e1e38d562c97bc79426742110a14ce497e9b5",
-            ),
-        ];
-
-        // Test the first class (we test just one to keep the test fast, but all are available)
-        let (class_hash_hex, expected_blake_hash_hex) = test_cases[0];
-        let class_hash = Felt::from_hex_unchecked(class_hash_hex);
-        let expected_blake_hash = Felt::from_hex_unchecked(expected_blake_hash_hex);
-
-        let class: ContractClass = provider
-            .get_class(BlockId::Tag(BlockTag::Latest), class_hash)
-            .await
-            .expect("Failed to fetch class from Sepolia")
-            .into();
-
-        if let ContractClass::Sierra(sierra) = class {
-            // Compile to CASM and get Poseidon hash
-            let (poseidon_hash, casm_class) = sierra.compile_to_casm().unwrap();
-
-            // Compute BLAKE hash using HashVersion::V2
-            let blake_hash = super::v2::compute_blake_compiled_class_hash(&casm_class).unwrap();
-
-            // Verify BLAKE hash matches expected value from Sepolia migration
-            assert_eq!(
-                blake_hash, expected_blake_hash,
-                "BLAKE hash mismatch! Expected: {:#x}, Got: {:#x}",
-                expected_blake_hash, blake_hash
-            );
-
-            // BLAKE and Poseidon hashes should be different
-            assert_ne!(poseidon_hash, blake_hash, "BLAKE and Poseidon hashes should be different");
-        } else {
-            panic!("Not a Sierra contract");
+        SierraClassInfo {
+            contract_class: sierra,
+            compiled_class_hash: None,
+            compiled_class_hash_v2: Some(expected_blake_hash),
         }
+        .compile()
+        .expect("Sierra class info compilation should accept the expected BLAKE hash");
     }
 }

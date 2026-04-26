@@ -18,9 +18,8 @@ use starknet::{
 };
 use starknet_core::{
     types::{
-        BlockId, BlockTag, Call, ContractClass, ExecuteInvocation, ExecutionResult, Felt, FunctionCall,
+        BlockId, BlockTag, Call, ContractClass, ExecutionResult, Felt, FunctionCall,
         MaybePreConfirmedBlockWithTxHashes, StarknetError, TransactionReceipt, TransactionReceiptWithBlockInfo,
-        TransactionTrace,
     },
     utils::starknet_keccak,
 };
@@ -138,7 +137,7 @@ impl SetupBuilder {
                 sequencer.feeder_gateway_url()
             ),
             "--validate-then-forward-txs-to".into(),
-            format!("{}/madara", sequencer.gateway_root_url.as_ref().unwrap()),
+            format!("{}madara", sequencer.gateway_root_url.as_ref().unwrap()),
             "--gateway".into(),
         ];
 
@@ -806,34 +805,9 @@ async fn declare_sierra_then_deploy(
         // 1. Deploy an account using the UDC.
 
         let key = SigningKey::from_secret_scalar(Felt::from_hex_unchecked("0x273623"));
-
-        // Simulate to get the contract address.
-
-        let res = ContractFactory::new_with_udc(
-            class_hash,
-            setup.account(setup.json_rpc()).await, // simulate can only be done through json_rpc
-            UdcSelector::Legacy,
-        )
-        .deploy_v3(vec![key.verifying_key().scalar()], /* salt */ Felt::TWO, /* unique */ true)
-        .simulate(/* skip_validate */ false, /* charge_fee */ true)
-        .await
-        .unwrap();
-
-        let TransactionTrace::Invoke(res) = res.transaction_trace else {
-            unreachable!("transaction trace should be invoke")
-        };
-        let ExecuteInvocation::Success(res) = res.execute_invocation else {
-            unreachable!("failed simulation: {:?}", res.execute_invocation)
-        };
-        let deployed_contract_address = res.result[2];
-        assert_eq!(
-            res.result,
-            vec![
-                /* results.len() */ Felt::ONE,
-                /* results[0].len() */ Felt::ONE,
-                /* results[0][0] */ deployed_contract_address
-            ]
-        );
+        let deployed_contract_address = ContractFactory::new_with_udc(class_hash, account.clone(), UdcSelector::Legacy)
+            .deploy_v3(vec![key.verifying_key().scalar()], /* salt */ Felt::TWO, /* unique */ true)
+            .deployed_address();
 
         // Deploy the account.
 

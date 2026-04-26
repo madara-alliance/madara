@@ -1,8 +1,8 @@
 //! End-to-end test for the local-aggregation path used by the Mock prover.
 //!
 //! Flow (all in-process):
-//! 1. Download two SNOS `CairoPIE` zips (paradex testnet blocks 40001 + 40002) from the
-//!    `madara-test-artifacts` repo.
+//! 1. Download four SNOS `CairoPIE` zips (Starknet Sepolia blocks 8059997..=8060000)
+//!    from the `madara-test-artifacts` repo.
 //! 2. Extract each PIE's program output.
 //! 3. Run the local aggregator ([`orchestrator_aggregator_runner::run_local_aggregator`])
 //!    against those outputs.
@@ -47,27 +47,28 @@ sol! {
     }
 }
 
-/// Chain id the two SNOS PIEs were produced on (ASCII `"PRIVATE_SN_PARACLEAR_TESTNET"`).
-const PARADEX_CHAIN_ID_HEX: &str = "0x505249564154455f534e5f50415241434c4541525f544553544e4554";
-/// Fee token address on the paradex testnet at the time of PIE generation.
-const PARADEX_FEE_TOKEN: &str = "0x1c9db8291f806fc5237ab3902efc5a77001460900cf707ffb65ae460837c1d9";
+/// Chain id the SNOS PIEs were produced on (ASCII `"SN_SEPOLIA"`).
+const SEPOLIA_CHAIN_ID_HEX: &str = "0x534e5f5345504f4c4941";
+/// STRK fee token address returned by Sepolia feeder gateway `get_contract_addresses`.
+const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
 /// Filenames in the `madara-test-artifacts` repo. Each zip is a SNOS CairoPIE for one
-/// paradex testnet block.
-const SNOS_PIE_FILES: [&str; 2] = ["snos_paradex_40001.zip", "snos_paradex_40002.zip"];
+/// Starknet Sepolia block.
+const SNOS_PIE_FILES: [&str; 4] =
+    ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Expected aggregator fact hash when the two SNOS PIEs above are aggregated.
+/// Expected aggregator fact hash when the four SNOS PIEs above are aggregated.
 /// Pinning this value turns any drift in `run_local_aggregator` or `get_fact_info` into
 /// a loud test failure.
-/// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x9ded3dc8e7533ccb23b13bb1619584ce2a2caac2340d93dafc0c9968710c14c1
-const EXPECTED_AGG_FACT: &str = "0x69aa6a55c93fe351d0498981f3777a1c70e7bec5ed21b3252e4d347a53cc7dd6";
+/// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x210ce8de99bfc31ddf1d6c62665210bb23c9ec975fd1a6ff7ce0c7124c8e6140
+const EXPECTED_AGG_FACT: &str = "0x567583b3f11c269a52e29622b95e7be9b0a1a195c0df9ad3e052b4c82163a6dc";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_local_aggregator_with_fact_registration() -> color_eyre::Result<()> {
     dotenvy::from_filename_override("../.env.test").ok();
 
-    // 1. Pull both SNOS PIEs from the remote artifacts repo.
+    // 1. Pull the SNOS PIEs from the remote artifacts repo.
     let data_dir = setup_test_data(SNOS_PIE_FILES.iter().map(|f| (*f, false)).collect())
         .await
         .expect("Failed to download SNOS PIE artifacts");
@@ -88,8 +89,8 @@ async fn test_local_aggregator_with_fact_registration() -> color_eyre::Result<()
         layout: LayoutName::all_cairo,
         full_output: false,
         debug_mode: false,
-        chain_id: AggregatorFelt::from_hex(PARADEX_CHAIN_ID_HEX).expect("valid paradex chain id"),
-        fee_token_address: AggregatorFelt::from_hex(PARADEX_FEE_TOKEN).expect("valid fee token address"),
+        chain_id: AggregatorFelt::from_hex(SEPOLIA_CHAIN_ID_HEX).expect("valid Sepolia chain id"),
+        fee_token_address: AggregatorFelt::from_hex(SEPOLIA_STRK_FEE_TOKEN).expect("valid Sepolia fee token address"),
         da_public_keys: None,
     };
     let agg_output = run_local_aggregator(input).expect("Local aggregator failed");
