@@ -26,6 +26,20 @@ impl std::fmt::Display for ReplayBoundsError {
     }
 }
 
+fn extract_block_hash(
+    result: Result<MaybePreConfirmedBlockWithTxHashes, impl std::fmt::Display>,
+    block_number: u64,
+    source: &str,
+) -> Result<starknet::core::types::Felt, ReplayBoundsError> {
+    match result {
+        Ok(MaybePreConfirmedBlockWithTxHashes::Block(block)) => Ok(block.block_hash),
+        Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
+            Err(ReplayBoundsError::BlockPending { block_number, source: source.into() })
+        }
+        Err(e) => Err(ReplayBoundsError::FetchFailed { block_number, source: source.into(), error: e.to_string() }),
+    }
+}
+
 /// Validates that the block hash from the Madara (replay) node matches the reference node.
 /// Fails closed: RPC errors and pending blocks halt batching rather than silently passing.
 pub async fn validate_block_hash(
@@ -40,29 +54,8 @@ pub async fn validate_block_hash(
         reference_client.get_block_with_tx_hashes(block_id),
     );
 
-    let madara_hash = match madara_result {
-        Ok(MaybePreConfirmedBlockWithTxHashes::Block(block)) => block.block_hash,
-        Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
-            return Err(ReplayBoundsError::BlockPending { block_number, source: "madara".into() });
-        }
-        Err(e) => {
-            return Err(ReplayBoundsError::FetchFailed { block_number, source: "madara".into(), error: e.to_string() });
-        }
-    };
-
-    let reference_hash = match reference_result {
-        Ok(MaybePreConfirmedBlockWithTxHashes::Block(block)) => block.block_hash,
-        Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_)) => {
-            return Err(ReplayBoundsError::BlockPending { block_number, source: "reference".into() });
-        }
-        Err(e) => {
-            return Err(ReplayBoundsError::FetchFailed {
-                block_number,
-                source: "reference".into(),
-                error: e.to_string(),
-            });
-        }
-    };
+    let madara_hash = extract_block_hash(madara_result, block_number, "madara")?;
+    let reference_hash = extract_block_hash(reference_result, block_number, "reference")?;
 
     if madara_hash == reference_hash {
         tracing::debug!(block_number, hash = %madara_hash, "Replay bounds: block hash validated");

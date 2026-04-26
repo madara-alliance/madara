@@ -856,24 +856,27 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        // Atomically check and clear the custom header to avoid TOCTOU races.
-        let maybe_custom = {
+        // Atomically peek at the custom header — only consume it if block_n matches.
+        {
             let mut guard = self.inner.custom_header.lock().expect("Poisoned lock");
-            guard.take()
-        };
-        if let Some(custom) = maybe_custom {
-            if !custom.is_block_hash_as_expected(&block_hash) {
-                let msg = format!(
-                    "Block hash mismatch at block #{}: expected={}, computed={}. \
-                     No data has been persisted. Shutting down.",
-                    block.header.block_number, custom.expected_block_hash, block_hash,
-                );
-                tracing::error!("{msg}");
-                #[allow(clippy::print_stderr)]
-                {
-                    eprintln!("{msg}");
+            if let Some(custom) = guard.as_ref() {
+                if custom.block_n != block.header.block_number {
+                    anyhow::bail!(
+                        "Custom header block number mismatch: header is for block #{}, but closing block #{}",
+                        custom.block_n,
+                        block.header.block_number,
+                    );
                 }
-                std::process::exit(1);
+                if !custom.is_block_hash_as_expected(&block_hash) {
+                    let msg = format!(
+                        "Block hash mismatch at block #{}: expected={}, computed={}. \
+                         No data has been persisted.",
+                        block.header.block_number, custom.expected_block_hash, block_hash,
+                    );
+                    guard.take();
+                    anyhow::bail!(msg);
+                }
+                guard.take();
             }
         }
 

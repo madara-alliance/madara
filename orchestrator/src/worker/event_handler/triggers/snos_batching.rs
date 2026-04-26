@@ -71,6 +71,7 @@ impl JobTrigger for SnosBatchingTrigger {
             info!("Processing SNOS batches for blocks {} to {}", start_block, end_block);
 
             let mut state = state_handler.load_batch_state().await?;
+            let mut replay_bounds_error: Option<replay_bounds::ReplayBoundsError> = None;
 
             for block_num in start_block..=end_block {
                 // For L2s, we need to get the aggregator batch index for this block
@@ -101,6 +102,7 @@ impl JobTrigger for SnosBatchingTrigger {
                         replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
                     {
                         error!(block_num, "Replay bounds: {}, stopping SNOS batching", e);
+                        replay_bounds_error = Some(e);
                         break;
                     }
                 }
@@ -121,12 +123,16 @@ impl JobTrigger for SnosBatchingTrigger {
                 }
             }
 
-            // Save the final state if it's non-empty
+            // Save valid partial state before propagating the error
             match state {
                 SnosState::Empty(_) => {}
                 SnosState::NonEmpty(state) => {
                     state_handler.save_batch_state(&state).await?;
                 }
+            }
+
+            if let Some(e) = replay_bounds_error {
+                return Err(color_eyre::eyre::eyre!("Replay bounds validation failed: {}", e));
             }
 
             Ok(())

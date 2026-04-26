@@ -60,6 +60,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
             info!("Processing Aggregator batches for blocks {} to {}", start_block, end_block);
 
             let mut state = state_handler.load_batch_state().await?;
+            let mut replay_bounds_error: Option<replay_bounds::ReplayBoundsError> = None;
 
             for block_num in start_block..=end_block {
                 if let Some(ref_client) = config.replay_bounds_client() {
@@ -67,6 +68,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
                         replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
                     {
                         error!(block_num, "Replay bounds: {}, stopping aggregator batching", e);
+                        replay_bounds_error = Some(e);
                         break;
                     }
                 }
@@ -87,11 +89,16 @@ impl JobTrigger for AggregatorBatchingTrigger {
                 }
             }
 
+            // Save valid partial state before propagating the error
             match state {
                 AggregatorState::Empty(_) => {}
                 AggregatorState::NonEmpty(state) => {
                     state_handler.save_batch_state(&state).await?;
                 }
+            }
+
+            if let Some(e) = replay_bounds_error {
+                return Err(color_eyre::eyre::eyre!("Replay bounds validation failed: {}", e));
             }
 
             Ok(())
