@@ -4,7 +4,7 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
-        global_trie::{apply_to_global_trie, get_state_root, MerklizationTimings},
+        global_trie::{apply_to_global_trie, compute_global_trie_staged, get_state_root, MerklizationTimings},
         meta::StoredChainTipWithoutContent,
         metrics::DbMetrics,
         options::rocksdb_global_options,
@@ -631,6 +631,17 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Applying state diff to global trie start_block_n={start_block_n}");
         apply_to_global_trie(self, start_block_n, state_diffs, protocol_version)
             .context("Applying state diff to global trie")
+    }
+
+    fn compute_global_trie_staged(
+        &self,
+        state_diff: &StateDiff,
+        protocol_version: StarknetVersion,
+        block_number: u64,
+    ) -> Result<(Felt, global_trie::StagedGlobalTries)> {
+        tracing::debug!("Computing staged global trie for block_n={block_number}");
+        compute_global_trie_staged(self, state_diff, protocol_version, block_number)
+            .context("Computing staged global trie")
     }
 
     fn flush(&self) -> Result<()> {

@@ -43,9 +43,76 @@ pub struct MerklizationTimings {
     pub class_trie: ClassTrieTimings,
 }
 
+pub use classes::StagedClassTrie;
+pub use contracts::StagedContractTries;
+
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = b"0xcontract";
     pub const CLASS: &[u8] = b"0xclass";
+}
+
+/// Holds all uncommitted global tries between staged root computation and final commit.
+pub struct StagedGlobalTries {
+    contract: StagedContractTries,
+    class: StagedClassTrie,
+    pub contract_trie_root_duration: Duration,
+    pub class_trie_root_duration: Duration,
+}
+
+impl StagedGlobalTries {
+    pub fn commit(self, block_number: u64) -> Result<(ContractTrieTimings, ClassTrieTimings)> {
+        let contract_timings = self.contract.commit(block_number)?;
+        let class_timings = self.class.commit(block_number)?;
+        Ok((contract_timings, class_timings))
+    }
+}
+
+/// Compute the global state root from staged (uncommitted) trie changes.
+/// Nothing is persisted to disk. Call `StagedGlobalTries::commit()` to persist.
+pub fn compute_global_trie_staged(
+    backend: &RocksDBStorage,
+    state_diff: &StateDiff,
+    last_block_protocol_version: StarknetVersion,
+    block_number: u64,
+) -> Result<(Felt, StagedGlobalTries)> {
+    let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
+        || {
+            let start = Instant::now();
+            let result = contracts::contract_trie_root_staged(
+                backend,
+                &state_diff.deployed_contracts,
+                &state_diff.replaced_classes,
+                &state_diff.nonces,
+                &state_diff.storage_diffs,
+                block_number,
+            );
+            (result, start.elapsed())
+        },
+        || {
+            let start = Instant::now();
+            let result = classes::class_trie_root_staged(
+                backend,
+                &state_diff.declared_classes,
+                &state_diff.migrated_compiled_classes,
+            );
+            (result, start.elapsed())
+        },
+    );
+
+    let (contract_trie_root, staged_contracts) = contract_result?;
+    let (class_trie_root, staged_classes) = class_result?;
+
+    let state_root = calculate_state_root(contract_trie_root, class_trie_root, last_block_protocol_version);
+
+    Ok((
+        state_root,
+        StagedGlobalTries {
+            contract: staged_contracts,
+            class: staged_classes,
+            contract_trie_root_duration: contract_duration,
+            class_trie_root_duration: class_duration,
+        },
+    ))
 }
 
 /// Update the global tries and compute the state root for the last block in the batch.
