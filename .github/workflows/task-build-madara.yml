@@ -56,9 +56,9 @@ jobs:
           echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
 
-          # Hash the cairo artifacts directory
-          ARTIFACTS_HASH=$(find build-artifacts -type f -exec sha256sum {} + | sort -k 2)
-          HASH=$(printf "%s\n%s\n" "$TIMESTAMP" "$ARTIFACTS_HASH" | sha256sum | awk '{ print $1 }')
+          # Path to the cairo artifacts
+          ARTIFACTS_PATH=./artifacts.tar.gz
+          HASH=$(echo "$TIMESTAMP" | cat - $ARTIFACTS_PATH | sha256sum | awk '{ print $1 }')
           echo "cairo-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Hash of cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
 
