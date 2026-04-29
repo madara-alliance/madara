@@ -1161,6 +1161,7 @@ pub(crate) mod tests {
     pub async fn devnet_setup(
         #[default(Duration::from_secs(30))] block_time: Duration,
         #[default(false)] use_bouncer_weights: bool,
+        #[default(false)] no_empty_blocks: bool,
     ) -> DevnetSetup {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -1178,10 +1179,11 @@ pub(crate) mod tests {
                     block_max_capacity: bouncer_weights,
                     builtin_weights: Default::default(),
                 },
+                no_empty_blocks,
                 ..ChainConfig::madara_devnet()
             })
         } else {
-            Arc::new(ChainConfig { block_time, ..ChainConfig::madara_devnet() })
+            Arc::new(ChainConfig { block_time, no_empty_blocks, ..ChainConfig::madara_devnet() })
         };
 
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
@@ -1833,6 +1835,28 @@ pub(crate) mod tests {
 
         assert_eq!(view.block_number(), 1);
         assert_eq!(view.get_executed_transactions(..).unwrap(), []);
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_no_empty_blocks_does_not_close_empty_block(
+        #[future]
+        #[with(Duration::from_millis(200), false, true)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        assert!(tokio::time::timeout(Duration::from_millis(500), notifications.recv()).await.is_err());
+        assert_eq!(devnet_setup.backend.block_view_on_last_confirmed().unwrap().block_number(), 0);
     }
 
     #[rstest::rstest]

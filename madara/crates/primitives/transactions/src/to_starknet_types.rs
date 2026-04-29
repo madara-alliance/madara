@@ -370,6 +370,12 @@ mod tests {
     use crate::tests::{dummy_tx_invoke_v3, dummy_tx_invoke_v3_with_proof_facts};
     use starknet_types_core::felt::Felt;
 
+    #[derive(Clone, Copy)]
+    enum InvokeV3Fixture {
+        MissingProofFacts,
+        PresentProofFacts,
+    }
+
     fn invoke_v3_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> Option<Vec<Felt>> {
         let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)) = txn else {
             panic!("expected invoke v3 transaction");
@@ -377,38 +383,32 @@ mod tests {
         tx.proof_facts
     }
 
-    #[test]
-    fn rpc_v0_10_2_include_proof_facts_returns_empty_for_missing_facts() {
-        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
+    #[rstest::rstest]
+    #[case::include_missing(InvokeV3Fixture::MissingProofFacts, true)]
+    #[case::omit_missing(InvokeV3Fixture::MissingProofFacts, false)]
+    #[case::include_present(InvokeV3Fixture::PresentProofFacts, true)]
+    fn rpc_v0_10_2_proof_facts_flag_controls_serialized_facts(
+        #[case] fixture: InvokeV3Fixture,
+        #[case] include_proof_facts: bool,
+    ) {
+        let tx = match fixture {
+            InvokeV3Fixture::MissingProofFacts => dummy_tx_invoke_v3(),
+            InvokeV3Fixture::PresentProofFacts => dummy_tx_invoke_v3_with_proof_facts(),
+        };
+        let expected_proof_facts = match (fixture, include_proof_facts) {
+            (InvokeV3Fixture::MissingProofFacts, true) => Some(vec![]),
+            (InvokeV3Fixture::MissingProofFacts, false) => None,
+            (InvokeV3Fixture::PresentProofFacts, true) => tx.proof_facts.clone(),
+            (InvokeV3Fixture::PresentProofFacts, false) => None,
+        };
+        let expected_json = expected_proof_facts
+            .as_ref()
+            .map(|proof_facts| serde_json::to_value(proof_facts).expect("proof facts should serialize"));
 
-        let rpc_tx = tx.to_rpc_v0_10_2(true);
+        let rpc_tx = Transaction::Invoke(InvokeTransaction::V3(tx)).to_rpc_v0_10_2(include_proof_facts);
         let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
 
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), Some(vec![]));
-        assert_eq!(json.get("proof_facts"), Some(&serde_json::json!([])));
-    }
-
-    #[test]
-    fn rpc_v0_10_2_without_include_proof_facts_omits_missing_facts() {
-        let tx = Transaction::Invoke(InvokeTransaction::V3(dummy_tx_invoke_v3()));
-
-        let rpc_tx = tx.to_rpc_v0_10_2(false);
-        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
-
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), None);
-        assert_eq!(json.get("proof_facts"), None);
-    }
-
-    #[test]
-    fn rpc_v0_10_2_include_proof_facts_preserves_present_facts() {
-        let tx = dummy_tx_invoke_v3_with_proof_facts();
-        let proof_facts = tx.proof_facts.clone();
-        let expected_json = serde_json::to_value(&proof_facts).expect("proof facts should serialize");
-
-        let rpc_tx = Transaction::Invoke(InvokeTransaction::V3(tx)).to_rpc_v0_10_2(true);
-        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
-
-        assert_eq!(invoke_v3_proof_facts(rpc_tx), proof_facts);
-        assert_eq!(json.get("proof_facts"), Some(&expected_json));
+        assert_eq!(invoke_v3_proof_facts(rpc_tx), expected_proof_facts);
+        assert_eq!(json.get("proof_facts"), expected_json.as_ref());
     }
 }

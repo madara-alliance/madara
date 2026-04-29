@@ -474,7 +474,7 @@ impl<D> MadaraBackend<D> {
 impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
         let chain_tip = self.chain_tip.borrow();
-        tracing::info!(
+        tracing::debug!(
             target: "custom_header",
             block_n = custom_header.block_n,
             timestamp = custom_header.timestamp,
@@ -487,7 +487,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 
         let mut guard = self.custom_headers.lock().expect("Poisoned lock");
         if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
-            tracing::info!(
+            tracing::debug!(
                 target: "custom_header",
                 block_n = custom_header.block_n,
                 previous_timestamp = previous.timestamp,
@@ -884,7 +884,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
-            tracing::info!(
+            tracing::debug!(
                 target: "custom_header",
                 block_n = block.header.block_number,
                 consumed_timestamp = header.timestamp,
@@ -911,7 +911,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
         let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
         if cleared_headers > 0 {
-            tracing::info!(
+            tracing::debug!(
                 target: "custom_header",
                 block_n = block.header.block_number,
                 cleared_headers,

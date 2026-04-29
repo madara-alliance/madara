@@ -418,7 +418,7 @@ impl BlockImporterCtx {
                     (None, Some(gateway_hash))
                 } else {
                     if !self.config.no_check && hashes.poseidon_hash != gateway_hash {
-                        tracing::debug!(
+                        tracing::warn!(
                             class_hash = %format!("{class_hash:#x}"),
                             gateway_hash = %format!("{gateway_hash:#x}"),
                             computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),

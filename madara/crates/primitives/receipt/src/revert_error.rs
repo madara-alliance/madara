@@ -10,7 +10,14 @@ use blockifier::transaction::objects::RevertError;
 /// Thin helpers which keep receipt formatting aligned with blockifier's canonical `Display`
 /// implementation.
 pub trait RevertErrorExt {
+    /// Returns the receipt-facing revert error.
+    ///
+    /// Most errors are left unchanged so receipt commitments use blockifier's canonical
+    /// formatting. The only exception is the nested constructor failure shape where
+    /// Pathfinder strips VM traceback frames from the receipt string.
     fn format_for_receipt(self) -> RevertError;
+
+    /// Formats the receipt-facing revert error without consuming the original value.
     fn format_for_receipt_string(&self) -> String;
 }
 
@@ -35,6 +42,9 @@ impl RevertErrorExt for RevertError {
 }
 
 fn should_strip_vm_tracebacks_for_receipt(error_stack: &ErrorStack) -> bool {
+    // Pathfinder strips VM tracebacks for constructor failures wrapped in another
+    // "Execution failed" frame. Limit the special case to that exact shape so normal
+    // blockifier revert strings remain canonical.
     let has_constructor_frame = error_stack
         .stack
         .iter()
@@ -47,6 +57,7 @@ fn should_strip_vm_tracebacks_for_receipt(error_stack: &ErrorStack) -> bool {
     has_constructor_frame && has_nested_constructor_failure
 }
 
+/// Consuming variant used while building receipt values.
 fn strip_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
     ErrorStack {
         header: error_stack.header,
@@ -54,6 +65,7 @@ fn strip_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
     }
 }
 
+/// Borrowing variant used when callers only need the formatted receipt string.
 fn strip_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
     let mut new_stack = ErrorStack { header: error_stack.header.clone(), stack: Vec::new() };
 

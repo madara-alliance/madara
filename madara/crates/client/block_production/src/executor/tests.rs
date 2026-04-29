@@ -7,7 +7,7 @@ use assert_matches::assert_matches;
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
-use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_chain_config::StarknetVersion;
 use mp_convert::{Felt, ToFelt};
 use mp_rpc::v0_9_0::BroadcastedTxn;
 use mp_transactions::IntoStarknetApiExt;
@@ -17,7 +17,6 @@ use starknet_core::utils::get_selector_from_name;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::time::timeout;
 
 pub(super) fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction, AdditionalTxInfo) {
     let (tx, ts, declared_class) = tx
@@ -53,26 +52,6 @@ fn make_l1_handler_tx(
     .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
     .unwrap();
     (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default() })
-}
-
-#[tokio::test]
-async fn test_no_empty_blocks_does_not_start_block_without_transactions() {
-    let chain_config = Arc::new(ChainConfig {
-        block_time: Duration::from_secs(30000),
-        no_empty_blocks: true,
-        ..ChainConfig::madara_devnet()
-    });
-    let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
-    backend.set_l1_gas_quote_for_testing();
-
-    let (commands_sender, commands) = mpsc::unbounded_channel();
-    let mut handle = start_executor_thread(backend, commands, Arc::new(BlockProductionMetrics::register())).unwrap();
-
-    assert_matches!(timeout(Duration::from_millis(100), handle.replies.recv()).await, Err(_));
-
-    drop(commands_sender);
-    handle.send_batch.take();
-    handle.stop.recv().await.unwrap();
 }
 
 struct L1HandlerSetup {

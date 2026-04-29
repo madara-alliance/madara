@@ -62,20 +62,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         // TODO: cache the preconfirmed fake blocks.
         let block = match &*chain_tip {
             // Real preconfirmed block.
-            ChainTip::Preconfirmed(block) => {
-                if let Some(custom_header) = self.get_custom_header(block.header.block_number) {
-                    tracing::warn!(
-                        target: "custom_header",
-                        block_n = block.header.block_number,
-                        live_preconfirmed_timestamp = block.header.block_timestamp.0,
-                        live_preconfirmed_gas_prices = ?block.header.gas_prices,
-                        stored_custom_timestamp = custom_header.timestamp,
-                        stored_custom_gas_prices = ?custom_header.gas_prices,
-                        "returning existing in-memory preconfirmed block while a custom header is still stored"
-                    );
-                }
-                block.clone()
-            }
+            ChainTip::Preconfirmed(block) => block.clone(),
             // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
             ChainTip::Confirmed(parent_block_number) => {
                 let parent_block_info = self

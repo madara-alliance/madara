@@ -196,7 +196,7 @@ pub(crate) fn create_execution_context(
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
         let gas_prices = custom_header.gas_prices;
-        tracing::info!(
+        tracing::debug!(
             target: "custom_header",
             block_n,
             timestamp = custom_header.timestamp,

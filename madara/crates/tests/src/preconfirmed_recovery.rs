@@ -20,8 +20,6 @@ enum ShutdownKind {
     Ungraceful,
 }
 
-const TEST_MAX_L2_GAS: u64 = 2_000_000;
-
 fn devnet_args(block_time: &str, block_production_disabled: bool) -> Vec<String> {
     let mut args = vec![
         "--devnet".into(),
@@ -86,7 +84,7 @@ async fn submit_success_and_revert_txs(node: &MadaraCmd) -> (Felt, Felt) {
         .execute_v3(vec![transfer_call(recipient, Felt::ONE, Felt::ZERO)])
         .l1_gas(1_000_000)
         .l1_gas_price(l1_price)
-        .l2_gas(TEST_MAX_L2_GAS)
+        .l2_gas(2_000_000)
         .l2_gas_price(l2_price)
         .l1_data_gas(1_000_000)
         .l1_data_gas_price(l1_data_price)
@@ -100,7 +98,7 @@ async fn submit_success_and_revert_txs(node: &MadaraCmd) -> (Felt, Felt) {
         .execute_v3(vec![transfer_call(recipient, Felt::ZERO, Felt::ONE)])
         .l1_gas(1_000_000)
         .l1_gas_price(l1_price)
-        .l2_gas(TEST_MAX_L2_GAS)
+        .l2_gas(2_000_000)
         .l2_gas_price(l2_price)
         .l1_data_gas(1_000_000)
         .l1_data_gas_price(l1_data_price)

@@ -287,3 +287,60 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MempoolConfig;
+    use mc_db::test_utils::{add_test_block, l1_handler_tx_with_receipt};
+    use mp_chain_config::ChainConfig;
+    use mp_transactions::{validated::TxTimestamp, L1HandlerTransaction, Transaction};
+    use std::sync::Arc;
+
+    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
+        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
+    }
+
+    fn validated_l1_handler_tx(tx_hash: Felt) -> ValidatedTransaction {
+        ValidatedTransaction {
+            transaction: Transaction::L1Handler(L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: 0,
+                contract_address: Felt::ONE,
+                entry_point_selector: Felt::TWO,
+                calldata: Default::default(),
+            }),
+            paid_fee_on_l1: Some(0),
+            contract_address: Felt::ONE,
+            arrived_at: TxTimestamp::now(),
+            declared_class: None,
+            hash: tx_hash,
+            charge_fee: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn confirmed_block_hashes_are_collected_and_clear_saved_transactions() {
+        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let tx_hash = Felt::from(123_u64);
+        let tx = validated_l1_handler_tx(tx_hash);
+        backend.write_saved_mempool_transaction(&tx).unwrap();
+        add_test_block(&backend, 0, vec![l1_handler_tx_with_receipt(0, tx_hash)]);
+
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        let view = backend.block_view_on_confirmed(0).unwrap().into();
+        let mut removed = HashMap::from([(tx_hash, Arc::new(tx))]);
+        let mut confirmed_tx_hashes = Vec::new();
+
+        mempool
+            .update_block_transaction_statuses(&view, [(0, tx_hash)], &mut removed, &mut confirmed_tx_hashes)
+            .unwrap();
+
+        assert!(removed.is_empty());
+        assert_eq!(confirmed_tx_hashes, [tx_hash]);
+
+        mempool.remove_saved_txs_by_hashes(confirmed_tx_hashes);
+
+        assert!(saved_mempool_txs(&backend).is_empty());
+    }
+}

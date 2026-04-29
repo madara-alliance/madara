@@ -360,12 +360,18 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         .await
         .expect("Failed to submit task to Atlantic service");
 
-    let mut last_status = None;
+    let mut current_retry = 0;
 
-    for current_retry in 0..MAX_RETRIES.min(3) {
-        // Give Atlantic a short window to index the job before fetching its status.
-        tokio::time::sleep(RETRY_DELAY.min(std::time::Duration::from_secs(5))).await;
+    loop {
+        if current_retry >= MAX_RETRIES {
+            panic!("Maximum retries reached. Test timed out.");
+        }
 
+        // Wait before checking status again
+        tokio::time::sleep(RETRY_DELAY).await;
+        current_retry += 1;
+
+        // Get the current status of the job
         let status_result =
             atlantic_service.atlantic_client.get_job_status(&task_result).await.expect("Failed to get job status");
 
@@ -375,25 +381,17 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
                     assert!(is_mocked, "Expected fact to be mocked but it wasn't");
                 }
 
-                return;
+                break; // Exit the loop when the job is done
             }
             AtlanticQueryStatus::Failed => {
+                // Job failed
                 let error_reason =
                     status_result.atlantic_query.error_reason.unwrap_or_else(|| "Unknown error".to_string());
                 panic!("Job failed with reason: {}", error_reason);
             }
-            status => {
-                last_status = Some(status);
-                if current_retry > 0 {
-                    break;
-                }
+            _ => {
+                continue;
             }
         }
     }
-
-    assert!(
-        matches!(last_status, Some(AtlanticQueryStatus::Received | AtlanticQueryStatus::InProgress)),
-        "Expected a retrievable Atlantic job status, got {:?}",
-        last_status
-    );
 }
