@@ -861,16 +861,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
         metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        let (global_state_root, merklization_timings) =
-            self.apply_to_global_trie(block.header.block_number, [&block.state_diff], block.header.protocol_version)?;
-
-        // Copy merklization timings
-        timings.merklization = merklization_timings.total;
-        timings.contract_trie_root = merklization_timings.contract_trie_root;
-        timings.class_trie_root = merklization_timings.class_trie_root;
-        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
-        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
-        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
+        // Phase 1: Compute the global state root from staged (uncommitted) trie changes.
+        // Nothing is persisted to disk yet — if the custom header hash check fails,
+        // the staged tries are dropped and the DB remains untouched.
+        let merklization_start = Instant::now();
+        let (global_state_root, staged_tries) = self.inner.db.compute_global_trie_staged(
+            &block.state_diff,
+            block.header.protocol_version,
+            block.header.block_number,
+        )?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
@@ -894,9 +893,20 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                 block_gas_prices = ?block.header.gas_prices,
                 "consuming custom header during block close"
             );
-            let is_valid = header.is_block_hash_as_expected(&block_hash);
-            if !is_valid {
-                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+            if !header.is_block_hash_as_expected(&block_hash) {
+                let msg = format!(
+                    "Block hash mismatch at block #{}: expected={}, computed={}. \
+                     No data has been persisted.",
+                    block.header.block_number, header.expected_block_hash, block_hash,
+                );
+                tracing::warn!(
+                    target: "custom_header",
+                    block_n = block.header.block_number,
+                    expected = ?header.expected_block_hash,
+                    computed = ?block_hash,
+                    "{msg}"
+                );
+                anyhow::bail!(msg);
             }
         }
         let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
@@ -908,6 +918,34 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                 "cleared staged custom headers through closed block"
             );
         }
+
+        // Phase 2: Persist the staged trie changes to RocksDB.
+        let contract_trie_root_duration = staged_tries.contract_trie_root_duration;
+        let class_trie_root_duration = staged_tries.class_trie_root_duration;
+        let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
+
+        // Record total merklization duration (Phase 1 + Phase 2) to match the sync path's
+        // apply_to_global_trie metric which also covers both compute and commit.
+        let merklization_duration = merklization_start.elapsed();
+        let merklization_secs = merklization_duration.as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
+        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
+
+        // Record per-trie root metrics (histogram + gauge)
+        let contract_root_secs = contract_trie_root_duration.as_secs_f64();
+        let class_root_secs = class_trie_root_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_root_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_root_secs, &[]);
+        metrics().class_trie_root_duration.record(class_root_secs, &[]);
+        metrics().class_trie_root_last.record(class_root_secs, &[]);
+
+        // Record merklization timings
+        timings.merklization = merklization_duration;
+        timings.contract_trie_root = contract_trie_root_duration;
+        timings.class_trie_root = class_trie_root_duration;
+        timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
+        timings.contract_trie_commit = contract_trie_timings.trie_commit;
+        timings.class_trie_commit = class_trie_timings.trie_commit;
 
         // Save the block.
 

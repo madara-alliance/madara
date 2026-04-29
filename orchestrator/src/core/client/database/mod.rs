@@ -3,7 +3,8 @@ pub mod error;
 pub mod mongodb;
 
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
@@ -67,6 +68,17 @@ pub trait DatabaseClient: Send + Sync {
         internal_id: u64,
         job_type: &JobType,
     ) -> Result<Option<JobItem>, DatabaseError>;
+
+    /// Get jobs by their internal IDs and type
+    ///
+    /// # Arguments
+    /// * `internal_ids` - Internal identifiers of the jobs
+    /// * `job_type` - The type of job to search for
+    async fn get_jobs_by_internal_ids_and_type(
+        &self,
+        internal_ids: Vec<u64>,
+        job_type: &JobType,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Update a job in the database
     ///
@@ -340,6 +352,9 @@ pub trait DatabaseClient: Send + Sync {
     /// * `block_number` - The block number to search for
     async fn get_aggregator_batch_for_block(&self, block_number: u64)
         -> Result<Option<AggregatorBatch>, DatabaseError>;
+
+    /// Get the reverse lookup entry for a specific block number.
+    async fn get_block_batch_lookup(&self, block_number: u64) -> Result<Option<BlockBatchLookup>, DatabaseError>;
 
     /// Get the first SNOS batch in an Aggregator batch
     async fn get_start_snos_batch_for_aggregator(

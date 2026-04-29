@@ -201,6 +201,8 @@ pub struct Config {
     chain_details: ChainDetails,
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// Optional reference node client for replay bounds validation
+    replay_bounds_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The Madara feeder gateway client for fetching builtins
     madara_feeder_gateway_client: Arc<RestClient>,
     /// Batch RPC client for efficient batch queries
@@ -248,6 +250,7 @@ impl Config {
             params,
             chain_details,
             madara_rpc_client,
+            replay_bounds_client: None,
             madara_feeder_gateway_client,
             batch_rpc_client,
             database,
@@ -309,6 +312,10 @@ impl Config {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
         let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
+        let replay_bounds_client = run_cmd
+            .replay_bounds_rpc_url
+            .as_ref()
+            .map(|url| Arc::new(JsonRpcClient::new(HttpTransport::new(url.clone()))));
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -330,6 +337,10 @@ impl Config {
                 })?;
         info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
+        if let Some(ref url) = run_cmd.replay_bounds_rpc_url {
+            info!(reference_rpc_url = %url, "Replay bounds validation enabled");
+        }
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(
             &prover_config,
@@ -347,6 +358,7 @@ impl Config {
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
+            replay_bounds_client,
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             batch_rpc_client,
             database,
@@ -538,6 +550,11 @@ impl Config {
     /// Returns the Madara client
     pub fn madara_rpc_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
         &self.madara_rpc_client
+    }
+
+    /// Returns the replay bounds reference client, if configured
+    pub fn replay_bounds_client(&self) -> Option<&Arc<JsonRpcClient<HttpTransport>>> {
+        self.replay_bounds_client.as_ref()
     }
 
     /// Returns the Madara feeder gateway client

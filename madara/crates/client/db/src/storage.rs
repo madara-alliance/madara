@@ -1,7 +1,7 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
 use crate::rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
-use crate::rocksdb::global_trie::MerklizationTimings;
+use crate::rocksdb::global_trie::{MerklizationTimings, StagedGlobalTries};
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
@@ -239,6 +239,13 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
         protocol_version: StarknetVersion,
     ) -> Result<(Felt, MerklizationTimings)>;
+
+    fn compute_global_trie_staged(
+        &self,
+        state_diff: &StateDiff,
+        protocol_version: StarknetVersion,
+        block_number: u64,
+    ) -> Result<(Felt, StagedGlobalTries)>;
 
     fn flush(&self) -> Result<()>;
 

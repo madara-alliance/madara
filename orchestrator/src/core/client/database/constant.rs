@@ -14,6 +14,12 @@ pub const SNOS_BATCHES_COLLECTION: &str = "snos_batches";
 /// maintain state for proof generation and settlement.
 pub const AGGREGATOR_BATCHES_COLLECTION: &str = "aggregator_batches";
 
+/// Collection name for per-block reverse lookups into batch membership.
+///
+/// Each document is keyed by a concrete block number and stores the SNOS and
+/// aggregator batch indices that currently own that block.
+pub const BLOCK_BATCH_LOOKUPS_COLLECTION: &str = "block_batch_lookups";
+
 /// Legacy collection name for batches (deprecated)
 ///
 /// This was previously used for storing both SNOS and Aggregator batches
