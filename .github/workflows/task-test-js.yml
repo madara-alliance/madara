@@ -70,7 +70,7 @@ jobs:
             --rpc-external \
             --rpc-admin \
             --devnet \
-            --chain-config-path madara/crates/tests/test_devnet.yaml \
+            --preset devnet \
             --l1-gas-price 0 \
             --blob-gas-price 0 \
             --strk-per-eth 1 \
