@@ -3,6 +3,7 @@ use alloy::providers::ProviderBuilder;
 use cairo_vm::Felt252;
 use starknet_core::types::Felt;
 
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
@@ -11,6 +12,7 @@ use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+use orchestrator_mock_service::MockProverService;
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
@@ -49,23 +51,41 @@ use crate::{
 use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
-/// Starknet versions supported by the service
+/// Starknet versions supported by the service.
+///
+/// The last entry in the list is automatically exposed as
+/// [`SUPPORTED_STARKNET_VERSION`] — the single version this orchestrator build
+/// is pinned to for DA encoding and batching. To bump the supported version,
+/// simply append a new variant at the end of the list.
 macro_rules! versions {
-    ($(($variant:ident, $version:expr)),* $(,)?) => {
+    // Entry point: forward all items to the token-munching helper.
+    ($(($variant:ident, $version:expr)),+ $(,)?) => {
+        versions!(@munch [] $(($variant, $version)),+);
+    };
+
+    // Recursive case: shift the first item into the accumulator and continue.
+    (@munch [$($accum:tt)*] ($v:ident, $s:expr), $($rest:tt)+) => {
+        versions!(@munch [$($accum)* ($v, $s),] $($rest)+);
+    };
+
+    // Terminal case: one entry remains — that is the latest supported version.
+    (@munch [$(($variant:ident, $version:expr),)*] ($last_v:ident, $last_s:expr)) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         pub enum StarknetVersion {
-            $($variant),*
+            $($variant,)*
+            $last_v,
         }
 
         impl StarknetVersion {
             pub fn to_string(&self) -> &'static str {
                 match self {
-                    $(Self::$variant => $version),*
+                    $(Self::$variant => $version,)*
+                    Self::$last_v => $last_s,
                 }
             }
 
             pub fn supported() -> &'static [StarknetVersion] {
-                &[$(Self::$variant),*]
+                &[$(Self::$variant,)* Self::$last_v]
             }
 
             pub fn is_supported(&self) -> bool {
@@ -79,15 +99,18 @@ macro_rules! versions {
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 match s {
                     $($version => Ok(Self::$variant),)*
+                    $last_s => Ok(Self::$last_v),
                     _ => Err(format!("Unknown version: {}", s)),
                 }
             }
         }
 
-        /// Making 0.13.3 as the default version for now
+        /// Aligned with [`SUPPORTED_STARKNET_VERSION`] so `#[derive(Default)]`
+        /// on structs embedding `StarknetVersion` (e.g. batch metadata) yields
+        /// the single version this build actually supports.
         impl Default for StarknetVersion {
             fn default() -> Self {
-                Self::V0_13_3
+                SUPPORTED_STARKNET_VERSION
             }
         }
 
@@ -115,12 +138,20 @@ macro_rules! versions {
                 StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
-    }
+
+        /// The single Starknet version supported by this orchestrator build.
+        /// Automatically derived from the last entry of the `versions!` list —
+        /// used for DA blob encoding decisions and enforced during batching.
+        pub const SUPPORTED_STARKNET_VERSION: StarknetVersion = StarknetVersion::$last_v;
+    };
 }
 
-// Add more versions here whenever necessary. Follow the following rules:
-// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
-// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+// All known Starknet versions. The enum is needed for parsing block versions from RPC
+// responses and for version comparisons in compression/DA encoding logic.
+//
+// Rules:
+// 1. Versions must be ordered (e.g., 0.15.0 must come after 0.14.0)
+// 2. The last entry is automatically the supported version — to bump, append a new entry.
 versions!(
     (V0_13_2, "0.13.2"),
     (V0_13_3, "0.13.3"),
@@ -134,7 +165,6 @@ versions!(
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_feeder_gateway_url: Url,
-    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
@@ -154,18 +184,28 @@ pub struct ConfigParam {
     pub da_public_keys: Option<Vec<Felt>>,
 }
 
+// Re-export so downstream modules can `use crate::core::config::ProverKind;`.
+pub use crate::types::params::prover::ProverKind;
+
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
+    /// Which prover backend is active. Stored so handlers can branch on it
+    /// without plumbing the full `ProverConfig` around.
+    prover_kind: ProverKind,
     /// The orchestrator config
     pub params: ConfigParam,
     /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
     chain_details: ChainDetails,
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// Optional reference node client for replay bounds validation
+    replay_bounds_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The Madara feeder gateway client for fetching builtins
     madara_feeder_gateway_client: Arc<RestClient>,
+    /// Batch RPC client for efficient batch queries
+    batch_rpc_client: BatchRpcClient,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
     /// The service that produces proof and registers it onchain
@@ -193,6 +233,7 @@ impl Config {
         chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
         madara_feeder_gateway_client: Arc<RestClient>,
+        batch_rpc_client: BatchRpcClient,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
         lock: Box<dyn LockClient>,
@@ -204,10 +245,13 @@ impl Config {
     ) -> Self {
         Self {
             layer,
+            prover_kind: ProverKind::Atlantic,
             params,
             chain_details,
             madara_rpc_client,
+            replay_bounds_client: None,
             madara_feeder_gateway_client,
+            batch_rpc_client,
             database,
             lock,
             storage,
@@ -236,6 +280,7 @@ impl Config {
 
         let prover_config =
             ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
+        let prover_kind = prover_config.kind();
         let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
@@ -250,7 +295,6 @@ impl Config {
                 .madara_feeder_gateway_url
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
-            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
@@ -266,6 +310,11 @@ impl Config {
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
+        let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
+        let replay_bounds_client = run_cmd
+            .replay_bounds_rpc_url
+            .as_ref()
+            .map(|url| Arc::new(JsonRpcClient::new(HttpTransport::new(url.clone()))));
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -287,6 +336,10 @@ impl Config {
                 })?;
         info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
+        if let Some(ref url) = run_cmd.replay_bounds_rpc_url {
+            info!(reference_rpc_url = %url, "Replay bounds validation enabled");
+        }
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(
             &prover_config,
@@ -300,10 +353,13 @@ impl Config {
 
         Ok(Self {
             layer,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
+            replay_bounds_client,
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
+            batch_rpc_client,
             database,
             lock,
             storage,
@@ -323,6 +379,11 @@ impl Config {
     /// Returns the chain details fetched from the node at startup
     pub fn chain_details(&self) -> &ChainDetails {
         &self.chain_details
+    }
+
+    /// Which prover backend is active.
+    pub fn prover_kind(&self) -> ProverKind {
+        self.prover_kind
     }
 
     pub(crate) async fn build_database_client(
@@ -382,9 +443,7 @@ impl Config {
         da_public_keys: Option<Vec<Felt>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
                 atlantic_params,
                 &params.prover_layout_name,
@@ -392,6 +451,7 @@ impl Config {
                 fee_token_address,
                 da_public_keys,
             )),
+            ProverConfig::Mock(mock_params) => Box::new(MockProverService::new_with_args(mock_params)),
         }
     }
 
@@ -426,7 +486,7 @@ impl Config {
                     info!("Mock Atlantic server started successfully");
                 }
             }
-            ProverConfig::Sharp(_) => {
+            ProverConfig::Sharp(_) | ProverConfig::Mock(_) => {
                 tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
@@ -491,9 +551,19 @@ impl Config {
         &self.madara_rpc_client
     }
 
+    /// Returns the replay bounds reference client, if configured
+    pub fn replay_bounds_client(&self) -> Option<&Arc<JsonRpcClient<HttpTransport>>> {
+        self.replay_bounds_client.as_ref()
+    }
+
     /// Returns the Madara feeder gateway client
     pub fn madara_feeder_gateway_client(&self) -> &Arc<RestClient> {
         &self.madara_feeder_gateway_client
+    }
+
+    /// Returns the batch RPC client for efficient batch queries
+    pub fn batch_rpc_client(&self) -> &BatchRpcClient {
+        &self.batch_rpc_client
     }
 
     /// Returns the server config

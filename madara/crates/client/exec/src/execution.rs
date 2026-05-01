@@ -1,3 +1,4 @@
+use crate::metrics::TxExecutionTimer;
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -7,7 +8,7 @@ use blockifier::transaction::objects::{HasRelatedFeeType, TransactionInfoCreator
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mc_db::MadaraStorageRead;
-use mp_convert::ToFelt;
+use mp_convert::{Felt, ToFelt};
 use mp_receipt::RevertErrorExt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
@@ -15,6 +16,7 @@ use starknet_api::core::{ClassHash, ContractAddress, Nonce};
 use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::{TransactionHash, TransactionVersion};
+use std::collections::HashSet;
 
 impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -27,13 +29,16 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
+            let tx_type = tx.tx_type();
             tracing::debug!("executing {:#x}", hash.to_felt());
+            let timer = TxExecutionTimer::new();
             tx.execute(&mut self.state, &self.block_context).map_err(|err| TxExecError {
                 view: format!("{}", self.view()),
                 hash,
                 index,
                 err,
             })?;
+            timer.finish(tx_type);
             executed_prev += 1;
         }
 
@@ -60,8 +65,10 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
+                let timer = TxExecutionTimer::new();
                 let mut execution_info =
                     tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
+                timer.finish(tx_type);
 
                 execution_info.revert_error = execution_info.revert_error.take().map(|e| e.format_for_receipt());
 
@@ -69,7 +76,31 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .to_state_diff()
                     .map_err(TransactionExecutionError::StateError)
                     .map_err(make_reexec_error)?;
+
+                // Determine which addresses are new deployments vs class replacements.
+                // If the initial class hash was ClassHash::default() (zero), the contract
+                // didn't exist before this tx, so it's a deployment. Otherwise it's a replacement.
+                let initial_reads = transactional_state
+                    .get_initial_reads()
+                    .map_err(TransactionExecutionError::StateError)
+                    .map_err(make_reexec_error)?;
+                let deployed_contracts: HashSet<Felt> = state_diff
+                    .state_maps
+                    .class_hashes
+                    .keys()
+                    .filter(|addr| initial_reads.class_hashes.get(addr).is_none_or(|ch| *ch == ClassHash::default()))
+                    .map(|addr| addr.to_felt())
+                    .collect();
+
                 transactional_state.commit();
+
+                // Check if this is a deprecated (Cairo 0) class declaration (DeclareV0/V1).
+                let deprecated_declared_class = match &tx {
+                    Transaction::Account(AccountTransaction {
+                        tx: ApiAccountTransaction::Declare(declare_tx), ..
+                    }) if declare_tx.version() < TransactionVersion::TWO => Some(declare_tx.class_hash().to_felt()),
+                    _ => None,
+                };
 
                 let gas_vector_computation_mode = match tx {
                     Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
@@ -84,6 +115,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     execution_info,
                     gas_vector_computation_mode,
                     state_diff: state_diff.state_maps.into(),
+                    deployed_contracts,
+                    deprecated_declared_class,
                 })
             })
             .collect::<Result<Vec<_>, _>>()

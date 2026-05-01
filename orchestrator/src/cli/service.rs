@@ -1,5 +1,11 @@
 use clap::Args;
 
+/// Timeout for marking the job as stale if the job is stuck in LockedForProcessing for more than this time.
+///
+/// NOTE: This is used for determining `QUEUE_VISIBILITY_TIMEOUT_SECONDS` in `orchestrator/src/types/queue_control.rs`.
+/// This value must be lower than `QUEUE_VISIBILITY_TIMEOUT_SECONDS` for orphan healing logic to work properly.
+pub const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
+
 fn parse_positive_usize(s: &str) -> Result<usize, String> {
     let value: usize = s.parse().map_err(|_| format!("'{}' is not a valid number", s))?;
     if value == 0 {
@@ -30,14 +36,48 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
 
-    /// Timeout in seconds for jobs stuck in LockedForProcessing status before self-healing recovery.
-    #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
-    pub job_processing_timeout_seconds: u64,
+    /// The maximum number of aggregator jobs to process concurrently.
+    /// Relevant when the aggregator runs locally (SHARP / Mock paths).
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS", long)]
+    pub max_concurrent_aggregator_jobs: Option<usize>,
+
+    /// Timeout in seconds for SNOS jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub snos_job_timeout_seconds: u64,
+
+    /// Timeout in seconds for Proving jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_PROVING_JOB_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub proving_job_timeout_seconds: u64,
+
+    /// Timeout in seconds for Proof Registration jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_PROOF_REGISTRATION_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub proof_registration_timeout_seconds: u64,
+
+    /// Timeout in seconds for Data Submission jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_DATA_SUBMISSION_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub data_submission_timeout_seconds: u64,
+
+    /// Timeout in seconds for State Transition jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_STATE_TRANSITION_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub state_transition_timeout_seconds: u64,
+
+    /// Timeout in seconds for Aggregator jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_AGGREGATOR_JOB_TIMEOUT_SECONDS", long, default_value_t = DEFAULT_TIMEOUT_SECONDS)]
+    pub aggregator_job_timeout_seconds: u64,
 
     /// Target number of SNOS jobs to maintain in the processing pipeline/buffer.
     /// New jobs are created when the buffer drops below this size.
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_BUFFER_SIZE", long, default_value = "50")]
     pub snos_job_buffer_size: u64,
+
+    /// Target number of aggregator jobs to maintain in the [oldest-incomplete, latest]
+    /// window. Caps creation — not processing concurrency (see
+    /// `--max-concurrent-aggregator-jobs`). Needed because state updates must
+    /// run in strict batch-index order, so a stalled lower-batch aggregator
+    /// would otherwise let an unbounded pile of higher-batch Created jobs
+    /// accumulate behind it.
+    #[arg(env = "MADARA_ORCHESTRATOR_AGGREGATOR_JOB_BUFFER_SIZE", long, default_value = "5")]
+    pub aggregator_job_buffer_size: u64,
 
     /// Maximum number of messages allowed in the priority queue. Must be greater than 0.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", long, default_value = "20", value_parser = parse_positive_usize)]

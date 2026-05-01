@@ -1,8 +1,10 @@
 use crate::{
     prelude::*,
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
+    storage::{L1ToL2MessageIndexEntry, L1ToL2MessagesByL1TxHash},
 };
 use mp_convert::Felt;
+use mp_convert::L1TransactionHash;
 use mp_receipt::L1HandlerTransactionReceipt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rocksdb::ReadOptions;
@@ -10,12 +12,26 @@ use rocksdb::ReadOptions;
 /// <core_contract_nonce 8 bytes> => bincode(pending message)
 pub const L1_TO_L2_PENDING_MESSAGE_BY_NONCE: Column =
     Column::new("l1_to_l2_pending_message_by_nonce").set_point_lookup();
+/// <core_contract_nonce 8 bytes> => <l1_tx_hash 32 bytes>
+pub const L1_TO_L2_L1_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_l1_txn_hash_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => txn hash
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
+/// <core_contract_nonce 8 bytes> => l1 block number (u64 be)
+pub const L1_TO_L2_L1_BLOCK_BY_NONCE: Column = Column::new("l1_to_l2_l1_block_by_nonce").set_point_lookup();
+
+/// <l1_tx_hash 32 bytes> + <core_contract_nonce 8 bytes> => <l2_tx_hash 32 bytes> | empty
+///
+/// This is the secondary index used by `starknet_getMessagesStatus` to avoid O(N) scans at RPC time.
+/// - Key prefix: 32 bytes of `l1_tx_hash` allows prefix iteration for all messages sent by the same L1 tx.
+/// - Value:
+///   - empty => "seen/received marker" (message emitted on L1, but no consumed L1-handler tx known yet)
+///   - 32 bytes => consumed L1-handler L2 transaction hash (felt bytes)
+pub const L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE: Column =
+    Column::new("l1_to_l2_l2_txn_hash_by_l1_txn_hash_and_nonce").with_prefix_extractor_len(32);
 
 impl RocksDBStorageInner {
     /// Also removed the given txns from the pending column.
-    pub(super) fn messages_to_l2_write_trasactions<'a>(
+    pub(super) fn messages_to_l2_write_transactions<'a>(
         &self,
         txs: impl IntoIterator<Item = (&'a L1HandlerTransaction, &'a L1HandlerTransactionReceipt)>,
     ) -> Result<()> {
@@ -24,13 +40,152 @@ impl RocksDBStorageInner {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
 
         for (txn, receipt) in txs {
-            let key = txn.nonce.to_be_bytes();
-            batch.delete_cf(&pending_cf, key);
-            batch.put_cf(&on_l2_cf, key, receipt.transaction_hash.to_bytes_be());
+            self.add_message_to_l2_consumed_transaction_ops(&mut batch, &pending_cf, &on_l2_cf, txn, receipt)?;
         }
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
+    }
+
+    fn add_message_to_l2_consumed_transaction_ops(
+        &self,
+        batch: &mut WriteBatchWithTransaction,
+        pending_cf: &Arc<rocksdb::BoundColumnFamily<'_>>,
+        on_l2_cf: &Arc<rocksdb::BoundColumnFamily<'_>>,
+        txn: &L1HandlerTransaction,
+        receipt: &L1HandlerTransactionReceipt,
+    ) -> Result<()> {
+        let nonce_key = txn.nonce.to_be_bytes();
+
+        batch.delete_cf(pending_cf, nonce_key);
+        batch.put_cf(on_l2_cf, nonce_key, receipt.transaction_hash.to_bytes_be());
+
+        if let Some(l1_tx_hash) = self.get_l1_txn_hash_by_nonce(txn.nonce)? {
+            let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+            let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, txn.nonce);
+            batch.put_cf(&by_l1_tx_hash_cf, by_l1_key, receipt.transaction_hash.to_bytes_be());
+        }
+
+        Ok(())
+    }
+
+    fn message_to_l2_by_l1_tx_key(l1_tx_hash: &L1TransactionHash, core_contract_nonce: u64) -> [u8; 40] {
+        let mut key = [0u8; 40];
+        key[..32].copy_from_slice(&l1_tx_hash.0);
+        key[32..].copy_from_slice(&core_contract_nonce.to_be_bytes());
+        key
+    }
+
+    pub(super) fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<L1ToL2MessageIndexEntry>> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        let Some(existing) = self.db.get_pinned_cf(&cf, key)? else { return Ok(None) };
+        Ok(Some(Self::parse_l1_to_l2_message_status(&existing)?))
+    }
+
+    fn parse_l1_to_l2_message_status(raw: &[u8]) -> Result<L1ToL2MessageIndexEntry> {
+        match raw.len() {
+            0 => Ok(L1ToL2MessageIndexEntry::Seen),
+            32 => {
+                Ok(L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(raw.try_into().expect("slice len checked"))))
+            }
+            n => bail!("Invalid l1->l2 message value length: expected 0 or 32, got {n}"),
+        }
+    }
+
+    /// Insert the `(l1_tx_hash, nonce)` key with an empty marker value, if it is missing.
+    ///
+    /// Returns:
+    /// - `Ok(true)` if the marker was inserted.
+    /// - `Ok(false)` if the key already existed (empty marker or consumed tx hash).
+    pub(super) fn insert_message_to_l2_seen_marker(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<bool> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        if self.db.get_pinned_cf(&cf, key)?.is_some() {
+            return Ok(false);
+        }
+        self.db.put_cf_opt(&cf, key, [], &self.writeopts)?;
+        Ok(true)
+    }
+
+    /// Write/update the consumed L1-handler L2 transaction hash for `(l1_tx_hash, nonce)`.
+    pub(super) fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        self.db.put_cf_opt(&cf, key, l2_tx_hash.to_bytes_be(), &self.writeopts)?;
+        Ok(())
+    }
+
+    /// Get all messages (nonces) for a given L1 tx, in L1 sending order (nonce order).
+    ///
+    /// Returns:
+    /// - `Ok(None)` if the L1 tx hash is unknown to the node.
+    /// - `Ok(Some(vec))` for known hashes (values may be `None` for not-yet-consumed messages).
+    pub(super) fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+    ) -> Result<Option<L1ToL2MessagesByL1TxHash>> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let prefix = l1_tx_hash.0.as_slice();
+
+        // We use RocksDB's standard iterator here (owned key/value) since we need to stop once
+        // the prefix no longer matches.
+        let iter = self.db.iterator_cf(&cf, rocksdb::IteratorMode::From(prefix, rocksdb::Direction::Forward));
+
+        let mut out = Vec::new();
+        for kv in iter {
+            let (key, val) = kv?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if key.len() != 40 {
+                bail!("Invalid l1->l2 message key length: expected 40, got {}", key.len());
+            }
+            let nonce = u64::from_be_bytes(key[32..40].try_into().expect("slice len checked"));
+            let l2_hash = match Self::parse_l1_to_l2_message_status(&val)? {
+                L1ToL2MessageIndexEntry::Seen => None,
+                L1ToL2MessageIndexEntry::Consumed(tx_hash) => Some(tx_hash),
+            };
+            out.push((nonce, l2_hash));
+        }
+
+        if out.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(out))
+        }
+    }
+
+    pub(super) fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &L1TransactionHash,
+    ) -> Result<()> {
+        let cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        self.db.put_cf_opt(&cf, core_contract_nonce.to_be_bytes(), l1_tx_hash.0, &self.writeopts)?;
+        Ok(())
+    }
+
+    pub(super) fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<L1TransactionHash>> {
+        let cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        let Some(res) = self.db.get_pinned_cf(&cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
+        if res.len() != 32 {
+            bail!("Invalid l1->l2 nonce->l1_tx_hash value length: expected 32, got {}", res.len());
+        }
+        Ok(Some(L1TransactionHash(res.as_ref().try_into().expect("slice len checked"))))
     }
 
     /// If the message is already pending, this will overwrite it.
@@ -70,6 +225,22 @@ impl RocksDBStorageInner {
         iter.next().transpose()?.transpose().map_err(Into::into)
     }
 
+    pub(super) fn get_all_pending_message_nonces(&self) -> Result<Vec<u64>> {
+        let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        let iter = DBIterator::new_cf(&self.db, &pending_cf, ReadOptions::default(), rocksdb::IteratorMode::Start)
+            .into_iter_keys(|k| k.to_vec());
+
+        let mut nonces = Vec::new();
+        for key in iter {
+            let key = key?;
+            if key.len() != size_of::<u64>() {
+                bail!("Invalid pending message nonce key length: expected 8, got {}", key.len());
+            }
+            nonces.push(u64::from_be_bytes(key.as_slice().try_into().expect("slice len checked")));
+        }
+        Ok(nonces)
+    }
+
     pub(super) fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
         let Some(res) = self.db.get_pinned_cf(&on_l2_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
@@ -79,6 +250,20 @@ impl RocksDBStorageInner {
     pub(super) fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
         self.db.put_cf_opt(&on_l2_cf, core_contract_nonce.to_be_bytes(), txn_hash.to_bytes_be(), &self.writeopts)?;
+        Ok(())
+    }
+
+    pub(super) fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
+        let Some(res) = self.db.get_pinned_cf(&source_cf, core_contract_nonce.to_be_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(u64::from_be_bytes(res[..].try_into().context("Deserializing l1 source block from DB")?)))
+    }
+
+    pub(super) fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
+        self.db.put_cf_opt(&source_cf, core_contract_nonce.to_be_bytes(), l1_block_n.to_be_bytes(), &self.writeopts)?;
         Ok(())
     }
 
@@ -92,5 +277,113 @@ impl RocksDBStorageInner {
             batch.delete_cf(&on_l2_cf, core_contract_nonce.to_be_bytes());
         }
         Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_pending(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&pending_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_for_nonces(
+        &self,
+        nonces: &[u64],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        if nonces.is_empty() {
+            return Ok(());
+        }
+
+        // get the keys for deleting from (nonce|l1_hash -> l2_hash) mapping column before we delete from (nonce -> l1 hash) mapping column
+        let l1_tx_hash_mappings: Vec<_> = nonces
+            .iter()
+            .copied()
+            .filter_map(|nonce| self.get_l1_txn_hash_by_nonce(nonce).transpose().map(|hash| hash.map(|h| (nonce, h))))
+            .collect::<Result<_>>()?;
+
+        self.message_to_l2_remove_txns(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_pending(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_block_by_nonces(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_txn_hash_by_nonces(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(l1_tx_hash_mappings, batch)?;
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_l1_txn_hash_by_nonces(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let l1_txn_hash_cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&l1_txn_hash_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(
+        &self,
+        l1_tx_hash_mappings: impl IntoIterator<Item = (u64, L1TransactionHash)>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        for (core_contract_nonce, l1_tx_hash) in l1_tx_hash_mappings {
+            let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, core_contract_nonce);
+            batch.delete_cf(&by_l1_tx_hash_cf, by_l1_key);
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_l1_block_by_nonces(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&source_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::seen(&[])]
+    #[case::consumed(&[
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+    ])]
+    fn parse_l1_to_l2_message_status_parses_known_encodings(#[case] raw: &[u8]) {
+        let expected = match raw.len() {
+            0 => L1ToL2MessageIndexEntry::Seen,
+            32 => {
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(raw);
+                L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(&bytes))
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(RocksDBStorageInner::parse_l1_to_l2_message_status(raw).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::invalid_len_1(&[0u8])]
+    #[case::invalid_len_31(&[0u8; 31])]
+    #[case::invalid_len_33(&[0u8; 33])]
+    fn parse_l1_to_l2_message_status_rejects_invalid_sizes(#[case] raw: &[u8]) {
+        let err = RocksDBStorageInner::parse_l1_to_l2_message_status(raw)
+            .expect_err("invalid message value length should be rejected");
+        assert!(err.to_string().contains("expected 0 or 32"));
     }
 }

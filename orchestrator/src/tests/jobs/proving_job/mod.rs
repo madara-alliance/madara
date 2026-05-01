@@ -33,7 +33,7 @@ async fn test_create_job() {
         specific: JobSpecificMetadata::Proving(ProvingMetadata::default()),
     };
 
-    let job = ProvingJobHandler.create_job(String::from("0"), metadata).await;
+    let job = ProvingJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -50,7 +50,7 @@ async fn test_create_job() {
 #[tokio::test]
 async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
-    prover_client.expect_get_task_status().times(1).returning(|_, _, _, _| Ok(TaskStatus::Succeeded));
+    prover_client.expect_get_task_status().times(1).returning(|_, _, _| Ok(TaskStatus::Succeeded));
 
     let services = TestConfigBuilder::new().configure_prover_client(prover_client.into()).build().await;
 
@@ -105,7 +105,7 @@ async fn test_process_job() {
                 services.config,
                 &mut JobItem {
                     id: Uuid::default(),
-                    internal_id: "0".into(),
+                    internal_id: 0,
                     job_type: JobType::ProofCreation,
                     status: JobStatus::Created,
                     external_id: String::new().into(),

@@ -9,3 +9,6 @@
 //! 4. Update `.db-versions.yml`
 
 pub mod revision_0009;
+pub mod revision_0010;
+pub mod revision_0011;
+pub mod revision_0012;

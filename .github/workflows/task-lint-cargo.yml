@@ -34,13 +34,7 @@ jobs:
 
       - name: Cargo fmt
         run: |
-          cargo fmt -- --check
-
-          # TODO(mehul 21/11/2025, hotfix): This is a temporary fix to ensure that the madara is fmt checked.
-          # Madara does not belong to the toplevel workspace, so we need to lint it separately.
-          # Remove this once we add madara back to toplevel workspace. 
-          cd madara
-          cargo fmt -- --check
+          cargo fmt --all -- --check
 
       - name: Python Cairo setup (before clippy)
         uses: ./.github/actions/setup-python-cairo
@@ -50,15 +44,5 @@ jobs:
       - name: Cargo Clippy
         run: |
           echo "Running cargo clippy..."
-          cargo clippy --workspace --no-deps -- -D warnings
-          cargo clippy --workspace --tests --no-deps -- -D warnings
-
-          # TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
-          # Madara does not belong to the toplevel workspace, so we need to lint it separately.
-          # Remove this once we add madara back to toplevel workspace.
-
-          echo "Running cargo clippy for madara..."
-          cd madara
-          cargo clippy --workspace --no-deps -- -D warnings
-          cargo clippy --workspace --tests --no-deps -- -D warnings
-          cd ..
+          cargo clippy --workspace --all-features --no-deps -- -D warnings
+          cargo clippy --workspace --all-features --tests --no-deps -- -D warnings

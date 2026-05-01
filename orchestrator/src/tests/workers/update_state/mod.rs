@@ -12,6 +12,7 @@ use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::Layer;
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -26,7 +27,7 @@ async fn update_state_worker_with_pending_jobs() {
         .await;
 
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(1, unique_id);
     job_item.status = JobStatus::PendingVerification;
     job_item.job_type = JobType::StateTransition;
     services.config.database().create_job(job_item).await.unwrap();
@@ -34,7 +35,7 @@ async fn update_state_worker_with_pending_jobs() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.status, JobStatus::PendingVerification);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
     assert_eq!(latest_job.id, unique_id);
@@ -62,14 +63,14 @@ async fn update_state_worker_first_block() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
 
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -95,7 +96,42 @@ async fn update_state_worker_first_block_missing() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     // update state worker should not create any job
-    assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().is_none());
+    assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn update_state_worker_does_not_starve_first_block_with_large_backlog() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_layer(Layer::L2)
+        .build()
+        .await;
+
+    for block_number in 1..=550 {
+        let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), block_number, JobStatus::Completed)
+            .await
+            .unwrap();
+    }
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
+
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
+
+    let latest_job =
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
+    assert_eq!(latest_job.status, JobStatus::Created);
+    assert_eq!(latest_job.job_type, JobType::StateTransition);
+
+    let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
+    let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Batch context") };
+    assert_eq!(data.to_settle, 1, "Expected the oldest completed parent batch to be processed first");
 }
 
 #[rstest]
@@ -122,7 +158,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     // update state worker should not create any job
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
@@ -130,7 +166,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -150,35 +186,20 @@ async fn update_state_worker_continues_from_previous_state_update() {
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 5, JobStatus::Completed).await.unwrap();
 
     // add state transition job for blocks 0-4
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), Uuid::new_v4());
+    let mut job_item = get_job_item_mock_by_id(0, Uuid::new_v4());
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        tx_hashes: Vec::new(),
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
+        tx_hash: None,
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
+        storage_artifacts_tagged_at: None,
     };
 
     job_item.metadata =
@@ -192,7 +213,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     // update state worker should not create any job
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
@@ -200,7 +221,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![5]);
+    assert_eq!(data.to_settle, 5);
 }
 
 #[rstest]
@@ -222,35 +243,20 @@ async fn update_state_worker_next_block_missing() {
 
     // add state transition job for blocks 0-4
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(0, unique_id);
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        tx_hashes: Vec::new(),
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
+        tx_hash: None,
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
+        storage_artifacts_tagged_at: None,
     };
 
     job_item.metadata =
@@ -264,6 +270,6 @@ async fn update_state_worker_next_block_missing() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.id, unique_id);
 }

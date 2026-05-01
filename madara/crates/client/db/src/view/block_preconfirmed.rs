@@ -391,6 +391,70 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 
         Ok((FullBlockWithoutCommitments { header, state_diff, transactions, events }, classes))
     }
+
+    /// Get old declared contracts (Cairo 0 legacy classes) from per-tx state diffs.
+    /// This is a lightweight operation that only iterates over transactions without DB queries.
+    pub fn get_old_declared_contracts(&self) -> Vec<Felt> {
+        let mut old_declared_contracts: Vec<Felt> = Vec::new();
+
+        let borrow = self.borrow_content();
+        for tx in borrow.executed_transactions() {
+            for (&class_hash, &compiled_class_hash) in &tx.state_diff.declared_classes {
+                if matches!(compiled_class_hash, DeclaredClassCompiledClass::Legacy) {
+                    old_declared_contracts.push(class_hash);
+                }
+            }
+        }
+
+        old_declared_contracts.sort();
+        old_declared_contracts
+    }
+
+    /// Get the set of contract addresses that were newly deployed in this block.
+    /// This is extracted from per-tx state diffs where ClassUpdateItem::DeployedContract was recorded.
+    /// This is a lightweight operation that only iterates over transactions without DB queries.
+    pub fn get_deployed_contracts_set(&self) -> std::collections::HashSet<Felt> {
+        use mp_state_update::ClassUpdateItem;
+
+        let mut deployed_contracts = std::collections::HashSet::new();
+
+        let borrow = self.borrow_content();
+        for tx in borrow.executed_transactions() {
+            for (&address, update) in &tx.state_diff.contract_class_hashes {
+                if matches!(update, ClassUpdateItem::DeployedContract(_)) {
+                    deployed_contracts.insert(address);
+                }
+            }
+        }
+
+        deployed_contracts
+    }
+
+    /// Get the full block with classes, but WITHOUT computing the normalized state diff.
+    /// The returned block has an empty state_diff - caller must provide it separately.
+    /// This avoids the expensive DB queries in get_normalized_state_diff().
+    pub fn get_full_block_without_state_diff(&self) -> Result<(FullBlockWithoutCommitments, Vec<ConvertedClass>)> {
+        let header = self.block.header.clone();
+
+        // We don't care about the candidate transactions.
+        let mut executed_transactions: Vec<_> = self.borrow_content().executed_transactions().cloned().collect();
+
+        let classes: Vec<_> = executed_transactions.iter_mut().filter_map(|tx| tx.declared_class.take()).collect();
+        let transactions: Vec<_> = executed_transactions.into_iter().map(|tx| tx.transaction.clone()).collect();
+        let events = transactions
+            .iter()
+            .flat_map(|tx| {
+                tx.receipt
+                    .events()
+                    .iter()
+                    .cloned()
+                    .map(|event| EventWithTransactionHash { transaction_hash: *tx.receipt.transaction_hash(), event })
+            })
+            .collect();
+
+        // Return with empty state_diff - caller will provide it
+        Ok((FullBlockWithoutCommitments { header, state_diff: StateDiff::default(), transactions, events }, classes))
+    }
 }
 
 /// A notification of a block change on the preconfirmed block.

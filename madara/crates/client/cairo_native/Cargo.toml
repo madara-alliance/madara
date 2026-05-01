@@ -17,12 +17,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-analytics = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
+blockifier = { workspace = true, features = ["cairo_native"] }
 cairo-native = { workspace = true }
 cairo-vm = { workspace = true }
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "2.12.0-dev.1" }

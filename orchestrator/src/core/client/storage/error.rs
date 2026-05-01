@@ -27,4 +27,6 @@ pub enum StorageError {
     ObjectStreamError(String),
     #[error("Invalid Bucket Name is given: {0}")]
     InvalidBucketName(String),
+    #[error("Object not found: {0}")]
+    NotFound(String),
 }

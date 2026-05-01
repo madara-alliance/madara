@@ -27,7 +27,7 @@ use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -88,34 +88,58 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     // Run pre-flight health checks to ensure all dependencies are accessible
     run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;
 
-    // Run the server in a separate tokio spawn task
-    setup_server(config.clone()).await?;
-
-    info!("Application server live!");
+    // Run the server in a separate tokio spawn task and keep the handle
+    let (api_server_url, server_handle) = setup_server(config.clone()).await?;
+    info!("Application server live at {}", api_server_url);
 
     // Set up comprehensive signal handling for Docker/Kubernetes
     debug!("Setting up signal handler for graceful shutdown");
     let mut signal_handler = SignalHandler::new();
     let shutdown_token = signal_handler.get_shutdown_token();
 
-    // Initialize workers and keep the controller for shutdown
-    let worker_controller = initialize_worker(config.clone(), shutdown_token).await?;
+    // Initialize workers and keep the controller and handle for shutdown
+    let (worker_controller, worker_handle) = initialize_worker(config.clone(), shutdown_token).await?;
 
     let shutdown_signal = signal_handler.wait_for_shutdown().await;
 
     info!("Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
 
     // Perform a graceful shutdown with timeout
+    // Collect errors from all components instead of failing fast
     let shutdown_result = signal_handler
         .handle_graceful_shutdown(
             || async {
-                // Graceful shutdown for workers
-                worker_controller.shutdown().await?;
+                let mut had_errors = false;
 
-                // Analytics Shutdown
-                instrumentation.shutdown()?;
+                // 1. Gracefully shutdown the server
+                if let Err(e) = server_handle.shutdown().await {
+                    warn!("Server shutdown error: {:?}", e);
+                    had_errors = true;
+                }
 
-                info!("All components shutdown successfully");
+                // 2. Trigger worker controller shutdown (cancels token and waits for workers)
+                if let Err(e) = worker_controller.shutdown().await {
+                    error!("Worker controller shutdown error: {:?}", e);
+                    had_errors = true;
+                }
+
+                // 3. Wait for the worker task to complete
+                if let Err(e) = worker_handle.await {
+                    error!("Worker task error: {:?}", e);
+                    had_errors = true;
+                }
+
+                // 4. Shutdown OTEL instrumentation
+                if let Err(e) = instrumentation.shutdown() {
+                    error!("OTEL instrumentation shutdown error: {}", e);
+                    had_errors = true;
+                }
+
+                if had_errors {
+                    info!("Shutdown completed with some errors (see warnings above)");
+                } else {
+                    info!("All components shutdown successfully");
+                }
                 Ok(())
             },
             run_cmd.graceful_shutdown_timeout,

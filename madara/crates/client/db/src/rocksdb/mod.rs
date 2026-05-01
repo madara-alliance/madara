@@ -4,8 +4,7 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
-        global_trie::apply_to_global_trie,
-        global_trie::get_state_root,
+        global_trie::{apply_to_global_trie, compute_global_trie_staged, get_state_root, MerklizationTimings},
         meta::StoredChainTipWithoutContent,
         metrics::DbMetrics,
         options::rocksdb_global_options,
@@ -22,6 +21,7 @@ use blockifier::bouncer::BouncerWeights;
 use bonsai_trie::id::BasicId;
 
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
+use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
@@ -35,6 +35,7 @@ mod classes;
 mod column;
 mod events;
 mod events_bloom_filter;
+pub(crate) mod external_outbox;
 mod iter_pinned;
 mod l1_to_l2_messages;
 mod mempool;
@@ -156,10 +157,9 @@ impl RocksDBStorageInner {
                     .collect::<Result<_>>()?;
 
                 self.events_remove_block(block_n, &mut batch)?;
-                self.message_to_l2_remove_txns(
-                    transactions.iter().filter_map(|v| v.transaction.as_l1_handler()).map(|tx| tx.nonce),
-                    &mut batch,
-                )?;
+                let l1_handler_nonces: Vec<u64> =
+                    transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
+                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -355,16 +355,56 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_next_pending_message_to_l2(start_nonce)
             .with_context(|| format!("Getting next pending message to l2 with start_nonce={start_nonce}"))
     }
+    fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
+        self.inner
+            .get_l1_txn_hash_by_nonce(core_contract_nonce)
+            .with_context(|| format!("Getting l1 txn hash by nonce={core_contract_nonce}"))
+    }
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.inner
             .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
             .with_context(|| format!("Getting next pending message to l2 with nonce={core_contract_nonce}"))
+    }
+    fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        self.inner
+            .get_l1_handler_l1_block_by_nonce(core_contract_nonce)
+            .with_context(|| format!("Getting l1 handler l1 block by nonce={core_contract_nonce}"))
+    }
+    fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+        self.inner
+            .get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
+            .with_context(|| format!("Getting messages to l2 by l1_tx_hash_bytes={:?}", l1_tx_hash.0))
+    }
+    fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+        self.inner.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce).with_context(|| {
+            format!(
+                "Getting l1->l2 message index entry l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                l1_tx_hash.0
+            )
+        })
     }
 
     // Mempool
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.inner.get_mempool_transactions().map(|res| res.context("Getting mempool transactions"))
+    }
+    fn get_external_outbox_transactions(
+        &self,
+        limit: usize,
+    ) -> impl Iterator<Item = Result<external_outbox::ExternalOutboxEntry>> + '_ {
+        self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
+    }
+
+    fn get_external_outbox_size_estimate(&self) -> Result<u64> {
+        self.inner.external_outbox_size_estimate().context("Getting external outbox size estimate")
     }
 }
 
@@ -381,7 +421,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Writing transactions {block_n}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
-            .messages_to_l2_write_trasactions(
+            .messages_to_l2_write_transactions(
                 txs.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
             )
             .with_context(|| format!("Updating L1 state when storing transactions for block_n={block_n}"))?;
@@ -447,12 +487,28 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.append_preconfirmed_content(start_tx_index, txs).context("Appending to preconfirmed content to db")
     }
 
+    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
+        self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
+    }
+    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
+        self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
+    }
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         tracing::debug!(
             "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
         );
         self.inner.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash).with_context(|| {
             format!("Writing l1 handler txn hash by nonce nonce={core_contract_nonce} txn_hash={txn_hash:#x}")
+        })
+    }
+    fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        tracing::debug!(
+            "Write l1 handler l1 block by nonce core_contract_nonce={core_contract_nonce}, l1_block_n={l1_block_n}"
+        );
+        self.inner.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n).with_context(|| {
+            format!("Writing l1 handler l1 block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
         })
     }
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
@@ -468,22 +524,65 @@ impl MadaraStorageWrite for RocksDBStorage {
             .remove_pending_message_to_l2(core_contract_nonce)
             .with_context(|| format!("Removing pending message to l2 nonce={core_contract_nonce}"))
     }
+    fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Write l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
+            l1_tx_hash.0
+        );
+        self.inner.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash).with_context(|| {
+            format!(
+                "Writing l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
+                l1_tx_hash.0
+            )
+        })
+    }
 
-    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
-        tracing::debug!("Write chain info");
-        self.inner.write_chain_info(info)
+    fn insert_message_to_l2_seen_marker(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<bool> {
+        tracing::debug!(
+            "Insert l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+            l1_tx_hash.0
+        );
+        self.inner.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce).with_context(|| {
+            format!(
+                "Inserting l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                l1_tx_hash.0
+            )
+        })
+    }
+    fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Write consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
+            l1_tx_hash.0
+        );
+        self.inner.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash).with_context(
+            || {
+                format!(
+                    "Writing consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
+                    l1_tx_hash.0
+                )
+            },
+        )
     }
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
         tracing::debug!("Write devnet keys");
         self.inner.write_devnet_predeployed_keys(devnet_keys).context("Writing devnet predeployed keys to db")
     }
-    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
-        self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
-    }
-    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
-        self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
+    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
+        tracing::debug!("Write chain info");
+        self.inner.write_chain_info(info)
     }
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
@@ -509,18 +608,40 @@ impl MadaraStorageWrite for RocksDBStorage {
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
     }
-
-    fn get_state_root_hash(&self) -> Result<Felt> {
-        get_state_root(self)
+    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<external_outbox::ExternalOutboxId> {
+        let tx_hash = tx.hash;
+        tracing::debug!("Writing external outbox transaction for tx_hash={tx_hash:#x}");
+        self.inner
+            .write_external_outbox(tx)
+            .with_context(|| format!("Writing external outbox transaction for tx_hash={tx_hash:#x}"))
+    }
+    fn delete_external_outbox(&self, id: external_outbox::ExternalOutboxId) -> Result<()> {
+        tracing::debug!("Removing external outbox transaction arrived_at_ms={} uuid={:x?}", id.arrived_at_ms, id.uuid);
+        self.inner
+            .delete_external_outbox(id)
+            .with_context(|| format!("Deleting external outbox transaction arrived_at_ms={}", id.arrived_at_ms))
     }
 
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt> {
+        protocol_version: StarknetVersion,
+    ) -> Result<(Felt, MerklizationTimings)> {
         tracing::debug!("Applying state diff to global trie start_block_n={start_block_n}");
-        apply_to_global_trie(self, start_block_n, state_diffs).context("Applying state diff to global trie")
+        apply_to_global_trie(self, start_block_n, state_diffs, protocol_version)
+            .context("Applying state diff to global trie")
+    }
+
+    fn compute_global_trie_staged(
+        &self,
+        state_diff: &StateDiff,
+        protocol_version: StarknetVersion,
+        block_number: u64,
+    ) -> Result<(Felt, global_trie::StagedGlobalTries)> {
+        tracing::debug!("Computing staged global trie for block_n={block_number}");
+        compute_global_trie_staged(self, state_diff, protocol_version, block_number)
+            .context("Computing staged global trie")
     }
 
     fn flush(&self) -> Result<()> {
@@ -541,6 +662,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .remove_all_blocks_starting_from(starting_from_block_n)
             .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        // This method has no callers outside the trait definition. Use LATEST as default.
+        // If pre-0.14.0 chains need this, thread the version through the trait method.
+        get_state_root(self, StarknetVersion::LATEST)
     }
 
     /// Reverts the blockchain state to a specific block hash during a chain reorganization.
@@ -579,8 +706,12 @@ impl MadaraStorageWrite for RocksDBStorage {
     ///
     /// # Notes
     ///
+    /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
+    ///   are missing source-block mappings, this function fails early without mutating chain state.
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
+    /// * This function does not stop services or shutdown the process. Lifecycle side-effects
+    ///   are managed by upper layers (for example admin RPC orchestration).
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
     /// ```
@@ -621,6 +752,63 @@ impl MadaraStorageWrite for RocksDBStorage {
         if target_block_n > current_tip {
             anyhow::bail!("Cannot revert to block_n={target_block_n} which is > current tip={current_tip}");
         }
+
+        // Preflight L1 messaging rewind before any destructive write.
+        let reverted_l1_handler_nonces = self
+            .inner
+            .collect_reverted_l1_handler_nonces(target_block_n, current_tip)
+            .context("Collecting reverted L1 handler nonces")?;
+        let pending_l1_message_nonces =
+            self.inner.get_all_pending_message_nonces().context("Collecting pending L1 message nonces")?;
+
+        let mut l1_message_nonces_to_cleanup =
+            Vec::with_capacity(reverted_l1_handler_nonces.len() + pending_l1_message_nonces.len());
+        l1_message_nonces_to_cleanup.extend(reverted_l1_handler_nonces.iter().copied());
+        l1_message_nonces_to_cleanup.extend(pending_l1_message_nonces.iter().copied());
+        l1_message_nonces_to_cleanup.sort_unstable();
+        l1_message_nonces_to_cleanup.dedup();
+
+        let mut min_source_l1_block: Option<u64> = None;
+        let mut missing_source_block_nonces = Vec::new();
+
+        for nonce in l1_message_nonces_to_cleanup.iter().copied() {
+            match self
+                .inner
+                .get_l1_handler_l1_block_by_nonce(nonce)
+                .with_context(|| format!("Fetching L1 handler L1 block for cleanup nonce={nonce}"))?
+            {
+                Some(l1_block_n) => {
+                    min_source_l1_block = Some(match min_source_l1_block {
+                        Some(current_min) => current_min.min(l1_block_n),
+                        None => l1_block_n,
+                    });
+                }
+                None => missing_source_block_nonces.push(nonce),
+            }
+        }
+        missing_source_block_nonces.sort_unstable();
+
+        if !missing_source_block_nonces.is_empty() {
+            let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
+            bail!(
+                "Cannot revert: missing L1 handler L1 block mapping for {} L1 message nonce(s) scheduled for cleanup (sample={sample:?}).",
+                missing_source_block_nonces.len()
+            );
+        }
+
+        let rewind_from_l1_block = min_source_l1_block;
+        // Persist the tip one block before the chosen rewind point so next sync replays boundary events.
+        // This is intentional: L1 message ingestion/execution is idempotent by nonce and filters duplicates.
+        let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
+
+        tracing::info!(
+            "🔁 REORG preflight: reverted_l1_handler_nonces={}, pending_l1_message_nonces={}, l1_message_cleanup_nonces={}, min_source_l1_block={:?}, next_l1_sync_tip={:?}",
+            reverted_l1_handler_nonces.len(),
+            pending_l1_message_nonces.len(),
+            l1_message_nonces_to_cleanup.len(),
+            min_source_l1_block,
+            l1_messaging_sync_tip_after_revert
+        );
 
         tracing::info!(
             "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n}",
@@ -673,6 +861,23 @@ impl MadaraStorageWrite for RocksDBStorage {
             self.inner.block_db_revert(target_block_n, current_tip).context("Reverting blocks database")?;
         tracing::info!("✅ REORG: Block database reverted, collected {} state diffs", state_diffs.len());
 
+        // Pending messages are synced by L1 block and may have never been consumed on L2 yet.
+        // On revert, we intentionally drop all currently pending L1 messages and related L1 indices so
+        // the next L1 sync replays them from `l1_messaging_sync_tip_after_revert`.
+        tracing::info!(
+            "📦 REORG: Cleaning {} L1 message nonce entries (reverted + pending)",
+            l1_message_nonces_to_cleanup.len()
+        );
+        let mut l1_message_cleanup_batch = WriteBatchWithTransaction::default();
+        self.inner
+            .message_to_l2_remove_for_nonces(&l1_message_nonces_to_cleanup, &mut l1_message_cleanup_batch)
+            .context("Removing L1 message data for reverted/pending nonces")?;
+        self.inner
+            .db
+            .write_opt(l1_message_cleanup_batch, &self.inner.writeopts)
+            .context("Committing L1 message cleanup batch after reorg")?;
+        tracing::info!("✅ REORG: L1 message cleanup completed");
+
         // Then use those state diffs to revert contract and class state
         tracing::info!("📝 REORG: Starting contract database revert...");
         self.inner.contract_db_revert(&state_diffs).context("Reverting contract database")?;
@@ -695,6 +900,18 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.write_latest_applied_trie_update(&Some(target_block_n))
             .context("Resetting latest_applied_trie_update after reorg")?;
         tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
+
+        if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
+            tracing::info!(
+                "🔁 REORG: Rewinding L1 messaging sync tip to block_n={l1_sync_tip} (from source block {:?})",
+                rewind_from_l1_block
+            );
+            self.write_l1_messaging_sync_tip(Some(l1_sync_tip))
+                .context("Rewinding l1 messaging sync tip after reorg")?;
+            tracing::info!("✅ REORG: L1 messaging sync tip rewound successfully");
+        } else {
+            tracing::info!("🔁 REORG: No L1 messaging rewind needed");
+        }
 
         tracing::info!("💾 REORG: Flushing database to persist changes...");
         self.flush().context("Flushing database after reorg")?;

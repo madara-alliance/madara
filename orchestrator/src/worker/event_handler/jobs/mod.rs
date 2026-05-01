@@ -29,12 +29,12 @@ pub trait JobHandlerTrait: Send + Sync {
     ///
     /// # Arguments
     /// * `config` - Shared configuration for the job
-    /// * `internal_id` - Unique identifier for internal tracking
+    /// * `internal_id` - Numeric identifier for internal tracking (e.g., block_no, batch_no)
     /// * `metadata` - Additional key-value pairs associated with the job
     ///
     /// # Returns
     /// * `Result<JobItem, JobError>` - The created job item or an error
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError>;
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError>;
 
     /// Should process the job and return the external_id which can be used to
     /// track the status of the job. For example, a DA job will submit the state diff

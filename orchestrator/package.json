@@ -15,7 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "ethers": "^6.13.4",
-    "migrate-mongo": "^11.0.0",
+    "migrate-mongo": "^14.0.7",
     "mongodb": "^6.9.0",
     "prettier-plugin-solidity": "^1.4.2",
     "starknet": "^6.11.0",

@@ -214,4 +214,100 @@ mod tests {
         // Cleanup
         inner_sqs.client().delete_queue().queue_url(&actual_queue_url).send().await.ok();
     }
+
+    /// Test that queue URLs are cached and reused across multiple operations
+    /// This verifies that:
+    /// 1. Cache starts empty
+    /// 2. First operation populates the cache
+    /// 3. Subsequent operations reuse the cached URL (cache size doesn't grow)
+    /// 4. Different queue types are cached independently
+    #[rstest]
+    #[tokio::test]
+    async fn test_queue_url_caching(#[future] localstack_config: aws_config::SdkConfig) {
+        let config = localstack_config.await;
+
+        // Create unique queue names for two different queue types
+        let unique_name = crate::tests::common::create_unique_queue_name("cache-test");
+        let uuid_prefix = unique_name.strip_prefix("cache-test-").map(|s| &s[..8.min(s.len())]).unwrap_or("default");
+        let queue_template = format!("cache-test-{}-{{}}_queue", uuid_prefix);
+
+        // Create the actual queues in localstack
+        let inner_sqs = InnerSQS::new(&config);
+
+        let snos_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
+        let proving_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::ProvingJobProcessing);
+
+        inner_sqs
+            .client()
+            .create_queue()
+            .queue_name(&snos_queue_name)
+            .send()
+            .await
+            .expect("Failed to create snos queue");
+
+        inner_sqs
+            .client()
+            .create_queue()
+            .queue_name(&proving_queue_name)
+            .send()
+            .await
+            .expect("Failed to create proving queue");
+
+        // Wait for queues to be available
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Create SQS client
+        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
+        let sqs = SQS::new(&config, &queue_args);
+
+        // Verify cache starts empty
+        assert_eq!(sqs.cached_url_count().await, 0, "Cache should start empty");
+
+        // First operation on SnosJobProcessing - should populate cache
+        sqs.send_message(QueueType::SnosJobProcessing, "test1".to_string(), None)
+            .await
+            .expect("Failed to send first message");
+
+        assert_eq!(sqs.cached_url_count().await, 1, "Cache should have 1 entry after first queue type");
+
+        // Second operation on same queue type - should reuse cache
+        sqs.send_message(QueueType::SnosJobProcessing, "test2".to_string(), None)
+            .await
+            .expect("Failed to send second message");
+
+        assert_eq!(sqs.cached_url_count().await, 1, "Cache should still have 1 entry (reused)");
+
+        // Third operation on same queue type - verify cache is still used
+        sqs.send_message(QueueType::SnosJobProcessing, "test3".to_string(), None)
+            .await
+            .expect("Failed to send third message");
+
+        assert_eq!(sqs.cached_url_count().await, 1, "Cache should still have 1 entry after multiple operations");
+
+        // Operation on different queue type - should add new cache entry
+        sqs.send_message(QueueType::ProvingJobProcessing, "test4".to_string(), None)
+            .await
+            .expect("Failed to send message to proving queue");
+
+        assert_eq!(sqs.cached_url_count().await, 2, "Cache should have 2 entries for different queue types");
+
+        // More operations on both queue types - cache should not grow
+        sqs.send_message(QueueType::SnosJobProcessing, "test5".to_string(), None)
+            .await
+            .expect("Failed to send another snos message");
+
+        sqs.send_message(QueueType::ProvingJobProcessing, "test6".to_string(), None)
+            .await
+            .expect("Failed to send another proving message");
+
+        assert_eq!(sqs.cached_url_count().await, 2, "Cache should still have 2 entries after more operations");
+
+        // Cleanup - delete the queues
+        let snos_url = inner_sqs.get_queue_url_from_client(&snos_queue_name).await.expect("Failed to get snos URL");
+        let proving_url =
+            inner_sqs.get_queue_url_from_client(&proving_queue_name).await.expect("Failed to get proving URL");
+
+        inner_sqs.client().delete_queue().queue_url(&snos_url).send().await.ok();
+        inner_sqs.client().delete_queue().queue_url(&proving_url).send().await.ok();
+    }
 }

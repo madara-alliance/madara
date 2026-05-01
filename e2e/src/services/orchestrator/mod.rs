@@ -39,6 +39,12 @@ struct BatchData {
     batch_number: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct CloseBatchesData {
+    snos_batches_closed: u64,
+    aggregator_batches_closed: u64,
+}
+
 pub struct OrchestratorService {
     server: Server, // None for setup mode
     config: OrchestratorConfig,
@@ -274,5 +280,57 @@ impl OrchestratorService {
         // No StateTransition job found for this block
         println!("No StateTransition job found for block {} (batch {})", block_number, batch_number);
         Ok(false)
+    }
+
+    /// Check if a block has been included in an aggregator batch
+    pub async fn is_block_in_batch(&self, block_number: u64) -> Result<bool, OrchestratorError> {
+        let client = reqwest::Client::new();
+        let endpoint = self.endpoint().unwrap();
+        let url = format!("{}blocks/batch-for-block/{}", endpoint, block_number);
+
+        let response = client
+            .get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| OrchestratorError::NetworkError(e.to_string()))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+
+        let body: ApiResponse<BatchData> =
+            response.json().await.map_err(|e| OrchestratorError::InvalidResponse(e.to_string()))?;
+
+        Ok(body.success)
+    }
+
+    /// Close all open SNOS and aggregator batches via the admin endpoint
+    pub async fn close_open_batches(&self) -> Result<u64, OrchestratorError> {
+        let client = reqwest::Client::new();
+        let endpoint = self.endpoint().unwrap();
+        let url = format!("{}admin/batches/close-open", endpoint);
+
+        let response = client.post(&url).header("accept", "application/json").send().await.map_err(|e| {
+            println!("Failed to call close-open-batches: {}", e);
+            OrchestratorError::NetworkError(e.to_string())
+        })?;
+
+        let body: ApiResponse<CloseBatchesData> = response.json().await.map_err(|e| {
+            println!("Failed to parse close-open-batches response: {}", e);
+            OrchestratorError::InvalidResponse(e.to_string())
+        })?;
+
+        if !body.success {
+            return Err(OrchestratorError::InvalidResponse(body.message));
+        }
+
+        let total = body.data.snos_batches_closed + body.data.aggregator_batches_closed;
+        println!(
+            "Closed {} aggregator batch(es) and {} SNOS batch(es)",
+            body.data.aggregator_batches_closed, body.data.snos_batches_closed
+        );
+
+        Ok(total)
     }
 }

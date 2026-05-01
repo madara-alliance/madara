@@ -20,7 +20,6 @@
 //! These are crates which are responsible for the core (business) functionality of the node. They
 //! answer the question of _how_ the node transforms data.
 //!
-//! - [mc-analytics]
 //! - [mc-block-production]
 //! - [mc-db]
 //! - [mc-devnet]
@@ -68,7 +67,6 @@
 //! [Starknet RPC specs]: https://github.com/starkware-libs/starknet-specs
 //! [Starknet P2P specs]: https://github.com/starknet-io/starknet-p2p-specs
 //!
-//! [mc-analytics]: mc_analytics
 //! [mc-block-production]: mc_block_production
 //! [mc-db]: mc_db
 //! [mc-devnet]: mc_devnet
@@ -116,8 +114,8 @@ use figment::{
     Figment,
 };
 use http::{HeaderName, HeaderValue};
-use mc_analytics::AnalyticsService;
 use mc_db::MadaraBackend;
+use mc_external_db::ExternalDbService;
 use mc_gateway_client::GatewayProvider;
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
@@ -174,10 +172,10 @@ async fn main() -> anyhow::Result<()> {
     let mut run_cmd: RunCmd = config.extract()?;
     run_cmd.check_mode()?;
 
-    // Setting up analytics
-    let mut service_analytics = AnalyticsService::new(run_cmd.analytics_params.as_analytics_config())
-        .context("Initializing analytics service")?;
-    service_analytics.setup().context("Setting-up analystics service")?;
+    // Setting up telemetry
+    let mut service_telemetry = TelemetryService::new(run_cmd.telemetry_params.as_telemetry_config())
+        .context("Initializing telemetry service")?;
+    service_telemetry.setup().context("Setting-up telemetry service")?;
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
@@ -190,7 +188,11 @@ async fn main() -> anyhow::Result<()> {
 
     // If the devnet is running, we set the gas prices to a default value.
     if run_cmd.is_devnet() {
-        run_cmd.l1_sync_params.l1_sync_disabled = true;
+        // Only disable L1 sync if no explicit --l1-endpoint was provided.
+        // This allows devnet + L1 sync for testing L1→L2 messaging flows.
+        if run_cmd.l1_sync_params.l1_endpoint.is_none() {
+            run_cmd.l1_sync_params.l1_sync_disabled = true;
+        }
         run_cmd.l1_sync_params.l1_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.blob_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);
@@ -208,8 +210,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let node_version = env!("MADARA_BUILD_VERSION");
-
     tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
     tracing::info!("🏷  Node Name: {}", node_name);
@@ -233,7 +233,8 @@ async fn main() -> anyhow::Result<()> {
     // Native execution is opt-in and only enabled when the --enable-native-execution CLI flag
     // is set to true (default: false). When disabled, all contracts will use Cairo VM execution
     // regardless of cache state.
-    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config();
+    // The native cache directory is derived from base_path as `base_path/native_classes`.
+    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config(&run_cmd.backend_params.base_path);
 
     // Setup: validate, initialize semaphore, and log configuration
     // Note: Validation happens inside setup_and_log() via NativeConfig::validate()
@@ -243,12 +244,6 @@ async fn main() -> anyhow::Result<()> {
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
     // ===================================================================== //
-
-    // Telemetry
-
-    let service_telemetry: TelemetryService =
-        TelemetryService::new(run_cmd.telemetry_params.telemetry_endpoints.clone())
-            .context("Initializing telemetry service")?;
 
     // Database
 
@@ -261,6 +256,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
+
+    run_cmd.backend_params.validate().context("Validating backend configuration")?;
 
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
@@ -305,10 +302,6 @@ async fn main() -> anyhow::Result<()> {
 
         if run_cmd.gateway_params.any_enabled() {
             deferred_service_start.push(MadaraServiceId::Gateway);
-        }
-
-        if run_cmd.telemetry_params.telemetry {
-            deferred_service_start.push(MadaraServiceId::Telemetry);
         }
 
         if run_cmd.is_sequencer() {
@@ -363,6 +356,13 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.no_charge_fee,
     )?;
 
+    let service_external_db = run_cmd
+        .external_db_params
+        .to_config()
+        .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
+        .transpose()?;
+    let external_db_configured = service_external_db.is_some();
+
     // Add transaction provider
 
     let mempool_tx_validator = Arc::new(TransactionValidator::new(
@@ -411,8 +411,6 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Initializing gateway service")?;
 
-    service_telemetry.send_connected(&node_name, node_version, &chain_config.chain_name, &sys_info);
-
     // ===================================================================== //
     //                             SERVICES (START)                          //
     // ===================================================================== //
@@ -421,16 +419,19 @@ async fn main() -> anyhow::Result<()> {
         service_block_production.setup_devnet().await?;
     }
 
-    let app = ServiceMonitor::default()
-        .with(service_analytics)?
+    let mut app = ServiceMonitor::default()
+        .with(service_telemetry)?
         .with(service_mempool)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
-        .with(service_gateway)?
-        .with(service_telemetry)?;
+        .with(service_gateway)?;
+
+    if let Some(service_external_db) = service_external_db {
+        app = app.with(service_external_db)?;
+    }
 
     // Since the database is not implemented as a proper service, we do not
     // active it, as it would never be marked as stopped by the existing logic
@@ -442,7 +443,7 @@ async fn main() -> anyhow::Result<()> {
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
 
     app.activate(MadaraServiceId::Mempool);
-    app.activate(MadaraServiceId::Analytics);
+    app.activate(MadaraServiceId::Telemetry);
 
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraServiceId::L1Sync);
@@ -468,8 +469,11 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Gateway);
     }
 
-    if run_cmd.telemetry_params.telemetry && !warp_update_receiver {
-        app.activate(MadaraServiceId::Telemetry);
+    if external_db_configured && !warp_update_receiver {
+        // Warp-update receiver mode does not accept txs into the mempool, so running the
+        // outbox worker would be confusing at best and harmful at worst (it is tied to
+        // mempool tx acceptance and retention).
+        app.activate(MadaraServiceId::ExternalDb);
     }
 
     let result = app.start().await;

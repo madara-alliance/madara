@@ -7,6 +7,7 @@ use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_contex
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
@@ -41,21 +42,19 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     let mut queue = MockQueueClient::new();
     let mut job_handler = MockJobHandlerTrait::new();
 
-    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
-
     db.expect_get_latest_job_by_type()
-        .with(eq(JobType::SnosRun))
-        .returning(move |_| Ok(Some(get_job_item_mock_by_id("20".to_string(), Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
 
     db.expect_get_oldest_job_by_type_excluding_statuses()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
-        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("10".to_string(), Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
-        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();
-            move |_, _| {
+            move |_, _, _| {
                 Ok(completed_snos_batches
                     .iter()
                     .map(|&index| {
@@ -73,8 +72,7 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     // Mock job creation
     for &block_num in &completed_snos_batches {
         let uuid = Uuid::new_v4();
-        let block_num_str = block_num.to_string();
-        let job_item = get_job_item_mock_by_id(block_num_str.clone(), uuid);
+        let job_item = get_job_item_mock_by_id(block_num, uuid);
         let job_item_clone = job_item.clone();
 
         db.expect_get_snos_batches_by_indices()
@@ -87,12 +85,11 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
         job_handler
             .expect_create_job()
-            .with(eq(block_num_str.clone()), mockall::predicate::always())
+            .with(eq(block_num), mockall::predicate::always())
             .returning(move |_, _| Ok(job_item_clone.clone()));
 
-        let block_num_str_for_db = block_num_str.clone();
         db.expect_create_job()
-            .withf(move |item| item.internal_id == block_num_str_for_db)
+            .withf(move |item| item.internal_id == block_num)
             .returning(move |_| Ok(job_item.clone()));
     }
 
@@ -160,22 +157,19 @@ async fn test_create_snos_job_for_existing_batch(
         then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
     });
 
-    // No orphaned jobs
-    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
-
     db.expect_get_latest_job_by_type()
-        .with(eq(JobType::SnosRun))
-        .returning(move |_| Ok(Some(get_job_item_mock_by_id("20".to_string(), Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
 
     db.expect_get_oldest_job_by_type_excluding_statuses()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
-        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("10".to_string(), Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
-        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();
-            move |_, _| {
+            move |_, _, _| {
                 Ok(completed_snos_batches
                     .iter()
                     .map(|&index| {
@@ -196,7 +190,7 @@ async fn test_create_snos_job_for_existing_batch(
     // Mock job creation for our test batch
     for snos_batch_num in completed_snos_batches {
         let uuid = Uuid::new_v4();
-        let job_item = get_job_item_mock_by_id(snos_batch_num.to_string(), uuid);
+        let job_item = get_job_item_mock_by_id(snos_batch_num, uuid);
         let job_item_clone = job_item.clone();
 
         db.expect_get_snos_batches_by_indices()
@@ -205,13 +199,13 @@ async fn test_create_snos_job_for_existing_batch(
             .returning(|_| Ok(Vec::new()));
 
         db.expect_create_job()
-            .withf(move |item| item.internal_id == snos_batch_num.to_string())
+            .withf(move |item| item.internal_id == snos_batch_num)
             .times(1)
             .returning(move |_| Ok(job_item.clone()));
 
         job_handler
             .expect_create_job()
-            .with(eq(snos_batch_num.to_string()), mockall::predicate::always())
+            .with(eq(snos_batch_num), mockall::predicate::always())
             .times(1)
             .returning(move |_, _| Ok(job_item_clone.clone()));
     }

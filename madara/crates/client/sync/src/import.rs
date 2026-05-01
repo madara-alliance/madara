@@ -94,6 +94,10 @@ pub enum BlockImportError {
 
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
+
+    #[error("Unsupported Starknet version {version} at block {block_n}. Latest supported version is {latest_supported}. Please upgrade Madara.")]
+    UnsupportedStarknetVersion { block_n: u64, version: StarknetVersion, latest_supported: StarknetVersion },
+
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
     InternalDb { context: Cow<'static, str>, error: anyhow::Error },
@@ -165,6 +169,20 @@ impl BlockImporterCtx {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
         }
 
+        // Reject blocks with unsupported Starknet versions.
+        // This is NOT gated by no_check — we always want to stop on unsupported versions
+        // to prevent syncing data that the node cannot correctly process or verify.
+        // Uses the compile-time constant rather than chain config to prevent config overrides
+        // from accidentally allowing unsupported versions.
+        let latest_supported = StarknetVersion::LATEST;
+        if signed_header.header.protocol_version > latest_supported {
+            return Err(BlockImportError::UnsupportedStarknetVersion {
+                block_n: signed_header.header.block_number,
+                version: signed_header.header.protocol_version,
+                latest_supported,
+            });
+        }
+
         // TODO(cchudant): for pre-v0.13.2 blocks, we currently do not check their integrity. Checking them is cumbersome, as it requires us
         // to implement a very big lookup table of all the existing block hashes for pre-v0.13.2 mainnet and sepolia blocks.
         // This is because we cannot check the integrity of receipts and state diffs and a ton of other fields for these older blocks, since
@@ -189,10 +207,14 @@ impl BlockImporterCtx {
         const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
         // First v0.13.2 mainnet block: https://voyager.online/block/671813.
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
+        // First v0.13.2 integration-sepolia block.
+        const INTEGRATION_SEPOLIA_FIRST_V0_13_2: u64 = 35748;
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
             && ((self.backend.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2)
+                || (self.backend.chain_config().chain_id == ChainId::IntegrationSepolia
+                    && block_n < INTEGRATION_SEPOLIA_FIRST_V0_13_2))
         {
             // Skip integrity check.
             return Ok(());
@@ -584,22 +606,28 @@ impl BlockImporterCtx {
 
         tracing::debug!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
 
-        let got =
-            self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
-                BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
+        // Fetch the last block's protocol version for version-gated state root computation.
+        let last_block_info = self
+            .backend
+            .db
+            .get_block_info(last_block_n)?
+            .context("Block header can't be found for protocol version lookup")?;
+        let protocol_version = last_block_info.header.protocol_version;
+
+        let (got, _timings) = self
+            .backend
+            .write_access()
+            .apply_to_global_trie(block_range.start, state_diffs, protocol_version)
+            .map_err(|error| BlockImportError::InternalDb {
+                error,
+                context: "Applying state diff to global trie".into(),
             })?;
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {
-            let expected = self
-                .backend
-                .db
-                .get_block_info(last_block_n)? // Raw get
-                .context("Block header can't be found")?
-                .header
-                .global_state_root;
+            let expected = last_block_info.header.global_state_root;
 
             if expected != got {
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
@@ -633,8 +661,10 @@ mod tests {
     /// produces the expected results or errors.
     #[rstest]
     #[case::success(
-            // A non-zero global state root
-            felt!("0x738e796f750b21ddb3ce528ca88f7e35fad580768bd58571995b19a6809bb4a"),
+            // Global state root: Poseidon(STARKNET_STATE_V0, contract_trie_root, 0)
+            // because default protocol_version is LATEST (>= 0.14.0), class_trie_root is zero,
+            // and the >= 0.14.0 formula always hashes.
+            felt!("0x34d3e676a44c29cff0939ab2285ec02ffc3efd9eb548d85f59a6c7dd544e64d"),
             // A non-empty state diff with deployed contracts and storage changes
             StateDiff {
                 deployed_contracts: vec![(DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") })],
@@ -685,7 +715,7 @@ mod tests {
         let importer = BlockImporter::new(backend, validation);
 
         // WHEN: We call update_tries with these parameters
-        let result = importer.ctx().apply_to_global_trie(0..1, vec![state_diff]);
+        let result = importer.ctx().apply_to_global_trie(0..1, vec![state_diff]).map(|_| ());
 
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }

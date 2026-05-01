@@ -21,6 +21,7 @@ num-traits = { workspace = true }
 # Madara
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
@@ -44,7 +45,7 @@ anyhow = "1.0.98"
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-  "tonic",
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }

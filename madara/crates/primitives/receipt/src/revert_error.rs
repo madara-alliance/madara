@@ -197,16 +197,24 @@ fn find_parent_entry_point(
     None
 }
 
-/// Checks if there's any EntryPoint (CallContract or LibraryCall) after the given VM traceback index.
-/// Returns true if there's any EntryPoint after, false if this is the last one before the error.
+/// Checks if there's any filtering EntryPoint (CallContract or LibraryCall) after the given VM traceback index.
+/// Returns true if there's any CallContract or LibraryCall after, false if only Constructor or no entry points.
+/// Constructor is treated as a final error frame and doesn't cause filtering.
 fn has_any_entry_point_after(error_stack: &ErrorStack, vm_index: usize) -> bool {
-    // Scan forward to find any EntryPoint
+    // Scan forward to find any CallContract or LibraryCall EntryPoint
+    // Constructor is excluded because it's treated as a final error frame
     for segment in error_stack.stack.iter().skip(vm_index + 1) {
-        if matches!(segment, ErrorStackSegment::EntryPoint(_)) {
-            return true;
+        if let ErrorStackSegment::EntryPoint(entry_point) = segment {
+            // Only count CallContract and LibraryCall as filtering entry points
+            // Constructor should not cause previous VM tracebacks to be filtered
+            if entry_point.preamble_type == PreambleType::CallContract
+                || entry_point.preamble_type == PreambleType::LibraryCall
+            {
+                return true;
+            }
         }
     }
-    // No EntryPoint found after this index
+    // No filtering EntryPoint found after this index
     false
 }
 
@@ -279,9 +287,10 @@ fn find_parent_entry_point_index(error_stack: &ErrorStack, vm_index: usize) -> O
 /// Checks if the next CallContract after this VM traceback is the last one before the error.
 /// Returns true only if:
 /// 1. The next EntryPoint is a CallContract
-/// 2. There are no more EntryPoints after it (just error messages)
+/// 2. There are no more filtering EntryPoints (CallContract or LibraryCall) after it
 ///
 /// This specifically handles the case where CallContract chain ends in error without LibraryCall.
+/// Constructor is treated as a final error frame and doesn't prevent keeping the traceback.
 fn is_next_call_contract_last(error_stack: &ErrorStack, vm_index: usize) -> bool {
     let mut found_next_entry = false;
 
@@ -297,14 +306,18 @@ fn is_next_call_contract_last(error_stack: &ErrorStack, vm_index: usize) -> bool
                 found_next_entry = true;
             } else {
                 // Found a second entry point after the next CallContract
-                // If there's another EntryPoint (CallContract or LibraryCall), return false
-                // We only want to keep both when the chain ends without more EntryPoints
-                return false;
+                // Only count CallContract and LibraryCall as filtering entry points
+                // Constructor is treated as a final error frame
+                if entry_point.preamble_type == PreambleType::CallContract
+                    || entry_point.preamble_type == PreambleType::LibraryCall
+                {
+                    return false;
+                }
             }
         }
     }
 
-    // If we found the next CallContract and no more EntryPoints after it, it's the last
+    // If we found the next CallContract and no more filtering EntryPoints after it, it's the last
     found_next_entry
 }
 
@@ -905,6 +918,102 @@ mod tests {
 
         // Expected output: VM tracebacks from entry 0 and entry 1 are removed, only entry 2's traceback is kept
         let expected = "Transaction execution has failed:\n0: Error in the called contract (contract address: 0x051a24146bfe38f21f6a119443a071710e28c05981e854394c7a72ec2b729c2c, class hash: 0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):\n1: Error in the called contract (contract address: 0x012f3ff23c30ac1cd01cd6a929eb18553dbf0e2ed84fa999781707617eef6720, class hash: 0x05755c007b188110107d00696dcc349b158da075d395b1414fd5c6662a9d44a8, selector: 0x01c2961b7317d2486c600e15b77a7261b34e53ad3f0faa22d71320bbe7709ae2):\n2: Error in a library call (contract address: 0x012f3ff23c30ac1cd01cd6a929eb18553dbf0e2ed84fa999781707617eef6720, class hash: 0x070cdfaea3ec997bd3a8cdedfc0ffe804a58afc3d6b5a6e5c0218ec233ceea6d, selector: 0x0000000000000000000000000000000000000000000000000000000000000abc):\nError at pc=0:32:\nCairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n\n3: Error in a library call (contract address: 0x012f3ff23c30ac1cd01cd6a929eb18553dbf0e2ed84fa999781707617eef6720, class hash: 0x0000000000000000000000000000000000000000000000000000000000000000, selector: 0x0000000000000000000000000000000000000000000000000000000000000abc):\nClass with hash 0x0000000000000000000000000000000000000000000000000000000000000000 is not declared.\n";
+
+        let result = revert_error.format_for_receipt().to_string();
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_revert_error_keeps_tracebacks_for_call_contract_chain_ending_in_constructor() {
+        // Test case from production: CC(0) -> CC(1) -> Constructor(2)
+        // This matches the real error structure from Pathfinder for transaction
+        // 0x127f5e3049266e0973a6b20d48739071edb7fdb80e08971546071bd1ea33e84
+        //
+        // All VM tracebacks should be kept because:
+        // - Entry 0: CallContract before another CallContract ending in Constructor
+        // - Entry 1: CallContract before Constructor (no LibraryCall in chain)
+        // - Entry 2: Constructor with final error message (no VM traceback)
+        //
+        // The Constructor frame is like a final error frame and should not cause
+        // previous CallContract VM tracebacks to be filtered.
+        let mut error_stack = ErrorStack { header: ErrorStackHeader::Execution, stack: vec![] };
+
+        // Entry 0: CallContract with VM traceback (should be kept)
+        error_stack.push(
+            EntryPointErrorFrame {
+                depth: 0,
+                preamble_type: PreambleType::CallContract,
+                storage_address: test_contract_address!(
+                    "0x05183df62c1ca70330c9927d894495bbdf1b530e06a1fcaf8db78296d78603b8"
+                ),
+                class_hash: test_class_hash!("0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2"),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+                ))),
+            }
+            .into(),
+        );
+        error_stack.push(
+            VmExceptionFrame {
+                pc: Relocatable { segment_index: 0, offset: 35988 },
+                error_attr_value: None,
+                traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\n".to_string()),
+            }
+            .into(),
+        );
+
+        // Entry 1: CallContract with VM traceback (should be kept)
+        error_stack.push(
+            EntryPointErrorFrame {
+                depth: 1,
+                preamble_type: PreambleType::CallContract,
+                storage_address: test_contract_address!(
+                    "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf"
+                ),
+                class_hash: test_class_hash!("0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69"),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x01987cbd17808b9a23693d4de7e246a443cfe37e6e7fbaeabd7d7e6532b07c3d"
+                ))),
+            }
+            .into(),
+        );
+        error_stack.push(
+            VmExceptionFrame {
+                pc: Relocatable { segment_index: 0, offset: 32 },
+                error_attr_value: None,
+                traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:174)\nUnknown location (pc=0:127)\n".to_string()),
+            }
+            .into(),
+        );
+
+        // Entry 2: Constructor with final error (no VM traceback)
+        error_stack.push(
+            EntryPointErrorFrame {
+                depth: 2,
+                preamble_type: PreambleType::Constructor,
+                storage_address: test_contract_address!(
+                    "0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9"
+                ),
+                class_hash: test_class_hash!("0x03530cc4759d78042f1b543bf797f5f3d647cde0388c33734cf91b7f7b9314a9"),
+                selector: None, // Constructor has UNKNOWN selector
+            }
+            .into(),
+        );
+        error_stack.push(ErrorStackSegment::StringFrame(
+            "Deployment failed: contract already deployed at address 0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9\n"
+                .to_string(),
+        ));
+
+        let revert_error = RevertError::Execution(error_stack);
+
+        // Verify that the RevertError structure produces the correct input (unfiltered)
+        let input = "Transaction execution has failed:\n0: Error in the called contract (contract address: 0x05183df62c1ca70330c9927d894495bbdf1b530e06a1fcaf8db78296d78603b8, class hash: 0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):\nError at pc=0:35988:\nCairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\n\n1: Error in the called contract (contract address: 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf, class hash: 0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69, selector: 0x01987cbd17808b9a23693d4de7e246a443cfe37e6e7fbaeabd7d7e6532b07c3d):\nError at pc=0:32:\nCairo traceback (most recent call last):\nUnknown location (pc=0:174)\nUnknown location (pc=0:127)\n\n2: Error in the contract class constructor (contract address: 0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9, class hash: 0x03530cc4759d78042f1b543bf797f5f3d647cde0388c33734cf91b7f7b9314a9, selector: UNKNOWN):\nDeployment failed: contract already deployed at address 0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9\n";
+        assert_eq!(revert_error.to_string(), input);
+
+        // Expected output: all VM tracebacks kept (Constructor should not cause filtering)
+        // This matches Pathfinder output for this transaction
+        let expected = "Transaction execution has failed:\n0: Error in the called contract (contract address: 0x05183df62c1ca70330c9927d894495bbdf1b530e06a1fcaf8db78296d78603b8, class hash: 0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):\nError at pc=0:35988:\nCairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\n\n1: Error in the called contract (contract address: 0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf, class hash: 0x07b3e05f48f0c69e4a65ce5e076a66271a527aff2c34ce1083ec6e1526997a69, selector: 0x01987cbd17808b9a23693d4de7e246a443cfe37e6e7fbaeabd7d7e6532b07c3d):\nError at pc=0:32:\nCairo traceback (most recent call last):\nUnknown location (pc=0:174)\nUnknown location (pc=0:127)\n\n2: Error in the contract class constructor (contract address: 0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9, class hash: 0x03530cc4759d78042f1b543bf797f5f3d647cde0388c33734cf91b7f7b9314a9, selector: UNKNOWN):\nDeployment failed: contract already deployed at address 0x01ec10964f1d73c63cfe9153435e07507464d5c9afcd086768fed0f01ab003d9\n";
 
         let result = revert_error.format_for_receipt().to_string();
 

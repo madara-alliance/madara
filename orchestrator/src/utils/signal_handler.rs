@@ -141,17 +141,14 @@ impl SignalHandler {
         let shutdown_future = shutdown_fn();
         let shutdown_result = tokio::time::timeout(timeout_duration, shutdown_future).await;
 
-        // Calculate remaining time to ensure we wait at least the full timeout duration
         let elapsed = start_time.elapsed();
-        let remaining_time = timeout_duration.saturating_sub(elapsed);
 
+        // TODO(mehul, 21-01-2026): Add tests for graceful shutdown behavior.
+        // This is difficult to test due to OS-level signal handling,
+        // but the timeout and error collection logic could be unit tested with mock futures.
         match shutdown_result {
             Ok(Ok(())) => {
-                info!("Graceful shutdown completed successfully");
-                if remaining_time > tokio::time::Duration::from_secs(0) {
-                    info!("Waiting remaining {:?} to ensure graceful shutdown", remaining_time);
-                    tokio::time::sleep(remaining_time).await;
-                }
+                info!("Graceful shutdown completed successfully in {:?}", elapsed);
                 Ok(())
             }
             Ok(Err(e)) => {

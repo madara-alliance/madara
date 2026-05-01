@@ -4,15 +4,14 @@ use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::BYTE_CHUNK_SIZE;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
-use bytes::Bytes;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
@@ -30,8 +29,7 @@ use starknet_core::types::Felt;
 use url::Url;
 
 use std::sync::Arc;
-use std::time::Duration;
-use tempfile::NamedTempFile;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 /// Delay before retrying when SNOS RPC is unavailable (in seconds)
@@ -80,16 +78,17 @@ impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
 
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::SnosRun, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::SnosRun, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::SnosRun, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::SnosRun, internal_id);
+        let start_time = Instant::now();
 
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -127,7 +126,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
             error!(error = %e, "SNOS execution failed");
-            SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
+            SnosError::SnosExecutionError { internal_id, message: e.to_string() }
         })?;
         debug!("generate_pie function completed successfully");
 
@@ -175,15 +174,16 @@ impl JobHandlerTrait for SnosJobHandler {
 
         debug!("Storing SNOS outputs");
         // Store the Cairo Pie path
-        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
+        self.store(internal_id, config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
+        MetricsRecorder::record_snos_job_processing_time(start_time.elapsed().as_secs_f64());
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
 
     async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
@@ -224,7 +224,7 @@ impl SnosJobHandler {
     ///     - [block_number]/snos_output.json
     async fn store(
         &self,
-        internal_id: String,
+        internal_id: u64,
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
         cairo_pie: CairoPie,
@@ -249,68 +249,36 @@ impl SnosJobHandler {
 
         // Store Cairo Pie
         {
-            let cairo_pie_zip_bytes = self.cairo_pie_to_zip_bytes(cairo_pie).await.map_err(|e| {
-                SnosError::CairoPieUnserializable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
-            data_storage.put_data(cairo_pie_zip_bytes, cairo_pie_key).await.map_err(|e| {
-                SnosError::CairoPieUnstorable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
+            let cairo_pie_zip_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(cairo_pie)
+                .await
+                .map_err(|e| SnosError::CairoPieUnserializable { internal_id, message: e.to_string() })?;
+            data_storage
+                .put_data(cairo_pie_zip_bytes, cairo_pie_key)
+                .await
+                .map_err(|e| SnosError::CairoPieUnstorable { internal_id, message: e.to_string() })?;
         }
 
         // Store SNOS Output
         {
-            let snos_output_json = serde_json::to_vec(&snos_output).map_err(|e| {
-                SnosError::SnosOutputUnserializable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
-            data_storage.put_data(snos_output_json.into(), snos_output_key).await.map_err(|e| {
-                SnosError::SnosOutputUnstorable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
+            let snos_output_json = serde_json::to_vec(&snos_output)
+                .map_err(|e| SnosError::SnosOutputUnserializable { internal_id, message: e.to_string() })?;
+            data_storage
+                .put_data(snos_output_json.into(), snos_output_key)
+                .await
+                .map_err(|e| SnosError::SnosOutputUnstorable { internal_id, message: e.to_string() })?;
         }
 
         // Store Program Output
         {
             let program_output: Vec<[u8; 32]> = program_output.iter().map(|f| f.to_bytes_be()).collect();
-            let encoded_data = bincode::serialize(&program_output).map_err(|e| {
-                SnosError::ProgramOutputUnserializable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
-            data_storage.put_data(encoded_data.into(), program_output_key).await.map_err(|e| {
-                SnosError::ProgramOutputUnstorable { internal_id: internal_id.clone(), message: e.to_string() }
-            })?;
+            let encoded_data = bincode::serialize(&program_output)
+                .map_err(|e| SnosError::ProgramOutputUnserializable { internal_id, message: e.to_string() })?;
+            data_storage
+                .put_data(encoded_data.into(), program_output_key)
+                .await
+                .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id, message: e.to_string() })?;
         }
 
         Ok(())
-    }
-
-    /// Converts the [CairoPie] input as a zip file and returns it as [Bytes].
-    async fn cairo_pie_to_zip_bytes(&self, cairo_pie: CairoPie) -> Result<Bytes> {
-        let mut cairo_pie_zipfile = NamedTempFile::new()?;
-        cairo_pie.write_zip_file(cairo_pie_zipfile.path(), true)?;
-        drop(cairo_pie); // Drop cairo_pie to release the memory
-        let cairo_pie_zip_bytes = self.tempfile_to_bytes_streaming(&mut cairo_pie_zipfile).await?;
-        cairo_pie_zipfile.close()?;
-        Ok(cairo_pie_zip_bytes)
-    }
-
-    /// Converts a [NamedTempFile] to [Bytes].
-    /// This function reads the file in chunks and appends them to the buffer.
-    /// This is useful when the file is too large to be read in one go.
-    async fn tempfile_to_bytes_streaming(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
-        use tokio::io::AsyncReadExt;
-
-        let file_size = tmp_file.as_file().metadata()?.len() as usize;
-        let mut buffer = Vec::with_capacity(file_size);
-
-        let mut chunk = vec![0; BYTE_CHUNK_SIZE];
-
-        let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
-
-        while let Ok(n) = file.read(&mut chunk).await {
-            if n == 0 {
-                break;
-            }
-            buffer.extend_from_slice(&chunk[..n]);
-        }
-
-        Ok(Bytes::from(buffer))
     }
 }

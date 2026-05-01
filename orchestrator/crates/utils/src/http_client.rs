@@ -174,6 +174,16 @@ impl HttpClientBuilder {
         self
     }
 
+    /// Force reqwest to use rustls instead of native-tls.
+    ///
+    /// Needed on macOS where native-tls/SecureTransport doesn't reliably honor
+    /// `add_root_certificate()` for self-signed roots. rustls is consistent
+    /// across platforms.
+    pub fn use_rustls_tls(mut self) -> Self {
+        self.client_builder = self.client_builder.use_rustls_tls();
+        self
+    }
+
     /// Adds a default header to be included in all requests.
     pub fn default_header(mut self, key: HeaderName, value: HeaderValue) -> Self {
         self.default_headers.insert(key, value);
@@ -627,7 +637,7 @@ mod http_client_tests {
             .expect("Failed to build client");
 
         // Since we can't check the certificates directly, we'll just verify the client was built
-        assert_eq!(client.base_url.as_str(), (TEST_URL.to_owned() + "/"));
+        assert_eq!(client.base_url.as_str(), TEST_URL.to_owned() + "/");
     }
 
     /// Tests client behavior with:

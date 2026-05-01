@@ -1,11 +1,10 @@
 use crate::core::config::Config;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::constant::{ORCHESTRATOR_VERSION, PROOF_FILE_NAME};
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::filter_jobs_by_orchestrator_version;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
@@ -21,17 +20,15 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: We intentionally do not heal orphaned Proving jobs as
-        // they might create inconsistent state on the atlantic side,
-        // sending request twice, opening the same bucket again, adding the the
-        // same block again etc.
-
         let successful_snos_jobs = config
             .database()
-            .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
+            .get_jobs_without_successor(
+                JobType::SnosRun,
+                JobStatus::Completed,
+                JobType::ProofCreation,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
-
-        let successful_snos_jobs = filter_jobs_by_orchestrator_version(successful_snos_jobs);
 
         debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 
@@ -57,8 +54,12 @@ impl JobTrigger for ProvingJobTrigger {
                                     continue;
                                 }
                                 Some(start_snos_batch) => (
-                                    None,
-                                    None,
+                                    if config.params.store_audit_artifacts {
+                                        Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME))
+                                    } else {
+                                        None
+                                    },
+                                    None, // We don't check the on-chain registration of snos fact when using AR
                                     Some(batch.bucket_id),
                                     Some(snos_metadata.snos_batch_index - start_snos_batch.index + 1),
                                 ),
@@ -104,7 +105,7 @@ impl JobTrigger for ProvingJobTrigger {
             debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
             match JobHandlerService::create_job(
                 JobType::ProofCreation,
-                snos_job.internal_id.clone(),
+                snos_job.internal_id,
                 proving_metadata,
                 config.clone(),
             )
@@ -117,7 +118,7 @@ impl JobTrigger for ProvingJobTrigger {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    MetricsRecorder::record_failed_job_operation(1.0, &attributes);
                     return Err(e.into());
                 }
             }

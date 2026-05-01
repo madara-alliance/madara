@@ -2,7 +2,10 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["starknet_rpc_url", "starknet_private_key", "starknet_account_address", "starknet_cairo_core_contract_address", "starknet_finality_retry_wait_in_secs"])]
+// Note: we intentionally do not use requires_all here because env vars can populate
+// fields even when --settle-on-starknet is not passed, causing clap to incorrectly
+// demand all fields. Validation is done in TryFrom<RunCmd> for SettlementConfig
+// (see src/types/params/settlement.rs).
 pub struct StarknetSettlementCliArgs {
     /// Use the Starknet settlement layer.
     #[arg(long)]

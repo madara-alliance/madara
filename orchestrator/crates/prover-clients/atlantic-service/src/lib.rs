@@ -15,7 +15,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
-    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+    AggregationArtifacts, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
 use starknet_core::types::Felt;
 use swiftness_proof_parser::{parse, StarkProof};
@@ -23,7 +23,6 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
-use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
 use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
 
 #[derive(Debug, Clone)]
@@ -40,6 +39,8 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_cairo_vm: AtlanticCairoVm,
     pub atlantic_result: AtlanticQueryStep,
     pub atlantic_sharp_prover: AtlanticSharpProver,
+    /// Base URL for fetching artifacts (proofs, SNOS outputs, etc.) from the Atlantic service.
+    pub atlantic_artifacts_base_url: Url,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -72,34 +73,17 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(CreateJobInfo {
-                cairo_pie,
-                bucket_id,
-                bucket_job_index,
-                num_steps: n_steps,
-                external_id,
-            }) => {
-                let existing_job = self
-                    .atlantic_client
-                    .search_atlantic_queries(
-                        &self.atlantic_api_key,
-                        &external_id,
-                        Some(1),
-                        Some(self.atlantic_network.as_str()),
-                    )
-                    .await?
-                    .atlantic_queries
-                    .into_iter()
-                    .find(|query| {
-                        query.external_id.as_deref() == Some(external_id.as_str()) || query.id == external_id
-                    });
+            Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps, dedup_id }) => {
+                // Direct lookup by dedup ID - O(1), no list filtering needed
+                let existing_job =
+                    self.atlantic_client.get_query_by_dedup_id(&dedup_id, &self.atlantic_api_key).await?;
 
                 if let Some(existing_job) = existing_job {
                     match existing_job.status {
                         AtlanticQueryStatus::Failed => {
                             tracing::warn!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %dedup_id,
                                 status = ?existing_job.status,
                                 "Existing Atlantic job found in failed state. Resubmitting."
                             );
@@ -108,7 +92,7 @@ impl ProverClient for AtlanticProverService {
                             Self::ensure_bucket_details_match(&existing_job, &bucket_id, bucket_job_index)?;
                             tracing::info!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %dedup_id,
                                 status = ?existing_job.status,
                                 "Atlantic job already exists. Skipping resubmission."
                             );
@@ -127,7 +111,7 @@ impl ProverClient for AtlanticProverService {
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
-                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps, external_id },
+                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps, dedup_id },
                         AtlanticJobConfig {
                             proof_layout: self.proof_layout,
                             cairo_vm: self.cairo_vm.clone(),
@@ -159,11 +143,24 @@ impl ProverClient for AtlanticProverService {
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
-            Task::CloseBucket(bucket_id) => {
-                let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
-                tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
-                Ok(response.atlantic_bucket.id)
+            Task::RunAggregation(bucket_id) => {
+                let existing_bucket = self.atlantic_client.get_bucket(&bucket_id).await?;
+                match existing_bucket.bucket.status {
+                    AtlanticBucketStatus::Open => {
+                        let response =
+                            self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
+                        tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
+                    }
+                    _ => {
+                        tracing::warn!(bucket_id = %bucket_id, status = ?existing_bucket.bucket.status, "Atlantic bucket already closed. Skipping re-sending close bucket request");
+                    }
+                };
+
+                Ok(existing_bucket.bucket.id)
             }
+            Task::RunAggregationWithPie(_) => Err(ProverClientError::TaskInvalid(
+                "Atlantic does not support PIE-based aggregation. Use RunAggregation instead.".to_string(),
+            )),
         }
     }
 
@@ -172,8 +169,8 @@ impl ProverClient for AtlanticProverService {
     /// # Arguments
     /// task - specifies the task type which can be a job or a bucket
     /// job_key - job ID
-    /// fact - optional fact string to verify
-    /// cross_verify - boolean to specify if we should cross verify the fact calculated and registered
+    /// fact - optional fact string; when present (and a fact_checker is configured),
+    ///        cross-verifies the fact on-chain before returning Succeeded
     ///
     /// # Returns
     /// Status of the task
@@ -182,7 +179,6 @@ impl ProverClient for AtlanticProverService {
         task: TaskType,
         job_key: &str,
         fact: Option<String>,
-        cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             TaskType::Job => {
@@ -190,32 +186,12 @@ impl ProverClient for AtlanticProverService {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::Done => {
-                        if !cross_verify {
-                            tracing::debug!("Skipping cross-verification as it's disabled");
-                            return Ok(TaskStatus::Succeeded);
-                        }
-                        match &self.fact_checker {
-                            None => {
-                                tracing::debug!("There is no Fact check registered");
-                                Ok(TaskStatus::Succeeded)
-                            }
-                            Some(fact_checker) => {
-                                tracing::debug!("Fact check registered");
-                                // Cross-verification is enabled
-                                let fact_str = match fact {
-                                    Some(f) => f,
-                                    None => {
-                                        return Ok(TaskStatus::Failed(
-                                            "Cross verification enabled but no fact provided".to_string(),
-                                        ));
-                                    }
-                                };
-
+                        // Cross-verify on-chain if both a fact and a fact_checker are available.
+                        match (&self.fact_checker, fact) {
+                            (Some(fact_checker), Some(fact_str)) => {
                                 let fact = B256::from_str(&fact_str)
                                     .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-
                                 tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
-
                                 if fact_checker.is_valid(&fact).await? {
                                     Ok(TaskStatus::Succeeded)
                                 } else {
@@ -225,6 +201,10 @@ impl ProverClient for AtlanticProverService {
                                     )))
                                 }
                             }
+                            _ => {
+                                tracing::debug!("No fact or no fact checker — skipping cross-verification");
+                                Ok(TaskStatus::Succeeded)
+                            }
                         }
                     }
                     AtlanticQueryStatus::Failed => {
@@ -232,7 +212,7 @@ impl ProverClient for AtlanticProverService {
                     }
                 }
             }
-            TaskType::Bucket => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
+            TaskType::Aggregation => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
                 AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::Done => Ok(TaskStatus::Succeeded),
@@ -294,37 +274,56 @@ impl ProverClient for AtlanticProverService {
         Ok(atlantic_job_response.atlantic_query_id)
     }
 
+    /// Fetch aggregation artifacts from Atlantic after bucket completion.
+    ///
+    /// Finds the aggregator query ID, then fetches CairoPIE, DA segment, and optionally
+    /// the proof from the Atlantic artifacts endpoint.
+    async fn get_aggregation_artifacts(
+        &self,
+        external_id: &str,
+        include_proof: bool,
+    ) -> Result<AggregationArtifacts, ProverClientError> {
+        // external_id is the bucket_id for Atlantic
+        let aggregator_query_id = self.get_aggregator_task_id(external_id).await?;
+
+        let cairo_pie = self.get_task_artifacts(&aggregator_query_id, constants::CAIRO_PIE_FILE_NAME).await?;
+        let da_segment = self.get_task_artifacts(&aggregator_query_id, constants::DA_SEGMENT_FILE_NAME).await?;
+
+        let proof = if include_proof {
+            Some(self.get_task_artifacts(&aggregator_query_id, constants::PROOF_FILE_NAME).await?)
+        } else {
+            None
+        };
+
+        Ok(AggregationArtifacts { cairo_pie: Some(cairo_pie), da_segment: Some(da_segment), proof })
+    }
+}
+
+/// Private helpers (not part of the ProverClient trait).
+impl AtlanticProverService {
     async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError> {
         let bucket = self.atlantic_client.get_bucket(bucket_id).await?;
 
-        // Find the aggregator job by its step type (FactHashRegistration)
-        // This is more reliable than using bucket_job_index which depends on num_snos_batches
         Ok(bucket
             .queries
             .iter()
-            .find(|query| matches!(query.step, Some(AtlanticQueryStep::FactHashRegistration)))
+            .find(|query| {
+                matches!(
+                    query.step,
+                    Some(AtlanticQueryStep::FactHashRegistration)
+                        | Some(AtlanticQueryStep::ProofGenerationAndVerification)
+                )
+            })
             .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
             .id
             .clone())
     }
 
-    /// Fetch artifacts from the Atlantic service.
-    /// It tries to fetch the artifact for the given task ID from
-    /// [ATLANTIC_FETCH_ARTIFACTS_BASE_URL] S3 bucket.
-    /// The type of artifacts to be fetched is defined by the `file_name` parameter.
-    ///
-    /// Calls the `get_artifacts` method of `AtlanticClient` defined in `client.rs`
-    /// # Arguments
-    /// `task_id` - the ID of the task for which the artifacts need to be fetched
-    /// `file_name` - the name of the file which is to be fetched
-    ///
-    /// # Returns
-    /// The artifact as a byte array if the request is successful, otherwise an error is returned
+    /// Download a single artifact (proof, PIE, DA segment, etc.) from Atlantic's
+    /// storage bucket for the given task.
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
-        Ok(self
-            .atlantic_client
-            .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
-            .await?)
+        let base_url = self.atlantic_client.artifacts_base_url().as_str().trim_end_matches('/');
+        Ok(self.atlantic_client.get_artifacts(format!("{}/queries/{}/{}", base_url, task_id, file_name)).await?)
     }
 }
 
