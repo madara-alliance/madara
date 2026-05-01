@@ -1,7 +1,7 @@
 # Chain config version - REQUIRED field
 # This version number is used to track breaking changes to the chain config format.
-# Current version: 1
-config_version: 1
+# Current version: 2
+config_version: 2
 # 0.14.2 example values below are aligned with StarkWare sequencer tag APOLLO-0.14.2-RC.4.
 
 # Human readable chain name, for displaying to the console.

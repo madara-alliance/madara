@@ -1,4 +1,4 @@
-config_version: 1
+config_version: 2
 # 0.14.2 preset values below are aligned with StarkWare sequencer tag APOLLO-0.14.2-RC.4.
 chain_name: "Starknet Sepolia"
 chain_id: "SN_SEPOLIA"

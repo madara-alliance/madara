@@ -101,7 +101,7 @@ pub mod public_key {
 }
 
 /// Current chain config version
-pub const CURRENT_CONFIG_VERSION: u32 = 1;
+pub const CURRENT_CONFIG_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -205,9 +205,9 @@ impl L2GasPrice {
     }
 }
 
-/// Chain config version 1 structure (without config_version field - it's in the enum tag)
+/// Chain config version 2 structure (without config_version field - it's in the enum tag)
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ChainConfigV1 {
+pub struct ChainConfigV2 {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
@@ -325,8 +325,8 @@ pub struct ChainConfigV1 {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "config_version")]
 pub enum ChainConfigVersioned {
-    #[serde(rename = "1")]
-    V1(ChainConfigV1),
+    #[serde(rename = "2")]
+    V2(ChainConfigV2),
 }
 
 /// Canonical chain config structure used throughout the codebase
@@ -488,38 +488,38 @@ impl Clone for ChainConfig {
 
 // Conversion implementations for versioned configs
 
-impl TryFrom<ChainConfigV1> for ChainConfig {
+impl TryFrom<ChainConfigV2> for ChainConfig {
     type Error = anyhow::Error;
 
-    fn try_from(v1: ChainConfigV1) -> Result<Self> {
+    fn try_from(v2: ChainConfigV2) -> Result<Self> {
         Ok(ChainConfig {
-            config_version: 1,
-            chain_name: v1.chain_name,
-            chain_id: v1.chain_id,
-            l1_da_mode: v1.l1_da_mode,
-            settlement_chain_kind: v1.settlement_chain_kind,
-            feeder_gateway_url: v1.feeder_gateway_url,
-            gateway_url: v1.gateway_url,
-            native_fee_token_address: v1.native_fee_token_address,
-            parent_fee_token_address: v1.parent_fee_token_address,
-            versioned_constants: v1.versioned_constants,
-            latest_protocol_version: v1.latest_protocol_version,
-            block_time: v1.block_time,
-            no_empty_blocks: v1.no_empty_blocks,
-            bouncer_config: v1.bouncer_config,
-            sequencer_address: v1.sequencer_address,
-            eth_core_contract_address: v1.eth_core_contract_address,
-            eth_gps_statement_verifier: v1.eth_gps_statement_verifier,
-            private_key: v1.private_key,
-            mempool_mode: v1.mempool_mode,
-            mempool_min_tip_bump: v1.mempool_min_tip_bump,
-            mempool_max_transactions: v1.mempool_max_transactions,
-            mempool_max_declare_transactions: v1.mempool_max_declare_transactions,
-            mempool_ttl: v1.mempool_ttl,
-            l2_gas_price: v1.l2_gas_price,
-            block_production_concurrency: v1.block_production_concurrency,
-            l1_messages_replay_max_duration: v1.l1_messages_replay_max_duration,
-            l1_messages_finality_blocks: v1.l1_messages_finality_blocks,
+            config_version: CURRENT_CONFIG_VERSION,
+            chain_name: v2.chain_name,
+            chain_id: v2.chain_id,
+            l1_da_mode: v2.l1_da_mode,
+            settlement_chain_kind: v2.settlement_chain_kind,
+            feeder_gateway_url: v2.feeder_gateway_url,
+            gateway_url: v2.gateway_url,
+            native_fee_token_address: v2.native_fee_token_address,
+            parent_fee_token_address: v2.parent_fee_token_address,
+            versioned_constants: v2.versioned_constants,
+            latest_protocol_version: v2.latest_protocol_version,
+            block_time: v2.block_time,
+            no_empty_blocks: v2.no_empty_blocks,
+            bouncer_config: v2.bouncer_config,
+            sequencer_address: v2.sequencer_address,
+            eth_core_contract_address: v2.eth_core_contract_address,
+            eth_gps_statement_verifier: v2.eth_gps_statement_verifier,
+            private_key: v2.private_key,
+            mempool_mode: v2.mempool_mode,
+            mempool_min_tip_bump: v2.mempool_min_tip_bump,
+            mempool_max_transactions: v2.mempool_max_transactions,
+            mempool_max_declare_transactions: v2.mempool_max_declare_transactions,
+            mempool_ttl: v2.mempool_ttl,
+            l2_gas_price: v2.l2_gas_price,
+            block_production_concurrency: v2.block_production_concurrency,
+            l1_messages_replay_max_duration: v2.l1_messages_replay_max_duration,
+            l1_messages_finality_blocks: v2.l1_messages_finality_blocks,
         })
     }
 }
@@ -529,7 +529,7 @@ impl TryFrom<ChainConfigVersioned> for ChainConfig {
 
     fn try_from(versioned: ChainConfigVersioned) -> Result<Self> {
         match versioned {
-            ChainConfigVersioned::V1(v1) => ChainConfig::try_from(v1),
+            ChainConfigVersioned::V2(v2) => ChainConfig::try_from(v2),
         }
     }
 }

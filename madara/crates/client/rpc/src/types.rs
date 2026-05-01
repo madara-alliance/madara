@@ -57,12 +57,14 @@ pub fn continuation_token_from_page(
             event_n: number_of_events_in_last_block.saturating_sub(1) as u64,
         })
     } else {
-        // All fetched events are still in the same block; keep the block number and advance by
-        // the number of matching events returned for this page.
-        Some(ContinuationToken {
-            block_number: previous_token.block_number,
-            event_n: previous_token.event_n + page_size as u64,
-        })
+        // All fetched events are in `last_block_number`; advance the filtered offset relative to
+        // that block.
+        let event_n = if last_block_number == previous_token.block_number {
+            previous_token.event_n + page_size as u64
+        } else {
+            page_size as u64
+        };
+        Some(ContinuationToken { block_number: last_block_number, event_n })
     }
 }
 
@@ -126,6 +128,7 @@ mod tests {
     #[rstest]
     #[case(&[0], 2, ContinuationToken { block_number: 0, event_n: 0 }, None)]
     #[case(&[0, 0, 0], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 0, event_n: 2 }))]
+    #[case(&[7, 7, 7], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 7, event_n: 2 }))]
     #[case(&[0, 0, 4], 2, ContinuationToken { block_number: 0, event_n: 0 }, Some(ContinuationToken { block_number: 4, event_n: 0 }))]
     #[case(&[4, 6, 6], 2, ContinuationToken { block_number: 0, event_n: 2 }, Some(ContinuationToken { block_number: 6, event_n: 1 }))]
     fn continuation_token_from_page_tracks_block_boundaries(
