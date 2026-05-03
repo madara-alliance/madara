@@ -27,7 +27,7 @@
 //!
 //! The [`MadaraCmdBuilder`] provides the main interface for configuring test nodes:
 //!
-//! ```no_run
+//! ```ignore
 //! let builder = MadaraCmdBuilder::new()
 //!     .args(["--full", "--network", "sepolia"])
 //!     .env([("MADARA_RPC_PORT", "9944")])
@@ -115,7 +115,7 @@
 //!
 //! The [`wait_for_cond`] utility enables testing asynchronous blockchain operations:
 //!
-//! ```no_run
+//! ```ignore
 //! wait_for_cond(
 //!     || async {
 //!         let receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
@@ -131,7 +131,7 @@
 //!
 //! Devnet mode provides pre-funded accounts with known private keys:
 //!
-//! ```no_run
+//! ```ignore
 //! use mc_e2e_tests::devnet::{ACCOUNTS, ACCOUNT_SECRETS};
 //!
 //! let account_address = ACCOUNTS[0];
@@ -148,7 +148,7 @@
 //! 4. **Assert results**: Use utilities like [`wait_for_cond`] for async assertions
 //! 5. **Cleanup**: Automatic via [`Drop`] implementations
 //!
-//! ```no_run
+//! ```ignore
 //! #[tokio::test]
 //! async fn test_transaction() {
 //!     // Setup

@@ -81,9 +81,10 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     let storage_client = services.config.storage();
 
-    // starknet sepolia block 0.14.1 first block
-    // link: https://sepolia.voyager.online/block/0x926ef481b290f748064bc2e4eac931fd3a736645d7daa7a731297c315bcf04
-    let block_number = 2934726;
+    // Starknet Sepolia first 0.14.2 block.
+    // Block hash:
+    // 0x16b767c0592b8f5a9b29d42d7c82ec865fcab4d4765343b30dd9eb17b65b785
+    let block_number = 7984520;
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {

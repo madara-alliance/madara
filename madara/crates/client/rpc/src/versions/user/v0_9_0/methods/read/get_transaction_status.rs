@@ -138,7 +138,7 @@ mod tests {
     #[rstest::rstest]
     async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::v0_9_0::BroadcastedInvokeTxn) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
-        let result = provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        let result = provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let tx_hash = result.transaction_hash;
 
         let status = get_transaction_status(&starknet, tx_hash).await.expect("Failed to retrieve transaction status");

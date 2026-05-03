@@ -11,7 +11,7 @@ use futures::{StreamExt, TryStreamExt};
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use starknet_core::types::{
-    BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePreConfirmedBlockWithTxHashes,
+    AddressFilter, BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePreConfirmedBlockWithTxHashes,
 };
 use starknet_core::utils::get_selector_from_name;
 use starknet_crypto::poseidon_hash_many;
@@ -255,7 +255,7 @@ impl SettlementLayerProvider for StarknetClient {
             .provider
             .get_events(
                 EventFilter {
-                    address: Some(self.core_contract_address),
+                    address: Some(AddressFilter::Single(self.core_contract_address)),
                     from_block: None,
                     to_block: None,
                     keys: Some(vec![vec![event_selector, Felt::from_bytes_be_slice(msg_hash)]]),
@@ -381,7 +381,7 @@ impl SettlementLayerProvider for StarknetClient {
             self.provider.clone(),
             Some(from_l1_block_n),
             WatchEventFilter {
-                address: Some(self.core_contract_address),
+                address: Some(AddressFilter::Single(self.core_contract_address)),
                 keys: Some(vec![vec![get_selector_from_name("MessageSent").map_err(
                     |e| -> SettlementClientError {
                         StarknetClientError::MessageProcessing {
@@ -416,7 +416,7 @@ impl StarknetClient {
             let filter = EventFilter {
                 from_block: Some(from_block),
                 to_block: Some(to_block),
-                address: Some(contract_address),
+                address: Some(AddressFilter::Single(contract_address)),
                 keys: Some(vec![keys.clone()]),
             };
             tracing::debug!("Getting events filter={filter:?} cont={continuation_token:?}");

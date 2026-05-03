@@ -87,33 +87,18 @@ impl CompressedLegacyContractClass {
 
 #[cfg(test)]
 mod tests {
-    use crate::ContractClass;
-    use starknet_core::types::BlockId;
-    use starknet_core::types::BlockTag;
-    use starknet_providers::Url;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use crate::test_utils::{fetch_sierra_class, MAINNET_FEEDER_GATEWAY_URL};
     use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     async fn test_compute_sierra_class_hash() {
-        let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gateway.alpha-mainnet.starknet.io/gateway").unwrap(),
-            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
-            starknet_core::chain_id::MAINNET,
-        );
-
-        let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
-
-        let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
-
-        let starknet_core::types::ContractClass::Sierra(_) = class else { panic!("Not a Sierra contract") };
-
-        let class: ContractClass = class.into();
+        let class_hash = "0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253";
+        let class = fetch_sierra_class(MAINNET_FEEDER_GATEWAY_URL, class_hash).await;
 
         let start = std::time::Instant::now();
         let computed_class_hash = class.compute_class_hash().unwrap();
 
         println!("computed_class_hash in {:?}", start.elapsed());
-        assert_eq!(computed_class_hash, class_hash);
+        assert_eq!(computed_class_hash, Felt::from_hex_unchecked(class_hash));
     }
 }

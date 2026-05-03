@@ -106,29 +106,31 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-cairo-vm = "=2.5.0"
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.17.0-rc.0" }
-starknet-contract = { package = "starknet-rust-contract", version = "0.17.0-rc.0" }
-starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.1.0" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.17.0-rc.0" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.15.0-rc.0" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.2.6-rc.0" }
-starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.0-rc.2" }
+starknet-contract = { package = "starknet-rust-contract", version = "0.19.0-rc.2" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.0-rc.2" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.19.0-rc.2" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
+starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
+  "serde",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1", features = [
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4", features = [
   "node_api",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
-cairo-lang-starknet-classes = "=2.12.3"
-cairo-lang-utils = "=2.12.3"
-cairo-native = "0.7.3"
-
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4" }
+cairo-lang-starknet-classes = "=2.17.0"
+cairo-lang-utils = "=2.17.0"
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0" }
+cairo-vm = "=3.2.0"
+cairo-native = "0.9.0-rc.2"
 alloy = { version = "1.1.0", features = [
   "node-bindings",
   "eips",
@@ -278,8 +280,8 @@ subxt-lightclient = { version = "0.35.3", default-features = false }
 
 # Orchestrator
 num = { version = "0.4.1" }
-alloy-primitives = { version = "0.8.3", default-features = false }
-alloy-sol-types = "0.8.3"
+alloy-primitives = { version = "0.8.5", default-features = false }
+alloy-sol-types = "0.8.5"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
 aws-sdk-eventbridge = { version = "1.41.0", features = [
@@ -312,9 +314,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "9d3ad533b3f3c4849663ad180e4a92671cb07e6b", features = [
-  "cairo_native",
-] }
+# SNOS 0.14.2 pre-release with Cairo 2.17 support needed for Sierra 1.8 declares during replay.
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", tag = "v0.14.2-alpha.0" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -324,8 +325,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
-starknet_os = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+apollo_starknet_os_program = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4" }
+starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.4" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }

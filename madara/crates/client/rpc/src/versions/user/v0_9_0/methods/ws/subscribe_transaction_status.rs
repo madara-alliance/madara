@@ -307,7 +307,8 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                             format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
                         })?;
 
-                    let Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info), _idx)) = block_info else {
+                    let Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info), _idx)) = block_info
+                    else {
                         continue;
                     };
 
@@ -515,7 +516,7 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
@@ -550,7 +551,7 @@ mod test {
         tracing::debug!("Started jsonrpsee client");
 
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
@@ -620,7 +621,7 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
@@ -757,7 +758,7 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
@@ -823,7 +824,7 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
         let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
 

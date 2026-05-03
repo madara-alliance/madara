@@ -1,0 +1,752 @@
+{
+  "version": "0.10.2",
+  "assertions": [
+    {
+      "id": "chain_id",
+      "method": "starknet_chainId",
+      "params": [],
+      "expected": "0x4d41444152415f4445564e4554",
+      "description": "MADARA_DEVNET as felt hex"
+    },
+    {
+      "id": "spec_version",
+      "method": "starknet_specVersion",
+      "params": [],
+      "expected": "0.10.2"
+    },
+    {
+      "id": "syncing",
+      "method": "starknet_syncing",
+      "params": [],
+      "expected": false,
+      "description": "Devnet sequencer should not be syncing"
+    },
+    {
+      "id": "block_number",
+      "method": "starknet_blockNumber",
+      "params": [],
+      "expected": "$gt:0"
+    },
+    {
+      "id": "block_hash_and_number",
+      "method": "starknet_blockHashAndNumber",
+      "params": [],
+      "expected": {
+        "block_hash": "$any",
+        "block_number": "$gt:0"
+      }
+    },
+    {
+      "id": "get_block_tx_hashes_single",
+      "method": "starknet_getBlockWithTxHashes",
+      "params": {
+        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+      },
+      "expected": {
+        "status": "ACCEPTED_ON_L2",
+        "block_hash": "$ref:declare_hello.block_hash",
+        "block_number": "$ref:declare_hello.block_number",
+        "parent_hash": "$any",
+        "new_root": "$any",
+        "sequencer_address": "$any",
+        "starknet_version": "$any",
+        "timestamp": "$gt:0",
+        "l1_da_mode": "$any",
+        "l1_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
+        "l1_data_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
+        "l2_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
+        "transaction_commitment": "$any",
+        "event_commitment": "$any",
+        "receipt_commitment": "$any",
+        "state_diff_commitment": "$any",
+        "transaction_count": 1,
+        "event_count": "$exists",
+        "state_diff_length": "$exists",
+        "transactions": ["$ref:declare_hello.transaction_hash"]
+      },
+      "description": "Block with single declare tx. Validates all v0.10.0 header fields exist."
+    },
+    {
+      "id": "get_block_tx_hashes_multi",
+      "method": "starknet_getBlockWithTxHashes",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": {
+        "status": "ACCEPTED_ON_L2",
+        "block_number": "$ref:invoke_increase_100.block_number",
+        "transaction_count": 2,
+        "transactions": [
+          "$ref:invoke_increase_42.transaction_hash",
+          "$ref:invoke_increase_100.transaction_hash"
+        ]
+      },
+      "description": "Multi-tx block. Validates tx count and ordering."
+    },
+    {
+      "id": "get_block_tx_hashes_by_hash",
+      "method": "starknet_getBlockWithTxHashes",
+      "params": {
+        "block_id": { "block_hash": "$ref:declare_hello.block_hash" }
+      },
+      "expected": {
+        "block_hash": "$ref:declare_hello.block_hash",
+        "block_number": "$ref:declare_hello.block_number"
+      },
+      "description": "Query by block_hash to verify hash-based lookup works"
+    },
+    {
+      "id": "get_block_with_txs",
+      "method": "starknet_getBlockWithTxs",
+      "params": {
+        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+      },
+      "expected": {
+        "status": "ACCEPTED_ON_L2",
+        "block_number": "$ref:declare_hello.block_number",
+        "transactions": [
+          {
+            "transaction_hash": "$ref:declare_hello.transaction_hash",
+            "type": "DECLARE",
+            "version": "$any",
+            "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+            "class_hash": "$ref:declare_hello.class_hash",
+            "nonce": "$any",
+            "signature": "$length_gte:1",
+            "resource_bounds": "$any"
+          }
+        ]
+      },
+      "description": "Full tx body for DECLARE. Validates class_hash, sender, signature present."
+    },
+    {
+      "id": "get_block_with_txs_deploy_account",
+      "method": "starknet_getBlockWithTxs",
+      "params": {
+        "block_id": { "block_number": "$ref:deploy_new_account.block_number" }
+      },
+      "expected": {
+        "status": "ACCEPTED_ON_L2",
+        "transactions": "$length_gte:1"
+      },
+      "description": "Block with deploy_account tx."
+    },
+    {
+      "id": "get_block_with_receipts",
+      "method": "starknet_getBlockWithReceipts",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": {
+        "status": "ACCEPTED_ON_L2",
+        "transactions": [
+          {
+            "transaction": { "type": "INVOKE" },
+            "receipt": {
+              "type": "INVOKE",
+              "transaction_hash": "$ref:invoke_increase_42.transaction_hash",
+              "execution_status": "SUCCEEDED",
+              "finality_status": "ACCEPTED_ON_L2",
+              "actual_fee": { "amount": "$any", "unit": "FRI" },
+              "execution_resources": "$any",
+              "events": "$any",
+              "messages_sent": "$any"
+            }
+          },
+          {
+            "transaction": { "type": "INVOKE" },
+            "receipt": {
+              "type": "INVOKE",
+              "transaction_hash": "$ref:invoke_increase_100.transaction_hash",
+              "execution_status": "SUCCEEDED"
+            }
+          }
+        ]
+      },
+      "description": "Multi-tx block with tx+receipt pairs. Validates receipt structure, status, fee unit."
+    },
+    {
+      "id": "get_block_tx_count_multi",
+      "method": "starknet_getBlockTransactionCount",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": 2
+    },
+    {
+      "id": "get_block_tx_count_empty",
+      "method": "starknet_getBlockTransactionCount",
+      "params": {
+        "block_id": { "block_number": "$ref:empty_block.block_number" }
+      },
+      "expected": 0,
+      "description": "Empty block must return 0, not error"
+    },
+    {
+      "id": "get_tx_by_hash_declare",
+      "method": "starknet_getTransactionByHash",
+      "params": { "transaction_hash": "$ref:declare_hello.transaction_hash" },
+      "expected": {
+        "transaction_hash": "$ref:declare_hello.transaction_hash",
+        "type": "DECLARE",
+        "version": "$any",
+        "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+        "class_hash": "$ref:declare_hello.class_hash",
+        "signature": "$length_gte:1",
+        "nonce": "$any",
+        "resource_bounds": "$any"
+      }
+    },
+    {
+      "id": "get_tx_by_hash_invoke",
+      "method": "starknet_getTransactionByHash",
+      "params": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash"
+      },
+      "expected": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash",
+        "type": "INVOKE",
+        "version": "$any",
+        "sender_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+        "calldata": "$length_gte:1",
+        "signature": "$length_gte:1"
+      }
+    },
+    {
+      "id": "get_tx_by_hash_deploy_account",
+      "method": "starknet_getTransactionByHash",
+      "params": {
+        "transaction_hash": "$ref:deploy_new_account.transaction_hash"
+      },
+      "expected": {
+        "transaction_hash": "$ref:deploy_new_account.transaction_hash",
+        "type": "DEPLOY_ACCOUNT",
+        "version": "$any",
+        "class_hash": "$ref:declare_test_account.class_hash",
+        "constructor_calldata": "$length_gte:1",
+        "signature": "$length_gte:1",
+        "nonce": "$any"
+      }
+    },
+    {
+      "id": "get_tx_by_block_and_index_0",
+      "method": "starknet_getTransactionByBlockIdAndIndex",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" },
+        "index": 0
+      },
+      "expected": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash",
+        "type": "INVOKE"
+      },
+      "description": "Index 0 in multi-tx block = first invoke"
+    },
+    {
+      "id": "get_tx_by_block_and_index_1",
+      "method": "starknet_getTransactionByBlockIdAndIndex",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" },
+        "index": 1
+      },
+      "expected": {
+        "transaction_hash": "$ref:invoke_increase_100.transaction_hash",
+        "type": "INVOKE"
+      },
+      "description": "Index 1 = second invoke. Catches: index always returns same tx."
+    },
+    {
+      "id": "get_tx_receipt_declare",
+      "method": "starknet_getTransactionReceipt",
+      "params": { "transaction_hash": "$ref:declare_hello.transaction_hash" },
+      "expected": {
+        "type": "DECLARE",
+        "transaction_hash": "$ref:declare_hello.transaction_hash",
+        "block_hash": "$ref:declare_hello.block_hash",
+        "block_number": "$ref:declare_hello.block_number",
+        "execution_status": "SUCCEEDED",
+        "finality_status": "ACCEPTED_ON_L2",
+        "actual_fee": { "amount": "$any", "unit": "FRI" },
+        "execution_resources": {
+          "l1_gas": "$exists",
+          "l2_gas": "$exists",
+          "l1_data_gas": "$exists"
+        },
+        "events": "$any",
+        "messages_sent": "$any"
+      }
+    },
+    {
+      "id": "get_tx_receipt_invoke",
+      "method": "starknet_getTransactionReceipt",
+      "params": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash"
+      },
+      "expected": {
+        "type": "INVOKE",
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash",
+        "block_hash": "$ref:invoke_increase_100.block_hash",
+        "block_number": "$ref:invoke_increase_100.block_number",
+        "execution_status": "SUCCEEDED",
+        "finality_status": "ACCEPTED_ON_L2",
+        "actual_fee": { "amount": "$any", "unit": "FRI" }
+      },
+      "description": "invoke_increase_42 is in same block as invoke_increase_100"
+    },
+    {
+      "id": "get_tx_receipt_deploy_account",
+      "method": "starknet_getTransactionReceipt",
+      "params": {
+        "transaction_hash": "$ref:deploy_new_account.transaction_hash"
+      },
+      "expected": {
+        "type": "DEPLOY_ACCOUNT",
+        "transaction_hash": "$ref:deploy_new_account.transaction_hash",
+        "execution_status": "SUCCEEDED",
+        "finality_status": "ACCEPTED_ON_L2",
+        "contract_address": "$ref:deploy_new_account.contract_address"
+      },
+      "description": "DEPLOY_ACCOUNT receipt must include contract_address"
+    },
+    {
+      "id": "get_tx_receipt_l1_handler",
+      "method": "starknet_getTransactionReceipt",
+      "params": { "transaction_hash": "$ref:l1_handler_call.transaction_hash" },
+      "expected": {
+        "type": "L1_HANDLER",
+        "execution_status": "SUCCEEDED",
+        "finality_status": "ACCEPTED_ON_L2",
+        "message_hash": "$any"
+      },
+      "description": "L1_HANDLER receipt must have message_hash field"
+    },
+    {
+      "id": "get_tx_status",
+      "method": "starknet_getTransactionStatus",
+      "params": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash"
+      },
+      "expected": {
+        "finality_status": "ACCEPTED_ON_L2",
+        "execution_status": "SUCCEEDED"
+      }
+    },
+    {
+      "id": "get_state_update_declare",
+      "method": "starknet_getStateUpdate",
+      "params": {
+        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+      },
+      "expected": {
+        "block_hash": "$ref:declare_hello.block_hash",
+        "old_root": "$any",
+        "new_root": "$any",
+        "state_diff": {
+          "declared_classes": "$length:1",
+          "deployed_contracts": "$length:0",
+          "deprecated_declared_classes": "$any",
+          "nonces": "$length_gte:1",
+          "storage_diffs": "$any",
+          "replaced_classes": "$any",
+          "migrated_compiled_classes": "$any"
+        }
+      },
+      "description": "Declare block: 1 declared class, 0 deploys. migrated_compiled_classes validates v0.10.0 field."
+    },
+    {
+      "id": "get_state_update_deploy",
+      "method": "starknet_getStateUpdate",
+      "params": {
+        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+      },
+      "expected": {
+        "state_diff": {
+          "deployed_contracts": "$length:1",
+          "declared_classes": "$length:0"
+        }
+      },
+      "description": "Deploy block: 1 deployed contract, 0 new declarations"
+    },
+    {
+      "id": "get_state_update_invoke",
+      "method": "starknet_getStateUpdate",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": {
+        "state_diff": {
+          "storage_diffs": "$length_gte:1",
+          "nonces": "$length_gte:1"
+        }
+      },
+      "description": "Invoke block: storage changes for HelloStarknet.balance + nonce updates"
+    },
+    {
+      "id": "get_storage_at_balance",
+      "method": "starknet_getStorageAt",
+      "params": {
+        "contract_address": "$ref:deploy_hello.contract_address",
+        "key": "$computed:sn_keccak:balance",
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": "0x8e",
+      "description": "HelloStarknet.balance = 0x2a + 0x64 = 0x8e (142). Key computed by runner via sn_keccak('balance')."
+    },
+    {
+      "id": "get_storage_at_before_invoke",
+      "method": "starknet_getStorageAt",
+      "params": {
+        "contract_address": "$ref:deploy_hello.contract_address",
+        "key": "$computed:sn_keccak:balance",
+        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+      },
+      "expected": "0x0",
+      "description": "Balance is 0 right after deploy, before any invoke. Catches: block_id ignored."
+    },
+    {
+      "id": "get_nonce",
+      "method": "starknet_getNonce",
+      "params": {
+        "block_id": "latest",
+        "contract_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d"
+      },
+      "expected": "$gt:0",
+      "description": "Default account nonce must be > 0 after multiple txs"
+    },
+    {
+      "id": "get_nonce_at_genesis",
+      "method": "starknet_getNonce",
+      "params": {
+        "block_id": { "block_number": 0 },
+        "contract_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d"
+      },
+      "expected": "0x0",
+      "description": "Nonce was 0 at genesis. Catches: getNonce ignores block_id."
+    },
+    {
+      "id": "get_class",
+      "method": "starknet_getClass",
+      "params": {
+        "block_id": "latest",
+        "class_hash": "$ref:declare_hello.class_hash"
+      },
+      "expected": {
+        "contract_class_version": "0.1.0",
+        "sierra_program": "$length_gte:1",
+        "abi": "$any",
+        "entry_points_by_type": {
+          "CONSTRUCTOR": "$any",
+          "EXTERNAL": "$length:2",
+          "L1_HANDLER": "$any"
+        }
+      },
+      "description": "HelloStarknet has 2 EXTERNAL entry points: increase_balance, get_balance"
+    },
+    {
+      "id": "get_class_at",
+      "method": "starknet_getClassAt",
+      "params": {
+        "block_id": "latest",
+        "contract_address": "$ref:deploy_hello.contract_address"
+      },
+      "expected": {
+        "contract_class_version": "0.1.0",
+        "sierra_program": "$length_gte:1",
+        "entry_points_by_type": {
+          "EXTERNAL": "$length:2"
+        }
+      },
+      "description": "Same class as getClass but looked up by address"
+    },
+    {
+      "id": "get_class_hash_at",
+      "method": "starknet_getClassHashAt",
+      "params": {
+        "block_id": "latest",
+        "contract_address": "$ref:deploy_hello.contract_address"
+      },
+      "expected": "$ref:declare_hello.class_hash"
+    },
+    {
+      "id": "get_compiled_casm",
+      "method": "starknet_getCompiledCasm",
+      "params": { "class_hash": "$ref:declare_hello.class_hash" },
+      "expected": {
+        "prime": "$any",
+        "compiler_version": "$any",
+        "bytecode": "$length_gte:1",
+        "entry_points_by_type": {
+          "EXTERNAL": "$length:2",
+          "CONSTRUCTOR": "$any",
+          "L1_HANDLER": "$any"
+        }
+      }
+    },
+    {
+      "id": "get_storage_proof",
+      "method": "starknet_getStorageProof",
+      "params": {
+        "block_id": "latest",
+        "class_hashes": ["$ref:declare_hello.class_hash"],
+        "contract_addresses": ["$ref:deploy_hello.contract_address"],
+        "contracts_storage_keys": [
+          {
+            "contract_address": "$ref:deploy_hello.contract_address",
+            "storage_keys": ["$computed:sn_keccak:balance"]
+          }
+        ]
+      },
+      "expected": {
+        "classes_proof": "$length_gte:1",
+        "contracts_proof": "$any",
+        "contracts_storage_proofs": "$length:1",
+        "global_roots": {
+          "contracts_tree_root": "$any",
+          "classes_tree_root": "$any",
+          "block_hash": "$any"
+        }
+      }
+    },
+    {
+      "id": "call_get_balance",
+      "method": "starknet_call",
+      "params": {
+        "request": {
+          "contract_address": "$ref:deploy_hello.contract_address",
+          "entry_point_selector": "$computed:sn_keccak:get_balance",
+          "calldata": []
+        },
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": ["0x8e"],
+      "description": "get_balance() returns 142. Cross-validates with getStorageAt."
+    },
+    {
+      "id": "call_get_balance_before_invoke",
+      "method": "starknet_call",
+      "params": {
+        "request": {
+          "contract_address": "$ref:deploy_hello.contract_address",
+          "entry_point_selector": "$computed:sn_keccak:get_balance",
+          "calldata": []
+        },
+        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+      },
+      "expected": ["0x0"],
+      "description": "Balance is 0 after deploy, before invoke. Catches: call ignores block_id."
+    },
+    {
+      "id": "estimate_fee",
+      "method": "starknet_estimateFee",
+      "params": {
+        "simulation_flags": [],
+        "block_id": "latest"
+      },
+      "construct": {
+        "type": "invoke_v3",
+        "contract_address": "$ref:deploy_hello.contract_address",
+        "entry_point": "increase_balance",
+        "calldata": ["0x1"]
+      },
+      "expected": {
+        "overall_fee": "$any",
+        "unit": "FRI",
+        "resourceBounds": "$any"
+      },
+      "description": "Fee estimate via starknet.js Account. Returns overall_fee, unit, resourceBounds."
+    },
+    {
+      "id": "estimate_message_fee",
+      "method": "starknet_estimateMessageFee",
+      "params": {
+        "message": {
+          "from_address": "0x00000000000000000000000000000000deadbeef",
+          "to_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+          "entry_point_selector": "0x0",
+          "payload": ["0x1", "0x2"]
+        },
+        "block_id": "latest"
+      },
+      "expected": {
+        "overall_fee": "$any",
+        "unit": "WEI",
+        "l1_gas_consumed": "$exists",
+        "l2_gas_consumed": "$exists"
+      },
+      "description": "Estimate L1 handler fee targeting the default pre-deployed account."
+    },
+    {
+      "id": "simulate_transactions",
+      "method": "starknet_simulateTransactions",
+      "params": {
+        "block_id": "latest",
+        "simulation_flags": ["SKIP_FEE_CHARGE"]
+      },
+      "construct": {
+        "type": "invoke_v3",
+        "contract_address": "$ref:deploy_hello.contract_address",
+        "entry_point": "increase_balance",
+        "calldata": ["0x1"]
+      },
+      "expected": "$length_gte:1",
+      "description": "Simulation via starknet.js Account. Returns array of simulation results."
+    },
+    {
+      "id": "trace_transaction",
+      "method": "starknet_traceTransaction",
+      "params": {
+        "transaction_hash": "$ref:invoke_increase_42.transaction_hash"
+      },
+      "expected": {
+        "type": "INVOKE",
+        "execute_invocation": "$any",
+        "execution_resources": "$any"
+      },
+      "description": "Trace for invoke tx. execute_invocation must exist."
+    },
+    {
+      "id": "trace_block_transactions",
+      "method": "starknet_traceBlockTransactions",
+      "params": {
+        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+      },
+      "expected": "$length:2",
+      "description": "Multi-tx block must produce 2 traces"
+    },
+    {
+      "id": "get_events_transfer",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": { "block_number": "$ref:transfer_strk.block_number" },
+          "to_block": { "block_number": "$ref:transfer_strk.block_number" },
+          "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "keys": [["$computed:sn_keccak:Transfer"]],
+          "chunk_size": 100
+        }
+      },
+      "expected": {
+        "events": "$length_gte:1"
+      },
+      "description": "ERC20 Transfer events in transfer block"
+    },
+    {
+      "id": "get_events_messaging",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_number": "$ref:invoke_fire_event.block_number"
+          },
+          "to_block": { "block_number": "$ref:invoke_fire_event.block_number" },
+          "address": "$ref:deploy_messaging.contract_address",
+          "keys": [],
+          "chunk_size": 100
+        }
+      },
+      "expected": {
+        "events": [
+          {
+            "transaction_hash": "$ref:invoke_fire_event.transaction_hash",
+            "block_hash": "$ref:invoke_fire_event.block_hash",
+            "block_number": "$ref:invoke_fire_event.block_number",
+            "transaction_index": "$exists",
+            "event_index": "$exists",
+            "keys": "$length_gte:1",
+            "data": "$length_gte:1"
+          }
+        ]
+      },
+      "description": "MessageSent event. Validates v0.10.0 fields: transaction_index, event_index."
+    },
+    {
+      "id": "get_events_state_update",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_number": "$ref:invoke_update_state.block_number"
+          },
+          "to_block": {
+            "block_number": "$ref:invoke_update_state.block_number"
+          },
+          "address": "$ref:deploy_state_update.contract_address",
+          "keys": [],
+          "chunk_size": 100
+        }
+      },
+      "expected": {
+        "events": "$length_gte:1"
+      },
+      "description": "LogStateUpdate event from StateUpdateContract"
+    },
+    {
+      "id": "get_events_l1_handler",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": { "block_number": "$ref:l1_handler_call.block_number" },
+          "to_block": { "block_number": "$ref:l1_handler_call.block_number" },
+          "address": "$ref:deploy_new_account.contract_address",
+          "keys": [],
+          "chunk_size": 100
+        }
+      },
+      "expected": {
+        "events": "$length_gte:1"
+      },
+      "description": "CalledFromL1 event from L1 handler execution"
+    },
+    {
+      "id": "get_messages_status",
+      "method": "starknet_getMessagesStatus",
+      "params": {
+        "transaction_hash": "$ref:l1_messaging_event.transaction_hash"
+      },
+      "expected": "$length_gte:1",
+      "description": "Returns consumed L1->L2 message status. Requires ANVIL_PORT env var for L1 messaging setup.",
+      "requires_anvil": true
+    },
+    {
+      "id": "add_invoke_transaction",
+      "method": "starknet_addInvokeTransaction",
+      "params": {},
+      "construct": {
+        "type": "invoke_v3",
+        "contract_address": "$ref:deploy_hello.contract_address",
+        "entry_point": "increase_balance",
+        "calldata": ["0x1"]
+      },
+      "expected": {
+        "transaction_hash": "$any"
+      },
+      "description": "Submit invoke via user RPC (with mempool validation). Validates tx accepted."
+    },
+    {
+      "id": "add_declare_transaction",
+      "method": "starknet_addDeclareTransaction",
+      "params": {},
+      "construct": {
+        "type": "declare_v3",
+        "contract": "madara_contracts_DeclareTestContract"
+      },
+      "expected": {
+        "transaction_hash": "$any",
+        "class_hash": "$any"
+      },
+      "description": "Declare DeclareTestContract (reserved for this test, not declared in setup)."
+    },
+    {
+      "id": "add_deploy_account_transaction",
+      "method": "starknet_addDeployAccountTransaction",
+      "params": {},
+      "construct": {
+        "type": "deploy_account_v3"
+      },
+      "expected": {
+        "transaction_hash": "$any",
+        "contract_address": "$any"
+      },
+      "description": "Deploy a fresh account. Runner closes pending block first to sync nonce."
+    }
+  ]
+}
