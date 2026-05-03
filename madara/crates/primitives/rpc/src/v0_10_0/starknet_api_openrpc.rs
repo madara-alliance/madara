@@ -49,7 +49,7 @@ pub struct StateDiff {
     /// The storage diffs
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     /// The migrated compiled classes (NEW in v0.10.0)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 

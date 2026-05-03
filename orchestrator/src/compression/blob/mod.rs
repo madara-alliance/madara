@@ -78,7 +78,11 @@ pub async fn state_update_to_blob_data(
     tracing::debug!("Total contract updates in blob: {}", total_contracts);
 
     // Add declared classes count and data
-    add_declared_classes_to_blob_data(state_diff.declared_classes, &mut blob_data);
+    add_declared_classes_to_blob_data(
+        state_diff.declared_classes,
+        state_diff.migrated_compiled_classes.unwrap_or_default(),
+        &mut blob_data,
+    );
 
     tracing::debug!("Created blob data with {} elements", blob_data.len());
 
@@ -110,9 +114,27 @@ pub fn da_word(
     Ok(Felt::from(da_word))
 }
 
-/// Converts a vector of felts into blob data (vec of big uint)
-/// Returns a vector of blobs
-/// A single blob has a fixed size of [BLOB_LEN]
+/// Converts a vector of felts into blob data (vec of big uint).
+///
+/// **L3 Usage**: This function is used for L3 settlements where the state diff
+/// is generated locally by the orchestrator from SNOS outputs. The state diff
+/// is compressed and prepared as calldata (not encrypted blobs).
+///
+/// For L2 settlements with encrypted DA, use [`da_segment_to_blobs`] which
+/// processes the pre-encrypted DA segment received from the prover (Atlantic).
+///
+/// # Process
+/// 1. Converts felts to BigUint
+/// 2. Applies FFT transformation for KZG commitment
+/// 3. Returns blobs of fixed size [`BLOB_LEN`] (4096 elements)
+///
+/// # Arguments
+/// * `elements` - State diff felts to convert
+///
+/// # Returns
+/// * `Vec<Vec<BigUint>>` - Vector of transformed blobs
+///
+/// [`da_segment_to_blobs`]: crate::worker::utils::encrypted_blob::da_segment_to_blobs
 pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUint>>, JobError> {
     let blob_data = convert_to_biguint(elements);
     let num_blobs = blob_data.len().div_ceil(BLOB_LEN);

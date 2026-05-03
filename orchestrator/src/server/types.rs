@@ -1,5 +1,7 @@
+use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::jobs::types::{JobStatus, JobType};
 use axum::response::Response;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -151,4 +153,65 @@ pub type BlockRouteResult = Result<Response<axum::body::Body>, BlockRouteError>;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BlockStatusResponse {
     pub batch_number: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct SettlementJobTimestampsResponse {
+    #[serde(default, with = "chrono::serde::ts_seconds_option")]
+    pub process_started_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "chrono::serde::ts_seconds_option")]
+    pub process_completed_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "chrono::serde::ts_seconds_option")]
+    pub verification_started_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "chrono::serde::ts_seconds_option")]
+    pub verification_completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SettlementJobResponseItem {
+    pub job_type: JobType,
+    pub id: Uuid,
+    pub internal_id: u64,
+    pub status: JobStatus,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+    pub timestamps: SettlementJobTimestampsResponse,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SettlementSnosBatchResponse {
+    pub index: u64,
+    pub aggregator_batch_index: Option<u64>,
+    pub start_block: u64,
+    pub end_block: u64,
+    pub status: SnosBatchStatus,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SettlementAggregatorBatchResponse {
+    pub index: u64,
+    pub start_block: u64,
+    pub end_block: u64,
+    pub status: AggregatorBatchStatus,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlockSettlementStatusResponse {
+    pub block_number: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snos_batch: Option<SettlementSnosBatchResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregator_batch: Option<SettlementAggregatorBatchResponse>,
+    pub block_jobs: Vec<SettlementJobResponseItem>,
+    pub aggregator_proof_jobs: Vec<SettlementJobResponseItem>,
 }

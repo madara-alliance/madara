@@ -1,9 +1,11 @@
 use crate::core::config::StarknetVersion;
-use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file};
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
-use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
+use mongodb::bson::serde_helpers::{
+    chrono_datetime_as_bson_datetime, chrono_datetime_as_bson_datetime_optional, uuid_1_as_binary,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -119,6 +121,11 @@ pub struct AggregatorBatch {
     /// All blocks in a batch must have the same Starknet version for prover compatibility
     pub starknet_version: StarknetVersion,
 
+    /// Orchestrator version that created this batch.
+    /// Used to ensure only compatible orchestrator versions process batches they can handle.
+    #[serde(default)]
+    pub orchestrator_version: String,
+
     /// Start block number of the aggregator batch (inclusive)
     /// This is the lowest block number across all contained SNOS batches
     pub start_block: u64,
@@ -211,6 +218,7 @@ impl AggregatorBatch {
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
             starknet_version,
+            orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
             status: AggregatorBatchStatus::Open,
             builtin_weights,
         }
@@ -235,15 +243,15 @@ impl AggregatorBatch {
     }
 
     pub fn get_blob_file_path(batch_index: u64, blob_index: u64) -> String {
-        format!("{}/{}.txt", Self::get_blob_dir_path(batch_index), blob_index)
+        get_batch_blob_file(batch_index, blob_index)
     }
 
     fn get_state_update_file_path(batch_index: u64) -> String {
-        format!("{}/batch/{}.json", STORAGE_STATE_UPDATE_DIR, batch_index)
+        get_batch_state_update_file(batch_index)
     }
 
     fn get_blob_dir_path(batch_index: u64) -> String {
-        format!("{}/batch/{}", STORAGE_BLOB_DIR, batch_index)
+        get_batch_blob_dir(batch_index)
     }
 }
 
@@ -288,7 +296,7 @@ impl SnosBatchStatus {
 /// - SNOS batches can also close independently based on their own criteria
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct SnosBatch {
-    // Statis fields - set when starting and don't change after that
+    // Static fields - set when starting and don't change after that
     /// Unique identifier for the batch
     #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
@@ -303,6 +311,11 @@ pub struct SnosBatch {
     pub aggregator_batch_index: Option<u64>,
 
     pub starknet_version: StarknetVersion,
+
+    /// Orchestrator version that created this batch.
+    /// Used to ensure only compatible orchestrator versions process batches they can handle.
+    #[serde(default)]
+    pub orchestrator_version: String,
 
     /// Start block number of the batch (inclusive)
     pub start_block: u64,
@@ -326,6 +339,33 @@ pub struct SnosBatch {
     pub created_at: DateTime<Utc>,
 
     /// Timestamp when the batch was last updated
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Reverse lookup entry for per-block batch membership.
+///
+/// This materializes the batch relationships needed by alerting and route
+/// lookups so we do not have to repeatedly scan block ranges at read time.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct BlockBatchLookup {
+    /// Concrete block number represented by this lookup row.
+    pub block_number: u64,
+
+    /// SNOS batch containing this block, when available.
+    #[serde(default)]
+    pub snos_batch_index: Option<u64>,
+
+    /// Aggregator batch containing this block, when available.
+    #[serde(default)]
+    pub aggregator_batch_index: Option<u64>,
+
+    /// Timestamp when the lookup row was created.
+    #[serde(default)]
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime_optional"))]
+    pub created_at: Option<DateTime<Utc>>,
+
+    /// Timestamp when the lookup row was last refreshed.
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
 }
@@ -357,6 +397,7 @@ impl SnosBatch {
             index,
             aggregator_batch_index,
             starknet_version,
+            orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
             start_block,
             end_block: start_block,
             num_blocks: 1,

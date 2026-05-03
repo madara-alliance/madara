@@ -36,7 +36,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 const PQ_WORKER_ERROR_SLEEP: Duration = Duration::from_millis(500);
-const PQ_WORKER_NO_MESSAGE_SLEEP: Duration = Duration::from_millis(100);
+const PQ_WORKER_NO_MESSAGE_SLEEP: Duration = Duration::from_millis(1000);
 
 /// The action type this priority queue worker handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

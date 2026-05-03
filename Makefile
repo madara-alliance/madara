@@ -117,7 +117,7 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
 AWS_REGION ?= us-east-1
-PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.1/pathfinder-aarch64-apple-darwin.tar.gz
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -221,7 +221,7 @@ setup-cairo:
 .PHONY: build-madara
 build-madara:
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
-	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+	@$(VENV_ACTIVATE) && cargo build --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: build-orchestrator
@@ -240,20 +240,12 @@ check:
 	@npm install
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
-	@cargo fmt -- --check
+	@cargo fmt --all -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
-	@cargo clippy --workspace --no-deps -- -D warnings
-	@cargo clippy --workspace --tests --no-deps -- -D warnings
-	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
-	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
-	@# Remove this once we add madara back to toplevel workspace.
-	@echo "Running cargo clippy for madara..."
-	@cd madara && \
-	cargo clippy --workspace --no-deps -- -D warnings && \
-	cargo clippy --workspace --tests --no-deps -- -D warnings && \
-	cd ..
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --no-deps -- -D warnings
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
@@ -272,7 +264,7 @@ fmt:
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
-	@cargo fmt
+	@cargo fmt --all
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e
@@ -393,13 +385,13 @@ build-e2e-binaries:
 	@mkdir -p $(CARGO_TARGET_DIR)/release
 	@# Build Madara
 	@echo -e "$(INFO)Building Madara...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path madara/Cargo.toml --bin madara --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara --release
 	@# Build Orchestrator
 	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
-	@# Build Bootstrapper
-	@echo -e "$(INFO)Building Bootstrapper...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper/Cargo.toml --bin bootstrapper --release
+	@# Build Bootstrapper V2
+	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
@@ -422,7 +414,7 @@ download-pathfinder-mac:
 make-e2e-binaries-executable:
 	@echo -e "$(DIM)Making binaries executable...$(RESET)"
 	@chmod +x $(CARGO_TARGET_DIR)/release/madara
-	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper
+	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper-v2
 	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
 	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
 	@chmod +x test_utils/scripts/deploy_dummy_verifier.sh
@@ -475,7 +467,7 @@ git-hook:
 	@git config core.hooksPath .githooks
 
 .PHONY: setup-l2
-setup-l2:
+setup-l2: setup-cairo
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
@@ -491,24 +483,24 @@ setup-l3:
 
 .PHONY: setup-l3-localstack
 setup-l3-localstack:
-	@echo -e "$(DIM)Setting up orchestrator with L3 layer abd Localstack...$(RESET)"
+	@echo -e "$(DIM)Setting up orchestrator with L3 layer and Localstack...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.14.0 2>&1
+	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover atlantic --da-on-ethereum 2>&1
 
 
 .PHONY: run-orchestrator-l3
 run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet --madara-version 0.14.0 2>&1
+	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --mock-atlantic-server --da-on-starknet 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
-	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --da-on-starknet' 2>&1
 
 # Run the mock Atlantic server with enhanced CLI
 # Usage: make run-mock-atlantic-server

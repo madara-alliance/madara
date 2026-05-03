@@ -6,16 +6,16 @@ use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
+use alloy::network::Ethereum;
 use alloy::primitives::{keccak256, Address, B256, I256, U256};
-use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
+use alloy::providers::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
+use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::types::Filter;
 use alloy::sol;
 use alloy::sol_types::SolValue;
-use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
-use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
-use futures::stream::BoxStream;
+use futures::stream::{self, BoxStream};
 use futures::StreamExt;
 use mp_convert::{FeltExt, ToFelt};
 use mp_transactions::L1HandlerTransactionWithFee;
@@ -36,9 +36,15 @@ sol!(
     "src/eth/starknet_core.json"
 );
 
+pub type DefaultHttpProvider = FillProvider<
+    JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+    RootProvider<Ethereum>,
+    Ethereum,
+>;
+
 pub struct EthereumClient {
-    pub provider: Arc<ReqwestProvider>,
-    pub l1_core_contract: StarknetCoreContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+    pub provider: Arc<DefaultHttpProvider>,
+    pub l1_core_contract: StarknetCoreContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
 }
 
 #[derive(Clone)]
@@ -55,7 +61,7 @@ impl Clone for EthereumClient {
 
 impl EthereumClient {
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
-        let provider = ProviderBuilder::new().on_http(config.rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(config.rpc_url));
         let core_contract_address =
             Address::from_str(&config.core_contract_address).map_err(|e| -> SettlementClientError {
                 EthereumClientError::Conversion(format!("Invalid core contract address: {e}")).into()
@@ -67,13 +73,57 @@ impl EthereumClient {
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?
             .is_empty()
         {
-            let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
-            Ok(Self { provider: Arc::new(provider), l1_core_contract: contract })
+            let contract = StarknetCoreContract::new(core_contract_address, Arc::clone(&provider));
+            Ok(Self { provider, l1_core_contract: contract })
         } else {
             Err(SettlementClientError::Ethereum(EthereumClientError::Contract(
                 "Core contract not found at given address".into(),
             )))
         }
+    }
+
+    /// Fetches `LogMessageToL2` events from `from_block` to `to_block` in paginated chunks
+    /// using `eth_getLogs`. This ensures historical events are not missed (unlike `eth_newFilter`
+    /// which only returns events after filter creation).
+    async fn query_paginated_events(
+        contract: &StarknetCoreContractInstance<Arc<DefaultHttpProvider>, Ethereum>,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<MessageToL2WithMetadata>, SettlementClientError> {
+        /// Max blocks per `eth_getLogs` request. Most RPC providers (Alchemy, Infura)
+        /// limit queries to 2k–10k blocks; 10 000 is a safe upper bound.
+        const QUERY_CHUNK_SIZE: u64 = 10_000;
+
+        let mut all_events = Vec::new();
+        let mut current_from = from_block;
+
+        while current_from <= to_block {
+            let current_to = std::cmp::min(current_from + QUERY_CHUNK_SIZE - 1, to_block);
+
+            tracing::debug!("Fetching historical L1→L2 events: blocks {current_from}..{current_to}");
+
+            let events = contract
+                .event_filter::<LogMessageToL2>()
+                .from_block(current_from)
+                .to_block(current_to)
+                .query()
+                .await
+                .map_err(|e| -> SettlementClientError {
+                    EthereumClientError::ArchiveRequired(format!(
+                        "Could not fetch historical events (blocks {current_from}..{current_to}), \
+                         archive node may be required: {e}"
+                    ))
+                    .into()
+                })?;
+
+            for pair in events {
+                all_events.push(MessageToL2WithMetadata::try_from(pair)?);
+            }
+
+            current_from = current_to + 1;
+        }
+
+        Ok(all_events)
     }
 }
 
@@ -90,7 +140,6 @@ impl SettlementLayerProvider for EthereumClient {
         self.provider
             .get_block_number()
             .await
-            .map(|n| n.as_u64())
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })
     }
 
@@ -134,10 +183,12 @@ impl SettlementLayerProvider for EthereumClient {
         // when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
         // executing the block 0.
         // link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
-        let block_number: Option<u64> = if block_number._0 == I256::MINUS_ONE {
+        let block_number: Option<u64> = if block_number == I256::MINUS_ONE {
             None // initial contract state
         } else {
-            Some(block_number._0.as_u64())
+            Some(u64::try_from(block_number).map_err(|e| -> SettlementClientError {
+                EthereumClientError::Conversion(format!("Failed to convert state block number: {e}")).into()
+            })?)
         };
 
         let global_root =
@@ -146,7 +197,7 @@ impl SettlementLayerProvider for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state root: {e:#}")).into()
                 },
             )?;
-        let global_root = global_root._0.to_felt();
+        let global_root = global_root.to_felt();
 
         let block_hash =
             self.l1_core_contract.stateBlockHash().block(BlockId::number(latest_block_n)).call().await.map_err(
@@ -154,7 +205,7 @@ impl SettlementLayerProvider for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
                 },
             )?;
-        let block_hash = block_hash._0.to_felt();
+        let block_hash = block_hash.to_felt();
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
@@ -281,7 +332,7 @@ impl SettlementLayerProvider for EthereumClient {
                 },
             )?;
 
-        Ok(!cancellation_timestamp._0.is_zero())
+        Ok(!cancellation_timestamp.is_zero())
     }
 
     /// Get cancellation status of an L1 to L2 message
@@ -311,16 +362,13 @@ impl SettlementLayerProvider for EthereumClient {
             )?;
 
         tracing::debug!("Returned");
-        Ok(cancellation_timestamp._0 != U256::ZERO)
+        Ok(cancellation_timestamp != U256::ZERO)
     }
 
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
         let block = self
             .provider
-            .get_block(
-                BlockId::Number(BlockNumberOrTag::Number(l1_block_n)),
-                alloy::rpc::types::BlockTransactionsKind::Hashes,
-            )
+            .get_block(BlockId::Number(BlockNumberOrTag::Number(l1_block_n)))
             .await
             .map_err(|e| -> SettlementClientError {
                 EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
@@ -332,23 +380,82 @@ impl SettlementLayerProvider for EthereumClient {
         Ok(block.header.timestamp)
     }
 
+    async fn get_block_n_hash(&self, l1_block_n: u64) -> Result<Option<[u8; 32]>, SettlementClientError> {
+        let block = self.provider.get_block(BlockId::Number(BlockNumberOrTag::Number(l1_block_n))).await.map_err(
+            |e| -> SettlementClientError {
+                EthereumClientError::Rpc(format!("Failed to get block #{l1_block_n}: {e}")).into()
+            },
+        )?;
+        Ok(block.map(|b| b.header.hash.0))
+    }
+
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
-        let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-        let event_stream =
-            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
-                |e| -> SettlementClientError {
-                    EthereumClientError::ArchiveRequired(format!(
-                        "Could not fetch events, archive node may be required: {}",
-                        e
-                    ))
-                    .into()
-                },
-            )?;
+        // Step 1: Create the live event watcher BEFORE querying the latest block.
+        // This guarantees no gap: the watcher tracks events from its creation time onward,
+        // and the historical query (in step 3) covers everything up to the chain tip we
+        // observe in step 2. The two ranges overlap at the chain tip, so any event that lands
+        // in a block right around filter creation is caught by at least one path. Duplicates
+        // from the overlap are deduplicated downstream by nonce.
+        // EthereumEventStream::new() calls into_stream() which spawns a background polling
+        // task (eth_getFilterChanges every ~7s), keeping the filter alive during the
+        // historical query and buffering any new events.
+        //
+        // We use `toBlock: "latest"` (not "finalized") for portability:
+        //   - Vanilla Geth's `SubscribeLogs` rejects `toBlock: "finalized"` with
+        //     `errInvalidBlockRange` — only "latest" or concrete numbers are supported.
+        //   - Hosted providers (e.g. Alchemy) accept "finalized" but their custom filter
+        //     layer does not enforce it, so events are delivered at chain-tip latency anyway.
+        //   - With "latest", the live watcher delivers events as soon as their block is mined.
+        //     Finality enforcement is performed client-side in `process_finalized_events`
+        //     by holding events until they reach `l1_messages_finality_blocks` confirmations
+        //     AND verifying the block hash is still canonical (catches reorgs).
+        let event_poller = self
+            .l1_core_contract
+            .event_filter::<LogMessageToL2>()
+            .from_block(from_l1_block_n)
+            .to_block(BlockNumberOrTag::Latest)
+            .watch()
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::ArchiveRequired(format!("Could not create event watcher: {e}")).into()
+            })?;
+        let live_stream = EthereumEventStream::new(event_poller);
 
-        Ok(EthereumEventStream::new(event_stream).boxed())
+        // Step 2: Snapshot the latest block AFTER creating the watcher.
+        //
+        // The historical query MUST cover up to `latest` (not `finalized`), otherwise events
+        // in blocks `(finalized, latest]` at the moment of filter creation would be silently
+        // dropped: the live watcher only delivers events from blocks added after filter
+        // creation, so any event already mined in the (finalized, latest] window would never
+        // be picked up by it.
+        //
+        // This is safe because finality enforcement now happens client-side in
+        // `process_finalized_events`: every event (historical or live) is held in the
+        // in-memory `pending_events` queue until it reaches `l1_messages_finality_blocks`
+        // confirmations AND its block hash is verified canonical. Historical events from
+        // unfinalized blocks just sit in the queue a bit longer until they age into the
+        // confirmation window.
+        let latest_block = self.provider.get_block_number().await.map_err(|e| -> SettlementClientError {
+            EthereumClientError::Rpc(format!("Failed to get latest block: {e}")).into()
+        })?;
+
+        // Step 3: Fetch historical events via paginated eth_getLogs (.query()).
+        tracing::info!(
+            "⟠ L1→L2 message sync: querying historical events from block #{from_l1_block_n} to #{latest_block}"
+        );
+        let historical_events =
+            Self::query_paginated_events(&self.l1_core_contract, from_l1_block_n, latest_block).await?;
+        tracing::info!(
+            "⟠ L1→L2 message sync: historical catchup complete ({} events), switching to live watching",
+            historical_events.len()
+        );
+        let historical_stream = stream::iter(historical_events.into_iter().map(Ok));
+
+        // Chain: historical events first, then live watch stream.
+        Ok(historical_stream.chain(live_stream).boxed())
     }
 }
 
@@ -383,10 +490,10 @@ pub mod eth_client_getter_test {
 
     pub fn create_ethereum_client(url: String) -> EthereumClient {
         let rpc_url: Url = url.parse().expect("issue while parsing URL");
-        let provider = ProviderBuilder::new().on_http(rpc_url.clone());
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
         let address = Address::parse_checksummed(CORE_CONTRACT_ADDRESS, None).unwrap();
-        let contract = StarknetCoreContract::new(address, provider.clone());
-        EthereumClient { provider: Arc::new(provider), l1_core_contract: contract }
+        let contract = StarknetCoreContract::new(address, Arc::clone(&provider));
+        EthereumClient { provider, l1_core_contract: contract }
     }
 
     #[tokio::test]
@@ -406,8 +513,7 @@ pub mod eth_client_getter_test {
     #[tokio::test]
     async fn get_latest_block_number_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let block_number =
-            eth_client.provider.get_block_number().await.expect("issue while fetching the block number").as_u64();
+        let block_number = eth_client.provider.get_block_number().await.expect("issue while fetching the block number");
         assert_eq!(block_number, L1_BLOCK_NUMBER, "provider unable to get the correct block number");
     }
 
@@ -462,9 +568,9 @@ pub mod eth_client_getter_test {
                 .to_string(),
         };
 
-        let provider = ProviderBuilder::new().on_http(config.rpc_url);
-        let contract = StarknetCoreContract::new(config.core_contract_address.parse().unwrap(), provider.clone());
-        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract };
+        let provider = Arc::new(ProviderBuilder::new().connect_http(config.rpc_url));
+        let contract = StarknetCoreContract::new(config.core_contract_address.parse().unwrap(), Arc::clone(&provider));
+        let eth_client = EthereumClient { provider, l1_core_contract: contract };
 
         // Call contract and verify we get -1 as int256
         let block_number = eth_client
@@ -478,10 +584,10 @@ pub mod eth_client_getter_test {
             })
             .unwrap();
 
-        assert_eq!(block_number._0, I256::MINUS_ONE);
+        assert_eq!(block_number, I256::MINUS_ONE);
 
         // Verify that converting -1 to u64 returns None
-        let block_number: Option<u64> = block_number._0.try_into().ok();
+        let block_number: Option<u64> = block_number.try_into().ok();
         assert!(block_number.is_none());
 
         // Verify mock was called
@@ -497,14 +603,19 @@ mod l1_messaging_tests {
     use crate::messaging::sync;
     use alloy::{
         hex::FromHex,
+        network::{Ethereum, EthereumWallet},
         node_bindings::{Anvil, AnvilInstance},
         primitives::{Address, U256},
-        providers::{ProviderBuilder, RootProvider},
+        providers::{
+            fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller},
+            Identity, ProviderBuilder, RootProvider,
+        },
         sol,
-        transports::http::{Client, Http},
     };
     use mc_db::MadaraBackend;
+    use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_chain_config::ChainConfig;
+    use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -513,11 +624,20 @@ mod l1_messaging_tests {
     use tracing_test::traced_test;
     use url::Url;
 
+    type TestWalletProvider = FillProvider<
+        JoinFill<
+            JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+            WalletFiller<EthereumWallet>,
+        >,
+        RootProvider<Ethereum>,
+        Ethereum,
+    >;
+
     struct TestRunner {
         #[allow(dead_code)]
         anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
         db_service: Arc<MadaraBackend>,
-        dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
+        dummy_contract: DummyContractInstance<Arc<TestWalletProvider>, Ethereum>,
         eth_client: EthereumClient,
     }
 
@@ -602,13 +722,13 @@ mod l1_messaging_tests {
     /// Common setup for tests
     ///
     /// This test performs the following steps:
-    /// 1. Sets up test environemment
+    /// 1. Sets up test environment
     /// 2. Starts worker
     /// 3. Fires a Message event from the dummy contract
     /// 4. Waits for event to be processed
     /// 5. Assert that the worker handle the event with correct data
     /// 6. Assert that the hash computed by the worker is correct
-    /// 7. Assert that the tx is succesfully submited
+    /// 7. Assert that the tx is successfully submitted
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
     ///
@@ -625,31 +745,34 @@ mod l1_messaging_tests {
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
+        let wallet_provider = Arc::new(
+            ProviderBuilder::new()
+                .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
+                .connect_http(rpc_url),
+        );
 
         // Set up dummy contract
-        let contract = DummyContract::deploy(provider.clone()).await.unwrap();
+        let contract = DummyContract::deploy(wallet_provider).await.unwrap();
 
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
+        let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract.clone() };
 
         TestRunner { anvil, db_service: db, dummy_contract: contract, eth_client }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
     ///
-    /// This test performs the following steps:
-    /// 1. Sets up test environemment
-    /// 2. Starts worker
-    /// 3. Fires a Message event from the dummy contract
-    /// 4. Waits for event to be processed
-    /// 5. Assert that the worker handle the event with correct data
-    /// 6. Assert that the hash computed by the worker is correct
-    /// 7. TODO : Assert that the tx is succesfully submited
-    /// 8. Assert that the event is successfully pushed to the db
-    /// 9. TODO : Assert that the tx was correctly executed
+    /// This test exercises the full "seen -> executed" lifecycle for L1->L2 messaging metadata:
+    /// 1. Emit an L1 `LogMessageToL2` event on anvil (L1 side).
+    /// 2. Run the messaging sync worker and assert the message is stored as pending (L2 side).
+    /// 3. Assert DB indices used by `starknet_getMessagesStatus` are written:
+    ///    - `nonce -> l1_tx_hash`
+    ///    - `l1_tx_hash||nonce -> <empty marker>`
+    /// 4. Simulate L2 execution by writing a block with a consumed L1-handler receipt and assert:
+    ///    - pending entry is removed
+    ///    - `l1_tx_hash||nonce -> l2_tx_hash` is filled
     #[rstest]
     #[traced_test]
     #[tokio::test]
@@ -660,13 +783,23 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing()).await
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                    false,
+                )
+                .await
             })
         };
 
         // Set canceled status and fire event
         let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
-        let _ = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let fire_tx = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let l1_tx_hash_u256: U256 = (*fire_tx.tx_hash()).into();
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_u256.to_be_bytes::<32>());
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -693,7 +826,6 @@ mod l1_messaging_tests {
             .call()
             .await
             .expect("Should successfully get the message hash from the contract")
-            ._0
             .to_string();
         assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
@@ -706,7 +838,129 @@ mod l1_messaging_tests {
         // TODO: Assert that the transaction has been executed successfully
         assert!(db.get_pending_message_to_l2(0).unwrap().is_some());
 
+        // Assert that L1 tx hash indexing metadata was persisted (used by `starknet_getMessagesStatus`).
+        assert_eq!(db.get_l1_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, None)]
+        );
+
+        // Simulate L2 execution: when block production consumes the message, it writes an L1-handler
+        // transaction + receipt. This should fill `l1_tx_hash||nonce -> l2_tx_hash` and remove the
+        // pending message entry.
+        let l2_tx_hash = Felt::from_hex_unchecked("0x123");
+        let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash,
+            execution_result: ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let block = FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![TransactionWithReceipt { transaction: handler_tx.tx.clone().into(), receipt }],
+            events: Default::default(),
+        };
+        db.write_access().add_full_block_with_classes(&block, &[], true).unwrap();
+
+        assert!(
+            db.get_pending_message_to_l2(handler_tx.tx.nonce).unwrap().is_none(),
+            "pending message should be removed once consumed"
+        );
+        assert_eq!(
+            db.get_l1_handler_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(),
+            Some(l2_tx_hash),
+            "nonce->l2_tx_hash mapping should be written once the message is executed on L2"
+        );
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, Some(l2_tx_hash))],
+            "secondary index should be filled once the message is executed on L2"
+        );
+
         // Explicitly cancel the listen task, else it would be running in the background
+        worker_handle.abort();
+    }
+
+    /// Test that historical L1→L2 messages emitted BEFORE the sync worker starts are
+    /// correctly picked up via eth_getLogs (the historical catchup phase).
+    ///
+    /// This is a regression test: the old implementation only used eth_newFilter +
+    /// eth_getFilterChanges (.watch()), which is forward-only from filter creation time.
+    /// Events emitted before the filter existed were silently lost.
+    ///
+    /// Steps:
+    /// 1. Deploy contract and fire a LogMessageToL2 event (this is now "historical")
+    /// 2. Wait for a few blocks so the event is in the past
+    /// 3. Start the sync worker (which creates the filter AFTER the event)
+    /// 4. Assert the historical event is still picked up and stored in the DB
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_historical_messages_catchup(#[future] setup_test_env: TestRunner) {
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } = setup_test_env.await;
+
+        // Step 1: Fire the event BEFORE the sync worker starts.
+        let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
+        let fire_tx = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let l1_tx_hash_u256: U256 = (*fire_tx.tx_hash()).into();
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_u256.to_be_bytes::<32>());
+
+        // Step 2: Wait a few blocks so the event sits firmly in the "historical" range
+        // by the time the worker starts. The sync worker's historical query (eth_getLogs)
+        // will pick it up regardless of finality, since we use `latest` as the upper bound
+        // and `madara_test()` sets `l1_messages_finality_blocks = 0`.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Step 3: Set the sync tip to block 0 so the worker queries from the beginning.
+        // This simulates a node that has never synced L1 messages before.
+        db.write_l1_messaging_sync_tip(Some(0)).unwrap();
+
+        // Step 4: NOW start the sync worker — the event is already in the past.
+        // With the old code (.watch() only), this event would be lost.
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                    false,
+                )
+                .await
+            })
+        };
+
+        // Step 5: Wait for the worker to process the historical event.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Step 6: Assert the historical event was picked up.
+        let handler_tx = db
+            .get_pending_message_to_l2(0)
+            .expect("DB read should succeed")
+            .expect("Historical message should have been picked up by eth_getLogs catchup");
+
+        assert_eq!(handler_tx.tx.nonce, 0);
+        assert_eq!(
+            handler_tx.tx.contract_address,
+            Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370").unwrap()
+        );
+
+        // Assert sync tip was updated
+        let sync_tip = db
+            .get_l1_messaging_sync_tip()
+            .expect("DB read should succeed")
+            .expect("Sync tip should be updated after processing");
+        assert!(sync_tip > 0, "Sync tip should have advanced past block 0");
+
+        // Assert L1 tx hash metadata was persisted
+        assert_eq!(db.get_l1_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, None)]
+        );
+
         worker_handle.abort();
     }
 
@@ -756,6 +1010,179 @@ mod l1_messaging_tests {
             .expect("Should parse valid expected hash hex");
 
         assert_eq!(msg, expected_hash);
+    }
+
+    /// End-to-end test of the full L1 reorg flow against Anvil:
+    ///   1. Event #1 with nonce 0 is fired and observed by the worker.
+    ///   2. The chain is reorged past event #1's block.
+    ///   3. Event #2 with the same nonce is fired on the new canonical chain.
+    ///   4. The worker drops event #1 (canonical hash mismatch) without poisoning the
+    ///      nonce mapping.
+    ///   5. Event #2 is processed normally and queued for L2 inclusion, with nonce 0
+    ///      mapped to event #2's L1 tx hash.
+    ///
+    /// Working around alloy's `NonceFiller` cache:
+    /// `CachedNonceManager` (the default) fetches `eth_getTransactionCount` once per
+    /// address, then increments the cache locally on each send. After `anvil_rollback`
+    /// the cache is ahead of the chain — sending another tx through the same provider
+    /// produces a "future" nonce that sits in the mempool forever and `get_receipt()`
+    /// hangs. We work around this by creating a **fresh** `wallet_provider_2` after the
+    /// rollback; its new `NonceFiller` calls `eth_getTransactionCount` on first use and
+    /// picks up the correct post-rollback nonce.
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_reorg_drops_event_and_processes_re_emission() {
+        use alloy::providers::ext::AnvilApi;
+        use alloy::providers::Provider;
+
+        // === Setup ===
+        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+
+        // Use a moderate finality_blocks: large enough to give us a window to reorg
+        // before the worker processes the event, small enough to keep the test fast.
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.l1_messages_finality_blocks = 15;
+        let chain_config = Arc::new(chain_config);
+        let db = MadaraBackend::open_for_testing(chain_config);
+
+        let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
+        let wallet_provider = Arc::new(
+            ProviderBuilder::new()
+                .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
+                .connect_http(rpc_url.clone()),
+        );
+
+        let contract = DummyContract::deploy(wallet_provider.clone()).await.unwrap();
+        let _ = contract.setIsCanceled(false).send().await.expect("setIsCanceled failed");
+
+        let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
+        let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract };
+
+        // === Start sync worker ===
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                    false,
+                )
+                .await
+            })
+        };
+
+        // Brief wait for worker to initialize and create the filter
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // === Phase 1: Fire event #1 ===
+        let fire_tx_1 = contract.fireEvent().send().await.expect("fireEvent #1 failed");
+        let l1_tx_hash_1_u256: U256 = (*fire_tx_1.tx_hash()).into();
+        let receipt_1 = fire_tx_1.get_receipt().await.expect("receipt #1 failed");
+        let event_block_1 = receipt_1.block_number.expect("event #1 receipt missing block number");
+        tracing::info!("Event #1 fired at block #{event_block_1}, tx={:#x}", l1_tx_hash_1_u256);
+
+        // Wait for the worker's live filter to observe event #1 (alloy polls ~7s).
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        // Sanity: event should be in the in-memory queue, not yet in DB
+        assert!(
+            db.get_pending_message_to_l2(0).unwrap().is_none(),
+            "Event #1 should still be in the in-memory queue, not yet processed"
+        );
+
+        // === Phase 2: Reorg past event #1's block ===
+        let current_latest = provider.get_block_number().await.expect("get_block_number failed");
+        let depth = current_latest - event_block_1 + 1;
+        tracing::info!("Rolling back chain by {depth} blocks (latest #{current_latest} → #{})", current_latest - depth);
+        provider.anvil_rollback(Some(depth)).await.expect("anvil_rollback failed");
+
+        let post_reorg_latest = provider.get_block_number().await.expect("get_block_number failed");
+        tracing::info!("Post-reorg latest: #{post_reorg_latest}");
+        assert!(
+            post_reorg_latest < event_block_1,
+            "After rollback, latest (#{post_reorg_latest}) should be before event #1's block (#{event_block_1})"
+        );
+
+        // === Phase 3: Fire event #2 from a DIFFERENT anvil dev account ===
+        //
+        // Two reasons we use a different account here (not the same one with a fresh provider):
+        //
+        // 1. `CachedNonceManager` cache staleness: the original `wallet_provider` remembers
+        //    having sent deploy + setIsCanceled + event #1, so it thinks the next nonce is 3.
+        //    After the rollback, the chain only has deploy + setIsCanceled and expects nonce 2.
+        //    A fresh provider would query the chain and get nonce 2 — but then send a tx
+        //    that's BIT-FOR-BIT IDENTICAL to event #1's tx (same from, same nonce, same
+        //    calldata, same gas), producing the same tx hash. We'd lose the ability to
+        //    distinguish event #1 from event #2 in the assertions.
+        //
+        // 2. Using a different account guarantees a different `from` field → different tx
+        //    hash → we can prove the nonce mapping points to event #2 specifically.
+        let signer_2: alloy::signers::local::PrivateKeySigner = anvil.keys()[1].clone().into();
+        let wallet_2 = EthereumWallet::from(signer_2);
+        let wallet_provider_2 = Arc::new(ProviderBuilder::new().wallet(wallet_2).connect_http(rpc_url.clone()));
+        let contract_2 = DummyContract::new(*contract.address(), wallet_provider_2);
+
+        let fire_tx_2 = contract_2.fireEvent().send().await.expect("fireEvent #2 failed");
+        let l1_tx_hash_2_u256: U256 = (*fire_tx_2.tx_hash()).into();
+        let receipt_2 = fire_tx_2.get_receipt().await.expect("receipt #2 failed");
+        let event_block_2 = receipt_2.block_number.expect("event #2 receipt missing block number");
+        tracing::info!("Event #2 fired at block #{event_block_2}, tx={:#x}", l1_tx_hash_2_u256);
+
+        // Sanity: distinct L1 tx hashes (different from-addresses, hence different RLP)
+        assert_ne!(l1_tx_hash_1_u256, l1_tx_hash_2_u256, "Event #1 and event #2 must have distinct L1 tx hashes");
+
+        // === Phase 4: Wait for both events to reach the confirmation threshold ===
+        // Need: latest >= max(event_block_1, event_block_2) + 15
+        let max_event_block = std::cmp::max(event_block_1, event_block_2);
+        let target_latest = max_event_block + 15;
+        let post_2_latest = provider.get_block_number().await.expect("get_block_number failed");
+        let blocks_to_wait = if post_2_latest < target_latest {
+            (target_latest - post_2_latest) + 5 // small buffer for filter polling
+        } else {
+            5
+        };
+        tracing::info!("Waiting {blocks_to_wait}s for confirmations (need latest >= #{target_latest})...");
+        tokio::time::sleep(Duration::from_secs(blocks_to_wait)).await;
+
+        let final_latest = provider.get_block_number().await.expect("get_block_number failed");
+        tracing::info!("Final latest: #{final_latest}");
+        assert!(final_latest >= target_latest, "Latest #{final_latest} should be >= target #{target_latest}");
+
+        // === Phase 5: Verify event #1 dropped, event #2 processed, nonce mapped to event #2 ===
+        let pending = db.get_pending_message_to_l2(0).unwrap();
+        assert!(pending.is_some(), "Event #2 should be in pending_message_to_l2 (worker should have processed it)");
+
+        let l1_tx_hash_2_typed = mp_convert::L1TransactionHash(l1_tx_hash_2_u256.to_be_bytes::<32>());
+        let l1_tx_hash_1_typed = mp_convert::L1TransactionHash(l1_tx_hash_1_u256.to_be_bytes::<32>());
+        let stored_l1_tx_hash = db.get_l1_txn_hash_by_nonce(0).unwrap();
+
+        // CRITICAL: nonce 0 must be mapped to event #2's L1 tx hash, NOT event #1's.
+        // If event #1 had poisoned the mapping (because we wrote nonce metadata before
+        // checking canonicity), this would point to event #1 and we'd be processing a
+        // message that was reorged out.
+        assert_eq!(
+            stored_l1_tx_hash,
+            Some(l1_tx_hash_2_typed),
+            "Nonce 0 should be mapped to event #2's L1 tx hash (proving non-poisoning)"
+        );
+        assert_ne!(
+            stored_l1_tx_hash,
+            Some(l1_tx_hash_1_typed),
+            "Nonce 0 must NOT be mapped to event #1's tx hash (which was reorged out)"
+        );
+
+        // Sync tip should have advanced at least past event #2's block
+        let sync_tip = db.get_l1_messaging_sync_tip().unwrap().unwrap();
+        assert!(
+            sync_tip >= event_block_2,
+            "Sync tip #{sync_tip} should have advanced to at least event #2's block #{event_block_2}"
+        );
+
+        worker_handle.abort();
     }
 }
 
@@ -830,13 +1257,17 @@ mod eth_client_event_subscription_test {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
-        let provider = ProviderBuilder::new().on_http(rpc_url);
+        let provider = Arc::new(ProviderBuilder::new().connect_http(rpc_url.clone()));
+        let wallet_provider = Arc::new(
+            ProviderBuilder::new()
+                .wallet(anvil.wallet().expect("anvil should expose a development wallet"))
+                .connect_http(rpc_url),
+        );
 
-        let contract = DummyContract::deploy(provider.clone()).await.unwrap();
+        let contract = DummyContract::deploy(wallet_provider).await.unwrap();
         let core_contract = StarknetCoreContract::new(*contract.address(), provider.clone());
 
-        let eth_client =
-            EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
+        let eth_client = EthereumClient { provider: provider.clone(), l1_core_contract: core_contract.clone() };
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
         let (snd, mut recv) = tokio::sync::watch::channel(None);
 

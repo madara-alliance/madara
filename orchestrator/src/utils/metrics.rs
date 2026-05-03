@@ -3,8 +3,10 @@ use crate::utils::job_status_metrics::JobStatusTracker;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge};
-use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
+use orchestrator_utils::metrics::lib::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument, Metrics,
+};
 use orchestrator_utils::register_metric;
 
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
@@ -29,6 +31,7 @@ pub struct OrchestratorMetrics {
     // Latency Metrics
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
+    pub snos_job_processing_time: Histogram<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
     pub jobs_per_minute: Gauge<f64>,
@@ -42,8 +45,7 @@ pub struct OrchestratorMetrics {
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
     pub job_age_p99: Gauge<f64>,
-    pub batching_rate: Gauge<f64>,
-    pub batch_creation_time: Gauge<f64>,
+    pub batch_creation_total: Counter<f64>,
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
     // Atlantic Service Metrics
@@ -58,6 +60,23 @@ pub struct OrchestratorMetrics {
     pub atlantic_api_errors_total: Counter<f64>,
     pub atlantic_api_retries_total: Counter<f64>,
     pub atlantic_data_transfer_bytes: Counter<f64>,
+    // Local aggregation metrics (SHARP / Mock paths)
+    pub aggregator_local_run_duration: Gauge<f64>,
+    pub aggregator_local_run_total: Counter<f64>,
+    pub aggregator_child_count: Gauge<f64>,
+    /// Failures per stage of `run_and_submit_with_local_aggregation`, labeled
+    /// by `prover`, `stage` (load_children/run_aggregator/fact_hash/
+    /// store_artifacts/submit_prover), and bounded `error_type`.
+    pub aggregator_local_run_failures_total: Counter<f64>,
+    pub aggregator_program_output_bytes: Gauge<f64>,
+    pub aggregator_da_segment_bytes: Gauge<f64>,
+    pub aggregator_pie_zip_bytes: Gauge<f64>,
+    // Storage cleanup metrics
+    pub cleanup_runs_total: Counter<f64>,
+    pub cleanup_jobs_attempted: Counter<f64>,
+    pub cleanup_jobs_processed: Counter<f64>,
+    pub cleanup_artifacts_tagged: Counter<f64>,
+    pub cleanup_failures_total: Counter<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -181,6 +200,13 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
+        let snos_job_processing_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_job_processing_time".to_string(),
+            "Time to process SNOS jobs".to_string(),
+            "s".to_string(),
+        );
+
         let settlement_time = register_gauge_metric_instrument(
             &orchestrator_meter,
             "settlement_time".to_string(),
@@ -249,18 +275,11 @@ impl Metrics for OrchestratorMetrics {
         );
 
         // Batching Metrics
-        let batching_rate = register_gauge_metric_instrument(
+        let batch_creation_total = register_counter_metric_instrument(
             &orchestrator_meter,
-            "batching_rate".to_string(),
-            "Number of batches created per hour".to_string(),
-            "batches/hour".to_string(),
-        );
-
-        let batch_creation_time = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "batch_creation_time".to_string(),
-            "Average time to create a batch".to_string(),
-            "s".to_string(),
+            "batch_creation".to_string(),
+            "Total number of batches created".to_string(),
+            "1".to_string(),
         );
 
         // Job Status Tracking Metrics
@@ -323,6 +342,100 @@ impl Metrics for OrchestratorMetrics {
             "bytes".to_string(),
         );
 
+        // Local aggregation metrics (SHARP / Mock paths).
+        //
+        // TODO(@prakhar, 2026-04-24): migrate the per-run gauges in this block
+        // (`aggregator_local_run_duration`, `aggregator_child_count`,
+        // `aggregator_program_output_bytes`, `aggregator_da_segment_bytes`,
+        // `aggregator_pie_zip_bytes`) to histograms so Grafana can compute
+        // p50/p95/p99 over runs. Gauges only retain the last value per label
+        // set, which makes distributional queries impossible. Fold this into
+        // the same sweep that migrates `atlantic_api_call_duration`.
+        let aggregator_local_run_duration = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_duration".to_string(),
+            "Duration of local aggregator runs".to_string(),
+            "s".to_string(),
+        );
+
+        let aggregator_local_run_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_total".to_string(),
+            "Total number of local aggregator runs".to_string(),
+            "runs".to_string(),
+        );
+
+        let aggregator_child_count = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_child_count".to_string(),
+            "Number of children aggregated per run".to_string(),
+            "children".to_string(),
+        );
+
+        let aggregator_local_run_failures_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_local_run_failures_total".to_string(),
+            "Failures per stage of local aggregator runs".to_string(),
+            "errors".to_string(),
+        );
+
+        let aggregator_program_output_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_program_output_bytes".to_string(),
+            "Serialized program output size per aggregator run".to_string(),
+            "bytes".to_string(),
+        );
+
+        let aggregator_da_segment_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_da_segment_bytes".to_string(),
+            "DA segment size per aggregator run".to_string(),
+            "bytes".to_string(),
+        );
+
+        let aggregator_pie_zip_bytes = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_pie_zip_bytes".to_string(),
+            "Aggregator CairoPIE zip size per run".to_string(),
+            "bytes".to_string(),
+        );
+
+        // Storage cleanup metrics
+        let cleanup_runs_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_runs_total".to_string(),
+            "Total number of storage cleanup runs".to_string(),
+            "runs".to_string(),
+        );
+
+        let cleanup_jobs_processed = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_jobs_processed".to_string(),
+            "Total number of storage cleanup jobs processed successfully".to_string(),
+            "jobs".to_string(),
+        );
+
+        let cleanup_jobs_attempted = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_jobs_attempted".to_string(),
+            "Total number of storage cleanup jobs attempted".to_string(),
+            "jobs".to_string(),
+        );
+
+        let cleanup_artifacts_tagged = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_artifacts_tagged".to_string(),
+            "Total number of artifacts tagged for cleanup".to_string(),
+            "artifacts".to_string(),
+        );
+
+        let cleanup_failures_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_failures_total".to_string(),
+            "Total number of storage cleanup failures by reason".to_string(),
+            "errors".to_string(),
+        );
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -340,6 +453,7 @@ impl Metrics for OrchestratorMetrics {
             job_abandoned_count,
             job_e2e_latency,
             proof_generation_time,
+            snos_job_processing_time,
             settlement_time,
             jobs_per_minute,
             blocks_per_hour,
@@ -349,14 +463,25 @@ impl Metrics for OrchestratorMetrics {
             active_jobs_count,
             sla_breach_count,
             job_age_p99,
-            batching_rate,
-            batch_creation_time,
+            batch_creation_total,
+            aggregator_local_run_duration,
+            aggregator_local_run_total,
+            aggregator_child_count,
+            aggregator_local_run_failures_total,
+            aggregator_program_output_bytes,
+            aggregator_da_segment_bytes,
+            aggregator_pie_zip_bytes,
             job_status_tracker,
             atlantic_api_call_duration,
             atlantic_api_calls_total,
             atlantic_api_errors_total,
             atlantic_api_retries_total,
             atlantic_data_transfer_bytes,
+            cleanup_runs_total,
+            cleanup_jobs_attempted,
+            cleanup_jobs_processed,
+            cleanup_artifacts_tagged,
+            cleanup_failures_total,
         }
     }
 }

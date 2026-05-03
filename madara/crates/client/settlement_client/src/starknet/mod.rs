@@ -359,6 +359,20 @@ impl SettlementLayerProvider for StarknetClient {
         }
     }
 
+    async fn get_block_n_hash(&self, l1_block_n: u64) -> Result<Option<[u8; 32]>, SettlementClientError> {
+        let block = self.provider.get_block_with_tx_hashes(BlockId::Number(l1_block_n)).await.map_err(
+            |e| -> SettlementClientError {
+                StarknetClientError::Provider(format!("Failed to get block #{l1_block_n}: {e}")).into()
+            },
+        )?;
+
+        match block {
+            MaybePreConfirmedBlockWithTxHashes::Block(b) => Ok(Some(b.block_hash.to_bytes_be())),
+            // Pre-confirmed blocks aren't yet on-chain — they have no canonical hash.
+            MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => Ok(None),
+        }
+    }
+
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
@@ -489,7 +503,7 @@ pub mod starknet_client_tests {
 
     /// This struct holds all commonly used test resources
     pub struct StarknetClientTextFixture {
-        pub context: crate::starknet::test_utils::TestContext,
+        pub context: test_utils::TestContext,
         pub client: StarknetClient,
     }
 
@@ -517,7 +531,7 @@ pub mod starknet_client_tests {
         let fixture = test_fixture.await;
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
-            rpc_url: fixture.context.cmd.rpc_url().parse().unwrap(),
+            rpc_url: fixture.context.cmd.rpc_url().parse()?,
             core_contract_address: "0xdeadbeef".to_string(),
         })
         .await;
@@ -699,15 +713,18 @@ mod starknet_client_messaging_test {
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::MadaraBackend;
+    use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_chain_config::ChainConfig;
+    use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
     use mp_utils::service::ServiceContext;
     use rstest::{fixture, rstest};
+    use starknet_types_core::felt::Felt;
     use std::sync::Arc;
     use std::time::Duration;
 
     /// This struct holds all commonly used test resources
     pub struct StarknetClientTextFixture {
-        pub context: crate::starknet::test_utils::TestContext,
+        pub context: test_utils::TestContext,
         pub db_service: Arc<MadaraBackend>,
         pub starknet_client: StarknetClient,
     }
@@ -733,6 +750,13 @@ mod starknet_client_messaging_test {
         StarknetClientTextFixture { context, db_service: db, starknet_client }
     }
 
+    /// End-to-end test for Starknet-settlement-provider L1->L2 messaging metadata.
+    ///
+    /// Desired results:
+    /// - After emitting the messaging event, the sync worker persists a pending message and writes the
+    ///   `getMessagesStatus` indices (`nonce -> l1_tx_hash` and `l1_tx_hash||nonce -> marker`).
+    /// - After simulating L2 execution (writing a consumed L1-handler receipt), the pending entry is removed and the
+    ///   `l1_tx_hash||nonce` entry is filled with the consumed L2 transaction hash.
     #[rstest]
     #[tokio::test]
     async fn e2e_test_basic_workflow_starknet(#[future] test_fixture: StarknetClientTextFixture) -> anyhow::Result<()> {
@@ -745,19 +769,75 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
-                    .await
-                    .unwrap();
+                sync(
+                    Arc::new(starknet_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                    false,
+                )
+                .await
+                .unwrap();
                 tracing::debug!("messaging worker stopped");
             })
         };
 
         // Firing the event
-        fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        let l1_tx_hash_felt =
+            fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
+        sleep(Duration::from_secs(10)).await;
 
-        // Assert that the event is well stored in db
-        assert!(fixture.db_service.get_pending_message_to_l2(0)?.is_some());
+        // Assert that the event is well stored in db:
+        // - pending message is persisted
+        // - `getMessagesStatus` indices are written (seen marker)
+        let pending = fixture.db_service.get_pending_message_to_l2(0)?.expect("message should be stored as pending");
+
+        let nonce = pending.tx.nonce;
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_felt.to_bytes_be());
+
+        assert_eq!(fixture.db_service.get_l1_txn_hash_by_nonce(nonce)?, Some(l1_tx_hash));
+        let msgs =
+            fixture.db_service.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash)?.expect("l1 tx hash should be known");
+        assert!(
+            msgs.iter().any(|(n, maybe)| *n == nonce && maybe.is_none()),
+            "expected (nonce, None) marker entry for the fired message"
+        );
+
+        // Simulate L2 execution by writing a block containing the consumed L1-handler transaction.
+        // This should remove the pending entry and fill `l1_tx_hash||nonce -> l2_tx_hash`.
+        let l2_tx_hash = Felt::from_hex_unchecked("0x123");
+        let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash,
+            execution_result: ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let block = FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![TransactionWithReceipt { transaction: pending.tx.clone().into(), receipt }],
+            events: Default::default(),
+        };
+        fixture.db_service.write_access().add_full_block_with_classes(&block, &[], true)?;
+
+        assert!(
+            fixture.db_service.get_pending_message_to_l2(nonce)?.is_none(),
+            "pending message should be removed once consumed"
+        );
+        assert_eq!(
+            fixture.db_service.get_l1_handler_txn_hash_by_nonce(nonce)?,
+            Some(l2_tx_hash),
+            "nonce->l2_tx_hash mapping should be written once the message is executed on L2"
+        );
+        assert!(
+            fixture
+                .db_service
+                .get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash)?
+                .expect("l1 tx hash should still be known")
+                .iter()
+                .any(|(n, maybe)| *n == nonce && *maybe == Some(l2_tx_hash)),
+            "secondary index should be filled once the message is executed on L2"
+        );
 
         // Cancelling worker
         worker_handle.abort();
@@ -779,8 +859,15 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
-                    .await
+                sync(
+                    Arc::new(starknet_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                    false,
+                )
+                .await
             })
         };
 
@@ -789,7 +876,7 @@ mod starknet_client_messaging_test {
                 .await;
 
         cancel_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(5)).await;
         assert!(fixture.starknet_client.message_to_l2_has_cancel_request(&message_hash.to_bytes_be()).await.unwrap());
 
         Ok(())

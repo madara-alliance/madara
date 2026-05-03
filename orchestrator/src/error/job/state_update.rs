@@ -13,7 +13,7 @@ pub enum StateUpdateError {
     LastFailedBlockNonPositive,
 
     #[error("Block numbers to settle must be specified (state update job #{internal_id:?})")]
-    UnspecifiedBlockNumber { internal_id: String },
+    UnspecifiedBlockNumber { internal_id: u64 },
 
     #[error("Could not find tx hashes metadata for the current attempt")]
     TxnHashMetadataNotFound,

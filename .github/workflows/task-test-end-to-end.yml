@@ -3,34 +3,19 @@
 name: Task - Test E2E
 
 # This workflow runs end-to-end tests for the Madara System
-# against the Madara, Orchestrator, Bootstrapper binaries to ensure e2e testing
+# It builds all required binaries and runs the e2e test suite
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      madara-binary-hash:
-        description: "Hash used to retrieve the madara artifact"
-        required: true
-        type: string
-      orchestrator-binary-hash:
-        description: "Hash used to retrieve the orchestrator artifact"
-        required: true
-        type: string
-      bootstrapper-binary-hash:
-        description: "Hash used to retrieve the bootstrapper artifact"
-        required: true
-        type: string
-      cairo-artifacts-hash:
-        description: "Hash used to retrieve the cairo artifacts"
-        required: true
-        type: string
     secrets:
       ETHEREUM_SEPOLIA_RPC:
+        required: false
+      MADARA_ORCHESTRATOR_ATLANTIC_API_KEY:
         required: true
 
 jobs:
   test-end-to-end:
-    runs-on: blacksmith-8vcpu-ubuntu-2204
+    runs-on: blacksmith-8vcpu-ubuntu-2404
 
     steps:
       - name: Checkout Repository
@@ -55,94 +40,38 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
-      - name: Download Madara binary
-        uses: actions/download-artifact@v4
-        with:
-          name: madara-binary-${{ inputs.madara-binary-hash }}
-          path: target/release/
+      - name: Setup Python Cairo (needed for orchestrator build)
+        uses: ./.github/actions/setup-python-cairo
 
-      - name: Download Orchestrator binary
-        uses: actions/download-artifact@v4
-        with:
-          name: orchestrator-binary-${{ inputs.orchestrator-binary-hash }}
-          path: target/release/
+      - name: Build Madara
+        run: CARGO_TARGET_DIR=target cargo build --bin madara --release
 
-      - name: Download Bootstrapper binary
-        uses: actions/download-artifact@v4
-        with:
-          name: bootstrapper-binary-${{ inputs.bootstrapper-binary-hash }}
-          path: target/release/
+      - name: Build Orchestrator
+        run: CARGO_TARGET_DIR=target cargo build --bin orchestrator --release
 
-      - name: Download Cairo artiracts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
-          path: build-artifacts/
+      - name: Build Bootstrapper V2
+        run: CARGO_TARGET_DIR=target cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 
       - name: Download and extract Pathfinder binary
         run: |
           mkdir -p target/release/
-          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.1/pathfinder-x86_64-unknown-linux-gnu.tar.gz
+          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-x86_64-unknown-linux-gnu.tar.gz
           tar -xf pathfinder.tar.gz -C target/release/
           rm pathfinder.tar.gz
-
-      # - name: Build Mock Atlantic Server
-      #   run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
-      # chmod +x target/release/mock-atlantic-server
 
       - name: Make binaries executable
         run: |
           chmod +x target/release/madara
-          chmod +x target/release/bootstrapper
+          chmod +x target/release/bootstrapper-v2
           chmod +x target/release/pathfinder
           chmod +x target/release/orchestrator
           chmod +x test_utils/scripts/deploy_dummy_verifier.sh
-
-      - name: Check Docker Installation
-        run: |
-          if command -v docker &> /dev/null
-            then
-                echo "Docker is installed. Version information:"
-                docker --version
-                echo "Checking if Docker daemon is running:"
-                if docker info &> /dev/null
-                then
-                    echo "✅ Docker daemon is running"
-                else
-                    echo "❌ Docker daemon is not running"
-                fi
-            else
-                echo "Docker is not installed or not in PATH"
-            fi
-
-      - name: Check Forge Installation
-        run: |
-          if command -v forge &> /dev/null
-          then
-              echo "Forge is installed. Version information:"
-              forge --version
-          else
-              echo "Forge is not installed or not in PATH"
-              exit 1
-          fi
-
-      - name: Check Anvil Installation
-        run: |
-          if command -v anvil &> /dev/null
-          then
-              echo "Anvil is installed. Version information:"
-              anvil --version
-          else
-              echo "Anvil is not installed or not in PATH"
-              exit 1
-          fi
 
       - name: Build E2E for tests
         run: cargo build -p e2e
 
       - name: Run E2E test
         env:
-          # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC }}
           MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}

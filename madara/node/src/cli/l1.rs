@@ -107,6 +107,39 @@ pub struct L1SyncParams {
     )]
     pub gas_price_poll: Duration,
 
+    /// DANGEROUS: Disables the check that verifies an L1→L2 message has not already been consumed
+    /// on the settlement layer (L1) before including it in block production.
+    ///
+    /// Normally, before consuming an L1→L2 message, Madara queries the core contract's `l1ToL2Messages(hash)`
+    /// mapping to confirm the message still exists (refcount > 0). After a state update is posted to L1, this
+    /// refcount is decremented to 0, causing the check to reject the message even if it hasn't been processed
+    /// locally. Enabling this flag skips that specific L1 query.
+    ///
+    /// **You almost certainly do not need this flag.** It is intended only for rare recovery scenarios where
+    /// messages must be re-processed locally despite already being marked as consumed on L1.
+    ///
+    /// WARNING: Enabling this removes a safety guard against double-processing of L1→L2 messages.
+    /// The local nonce check and cancellation check remain active.
+    #[clap(env = "MADARA_UNSAFE_SKIP_L1_MESSAGE_CONSUMED_CHECK", long)]
+    pub unsafe_skip_l1_message_consumed_check: bool,
+
+    /// DANGEROUS: Runs L1 sync in metadata-only mode for L1→L2 messages.
+    ///
+    /// When enabled, the L1 sync messaging worker will still run and persist all metadata
+    /// (nonce → L1 tx hash, seen marker, nonce → L1 block number) needed by
+    /// `starknet_getMessagesStatus`, but it will NOT write messages to the pending table.
+    /// This means L1→L2 messages will never be automatically included in blocks.
+    ///
+    /// This is useful when an external orchestrator submits L1 handler transactions exclusively
+    /// via the admin RPC (`addL1HandlerMessage`).
+    ///
+    /// WARNING: If this flag is enabled and no external service submits L1 handler transactions,
+    /// L1→L2 messages will be silently ignored and never executed on L2.
+    ///
+    /// Cannot be combined with `--no-l1-sync`.
+    #[clap(env = "MADARA_UNSAFE_L1_HANDLER_METADATA_ONLY", long, conflicts_with = "l1_sync_disabled")]
+    pub unsafe_l1_handler_metadata_only: bool,
+
     /// The settlement layer type. This specifies the type of API `--l1-endpoint <RPC url>` uses: Ethereum RPC, or Starknet RPC.
     /// The usual cases for this is:
     /// - When settling on Ethereum, which is the case for Starknet Mainnet, we are usually running an L2 - because Ethrereum is an L1 and doesn't settle on any other chain.

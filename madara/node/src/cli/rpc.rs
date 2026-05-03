@@ -92,7 +92,7 @@ pub struct RpcParams {
     pub rpc_admin_external: bool,
 
     /// Enables unsafe admin RPC methods. This includes dangerous methods like
-    /// `revertTo` and `setCustomBlockHeader` that can modify the blockchain state.
+    /// `revertToAndShutdown` and `setCustomBlockHeader` that can modify the blockchain state.
     /// Use with extreme caution. Requires `--rpc-admin` to be enabled.
     #[arg(env = "MADARA_RPC_UNSAFE", long, default_value_t = false, requires = "rpc_admin")]
     pub rpc_unsafe: bool,

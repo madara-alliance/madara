@@ -4,7 +4,6 @@ use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::MessageToL2WithMetadata;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
-use alloy::transports::http::{Client, Http};
 use futures::Stream;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
@@ -21,6 +20,12 @@ impl TryFrom<(LogMessageToL2, Log)> for MessageToL2WithMetadata {
             l1_block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
                 EthereumClientError::MissingField("block_number in Ethereum log").into()
             })?,
+            l1_block_hash: log
+                .block_hash
+                .ok_or_else(|| -> SettlementClientError {
+                    EthereumClientError::MissingField("block_hash in Ethereum log").into()
+                })?
+                .0,
             l1_transaction_hash: log
                 .transaction_hash
                 .ok_or_else(|| -> SettlementClientError {
@@ -31,6 +36,7 @@ impl TryFrom<(LogMessageToL2, Log)> for MessageToL2WithMetadata {
         })
     }
 }
+
 impl TryFrom<LogMessageToL2> for L1HandlerTransactionWithFee {
     type Error = SettlementClientError;
 
@@ -63,7 +69,7 @@ pub struct EthereumEventStream {
 }
 
 impl EthereumEventStream {
-    pub fn new(watcher: EventPoller<Http<Client>, LogMessageToL2>) -> Self {
+    pub fn new(watcher: EventPoller<LogMessageToL2>) -> Self {
         let stream = watcher.into_stream();
         Self { stream: Box::pin(stream) }
     }
@@ -245,6 +251,27 @@ pub mod eth_event_stream_tests {
         assert_eq!(events.len(), 1);
         assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
             assert_eq!(*field, "transaction_hash in Ethereum log", "Error should mention missing transaction hash");
+        });
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_missing_block_hash(mock_event: LogMessageToL2, mock_log: Log) {
+        let mock_events = vec![Ok((
+            mock_event,
+            Log {
+                block_hash: None, // Only block hash is missing
+                ..mock_log
+            },
+        ))];
+
+        let mock_stream = iter(mock_events);
+        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
+        let events = collect_stream_events(&mut ethereum_stream).await;
+
+        assert_eq!(events.len(), 1);
+        assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
+            assert_eq!(*field, "block_hash in Ethereum log", "Error should mention missing block hash");
         });
     }
 }

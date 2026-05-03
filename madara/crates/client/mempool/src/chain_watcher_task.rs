@@ -255,6 +255,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         &mut removed_txs,
                     );
                 }
+                self.metrics.record_mempool_state(&guard.summary());
             }
 
             // Update the mempool with the modifications.

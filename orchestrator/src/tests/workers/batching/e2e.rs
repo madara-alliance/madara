@@ -2,6 +2,7 @@ use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 use crate::tests::utils::read_file_to_string;
+use crate::types::constant::get_batch_blob_file;
 use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
 use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -48,8 +49,11 @@ async fn test_assign_batch_to_block_new_batch(
     let result = SnosBatchingTrigger.run_worker(services.config.clone()).await;
     assert!(result.is_ok());
 
-    let generated_blobs =
-        get_blobs_from_s3_paths(vec!["blob/batch/1/1.txt", "blob/batch/1/2.txt"], services.config.storage()).await?;
+    let generated_blobs = get_blobs_from_s3_paths(
+        vec![&get_batch_blob_file(1, 1), &get_batch_blob_file(1, 2)],
+        services.config.storage(),
+    )
+    .await?;
 
     // Fetch real blobs from test data
     // The test data contains state update information about block 8373665 on Ethereum Sepolia

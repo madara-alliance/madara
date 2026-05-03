@@ -1,4 +1,5 @@
 pub mod alerts;
+pub mod cli;
 pub mod common;
 pub mod compression;
 pub mod config;
@@ -8,5 +9,6 @@ pub mod jobs;
 pub mod queue;
 pub mod server;
 pub mod setup;
+pub mod types;
 pub mod utils;
 pub mod workers;

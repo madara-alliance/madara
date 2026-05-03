@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::{header::PreconfirmedHeader, Header, TransactionWithReceipt};
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
@@ -8,6 +9,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
 };
+use std::time::Instant;
 
 pub struct CommitmentComputationContext {
     pub protocol_version: StarknetVersion,
@@ -99,10 +101,32 @@ impl BlockCommitments {
         state_diff: &StateDiff,
         events: &[EventWithTransactionHash],
     ) -> Self {
-        let (transaction, (state_diff, event)) = rayon::join(
-            || TransactionAndReceiptCommitment::compute(ctx, transactions),
-            || rayon::join(|| StateDiffCommitment::compute(ctx, state_diff), || EventsCommitment::compute(ctx, events)),
+        let ((transaction, tx_duration), ((state_diff, sd_duration), (event, ev_duration))) = rayon::join(
+            || {
+                let start = Instant::now();
+                let result = TransactionAndReceiptCommitment::compute(ctx, transactions);
+                (result, start.elapsed())
+            },
+            || {
+                rayon::join(
+                    || {
+                        let start = Instant::now();
+                        let result = StateDiffCommitment::compute(ctx, state_diff);
+                        (result, start.elapsed())
+                    },
+                    || {
+                        let start = Instant::now();
+                        let result = EventsCommitment::compute(ctx, events);
+                        (result, start.elapsed())
+                    },
+                )
+            },
         );
+
+        metrics().transaction_commitment_duration.record(tx_duration.as_secs_f64(), &[]);
+        metrics().state_diff_commitment_duration.record(sd_duration.as_secs_f64(), &[]);
+        metrics().events_commitment_duration.record(ev_duration.as_secs_f64(), &[]);
+
         Self { transaction, state_diff, event }
     }
 }

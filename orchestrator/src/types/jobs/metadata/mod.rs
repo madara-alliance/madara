@@ -32,12 +32,17 @@ pub struct CommonMetadata {
     /// Timestamp when job verification completed
     #[serde(with = "chrono::serde::ts_seconds_option")]
     pub verification_completed_at: Option<DateTime<Utc>>,
-    /// Reason for job failure if any
+    /// Most recent failure reason (kept for backwards compatibility)
     pub failure_reason: Option<String>,
+    /// History of previous failure reasons, in chronological order (oldest first).
+    /// Each processing/verification failure appends to this list.
+    #[serde(default)]
+    pub previous_failure_reasons: Vec<String>,
     /// Orchestrator version that created this job.
     /// Used to ensure only compatible orchestrator versions process jobs they can handle.
     /// This prevents version conflicts in multi-version deployments.
-    pub orchestrator_version: Option<String>,
+    #[serde(default)]
+    pub orchestrator_version: String,
 }
 
 /// Metadata specific to data availability (DA) jobs.
@@ -70,8 +75,8 @@ pub enum ProvingInputType {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SettlementContextData {
     // Worker initialized field
-    /// Batch/block numbers that need to be settled
-    pub to_settle: Vec<u64>,
+    /// Batch/block number to be settled
+    pub to_settle: u64,
     // Job populated field
     /// Last batch/block number that failed processing
     pub last_failed: Option<u64>,
@@ -96,8 +101,10 @@ pub struct AggregatorMetadata {
     // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
-    /// Bucker ID received from the prover client
-    pub bucket_id: String,
+    /// Bucket ID received from the prover client (Atlantic only).
+    /// `None` for provers without a bucket concept (SHARP, Mock).
+    #[serde(default)]
+    pub bucket_id: Option<String>,
 
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
@@ -107,8 +114,10 @@ pub struct AggregatorMetadata {
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
-    /// Path of blob data
+    /// Path of blob data (batch-scoped directory for L2)
     pub blob_data_path: String,
+    /// Path to the DA segment file from the prover (used for L2 with encryption)
+    pub da_segment_path: String,
 
     // Job populated field
     // We'll get these from the Prover client after the aggregator job is completed
@@ -190,22 +199,35 @@ pub struct SnosMetadata {
 ///
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
-/// - Job-populated fields: last_failed_block_no and tx_hashes (during processing)
+/// - Job-populated fields: last_failed_block_no and tx_hash (during processing)
+///
+/// TODO(heemankv, 09-01-26): Use enum for paths to type-gate by settlement type (BlobSettlement vs CalldataSettlement)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
-    /// Paths to SNOS output files for each block/batch
-    pub snos_output_paths: Vec<String>,
-    /// Paths to program output files for each block/batch
-    pub program_output_paths: Vec<String>,
-    /// Paths to blob data files for each block/batch
-    pub blob_data_paths: Vec<String>,
+    /// Path to SNOS output file for the block/batch
+    pub snos_output_path: Option<String>,
+    /// Path to program output file for the block/batch
+    pub program_output_path: Option<String>,
+    /// Path to blob data file for the block/batch (used for L3)
+    pub blob_data_path: Option<String>,
+    /// Path to DA segment file for the batch (used for L2 with encryption)
+    /// Note: One DA segment per aggregator job, one state update per aggregator job
+    #[serde(default)]
+    pub da_segment_path: Option<String>,
 
     // Job-populated fields
-    /// Transaction hashes for processed blocks/batches
-    pub tx_hashes: Vec<String>,
+    /// Transaction hash for the state update
+    pub tx_hash: Option<String>,
 
     pub context: SettlementContext,
+
+    // Storage cleanup tracking
+    /// Timestamp when storage artifacts were tagged for expiration.
+    /// Used by StorageCleanupTrigger to track which jobs have been processed.
+    /// When None, the job's artifacts have not yet been tagged for cleanup.
+    #[serde(default)]
+    pub storage_artifacts_tagged_at: Option<DateTime<Utc>>,
 }
 
 /// Enum containing all possible job-specific metadata types.

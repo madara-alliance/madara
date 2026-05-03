@@ -86,13 +86,6 @@ jobs:
           # Copy the devnet.yaml file to the test directory
           cp ./configs/presets/devnet.yaml ./orchestrator/crates/settlement-clients/starknet/src/tests/devnet.yaml
 
-      - name: Getting necessary files for testing
-        working-directory: orchestrator
-        run: |
-          wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
-          # TODO: this can be optimised
-          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./src/tests/artifacts/238996-SN.zip
-
       - name: Check rust version
         run: rustup show
 

@@ -19,10 +19,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-analytics.workspace = true
 mc-db.workspace = true
 mc-mempool.workspace = true
 mc-submit-tx.workspace = true
+mc-telemetry.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-convert.workspace = true
@@ -69,7 +69,7 @@ async-trait = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-  "tonic",
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }
@@ -97,6 +97,7 @@ lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-db = { workspace = true, features = ["testing"] }
 mp-class.workspace = true
+mp-receipt.workspace = true
 m-cairo-test-contracts.workspace = true
 mc-e2e-tests.workspace = true
 tokio-util = { workspace = true, features = ["time"] }

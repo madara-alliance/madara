@@ -90,8 +90,8 @@ pub mod eth_core_contract_address {
 
 pub mod eth_gps_statement_verifier {
     pub const MAINNET: &str = "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60";
-    pub const SEPOLIA_TESTNET: &str = "0xf294781D719D2F4169cE54469C28908E6FA752C1";
-    pub const SEPOLIA_INTEGRATION: &str = "0x2046B966994Adcb88D83f467a41b75d64C2a619F";
+    pub const SEPOLIA_TESTNET: &str = "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe";
+    pub const SEPOLIA_INTEGRATION: &str = "0x07ec0D28e50322Eb0C159B9090ecF3aeA8346DFe";
 }
 
 pub mod public_key {
@@ -139,7 +139,19 @@ fn default_l1_messages_replay_max_duration() -> Duration {
     Duration::from_secs(3 * 24 * 60 * 60)
 }
 fn default_l1_messages_finality_blocks() -> u64 {
-    10 // Default: wait for 10 L1 blocks before processing messages (~2 minutes on Ethereum)
+    // Default confirmation depth before consuming L1→L2 messages: 10 blocks (~2 min on Ethereum).
+    //
+    // Rationale:
+    // - The deepest observed post-PoS Ethereum reorg is 7 blocks (Beacon Chain, May 2022,
+    //   Proposer Boost rollout incident). 10 blocks gives a 3-block safety margin over that.
+    // - Stricter alternatives: 32 (one epoch, ~6.4 min) for full epoch-justification semantics,
+    //   or 64 (two epochs, ~12.8 min) for full Casper-FFG finalization equivalence.
+    // - We deliberately do NOT use `eth_newFilter` with `toBlock: "finalized"` because (a) Geth
+    //   rejects it with errInvalidBlockRange, and (b) Alchemy's hosted filter layer accepts it
+    //   but does not enforce it. Instead, the message sync worker uses `toBlock: "latest"` and
+    //   enforces this confirmation depth + a per-event canonical block hash check client-side.
+    // - Chains with stronger latency requirements should override this in their chain config.
+    10
 }
 fn default_mempool_min_tip_bump() -> f64 {
     0.1
@@ -296,10 +308,15 @@ pub struct ChainConfigV1 {
     )]
     pub l1_messages_replay_max_duration: Duration,
 
-    /// Number of L1 blocks to wait before considering a message finalized.
-    /// This provides protection against L1 chain reorganizations.
-    /// Default: 0 (rely on L1's "finalized" block tag).
-    /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
+    /// Number of L1 blocks to wait behind `latest` before consuming an L1→L2 message.
+    /// Provides probabilistic reorg protection: a message is only processed once its source
+    /// block is at least this many confirmations deep AND its block hash still matches the
+    /// canonical hash on L1 (the latter is checked at processing time to detect reorgs that
+    /// occurred while the message was sitting in the queue).
+    ///
+    /// Default: 10 blocks (~2 min on Ethereum). This clears the deepest observed post-PoS
+    /// reorg (7 blocks, May 2022) with a 3-block margin. See `default_l1_messages_finality_blocks`
+    /// for the full rationale.
     #[serde(default = "default_l1_messages_finality_blocks")]
     pub l1_messages_finality_blocks: u64,
 }
@@ -419,10 +436,15 @@ pub struct ChainConfig {
     )]
     pub l1_messages_replay_max_duration: Duration,
 
-    /// Number of L1 blocks to wait before considering a message finalized.
-    /// This provides protection against L1 chain reorganizations.
-    /// Default: 0 (rely on L1's "finalized" block tag).
-    /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
+    /// Number of L1 blocks to wait behind `latest` before consuming an L1→L2 message.
+    /// Provides probabilistic reorg protection: a message is only processed once its source
+    /// block is at least this many confirmations deep AND its block hash still matches the
+    /// canonical hash on L1 (the latter is checked at processing time to detect reorgs that
+    /// occurred while the message was sitting in the queue).
+    ///
+    /// Default: 10 blocks (~2 min on Ethereum). This clears the deepest observed post-PoS
+    /// reorg (7 blocks, May 2022) with a 3-block margin. See `default_l1_messages_finality_blocks`
+    /// for the full rationale.
     #[serde(default = "default_l1_messages_finality_blocks")]
     pub l1_messages_finality_blocks: u64,
 }
@@ -817,7 +839,7 @@ where
 
 pub fn serialize_starknet_version<S>(version: &StarknetVersion, serializer: S) -> Result<S::Ok, S::Error>
 where
-    S: serde::Serializer,
+    S: Serializer,
 {
     version.to_string().serialize(serializer)
 }
@@ -891,7 +913,7 @@ mod tests {
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
-        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
+        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.14.1").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
 
         assert_eq!(

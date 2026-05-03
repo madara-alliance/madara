@@ -43,14 +43,14 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Duration;
 
 // Import default constants from the native config module
 use mc_class_exec::config::{
-    DEFAULT_CACHE_DIR, DEFAULT_COMPILATION_TIMEOUT_SECS, DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS,
-    DEFAULT_DISK_CACHE_SIZE_BYTES, DEFAULT_MAX_CONCURRENT_COMPILATIONS, DEFAULT_MAX_FAILED_COMPILATIONS,
-    DEFAULT_MEMORY_CACHE_SIZE, DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
+    DEFAULT_COMPILATION_TIMEOUT_SECS, DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS, DEFAULT_DISK_CACHE_SIZE_BYTES,
+    DEFAULT_MAX_CONCURRENT_COMPILATIONS, DEFAULT_MAX_FAILED_COMPILATIONS, DEFAULT_MEMORY_CACHE_SIZE,
+    DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
 };
 
 /// Default function for serde deserialization of memory cache size
@@ -164,18 +164,6 @@ pub struct CairoNativeParams {
         value_name = "BOOL"
     )]
     pub enable_native_execution: bool,
-
-    /// Directory where compiled native classes are stored.
-    ///
-    /// Compiled classes are saved as `.so` files (shared libraries) and persist across
-    /// node restarts, avoiding recompilation. The directory is created automatically if
-    /// it doesn't exist.
-    ///
-    /// Default: `/usr/share/madara/data/classes`
-    ///
-    /// Can also be set via the `MADARA_NATIVE_CACHE_DIR` environment variable.
-    #[clap(env = "MADARA_NATIVE_CACHE_DIR", long, value_name = "PATH")]
-    pub native_cache_dir: Option<PathBuf>,
 
     /// Maximum number of compiled classes to keep in memory.
     ///
@@ -352,7 +340,6 @@ impl Default for CairoNativeParams {
     fn default() -> Self {
         Self {
             enable_native_execution: false, // Native disabled by default
-            native_cache_dir: None,
             native_max_memory_cache_classes: DEFAULT_MEMORY_CACHE_SIZE,
             native_max_disk_cache_bytes: DEFAULT_DISK_CACHE_SIZE_BYTES,
             native_max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
@@ -367,15 +354,6 @@ impl Default for CairoNativeParams {
 }
 
 impl CairoNativeParams {
-    /// Returns the directory path where compiled classes are stored.
-    ///
-    /// The path is determined by checking (in order):
-    /// 1. The `native_cache_dir` CLI parameter if set (or `MADARA_NATIVE_CACHE_DIR` env var via clap)
-    /// 2. The default path from `DEFAULT_CACHE_DIR` constant
-    pub fn cache_dir(&self) -> PathBuf {
-        self.native_cache_dir.clone().unwrap_or_else(|| PathBuf::from(DEFAULT_CACHE_DIR))
-    }
-
     /// Returns the compilation timeout as a `Duration` for use with async timers.
     pub fn compilation_timeout(&self) -> Duration {
         Duration::from_secs(self.native_compilation_timeout_secs)
@@ -385,6 +363,11 @@ impl CairoNativeParams {
     ///
     /// This performs the final transformation from user-facing CLI parameters to the internal
     /// configuration format. Call this once at startup.
+    ///
+    /// # Arguments
+    ///
+    /// * `base_path` - The base path where madara stores data. The native cache directory
+    ///   will be created as `base_path/native_classes`.
     ///
     /// # Transformations
     ///
@@ -397,7 +380,7 @@ impl CairoNativeParams {
     /// Validation is performed automatically by `NativeConfig::validate()` which is called
     /// via `setup_and_log()` after conversion. This ensures configuration errors are caught
     /// before the system starts using the configuration.
-    pub fn to_runtime_config(&self) -> mc_class_exec::config::NativeConfig {
+    pub fn to_runtime_config(&self, base_path: &Path) -> mc_class_exec::config::NativeConfig {
         use mc_class_exec::config::NativeCompilationMode;
 
         // Normalize compilation mode: parse string and convert to enum
@@ -422,8 +405,11 @@ impl CairoNativeParams {
         let mut builder = mc_class_exec::config::NativeConfig::builder();
 
         if self.enable_native_execution {
+            // Derive native cache directory from base_path
+            let cache_dir = base_path.join("native_classes");
+
             builder = builder
-                .with_cache_dir(self.cache_dir())
+                .with_cache_dir(cache_dir)
                 .with_max_memory_cache_size(max_memory_cache_size)
                 .with_max_disk_cache_size(max_disk_cache_size)
                 .with_max_concurrent_compilations(self.native_max_concurrent_compilations)

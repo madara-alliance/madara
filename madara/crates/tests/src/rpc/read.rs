@@ -180,6 +180,210 @@ mod test_rpc_read_calls {
         );
     }
 
+    /// Validates that `starknet_getMessagesStatus` accepts spec-compliant `L1_TXN_HASH` inputs
+    /// (short / odd-length hex) and reaches the method implementation (i.e. parsing succeeds).
+    ///
+    /// Desired result: the call fails with `TXN_HASH_NOT_FOUND` (code 29) rather than `Invalid params`.
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_messages_status_accepts_short_and_odd_hex_params() {
+        let madara = get_madara().await;
+
+        let client = reqwest::Client::new();
+        for (id, hash) in [(0, "0x1"), (1, "0xabc")] {
+            let res = client
+                .post(madara.rpc_url.clone().unwrap())
+                .json(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getMessagesStatus",
+                    "params": { "transaction_hash": hash },
+                    "id": id,
+                }))
+                .send()
+                .await
+                .unwrap();
+
+            let body = res.json::<serde_json::Value>().await.unwrap();
+
+            // The node doesn't know this tx hash, but parsing should succeed.
+            assert_eq!(body["id"], serde_json::json!(id));
+            assert_eq!(body["error"]["code"], serde_json::json!(29));
+            assert_eq!(body["error"]["message"], serde_json::json!("Transaction hash not found"));
+        }
+    }
+
+    /// Validates that `starknet_getMessagesStatus` rejects invalid `L1_TXN_HASH` formats at the RPC layer.
+    ///
+    /// Desired result: the call fails with JSON-RPC `Invalid params` (-32602).
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_messages_status_rejects_invalid_l1_tx_hash_format() {
+        let madara = get_madara().await;
+
+        let client = reqwest::Client::new();
+        for (id, hash) in [(0, "1"), (1, "0x")] {
+            let res = client
+                .post(madara.rpc_url.clone().unwrap())
+                .json(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getMessagesStatus",
+                    "params": { "transaction_hash": hash },
+                    "id": id,
+                }))
+                .send()
+                .await
+                .unwrap();
+
+            let body = res.json::<serde_json::Value>().await.unwrap();
+
+            assert_eq!(body["id"], serde_json::json!(id));
+            assert_eq!(body["error"]["code"], serde_json::json!(-32602));
+            assert_eq!(body["error"]["message"], serde_json::json!("Invalid params"));
+        }
+    }
+
+    /// End-to-end lifecycle test for `starknet_getMessagesStatus` (DB-backed implementation).
+    ///
+    /// Desired results:
+    /// 1. When the L1 tx hash is known to the node but no consumed L2 tx hash is recorded yet, the RPC returns `[]`.
+    /// 2. Once a consumed L1-handler tx is written for the same nonce, the RPC returns its status with:
+    ///    - `finality_status = ACCEPTED_ON_L2`
+    ///    - `execution_status = SUCCEEDED`
+    #[tokio::test]
+    async fn test_get_messages_status_seen_then_executed_e2e() -> anyhow::Result<()> {
+        use mc_class_exec::config::NativeConfig;
+        use mc_db::{MadaraBackend, MadaraBackendConfig};
+        use mp_block::{FullBlockWithoutCommitments, PreconfirmedHeader, TransactionWithReceipt};
+        use mp_chain_config::ChainConfig;
+        use mp_convert::ToFelt;
+        use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
+        use mp_transactions::L1HandlerTransaction;
+        use std::sync::Arc;
+
+        let builder =
+            MadaraCmdBuilder::new().args(["--full", "--network", "devnet", "--no-l1-sync"]).label("getMessagesStatus");
+
+        // 1) Start the node to initialize the DB.
+        let mut node = builder.clone().run();
+        node.wait_for_ready().await;
+        let db_dir = node.db_dir().to_path_buf();
+        node.stop();
+
+        let chain_config = Arc::new(ChainConfig::madara_devnet());
+
+        // 2) Insert "seen" marker for an L1 tx hash and restart the node.
+        {
+            let builder = NativeConfig::builder();
+            mc_class_exec::init_compilation_semaphore(builder.max_concurrent_compilations());
+            let cairo_native_config = Arc::new(builder.build());
+
+            let backend = MadaraBackend::open_rocksdb(
+                &db_dir,
+                Arc::clone(&chain_config),
+                MadaraBackendConfig { save_preconfirmed: true, skip_migration_backup: true, ..Default::default() },
+                mc_db::rocksdb::RocksDBConfig::default(),
+                cairo_native_config,
+            )?;
+
+            let nonce = 7u64;
+            let mut l1_bytes = [0u8; 32];
+            l1_bytes[31] = 0x01;
+            let l1_tx_hash = mp_convert::L1TransactionHash(l1_bytes);
+
+            backend.write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash)?;
+            assert!(backend.insert_message_to_l2_seen_marker(&l1_tx_hash, nonce)?);
+
+            backend.flush()?;
+        }
+
+        let mut node = builder.clone().run();
+        node.wait_for_ready().await;
+
+        let client = reqwest::Client::new();
+        let res = client
+            .post(node.rpc_url.clone().unwrap())
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "starknet_getMessagesStatus",
+                "params": { "transaction_hash": "0x1" },
+                "id": 0,
+            }))
+            .send()
+            .await?;
+
+        let body = res.json::<serde_json::Value>().await?;
+        assert_eq!(body["id"], serde_json::json!(0));
+        assert_eq!(body["result"], serde_json::json!([]));
+
+        node.stop();
+
+        // 3) Simulate L2 execution by writing a block with the consumed L1-handler tx, then restart.
+        let l2_tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked("0x123");
+        {
+            let builder = NativeConfig::builder();
+            mc_class_exec::init_compilation_semaphore(builder.max_concurrent_compilations());
+            let cairo_native_config = Arc::new(builder.build());
+
+            let backend = MadaraBackend::open_rocksdb(
+                &db_dir,
+                Arc::clone(&chain_config),
+                MadaraBackendConfig { save_preconfirmed: true, skip_migration_backup: true, ..Default::default() },
+                mc_db::rocksdb::RocksDBConfig::default(),
+                cairo_native_config,
+            )?;
+
+            let next_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+
+            let header = PreconfirmedHeader {
+                block_number: next_block_n,
+                protocol_version: chain_config.latest_protocol_version,
+                sequencer_address: chain_config.sequencer_address.to_felt(),
+                ..Default::default()
+            };
+
+            let nonce = 7u64;
+            let tx = L1HandlerTransaction { nonce, ..Default::default() };
+            let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+                transaction_hash: l2_tx_hash,
+                execution_result: ExecutionResult::Succeeded,
+                ..Default::default()
+            });
+            let block = FullBlockWithoutCommitments {
+                header,
+                state_diff: Default::default(),
+                transactions: vec![TransactionWithReceipt { transaction: tx.into(), receipt }],
+                events: Default::default(),
+            };
+
+            backend.write_access().add_full_block_with_classes(&block, &[], true)?;
+            backend.flush()?;
+        }
+
+        let mut node = builder.clone().run();
+        node.wait_for_ready().await;
+
+        let res = client
+            .post(node.rpc_url.clone().unwrap())
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "starknet_getMessagesStatus",
+                "params": { "transaction_hash": "0x1" },
+                "id": 1,
+            }))
+            .send()
+            .await?;
+
+        let body = res.json::<serde_json::Value>().await?;
+        assert_eq!(body["id"], serde_json::json!(1));
+        assert_eq!(body["result"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(body["result"][0]["transaction_hash"], serde_json::json!(l2_tx_hash.to_hex_string()));
+        assert_eq!(body["result"][0]["finality_status"], serde_json::json!("ACCEPTED_ON_L2"));
+        assert_eq!(body["result"][0]["execution_status"], serde_json::json!("SUCCEEDED"));
+
+        node.stop();
+        Ok(())
+    }
+
     /// Fetches a block with its transactions and receipts.
     ///
     /// Example curl command:
@@ -235,6 +439,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![TransactionWithReceipt {
                 transaction: Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
                     transaction_hash: Felt::from_hex(
@@ -319,6 +531,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![
                 Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772").unwrap()
             ],
@@ -374,6 +594,14 @@ mod test_rpc_read_calls {
             },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
+            event_commitment: Felt::from_hex("0x0").unwrap(),
+            transaction_commitment: Felt::from_hex("0x6f777eb09c00aed5fa717ceb34038c1b70051b229aad566421858811c106e1a")
+                .unwrap(),
+            receipt_commitment: Felt::from_hex("0x0").unwrap(),
+            state_diff_commitment: Felt::from_hex("0x0").unwrap(),
+            event_count: 0,
+            transaction_count: 1,
+            state_diff_length: 1,
             transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
                 transaction_hash: Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")
                     .unwrap(),
@@ -769,7 +997,8 @@ mod test_rpc_read_calls {
                 deployed_contracts: vec![],
                 replaced_classes: vec![],
                 nonces: vec![],
-                migrated_compiled_classes: None,
+                // Always serialized, even when empty (RPC v0.10.0 spec)
+                migrated_compiled_classes: Some(vec![]),
             },
         });
 

@@ -56,9 +56,6 @@ pub const DEFAULT_MAX_CONCURRENT_COMPILATIONS: usize = 4;
 /// This prevents unbounded growth while still allowing retry for recently failed classes.
 pub const DEFAULT_MAX_FAILED_COMPILATIONS: usize = 1_000_000;
 
-/// Default cache directory path for compiled native classes
-pub const DEFAULT_CACHE_DIR: &str = "/usr/share/madara/data/classes";
-
 /// Native compilation mode determines how compilation failures are handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCompilationMode {
@@ -152,7 +149,7 @@ impl Default for NativeConfig {
 impl Default for NativeExecutionConfig {
     fn default() -> Self {
         Self {
-            cache_dir: PathBuf::from(DEFAULT_CACHE_DIR), // Use default path, actual path comes from CLI/config
+            cache_dir: PathBuf::new(), // Must be set via builder or CLI (derived from base_path)
             max_memory_cache_size: Some(DEFAULT_MEMORY_CACHE_SIZE),
             max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
             max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
@@ -459,12 +456,51 @@ impl NativeConfig {
                 .map_err(|e| format!("Failed to create cache directory {:?}: {}", config.cache_dir, e))?;
         }
 
-        // Check if directory is writable
+        // Check if path is a directory
         if !config.cache_dir.is_dir() {
             return Err(format!("Cache path {:?} is not a directory", config.cache_dir));
         }
 
+        // Check if directory is writable by attempting to create and delete a test file
+        let test_file = config.cache_dir.join(".write_test");
+        std::fs::write(&test_file, b"test")
+            .map_err(|e| format!("Cache directory {:?} is not writable: {}", config.cache_dir, e))?;
+        std::fs::remove_file(&test_file)
+            .map_err(|e| format!("Failed to clean up write test file {:?}: {}", test_file, e))?;
+
         Ok(())
+    }
+}
+
+/// Clean up orphaned .lock files from previous ungraceful shutdowns.
+///
+/// Called during startup to remove stale lock files that may have been
+/// left behind if the process was killed during compilation.
+fn cleanup_orphaned_lock_files(cache_dir: &std::path::PathBuf) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+
+    let mut cleaned_count = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("lock") && std::fs::remove_file(&path).is_ok() {
+            cleaned_count += 1;
+            tracing::debug!(
+                target: "madara_cairo_native",
+                path = %path.display(),
+                "removed_orphaned_lock_file"
+            );
+        }
+    }
+
+    if cleaned_count > 0 {
+        tracing::debug!(
+            target: "madara_cairo_native",
+            count = cleaned_count,
+            cache_dir = %cache_dir.display(),
+            "cleaned_orphaned_lock_files"
+        );
     }
 }
 
@@ -495,6 +531,12 @@ pub fn setup_and_log(config: &NativeConfig) -> Result<(), String> {
             tracing::info!("Cairo native disabled - all contracts will use Cairo VM");
         }
         NativeConfig::Enabled(exec_config) => {
+            // Clean up orphaned lock files from previous ungraceful shutdowns
+            cleanup_orphaned_lock_files(&exec_config.cache_dir);
+
+            // Initialize the Tokio runtime handle for use from non-Tokio threads (e.g., blockifier workers)
+            // This must be called first, while we're still in a Tokio runtime context
+            crate::compilation::init_tokio_runtime_handle();
             // Initialize the compilation semaphore with the configured concurrency limit
             // Only needed when native execution is enabled
             crate::compilation::init_compilation_semaphore(exec_config.max_concurrent_compilations);
@@ -555,7 +597,8 @@ mod tests {
             assert_eq!(exec_config.disk_cache_load_timeout.as_secs(), DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS);
             assert_eq!(exec_config.compilation_mode, NativeCompilationMode::Async);
             assert!(exec_config.enable_retry);
-            assert_eq!(exec_config.cache_dir, PathBuf::from(DEFAULT_CACHE_DIR));
+            // cache_dir defaults to empty PathBuf - must be set via CLI (derived from base_path)
+            assert_eq!(exec_config.cache_dir, PathBuf::new());
         } else {
             panic!("Expected Enabled variant");
         }
@@ -702,5 +745,32 @@ mod tests {
         } else {
             panic!("Expected Enabled variant");
         }
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_lock_files() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let cache_dir = temp_dir.path().to_path_buf();
+
+        // Create orphaned .lock files
+        std::fs::write(cache_dir.join("class1.lock"), b"").expect("Failed to create lock file");
+        std::fs::write(cache_dir.join("class2.lock"), b"").expect("Failed to create lock file");
+        // Create a valid .so file (should NOT be removed)
+        std::fs::write(cache_dir.join("class3.so"), b"").expect("Failed to create so file");
+
+        cleanup_orphaned_lock_files(&cache_dir);
+
+        // .lock files should be removed
+        assert!(!cache_dir.join("class1.lock").exists());
+        assert!(!cache_dir.join("class2.lock").exists());
+        // .so file should still exist
+        assert!(cache_dir.join("class3.so").exists());
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_lock_files_empty_dir() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        // Should not panic on empty directory
+        cleanup_orphaned_lock_files(&temp_dir.path().to_path_buf());
     }
 }

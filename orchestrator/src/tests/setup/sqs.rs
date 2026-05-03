@@ -61,12 +61,17 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
         // Verify queue exists
         let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await?;
 
-        // Verify visibility timeout
+        // Verify visibility timeout and message retention period
+        let mut attribute_names = vec![QueueAttributeName::VisibilityTimeout];
+        if queue_config.message_retention_period.is_some() {
+            attribute_names.push(QueueAttributeName::MessageRetentionPeriod);
+        }
+
         let attributes = inner_sqs
             .client()
             .get_queue_attributes()
             .queue_url(&queue_url)
-            .attribute_names(QueueAttributeName::VisibilityTimeout)
+            .set_attribute_names(Some(attribute_names))
             .send()
             .await?;
 
@@ -81,6 +86,21 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
             "Visibility timeout mismatch for queue {}",
             queue_name
         );
+
+        // Verify message retention period if configured
+        if let Some(expected_retention) = queue_config.message_retention_period {
+            let actual_retention = attributes
+                .attributes()
+                .and_then(|attrs| attrs.get(&QueueAttributeName::MessageRetentionPeriod))
+                .and_then(|retention| retention.parse::<u32>().ok())
+                .expect("Message retention period should be set");
+
+            assert_eq!(
+                actual_retention, expected_retention,
+                "Message retention period mismatch for queue {}",
+                queue_name
+            );
+        }
 
         // Verify DLQ configuration if present
         if let Some(dlq_config) = &queue_config.dlq_config {

@@ -1,12 +1,17 @@
 use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
+use starknet_api::core::ContractAddress;
 use std::path::PathBuf;
 
 #[allow(non_upper_case_globals)]
 const KiB: usize = 1024;
 #[allow(non_upper_case_globals)]
 const MiB: usize = 1024 * KiB;
+#[allow(non_upper_case_globals)]
+const GiB: usize = 1024 * MiB;
+
+const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
@@ -69,8 +74,8 @@ pub struct BackendParams {
 
     /// This is the number of blocks for which you can get storage proofs using the storage proof endpoints.
     /// Blocks older than this limit will not be stored for retrieving historical merkle trie state. By default,
-    /// the historical merkle trie state access is limited to 100 blocks by default.
-    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value = Some("100"))]
+    /// the historical merkle trie state access is limited to 10000 blocks by default.
+    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value = Some("10000"))]
     pub db_max_saved_trie_logs: Option<usize>,
 
     /// This affects the performance of the storage proof endpoint.
@@ -151,17 +156,117 @@ pub struct BackendParams {
     /// Recommended: false for production (good balance), true for maximum durability.
     #[clap(env = "MADARA_DB_FSYNC", long, default_value = "false")]
     pub db_fsync: bool,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WRITE STALL PREVENTION SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Maximum number of memtables (active + immutable) before write stall.
+    /// Higher values provide more buffer during write bursts but use more memory.
+    /// Increase if you see stalls due to memtable count.
+    #[clap(env = "MADARA_DB_MAX_WRITE_BUFFER_NUMBER", long, default_value_t = 5)]
+    pub db_max_write_buffer_number: i32,
+
+    /// Number of L0 files that triggers write slowdown.
+    /// When L0 file count reaches this, writes are throttled.
+    /// Increase for faster sync at cost of read performance.
+    #[clap(env = "MADARA_DB_L0_SLOWDOWN_TRIGGER", long, default_value_t = 20)]
+    pub db_l0_slowdown_trigger: i32,
+
+    /// Number of L0 files that triggers complete write stop.
+    /// When L0 file count reaches this, writes are blocked until compaction catches up.
+    /// Should be higher than slowdown trigger.
+    #[clap(env = "MADARA_DB_L0_STOP_TRIGGER", long, default_value_t = 36)]
+    pub db_l0_stop_trigger: i32,
+
+    /// Soft limit for pending compaction in GiB. When exceeded, writes slow down.
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
+    #[clap(env = "MADARA_DB_SOFT_PENDING_COMPACTION_GIB", long, default_value_t = 6)]
+    pub db_soft_pending_compaction_gib: usize,
+
+    /// Hard limit for pending compaction in GiB. When exceeded, writes stop completely.
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
+    #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
+    pub db_hard_pending_compaction_gib: usize,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EXECUTION READ CACHE SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Enable execution-time read cache for hot contract state. Default: false.
+    #[clap(env = "MADARA_EXEC_READ_CACHE_ENABLED", long)]
+    #[serde(default)]
+    pub exec_read_cache_enabled: bool,
+
+    /// Optional comma-separated list of contract addresses to cache (hex).
+    ///
+    /// - not set: cache all contracts
+    /// - set: cache only these contracts (allowlist mode)
+    #[clap(env = "MADARA_EXEC_READ_CACHE_CONTRACTS", long, use_value_delimiter = true, value_delimiter = ',')]
+    #[serde(default)]
+    pub exec_read_cache_contracts: Option<Vec<ContractAddress>>,
+
+    /// Maximum size of the execution read cache (MiB).
+    #[clap(env = "MADARA_EXEC_READ_CACHE_MAX_MEMORY_MIB", long, default_value_t = DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB)]
+    pub exec_read_cache_max_memory_mib: usize,
 }
 
 impl BackendParams {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.validate_exec_read_cache()
+    }
+
+    fn validate_exec_read_cache(&self) -> anyhow::Result<()> {
+        if !self.exec_read_cache_enabled {
+            if self.exec_read_cache_contracts.is_some()
+                || self.exec_read_cache_max_memory_mib != DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB
+            {
+                tracing::warn!(
+                    exec_read_cache_contracts = ?self.exec_read_cache_contracts,
+                    exec_read_cache_max_memory_mib = self.exec_read_cache_max_memory_mib,
+                    "Execution read cache is configured but disabled."
+                );
+            }
+            return Ok(());
+        }
+
+        anyhow::ensure!(
+            self.exec_read_cache_max_memory_mib > 0,
+            "Execution read cache is enabled but `exec_read_cache_max_memory_mib` is 0."
+        );
+
+        anyhow::ensure!(
+            self.exec_read_cache_max_memory_mib.checked_mul(MiB).is_some(),
+            "Execution read cache `exec_read_cache_max_memory_mib` is too large and overflows when converting to bytes."
+        );
+
+        if matches!(self.exec_read_cache_contracts.as_deref(), Some([])) {
+            tracing::warn!(
+                "Execution read cache enabled with an empty allowlist; caching will be effectively disabled."
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn backend_config(&self) -> MadaraBackendConfig {
+        // Prevent integer overflow on user-provided values.
+        // On 64-bit systems, the limit is very large for practical purposes :)
+        let max_memory_bytes = self.exec_read_cache_max_memory_mib.saturating_mul(MiB);
+
         MadaraBackendConfig {
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
             skip_migration_backup: self.skip_migration_backup,
+            execution_read_cache: mc_db::ExecutionReadCacheConfig {
+                enabled: self.exec_read_cache_enabled,
+                contracts: self.exec_read_cache_contracts.clone(),
+                max_memory_bytes,
+            },
         }
     }
+
     pub fn rocksdb_config(&self) -> RocksDBConfig {
         RocksDBConfig {
             enable_statistics: self.db_enable_statistics,
@@ -177,6 +282,12 @@ impl BackendParams {
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
+            // Write stall prevention settings
+            max_write_buffer_number: self.db_max_write_buffer_number,
+            level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,
+            level_zero_stop_writes_trigger: self.db_l0_stop_trigger,
+            soft_pending_compaction_bytes_limit: self.db_soft_pending_compaction_gib * GiB,
+            hard_pending_compaction_bytes_limit: self.db_hard_pending_compaction_gib * GiB,
         }
     }
 }

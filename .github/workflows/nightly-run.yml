@@ -36,6 +36,7 @@ jobs:
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           fi
+
   # ========================================================================= #
   #                              NIGHTLY RELEASE                              #
   # ========================================================================= #
@@ -78,11 +79,11 @@ jobs:
       id-token: write
     secrets: inherit
 
-  build-nightly-and-publish-bootstrapper:
+  build-nightly-and-publish-bootstrapper-v2:
     uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper/Dockerfile
+      image-name: bootstrapper-v2
+      image-file: ./bootstrapper-v2/Dockerfile
     needs: [test-end-to-end]
     if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
@@ -120,37 +121,11 @@ jobs:
   #                                E2E Test                                   #
   # ========================================================================= #
 
-  # Build Madara binary
-  build-madara:
-    uses: ./.github/workflows/task-build-madara.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # Build Orchestrator binary
-  build-orchestrator:
-    uses: ./.github/workflows/task-build-orchestrator.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # Build Bootstrapper binary
-  build-bootstrapper:
-    uses: ./.github/workflows/task-build-bootstrapper.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # End-to-end tests
+  # Self-contained E2E test — builds all binaries internally
   test-end-to-end:
-    needs: [build-madara, build-orchestrator, build-bootstrapper]
+    needs: [check-merged-today]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     uses: ./.github/workflows/task-test-end-to-end.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
-      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     secrets: inherit
 
   # ========================================================================= #
@@ -164,14 +139,11 @@ jobs:
       id-token: write
       contents: read
     needs:
-      - build-madara
-      - build-orchestrator
-      - build-bootstrapper
       - test-end-to-end
       - build-nightly-and-publish-madara
       - build-nightly-and-publish-orchestrator
-      - build-nightly-and-publish-bootstrapper
-    if: always() && (needs.build-madara.result == 'failure' || needs.build-orchestrator.result == 'failure' || needs.build-bootstrapper.result == 'failure' || needs.test-end-to-end.result == 'failure' || needs.build-nightly-and-publish-madara.result == 'failure' || needs.build-nightly-and-publish-orchestrator.result == 'failure' || needs.build-nightly-and-publish-bootstrapper.result == 'failure')
+      - build-nightly-and-publish-bootstrapper-v2
+    if: always() && (needs.test-end-to-end.result == 'failure' || needs.build-nightly-and-publish-madara.result == 'failure' || needs.build-nightly-and-publish-orchestrator.result == 'failure' || needs.build-nightly-and-publish-bootstrapper-v2.result == 'failure')
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -182,15 +154,6 @@ jobs:
       - name: Send SNS notification
         run: |
           FAILED_JOBS=""
-          if [ "${{ needs.build-madara.result }}" == "failure" ]; then
-            FAILED_JOBS="$FAILED_JOBS- build-madara\n"
-          fi
-          if [ "${{ needs.build-orchestrator.result }}" == "failure" ]; then
-            FAILED_JOBS="$FAILED_JOBS- build-orchestrator\n"
-          fi
-          if [ "${{ needs.build-bootstrapper.result }}" == "failure" ]; then
-            FAILED_JOBS="$FAILED_JOBS- build-bootstrapper\n"
-          fi
           if [ "${{ needs.test-end-to-end.result }}" == "failure" ]; then
             FAILED_JOBS="$FAILED_JOBS- test-end-to-end\n"
           fi
@@ -200,8 +163,8 @@ jobs:
           if [ "${{ needs.build-nightly-and-publish-orchestrator.result }}" == "failure" ]; then
             FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-orchestrator\n"
           fi
-          if [ "${{ needs.build-nightly-and-publish-bootstrapper.result }}" == "failure" ]; then
-            FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-bootstrapper\n"
+          if [ "${{ needs.build-nightly-and-publish-bootstrapper-v2.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-bootstrapper-v2\n"
           fi
 
           MESSAGE="Nightly Run Failed

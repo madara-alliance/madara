@@ -18,6 +18,7 @@ build-artifacts/*
 !build-artifacts/archive.docker
 !build-artifacts/build.docker
 !build-artifacts/cairo_artifacts/
+!build-artifacts/oz-account-sierra-1-4-0
 
 # Ignore the tar.gz file
 artifacts.tar.gz
@@ -43,9 +44,13 @@ rustc-ice-*.txt
 .local
 .cairo
 
+# IDE
+.cursor/
+.claude/
+
+
 # direnv cache
 .direnv
-.cairo
 
 # Javascript dependencies
 **/node_modules/
@@ -60,6 +65,7 @@ benchmarking/reports/*.json
 # idea
 .idea
 .zed
+madara/.vscode/
 
 # local runs
 run.sh
@@ -95,12 +101,16 @@ test-artifacts/madara
 .npm-global
 
 
+# bootstrapper v2 output
+bootstrapper-v2/output/
+
 # e2e test
 e2e_data/
 /e2e_data.zip
 /e2e_data/*
 /e2e_data*
 /e2e/data/*
+/deposit_withdraw/
 
 out
 cache
@@ -113,3 +123,7 @@ sequencer_venv/
 sequencer_requirements.txt
 # AI-generated documentation
 AI_docs/
+.claude
+orchestrator/package-lock.json
+orchestrator/crates/prover-clients/atlantic-service/swagger.json
+tests/js_tests/.cache

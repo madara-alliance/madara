@@ -1,10 +1,12 @@
 //! Executor thread internal logic.
 
+use crate::metrics::BlockProductionMetrics;
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
 use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
+use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
@@ -71,6 +73,7 @@ impl ExecutorThreadState {
 /// This thread becomes the blockifier executor scheduler thread (via TransactionExecutor), which will internally spawn worker threads.
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
+    metrics: Arc<BlockProductionMetrics>,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -96,9 +99,11 @@ impl ExecutorThread {
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
+        metrics: Arc<BlockProductionMetrics>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
+            metrics,
             incoming_batches,
             replies_sender,
             commands,
@@ -296,8 +301,13 @@ impl ExecutorThread {
 
                                 // Finalize the block to get execution summary
                                 // This uses the executor's current state - no re-execution needed
+                                let finalize_start = Instant::now();
                                 match execution_state.executor.finalize() {
                                     Ok(block_exec_summary) => {
+                                        let finalize_secs = finalize_start.elapsed().as_secs_f64();
+                                        self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
+                                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
+
                                         // Send EndFinalBlock message so main loop can close the block during shutdown
                                         if self
                                             .replies_sender
@@ -421,10 +431,23 @@ impl ExecutorThread {
 
             // Doesn't process the results, it just inspects them for logging stats, and figures out which classes were declared.
             // Results are processed async, outside the executor.
+            // Calculate average per-tx time for metrics (batch executes all txs together).
+            let avg_tx_time_ms = if !blockifier_results.is_empty() {
+                exec_duration.as_secs_f64() * 1000.0 / blockifier_results.len() as f64
+            } else {
+                0.0
+            };
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
                     Ok((execution_info, _state_diff)) => {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
+
+                        // Record tx execution time metric with production context.
+                        exec_metrics().record_tx_execution_time(
+                            avg_tx_time_ms,
+                            tx_type_to_label(btx.tx_type()),
+                            context_label::PRODUCTION,
+                        );
 
                         stats.n_added_to_block += 1;
                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
@@ -459,6 +482,9 @@ impl ExecutorThread {
                 execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
             );
             tracing::debug!("Block now full: {:?}", block_full);
+            if let Some(block_state) = execution_state.executor.block_state.as_mut() {
+                block_state.state.evict_read_cache_if_needed();
+            }
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
             if exec_result.stats.n_executed > 0
@@ -478,7 +504,11 @@ impl ExecutorThread {
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
                     execution_state.exec_ctx.block_number,
                 );
+                let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
+                let finalize_secs = finalize_start.elapsed().as_secs_f64();
+                self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
+                self.metrics.executor_finalize_last.record(finalize_secs, &[]);
 
                 if self
                     .replies_sender

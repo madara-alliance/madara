@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  # "madara",
+  "madara",
   "orchestrator",
   "e2e",
   "e2e-tests",
@@ -10,7 +10,7 @@ members = [
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
-  # "madara",
+  "madara",
   "orchestrator",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
 ]
@@ -22,7 +22,7 @@ authors = ["Madara <https://github.com/madara-alliance>"]
 homepage = "https://madara.build"
 edition = "2021"
 repository = "https://github.com/madara-alliance/madara/"
-version = "0.8.0"
+version = "0.10.0"
 license = "Apache-2.0"
 
 [workspace.lints.rust]
@@ -61,7 +61,7 @@ rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", tag = "v1.0.0", features = [
   "std",
 ] }
 
@@ -86,7 +86,7 @@ mp-chain-config = { path = "madara/crates/primitives/chain_config", default-feat
 mp-oracle = { path = "madara/crates/primitives/oracle", default-features = false }
 
 # Madara client
-mc-analytics = { path = "madara/crates/client/analytics" }
+mc-class-exec = { path = "madara/crates/client/cairo_native" }
 mc-telemetry = { path = "madara/crates/client/telemetry" }
 mc-db = { path = "madara/crates/client/db" }
 mc-exec = { path = "madara/crates/client/exec" }
@@ -99,6 +99,7 @@ mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
 mc-devnet = { path = "madara/crates/client/devnet" }
 mc-submit-tx = { path = "madara/crates/client/submit_tx" }
+mc-external-db = { path = "madara/crates/client/external_db" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
@@ -120,14 +121,13 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
-  "testing",
+blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1", features = [
+  "node_api",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
-  "testing",
-] }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
 cairo-lang-starknet-classes = "=2.12.3"
 cairo-lang-utils = "=2.12.3"
+cairo-native = "0.7.3"
 
 alloy = { version = "1.1.0", features = [
   "node-bindings",
@@ -141,7 +141,11 @@ alloy = { version = "1.1.0", features = [
 
 # Instrumentation
 opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
-opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio", "logs"] }
+opentelemetry_sdk = { version = "0.30.0", features = [
+  "rt-tokio",
+  "logs",
+  "experimental_metrics_custom_reader",
+] }
 opentelemetry-stdout = { version = "0.30.0" }
 opentelemetry-otlp = { version = "0.30.0", features = [
   "grpc-tonic",
@@ -183,13 +187,15 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
+bson = "2"
 
 # Async
-tokio = { version = "1.47", features = ["signal", "rt"] }
+tokio = { version = "1.47", features = ["signal", "rt", "macros"] }
 tokio-util = "0.7.12"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
+dashmap = "6.1.0"
 
 # Serialization
 serde = { version = "1.0", default-features = false, features = ["std"] }
@@ -221,7 +227,7 @@ twox-hash = "2.1"
 rustc-hash = "2.1"
 highway = "1.3"
 siphasher = "1.0"
-smallvec = "1.15.1"
+smallvec = { version = "1.15.1", features = ["write"] }
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
@@ -231,6 +237,7 @@ bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
 derive_more = { version = "2.0.1", features = ["from_str"] }
 indexmap = "2.2.6"
+libc = "0.2"
 
 
 # Error handling
@@ -294,7 +301,7 @@ log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
 omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
 tokio-stream = "0.1.15"
-uuid = { version = "1.7.0", features = ["v4", "serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
@@ -305,7 +312,9 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.1-alpha.2" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "9d3ad533b3f3c4849663ad180e4a92671cb07e6b", features = [
+  "cairo_native",
+] }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -314,15 +323,20 @@ orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlem
 orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
+orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
+apollo_starknet_os_program = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
+starknet_os = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-mock-service = { path = "orchestrator/crates/prover-clients/mock-service" }
 orchestrator = { path = "orchestrator" }
 
 utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 
 base64ct = "=1.6.0"
+time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]

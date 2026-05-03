@@ -1,4 +1,6 @@
-use crate::rocksdb::trie::WrappedBonsaiError;
+use super::ClassTrieTimings;
+use crate::metrics::metrics;
+use crate::rocksdb::trie::{GlobalTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -8,6 +10,7 @@ use mp_state_update::{DeclaredClassItem, MigratedClassItem};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
+use std::time::Instant;
 
 // "CONTRACT_CLASS_LEAF_V0"
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
@@ -18,15 +21,31 @@ fn compute_class_leaf_hash(compiled_class_hash: &Felt) -> Felt {
     Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, compiled_class_hash)
 }
 
-pub fn class_trie_root(
-    backend: &RocksDBStorage,
+/// Holds an uncommitted class trie between staged root computation and final commit.
+pub struct StagedClassTrie {
+    class_trie: GlobalTrie<Poseidon>,
+}
+
+impl StagedClassTrie {
+    pub fn commit(mut self, block_number: u64) -> Result<ClassTrieTimings> {
+        let mut timings = ClassTrieTimings::default();
+
+        let class_commit_start = Instant::now();
+        self.class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        timings.trie_commit = class_commit_start.elapsed();
+        let class_commit_secs = timings.trie_commit.as_secs_f64();
+        metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
+        metrics().class_trie_commit_last.record(class_commit_secs, &[]);
+
+        Ok(timings)
+    }
+}
+
+fn insert_class_updates(
+    class_trie: &mut GlobalTrie<Poseidon>,
     declared_classes: &[DeclaredClassItem],
     migrated_classes: &[MigratedClassItem],
-    block_number: u64,
-) -> Result<Felt> {
-    let mut class_trie = backend.class_trie();
-
-    // Process newly declared classes
+) -> Result<()> {
     let declared_updates: Vec<_> = declared_classes
         .into_par_iter()
         .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
@@ -35,8 +54,6 @@ pub fn class_trie_root(
         })
         .collect();
 
-    // Process migrated classes (SNIP-34)
-    // For migrated classes, the compiled_class_hash in MigratedClassItem is the new BLAKE hash
     let migrated_updates: Vec<_> = migrated_classes
         .into_par_iter()
         .map(|MigratedClassItem { class_hash, compiled_class_hash }| {
@@ -57,14 +74,38 @@ pub fn class_trie_root(
         class_trie.insert(super::bonsai_identifier::CLASS, &bv, &value).map_err(WrappedBonsaiError)?;
     }
 
-    tracing::trace!("class_trie committing");
-    class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    Ok(())
+}
 
-    let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
+/// Calculates the class trie root from staged (uncommitted) changes.
+/// Returns the root hash and the staged trie that can be committed later.
+pub fn class_trie_root_staged(
+    backend: &RocksDBStorage,
+    declared_classes: &[DeclaredClassItem],
+    migrated_classes: &[MigratedClassItem],
+) -> Result<(Felt, StagedClassTrie)> {
+    let mut class_trie = backend.class_trie();
 
-    tracing::trace!("class_trie committed");
+    insert_class_updates(&mut class_trie, declared_classes, migrated_classes)?;
 
-    Ok(root_hash)
+    let root_hash = class_trie.root_hash_staged(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
+
+    tracing::trace!("class_trie staged root computed");
+
+    Ok((root_hash, StagedClassTrie { class_trie }))
+}
+
+/// Calculates the class trie root (single-phase: inserts + commits immediately).
+/// Used by the sync path which does not need staged validation.
+pub fn class_trie_root(
+    backend: &RocksDBStorage,
+    declared_classes: &[DeclaredClassItem],
+    migrated_classes: &[MigratedClassItem],
+    block_number: u64,
+) -> Result<(Felt, ClassTrieTimings)> {
+    let (root_hash, staged) = class_trie_root_staged(backend, declared_classes, migrated_classes)?;
+    let timings = staged.commit(block_number)?;
+    Ok((root_hash, timings))
 }
 
 #[cfg(test)]
@@ -106,7 +147,7 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with the test data
-        let result = class_trie_root(&backend.db, &declared_classes, &[], block_number).unwrap();
+        let (result, _timings) = class_trie_root(&backend.db, &declared_classes, &[], block_number).unwrap();
 
         // Assert that the resulting root hash matches the expected value
         assert_eq!(
@@ -140,7 +181,8 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with both declared and migrated classes
-        let result = class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
+        let (result, _timings) =
+            class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
 
         // The result should incorporate both declared and migrated classes.
         // The expected hash is computed by inserting both class leaf hashes into the trie.

@@ -11,6 +11,33 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
+use std::time::Duration;
+use tokio::time::Instant;
+
+const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
+const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
+const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
+
+fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
+    tokio::spawn(async move {
+        tokio::time::sleep(REVERT_SHUTDOWN_DELAY).await;
+        ctx.cancel_global();
+    });
+}
+
+// Only include services controlled by ServiceMonitor.
+fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
+    [
+        MadaraServiceId::L1Sync,
+        MadaraServiceId::L2Sync,
+        MadaraServiceId::BlockProduction,
+        MadaraServiceId::RpcUser,
+        MadaraServiceId::Gateway,
+        MadaraServiceId::Mempool,
+    ]
+}
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -89,7 +116,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
-    async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {
+    /// Coordinated revert: stop all other services, wait for ack, revert DB, then exit.
+    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -98,7 +126,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        // Get the block number for the target hash
+        // Validate revert target and snap sync constraints early (before shutdown).
         let target_block_n = self
             .backend
             .db
@@ -109,7 +137,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 error: format!("Block with hash {:#x} not found", block_hash).into(),
             })?;
 
-        // Check if snap sync was used and if target block is before snap sync range
         if let Some(snap_sync_latest_block) = self
             .backend
             .get_snap_sync_latest_block()
@@ -121,12 +148,91 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                     error: format!(
                         "Cannot revert to block {} because snap sync was used up to block {}. Trie data is only available from block {} onwards.",
                         target_block_n, snap_sync_latest_block, snap_sync_latest_block
-                    ).into()
-                }.into());
+                    )
+                    .into(),
+                }
+                .into());
             }
         }
 
+        // 1) Initiate shutdown of all services except Admin RPC.
+        let stop_svcs = services_to_stop_for_revert();
+
+        tracing::info!(
+            target: "rpc::admin",
+            "revertToAndShutdown: requesting shutdown for services (excluding rpc_admin): {:?}",
+            stop_svcs.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+
+        for svc in &stop_svcs {
+            let prev = self.ctx.service_remove(*svc);
+            tracing::info!(
+                target: "rpc::admin",
+                "revertToAndShutdown: shutdown requested for service={} (was_requested={})",
+                svc,
+                prev
+            );
+        }
+
+        // 2) Wait until all services are *actually* down.
+        let timeout = SERVICE_GRACE_PERIOD + REVERT_STOP_WAIT_EXTRA;
+        let deadline = Instant::now() + timeout;
+        let mut last_log = Instant::now();
+        let log_interval = REVERT_STOP_LOG_INTERVAL;
+
+        loop {
+            let mut still_up: Vec<MadaraServiceId> = Vec::new();
+            for svc in &stop_svcs {
+                if self.ctx.service_status_actual(*svc) == MadaraServiceStatus::On {
+                    still_up.push(*svc);
+                }
+            }
+
+            if still_up.is_empty() {
+                break;
+            }
+
+            if Instant::now() >= deadline {
+                tracing::error!(
+                    target: "rpc::admin",
+                    "revertToAndShutdown: timed out waiting for services to stop; still_up={:?}",
+                    still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                );
+                schedule_global_cancel(self.ctx.clone());
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: format!(
+                        "Timed out waiting for services to stop (timeout {:?}). Still up: {:?}",
+                        timeout,
+                        still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                    )
+                    .into(),
+                }
+                .into());
+            }
+
+            if Instant::now().duration_since(last_log) >= log_interval {
+                tracing::info!(
+                    target: "rpc::admin",
+                    "revertToAndShutdown: waiting for services to stop... still_up={:?}",
+                    still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                );
+                last_log = Instant::now();
+            }
+
+            tokio::time::sleep(REVERT_STOP_POLL_INTERVAL).await;
+        }
+
+        tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
+
+        // 3) Revert DB state, then refresh backend chain tip broadcast.
+        tracing::info!(
+            target: "rpc::admin",
+            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
+            block_hash,
+            target_block_n
+        );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+
         let fresh_chain_tip = self
             .backend
             .db
@@ -135,6 +241,12 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
+
+        tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
+
+        // Shut down the process after responding, so the client gets an ACK.
+        schedule_global_cancel(self.ctx.clone());
+
         Ok(())
     }
 
@@ -145,7 +257,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(self
             .block_prod_handle
             .as_ref()
-            .unwrap()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .submit_l1_handler_transaction(l1_handler_message)
             .await
             .map_err(StarknetRpcApiError::from)?)
@@ -162,5 +274,88 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::services_to_stop_for_revert;
+    use crate::{
+        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
+    };
+    use mc_db::{
+        test_utils::{add_test_block, l1_handler_tx_with_receipt},
+        MadaraBackend,
+    };
+    use mp_chain_config::ChainConfig;
+    use mp_convert::Felt;
+    use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
+        let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
+        rpc.set_rpc_unsafe_enabled(true);
+        rpc
+    }
+
+    #[tokio::test]
+    async fn revert_waits_for_actual_service_shutdown_before_reverting_and_cancels_node() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        add_test_block(&backend, 1, vec![]);
+
+        let requested = Arc::new(MadaraServiceMask::default());
+        for svc in services_to_stop_for_revert() {
+            requested.activate(svc);
+        }
+        let actual = Arc::new(MadaraServiceMask::default());
+        actual.activate(mp_utils::service::MadaraServiceId::L2Sync);
+
+        let ctx = ServiceContext::new_with_services(Arc::clone(&requested)).with_services_actual(Arc::clone(&actual));
+        let rpc = make_starknet(backend.clone(), ctx.clone());
+
+        let mut cancel_wait_ctx = ctx.clone();
+        let wait_cancelled = tokio::spawn(async move { cancel_wait_ctx.cancelled().await });
+
+        let rpc_task = tokio::spawn(async move { rpc.revert_to_and_shutdown(block_0_hash).await });
+
+        // While one service is still reported as "actually up", revert must not proceed.
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        for svc in services_to_stop_for_revert() {
+            assert_eq!(ctx.service_status_requested(svc), MadaraServiceStatus::Off);
+        }
+
+        actual.deactivate(mp_utils::service::MadaraServiceId::L2Sync);
+
+        rpc_task.await.expect("rpc task should complete").expect("revert should succeed");
+        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+
+        tokio::time::timeout(Duration::from_secs(2), wait_cancelled)
+            .await
+            .expect("node cancellation should be triggered")
+            .expect("cancel waiter task should not panic");
+    }
+
+    #[tokio::test]
+    async fn revert_fails_when_source_mapping_missing() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        let reverted_nonce = 7u64;
+        add_test_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, Felt::from(700u64))]);
+
+        let rpc = make_starknet(backend.clone(), ServiceContext::default());
+
+        // Missing nonce->l1_block metadata should fail fast without mutating the chain.
+        let err = rpc
+            .revert_to_and_shutdown(block_0_hash)
+            .await
+            .expect_err("revert should fail when source metadata is missing");
+        assert_ne!(err.code(), 0);
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
     }
 }

@@ -92,6 +92,14 @@ pub struct AtlanticGetStatusResponse {
     pub metadata_urls: Vec<String>,
 }
 
+/// Response type for `/atlantic-query-by-dedup-id` endpoint.
+/// Unlike `AtlanticGetStatusResponse`, this endpoint does not return `metadata_urls`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlanticQueryByDedupIdResponse {
+    pub atlantic_query: AtlanticQuery,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticQuery {
@@ -125,7 +133,7 @@ pub struct AtlanticQuery {
     pub customer_name: Option<String>,
     pub is_job_size_valid: bool,
     pub is_proof_mocked: Option<bool>,
-    pub client: AtlanticClient,
+    pub client: Option<AtlanticClient>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,14 +144,6 @@ pub struct AtlanticClient {
     pub email: Option<String>,
     pub is_email_verified: Option<bool>,
     pub image: Option<String>,
-}
-
-/// This is the response struct for the `/atlantic-queries` GET endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AtlanticQueriesListResponse {
-    pub atlantic_queries: Vec<AtlanticQuery>,
-    pub total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

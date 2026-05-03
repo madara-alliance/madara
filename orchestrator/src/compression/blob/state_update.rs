@@ -5,7 +5,7 @@ use crate::types::constant::BLOB_LEN;
 use itertools::repeat_n;
 use num_bigint::BigUint;
 use num_traits::Zero;
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StorageEntry};
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, MigratedCompiledClassItem, StorageEntry};
 use std::collections::{HashMap, HashSet};
 
 pub(super) struct BlobContractDiff {
@@ -133,16 +133,29 @@ impl BlobContractDiffVec {
 
 /// Appends declared classes count and their data to blob_data
 pub(super) fn add_declared_classes_to_blob_data(
-    mut declared_classes: Vec<DeclaredClassItem>,
+    declared_classes: Vec<DeclaredClassItem>,
+    migrated_classes: Vec<MigratedCompiledClassItem>,
     blob_data: &mut Vec<Felt>,
 ) {
+    // Create a new vector combining declared classes and migrated classes
+    let mut all_declared_classes: Vec<DeclaredClassItem> = Vec::new();
+
+    // Add existing declared classes
+    all_declared_classes.extend(declared_classes);
+
+    // Add migrated classes with class_hash and new_compiled_class_hash as compiled_class_hash
+    all_declared_classes.extend(migrated_classes.into_iter().map(|migrated| DeclaredClassItem {
+        class_hash: migrated.class_hash,
+        compiled_class_hash: migrated.compiled_class_hash,
+    }));
+
     // Sorting declared classes by class hash for deterministic output
-    declared_classes.sort_by_key(|class| class.class_hash);
+    all_declared_classes.sort_by_key(|class| class.class_hash);
 
-    tracing::debug!("Total declared classes in blob: {}", declared_classes.len());
+    tracing::debug!("Total declared classes in blob: {}", all_declared_classes.len());
 
-    blob_data.push(Felt::from(declared_classes.len()));
-    for DeclaredClassItem { class_hash, compiled_class_hash } in declared_classes.into_iter() {
+    blob_data.push(Felt::from(all_declared_classes.len()));
+    for DeclaredClassItem { class_hash, compiled_class_hash } in all_declared_classes.into_iter() {
         blob_data.push(class_hash);
         blob_data.push(compiled_class_hash);
     }

@@ -28,14 +28,14 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 #[case(
     "src/tests/jobs/da_job/test_data/state_update/638353.txt",
     "src/tests/jobs/da_job/test_data/nonces/638353.txt",
-    "63853",
+    63853,
     110
 )]
 #[tokio::test]
 async fn test_da_job_process_job_failure_on_small_blob_size(
     #[case] state_update_file: String,
     #[case] nonces_file: String,
-    #[case] internal_id: String,
+    #[case] internal_id: u64,
     #[case] current_blob_length: u64,
 ) {
     // Mocking DA client calls
@@ -64,7 +64,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     let max_blob_per_txn = services.config.da_client().max_blob_per_txn().await;
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap();
+    let block_number = internal_id;
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {
@@ -79,7 +79,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
             services.config,
             &mut JobItem {
                 id: Uuid::default(),
-                internal_id: internal_id.to_string(),
+                internal_id,
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
@@ -115,7 +115,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
         .build()
         .await;
     let server = services.starknet_server.unwrap();
-    let internal_id = "1";
+    let internal_id: u64 = 1;
 
     let pending_state_update = MaybePreConfirmedStateUpdate::PreConfirmedUpdate(PreConfirmedStateUpdate {
         old_root: Some(Felt::default()),
@@ -139,7 +139,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     });
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap();
+    let block_number = internal_id;
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {
@@ -154,7 +154,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
             services.config,
             &mut JobItem {
                 id: Uuid::default(),
-                internal_id: internal_id.to_string(),
+                internal_id,
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String("1".to_string().into_boxed_str()),
@@ -188,23 +188,23 @@ async fn test_da_job_process_job_failure_on_pending_block() {
 #[case(
     "src/tests/jobs/da_job/test_data/state_update/631861.txt",
     "src/tests/jobs/da_job/test_data/nonces/631861.txt",
-    "631861"
+    631861
 )]
 #[case(
     "src/tests/jobs/da_job/test_data/state_update/640641.txt",
     "src/tests/jobs/da_job/test_data/nonces/640641.txt",
-    "640641"
+    640641
 )]
 #[case(
     "src/tests/jobs/da_job/test_data/state_update/638353.txt",
     "src/tests/jobs/da_job/test_data/nonces/638353.txt",
-    "638353"
+    638353
 )]
 #[tokio::test]
 async fn test_da_job_process_job_success(
     #[case] state_update_file: String,
     #[case] nonces_file: String,
-    #[case] internal_id: String,
+    #[case] internal_id: u64,
 ) {
     // Mocking DA client calls
     let mut da_client = MockDaClient::new();
@@ -233,7 +233,7 @@ async fn test_da_job_process_job_success(
     });
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap();
+    let block_number = internal_id;
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {
@@ -248,7 +248,7 @@ async fn test_da_job_process_job_success(
             services.config,
             &mut JobItem {
                 id: Uuid::default(),
-                internal_id: internal_id.to_string(),
+                internal_id,
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),

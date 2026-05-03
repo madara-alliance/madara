@@ -10,7 +10,7 @@ use mp_rpc::{
 };
 use starknet_api::executable_transaction::TransactionType;
 use starknet_api::transaction::fields::GasVectorComputationMode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -34,13 +34,13 @@ pub struct FunctionInvocation {
 #[derive(thiserror::Error, Debug)]
 pub enum ConvertCallInfoToExecuteInvocationError {
     #[error(transparent)]
-    GetFunctionInvocation(#[from] TryFuntionInvocationFromCallInfoError),
+    GetFunctionInvocation(#[from] TryFunctionInvocationFromCallInfoError),
     #[error("Missing FunctionInvocation")]
     MissingFunctionInvocation,
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum TryFuntionInvocationFromCallInfoError {
+pub enum TryFunctionInvocationFromCallInfoError {
     #[error(transparent)]
     TransactionExecution(#[from] TransactionExecutionError),
 }
@@ -135,11 +135,12 @@ pub fn execution_result_to_tx_trace_v0_7(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_7_1::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -267,11 +268,12 @@ pub fn execution_result_to_tx_trace_v0_8(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_8_1::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -383,11 +385,12 @@ pub fn execution_result_to_tx_trace_v0_9(
     executions_result: &ExecutionResult,
     versioned_constants: &VersionedConstants,
 ) -> Result<mp_rpc::v0_9_0::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
-    let ExecutionResult { tx_type, execution_info, state_diff, .. } = executions_result;
+    let ExecutionResult { tx_type, execution_info, state_diff, deployed_contracts, deprecated_declared_class, .. } =
+        executions_result;
 
     let state_diff = match state_diff_is_empty(state_diff) {
         true => None,
-        false => Some(to_state_diff(state_diff)),
+        false => Some(to_state_diff(state_diff, deployed_contracts, deprecated_declared_class)),
     };
 
     let validate_invocation = execution_info.validate_call_info.as_ref().map(|call_info| {
@@ -479,6 +482,14 @@ pub fn execution_result_to_tx_trace_v0_9(
     Ok(tx_trace)
 }
 
+pub fn execution_result_to_tx_trace_v0_10(
+    executions_result: &ExecutionResult,
+    versioned_constants: &VersionedConstants,
+) -> Result<mp_rpc::v0_10_0::TransactionTrace, ConvertCallInfoToExecuteInvocationError> {
+    let v0_9_trace = execution_result_to_tx_trace_v0_9(executions_result, versioned_constants)?;
+    Ok(v0_9_trace.into())
+}
+
 fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<mp_rpc::v0_7_1::OrderedMessage> {
     call_info
         .execution
@@ -552,7 +563,34 @@ fn resources_mapping(
     }
 }
 
-fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> mp_rpc::v0_7_1::StateDiff {
+fn to_state_diff(
+    commitment_state_diff: &CommitmentStateDiff,
+    deployed_contracts_set: &HashSet<Felt>,
+    deprecated_declared_class: &Option<Felt>,
+) -> mp_rpc::v0_7_1::StateDiff {
+    let mut deployed_contracts = vec![];
+    let mut replaced_classes = vec![];
+    for (address, class_hash) in &commitment_state_diff.address_to_class_hash {
+        let address_felt = address.to_felt();
+        let class_hash_felt = class_hash.to_felt();
+        if deployed_contracts_set.contains(&address_felt) {
+            deployed_contracts
+                .push(mp_rpc::v0_7_1::DeployedContractItem { address: address_felt, class_hash: class_hash_felt });
+        } else {
+            replaced_classes
+                .push(mp_rpc::v0_7_1::ReplacedClass { contract_address: address_felt, class_hash: class_hash_felt });
+        }
+    }
+
+    let declared_classes = commitment_state_diff
+        .class_hash_to_compiled_class_hash
+        .iter()
+        .map(|(class_hash, compiled_class_hash)| mp_rpc::v0_7_1::NewClasses {
+            class_hash: class_hash.to_felt(),
+            compiled_class_hash: compiled_class_hash.to_felt(),
+        })
+        .collect();
+
     mp_rpc::v0_7_1::StateDiff {
         storage_diffs: commitment_state_diff
             .storage_updates
@@ -565,10 +603,10 @@ fn to_state_diff(commitment_state_diff: &CommitmentStateDiff) -> mp_rpc::v0_7_1:
                 mp_rpc::v0_7_1::ContractStorageDiffItem { address: address.to_felt(), storage_entries }
             })
             .collect(),
-        deprecated_declared_classes: vec![],
-        declared_classes: vec![],
-        deployed_contracts: vec![],
-        replaced_classes: vec![],
+        deprecated_declared_classes: deprecated_declared_class.iter().copied().collect(),
+        declared_classes,
+        deployed_contracts,
+        replaced_classes,
         nonces: commitment_state_diff
             .address_to_nonce
             .iter()
@@ -615,5 +653,81 @@ fn agregate_execution_ressources_v0_7(
         bitwise_builtin_applications: sum(abc.clone(), |x| x.bitwise_builtin_applications),
         keccak_builtin_applications: sum(abc.clone(), |x| x.keccak_builtin_applications),
         segment_arena_builtin: sum(abc.clone(), |x| x.segment_arena_builtin),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blockifier::state::cached_state::CommitmentStateDiff;
+    use starknet_api::core::{ClassHash, ContractAddress};
+
+    /// Build a minimal `CommitmentStateDiff` with the given address→class_hash entries.
+    fn make_commitment_diff(entries: Vec<(ContractAddress, ClassHash)>) -> CommitmentStateDiff {
+        CommitmentStateDiff {
+            address_to_class_hash: entries.into_iter().collect(),
+            address_to_nonce: Default::default(),
+            storage_updates: Default::default(),
+            class_hash_to_compiled_class_hash: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_deployed_vs_replaced_classification() {
+        let deployed_addr = ContractAddress::try_from(Felt::from(1u64)).unwrap();
+        let replaced_addr = ContractAddress::try_from(Felt::from(2u64)).unwrap();
+        let class_hash = ClassHash(Felt::from(42u64));
+
+        let diff = make_commitment_diff(vec![(deployed_addr, class_hash), (replaced_addr, class_hash)]);
+
+        // Only deployed_addr is in the deployed set
+        let deployed_set: HashSet<Felt> = [deployed_addr.to_felt()].into_iter().collect();
+        let result = to_state_diff(&diff, &deployed_set, &None);
+
+        assert_eq!(result.deployed_contracts.len(), 1);
+        assert_eq!(result.deployed_contracts[0].address, deployed_addr.to_felt());
+        assert_eq!(result.deployed_contracts[0].class_hash, class_hash.to_felt());
+
+        assert_eq!(result.replaced_classes.len(), 1);
+        assert_eq!(result.replaced_classes[0].contract_address, replaced_addr.to_felt());
+        assert_eq!(result.replaced_classes[0].class_hash, class_hash.to_felt());
+    }
+
+    #[test]
+    fn test_deprecated_declared_class_populated() {
+        let diff = make_commitment_diff(vec![]);
+        let deprecated_class = Felt::from(0xCAFE);
+
+        let result = to_state_diff(&diff, &HashSet::new(), &Some(deprecated_class));
+
+        assert_eq!(result.deprecated_declared_classes, vec![deprecated_class]);
+    }
+
+    #[test]
+    fn test_deprecated_declared_class_empty_when_none() {
+        let diff = make_commitment_diff(vec![]);
+
+        let result = to_state_diff(&diff, &HashSet::new(), &None);
+
+        assert!(result.deprecated_declared_classes.is_empty());
+    }
+
+    #[test]
+    fn test_declared_classes_from_compiled_class_hash() {
+        let class_hash = ClassHash(Felt::from(10u64));
+        let compiled_hash = starknet_api::core::CompiledClassHash(Felt::from(20u64));
+
+        let diff = CommitmentStateDiff {
+            address_to_class_hash: Default::default(),
+            address_to_nonce: Default::default(),
+            storage_updates: Default::default(),
+            class_hash_to_compiled_class_hash: [(class_hash, compiled_hash)].into_iter().collect(),
+        };
+
+        let result = to_state_diff(&diff, &HashSet::new(), &None);
+
+        assert_eq!(result.declared_classes.len(), 1);
+        assert_eq!(result.declared_classes[0].class_hash, class_hash.to_felt());
+        assert_eq!(result.declared_classes[0].compiled_class_hash, compiled_hash.to_felt());
     }
 }

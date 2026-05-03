@@ -37,6 +37,8 @@ jobs:
   build-artifacts:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     if: inputs.should_run == 'true'
+    env:
+      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-artifacts
     outputs:
       artifacts: ${{ steps.tag.outputs.artifacts }}
       artifacts-pr: ${{ steps.tag.outputs.artifacts-pr }}
@@ -77,10 +79,14 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: useblacksmith/setup-docker-builder@v1
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
 
       - name: Build Docker image
         id: push
         uses: useblacksmith/build-push-action@v1.2
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
         with:
           context: .
           push: false
