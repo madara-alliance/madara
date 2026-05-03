@@ -315,7 +315,7 @@ async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 # SNOS 0.14.2 pre-release with Cairo 2.17 support needed for Sierra 1.8 declares during replay.
-generate-pie = { git = "https://github.com/karnotxyz/snos.git", branch = "fix/0.14.2-e2e-coroutine" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", branch = "fix/0.14.2-pathfinder-idle-connection" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
