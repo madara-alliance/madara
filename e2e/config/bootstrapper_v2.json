@@ -6,8 +6,8 @@
       "madara_fee_token": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
     },
     "core_contract_init_data": {
-      "aggregatorProgramHash": "0x03c2bf03c21bd2794125c481d7e224fbd8793ac675d24cdc9d476761d0d4ccab",
-      "programHash": "0x0207fde0facdcfcb085194635233fc46aa3dc8ca7182abf51079e31c88180905",
+      "aggregatorProgramHash": "0x05af6c0904619be30798f335358f96ba742a8f23c7b0df1080d0c24e2224c6f6",
+      "programHash": "0x060ad33489d71be515b7cb0bbbf368dc97ccf037e0120affc70fd065b0604d36",
       "state": {
         "blockHash": "0x0",
         "blockNumber": "-1",
