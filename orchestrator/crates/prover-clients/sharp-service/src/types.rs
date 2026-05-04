@@ -30,12 +30,13 @@ impl CairoJobStatus {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum InvalidReason {
-    #[default]
-    Unknown,
     InvalidCairoPieFileFormat,
+    #[default]
+    #[serde(other)]
+    Unknown,
 }
 
 /// Body of `POST /v1/gateway/add_job`.

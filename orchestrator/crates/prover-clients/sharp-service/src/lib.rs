@@ -239,9 +239,11 @@ pub fn map_sharp_status(
     match task {
         TaskType::Job => match res.status {
             CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
-            CairoJobStatus::Invalid => {
-                TaskStatus::Failed(format!("Job is invalid: {:?}", res.invalid_reason.clone().unwrap_or_default()))
-            }
+            CairoJobStatus::Invalid => TaskStatus::Failed(format!(
+                "Job is invalid: {:?}. error_log: {}",
+                res.invalid_reason.clone().unwrap_or_default(),
+                res.error_log.as_deref().unwrap_or("none")
+            )),
             CairoJobStatus::Unknown => TaskStatus::Failed(format!("Job not found: {}", job_key)),
             CairoJobStatus::Processed => TaskStatus::Succeeded,
             // SHARP's `validation_done=true` at `InProgress` is the gateway's
@@ -262,8 +264,9 @@ pub fn map_sharp_status(
         TaskType::Aggregation => match res.status {
             CairoJobStatus::Failed => TaskStatus::Failed(res.error_log.clone().unwrap_or_default()),
             CairoJobStatus::Invalid => TaskStatus::Failed(format!(
-                "Applicative job is invalid: {:?}",
-                res.invalid_reason.clone().unwrap_or_default()
+                "Applicative job is invalid: {:?}. error_log: {}",
+                res.invalid_reason.clone().unwrap_or_default(),
+                res.error_log.as_deref().unwrap_or("none")
             )),
             CairoJobStatus::Unknown => TaskStatus::Failed(format!("Applicative job not found: {}", job_key)),
             CairoJobStatus::Processed => match fact_verified_on_chain {
