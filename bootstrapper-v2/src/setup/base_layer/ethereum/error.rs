@@ -27,9 +27,6 @@ pub enum EthereumError {
     #[error("Contract Address not found in the reciept")]
     MissingContractInReceipt,
 
-    #[error("Key {key} not found in map, even after explicit check")]
-    KeyNotFound { key: String },
-
     #[error("Serde error: {0}")]
     SerdeError(#[from] serde_json::Error),
 
@@ -62,9 +59,6 @@ pub enum EthereumError {
 
     #[error("Other error: {0}")]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
-
-    #[error("L2 token polling timeout after {0} seconds")]
-    L2TokenPollingTimeout(u64),
 
     #[error("Starknet Felt parse error: {0}")]
     FeltParseError(String),

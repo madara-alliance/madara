@@ -1,0 +1,18 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Bootstrapper V2
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      bootstrapper-v2-binary-hash:
+        description: "Hash of the built bootstrapper-v2 binary"
+        value: ${{ jobs.build-bootstrapper-v2.outputs.binary-hash }}
+
+jobs:
+  build-bootstrapper-v2:
+    uses: ./.github/workflows/task-build-binary.yml
+    with:
+      binary-name: bootstrapper-v2
+    secrets: inherit

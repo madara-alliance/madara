@@ -7,23 +7,23 @@ use std::time::Duration;
 use crate::services::constants::*;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum BootstrapperMode {
+pub enum LegacyBootstrapperMode {
     SetupL1,
     SetupL2,
 }
 
-impl std::fmt::Display for BootstrapperMode {
+impl std::fmt::Display for LegacyBootstrapperMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BootstrapperMode::SetupL1 => write!(f, "setup-l1"),
-            BootstrapperMode::SetupL2 => write!(f, "setup-l2"),
+            LegacyBootstrapperMode::SetupL1 => write!(f, "setup-l1"),
+            LegacyBootstrapperMode::SetupL2 => write!(f, "setup-l2"),
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum BootstrapperError {
-    #[error("Bootstrapper binary not found: {0}")]
+pub enum LegacyBootstrapperError {
+    #[error("Legacy bootstrapper binary not found: {0}")]
     BinaryNotFound(String),
     #[error("Server error: {0}")]
     Server(#[from] ServerError),
@@ -31,9 +31,9 @@ pub enum BootstrapperError {
     MissingConfig(String),
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
-    #[error("Bootstrapper execution failed: {0}")]
+    #[error("Legacy bootstrapper execution failed: {0}")]
     ExecutionFailed(String),
-    #[error("Bootstrapper execution timed out after {0:?}")]
+    #[error("Legacy bootstrapper execution timed out after {0:?}")]
     ExecutionTimedOut(Duration),
     #[error("Setup failed with exit code: {0}")]
     SetupFailedWithCode(i32),
@@ -47,8 +47,8 @@ pub enum BootstrapperError {
 
 // Final immutable configuration
 #[derive(Debug, Clone)]
-pub struct BootstrapperConfig {
-    mode: BootstrapperMode,
+pub struct LegacyBootstrapperConfig {
+    mode: LegacyBootstrapperMode,
     timeout: Duration,
     config_path: Option<PathBuf>,
     binary_path: PathBuf,
@@ -57,13 +57,13 @@ pub struct BootstrapperConfig {
     additional_args: Vec<String>,
 }
 
-impl Default for BootstrapperConfig {
+impl Default for LegacyBootstrapperConfig {
     fn default() -> Self {
         Self {
-            mode: BootstrapperMode::SetupL1,
-            timeout: *BOOTSTRAPPER_SETUP_L1_TIMEOUT,
+            mode: LegacyBootstrapperMode::SetupL1,
+            timeout: *LEGACY_BOOTSTRAPPER_SETUP_L1_TIMEOUT,
             config_path: None,
-            binary_path: get_binary_path(BOOTSTRAPPER_BINARY),
+            binary_path: get_binary_path(LEGACY_BOOTSTRAPPER_BINARY),
             logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
@@ -71,19 +71,19 @@ impl Default for BootstrapperConfig {
     }
 }
 
-impl BootstrapperConfig {
-    /// Create a new configuration with default values
+impl LegacyBootstrapperConfig {
+    /// Create a new legacy bootstrapper configuration with default values
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Create a builder for BootstrapperConfig
-    pub fn builder() -> BootstrapperConfigBuilder {
-        BootstrapperConfigBuilder::new()
+    /// Create a builder for LegacyBootstrapperConfig
+    pub fn builder() -> LegacyBootstrapperConfigBuilder {
+        LegacyBootstrapperConfigBuilder::new()
     }
 
-    /// Get the bootstrapper mode
-    pub fn mode(&self) -> &BootstrapperMode {
+    /// Get the legacy bootstrapper mode
+    pub fn mode(&self) -> &LegacyBootstrapperMode {
         &self.mode
     }
 
@@ -144,23 +144,23 @@ impl BootstrapperConfig {
 
 // Builder type that allows configuration
 #[derive(Debug, Clone)]
-pub struct BootstrapperConfigBuilder {
-    config: BootstrapperConfig,
+pub struct LegacyBootstrapperConfigBuilder {
+    config: LegacyBootstrapperConfig,
 }
 
-impl BootstrapperConfigBuilder {
-    /// Create a new configuration builder with default values
+impl LegacyBootstrapperConfigBuilder {
+    /// Create a new legacy bootstrapper configuration builder with default values
     pub fn new() -> Self {
-        Self { config: BootstrapperConfig::default() }
+        Self { config: LegacyBootstrapperConfig::default() }
     }
 
     /// Build the final immutable configuration
-    pub fn build(self) -> BootstrapperConfig {
+    pub fn build(self) -> LegacyBootstrapperConfig {
         self.config
     }
 
-    /// Set the bootstrapper mode
-    pub fn mode(mut self, mode: BootstrapperMode) -> Self {
+    /// Set the legacy bootstrapper mode
+    pub fn mode(mut self, mode: LegacyBootstrapperMode) -> Self {
         self.config.mode = mode;
         self
     }
@@ -202,7 +202,7 @@ impl BootstrapperConfigBuilder {
     }
 }
 
-impl Default for BootstrapperConfigBuilder {
+impl Default for LegacyBootstrapperConfigBuilder {
     fn default() -> Self {
         Self::new()
     }

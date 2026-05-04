@@ -42,6 +42,9 @@ use crate::setup_scripts::upgrade_l2_bridge::upgrade_eth_bridge_to_cairo_1;
 use crate::utils::banner::BANNER;
 use crate::utils::{hexstring_to_address, save_to_json, JsonValueType};
 
+const LEGACY_BOOTSTRAPPER_WARNING: &str =
+    "bootstrapper is archived and unmaintained; use bootstrapper-v2 instead. This binary is kept for reference only.";
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum BootstrapMode {
     Core,
@@ -267,6 +270,8 @@ pub async fn main() -> color_eyre::Result<()> {
     let args = CliArgs::parse();
 
     println!("{color_red}{}{color_reset}", BANNER);
+    eprintln!("{color_red}WARNING:{color_reset} {}", LEGACY_BOOTSTRAPPER_WARNING);
+    log::warn!("{}", LEGACY_BOOTSTRAPPER_WARNING);
 
     let mut config_file = match args.config {
         Some(path) => ConfigBuilder::from_file(path)?.merge_with_env().build()?,

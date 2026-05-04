@@ -1,7 +1,16 @@
-use bootstrapper_v2::cli::{CliArgs, Commands};
-use bootstrapper_v2::config::{BaseConfigOuter, MadaraConfigOuter};
-use bootstrapper_v2::setup::madara::MadaraSetup;
-use bootstrapper_v2::BootstrapperResult;
+mod cli;
+mod config;
+mod error;
+mod utils;
+mod setup {
+    pub mod base_layer;
+    pub mod madara;
+}
+
+use crate::cli::{CliArgs, Commands};
+use crate::config::{BaseConfigOuter, MadaraConfigOuter};
+use crate::error::BootstrapperResult;
+use crate::setup::madara::MadaraSetup;
 use clap::Parser;
 use env_logger::Env;
 use std::fs::File;

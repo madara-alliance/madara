@@ -2,12 +2,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Build Binary (Reusable)
 
-# Reusable workflow for building Rust binaries (Bootstrapper, Orchestrator, etc.)
+# Reusable workflow for building Rust binaries (bootstrapper-v2, orchestrator, etc.)
 on:
   workflow_call:
     inputs:
       binary-name:
-        description: "Name of the binary to build (e.g., bootstrapper, orchestrator)"
+        description: "Name of the binary to build (e.g., bootstrapper-v2, orchestrator)"
         required: true
         type: string
       cache-key-suffix:

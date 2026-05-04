@@ -102,9 +102,9 @@ jobs:
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
 
-  # Run coverage tests (Bootstrapper)
-  test-bootstrapper:
-    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
+  # Run coverage tests (Bootstrapper V2)
+  test-bootstrapper-v2:
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper-v2.yml
 
   # Run JavaScript tests
   test-js:

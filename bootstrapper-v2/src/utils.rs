@@ -246,7 +246,6 @@ pub struct BaseContractAddresses {
     pub eth_token_bridge: String,
     pub token_bridge: String,
     pub manager: String,
-    pub registry: String,
     #[serde(default)]
     pub l1_token: Option<String>,
 }
@@ -255,12 +254,6 @@ pub struct BaseContractAddresses {
 #[serde(rename_all = "camelCase")]
 pub struct BaseImplementationAddresses {
     pub base_layer_factory: Option<String>,
-    pub core_contract: Option<String>,
-    pub manager: Option<String>,
-    pub registry: Option<String>,
-    pub multi_bridge: Option<String>,
-    pub eth_bridge: Option<String>,
-    pub eth_bridge_eic: Option<String>,
 }
 
 /// Strongly typed Madara addresses from madara_addresses.json
@@ -272,16 +265,7 @@ pub struct MadaraDeployedAddresses {
 #[derive(Debug, serde::Deserialize)]
 pub struct MadaraContractAddresses {
     pub l2_eth_bridge: String,
-    pub l2_eth_token: String,
     pub l2_token_bridge: String,
-    #[serde(default)]
-    pub l2_fee_token: Option<String>,
-    #[serde(default)]
-    pub l2_account: Option<String>,
-    #[serde(default)]
-    pub madara_factory: Option<String>,
-    #[serde(default)]
-    pub universal_deployer: Option<String>,
 }
 
 impl BaseLayerAddresses {

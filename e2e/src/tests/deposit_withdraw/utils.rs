@@ -1,6 +1,4 @@
-use crate::services::constants::{
-    BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, DATA_DIR,
-};
+use crate::services::constants::{BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT, DATA_DIR};
 use crate::services::helpers::get_file_path;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::helpers::TransactionFinalityStatus;
@@ -46,20 +44,20 @@ pub struct DeployedAddresses {
 impl DeployedAddresses {
     /// Load addresses from bootstrapper v2 output files in the given test directory
     pub fn load(test_name: &str) -> TestResult<Self> {
-        let base_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
-        let madara_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT));
+        let base_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT));
+        let madara_path = get_file_path(&format!("{}/{}", test_name, BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT));
 
         // Try test directory first, fall back to DATA_DIR
         let base_content = std::fs::read_to_string(&base_path)
             .or_else(|_| {
-                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT));
                 std::fs::read_to_string(fallback)
             })
             .map_err(|e| format!("Failed to read base_addresses.json: {}", e))?;
 
         let madara_content = std::fs::read_to_string(&madara_path)
             .or_else(|_| {
-                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT));
+                let fallback = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT));
                 std::fs::read_to_string(fallback)
             })
             .map_err(|e| format!("Failed to read madara_addresses.json: {}", e))?;

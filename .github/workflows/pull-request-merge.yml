@@ -22,7 +22,7 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
-  build-nightly-and-publish-bootstrapper:
+  build-nightly-and-publish-bootstrapper-v2:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
@@ -42,9 +42,9 @@ jobs:
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
 
-  # Run coverage tests (Bootstrapper)
-  test-bootstrapper:
-    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
+  # Run coverage tests (Bootstrapper V2)
+  test-bootstrapper-v2:
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper-v2.yml
 
   # Run JavaScript tests
   test-js:

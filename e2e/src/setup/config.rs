@@ -6,7 +6,7 @@ use crate::services::orchestrator::Layer;
 use crate::services::server::ServerError;
 use crate::services::{
     anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError},
-    bootstrapper_v2::{BootstrapperV2Config, BootstrapperV2Error},
+    bootstrapper::{BootstrapperV2Config, BootstrapperV2Error},
     helpers::{get_database_path, get_free_port},
     localstack::{LocalstackConfig, LocalstackError},
     madara::{MadaraConfig, MadaraConfigBuilder, MadaraError},
@@ -361,21 +361,21 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        // Bootstrapper V2 configs
+        // Bootstrapper configs (default = V2)
         let bootstrapper_base_config = BootstrapperV2Config::setup_base()
-            .config_path(BOOTSTRAPPER_V2_CONFIG)
-            .addresses_output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT))
+            .config_path(BOOTSTRAPPER_CONFIG)
+            .addresses_output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT))
             .private_key(ANVIL_PRIVATE_KEY)
             .logs((true, true))
             .build()?;
 
         let bootstrapper_madara_config = BootstrapperV2Config::setup_madara()
-            .config_path(BOOTSTRAPPER_V2_CONFIG)
-            .base_addresses_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT))
-            .output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT))
+            .config_path(BOOTSTRAPPER_CONFIG)
+            .base_addresses_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_BASE_ADDRESSES_OUTPUT))
+            .output_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_MADARA_ADDRESSES_OUTPUT))
             .private_key("0xabcd") // Madara devnet key
             .base_layer_private_key(ANVIL_PRIVATE_KEY)
-            .timeout(*BOOTSTRAPPER_V2_SETUP_MADARA_TIMEOUT)
+            .timeout(*BOOTSTRAPPER_SETUP_MADARA_TIMEOUT)
             .logs((true, true))
             .build()?;
 
