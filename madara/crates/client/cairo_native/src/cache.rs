@@ -6,6 +6,12 @@
 //! - Memory cache lookups are bounded by `memory_cache_timeout` to avoid blocking validation.
 //! - Disk cache loads (`.so`) are bounded by `disk_cache_load_timeout` to avoid hanging on slow I/O/dynamic linking.
 //! - Timeouts are treated as cache misses (fall back to VM / recompilation) and recorded in metrics.
+//! - On disk, one native cache entry is the `.so` plus its `.meta.json` sidecar.
+//!   Lookup requires both files to be present. If either file is missing, the remaining file
+//!   is cleaned up and the entry is treated as a cache miss.
+//! - Eviction accounts for the `.so` and `.meta.json` together and removes them together.
+//! - Sidecar deletion is not atomic with `.so` deletion. The cache tolerates partial cleanup
+//!   by deleting any leftover file on the next lookup or eviction pass.
 
 use blockifier::execution::contract_class::RunnableCompiledClass;
 use cairo_native::executor::AotContractExecutor;
@@ -13,7 +19,7 @@ use cairo_vm::types::errors::program_errors::ProgramError;
 use dashmap::DashMap;
 use mp_convert::ToFelt;
 use starknet_api::core::ClassHash;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -124,15 +130,19 @@ pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::Nat
         .join(filename)
 }
 
-pub(crate) fn remove_native_cache_artifacts(path: &std::path::Path) {
+/// Best-effort cleanup for one native cache entry: the `.so` and its metadata sidecar.
+///
+/// This is intentionally tolerant of partial cleanup. If the process stops after deleting
+/// one file but before deleting the other, future lookup or eviction will remove the leftover.
+pub(crate) fn remove_native_cache_artifacts(path: &Path) {
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(host_fingerprint::metadata_path_for_so(path));
 }
 
-fn remove_disk_cache_entry(path: &std::path::Path) -> Result<(), std::io::Error> {
+fn remove_disk_cache_entry(path: &Path) -> Result<(), std::io::Error> {
     std::fs::remove_file(path)?;
 
-    if is_native_so_path(path) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("so") {
         match std::fs::remove_file(host_fingerprint::metadata_path_for_so(path)) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -143,24 +153,10 @@ fn remove_disk_cache_entry(path: &std::path::Path) -> Result<(), std::io::Error>
     Ok(())
 }
 
-fn is_native_so_path(path: &std::path::Path) -> bool {
-    path.extension().and_then(|extension| extension.to_str()) == Some("so")
-}
-
-fn metadata_sidecar_so_path(path: &std::path::Path) -> Option<PathBuf> {
-    let file_name = path.file_name()?.to_str()?;
-    let so_file_name = file_name.strip_suffix(".meta.json")?;
-    Some(path.with_file_name(so_file_name))
-}
-
-fn should_skip_standalone_sidecar(path: &std::path::Path) -> bool {
-    metadata_sidecar_so_path(path).is_some_and(|so_path| so_path.exists())
-}
-
-fn disk_cache_entry_size(path: &std::path::Path, metadata: &std::fs::Metadata) -> u64 {
+fn disk_cache_entry_size(path: &Path, metadata: &std::fs::Metadata) -> u64 {
     let mut size = metadata.len();
 
-    if is_native_so_path(path) {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("so") {
         if let Ok(metadata) = std::fs::metadata(host_fingerprint::metadata_path_for_so(path)) {
             size += metadata.len();
         }
@@ -174,12 +170,18 @@ fn disk_cache_entry_size(path: &std::path::Path, metadata: &std::fs::Metadata) -
 /// When the disk cache grows too large, this function removes the oldest unused files
 /// to make room for new ones. Files are sorted by when they were last accessed,
 /// and the oldest files are deleted until the cache size is within the limit.
+/// This is a Madara-managed cache budget check, not an operating-system low-disk callback.
 ///
 /// **How it works**:
 /// - Tracks when each cached file was last used
 /// - When the cache exceeds the size limit, removes files that haven't been used recently
 /// - This ensures frequently used classes stay in cache while rarely used ones are removed
 /// - Works across different filesystems, automatically adapting to system capabilities
+/// - Treats one native cache entry as the `.so` and its metadata sidecar together
+/// - Skips healthy `.meta.json` sidecars as standalone eviction candidates because they are
+///   counted and removed with their owning `.so`
+/// - If a sidecar is orphaned because cleanup stopped halfway through, it is treated as its
+///   own file and can be removed by a later eviction pass
 ///
 /// Called automatically after saving new files to disk to keep the cache size manageable.
 pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64>) -> Result<(), std::io::Error> {
@@ -194,7 +196,13 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
         let metadata = entry.metadata()?;
         if metadata.is_file() {
             let path = entry.path();
-            if should_skip_standalone_sidecar(&path) {
+            let is_metadata_sidecar = path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .and_then(|file_name| file_name.strip_suffix(".meta.json"))
+                .is_some_and(|so_file_name| path.with_file_name(so_file_name).exists());
+
+            if is_metadata_sidecar {
                 continue;
             }
 
@@ -614,6 +622,13 @@ fn try_load_executor_with_timeout(
 /// Returns `Some(RunnableCompiledClass)` if successfully loaded, `None` otherwise.
 /// On success, also adds the class to the memory cache.
 ///
+/// A valid on-disk native cache entry requires both:
+/// - `{class_hash}.so`
+/// - `{class_hash}.so.meta.json`
+///
+/// If either file is missing, the remaining file is cleaned up and the entry is
+/// treated as a cache miss so the class can be recompiled.
+///
 /// **Guard Clause**: Skips disk cache if compilation is in progress to avoid loading incomplete files.
 pub(crate) fn try_get_from_disk_cache(
     class_hash: &ClassHash,
@@ -639,6 +654,14 @@ pub(crate) fn try_get_from_disk_cache(
     let path = get_native_cache_path(class_hash, config);
 
     if !path.exists() {
+        // Enforce the "both files must exist" invariant during lookup. If the .so is gone
+        // but the metadata sidecar remains, remove the orphaned sidecar and treat this as
+        // a normal cache miss so the caller can recompile.
+        let metadata_path = host_fingerprint::metadata_path_for_so(&path);
+        if metadata_path.exists() {
+            let _ = std::fs::remove_file(&metadata_path);
+        }
+
         let elapsed = start.elapsed();
         super::metrics::metrics().record_cache_disk_file_not_found();
         tracing::debug!(
@@ -981,6 +1004,36 @@ mod tests {
             CACHE_METADATA_INVALID: 1,
             CACHE_DISK_LOAD_ERROR: 0,
         );
+    }
+
+    #[test]
+    fn test_disk_cache_eviction_cleans_orphaned_metadata_sidecar() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let orphan_sidecar_path = temp_dir.path().join("0x1.so.meta.json");
+        std::fs::write(&orphan_sidecar_path, b"{\"arch\":\"orphan\"}").expect("orphaned metadata should be written");
+
+        enforce_disk_cache_limit(&temp_dir.path().to_path_buf(), Some(0)).expect("eviction should succeed");
+
+        assert!(!orphan_sidecar_path.exists(), "orphaned metadata sidecar should be evicted");
+    }
+
+    #[rstest]
+    fn test_disk_cache_missing_so_cleans_orphaned_metadata_sidecar(
+        sierra_class: SierraConvertedClass,
+        temp_dir: TempDir,
+    ) {
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let so_path = get_native_cache_path(&class_hash, &test_config);
+        let metadata_path = crate::host_fingerprint::metadata_path_for_so(&so_path);
+        std::fs::write(&metadata_path, b"{\"arch\":\"orphan\"}").expect("orphaned metadata should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("missing .so should not error").is_none());
+        assert!(!metadata_path.exists(), "orphaned metadata sidecar should be deleted during lookup");
     }
 
     #[rstest]

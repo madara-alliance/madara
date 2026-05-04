@@ -32,7 +32,7 @@ base_version: 8
 #   - description: (optional) Brief description of changes
 versions:
   - version: 13
-    description: "Clear Cairo Native disk cache before host metadata sidecar repopulation"
+    description: "Clear legacy Cairo Native disk cache so artifacts are rebuilt with host metadata sidecars"
   - version: 12
     description: "Reorg/revert L1-message cleanup consistency updates (no-op migration)"
   - version: 11
