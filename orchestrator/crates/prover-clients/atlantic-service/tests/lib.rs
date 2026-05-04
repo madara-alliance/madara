@@ -316,7 +316,6 @@ async fn atlantic_client_get_bucket_status_works() {
 }
 
 #[tokio::test]
-#[ignore = "Submits a live Atlantic job and can exceed the CI polling window."]
 async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -363,10 +362,11 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         .expect("Failed to submit task to Atlantic service");
 
     let mut current_retry = 0;
+    let mut last_status = None;
 
     loop {
         if current_retry >= MAX_RETRIES {
-            panic!("Maximum retries reached. Test timed out.");
+            panic!("Maximum retries reached for Atlantic job {task_result}. Last status: {last_status:#?}");
         }
 
         // Wait before checking status again
@@ -376,6 +376,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         // Get the current status of the job
         let status_result =
             atlantic_service.atlantic_client.get_job_status(&task_result).await.expect("Failed to get job status");
+        last_status = Some(status_result.atlantic_query.clone());
 
         match status_result.atlantic_query.status {
             AtlanticQueryStatus::Done => {
