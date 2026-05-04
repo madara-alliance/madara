@@ -349,12 +349,13 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
 
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
-        // We don't need to send the steps because it's a mock fact hash.
+        // Atlantic still validates the declared job size for mocked fact-hash jobs.
+        // The Fibonacci fixture is small enough to fit the S bucket.
         .submit_task(Task::CreateJob(CreateJobInfo {
             cairo_pie: Box::new(cairo_pie),
             bucket_id: None,
             bucket_job_index: None,
-            num_steps: None,
+            num_steps: Some(1_000_000),
             dedup_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
