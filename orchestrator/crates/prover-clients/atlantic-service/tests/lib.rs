@@ -316,6 +316,7 @@ async fn atlantic_client_get_bucket_status_works() {
 }
 
 #[tokio::test]
+#[ignore = "Submits a live Atlantic job and can exceed the CI polling window."]
 async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
