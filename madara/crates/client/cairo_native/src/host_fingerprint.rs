@@ -5,14 +5,21 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-const SCHEMA_VERSION: u32 = 1;
+// Maintainers:
+// Bump this when persisted native artifacts should be considered incompatible
+// even on the same host. Typical reasons:
+// - changing how Madara interprets or validates cached native artifacts
+// - changing the metadata sidecar contract
+// - adopting a cairo-native/compiler/runtime change that should force recompilation
+//
+// Do not bump this for host-only differences such as `arch`, `os`, or `cpu_vendor`;
+// those are already part of the fingerprint and are validated separately.
 const NATIVE_CACHE_ABI_VERSION: &str = "madara-cairo-native-v1";
 
 static CURRENT_FINGERPRINT: LazyLock<NativeHostFingerprint> = LazyLock::new(NativeHostFingerprint::detect);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct NativeHostFingerprint {
-    pub(crate) schema_version: u32,
     pub(crate) native_cache_abi_version: String,
     pub(crate) arch: String,
     pub(crate) cpu_vendor: String,
@@ -26,7 +33,6 @@ impl NativeHostFingerprint {
 
     fn detect() -> Self {
         Self {
-            schema_version: SCHEMA_VERSION,
             native_cache_abi_version: NATIVE_CACHE_ABI_VERSION.to_string(),
             arch: std::env::consts::ARCH.to_string(),
             cpu_vendor: detect_cpu_vendor(),
