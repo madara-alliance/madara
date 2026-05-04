@@ -6,7 +6,9 @@ use reqwest::header::{HeaderValue, CONTENT_TYPE};
 use reqwest::{Certificate, Identity, Method, StatusCode};
 use url::Url;
 
-use crate::constants::{APPLICATIVE_JOB_OFFCHAIN_PROOF, CHILD_JOB_OFFCHAIN_PROOF, SHARP_PROGRAM_HASH_FUNCTION};
+use crate::constants::{
+    APPLICATIVE_JOB_OFFCHAIN_PROOF, CHILD_JOB_FOR_APPLICATIVE, CHILD_JOB_OFFCHAIN_PROOF, SHARP_PROGRAM_HASH_FUNCTION,
+};
 use crate::error::SharpError;
 use crate::metrics::SHARP_METRICS;
 use crate::types::{SharpAddApplicativeJobRequest, SharpAddJobRequest, SharpAddJobResponse, SharpGetStatusResponse};
@@ -86,6 +88,7 @@ impl SharpClient {
                 .path("add_job")
                 .query_param("cairo_job_key", cairo_job_key)
                 .query_param("offchain_proof", CHILD_JOB_OFFCHAIN_PROOF)
+                .query_param("for_applicative", CHILD_JOB_FOR_APPLICATIVE)
                 .query_param("program_hash_function", SHARP_PROGRAM_HASH_FUNCTION)
                 .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
                 .body(&body)
