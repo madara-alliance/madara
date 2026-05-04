@@ -452,6 +452,7 @@ mod tests {
 
         // Use shared function to create native class (this compiles and saves to disk)
         let native_class = crate::test_utils::create_native_class_internal(sierra, &so_path)?;
+        crate::host_fingerprint::write_current_metadata_for_so(&so_path)?;
 
         // Optionally insert into memory cache
         if cache_in_memory {
@@ -566,6 +567,7 @@ mod tests {
         let so_path = cache::get_native_cache_path(&class_hash, &async_config);
         let _native_class = crate::test_utils::create_native_class_internal(&sierra_class, &so_path)
             .expect("Failed to create native class");
+        crate::host_fingerprint::write_current_metadata_for_so(&so_path).expect("Failed to write metadata");
         assert!(so_path.exists(), "Native class file should exist on disk");
 
         // Verify memory cache still doesn't have it
@@ -671,6 +673,11 @@ mod tests {
 
         // Assert that the returned class IS Cairo Native (not VM)
         assert_is_native_class(&runnable);
+        let so_path = cache::get_native_cache_path(&class_hash, &blocking_config);
+        assert!(
+            crate::host_fingerprint::metadata_path_for_so(&so_path).exists(),
+            "Blocking compilation should write native cache metadata"
+        );
         // Compilation should be complete, so not in progress
         assert!(
             !compilation::is_compilation_in_progress(&class_hash),
@@ -735,6 +742,11 @@ mod tests {
 
         // Verify compilation completed and class is cached
         assert!(cache::cache_contains(&class_hash), "Class should be in memory cache after compilation completes");
+        let so_path = cache::get_native_cache_path(&class_hash, &async_config);
+        assert!(
+            crate::host_fingerprint::metadata_path_for_so(&so_path).exists(),
+            "Async compilation should write native cache metadata"
+        );
         assert!(
             !compilation::is_compilation_in_progress(&class_hash),
             "Class should not be in compilation_in_progress after completion"
@@ -775,6 +787,7 @@ mod tests {
         // Use the config's cache directory path
         let so_path = cache::get_native_cache_path(&class_hash, &async_config);
         std::fs::write(&so_path, b"invalid binary data").expect("Failed to write invalid file");
+        crate::host_fingerprint::write_current_metadata_for_so(&so_path).expect("Failed to write metadata");
 
         // Disk error handled gracefully, falls back to compilation
         let result = handle_sierra_class(
@@ -1088,6 +1101,49 @@ mod tests {
             CACHE_HITS_DISK: 0,
             CACHE_DISK_MISS: 1,
             CACHE_DISK_LOAD_TIMEOUT: 1,
+            VM_FALLBACKS: 1,
+            COMPILATIONS_STARTED: 1,
+            COMPILATIONS_SUCCEEDED: 1,
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_handle_sierra_class_missing_metadata_falls_back_to_vm(
+        sierra_class: SierraConvertedClass,
+        temp_dir: TempDir,
+    ) {
+        let _guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let async_config =
+            crate::test_utils::create_test_config_arc(&temp_dir, Some(config::NativeCompilationMode::Async), true);
+
+        let so_path = cache::get_native_cache_path(&class_hash, &async_config);
+        std::fs::write(&so_path, b"invalid binary data").expect("Failed to write invalid file");
+
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
+
+        assert!(result.is_ok(), "Should return VM class in async mode");
+        assert_is_vm_class(&result.unwrap());
+
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+        assert!(compilation_completed, "Compilation should complete after metadata miss");
+        assert!(
+            crate::host_fingerprint::metadata_path_for_so(&so_path).exists(),
+            "Fresh compilation should write metadata"
+        );
+
+        assert_counters!(
+            CACHE_METADATA_MISSING: 1,
+            CACHE_DISK_LOAD_ERROR: 0,
             VM_FALLBACKS: 1,
             COMPILATIONS_STARTED: 1,
             COMPILATIONS_SUCCEEDED: 1,

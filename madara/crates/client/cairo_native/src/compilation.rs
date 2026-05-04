@@ -7,7 +7,7 @@ use cairo_native::executor::AotContractExecutor;
 use dashmap::DashMap;
 use mp_convert::ToFelt;
 use starknet_api::core::ClassHash;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -17,7 +17,7 @@ use super::error::NativeCompilationError;
 use super::native_class::NativeCompiledClass;
 use mp_class::SierraConvertedClass;
 
-use super::cache;
+use super::{cache, host_fingerprint};
 
 /// Tracks which classes are currently being compiled to avoid duplicate compilations.
 ///
@@ -304,8 +304,8 @@ pub(crate) fn convert_sierra_to_blockifier_class(
 /// Called on compilation timeout or failure to remove partial artifacts.
 /// The .lock file is created by cairo-native's compile_to_native() function.
 /// Safe to call even if files don't exist (errors are silently ignored).
-fn cleanup_compilation_artifacts(path: &PathBuf) {
-    let _ = std::fs::remove_file(path); // .so file
+fn cleanup_compilation_artifacts(path: &Path) {
+    cache::remove_native_cache_artifacts(path); // .so file and metadata sidecar
     let _ = std::fs::remove_file(path.with_extension("lock")); // .lock file
 }
 
@@ -315,14 +315,14 @@ fn cleanup_compilation_artifacts(path: &PathBuf) {
 /// This is a pure function that only performs compilation - no caching or metrics.
 fn execute_native_compilation(
     sierra: &SierraConvertedClass,
-    path: &PathBuf,
+    path: &Path,
     timeout: Duration,
     timer: super::metrics::CompilationTimer,
 ) -> Result<AotContractExecutor, NativeCompilationError> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         // Async context detected - spawn_blocking used with timeout
         let sierra_clone = Arc::new(sierra.clone());
-        let path_clone = path.clone();
+        let path_clone = path.to_path_buf();
         let compilation_future =
             tokio::task::spawn_blocking(move || sierra_clone.info.contract_class.compile_to_native(&path_clone));
 
@@ -330,10 +330,12 @@ fn execute_native_compilation(
             Ok(Ok(Ok(executor))) => Ok(executor),
             Ok(Ok(Err(e))) => {
                 timer.finish(false, false);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationFailed(format!("{:#}", e)))
             }
             Ok(Err(e)) => {
                 timer.finish(false, false);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationFailed(format!("Task panicked: {:#}", e)))
             }
             Err(_) => {
@@ -345,7 +347,7 @@ fn execute_native_compilation(
     } else {
         // Blocking context detected - compilation executed directly with timeout using std::thread
         let sierra_clone = Arc::new(sierra.clone());
-        let path_clone = path.clone();
+        let path_clone = path.to_path_buf();
         let (tx, rx) = std::sync::mpsc::channel();
 
         std::thread::spawn(move || {
@@ -358,6 +360,7 @@ fn execute_native_compilation(
             Ok(Ok(executor)) => Ok(executor),
             Ok(Err(e)) => {
                 timer.finish(false, false);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationFailed(format!("{:#}", e)))
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -367,6 +370,7 @@ fn execute_native_compilation(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 timer.finish(false, false);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationFailed("Compilation thread disconnected".to_string()))
             }
         }
@@ -458,8 +462,22 @@ pub(crate) fn compile_native_blocking(
         }
     };
 
+    if let Err(e) = host_fingerprint::write_current_metadata_for_so(&path) {
+        super::metrics::metrics().record_cache_metadata_write_error();
+        cleanup_compilation_artifacts(&path);
+        super::metrics::metrics().record_compilation_end(start.elapsed().as_millis() as u64, false, false);
+        return Err(NativeCompilationError::CacheMetadataError(e.to_string()));
+    }
+
     // Converted to blockifier class using common logic
-    let blockifier_compiled_class = convert_sierra_to_blockifier_class(sierra)?;
+    let blockifier_compiled_class = match convert_sierra_to_blockifier_class(sierra) {
+        Ok(compiled) => compiled,
+        Err(e) => {
+            cleanup_compilation_artifacts(&path);
+            super::metrics::metrics().record_compilation_end(start.elapsed().as_millis() as u64, false, false);
+            return Err(e);
+        }
+    };
 
     let elapsed = start.elapsed();
     tracing::debug!(
@@ -484,6 +502,7 @@ fn handle_async_compilation_success(
     class_hash: ClassHash,
     executor: AotContractExecutor,
     sierra: &SierraConvertedClass,
+    path: &Path,
     start: Instant,
     timer: super::metrics::CompilationTimer,
     config: &config::NativeConfig,
@@ -499,16 +518,27 @@ fn handle_async_compilation_success(
                 error = %e,
                 "compilation_async_conversion_failed"
             );
+            cleanup_compilation_artifacts(path);
             timer.finish(false, false);
-            // Mark this class as failed (with timestamp for eviction)
-            let exec_config = config
-                .execution_config()
-                .expect("handle_async_compilation_success should only be called when native execution is enabled");
-            evict_failed_compilations_if_needed(exec_config.max_failed_compilations);
-            FAILED_COMPILATIONS.insert(class_hash, Instant::now());
+            mark_async_compilation_failed(class_hash, config);
             return;
         }
     };
+
+    if let Err(e) = host_fingerprint::write_current_metadata_for_so(path) {
+        super::metrics::metrics().record_cache_metadata_write_error();
+        tracing::error!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            path = %path.display(),
+            error = %e,
+            "compilation_async_metadata_write_failed"
+        );
+        cleanup_compilation_artifacts(path);
+        timer.finish(false, false);
+        mark_async_compilation_failed(class_hash, config);
+        return;
+    }
 
     let compile_elapsed = start.elapsed();
 
@@ -535,7 +565,7 @@ fn handle_async_compilation_failure(
     class_hash: ClassHash,
     error_kind: &str,
     error_msg: String,
-    path: &PathBuf,
+    path: &Path,
     timer: super::metrics::CompilationTimer,
     is_timeout: bool,
     config: &config::NativeConfig,
@@ -549,8 +579,6 @@ fn handle_async_compilation_failure(
             error_kind = error_kind,
             "compilation_async_timeout"
         );
-        // Partial file cleanup attempted
-        cleanup_compilation_artifacts(path);
         timer.finish(false, true);
     } else {
         // Other failures are errors
@@ -564,10 +592,14 @@ fn handle_async_compilation_failure(
         timer.finish(false, false);
     }
 
-    // Mark this class as failed (with timestamp for eviction)
+    cleanup_compilation_artifacts(path);
+    mark_async_compilation_failed(class_hash, config);
+}
+
+fn mark_async_compilation_failed(class_hash: ClassHash, config: &config::NativeConfig) {
     let exec_config = config
         .execution_config()
-        .expect("handle_async_compilation_failure should only be called when native execution is enabled");
+        .expect("async compilation failure handling should only be called when native execution is enabled");
     evict_failed_compilations_if_needed(exec_config.max_failed_compilations);
     mark_failed_compilation(class_hash, Instant::now());
 }
@@ -741,7 +773,7 @@ pub(crate) fn spawn_compilation_if_needed(
         // Only one branch will execute, so moving timer is fine
         match compilation_result {
             Ok(Ok(Ok(executor))) => {
-                handle_async_compilation_success(class_hash, executor, &sierra, start, timer, &config);
+                handle_async_compilation_success(class_hash, executor, &sierra, &path, start, timer, &config);
             }
             Ok(Ok(Err(e))) => {
                 handle_async_compilation_failure(
@@ -925,17 +957,21 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
         let so_path = temp_dir.path().join("test_class.so");
         let lock_path = temp_dir.path().join("test_class.lock");
+        let metadata_path = crate::host_fingerprint::metadata_path_for_so(&so_path);
 
-        // Create both files
+        // Create all cache artifacts
         std::fs::write(&so_path, b"test").expect("Failed to create .so file");
         std::fs::write(&lock_path, b"test").expect("Failed to create .lock file");
+        std::fs::write(&metadata_path, b"test").expect("Failed to create metadata file");
         assert!(so_path.exists());
         assert!(lock_path.exists());
+        assert!(metadata_path.exists());
 
-        // Cleanup should remove both
+        // Cleanup should remove all artifacts
         cleanup_compilation_artifacts(&so_path);
         assert!(!so_path.exists(), ".so file should be removed");
         assert!(!lock_path.exists(), ".lock file should be removed");
+        assert!(!metadata_path.exists(), "metadata file should be removed");
 
         // Cleanup on non-existent files should not panic
         cleanup_compilation_artifacts(&so_path);

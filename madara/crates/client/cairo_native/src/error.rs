@@ -42,6 +42,9 @@ pub enum NativeCompilationError {
     #[error("Failed to create cache directory: {0}")]
     CacheDirectoryError(String),
 
+    #[error("Failed to write native cache metadata: {0}")]
+    CacheMetadataError(String),
+
     #[error("Failed to load native class from disk: {0}")]
     DiskLoadError(String),
 }

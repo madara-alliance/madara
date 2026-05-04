@@ -85,6 +85,10 @@ pub mod test_counters {
     pub static CACHE_DISK_FILE_NOT_FOUND: AtomicU64 = AtomicU64::new(0);
     pub static CACHE_DISK_FILE_EMPTY: AtomicU64 = AtomicU64::new(0);
     pub static CACHE_DISK_METADATA_ERROR: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_METADATA_MISSING: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_METADATA_INVALID: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_HOST_MISMATCH: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_METADATA_WRITE_ERROR: AtomicU64 = AtomicU64::new(0);
 
     // Compilation metrics
     pub static COMPILATIONS_STARTED: AtomicU64 = AtomicU64::new(0);
@@ -118,6 +122,10 @@ pub mod test_counters {
         CACHE_DISK_FILE_NOT_FOUND.store(0, Ordering::Relaxed);
         CACHE_DISK_FILE_EMPTY.store(0, Ordering::Relaxed);
         CACHE_DISK_METADATA_ERROR.store(0, Ordering::Relaxed);
+        CACHE_METADATA_MISSING.store(0, Ordering::Relaxed);
+        CACHE_METADATA_INVALID.store(0, Ordering::Relaxed);
+        CACHE_HOST_MISMATCH.store(0, Ordering::Relaxed);
+        CACHE_METADATA_WRITE_ERROR.store(0, Ordering::Relaxed);
 
         COMPILATIONS_STARTED.store(0, Ordering::Relaxed);
         COMPILATIONS_SUCCEEDED.store(0, Ordering::Relaxed);
@@ -155,6 +163,10 @@ pub struct NativeMetrics {
     cache_disk_file_not_found_counter: Counter<u64>,
     cache_disk_file_empty_counter: Counter<u64>,
     cache_disk_metadata_error_counter: Counter<u64>,
+    cache_metadata_missing_counter: Counter<u64>,
+    cache_metadata_invalid_counter: Counter<u64>,
+    cache_host_mismatch_counter: Counter<u64>,
+    cache_metadata_write_error_counter: Counter<u64>,
 
     // Cache latency histograms
     cache_lookup_time_memory_histogram: Histogram<f64>,
@@ -285,6 +297,30 @@ impl NativeMetrics {
             &meter,
             "cairo_native_cache_disk_metadata_error".to_string(),
             "Number of disk cache file metadata errors".to_string(),
+            "error".to_string(),
+        );
+        let cache_metadata_missing_counter = register_counter_metric_instrument(
+            &meter,
+            "cairo_native_cache_metadata_missing".to_string(),
+            "Number of disk cache artifacts skipped because host metadata is missing".to_string(),
+            "miss".to_string(),
+        );
+        let cache_metadata_invalid_counter = register_counter_metric_instrument(
+            &meter,
+            "cairo_native_cache_metadata_invalid".to_string(),
+            "Number of disk cache artifacts skipped because host metadata is unreadable or malformed".to_string(),
+            "error".to_string(),
+        );
+        let cache_host_mismatch_counter = register_counter_metric_instrument(
+            &meter,
+            "cairo_native_cache_host_mismatch".to_string(),
+            "Number of disk cache artifacts skipped because host metadata does not match this process".to_string(),
+            "mismatch".to_string(),
+        );
+        let cache_metadata_write_error_counter = register_counter_metric_instrument(
+            &meter,
+            "cairo_native_cache_metadata_write_error".to_string(),
+            "Number of Cairo Native metadata sidecar write errors".to_string(),
             "error".to_string(),
         );
 
@@ -418,6 +454,10 @@ impl NativeMetrics {
             cache_disk_file_not_found_counter,
             cache_disk_file_empty_counter,
             cache_disk_metadata_error_counter,
+            cache_metadata_missing_counter,
+            cache_metadata_invalid_counter,
+            cache_host_mismatch_counter,
+            cache_metadata_write_error_counter,
             cache_lookup_time_memory_histogram,
             cache_lookup_time_disk_histogram,
             cache_conversion_time_histogram,
@@ -527,6 +567,30 @@ impl NativeMetrics {
         self.cache_disk_metadata_error_counter.add(1, &[]);
         #[cfg(test)]
         test_counters::CACHE_DISK_METADATA_ERROR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn record_cache_metadata_missing(&self) {
+        self.cache_metadata_missing_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_METADATA_MISSING.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn record_cache_metadata_invalid(&self) {
+        self.cache_metadata_invalid_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_METADATA_INVALID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn record_cache_host_mismatch(&self) {
+        self.cache_host_mismatch_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_HOST_MISMATCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn record_cache_metadata_write_error(&self) {
+        self.cache_metadata_write_error_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_METADATA_WRITE_ERROR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Cache latency recording

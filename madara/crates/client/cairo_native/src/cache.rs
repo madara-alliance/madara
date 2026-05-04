@@ -6,6 +6,12 @@
 //! - Memory cache lookups are bounded by `memory_cache_timeout` to avoid blocking validation.
 //! - Disk cache loads (`.so`) are bounded by `disk_cache_load_timeout` to avoid hanging on slow I/O/dynamic linking.
 //! - Timeouts are treated as cache misses (fall back to VM / recompilation) and recorded in metrics.
+//! - On disk, one native cache entry is the `.so` plus its `.meta.json` sidecar.
+//!   Lookup requires both files to be present. If either file is missing, the remaining file
+//!   is cleaned up and the entry is treated as a cache miss.
+//! - Eviction accounts for the `.so` and `.meta.json` together and removes them together.
+//! - Sidecar deletion is not atomic with `.so` deletion. The cache tolerates partial cleanup
+//!   by deleting any leftover file on the next lookup or eviction pass.
 
 use blockifier::execution::contract_class::RunnableCompiledClass;
 use cairo_native::executor::AotContractExecutor;
@@ -13,12 +19,13 @@ use cairo_vm::types::errors::program_errors::ProgramError;
 use dashmap::DashMap;
 use mp_convert::ToFelt;
 use starknet_api::core::ClassHash;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use super::config;
+use super::host_fingerprint::{self, NativeCacheMetadataError};
 use super::native_class::NativeCompiledClass;
 use mp_class::SierraConvertedClass;
 
@@ -123,17 +130,58 @@ pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::Nat
         .join(filename)
 }
 
+/// Best-effort cleanup for one native cache entry: the `.so` and its metadata sidecar.
+///
+/// This is intentionally tolerant of partial cleanup. If the process stops after deleting
+/// one file but before deleting the other, future lookup or eviction will remove the leftover.
+pub(crate) fn remove_native_cache_artifacts(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(host_fingerprint::metadata_path_for_so(path));
+}
+
+fn remove_disk_cache_entry(path: &Path) -> Result<(), std::io::Error> {
+    std::fs::remove_file(path)?;
+
+    if path.extension().and_then(|extension| extension.to_str()) == Some("so") {
+        match std::fs::remove_file(host_fingerprint::metadata_path_for_so(path)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(())
+}
+
+fn disk_cache_entry_size(path: &Path, metadata: &std::fs::Metadata) -> u64 {
+    let mut size = metadata.len();
+
+    if path.extension().and_then(|extension| extension.to_str()) == Some("so") {
+        if let Ok(metadata) = std::fs::metadata(host_fingerprint::metadata_path_for_so(path)) {
+            size += metadata.len();
+        }
+    }
+
+    size
+}
+
 /// Enforce disk cache size limit by removing least recently accessed files.
 ///
 /// When the disk cache grows too large, this function removes the oldest unused files
 /// to make room for new ones. Files are sorted by when they were last accessed,
 /// and the oldest files are deleted until the cache size is within the limit.
+/// This is a Madara-managed cache budget check, not an operating-system low-disk callback.
 ///
 /// **How it works**:
 /// - Tracks when each cached file was last used
 /// - When the cache exceeds the size limit, removes files that haven't been used recently
 /// - This ensures frequently used classes stay in cache while rarely used ones are removed
 /// - Works across different filesystems, automatically adapting to system capabilities
+/// - Treats one native cache entry as the `.so` and its metadata sidecar together
+/// - Skips healthy `.meta.json` sidecars as standalone eviction candidates because they are
+///   counted and removed with their owning `.so`
+/// - If a sidecar is orphaned because cleanup stopped halfway through, it is treated as its
+///   own file and can be removed by a later eviction pass
 ///
 /// Called automatically after saving new files to disk to keep the cache size manageable.
 pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64>) -> Result<(), std::io::Error> {
@@ -147,6 +195,17 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
         let entry = entry?;
         let metadata = entry.metadata()?;
         if metadata.is_file() {
+            let path = entry.path();
+            let is_metadata_sidecar = path
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .and_then(|file_name| file_name.strip_suffix(".meta.json"))
+                .is_some_and(|so_file_name| path.with_file_name(so_file_name).exists());
+
+            if is_metadata_sidecar {
+                continue;
+            }
+
             // Determine when this file was last accessed for LRU eviction
             // Try to use the system's access time first, but fall back to modification time
             // if access time tracking is disabled (common on modern filesystems for performance)
@@ -158,8 +217,8 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
                 .or_else(|| metadata.modified().ok())
                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
 
-            let size = metadata.len();
-            entries.push((entry.path(), access_time, size));
+            let size = disk_cache_entry_size(&path, &metadata);
+            entries.push((path, access_time, size));
         }
     }
 
@@ -187,7 +246,7 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
             if to_remove >= bytes_to_remove {
                 break;
             }
-            std::fs::remove_file(&path)?;
+            remove_disk_cache_entry(&path)?;
             to_remove += size;
             files_removed += 1;
         }
@@ -207,6 +266,74 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
     }
 
     Ok(())
+}
+
+fn handle_metadata_validation_error(
+    class_hash: &ClassHash,
+    path: &std::path::Path,
+    error: NativeCacheMetadataError,
+    start: Instant,
+) {
+    let elapsed = start.elapsed();
+
+    match error {
+        NativeCacheMetadataError::Missing { path: metadata_path } => {
+            super::metrics::metrics().record_cache_metadata_missing();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                path = %path.display(),
+                metadata_path = %metadata_path.display(),
+                current_fingerprint = ?host_fingerprint::NativeHostFingerprint::current(),
+                elapsed = ?elapsed,
+                elapsed_ms = elapsed.as_millis(),
+                "native_cache_metadata_missing_skipping_disk_load"
+            );
+        }
+        NativeCacheMetadataError::Invalid { path: metadata_path, reason } => {
+            super::metrics::metrics().record_cache_metadata_invalid();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                path = %path.display(),
+                metadata_path = %metadata_path.display(),
+                error = %reason,
+                current_fingerprint = ?host_fingerprint::NativeHostFingerprint::current(),
+                elapsed = ?elapsed,
+                elapsed_ms = elapsed.as_millis(),
+                "native_cache_metadata_invalid_skipping_disk_load"
+            );
+        }
+        NativeCacheMetadataError::Mismatch { path: metadata_path, cached, current } => {
+            super::metrics::metrics().record_cache_host_mismatch();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                path = %path.display(),
+                metadata_path = %metadata_path.display(),
+                cached_fingerprint = ?cached,
+                current_fingerprint = ?current,
+                elapsed = ?elapsed,
+                elapsed_ms = elapsed.as_millis(),
+                "native_cache_host_mismatch_skipping_disk_load"
+            );
+        }
+        NativeCacheMetadataError::Write { path: metadata_path, reason } => {
+            super::metrics::metrics().record_cache_metadata_write_error();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                path = %path.display(),
+                metadata_path = %metadata_path.display(),
+                error = %reason,
+                elapsed = ?elapsed,
+                elapsed_ms = elapsed.as_millis(),
+                "native_cache_metadata_write_error_skipping_disk_load"
+            );
+        }
+    }
+
+    remove_native_cache_artifacts(path);
 }
 
 /// Evict entries from the memory cache if it exceeds the size limit.
@@ -495,6 +622,13 @@ fn try_load_executor_with_timeout(
 /// Returns `Some(RunnableCompiledClass)` if successfully loaded, `None` otherwise.
 /// On success, also adds the class to the memory cache.
 ///
+/// A valid on-disk native cache entry requires both:
+/// - `{class_hash}.so`
+/// - `{class_hash}.so.meta.json`
+///
+/// If either file is missing, the remaining file is cleaned up and the entry is
+/// treated as a cache miss so the class can be recompiled.
+///
 /// **Guard Clause**: Skips disk cache if compilation is in progress to avoid loading incomplete files.
 pub(crate) fn try_get_from_disk_cache(
     class_hash: &ClassHash,
@@ -520,6 +654,14 @@ pub(crate) fn try_get_from_disk_cache(
     let path = get_native_cache_path(class_hash, config);
 
     if !path.exists() {
+        // Enforce the "both files must exist" invariant during lookup. If the .so is gone
+        // but the metadata sidecar remains, remove the orphaned sidecar and treat this as
+        // a normal cache miss so the caller can recompile.
+        let metadata_path = host_fingerprint::metadata_path_for_so(&path);
+        if metadata_path.exists() {
+            let _ = std::fs::remove_file(&metadata_path);
+        }
+
         let elapsed = start.elapsed();
         super::metrics::metrics().record_cache_disk_file_not_found();
         tracing::debug!(
@@ -549,7 +691,7 @@ pub(crate) fn try_get_from_disk_cache(
             target: "madara_cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             path = %path.display(),
-                file_size_bytes = file_size,
+            file_size_bytes = file_size,
             "attempting_disk_load"
         );
     } else {
@@ -560,6 +702,11 @@ pub(crate) fn try_get_from_disk_cache(
             path = %path.display(),
             "disk_cache_file_metadata_error_skipping"
         );
+        return Ok(None);
+    }
+
+    if let Err(e) = host_fingerprint::validate_metadata_for_so(&path) {
+        handle_metadata_validation_error(class_hash, &path, e, start);
         return Ok(None);
     }
 
@@ -595,7 +742,7 @@ pub(crate) fn try_get_from_disk_cache(
                         "disk_hit_conversion_failed"
                     );
                     // Corrupted file removal attempted
-                    let _ = std::fs::remove_file(&path);
+                    remove_native_cache_artifacts(&path);
                     return Err(ProgramError::Parse(serde::de::Error::custom(format!(
                         "Failed to convert cached class: {}",
                         e
@@ -684,7 +831,12 @@ mod tests {
             temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()))
         };
 
-        crate::test_utils::create_native_class_internal(sierra, &so_path)
+        let native_class = crate::test_utils::create_native_class_internal(sierra, &so_path)?;
+        if config.is_some() {
+            crate::host_fingerprint::write_current_metadata_for_so(&so_path)?;
+        }
+
+        Ok(native_class)
     }
 
     #[rstest]
@@ -742,6 +894,10 @@ mod tests {
         let _native_class = create_test_native_class(&sierra_class, &temp_dir, class_hash, Some(&test_config))
             .expect("Failed to create and save native class to disk");
         assert!(path.exists(), "Native class file should exist on disk");
+        assert!(
+            crate::host_fingerprint::metadata_path_for_so(&path).exists(),
+            "Native cache metadata should exist on disk"
+        );
 
         // Clear memory cache to ensure we start fresh
         cache_remove(&class_hash);
@@ -758,6 +914,126 @@ mod tests {
         // Request the class again - should hit memory cache (not disk)
         let result = try_get_from_memory_cache(&class_hash, &test_config);
         assert!(result.is_some(), "Should hit memory cache after disk load");
+    }
+
+    #[rstest]
+    fn test_disk_cache_missing_metadata_skips_native_load(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let path = get_native_cache_path(&class_hash, &test_config);
+        std::fs::write(&path, b"invalid native artifact").expect("invalid so should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("metadata miss should not error").is_none());
+        assert_counters!(
+            CACHE_METADATA_MISSING: 1,
+            CACHE_DISK_LOAD_ERROR: 0,
+        );
+    }
+
+    #[rstest]
+    fn test_disk_cache_mismatched_arch_skips_native_load(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let path = get_native_cache_path(&class_hash, &test_config);
+        std::fs::write(&path, b"invalid native artifact").expect("invalid so should be written");
+
+        let mut cached = crate::host_fingerprint::NativeHostFingerprint::current().clone();
+        cached.arch = "different-arch".to_string();
+        crate::host_fingerprint::write_metadata_for_so(&path, &cached).expect("metadata should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("host mismatch should not error").is_none());
+        assert_counters!(
+            CACHE_HOST_MISMATCH: 1,
+            CACHE_DISK_LOAD_ERROR: 0,
+        );
+    }
+
+    #[rstest]
+    fn test_disk_cache_mismatched_cpu_vendor_skips_native_load(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let path = get_native_cache_path(&class_hash, &test_config);
+        std::fs::write(&path, b"invalid native artifact").expect("invalid so should be written");
+
+        let mut cached = crate::host_fingerprint::NativeHostFingerprint::current().clone();
+        cached.cpu_vendor = "DifferentVendor".to_string();
+        crate::host_fingerprint::write_metadata_for_so(&path, &cached).expect("metadata should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("host mismatch should not error").is_none());
+        assert_counters!(
+            CACHE_HOST_MISMATCH: 1,
+            CACHE_DISK_LOAD_ERROR: 0,
+        );
+    }
+
+    #[rstest]
+    fn test_disk_cache_malformed_metadata_skips_native_load(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let path = get_native_cache_path(&class_hash, &test_config);
+        std::fs::write(&path, b"invalid native artifact").expect("invalid so should be written");
+        std::fs::write(crate::host_fingerprint::metadata_path_for_so(&path), b"{not-json")
+            .expect("metadata should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("invalid metadata should not error").is_none());
+        assert_counters!(
+            CACHE_METADATA_INVALID: 1,
+            CACHE_DISK_LOAD_ERROR: 0,
+        );
+    }
+
+    #[test]
+    fn test_disk_cache_eviction_cleans_orphaned_metadata_sidecar() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let orphan_sidecar_path = temp_dir.path().join("0x1.so.meta.json");
+        std::fs::write(&orphan_sidecar_path, b"{\"arch\":\"orphan\"}").expect("orphaned metadata should be written");
+
+        enforce_disk_cache_limit(&temp_dir.path().to_path_buf(), Some(0)).expect("eviction should succeed");
+
+        assert!(!orphan_sidecar_path.exists(), "orphaned metadata sidecar should be evicted");
+    }
+
+    #[rstest]
+    fn test_disk_cache_missing_so_cleans_orphaned_metadata_sidecar(
+        sierra_class: SierraConvertedClass,
+        temp_dir: TempDir,
+    ) {
+        cache_clear();
+
+        let class_hash = create_unique_test_class_hash();
+        let test_config = crate::test_utils::create_test_config(&temp_dir, None, false);
+        let so_path = get_native_cache_path(&class_hash, &test_config);
+        let metadata_path = crate::host_fingerprint::metadata_path_for_so(&so_path);
+        std::fs::write(&metadata_path, b"{\"arch\":\"orphan\"}").expect("orphaned metadata should be written");
+
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
+
+        assert!(disk_result.expect("missing .so should not error").is_none());
+        assert!(!metadata_path.exists(), "orphaned metadata sidecar should be deleted during lookup");
     }
 
     #[rstest]
@@ -954,7 +1230,7 @@ mod tests {
         assert!(path_1.exists(), "File 1 should exist on disk");
         std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
 
-        let file_size = std::fs::metadata(&path_1).expect("File 1 should exist").len();
+        let file_size = disk_cache_entry_size(&path_1, &std::fs::metadata(&path_1).expect("File 1 should exist"));
 
         // Set disk cache limit to accommodate exactly 2 files (with some margin)
         // We want to ensure that deleting file_1 alone brings us under the limit
@@ -1010,8 +1286,8 @@ mod tests {
         assert!(cache_contains(&class_hash_2), "Class should be loaded into memory cache after disk hit");
 
         // Verify both files exist and total size is within limit
-        let total_size = std::fs::metadata(&path_1).expect("File 1 should exist").len()
-            + std::fs::metadata(&path_2).expect("File 2 should exist").len();
+        let total_size = disk_cache_entry_size(&path_1, &std::fs::metadata(&path_1).expect("File 1 should exist"))
+            + disk_cache_entry_size(&path_2, &std::fs::metadata(&path_2).expect("File 2 should exist"));
         assert!(total_size <= max_disk_size, "Total size {} should be within limit {}", total_size, max_disk_size);
 
         // Create and save third class - should trigger eviction
@@ -1023,9 +1299,11 @@ mod tests {
         assert!(path_3.exists(), "File 3 should exist on disk");
 
         // Get file sizes before eviction to verify files are complete after eviction
-        let file_1_size = std::fs::metadata(&path_1).expect("File 1 should exist").len();
-        let file_2_size = std::fs::metadata(&path_2).expect("File 2 should exist").len();
-        let file_3_size = std::fs::metadata(&path_3).expect("File 3 should exist").len();
+        let file_2_so_size = std::fs::metadata(&path_2).expect("File 2 should exist").len();
+        let file_3_so_size = std::fs::metadata(&path_3).expect("File 3 should exist").len();
+        let file_1_size = disk_cache_entry_size(&path_1, &std::fs::metadata(&path_1).expect("File 1 should exist"));
+        let file_2_size = disk_cache_entry_size(&path_2, &std::fs::metadata(&path_2).expect("File 2 should exist"));
+        let file_3_size = disk_cache_entry_size(&path_3, &std::fs::metadata(&path_3).expect("File 3 should exist"));
 
         // Verify total size exceeds limit (will trigger eviction)
         let total_size_before = file_1_size + file_2_size + file_3_size;
@@ -1063,23 +1341,29 @@ mod tests {
 
         // Verify file_1 (oldest, LRU) was completely deleted
         assert!(!path_1.exists(), "File 1 (oldest, LRU) should be completely deleted");
+        assert!(
+            !crate::host_fingerprint::metadata_path_for_so(&path_1).exists(),
+            "File 1 metadata should be deleted with the .so"
+        );
 
         // Verify file_2 and file_3 still exist and are complete (not truncated)
         assert!(path_2.exists(), "File 2 (more recently accessed) should still exist");
         assert!(path_3.exists(), "File 3 (newest) should still exist");
+        assert!(crate::host_fingerprint::metadata_path_for_so(&path_2).exists(), "File 2 metadata should still exist");
+        assert!(crate::host_fingerprint::metadata_path_for_so(&path_3).exists(), "File 3 metadata should still exist");
 
         let file_2_current_size = std::fs::metadata(&path_2).expect("File 2 should exist").len();
         let file_3_current_size = std::fs::metadata(&path_3).expect("File 3 should exist").len();
 
         assert_eq!(
-            file_2_current_size, file_2_size,
+            file_2_current_size, file_2_so_size,
             "File 2 should be complete (not truncated). Original size: {}, Current size: {}",
-            file_2_size, file_2_current_size
+            file_2_so_size, file_2_current_size
         );
         assert_eq!(
-            file_3_current_size, file_3_size,
+            file_3_current_size, file_3_so_size,
             "File 3 should be complete (not truncated). Original size: {}, Current size: {}",
-            file_3_size, file_3_current_size
+            file_3_so_size, file_3_current_size
         );
 
         // Verify total size is now within limit (config limit is respected)

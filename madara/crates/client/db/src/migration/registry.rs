@@ -68,6 +68,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v11→v12: revert L1-message cleanup consistency (no-op)",
             migrate: super::revisions::revision_0012::migrate,
         },
+        Migration {
+            from_version: 12,
+            to_version: 13,
+            name: "v12→v13: clear Cairo Native disk cache for metadata sidecars",
+            migrate: super::revisions::revision_0013::migrate,
+        },
     ]
 }
 

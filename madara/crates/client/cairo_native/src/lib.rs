@@ -16,6 +16,7 @@
 //! - [`cache`]: In-memory and disk-based caching of compiled classes
 //! - [`compilation`]: Compilation orchestration (blocking/async modes, retry logic)
 //! - [`execution`]: Main execution flow and class handling
+//! - [`host_fingerprint`]: Host compatibility metadata for persisted native artifacts
 //! - [`to_blockifier`]: Conversion to Blockifier's `RunnableCompiledClass` with native execution support
 
 pub mod cache;
@@ -23,6 +24,7 @@ pub mod compilation;
 pub mod config;
 pub mod error;
 pub mod execution;
+pub mod host_fingerprint;
 pub mod metrics;
 pub mod native_class;
 pub mod to_blockifier;
