@@ -6,3 +6,6 @@ pub const CHILD_JOB_OFFCHAIN_PROOF: &str = "true";
 /// Applicative (aggregator) jobs: proof must be registered on-chain so the core contract
 /// sees `isValid(fact) == true` during state update. Hence offchain = false.
 pub const APPLICATIVE_JOB_OFFCHAIN_PROOF: &str = "false";
+
+/// Required since SHARP v7.3: marks child jobs as eligible for applicative aggregation.
+pub const CHILD_JOB_FOR_APPLICATIVE: &str = "true";

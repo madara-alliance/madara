@@ -79,7 +79,7 @@ fn status_response(status: CairoJobStatus) -> SharpGetStatusResponse {
 
 #[rstest]
 #[case::failed(CairoJobStatus::Failed, TaskStatus::Failed(String::new()))]
-#[case::invalid(CairoJobStatus::Invalid, TaskStatus::Failed("Job is invalid: Unknown".to_string()))]
+#[case::invalid(CairoJobStatus::Invalid, TaskStatus::Failed("Job is invalid: Unknown. error_log: none".to_string()))]
 #[case::unknown(CairoJobStatus::Unknown, TaskStatus::Failed("Job not found: test-key".to_string()))]
 #[case::processed(CairoJobStatus::Processed, TaskStatus::Succeeded)]
 #[case::not_created(CairoJobStatus::NotCreated, TaskStatus::Processing)]
@@ -100,7 +100,7 @@ fn test_map_sharp_status_child_job(#[case] cairo_status: CairoJobStatus, #[case]
 )]
 #[case::invalid_with_reason(
     SharpGetStatusResponse { status: CairoJobStatus::Invalid, invalid_reason: Some(InvalidReason::InvalidCairoPieFileFormat), ..Default::default() },
-    TaskStatus::Failed("Job is invalid: InvalidCairoPieFileFormat".to_string())
+    TaskStatus::Failed("Job is invalid: InvalidCairoPieFileFormat. error_log: none".to_string())
 )]
 fn test_child_job_edge_cases(#[case] res: SharpGetStatusResponse, #[case] expected: TaskStatus) {
     assert_eq!(map_sharp_status(&TaskType::Job, "test-key", &res, None), expected);
@@ -110,7 +110,7 @@ fn test_child_job_edge_cases(#[case] res: SharpGetStatusResponse, #[case] expect
 
 #[rstest]
 #[case::failed(CairoJobStatus::Failed, None, TaskStatus::Failed(String::new()))]
-#[case::invalid(CairoJobStatus::Invalid, None, TaskStatus::Failed("Applicative job is invalid: Unknown".to_string()))]
+#[case::invalid(CairoJobStatus::Invalid, None, TaskStatus::Failed("Applicative job is invalid: Unknown. error_log: none".to_string()))]
 #[case::unknown(CairoJobStatus::Unknown, None, TaskStatus::Failed("Applicative job not found: agg-key".to_string()))]
 #[case::in_progress(CairoJobStatus::InProgress, None, TaskStatus::Processing)]
 #[case::not_created(CairoJobStatus::NotCreated, None, TaskStatus::Processing)]
@@ -130,4 +130,18 @@ fn test_map_sharp_status_aggregation(
 fn test_aggregation_processed_with_fact_check(#[case] fact_verified: Option<bool>, #[case] expected: TaskStatus) {
     let res = status_response(CairoJobStatus::Processed);
     assert_eq!(map_sharp_status(&TaskType::Aggregation, "agg-key", &res, fact_verified), expected);
+}
+
+#[test]
+fn unknown_invalid_reason_deserializes_instead_of_failing() {
+    let json = r#"{
+        "status": "INVALID",
+        "invalid_reason": "CHILD_JOB_NOT_APPLICATIVE_LEAF",
+        "error_log": "Child job key:abc with job_id=cj1234 is not applicative leaf."
+    }"#;
+    let res: SharpGetStatusResponse = serde_json::from_str(json).expect("should deserialize unknown invalid_reason");
+    assert_eq!(res.status, CairoJobStatus::Invalid);
+    assert_eq!(res.invalid_reason, Some(InvalidReason::Unknown));
+    let status = map_sharp_status(&TaskType::Aggregation, "agg-key", &res, None);
+    assert!(matches!(status, TaskStatus::Failed(msg) if msg.contains("error_log: Child job")));
 }
