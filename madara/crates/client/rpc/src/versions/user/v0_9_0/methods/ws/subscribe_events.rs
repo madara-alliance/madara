@@ -50,6 +50,9 @@ pub async fn subscribe_events(
             if sink.is_closed() {
                 return Ok(());
             }
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
 
             match reorgs.try_recv() {
                 Ok(reorg) => {
@@ -66,6 +69,9 @@ pub async fn subscribe_events(
                 Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
             }
 
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
             send_block_events(starknet, &sink, &from_address, &keys, next_block_n, &requested_finality).await?;
             next_block_n = next_block_n.saturating_add(1);
         }

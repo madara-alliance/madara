@@ -38,13 +38,23 @@ pub async fn subscribe_transaction_status(
 
                 send_txn_status(&sink, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
-                    close_subscription(starknet, &sink).await?;
+                    crate::close_ws_subscription(
+                        starknet,
+                        sink.subscription_id(),
+                        "SubscribeTransactionStatus failed to parse string subscription id",
+                    )
+                    .await?;
                     return Err(crate::errors::StarknetWsApiError::Internal);
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
-                close_subscription(starknet, &sink).await?;
+                crate::close_ws_subscription(
+                    starknet,
+                    sink.subscription_id(),
+                    "SubscribeTransactionStatus failed to parse string subscription id",
+                )
+                .await?;
                 return Err(crate::errors::StarknetWsApiError::Internal);
             }
         }
@@ -86,20 +96,6 @@ async fn next_update(
             Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
         },
     }
-}
-
-async fn close_subscription(
-    starknet: &crate::Starknet,
-    sink: &jsonrpsee::core::server::SubscriptionSink,
-) -> Result<(), crate::errors::StarknetWsApiError> {
-    let subscription_id = match sink.subscription_id() {
-        jsonrpsee::types::SubscriptionId::Num(id) => id,
-        jsonrpsee::types::SubscriptionId::Str(id) => {
-            id.parse().or_internal_server_error("SubscribeTransactionStatus failed to parse string subscription id")?
-        }
-    };
-    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
-    Ok(())
 }
 
 async fn send_txn_status(
