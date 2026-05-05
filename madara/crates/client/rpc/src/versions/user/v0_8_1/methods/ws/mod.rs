@@ -57,3 +57,9 @@ pub async fn send_reorg_notification(
 
     sink.send(msg).await.or_internal_server_error("Failed to send reorg websocket notification")
 }
+
+pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {
+    crate::errors::StarknetWsApiError::internal_server_error(
+        "Missed reorg notifications; websocket subscription can no longer guarantee canonical state",
+    )
+}

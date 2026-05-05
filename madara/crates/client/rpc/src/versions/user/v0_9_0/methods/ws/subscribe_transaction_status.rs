@@ -77,7 +77,9 @@ async fn next_update(
             _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
             reorg = reorgs.recv() => match reorg {
                 Ok(reorg) => return Ok(Some(SubscriptionUpdate::Reorg(reorg))),
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    return Err(super::missed_reorg_notifications_error());
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     return Err(crate::errors::StarknetWsApiError::Internal);
                 }
