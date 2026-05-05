@@ -38,17 +38,15 @@ pub async fn subscribe_transaction_status(
 
                 send_txn_status(&sink, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
-                    let subscription_id = match sink.subscription_id() {
-                        jsonrpsee::types::SubscriptionId::Num(id) => id,
-                        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(
-                            "SubscribeTransactionStatus failed to parse string subscription id",
-                        )?,
-                    };
-                    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
-                    return Ok(());
+                    close_subscription(starknet, &sink).await?;
+                    return Err(crate::errors::StarknetWsApiError::Internal);
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
+            SubscriptionUpdate::WatcherClosed => {
+                close_subscription(starknet, &sink).await?;
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
         }
     }
 }
@@ -56,6 +54,7 @@ pub async fn subscribe_transaction_status(
 enum SubscriptionUpdate {
     Snapshot(crate::TxStatusSnapshot),
     Reorg(mc_db::ReorgNotification),
+    WatcherClosed,
 }
 
 async fn next_update(
@@ -71,26 +70,36 @@ async fn next_update(
         }
     }
 
-    loop {
-        tokio::select! {
-            _ = sink.closed() => return Ok(None),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
-            reorg = reorgs.recv() => match reorg {
-                Ok(reorg) => return Ok(Some(SubscriptionUpdate::Reorg(reorg))),
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    return Err(super::missed_reorg_notifications_error());
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    return Err(crate::errors::StarknetWsApiError::Internal);
-                }
-            },
-            next = watch.recv() => {
-                if let Some(snapshot) = next {
-                    return Ok(Some(SubscriptionUpdate::Snapshot(snapshot)));
-                }
-            },
-        }
+    tokio::select! {
+        _ = sink.closed() => Ok(None),
+        _ = ctx.cancelled() => Err(crate::errors::StarknetWsApiError::Internal),
+        reorg = reorgs.recv() => match reorg {
+            Ok(reorg) => Ok(Some(SubscriptionUpdate::Reorg(reorg))),
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                Err(super::missed_reorg_notifications_error())
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                Err(crate::errors::StarknetWsApiError::Internal)
+            }
+        },
+        next = watch.recv() => {
+            Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
+        },
     }
+}
+
+async fn close_subscription(
+    starknet: &crate::Starknet,
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+) -> Result<(), crate::errors::StarknetWsApiError> {
+    let subscription_id = match sink.subscription_id() {
+        jsonrpsee::types::SubscriptionId::Num(id) => id,
+        jsonrpsee::types::SubscriptionId::Str(id) => {
+            id.parse().or_internal_server_error("SubscribeTransactionStatus failed to parse string subscription id")?
+        }
+    };
+    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
+    Ok(())
 }
 
 async fn send_txn_status(
