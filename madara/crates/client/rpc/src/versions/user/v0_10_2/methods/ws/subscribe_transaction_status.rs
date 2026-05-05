@@ -40,9 +40,9 @@ pub async fn subscribe_transaction_status(
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     let subscription_id = match sink.subscription_id() {
                         jsonrpsee::types::SubscriptionId::Num(id) => id,
-                        jsonrpsee::types::SubscriptionId::Str(id) => {
-                            id.parse().expect("string subscription ids should remain numeric internally")
-                        }
+                        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(
+                            "SubscribeTransactionStatus failed to parse string subscription id",
+                        )?,
                     };
                     let _ = starknet.ws_handles.subscription_close(subscription_id).await;
                     return Ok(());
