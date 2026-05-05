@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::test_utils::rpc_test_setup;
 use crate::versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server;
+use crate::versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server;
 use crate::versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server;
 use crate::versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server;
 
@@ -47,4 +48,18 @@ fn v0_10_0_ws_surface_uses_new_transaction_methods() {
     assert!(methods.contains("starknet_V0_10_0_subscribeNewTransactionReceipts"));
     assert!(methods.contains("starknet_V0_10_0_unsubscribe"));
     assert!(!methods.contains("starknet_V0_10_0_subscribePendingTransactions"));
+}
+
+#[test]
+fn v0_10_2_ws_surface_matches_new_transaction_spec_methods() {
+    let (_, starknet) = rpc_test_setup();
+    let methods = ws_method_names(StarknetWsRpcApiV0_10_2Server::into_rpc(starknet));
+
+    assert!(methods.contains("starknet_V0_10_2_subscribeNewHeads"));
+    assert!(methods.contains("starknet_V0_10_2_subscribeEvents"));
+    assert!(methods.contains("starknet_V0_10_2_subscribeTransactionStatus"));
+    assert!(methods.contains("starknet_V0_10_2_subscribeNewTransactions"));
+    assert!(methods.contains("starknet_V0_10_2_subscribeNewTransactionReceipts"));
+    assert!(methods.contains("starknet_V0_10_2_unsubscribe"));
+    assert!(!methods.contains("starknet_V0_10_2_subscribePendingTransactions"));
 }
