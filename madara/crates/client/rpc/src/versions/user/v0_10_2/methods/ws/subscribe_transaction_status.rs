@@ -99,6 +99,8 @@ async fn send_txn_status(
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let status = match snapshot {
         crate::TxStatusSnapshot::Received => mp_rpc::v0_10_2::TxnStatus::Received,
+        crate::TxStatusSnapshot::Candidate => mp_rpc::v0_10_2::TxnStatus::Candidate,
+        crate::TxStatusSnapshot::PreConfirmed => mp_rpc::v0_10_2::TxnStatus::PreConfirmed,
         crate::TxStatusSnapshot::AcceptedOnL2 => mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2,
         crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1,
     };
