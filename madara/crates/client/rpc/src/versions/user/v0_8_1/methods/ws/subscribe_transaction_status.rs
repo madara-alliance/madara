@@ -40,9 +40,9 @@ pub async fn subscribe_transaction_status(
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     let subscription_id = match sink.subscription_id() {
                         jsonrpsee::types::SubscriptionId::Num(id) => id,
-                        jsonrpsee::types::SubscriptionId::Str(_) => {
-                            unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
-                        }
+                        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(
+                            "SubscribeTransactionStatus failed to parse string subscription id",
+                        )?,
                     };
                     let _ = starknet.ws_handles.subscription_close(subscription_id).await;
                     return Ok(());
