@@ -1,5 +1,5 @@
 use crate::constants::MAX_EVENTS_KEYS;
-use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
+use crate::errors::{ErrorExtWs, StarknetWsApiError};
 use anyhow::Context;
 use mc_db::{subscription::SubscribeNewBlocksTag, EventFilter};
 use mp_block::EventWithInfo;
@@ -136,6 +136,7 @@ async fn send_block_events(
     requested_finality: &FinalityStatus,
 ) -> Result<(), StarknetWsApiError> {
     let view = starknet.backend.view_on_latest();
+    let latest_l1_confirmed_block_n = view.latest_l1_confirmed_block_n();
 
     let events = view
         .get_events(EventFilter {
@@ -154,7 +155,7 @@ async fn send_block_events(
             continue;
         }
 
-        let finality_status = event_finality_status(starknet, &event)?;
+        let finality_status = event_finality_status(&event, latest_l1_confirmed_block_n);
         if !subscription_allows_finality(requested_finality, finality_status) {
             continue;
         }
@@ -172,20 +173,16 @@ fn subscription_allows_finality(requested_finality: &FinalityStatus, event_final
     }
 }
 
-fn event_finality_status(
-    starknet: &crate::Starknet,
-    event: &EventWithInfo,
-) -> Result<TxnFinalityStatus, StarknetWsApiError> {
+fn event_finality_status(event: &EventWithInfo, latest_l1_confirmed_block_n: Option<u64>) -> TxnFinalityStatus {
     if event.in_preconfirmed {
-        return Ok(TxnFinalityStatus::PreConfirmed);
+        return TxnFinalityStatus::PreConfirmed;
     }
 
-    let block_view =
-        starknet.backend.block_view_on_confirmed(event.block_number).ok_or_else_internal_server_error(|| {
-            format!("Failed to retrieve confirmed block for block {}", event.block_number)
-        })?;
-
-    Ok(if block_view.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 })
+    if latest_l1_confirmed_block_n.is_some_and(|last_on_l1| event.block_number <= last_on_l1) {
+        TxnFinalityStatus::L1
+    } else {
+        TxnFinalityStatus::L2
+    }
 }
 
 async fn send_event(
