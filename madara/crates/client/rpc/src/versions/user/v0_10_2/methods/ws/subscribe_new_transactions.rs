@@ -116,7 +116,9 @@ async fn subscribe_new_transactions_inner(
                             .or_internal_server_error("SubscribeNewTransactions failed to refresh preconfirmed block view after reorg")?;
                         current_preconfirmed.refresh_with_candidates();
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        return Err(super::missed_reorg_notifications_error());
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         return Err(crate::errors::StarknetWsApiError::Internal);
                     }
