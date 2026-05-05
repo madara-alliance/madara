@@ -86,16 +86,21 @@ async fn subscribe_new_transactions_inner(
                     None => pending::<Option<Arc<ValidatedTransaction>>>().await,
                 }
             } => {
-                if let Some(tx) = received {
-                    send_validated_transaction(
-                        &sink,
-                        tx.as_ref(),
-                        TxnStatusWithoutL1::Received,
-                        sender_address.as_ref(),
-                        &allowed_statuses,
-                        include_proof_facts,
-                        &mut emitted,
-                    ).await?;
+                match received {
+                    Some(tx) => {
+                        send_validated_transaction(
+                            &sink,
+                            tx.as_ref(),
+                            TxnStatusWithoutL1::Received,
+                            sender_address.as_ref(),
+                            &allowed_statuses,
+                            include_proof_facts,
+                            &mut emitted,
+                        ).await?;
+                    }
+                    None => {
+                        received_watch = None;
+                    }
                 }
             }
             reorg = async {
