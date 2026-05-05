@@ -16,6 +16,7 @@ pub async fn subscribe_events(
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let mut next_block_n = starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1));
+    let mut reorgs = starknet.backend.subscribe_reorgs();
 
     if let Some(block_id) = block_id {
         if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
@@ -35,71 +36,93 @@ pub async fn subscribe_events(
             return Err(StarknetWsApiError::TooManyBlocksBack);
         }
 
-        let replayed_events = view
-            .get_events(EventFilter {
-                start_block: block_n,
-                start_event_index: 0,
-                end_block: latest_block,
-                from_address,
-                keys_pattern: keys.clone(),
-                max_events: usize::MAX,
-            })
-            .context("Error getting filtered events")
-            .or_internal_server_error("Failed to retrieve historical events")?;
-
-        for event in replayed_events {
-            send_event(event, &sink).await?;
-        }
-
-        next_block_n = latest_block.saturating_add(1);
+        next_block_n = block_n;
     }
 
-    let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-    heads.set_start_from(next_block_n);
-    let mut reorgs = starknet.backend.subscribe_reorgs();
+    'backfill: loop {
+        let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
 
-    loop {
-        let block_n = tokio::select! {
-            head = heads.next_head() => head.latest_confirmed_block_n(),
-            reorg = reorgs.recv() => {
-                match reorg {
-                    Ok(reorg) => {
-                        super::send_reorg_notification(&sink, &reorg).await?;
-                        heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-                        heads.set_start_from(reorg.first_reverted_block_n);
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        return Err(super::missed_reorg_notifications_error());
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        return Err(crate::errors::StarknetWsApiError::Internal);
-                    }
+        while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
+            if sink.is_closed() {
+                return Ok(());
+            }
+
+            match reorgs.try_recv() {
+                Ok(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    next_block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
                 }
-            },
-            _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
-        };
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                    return Err(super::missed_reorg_notifications_error());
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    return Err(crate::errors::StarknetWsApiError::Internal);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+            }
 
-        let block_n = block_n.expect("Confirmed block subscription should always yield a confirmed block number");
-        let live_events = starknet
-            .backend
-            .view_on_latest_confirmed()
-            .get_events(EventFilter {
-                start_block: block_n,
-                start_event_index: 0,
-                end_block: block_n,
-                from_address,
-                keys_pattern: keys.clone(),
-                max_events: usize::MAX,
-            })
-            .context("Error getting filtered events")
-            .or_internal_server_error("Failed to retrieve live events")?;
+            send_block_events(starknet, &sink, &from_address, &keys, next_block_n).await?;
+            next_block_n = next_block_n.saturating_add(1);
+        }
 
-        for event in live_events {
-            send_event(event, &sink).await?;
+        let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
+        heads.set_start_from(next_block_n);
+
+        loop {
+            let block_n = tokio::select! {
+                head = heads.next_head() => head.latest_confirmed_block_n(),
+                reorg = reorgs.recv() => {
+                    match reorg {
+                        Ok(reorg) => {
+                            super::send_reorg_notification(&sink, &reorg).await?;
+                            next_block_n = reorg.first_reverted_block_n;
+                            continue 'backfill;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            return Err(super::missed_reorg_notifications_error());
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            return Err(crate::errors::StarknetWsApiError::Internal);
+                        }
+                    }
+                },
+                _ = sink.closed() => return Ok(()),
+                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
+            };
+
+            let block_n = block_n.expect("Confirmed block subscription should always yield a confirmed block number");
+            send_block_events(starknet, &sink, &from_address, &keys, block_n).await?;
         }
     }
+}
+
+async fn send_block_events(
+    starknet: &crate::Starknet,
+    sink: &jsonrpsee::server::SubscriptionSink,
+    from_address: &Option<Felt>,
+    keys: &Option<Vec<Vec<Felt>>>,
+    block_n: u64,
+) -> Result<(), StarknetWsApiError> {
+    let events = starknet
+        .backend
+        .view_on_latest()
+        .get_events(EventFilter {
+            start_block: block_n,
+            start_event_index: 0,
+            end_block: block_n,
+            from_address: *from_address,
+            keys_pattern: keys.clone(),
+            max_events: usize::MAX,
+        })
+        .context("Error getting filtered events")
+        .or_internal_server_error("Failed to retrieve events")?;
+
+    for event in events {
+        send_event(event, sink).await?;
+    }
+
+    Ok(())
 }
 
 async fn send_event(

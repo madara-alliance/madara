@@ -48,64 +48,81 @@ pub async fn subscribe_new_heads(
         }
     };
 
-    for n in block_n.. {
-        if sink.is_closed() {
-            return Ok(());
-        }
-
-        let Some(block_view) = starknet.backend.block_view_on_confirmed(n) else {
-            break;
-        };
-        let block_info = block_view
-            .get_block_info()
-            .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {n}"))?;
-
-        if block_info.header.block_number != n {
-            let err = format!("Retrieved mismatched block {}, expected {n}", block_info.header.block_number);
-            return Err(StarknetWsApiError::internal_server_error(err));
-        }
-
-        send_block_header(&sink, block_info, n).await?;
-        block_n = block_n.saturating_add(1);
-    }
-
-    let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-    heads.set_start_from(block_n);
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
-    loop {
-        let next_block_n = tokio::select! {
-            head = heads.next_head() => head.latest_confirmed_block_n(),
-            reorg = reorgs.recv() => {
-                match reorg {
-                    Ok(reorg) => {
-                        super::send_reorg_notification(&sink, &reorg).await?;
-                        heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-                        heads.set_start_from(reorg.first_reverted_block_n);
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        return Err(super::missed_reorg_notifications_error());
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        return Err(crate::errors::StarknetWsApiError::Internal);
-                    }
-                }
-            },
-            _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
-        };
+    'backfill: loop {
+        loop {
+            if sink.is_closed() {
+                return Ok(());
+            }
 
-        let next_block_n =
-            next_block_n.expect("Confirmed block subscription should always yield a confirmed block number");
-        let block_view = starknet
-            .backend
-            .block_view_on_confirmed(next_block_n)
-            .ok_or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
-        let block_info = block_view
-            .get_block_info()
-            .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
-        send_block_header(&sink, block_info, next_block_n).await?;
+            match reorgs.try_recv() {
+                Ok(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                    return Err(super::missed_reorg_notifications_error());
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    return Err(crate::errors::StarknetWsApiError::Internal);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+            }
+
+            let Some(block_view) = starknet.backend.block_view_on_confirmed(block_n) else {
+                break;
+            };
+            let block_info = block_view
+                .get_block_info()
+                .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {block_n}"))?;
+
+            if block_info.header.block_number != block_n {
+                let err = format!("Retrieved mismatched block {}, expected {block_n}", block_info.header.block_number);
+                return Err(StarknetWsApiError::internal_server_error(err));
+            }
+
+            send_block_header(&sink, block_info, block_n).await?;
+            block_n = block_n.saturating_add(1);
+        }
+
+        let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
+        heads.set_start_from(block_n);
+
+        loop {
+            let next_block_n = tokio::select! {
+                head = heads.next_head() => head.latest_confirmed_block_n(),
+                reorg = reorgs.recv() => {
+                    match reorg {
+                        Ok(reorg) => {
+                            super::send_reorg_notification(&sink, &reorg).await?;
+                            block_n = reorg.first_reverted_block_n;
+                            continue 'backfill;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            return Err(super::missed_reorg_notifications_error());
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            return Err(crate::errors::StarknetWsApiError::Internal);
+                        }
+                    }
+                },
+                _ = sink.closed() => return Ok(()),
+                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+            };
+
+            let next_block_n =
+                next_block_n.expect("Confirmed block subscription should always yield a confirmed block number");
+            let block_view =
+                starknet.backend.block_view_on_confirmed(next_block_n).ok_or_else_internal_server_error(|| {
+                    format!("Failed to retrieve block info for block {next_block_n}")
+                })?;
+            let block_info = block_view
+                .get_block_info()
+                .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
+            send_block_header(&sink, block_info, next_block_n).await?;
+        }
     }
 }
 
@@ -336,5 +353,70 @@ mod test {
             serde_json::from_value(next).expect("Failed to deserialize block header item");
 
         assert_eq!(item.result, new_block_1);
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_new_heads_reorg_during_backfill(
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
+    ) {
+        const BACKFILL_BLOCKS: u64 = 1_025;
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_9_0Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut block_0_hash = Felt::ZERO;
+        let mut block_1_hash = Felt::ZERO;
+        let mut previous_head_hash = Felt::ZERO;
+        for n in 0..BACKFILL_BLOCKS {
+            let (block_hash, _header) = add_block_at(&backend, n);
+            if n == 0 {
+                block_0_hash = block_hash;
+            } else if n == 1 {
+                block_1_hash = block_hash;
+            }
+            previous_head_hash = block_hash;
+        }
+
+        let mut sub = raw_subscribe_new_heads(&client, BlockId::Number(0)).await;
+        backend.revert_to(&block_0_hash).expect("Revert should succeed");
+
+        let expected_reorg = serde_json::to_value(mp_rpc::v0_9_0::ReorgData {
+            starting_block_hash: block_1_hash,
+            starting_block_number: 1,
+            ending_block_hash: previous_head_hash,
+            ending_block_number: BACKFILL_BLOCKS - 1,
+        })
+        .expect("Failed to serialize expected reorg notification");
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let next = sub
+                    .next()
+                    .await
+                    .expect("Subscription closed unexpectedly")
+                    .expect("Failed to retrieve backfill item");
+
+                if next == expected_reorg {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("Timed out waiting for reorg notification after replay backfill");
+
+        let (_replacement_hash, replacement_head) = add_block_at(&backend, 1);
+
+        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for replacement head")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve replacement head");
+        let item: super::super::SubscriptionItem<BlockHeader> =
+            serde_json::from_value(next).expect("Failed to deserialize replacement head");
+
+        assert_eq!(item.result, replacement_head);
     }
 }

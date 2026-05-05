@@ -48,64 +48,81 @@ pub async fn subscribe_new_heads(
         }
     };
 
-    for n in block_n.. {
-        if sink.is_closed() {
-            return Ok(());
-        }
-
-        let Some(block_view) = starknet.backend.block_view_on_confirmed(n) else {
-            break;
-        };
-        let block_info = block_view
-            .get_block_info()
-            .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {n}"))?;
-
-        if block_info.header.block_number != n {
-            let err = format!("Retrieved mismatched block {}, expected {n}", block_info.header.block_number);
-            return Err(StarknetWsApiError::internal_server_error(err));
-        }
-
-        send_block_header(&sink, block_info, n).await?;
-        block_n = block_n.saturating_add(1);
-    }
-
-    let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-    heads.set_start_from(block_n);
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
-    loop {
-        let next_block_n = tokio::select! {
-            head = heads.next_head() => head.latest_confirmed_block_n(),
-            reorg = reorgs.recv() => {
-                match reorg {
-                    Ok(reorg) => {
-                        super::send_reorg_notification(&sink, &reorg).await?;
-                        heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
-                        heads.set_start_from(reorg.first_reverted_block_n);
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        return Err(super::missed_reorg_notifications_error());
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        return Err(crate::errors::StarknetWsApiError::Internal);
-                    }
-                }
-            },
-            _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
-        };
+    'backfill: loop {
+        loop {
+            if sink.is_closed() {
+                return Ok(());
+            }
 
-        let next_block_n =
-            next_block_n.expect("Confirmed block subscription should always yield a confirmed block number");
-        let block_view = starknet
-            .backend
-            .block_view_on_confirmed(next_block_n)
-            .ok_or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
-        let block_info = block_view
-            .get_block_info()
-            .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
-        send_block_header(&sink, block_info, next_block_n).await?;
+            match reorgs.try_recv() {
+                Ok(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                    return Err(super::missed_reorg_notifications_error());
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    return Err(crate::errors::StarknetWsApiError::Internal);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+            }
+
+            let Some(block_view) = starknet.backend.block_view_on_confirmed(block_n) else {
+                break;
+            };
+            let block_info = block_view
+                .get_block_info()
+                .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {block_n}"))?;
+
+            if block_info.header.block_number != block_n {
+                let err = format!("Retrieved mismatched block {}, expected {block_n}", block_info.header.block_number);
+                return Err(StarknetWsApiError::internal_server_error(err));
+            }
+
+            send_block_header(&sink, block_info, block_n).await?;
+            block_n = block_n.saturating_add(1);
+        }
+
+        let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
+        heads.set_start_from(block_n);
+
+        loop {
+            let next_block_n = tokio::select! {
+                head = heads.next_head() => head.latest_confirmed_block_n(),
+                reorg = reorgs.recv() => {
+                    match reorg {
+                        Ok(reorg) => {
+                            super::send_reorg_notification(&sink, &reorg).await?;
+                            block_n = reorg.first_reverted_block_n;
+                            continue 'backfill;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            return Err(super::missed_reorg_notifications_error());
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            return Err(crate::errors::StarknetWsApiError::Internal);
+                        }
+                    }
+                },
+                _ = sink.closed() => return Ok(()),
+                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+            };
+
+            let next_block_n =
+                next_block_n.expect("Confirmed block subscription should always yield a confirmed block number");
+            let block_view =
+                starknet.backend.block_view_on_confirmed(next_block_n).ok_or_else_internal_server_error(|| {
+                    format!("Failed to retrieve block info for block {next_block_n}")
+                })?;
+            let block_info = block_view
+                .get_block_info()
+                .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
+            send_block_header(&sink, block_info, next_block_n).await?;
+        }
     }
 }
 

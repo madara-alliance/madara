@@ -211,6 +211,10 @@ impl<D: MadaraStorageRead> SubscribeReorgs<D> {
     pub async fn recv(&mut self) -> Result<ReorgNotification, tokio::sync::broadcast::error::RecvError> {
         self.subscription.recv().await
     }
+
+    pub fn try_recv(&mut self) -> Result<ReorgNotification, tokio::sync::broadcast::error::TryRecvError> {
+        self.subscription.try_recv()
+    }
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
