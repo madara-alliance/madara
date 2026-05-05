@@ -1036,6 +1036,34 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     Ok(rpc_api)
 }
 
+struct WsSubscriptionHandle {
+    cancelled: std::sync::atomic::AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl WsSubscriptionHandle {
+    fn new() -> Self {
+        Self { cancelled: std::sync::atomic::AtomicBool::new(false), notify: tokio::sync::Notify::new() }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        self.notify.notified().await;
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
 pub(crate) struct WsSubscribeHandles {
     /// Keeps track of all ws connection handles.
     ///
@@ -1065,7 +1093,7 @@ pub(crate) struct WsSubscribeHandles {
     /// [DashMap]: dashmap::DashMap
     /// [DashMap::entry]: dashmap::DashMap::entry
     /// [Arc]: std::sync::Arc
-    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscribeHandles {
@@ -1083,7 +1111,7 @@ impl WsSubscribeHandles {
             }
         };
 
-        let handle = std::sync::Arc::new(tokio::sync::Notify::new());
+        let handle = std::sync::Arc::new(WsSubscriptionHandle::new());
         let map = std::sync::Arc::clone(&self.handles);
 
         self.handles.insert(id, std::sync::Arc::clone(&handle));
@@ -1093,7 +1121,7 @@ impl WsSubscribeHandles {
 
     pub async fn subscription_close(&self, id: u64) -> bool {
         if let Some((_, handle)) = self.handles.remove(&id) {
-            handle.notify_one();
+            handle.cancel();
             true
         } else {
             false
@@ -1105,16 +1133,36 @@ pub(crate) struct WsSubscriptionGuard {
     id: u64,
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
-    handle: std::sync::Arc<tokio::sync::Notify>,
-    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    handle: std::sync::Arc<WsSubscriptionHandle>,
+    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscriptionGuard {
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
     pub async fn cancelled(&self) {
-        self.handle.notified().await
+        self.handle.cancelled().await
     }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.handle.is_cancelled()
+    }
+}
+
+pub(crate) async fn close_ws_subscription(
+    starknet: &Starknet,
+    subscription_id: jsonrpsee::types::SubscriptionId<'_>,
+    parse_error_context: &'static str,
+) -> Result<(), errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    let subscription_id = match subscription_id {
+        jsonrpsee::types::SubscriptionId::Num(id) => id,
+        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(parse_error_context)?,
+    };
+
+    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
+    Ok(())
 }
 
 impl Drop for WsSubscriptionGuard {
