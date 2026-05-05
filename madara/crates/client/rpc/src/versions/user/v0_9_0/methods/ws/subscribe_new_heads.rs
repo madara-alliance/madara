@@ -55,6 +55,9 @@ pub async fn subscribe_new_heads(
             if sink.is_closed() {
                 return Ok(());
             }
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
 
             match reorgs.try_recv() {
                 Ok(reorg) => {
@@ -81,6 +84,9 @@ pub async fn subscribe_new_heads(
             if block_info.header.block_number != block_n {
                 let err = format!("Retrieved mismatched block {}, expected {block_n}", block_info.header.block_number);
                 return Err(StarknetWsApiError::internal_server_error(err));
+            }
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
             }
 
             send_block_header(&sink, block_info, block_n).await?;
