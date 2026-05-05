@@ -56,3 +56,9 @@ pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {
         "Missed reorg notifications; websocket subscription can no longer guarantee canonical state",
     )
 }
+
+pub fn missed_received_transaction_notifications_error() -> crate::errors::StarknetWsApiError {
+    crate::errors::StarknetWsApiError::internal_server_error(
+        "Missed new-transaction notifications; websocket subscription can no longer guarantee received transaction updates",
+    )
+}

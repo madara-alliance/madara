@@ -95,8 +95,12 @@ async fn next_matching_transaction(
             next = watch.recv() => next,
         };
 
-        let Some(tx) = next else {
-            return Ok(None);
+        let tx = match next {
+            Ok(Some(tx)) => tx,
+            Ok(None) => return Ok(None),
+            Err(crate::NewTransactionsWatchError::Lagged) => {
+                return Err(super::missed_received_transaction_notifications_error());
+            }
         };
 
         if sender_address.contains(&tx.contract_address) {

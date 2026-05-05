@@ -79,11 +79,11 @@ async fn subscribe_new_transactions_inner(
             received = async {
                 match &mut received_watch {
                     Some(watch) => watch.recv().await,
-                    None => pending::<Option<Arc<ValidatedTransaction>>>().await,
+                    None => pending::<Result<Option<Arc<ValidatedTransaction>>, crate::NewTransactionsWatchError>>().await,
                 }
             } => {
                 match received {
-                    Some(tx) => {
+                    Ok(Some(tx)) => {
                         send_validated_transaction(
                             &sink,
                             tx.as_ref(),
@@ -93,8 +93,11 @@ async fn subscribe_new_transactions_inner(
                             &mut emitted,
                         ).await?;
                     }
-                    None => {
+                    Ok(None) => {
                         received_watch = None;
+                    }
+                    Err(crate::NewTransactionsWatchError::Lagged) => {
+                        return Err(super::missed_received_transaction_notifications_error());
                     }
                 }
             }
