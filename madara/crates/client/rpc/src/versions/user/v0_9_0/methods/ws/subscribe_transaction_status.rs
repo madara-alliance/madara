@@ -99,6 +99,8 @@ async fn send_txn_status(
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let status = match snapshot {
         crate::TxStatusSnapshot::Received => mp_rpc::v0_9_0::TxnStatus::Received,
+        crate::TxStatusSnapshot::Candidate => mp_rpc::v0_9_0::TxnStatus::Candidate,
+        crate::TxStatusSnapshot::PreConfirmed => mp_rpc::v0_9_0::TxnStatus::PreConfirmed,
         crate::TxStatusSnapshot::AcceptedOnL2 => mp_rpc::v0_9_0::TxnStatus::AcceptedOnL2,
         crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_9_0::TxnStatus::AcceptedOnL1,
     };
@@ -223,6 +225,22 @@ mod test {
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
             Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Received);
+            }
+        );
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
+            Some(Ok(SubscriptionItem { result: status, .. })) => {
+                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Candidate);
+            }
+        );
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
+            Some(Ok(SubscriptionItem { result: status, .. })) => {
+                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::PreConfirmed);
             }
         );
 

@@ -391,21 +391,37 @@ mod test {
             .expect("Failed to retrieve received status");
         assert_eq!(first.result, mp_rpc::v0_10_2::TxnStatus::Received);
 
-        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
         let second = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for candidate status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve candidate status");
+        assert_eq!(second.result, mp_rpc::v0_10_2::TxnStatus::Candidate);
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
+        let third = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for pre-confirmed status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve pre-confirmed status");
+        assert_eq!(third.result, mp_rpc::v0_10_2::TxnStatus::PreConfirmed);
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        let fourth = tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
             .expect("Timed out waiting for L2 status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve L2 status");
-        assert_eq!(second.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
+        assert_eq!(fourth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
-        let third = tokio::time::timeout(Duration::from_secs(5), sub.next())
+        let fifth = tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
             .expect("Timed out waiting for L1 status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve L1 status");
-        assert_eq!(third.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1);
+        assert_eq!(fifth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1);
     }
 
     #[tokio::test]
