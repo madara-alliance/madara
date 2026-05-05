@@ -12,18 +12,12 @@ use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
-/// for blocks before 2597 on mainnet new classes are not declared in the state update
-/// https://github.com/madara-alliance/madara/issues/233
+/// Some historical mainnet gateway state updates omitted legacy class declarations.
+/// Keep an explicit repair table keyed by block number.
 fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut HashMap<Felt, DeclaredClassCompiledClass>) {
-    if block_n < 2597 {
-        classes_from_state_diff.extend(
-            MISSED_CLASS_HASHES
-                .get(&block_n)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|hash| (hash, DeclaredClassCompiledClass::Legacy)),
-        )
+    if let Some(class_hashes) = MISSED_CLASS_HASHES.get(&block_n) {
+        classes_from_state_diff
+            .extend(class_hashes.iter().copied().map(|hash| (hash, DeclaredClassCompiledClass::Legacy)))
     }
 }
 
