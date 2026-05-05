@@ -891,9 +891,9 @@ impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
     }
 }
 
-impl<D: mc_db::MadaraStorageRead> TxStatusWatcher for Arc<Mempool<D>> {
+impl<D: mc_db::MadaraStorageRead> TxStatusWatcher for Mempool<D> {
     fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
-        let watch = Arc::clone(self).watch_transaction_status(transaction_hash).ok()?;
+        let watch = self.watch_transaction_status(transaction_hash).ok()?;
         Some(Box::new(watch))
     }
 }
@@ -905,18 +905,16 @@ struct BroadcastNewTransactionsWatch {
 impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<Arc<ValidatedTransaction>>> + Send + '_>> {
         Box::pin(async move {
-            loop {
-                match self.receiver.recv().await {
-                    Ok(tx) => return Some(tx),
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
-                }
+            match self.receiver.recv().await {
+                Ok(tx) => Some(tx),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => None,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
             }
         })
     }
 }
 
-impl<D: mc_db::MadaraStorageRead + mc_db::MadaraStorageWrite> NewTransactionsWatcher for Arc<Mempool<D>> {
+impl<D: mc_db::MadaraStorageRead + mc_db::MadaraStorageWrite> NewTransactionsWatcher for Mempool<D> {
     fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
         Some(Box::new(BroadcastNewTransactionsWatch { receiver: self.subscribe_new_transactions() }))
     }
