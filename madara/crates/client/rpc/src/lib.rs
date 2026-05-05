@@ -826,6 +826,8 @@ impl Default for StorageProofConfig {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TxStatusSnapshot {
     Received,
+    Candidate,
+    PreConfirmed,
     AcceptedOnL2,
     AcceptedOnL1,
 }
@@ -852,9 +854,8 @@ impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
         let snapshot = match WatchTransactionStatus::current(self).clone() {
             Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
                 PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
-                PreConfirmationStatus::Candidate { .. } | PreConfirmationStatus::Executed { .. } => {
-                    Some(TxStatusSnapshot::AcceptedOnL2)
-                }
+                PreConfirmationStatus::Candidate { .. } => Some(TxStatusSnapshot::Candidate),
+                PreConfirmationStatus::Executed { .. } => Some(TxStatusSnapshot::PreConfirmed),
             },
             Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
                 if is_on_l1 {
@@ -874,9 +875,8 @@ impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
             match WatchTransactionStatus::recv(self).await.clone() {
                 Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
                     PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
-                    PreConfirmationStatus::Candidate { .. } | PreConfirmationStatus::Executed { .. } => {
-                        Some(TxStatusSnapshot::AcceptedOnL2)
-                    }
+                    PreConfirmationStatus::Candidate { .. } => Some(TxStatusSnapshot::Candidate),
+                    PreConfirmationStatus::Executed { .. } => Some(TxStatusSnapshot::PreConfirmed),
                 },
                 Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
                     if is_on_l1 {
