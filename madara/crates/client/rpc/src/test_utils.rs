@@ -36,7 +36,7 @@ use mp_transactions::{validated::TxTimestamp, InvokeTransaction, InvokeTransacti
 use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
 pub struct TestTransactionProvider;
@@ -83,8 +83,7 @@ impl TransactionLookup for TestTransactionProvider {
 
 #[cfg(test)]
 pub struct TestTxStatusWatcher {
-    sender: tokio::sync::watch::Sender<Option<TxStatusSnapshot>>,
-    _receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
+    sender: Mutex<Option<tokio::sync::watch::Sender<Option<TxStatusSnapshot>>>>,
 }
 
 #[cfg(test)]
@@ -105,12 +104,18 @@ pub struct TestNewTransactionsWatch {
 #[cfg(test)]
 impl TestTxStatusWatcher {
     pub fn new() -> Arc<Self> {
-        let (sender, receiver) = tokio::sync::watch::channel(None);
-        Arc::new(Self { sender, _receiver: receiver })
+        let (sender, _receiver) = tokio::sync::watch::channel(None);
+        Arc::new(Self { sender: Mutex::new(Some(sender)) })
     }
 
     pub fn set_status(&self, status: Option<TxStatusSnapshot>) {
-        let _ = self.sender.send_replace(status);
+        if let Some(sender) = self.sender.lock().expect("Locking test tx status watcher").as_ref() {
+            let _ = sender.send_replace(status);
+        }
+    }
+
+    pub fn close(&self) {
+        let _ = self.sender.lock().expect("Locking test tx status watcher").take();
     }
 }
 
@@ -129,7 +134,8 @@ impl TestNewTransactionsWatcher {
 #[cfg(test)]
 impl TxStatusWatcher for TestTxStatusWatcher {
     fn watch_transaction_status(&self, _transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
-        Some(Box::new(TestTxStatusWatch { receiver: self.sender.subscribe() }))
+        let receiver = self.sender.lock().expect("Locking test tx status watcher").as_ref()?.subscribe();
+        Some(Box::new(TestTxStatusWatch { receiver }))
     }
 }
 
