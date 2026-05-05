@@ -1,4 +1,5 @@
 pub mod admin_routes;
+pub mod block_routes;
 pub mod job_routes;
 pub mod jobs_by_status;
 use crate::tests::config::{ConfigType, TestConfigBuilder};

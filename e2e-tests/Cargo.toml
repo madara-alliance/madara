@@ -13,7 +13,7 @@ alloy = { workspace = true, features = [
   "rpc-client",
 ] }
 alloy-primitives = { workspace = true, default-features = false }
-alloy-sol-types = "0.8.5"
+alloy-sol-types = { workspace = true }
 async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-eventbridge = { workspace = true }

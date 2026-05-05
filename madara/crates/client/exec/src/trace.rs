@@ -10,7 +10,7 @@ use mp_rpc::{
 };
 use starknet_api::executable_transaction::TransactionType;
 use starknet_api::transaction::fields::GasVectorComputationMode;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -88,7 +88,7 @@ impl FunctionInvocation {
                 l2_gas: gas_consumed.l2_gas.0.into(),
             },
             is_reverted: call_info.execution.failed,
-            computation_resources: computation_resources_v0_7(&call_info.resources),
+            computation_resources: computation_resources_v0_7(&call_info.resources.vm_resources),
         }
     }
 
@@ -531,7 +531,7 @@ fn computation_resources_v0_7(
 }
 
 fn resources_mapping(
-    builtin_mapping: &HashMap<BuiltinName, usize>,
+    builtin_mapping: &BTreeMap<BuiltinName, usize>,
     steps: u64,
     memory_holes: u64,
 ) -> mp_rpc::v0_7_1::ComputationResources {

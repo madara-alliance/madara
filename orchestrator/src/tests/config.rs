@@ -1,3 +1,4 @@
+use crate::cli::snos::parse_constants;
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockClient, MockLockClient};
@@ -24,7 +25,6 @@ use crate::types::Layer;
 use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
-use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 
@@ -43,11 +43,13 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use starknet_core::types::Felt;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
+
+use orchestrator_utils::test_utils::pem_from_env;
+
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
@@ -731,13 +733,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
-    let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
+    let versioned_constants = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
         .expect("Couldn't get versioned constants path")
-        .map(PathBuf::from);
-
-    let versioned_constants = versioned_constants_path
-        .as_ref()
-        .map(|path| VersionedConstants::from_path(path).expect("Invalid versioned constant file"));
+        .map(|path| parse_constants(&path).expect("Failed to parse versioned constants path"));
 
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
@@ -800,6 +798,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS")
+        .expect("Couldn't get max concurrent aggregator jobs");
+    let max_concurrent_aggregator_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
     let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
@@ -810,6 +813,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        max_concurrent_aggregator_jobs,
         snos_job_timeout_seconds: 3600,           // 1 hour for SNOS jobs
         proving_job_timeout_seconds: 1800,        // 30 minutes for proving jobs
         proof_registration_timeout_seconds: 1800, // 30 minutes for proof registration
@@ -817,6 +821,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
         aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
+        aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,
     };
 
@@ -863,12 +868,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
         sharp_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_URL"),
-        sharp_user_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
-        sharp_user_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
+        sharp_user_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_CRT"),
+        sharp_user_key: pem_from_env("MADARA_ORCHESTRATOR_SHARP_USER_KEY"),
         sharp_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL"),
-        sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
-        sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
+        sharp_server_crt: pem_from_env("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
         sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     });

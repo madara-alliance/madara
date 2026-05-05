@@ -890,6 +890,79 @@ async fn test_get_aggregator_batch_for_block(
     assert_eq!(retrieved_batch2.index, 2);
 }
 
+/// Test for `get_block_batch_lookup` after creating aggregator and SNOS batches.
+#[rstest]
+#[tokio::test]
+async fn test_get_block_batch_lookup() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    let aggregator_batch = build_batch(1, 100, 109);
+
+    let mut first_snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+    first_snos_batch.end_block = 104;
+    first_snos_batch.num_blocks = 5;
+
+    let mut second_snos_batch = build_snos_batch(22, Some(aggregator_batch.index), 105);
+    second_snos_batch.end_block = 109;
+    second_snos_batch.num_blocks = 5;
+
+    database_client.create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    database_client.create_snos_batch(first_snos_batch.clone()).await.unwrap();
+    database_client.create_snos_batch(second_snos_batch.clone()).await.unwrap();
+
+    let first_lookup = database_client.get_block_batch_lookup(102).await.unwrap().unwrap();
+    assert_eq!(first_lookup.block_number, 102);
+    assert_eq!(first_lookup.aggregator_batch_index, Some(aggregator_batch.index));
+    assert_eq!(first_lookup.snos_batch_index, Some(first_snos_batch.index));
+    assert!(first_lookup.created_at.is_some());
+
+    let second_lookup = database_client.get_block_batch_lookup(107).await.unwrap().unwrap();
+    assert_eq!(second_lookup.block_number, 107);
+    assert_eq!(second_lookup.aggregator_batch_index, Some(aggregator_batch.index));
+    assert_eq!(second_lookup.snos_batch_index, Some(second_snos_batch.index));
+    assert!(second_lookup.created_at.is_some());
+
+    let missing_lookup = database_client.get_block_batch_lookup(500).await.unwrap();
+    assert!(missing_lookup.is_none());
+}
+
+/// Test for reverse lookup maintenance when batch ranges grow over time.
+#[rstest]
+#[tokio::test]
+async fn test_get_block_batch_lookup_after_batch_updates() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    let aggregator_batch = build_batch(1, 100, 100);
+    let snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+
+    database_client.create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    database_client.create_snos_batch(snos_batch.clone()).await.unwrap();
+
+    let mut expanded_aggregator_batch = aggregator_batch.clone();
+    expanded_aggregator_batch.end_block = 103;
+    expanded_aggregator_batch.num_blocks = 4;
+
+    let mut expanded_snos_batch = snos_batch.clone();
+    expanded_snos_batch.end_block = 103;
+    expanded_snos_batch.num_blocks = 4;
+
+    database_client
+        .update_or_create_aggregator_batch(&expanded_aggregator_batch, &AggregatorBatchUpdates::default())
+        .await
+        .unwrap();
+    database_client.update_or_create_snos_batch(&expanded_snos_batch, &Default::default()).await.unwrap();
+
+    let lookup = database_client.get_block_batch_lookup(103).await.unwrap().unwrap();
+    assert_eq!(lookup.block_number, 103);
+    assert_eq!(lookup.aggregator_batch_index, Some(aggregator_batch.index));
+    assert_eq!(lookup.snos_batch_index, Some(snos_batch.index));
+    assert!(lookup.created_at.is_some());
+}
+
 /// Test for `get_aggregator_batches_by_status` operation in database trait.
 /// Creates aggregator batches with different statuses and versions, tests filtering.
 #[rstest]

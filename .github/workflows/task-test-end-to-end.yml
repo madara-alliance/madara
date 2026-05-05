@@ -55,7 +55,7 @@ jobs:
       - name: Download and extract Pathfinder binary
         run: |
           mkdir -p target/release/
-          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-x86_64-unknown-linux-gnu.tar.gz
+          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.22.3-karnot.1/pathfinder-x86_64-unknown-linux-gnu.tar.gz
           tar -xf pathfinder.tar.gz -C target/release/
           rm pathfinder.tar.gz
 

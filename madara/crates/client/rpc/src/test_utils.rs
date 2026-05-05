@@ -18,9 +18,10 @@ use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
 #[cfg(test)]
+use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
+#[cfg(test)]
 use mp_rpc::v0_9_0::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_rpc::{admin::BroadcastedDeclareTxnV0, v0_9_0::ExecutionStatus};
 use mp_state_update::{

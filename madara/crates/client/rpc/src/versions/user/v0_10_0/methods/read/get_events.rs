@@ -1,10 +1,9 @@
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::types::ContinuationToken;
+use crate::types::{continuation_token_from_page, ContinuationToken};
 use crate::Starknet;
 use anyhow::Context;
 use mc_db::EventFilter;
-use mp_block::EventWithInfo;
 use mp_rpc::v0_10_0::{EventFilterWithPageRequest, EventsChunk};
 
 /// Returns events matching the filter with pagination support.
@@ -20,7 +19,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     if keys.as_ref().map(|k| k.iter().map(|pattern| pattern.len()).sum()).unwrap_or(0) > MAX_EVENTS_KEYS {
         return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
-    if chunk_size > MAX_EVENTS_CHUNK_SIZE {
+    if chunk_size == 0 || chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
@@ -33,7 +32,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         None => view.latest_block_n().unwrap_or(0),
     };
 
-    let continuation_token = match filter.continuation_token {
+    let requested_continuation_token = match filter.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?,
         None => ContinuationToken { block_number: from_block_n, event_n: 0 },
     };
@@ -42,8 +41,8 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         return Ok(EventsChunk { events: vec![], continuation_token: None });
     }
 
-    let from_block = continuation_token.block_number;
-    let from_event_n = continuation_token.event_n as usize;
+    let from_block = requested_continuation_token.block_number;
+    let from_event_n = requested_continuation_token.event_n as usize;
 
     let mut events_infos = view
         .get_events(EventFilter {
@@ -56,11 +55,9 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         })
         .context("Error getting filtered events")?;
 
-    let mut continuation_token = None;
-    if events_infos.len() > chunk_size {
-        continuation_token = events_infos.pop().map(|EventWithInfo { block_number, event_index_in_block, .. }| {
-            ContinuationToken { block_number, event_n: (event_index_in_block + 1) }
-        });
+    let continuation_token = continuation_token_from_page(&events_infos, chunk_size, &requested_continuation_token);
+    if continuation_token.is_some() {
+        events_infos.truncate(chunk_size);
     }
 
     Ok(EventsChunk {

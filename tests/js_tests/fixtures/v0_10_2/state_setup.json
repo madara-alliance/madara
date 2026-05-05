@@ -1,0 +1,119 @@
+{
+  "version": "0.10.2",
+  "steps": [
+    {
+      "id": "declare_hello",
+      "type": "declare",
+      "contract": "madara_contracts_HelloStarknet",
+      "close_block": true
+    },
+    {
+      "id": "deploy_hello",
+      "type": "deploy",
+      "class_hash": "$ref:declare_hello.class_hash",
+      "constructor_calldata": [],
+      "salt": "0x1234",
+      "unique": true,
+      "close_block": true
+    },
+    {
+      "id": "invoke_increase_42",
+      "type": "invoke",
+      "contract_address": "$ref:deploy_hello.contract_address",
+      "entry_point": "increase_balance",
+      "calldata": ["0x2a"],
+      "close_block": false
+    },
+    {
+      "id": "invoke_increase_100",
+      "type": "invoke",
+      "contract_address": "$ref:deploy_hello.contract_address",
+      "entry_point": "increase_balance",
+      "calldata": ["0x64"],
+      "close_block": true
+    },
+    {
+      "id": "transfer_strk",
+      "type": "invoke",
+      "contract_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+      "entry_point": "transfer",
+      "calldata": ["0x2", "0x174876e800", "0x0"],
+      "close_block": true
+    },
+    {
+      "id": "declare_test_account",
+      "type": "declare",
+      "contract": "madara_contracts_TestContract",
+      "close_block": true
+    },
+    {
+      "id": "deploy_new_account",
+      "type": "deploy_account",
+      "class_hash": "$ref:declare_test_account.class_hash",
+      "private_key": "0x0a2b1c3d4e5f6a7b8c9d0e1f2a3b4c5d",
+      "constructor_calldata": ["$self.public_key"],
+      "fund_amount": "0x2386f26fc10000",
+      "close_block": true
+    },
+    {
+      "id": "declare_state_update",
+      "type": "declare",
+      "contract": "madara_contracts_StateUpdateContract",
+      "close_block": true
+    },
+    {
+      "id": "deploy_state_update",
+      "type": "deploy",
+      "class_hash": "$ref:declare_state_update.class_hash",
+      "constructor_calldata": [],
+      "salt": "0x5678",
+      "unique": true,
+      "close_block": true
+    },
+    {
+      "id": "invoke_update_state",
+      "type": "invoke",
+      "contract_address": "$ref:deploy_state_update.contract_address",
+      "entry_point": "update_state",
+      "calldata": ["0x1", "0xdead", "0xbeef"],
+      "close_block": true
+    },
+    {
+      "id": "declare_messaging",
+      "type": "declare",
+      "contract": "madara_contracts_MessagingContract",
+      "close_block": true
+    },
+    {
+      "id": "deploy_messaging",
+      "type": "deploy",
+      "class_hash": "$ref:declare_messaging.class_hash",
+      "constructor_calldata": [],
+      "salt": "0x9abc",
+      "unique": true,
+      "close_block": true
+    },
+    {
+      "id": "invoke_fire_event",
+      "type": "invoke",
+      "contract_address": "$ref:deploy_messaging.contract_address",
+      "entry_point": "fire_event",
+      "calldata": [],
+      "close_block": true
+    },
+    {
+      "id": "l1_handler_call",
+      "type": "l1_handler",
+      "contract_address": "$ref:deploy_new_account.contract_address",
+      "entry_point": "l1_handler_entrypoint",
+      "calldata": ["0xdeadbeef", "0x1", "0x2"],
+      "nonce": 0,
+      "paid_fee_on_l1": "30000",
+      "close_block": true
+    },
+    {
+      "id": "empty_block",
+      "type": "close_block"
+    }
+  ]
+}

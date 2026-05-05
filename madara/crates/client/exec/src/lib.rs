@@ -37,7 +37,7 @@
 //! This allows block production to continue even while previous blocks are being saved to db
 //! asynchronously.
 //!
-//! ```no_run
+//! ```ignore
 //! let state_adapter = LayeredStateAdapter::new(backend.clone())?;
 //! let executor = backend.new_executor_for_block_production(state_adapter, block_info)?;
 //! ```
@@ -48,7 +48,7 @@
 //! operates on top of the pending block to ensure transactions are valid before adding them
 //! to the mempool.
 //!
-//! ```no_run
+//! ```ignore
 //! let validator = backend.new_transaction_validator()?;
 //! ```
 //!
@@ -60,7 +60,7 @@
 //! - **Block Start**: For tracing transaction execution without seeing state changes
 //! - **Block End**: For estimating fees and simulating transactions with full state visibility
 //!
-//! ```no_run
+//! ```ignore
 //! let exec_context = ExecutionContext::new_at_block_start(backend.clone(), block_info)?;
 //! let exec_context = ExecutionContext::new_at_block_end(backend.clone(), block_info)?;
 //! ```
@@ -150,10 +150,13 @@
 #![allow(clippy::result_large_err)]
 
 use blockifier::{
-    state::cached_state::CommitmentStateDiff,
+    state::cached_state::{CommitmentStateDiff, StateMaps},
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mp_chain_config::StarknetVersion;
+use mp_rpc::v0_10_2::{
+    InitialClassHashRead, InitialDeclaredContract, InitialNonceRead, InitialReads, InitialStorageRead,
+};
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
@@ -192,6 +195,12 @@ pub enum Error {
     CallContract(#[from] CallContractError),
     #[error("Internal error: {0:#}")]
     Internal(#[from] anyhow::Error),
+    #[error("Unsupported Starknet version {version}: {error}")]
+    UnsupportedStarknetVersion {
+        version: StarknetVersion,
+        #[source]
+        error: starknet_api::StarknetApiError,
+    },
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
 }
@@ -244,4 +253,90 @@ pub struct ExecutionResult {
     pub deployed_contracts: HashSet<Felt>,
     /// Class hash declared as deprecated (Cairo 0) by this transaction, if any.
     pub deprecated_declared_class: Option<Felt>,
+}
+
+pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {
+    InitialReads {
+        storage: state_maps
+            .storage
+            .into_iter()
+            .map(|((contract_address, key), value)| InitialStorageRead {
+                contract_address: Felt::from(contract_address),
+                key: Felt::from(key),
+                value,
+            })
+            .collect(),
+        nonces: state_maps
+            .nonces
+            .into_iter()
+            .map(|(contract_address, nonce)| InitialNonceRead {
+                contract_address: Felt::from(contract_address),
+                nonce: nonce.0,
+            })
+            .collect(),
+        class_hashes: state_maps
+            .class_hashes
+            .into_iter()
+            .map(|(contract_address, class_hash)| InitialClassHashRead {
+                contract_address: Felt::from(contract_address),
+                class_hash: Felt::from(class_hash),
+            })
+            .collect(),
+        declared_contracts: state_maps
+            .declared_contracts
+            .into_iter()
+            .map(|(class_hash, is_declared)| InitialDeclaredContract {
+                class_hash: Felt::from(class_hash),
+                is_declared,
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::state_maps_to_initial_reads;
+    use blockifier::state::cached_state::StateMaps;
+    use starknet_api::{
+        core::{ClassHash, ContractAddress, Nonce},
+        state::StorageKey,
+    };
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn state_maps_to_initial_reads_preserves_all_sections() {
+        let contract_address = ContractAddress::from(7_u16);
+        let storage_key = StorageKey::from(9_u32);
+        let storage_value = Felt::from(11_u64);
+        let nonce = Nonce(Felt::from(13_u64));
+        let class_hash = ClassHash(Felt::from(15_u64));
+        let declared_class_hash = ClassHash(Felt::from(17_u64));
+
+        let state_maps = StateMaps {
+            storage: [((contract_address, storage_key), storage_value)].into_iter().collect(),
+            nonces: [(contract_address, nonce)].into_iter().collect(),
+            class_hashes: [(contract_address, class_hash)].into_iter().collect(),
+            compiled_class_hashes: Default::default(),
+            declared_contracts: [(declared_class_hash, true)].into_iter().collect(),
+        };
+
+        let initial_reads = state_maps_to_initial_reads(state_maps);
+
+        assert_eq!(initial_reads.storage.len(), 1);
+        assert_eq!(initial_reads.storage[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.storage[0].key, Felt::from(storage_key));
+        assert_eq!(initial_reads.storage[0].value, storage_value);
+
+        assert_eq!(initial_reads.nonces.len(), 1);
+        assert_eq!(initial_reads.nonces[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.nonces[0].nonce, nonce.0);
+
+        assert_eq!(initial_reads.class_hashes.len(), 1);
+        assert_eq!(initial_reads.class_hashes[0].contract_address, Felt::from(contract_address));
+        assert_eq!(initial_reads.class_hashes[0].class_hash, Felt::from(class_hash));
+
+        assert_eq!(initial_reads.declared_contracts.len(), 1);
+        assert_eq!(initial_reads.declared_contracts[0].class_hash, Felt::from(declared_class_hash));
+        assert!(initial_reads.declared_contracts[0].is_declared);
+    }
 }

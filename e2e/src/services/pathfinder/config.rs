@@ -90,6 +90,17 @@ impl PathfinderConfig {
         &self.ethereum_url
     }
 
+    /// Pathfinder v0.22+ requires a WebSocket Ethereum endpoint.
+    pub fn ethereum_ws_url(&self) -> Url {
+        let mut url = self.ethereum_url().clone();
+        match url.scheme() {
+            "http" => url.set_scheme("ws").expect("valid WebSocket URL scheme"),
+            "https" => url.set_scheme("wss").expect("valid WebSocket URL scheme"),
+            _ => {}
+        }
+        url
+    }
+
     /// Get the database path
     pub fn database_path(&self) -> &PathBuf {
         &self.database_path
@@ -146,7 +157,7 @@ impl PathfinderConfig {
         let mut command = Command::new(binary_path);
 
         // Core arguments
-        command.arg("--ethereum.url").arg(self.ethereum_url().to_string());
+        command.arg("--ethereum.url").arg(self.ethereum_ws_url().to_string());
         command.arg("--data-directory").arg(&self.database_path);
         command.arg("--http-rpc").arg(format!("{}:{}", DEFAULT_SERVICE_HOST, self.port()));
         command.arg("--rpc.root-version").arg(self.rpc_root_version());

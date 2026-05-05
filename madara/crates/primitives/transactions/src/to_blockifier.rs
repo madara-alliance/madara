@@ -156,6 +156,73 @@ impl IntoStarknetApiExt for mp_rpc::v0_8_1::BroadcastedTxn {
     }
 }
 
+impl IntoStarknetApiExt for mp_rpc::v0_10_2::BroadcastedTxn {
+    fn into_starknet_api(
+        self,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        if starknet_version >= StarknetVersion::V0_14_0 && self.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion);
+        }
+
+        let (class_info, converted_class, class_hash) = match &self {
+            mp_rpc::v0_10_2::BroadcastedTxn::Declare(tx) => match tx {
+                mp_rpc::v0_10_2::BroadcastedDeclareTxn::V1(tx)
+                | mp_rpc::v0_10_2::BroadcastedDeclareTxn::QueryV1(tx) => {
+                    handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
+                }
+                mp_rpc::v0_10_2::BroadcastedDeclareTxn::V2(tx)
+                | mp_rpc::v0_10_2::BroadcastedDeclareTxn::QueryV2(tx) => handle_class_sierra(
+                    Arc::new((tx.contract_class).clone().into()),
+                    tx.compiled_class_hash,
+                    starknet_version,
+                )?,
+                mp_rpc::v0_10_2::BroadcastedDeclareTxn::V3(tx)
+                | mp_rpc::v0_10_2::BroadcastedDeclareTxn::QueryV3(tx) => handle_class_sierra(
+                    Arc::new((tx.contract_class).clone().into()),
+                    tx.compiled_class_hash,
+                    starknet_version,
+                )?,
+            },
+            _ => (None, None, None),
+        };
+
+        let TransactionWithHash { transaction, hash } =
+            TransactionWithHash::from_broadcasted_v0_10_2(self, chain_id, starknet_version, class_hash);
+        let deployed_address = match &transaction {
+            Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
+            _ => None,
+        };
+        let transaction = match transaction {
+            Transaction::Declare(tx) => ApiAccountTransaction::Declare(ApiDeclareTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                class_info: class_info.expect("BroadcastedDeclareTxn generate a ClassInfo"),
+            }),
+            Transaction::DeployAccount(tx) => ApiAccountTransaction::DeployAccount(ApiDeployAccountTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                contract_address: ContractAddress(
+                    deployed_address
+                        .expect("BroadcastedDeployAccount generate a DeployedAddress")
+                        .try_into()
+                        .expect("Calculated deployed_address is in bound"),
+                ),
+            }),
+            Transaction::Invoke(tx) => ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+            }),
+            Transaction::L1Handler(_) | Transaction::Deploy(_) => {
+                unreachable!("BroadcastedTxn can't be L1Handler or Deploy")
+            }
+        };
+
+        Ok((transaction, converted_class))
+    }
+}
+
 impl IntoStarknetApiExt for mp_rpc::v0_7_1::BroadcastedTxn {
     fn into_starknet_api(
         self,
@@ -352,4 +419,74 @@ fn handle_class_sierra(
     });
     let api_class_info = (&converted_class).try_into()?;
     Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{InvokeTransaction, Transaction};
+    use mp_rpc::v0_10_0::{DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
+
+    fn sample_broadcasted_invoke_v3(
+        proof: Option<Vec<u64>>,
+        proof_facts: Option<Vec<Felt>>,
+        query: bool,
+    ) -> mp_rpc::v0_10_2::BroadcastedTxn {
+        let tx = mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
+            inner: InvokeTxnV3 {
+                sender_address: Felt::ONE,
+                calldata: vec![Felt::TWO, Felt::THREE].into(),
+                signature: vec![Felt::from(4_u64)].into(),
+                nonce: Felt::from(5_u64),
+                resource_bounds: ResourceBoundsMapping {
+                    l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
+                    l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                    l1_data_gas: ResourceBounds { max_amount: 5, max_price_per_unit: 6 },
+                },
+                tip: 7,
+                paymaster_data: vec![],
+                account_deployment_data: vec![],
+                nonce_data_availability_mode: DaMode::L1,
+                fee_data_availability_mode: DaMode::L1,
+            },
+            proof,
+            proof_facts,
+        };
+
+        if query {
+            mp_rpc::v0_10_2::BroadcastedTxn::Invoke(mp_rpc::v0_10_2::BroadcastedInvokeTxn::QueryV3(tx))
+        } else {
+            mp_rpc::v0_10_2::BroadcastedTxn::Invoke(mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(tx))
+        }
+    }
+
+    #[test]
+    fn v0_10_2_into_starknet_api_preserves_invoke_v3_proof_inputs_in_hash_and_context() {
+        let chain_id = Felt::from_hex_unchecked("0x534e5f5345504f4c4941");
+        let version = StarknetVersion::LATEST;
+        let explicit_facts =
+            vec![Felt::from_hex_unchecked("0x50524f4f4630"), Felt::from_hex_unchecked("0x5649525455414c5f534e4f53")];
+        let cases = [
+            (Some(vec![11, 12]), None, vec![Felt::from(11_u64), Felt::from(12_u64)]),
+            (Some(vec![11, 12]), Some(explicit_facts.clone()), explicit_facts.clone()),
+        ];
+
+        for (proof, proof_facts, expected_proof_facts) in cases {
+            let tx = sample_broadcasted_invoke_v3(proof, proof_facts, false);
+            let expected_hash = match tx.clone() {
+                mp_rpc::v0_10_2::BroadcastedTxn::Invoke(invoke_tx) => {
+                    Transaction::Invoke(InvokeTransaction::from(invoke_tx)).compute_hash(chain_id, version, false)
+                }
+                _ => panic!("expected invoke transaction"),
+            };
+
+            let (api_tx, _) = tx.into_starknet_api(chain_id, version).expect("conversion should succeed");
+            let ApiAccountTransaction::Invoke(api_invoke) = api_tx else {
+                panic!("expected invoke api transaction");
+            };
+
+            assert_eq!(api_invoke.tx_hash.0, expected_hash);
+            assert_eq!(api_invoke.tx.proof_facts().0.as_ref().as_slice(), expected_proof_facts.as_slice());
+        }
+    }
 }

@@ -471,6 +471,7 @@ mod tests {
             sierra_gas: GasAmount(0),
             n_txs: 0,
             proving_gas: GasAmount(0),
+            receipt_l2_gas: GasAmount(0),
         }
     }
 
@@ -489,6 +490,7 @@ mod tests {
                 sierra_gas: GasAmount(1_000_000_000),
                 n_txs: 1_000_000,
                 proving_gas: GasAmount(1_000_000_000),
+                receipt_l2_gas: GasAmount(2_500_000_000),
             },
         )
     }

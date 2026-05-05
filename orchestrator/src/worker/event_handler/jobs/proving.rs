@@ -111,28 +111,22 @@ impl JobHandlerTrait for ProvingJobHandler {
             })?
             .into();
 
-        // Determine if we need on-chain verification
-        let (cross_verify, fact) = match &proving_metadata.ensure_on_chain_registration {
-            Some(fact_str) => (true, Some(fact_str.clone())),
-            None => (false, None),
-        };
+        let fact = proving_metadata.ensure_on_chain_registration.clone();
 
         debug!(
             %task_id,
-            cross_verify,
+            has_fact = fact.is_some(),
             "Getting task status from prover client"
         );
 
         let task_status =
-            config.prover_client().get_task_status(TaskType::Job, &task_id, fact, cross_verify).await.inspect_err(
-                |e| {
-                    error!(
-                        job_id = %internal_id,
-                        error = %e,
-                        "Failed to get task status from prover client"
-                    );
-                },
-            )?;
+            config.prover_client().get_task_status(TaskType::Job, &task_id, fact).await.inspect_err(|e| {
+                error!(
+                    job_id = %internal_id,
+                    error = %e,
+                    "Failed to get task status from prover client"
+                );
+            })?;
 
         match task_status {
             TaskStatus::Processing => {

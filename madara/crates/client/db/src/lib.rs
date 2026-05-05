@@ -310,18 +310,18 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
-    /// Custom header used during block replay to ensure deterministic execution.
+    /// Custom headers used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
-    /// from the original block to reproduce the expected block hash. This field stores
-    /// header overrides that are applied during transaction validation and execution,
-    /// along with the expected block hash to validate against after block creation.
+    /// from the original block to reproduce the expected block hash. These per-block
+    /// overrides are applied during transaction validation and execution, along with the
+    /// expected block hash to validate against after block creation.
     /// # Important Notes
-    /// - Custom header is different for each block and must be set per block
+    /// - Custom headers are keyed by block number because replay can prepare future blocks ahead of time
     /// - **Must verify** that the block number matches before use
-    /// - **Must clear** after use to prevent reuse across different blocks
+    /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
-    pub custom_header: Mutex<Option<CustomHeader>>,
+    pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -372,7 +372,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
-            custom_header: Mutex::new(None),
+            custom_headers: Mutex::new(Default::default()),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -447,30 +447,57 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-    pub fn get_custom_header(&self) -> Option<CustomHeader> {
-        self.get_custom_header_with_clear(false)
-    }
-
-    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        let result = guard.clone();
-
-        if clear {
-            *guard = None;
-        }
-
-        result
-    }
-
-    pub fn set_custom_header(&self, custom_header: CustomHeader) {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        *guard = Some(custom_header);
-    }
-
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
     /// Must be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
+    }
+}
+
+impl<D> MadaraBackend<D> {
+    pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        self.custom_headers.lock().expect("Poisoned lock").get(&block_n).cloned()
+    }
+
+    pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
+    }
+
+    pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        let initial_len = guard.len();
+        guard.retain(|stored_block_n, _| *stored_block_n > block_n);
+        initial_len.saturating_sub(guard.len())
+    }
+}
+
+impl<D: MadaraStorage> MadaraBackend<D> {
+    pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
+        let chain_tip = self.chain_tip.borrow();
+        tracing::debug!(
+            target: "custom_header",
+            block_n = custom_header.block_n,
+            timestamp = custom_header.timestamp,
+            gas_prices = ?custom_header.gas_prices,
+            expected_block_hash = ?custom_header.expected_block_hash,
+            chain_tip = ?*chain_tip,
+            "storing custom header"
+        );
+        drop(chain_tip);
+
+        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
+        if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
+            tracing::debug!(
+                target: "custom_header",
+                block_n = custom_header.block_n,
+                previous_timestamp = previous.timestamp,
+                previous_gas_prices = ?previous.gas_prices,
+                new_timestamp = custom_header.timestamp,
+                new_gas_prices = ?custom_header.gas_prices,
+                "replacing staged custom header for block"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -834,16 +861,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
         metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        let (global_state_root, merklization_timings) =
-            self.apply_to_global_trie(block.header.block_number, [&block.state_diff], block.header.protocol_version)?;
-
-        // Copy merklization timings
-        timings.merklization = merklization_timings.total;
-        timings.contract_trie_root = merklization_timings.contract_trie_root;
-        timings.class_trie_root = merklization_timings.class_trie_root;
-        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
-        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
-        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
+        // Phase 1: Compute the global state root from staged (uncommitted) trie changes.
+        // Nothing is persisted to disk yet — if the custom header hash check fails,
+        // the staged tries are dropped and the DB remains untouched.
+        let merklization_start = Instant::now();
+        let (global_state_root, staged_tries) = self.inner.db.compute_global_trie_staged(
+            &block.state_diff,
+            block.header.protocol_version,
+            block.header.block_number,
+        )?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
@@ -857,12 +883,69 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
-            let is_valid = header.is_block_hash_as_expected(&block_hash);
-            if !is_valid {
-                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+            tracing::debug!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                consumed_timestamp = header.timestamp,
+                consumed_gas_prices = ?header.gas_prices,
+                block_timestamp = block.header.block_timestamp.0,
+                block_gas_prices = ?block.header.gas_prices,
+                "consuming custom header during block close"
+            );
+            if !header.is_block_hash_as_expected(&block_hash) {
+                let msg = format!(
+                    "Block hash mismatch at block #{}: expected={}, computed={}. \
+                     No data has been persisted.",
+                    block.header.block_number, header.expected_block_hash, block_hash,
+                );
+                tracing::warn!(
+                    target: "custom_header",
+                    block_n = block.header.block_number,
+                    expected = ?header.expected_block_hash,
+                    computed = ?block_hash,
+                    "{msg}"
+                );
+                anyhow::bail!(msg);
             }
         }
+        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
+        if cleared_headers > 0 {
+            tracing::debug!(
+                target: "custom_header",
+                block_n = block.header.block_number,
+                cleared_headers,
+                "cleared staged custom headers through closed block"
+            );
+        }
+
+        // Phase 2: Persist the staged trie changes to RocksDB.
+        let contract_trie_root_duration = staged_tries.contract_trie_root_duration;
+        let class_trie_root_duration = staged_tries.class_trie_root_duration;
+        let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
+
+        // Record total merklization duration (Phase 1 + Phase 2) to match the sync path's
+        // apply_to_global_trie metric which also covers both compute and commit.
+        let merklization_duration = merklization_start.elapsed();
+        let merklization_secs = merklization_duration.as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
+        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
+
+        // Record per-trie root metrics (histogram + gauge)
+        let contract_root_secs = contract_trie_root_duration.as_secs_f64();
+        let class_root_secs = class_trie_root_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_root_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_root_secs, &[]);
+        metrics().class_trie_root_duration.record(class_root_secs, &[]);
+        metrics().class_trie_root_last.record(class_root_secs, &[]);
+
+        // Record merklization timings
+        timings.merklization = merklization_duration;
+        timings.contract_trie_root = contract_trie_root_duration;
+        timings.class_trie_root = class_trie_root_duration;
+        timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
+        timings.contract_trie_commit = contract_trie_timings.trie_commit;
+        timings.class_trie_commit = class_trie_timings.trie_commit;
 
         // Save the block.
 

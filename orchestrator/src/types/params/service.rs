@@ -9,6 +9,7 @@ pub struct ServiceParams {
     pub max_concurrent_created_snos_jobs: u64,
     pub max_concurrent_snos_jobs: Option<usize>,
     pub max_concurrent_proving_jobs: Option<usize>,
+    pub max_concurrent_aggregator_jobs: Option<usize>,
     pub snos_job_timeout_seconds: u64,
     pub proving_job_timeout_seconds: u64,
     pub proof_registration_timeout_seconds: u64,
@@ -16,6 +17,7 @@ pub struct ServiceParams {
     pub state_transition_timeout_seconds: u64,
     pub aggregator_job_timeout_seconds: u64,
     pub snos_job_buffer_size: u64,
+    pub aggregator_job_buffer_size: u64,
     pub max_priority_queue_size: usize,
 }
 
@@ -47,6 +49,7 @@ impl From<ServiceCliArgs> for ServiceParams {
             max_concurrent_created_snos_jobs: args.max_concurrent_created_snos_jobs,
             max_concurrent_snos_jobs: args.max_concurrent_snos_jobs,
             max_concurrent_proving_jobs: args.max_concurrent_proving_jobs,
+            max_concurrent_aggregator_jobs: args.max_concurrent_aggregator_jobs,
             snos_job_timeout_seconds: args.snos_job_timeout_seconds,
             proving_job_timeout_seconds: args.proving_job_timeout_seconds,
             proof_registration_timeout_seconds: args.proof_registration_timeout_seconds,
@@ -54,6 +57,7 @@ impl From<ServiceCliArgs> for ServiceParams {
             state_transition_timeout_seconds: args.state_transition_timeout_seconds,
             aggregator_job_timeout_seconds: args.aggregator_job_timeout_seconds,
             snos_job_buffer_size: args.snos_job_buffer_size,
+            aggregator_job_buffer_size: args.aggregator_job_buffer_size,
             max_priority_queue_size: args.max_priority_queue_size,
         }
     }

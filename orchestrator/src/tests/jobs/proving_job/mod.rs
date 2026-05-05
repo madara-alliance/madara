@@ -50,7 +50,7 @@ async fn test_create_job() {
 #[tokio::test]
 async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
-    prover_client.expect_get_task_status().times(1).returning(|_, _, _, _| Ok(TaskStatus::Succeeded));
+    prover_client.expect_get_task_status().times(1).returning(|_, _, _| Ok(TaskStatus::Succeeded));
 
     let services = TestConfigBuilder::new().configure_prover_client(prover_client.into()).build().await;
 

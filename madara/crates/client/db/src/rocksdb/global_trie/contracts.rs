@@ -1,6 +1,6 @@
 use super::ContractTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::WrappedBonsaiError;
+use crate::rocksdb::trie::{GlobalTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -20,51 +20,58 @@ struct ContractLeaf {
     pub nonce: Option<Felt>,
 }
 
-/// Calculates the contract trie root
-///
-/// # Arguments
-///
-/// * `csd`             - Commitment state diff for the current block.
-/// * `block_number`    - The current block number.
-///
-/// # Returns
-///
-/// The contract root and timing information.
-pub fn contract_trie_root(
+/// Holds uncommitted contract tries between staged root computation and final commit.
+pub struct StagedContractTries {
+    contract_storage_trie: GlobalTrie<Pedersen>,
+    contract_trie: GlobalTrie<Pedersen>,
+}
+
+impl StagedContractTries {
+    pub fn commit(mut self, block_number: u64) -> Result<ContractTrieTimings> {
+        let mut timings = ContractTrieTimings::default();
+
+        let storage_commit_start = Instant::now();
+        self.contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        timings.storage_commit = storage_commit_start.elapsed();
+        let storage_commit_secs = timings.storage_commit.as_secs_f64();
+        metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
+        metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
+
+        let contract_commit_start = Instant::now();
+        self.contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        timings.trie_commit = contract_commit_start.elapsed();
+        let contract_commit_secs = timings.trie_commit.as_secs_f64();
+        metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
+        metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
+
+        Ok(timings)
+    }
+}
+
+/// Calculates the contract trie root from staged (uncommitted) changes.
+/// Returns the root hash and the staged tries that can be committed later.
+pub fn contract_trie_root_staged(
     backend: &RocksDBStorage,
     deployed_contracts: &[DeployedContractItem],
     replaced_classes: &[ReplacedClassItem],
     nonces: &[NonceUpdate],
     storage_diffs: &[ContractStorageDiffItem],
     block_number: u64,
-) -> Result<(Felt, ContractTrieTimings)> {
-    let mut timings = ContractTrieTimings::default();
+) -> Result<(Felt, StagedContractTries)> {
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     let mut contract_storage_trie = backend.contract_storage_trie();
 
     tracing::trace!("contract_storage_trie inserting");
 
-    // First we insert the contract storage changes
     for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
         for StorageEntry { key, value } in storage_entries {
             let bytes = key.to_bytes_be();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             contract_storage_trie.insert(&address.to_bytes_be(), &bv, value).map_err(WrappedBonsaiError)?;
         }
-        // insert the contract address in the contract_leafs to put the storage root later
         contract_leafs.insert(*address, Default::default());
     }
-
-    tracing::trace!("contract_storage_trie commit");
-
-    // Then we commit them
-    let storage_commit_start = Instant::now();
-    contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    timings.storage_commit = storage_commit_start.elapsed();
-    let storage_commit_secs = timings.storage_commit.as_secs_f64();
-    metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
-    metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -78,13 +85,11 @@ pub fn contract_trie_root(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
-    let mut contract_trie = backend.contract_trie();
-
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
             let storage_root =
-                contract_storage_trie.root_hash(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
+                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
@@ -93,22 +98,32 @@ pub fn contract_trie_root(
         })
         .collect::<Result<_>>()?;
 
+    let mut contract_trie = backend.contract_trie();
+
     for (k, v) in leaf_hashes {
         contract_trie.insert(super::bonsai_identifier::CONTRACT, &k, &v).map_err(WrappedBonsaiError)?;
     }
 
-    tracing::trace!("contract_trie committing");
+    let root_hash = contract_trie.root_hash_staged(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
-    let contract_commit_start = Instant::now();
-    contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    timings.trie_commit = contract_commit_start.elapsed();
-    let contract_commit_secs = timings.trie_commit.as_secs_f64();
-    metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
-    metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
-    let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
+    tracing::trace!("contract_trie staged root computed");
 
-    tracing::trace!("contract_trie committed");
+    Ok((root_hash, StagedContractTries { contract_storage_trie, contract_trie }))
+}
 
+/// Calculates the contract trie root (single-phase: inserts + commits immediately).
+/// Used by the sync path which does not need staged validation.
+pub fn contract_trie_root(
+    backend: &RocksDBStorage,
+    deployed_contracts: &[DeployedContractItem],
+    replaced_classes: &[ReplacedClassItem],
+    nonces: &[NonceUpdate],
+    storage_diffs: &[ContractStorageDiffItem],
+    block_number: u64,
+) -> Result<(Felt, ContractTrieTimings)> {
+    let (root_hash, staged) =
+        contract_trie_root_staged(backend, deployed_contracts, replaced_classes, nonces, storage_diffs, block_number)?;
+    let timings = staged.commit(block_number)?;
     Ok((root_hash, timings))
 }
 

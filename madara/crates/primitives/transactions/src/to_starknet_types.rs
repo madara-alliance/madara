@@ -24,6 +24,25 @@ impl Transaction {
             Transaction::DeployAccount(tx) => mp_rpc::v0_8_1::Txn::DeployAccount(tx.to_rpc_v0_8()),
         }
     }
+
+    pub fn to_rpc_v0_10_2_with_proof_facts(self) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+        match self {
+            Transaction::Invoke(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(tx.to_rpc_v0_10_2_with_proof_facts()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::L1Handler(tx.to_rpc_v0_7()),
+            Transaction::Declare(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Declare(tx.to_rpc_v0_8()),
+            Transaction::Deploy(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::Deploy(tx.to_rpc_v0_7()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_10_2::TxnWithProofFacts::DeployAccount(tx.to_rpc_v0_8()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2(self, include_proof_facts: bool) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_2_with_proof_facts();
+        if include_proof_facts {
+            include_empty_proof_facts(txn)
+        } else {
+            strip_proof_facts(txn)
+        }
+    }
 }
 
 impl InvokeTransaction {
@@ -39,6 +58,23 @@ impl InvokeTransaction {
             InvokeTransaction::V0(tx) => mp_rpc::v0_8_1::InvokeTxn::V0(tx.to_rpc_v0_7()),
             InvokeTransaction::V1(tx) => mp_rpc::v0_8_1::InvokeTxn::V1(tx.to_rpc_v0_7()),
             InvokeTransaction::V3(tx) => mp_rpc::v0_8_1::InvokeTxn::V3(tx.to_rpc_v0_8()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2_with_proof_facts(self) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+        match self {
+            InvokeTransaction::V0(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V0(tx.to_rpc_v0_7()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V1(tx.to_rpc_v0_7()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx.to_rpc_v0_10_2()),
+        }
+    }
+
+    pub fn to_rpc_v0_10_2(self, include_proof_facts: bool) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_2_with_proof_facts();
+        if include_proof_facts {
+            include_empty_invoke_proof_facts(txn)
+        } else {
+            strip_invoke_proof_facts(txn)
         }
     }
 }
@@ -95,6 +131,64 @@ impl InvokeTransactionV3 {
             signature: self.signature,
             tip: self.tip,
         }
+    }
+
+    pub fn to_rpc_v0_10_2(self) -> mp_rpc::v0_10_2::InvokeTxnV3 {
+        mp_rpc::v0_10_2::InvokeTxnV3 {
+            inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                account_deployment_data: self.account_deployment_data,
+                calldata: self.calldata,
+                fee_data_availability_mode: self.fee_data_availability_mode.into(),
+                nonce: self.nonce,
+                nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+                paymaster_data: self.paymaster_data,
+                resource_bounds: self.resource_bounds.into(),
+                sender_address: self.sender_address,
+                signature: self.signature,
+                tip: self.tip,
+            },
+            proof_facts: self.proof_facts,
+        }
+    }
+}
+
+fn strip_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(tx) => {
+            mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(strip_invoke_proof_facts(tx))
+        }
+        other => other,
+    }
+}
+
+fn strip_invoke_proof_facts(txn: mp_rpc::v0_10_2::InvokeTxnWithProofFacts) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(mut tx) => {
+            tx.proof_facts = None;
+            mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)
+        }
+        other => other,
+    }
+}
+
+fn include_empty_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> mp_rpc::v0_10_2::TxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(tx) => {
+            mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(include_empty_invoke_proof_facts(tx))
+        }
+        other => other,
+    }
+}
+
+fn include_empty_invoke_proof_facts(
+    txn: mp_rpc::v0_10_2::InvokeTxnWithProofFacts,
+) -> mp_rpc::v0_10_2::InvokeTxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(mut tx) => {
+            tx.proof_facts.get_or_insert_with(Vec::new);
+            mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)
+        }
+        other => other,
     }
 }
 
@@ -267,5 +361,54 @@ impl DeployAccountTransactionV3 {
             signature: self.signature,
             tip: self.tip,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::{dummy_tx_invoke_v3, dummy_tx_invoke_v3_with_proof_facts};
+    use starknet_types_core::felt::Felt;
+
+    #[derive(Clone, Copy)]
+    enum InvokeV3Fixture {
+        MissingProofFacts,
+        PresentProofFacts,
+    }
+
+    fn invoke_v3_proof_facts(txn: mp_rpc::v0_10_2::TxnWithProofFacts) -> Option<Vec<Felt>> {
+        let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(tx)) = txn else {
+            panic!("expected invoke v3 transaction");
+        };
+        tx.proof_facts
+    }
+
+    #[rstest::rstest]
+    #[case::include_missing(InvokeV3Fixture::MissingProofFacts, true)]
+    #[case::omit_missing(InvokeV3Fixture::MissingProofFacts, false)]
+    #[case::include_present(InvokeV3Fixture::PresentProofFacts, true)]
+    fn rpc_v0_10_2_proof_facts_flag_controls_serialized_facts(
+        #[case] fixture: InvokeV3Fixture,
+        #[case] include_proof_facts: bool,
+    ) {
+        let tx = match fixture {
+            InvokeV3Fixture::MissingProofFacts => dummy_tx_invoke_v3(),
+            InvokeV3Fixture::PresentProofFacts => dummy_tx_invoke_v3_with_proof_facts(),
+        };
+        let expected_proof_facts = match (fixture, include_proof_facts) {
+            (InvokeV3Fixture::MissingProofFacts, true) => Some(vec![]),
+            (InvokeV3Fixture::MissingProofFacts, false) => None,
+            (InvokeV3Fixture::PresentProofFacts, true) => tx.proof_facts.clone(),
+            (InvokeV3Fixture::PresentProofFacts, false) => None,
+        };
+        let expected_json = expected_proof_facts
+            .as_ref()
+            .map(|proof_facts| serde_json::to_value(proof_facts).expect("proof facts should serialize"));
+
+        let rpc_tx = Transaction::Invoke(InvokeTransaction::V3(tx)).to_rpc_v0_10_2(include_proof_facts);
+        let json = serde_json::to_value(&rpc_tx).expect("transaction should serialize");
+
+        assert_eq!(invoke_v3_proof_facts(rpc_tx), expected_proof_facts);
+        assert_eq!(json.get("proof_facts"), expected_json.as_ref());
     }
 }

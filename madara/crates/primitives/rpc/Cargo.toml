@@ -25,7 +25,7 @@ includes-code-from = [
 starknet-types-core = { workspace = true }
 
 # Other
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

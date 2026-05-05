@@ -317,7 +317,7 @@ mod tests {
 
             tracing::debug!("tx: {:?}", tx);
 
-            self.tx_validator.submit_invoke_transaction(tx).await
+            self.tx_validator.submit_invoke_transaction(tx.into()).await
         }
 
         pub async fn sign_and_add_declare_tx(

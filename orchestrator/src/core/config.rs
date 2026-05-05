@@ -12,6 +12,7 @@ use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+use orchestrator_mock_service::MockProverService;
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
@@ -157,7 +158,8 @@ versions!(
     (V0_13_4, "0.13.4"),
     (V0_13_5, "0.13.5"),
     (V0_14_0, "0.14.0"),
-    (V0_14_1, "0.14.1")
+    (V0_14_1, "0.14.1"),
+    (V0_14_2, "0.14.2")
 );
 
 #[derive(Debug, Clone)]
@@ -183,16 +185,24 @@ pub struct ConfigParam {
     pub da_public_keys: Option<Vec<Felt>>,
 }
 
+// Re-export so downstream modules can `use crate::core::config::ProverKind;`.
+pub use crate::types::params::prover::ProverKind;
+
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
+    /// Which prover backend is active. Stored so handlers can branch on it
+    /// without plumbing the full `ProverConfig` around.
+    prover_kind: ProverKind,
     /// The orchestrator config
     pub params: ConfigParam,
     /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
     chain_details: ChainDetails,
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// Optional reference node client for replay bounds validation
+    replay_bounds_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The Madara feeder gateway client for fetching builtins
     madara_feeder_gateway_client: Arc<RestClient>,
     /// Batch RPC client for efficient batch queries
@@ -236,9 +246,11 @@ impl Config {
     ) -> Self {
         Self {
             layer,
+            prover_kind: ProverKind::Atlantic,
             params,
             chain_details,
             madara_rpc_client,
+            replay_bounds_client: None,
             madara_feeder_gateway_client,
             batch_rpc_client,
             database,
@@ -269,6 +281,7 @@ impl Config {
 
         let prover_config =
             ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
+        let prover_kind = prover_config.kind();
         let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
@@ -299,6 +312,10 @@ impl Config {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
         let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
+        let replay_bounds_client = run_cmd
+            .replay_bounds_rpc_url
+            .as_ref()
+            .map(|url| Arc::new(JsonRpcClient::new(HttpTransport::new(url.clone()))));
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -320,6 +337,10 @@ impl Config {
                 })?;
         info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
+        if let Some(ref url) = run_cmd.replay_bounds_rpc_url {
+            info!(reference_rpc_url = %url, "Replay bounds validation enabled");
+        }
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(
             &prover_config,
@@ -333,9 +354,11 @@ impl Config {
 
         Ok(Self {
             layer,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
+            replay_bounds_client,
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             batch_rpc_client,
             database,
@@ -357,6 +380,11 @@ impl Config {
     /// Returns the chain details fetched from the node at startup
     pub fn chain_details(&self) -> &ChainDetails {
         &self.chain_details
+    }
+
+    /// Which prover backend is active.
+    pub fn prover_kind(&self) -> ProverKind {
+        self.prover_kind
     }
 
     pub(crate) async fn build_database_client(
@@ -416,9 +444,7 @@ impl Config {
         da_public_keys: Option<Vec<Felt>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
                 atlantic_params,
                 &params.prover_layout_name,
@@ -426,6 +452,7 @@ impl Config {
                 fee_token_address,
                 da_public_keys,
             )),
+            ProverConfig::Mock(mock_params) => Box::new(MockProverService::new_with_args(mock_params)),
         }
     }
 
@@ -460,7 +487,7 @@ impl Config {
                     info!("Mock Atlantic server started successfully");
                 }
             }
-            ProverConfig::Sharp(_) => {
+            ProverConfig::Sharp(_) | ProverConfig::Mock(_) => {
                 tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
@@ -523,6 +550,11 @@ impl Config {
     /// Returns the Madara client
     pub fn madara_rpc_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
         &self.madara_rpc_client
+    }
+
+    /// Returns the replay bounds reference client, if configured
+    pub fn replay_bounds_client(&self) -> Option<&Arc<JsonRpcClient<HttpTransport>>> {
+        self.replay_bounds_client.as_ref()
     }
 
     /// Returns the Madara feeder gateway client
@@ -661,6 +693,7 @@ impl Config {
             sierra_gas: GasAmount(100_000_000), // 100M sierra gas
             n_txs: 10_000,                      // 10K transactions
             proving_gas: GasAmount(50_000_000), // 50M proving gas
+            receipt_l2_gas: GasAmount(2_500_000_000),
         }
     }
 }

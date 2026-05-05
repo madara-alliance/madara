@@ -21,17 +21,21 @@ fn block_context(
     chain_config: &ChainConfig,
     block_info: MadaraMaybePreconfirmedBlockInfo,
 ) -> Result<Arc<BlockContext>, Error> {
+    let protocol_version = block_info.protocol_version();
     Ok(BlockContext::new(
         BlockInfo {
             block_number: BlockNumber(block_info.block_number()),
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
+            starknet_version: protocol_version
+                .to_blockifier()
+                .map_err(|error| Error::UnsupportedStarknetVersion { version: *protocol_version, error })?,
             sequencer_address: ContractAddress::try_from(*block_info.sequencer_address())
                 .map_err(|_| Error::InvalidSequencerAddress(*block_info.sequencer_address()))?,
             gas_prices: block_info.gas_prices().into(),
             use_kzg_da: *block_info.l1_da_mode() == L1DataAvailabilityMode::Blob,
         },
         chain_config.blockifier_chain_info(),
-        chain_config.exec_constants_by_protocol_version(*block_info.protocol_version())?,
+        chain_config.exec_constants_by_protocol_version(*protocol_version)?,
         chain_config.bouncer_config.clone(),
     )
     .into())
@@ -50,6 +54,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
 
     pub fn into_transaction_validator(self) -> StatefulValidator<BlockifierStateAdapter<D>> {
         StatefulValidator::create(self.state, Arc::unwrap_or_clone(self.block_context))
+    }
+
+    pub fn get_initial_reads(
+        &self,
+    ) -> Result<blockifier::state::cached_state::StateMaps, blockifier::state::errors::StateError> {
+        self.state.get_initial_reads()
     }
 }
 

@@ -130,7 +130,7 @@ async fn wait_for_mongo_ready(uri: &str) {
 }
 
 struct MongoFixture {
-    _node: ContainerAsync<GenericImage>,
+    _node: Option<ContainerAsync<GenericImage>>,
     uri: String,
 }
 
@@ -165,12 +165,17 @@ fn extract_block_hash(update: MaybePreConfirmedStateUpdate) -> Felt {
 async fn mongo_fixture() -> &'static MongoFixture {
     MONGO_FIXTURE
         .get_or_init(|| async {
+            if let Ok(uri) = std::env::var("MADARA_EXTERNAL_DB_TEST_MONGODB_URI") {
+                wait_for_mongo_ready(&uri).await;
+                return MongoFixture { _node: None, uri };
+            }
+
             let image = GenericImage::new("mongo", "7.0").with_exposed_port(27017.tcp());
             let node = image.start().await.unwrap();
             let port = node.get_host_port_ipv4(27017).await.unwrap();
             let uri = format!("mongodb://127.0.0.1:{port}");
             wait_for_mongo_ready(&uri).await;
-            MongoFixture { _node: node, uri }
+            MongoFixture { _node: Some(node), uri }
         })
         .await
 }

@@ -68,6 +68,7 @@ pub fn invoke_v3(sender: Felt, nonce: Felt) -> InvokeTransactionV3 {
         account_deployment_data: vec![Felt::from_hex_unchecked("0xbeef")],
         nonce_data_availability_mode: DataAvailabilityMode::L1,
         fee_data_availability_mode: DataAvailabilityMode::L1,
+        proof_facts: None,
     }
 }
 

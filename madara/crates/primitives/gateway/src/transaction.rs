@@ -273,6 +273,8 @@ pub struct InvokeTransactionV3 {
     pub transaction_hash: Felt,
     pub calldata: Calldata,
     pub account_deployment_data: Vec<Felt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_facts: Option<Vec<Felt>>,
 }
 
 impl InvokeTransactionV3 {
@@ -289,6 +291,7 @@ impl InvokeTransactionV3 {
             transaction_hash: hash,
             calldata: transaction.calldata,
             account_deployment_data: transaction.account_deployment_data,
+            proof_facts: transaction.proof_facts,
         }
     }
 }
@@ -306,6 +309,7 @@ impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
             account_deployment_data: tx.account_deployment_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode,
             fee_data_availability_mode: tx.fee_data_availability_mode,
+            proof_facts: tx.proof_facts,
         }
     }
 }

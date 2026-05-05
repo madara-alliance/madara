@@ -339,6 +339,44 @@ impl RunCmd {
     pub fn is_devnet(&self) -> bool {
         self.devnet
     }
+
+    pub fn should_run_mempool(&self) -> bool {
+        self.is_sequencer()
+    }
+
+    pub fn should_save_mempool_to_db(&self) -> bool {
+        self.should_run_mempool() && !self.validator_params.no_mempool_saving
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RunCmd;
+    use clap::Parser;
+
+    #[test]
+    fn full_node_does_not_run_or_save_mempool() {
+        let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
+
+        assert!(!run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_save_mempool_to_db());
+    }
+
+    #[test]
+    fn sequencer_runs_and_saves_mempool_by_default() {
+        let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+
+        assert!(run_cmd.should_run_mempool());
+        assert!(run_cmd.should_save_mempool_to_db());
+    }
+
+    #[test]
+    fn sequencer_can_disable_mempool_saving() {
+        let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet", "--no-mempool-saving"]);
+
+        assert!(run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_save_mempool_to_db());
+    }
 }
 
 /// Starknet network types.

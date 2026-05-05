@@ -103,13 +103,13 @@ Example usage:
 # Run orchestrator with mock Atlantic server (SIMPLIFIED!)
 # Only 2 Atlantic parameters needed - everything else gets sensible defaults!
 cargo run --bin orchestrator -- run \
-  --atlantic \
+  --prover atlantic \
   --atlantic-mock-fact-hash "true" \
   # ... other orchestrator arguments (non-Atlantic)
 
 # Optional: Override defaults if needed
 cargo run --bin orchestrator -- run \
-  --atlantic \
+  --prover atlantic \
   --atlantic-mock-fact-hash "true" \
   --atlantic-api-key "custom-mock-key" \
   --atlantic-network "MAINNET" \

@@ -1,4 +1,5 @@
 pub mod alerts;
+pub mod cli;
 pub mod common;
 pub mod compression;
 pub mod config;

@@ -92,7 +92,7 @@ RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
   && rm -rf Python-3.9.16 Python-3.9.16.tgz
 
 # Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/get-pip.py \
+RUN wget https://bootstrap.pypa.io/pip/3.9/get-pip.py \
   && python3.9 get-pip.py \
   && rm get-pip.py \
   && python3.9 -m pip install virtualenv

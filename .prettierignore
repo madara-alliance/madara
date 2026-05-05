@@ -14,3 +14,4 @@ orchestrator/build/
 orchestrator/node_modules/
 lib/
 s3/
+bootstrapper-v2/contracts/ethereum/src/starkware/

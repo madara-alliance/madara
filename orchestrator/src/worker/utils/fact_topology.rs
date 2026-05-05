@@ -2,7 +2,7 @@
 //!
 //! Ported from https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/cairo/bootloaders/fact_topology.py
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::error::job::fact::FactError;
 use cairo_vm::types::builtin_name::BuiltinName;
@@ -65,7 +65,7 @@ pub fn get_fact_topology(cairo_pie: &CairoPie, output_size: usize) -> Result<Fac
 
 /// Returns the sizes of the program output pages, given the pages dictionary that appears
 /// in the additional attributes of the output builtin.
-pub fn get_page_sizes(pages: &HashMap<usize, PublicMemoryPage>, output_size: usize) -> Result<Vec<usize>, FactError> {
+pub fn get_page_sizes(pages: &BTreeMap<usize, PublicMemoryPage>, output_size: usize) -> Result<Vec<usize>, FactError> {
     tracing::debug!(
         log_type = "FactTopology",
         category = "get_page_sizes",

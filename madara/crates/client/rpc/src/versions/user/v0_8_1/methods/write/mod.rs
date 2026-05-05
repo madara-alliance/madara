@@ -60,7 +60,7 @@ impl StarknetWriteRpcApiV0_8_1Server for Starknet {
     ) -> RpcResult<AddInvokeTransactionResult> {
         Ok(self
             .add_transaction_provider
-            .submit_invoke_transaction(invoke_transaction)
+            .submit_invoke_transaction(invoke_transaction.into())
             .await
             .map_err(StarknetRpcApiError::from)?)
     }

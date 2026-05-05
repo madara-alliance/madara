@@ -218,7 +218,11 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
                 max_receive_count: QUEUE_MAX_RECEIVE_COUNT,
                 dlq_name: QueueType::JobHandleFailure,
             }),
-            queue_control: QueueControlConfig::new(10),
+            queue_control: QueueControlConfig::default_with_message_count(
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS", "10")
+                    .parse()
+                    .expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS does not have correct value. Should be a whole number"),
+            ),
             supported_layers: vec![Layer::L2],
             message_retention_period: None,
         },

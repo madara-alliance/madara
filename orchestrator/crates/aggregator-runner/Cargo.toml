@@ -1,0 +1,17 @@
+[package]
+name = "orchestrator-aggregator-runner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+apollo_starknet_os_program.workspace = true
+cairo-vm.workspace = true
+serde_json.workspace = true
+starknet-types-core.workspace = true
+starknet_os.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

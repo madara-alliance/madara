@@ -83,7 +83,7 @@ pub enum BlockImportError {
     #[error("Compiled class hash mismatch for class hash {class_hash:#x}: expected {expected:#x}, got {got:#x}")]
     CompiledClassHash { class_hash: Felt, got: Felt, expected: Felt },
     #[error("Class with hash {class_hash:#x} failed to compile: {error}")]
-    CompilationClassError { class_hash: Felt, error: ClassCompilationError },
+    CompilationClassError { class_hash: Felt, error: Box<ClassCompilationError> },
     #[error("Failed to compute class hash {class_hash:#x}: {error}")]
     ComputeClassHash { class_hash: Felt, error: ComputeClassHashError },
 
@@ -400,25 +400,33 @@ impl BlockImporterCtx {
                 let hashes = sierra
                     .contract_class
                     .compile_to_casm_with_hashes()
-                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
+                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?;
 
-                // Verify compiled class hash based on protocol version
-                // For v0.14.1+: gateway provides BLAKE hash
-                // For pre-v0.14.1: gateway provides Poseidon hash
-                let expected_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
-                if !self.config.no_check && expected_hash != gateway_hash {
-                    return Err(BlockImportError::CompiledClassHash {
-                        class_hash,
-                        got: gateway_hash,
-                        expected: expected_hash,
-                    });
-                }
-
-                // Store:
-                // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
-                // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
-                let (stored_poseidon, stored_blake) =
-                    if uses_blake { (None, Some(hashes.blake_hash)) } else { (Some(hashes.poseidon_hash), None) };
+                // Verify compiled class hash based on protocol version.
+                // For v0.14.1+ the gateway-provided hash is the canonical BLAKE hash and must match
+                // the locally recomputed value. For older Sierra classes we keep the gateway-provided
+                // Poseidon hash, since historical gateway hashes may not match a local recomputation
+                // after compiler/toolchain upgrades.
+                let (stored_poseidon, stored_blake) = if uses_blake {
+                    if !self.config.no_check && hashes.blake_hash != gateway_hash {
+                        return Err(BlockImportError::CompiledClassHash {
+                            class_hash,
+                            got: gateway_hash,
+                            expected: hashes.blake_hash,
+                        });
+                    }
+                    (None, Some(gateway_hash))
+                } else {
+                    if !self.config.no_check && hashes.poseidon_hash != gateway_hash {
+                        tracing::warn!(
+                            class_hash = %format!("{class_hash:#x}"),
+                            gateway_hash = %format!("{gateway_hash:#x}"),
+                            computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
+                            "Retaining gateway-provided historical compiled_class_hash for Sierra class",
+                        );
+                    }
+                    (Some(gateway_hash), None)
+                };
 
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
@@ -430,7 +438,7 @@ impl BlockImporterCtx {
                     compiled: Arc::new((&hashes.casm_class).try_into().map_err(|e| {
                         BlockImportError::CompilationClassError {
                             class_hash,
-                            error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                            error: Box::new(ClassCompilationError::ParsingProgramJsonFailed(e)),
                         }
                     })?),
                 }))

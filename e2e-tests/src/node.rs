@@ -65,9 +65,8 @@ impl Orchestrator {
         if is_run_mode {
             command.arg("--settle-on-ethereum");
             command.arg("--da-on-ethereum");
-            command.arg("--sharp");
+            command.arg("--prover=sharp");
             command.arg("--mongodb");
-            command.arg("--madara-version=0.13.3");
 
             let port = get_free_port();
             let addr = format!("127.0.0.1:{}", port);

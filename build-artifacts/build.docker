@@ -114,6 +114,7 @@ RUN curl -L https://foundry.paradigm.xyz | bash
 ENV PATH="$PATH:/root/.foundry/bin"
 RUN foundryup
 
+# TODO(mohit, 2026-05-01): Remove the os_latest.json compilation code from the build artifacts flow.
 RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
 
 COPY ./build-artifacts/src/foundry-cairo-lang.toml foundry.toml

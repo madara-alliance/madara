@@ -135,6 +135,7 @@ pub fn default_test_bouncer_weights() -> BouncerWeights {
         sierra_gas: GasAmount(0),
         n_txs: 0,
         proving_gas: GasAmount(0),
+        receipt_l2_gas: GasAmount(0),
     }
 }
 

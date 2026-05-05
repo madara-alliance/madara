@@ -18,6 +18,7 @@ pub mod encrypted_blob;
 pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
+pub mod pie;
 
 /// biguint_vec_to_u8_vec - Converts a vector of BigUint numbers to a vector of u8 bytes.
 ///

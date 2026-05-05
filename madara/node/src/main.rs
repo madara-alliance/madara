@@ -442,7 +442,9 @@ async fn main() -> anyhow::Result<()> {
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
 
-    app.activate(MadaraServiceId::Mempool);
+    if run_cmd.should_run_mempool() {
+        app.activate(MadaraServiceId::Mempool);
+    }
     app.activate(MadaraServiceId::Telemetry);
 
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {

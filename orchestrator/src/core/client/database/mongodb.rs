@@ -1,11 +1,12 @@
 use super::error::DatabaseError;
 use crate::core::client::database::constant::{
-    AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
+    AGGREGATOR_BATCHES_COLLECTION, BLOCK_BATCH_LOOKUPS_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
 use crate::core::client::database::DatabaseClient;
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
@@ -28,6 +29,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+const BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE: usize = 1000;
 
 pub trait ToDocument {
     fn to_document(&self) -> Result<Document, DatabaseError>;
@@ -164,6 +167,21 @@ impl MongoDbClient {
         snos_collection.create_indexes(snos_indexes, None).await?;
         info!("Created indexes for SNOS batch collection");
 
+        // Create indexes for per-block batch lookup collection
+        let block_lookup_collection = self.get_block_batch_lookup_collection();
+
+        let block_lookup_indexes = vec![
+            IndexModel::builder()
+                .keys(doc! { "block_number": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            IndexModel::builder().keys(doc! { "snos_batch_index": 1 }).build(),
+            IndexModel::builder().keys(doc! { "aggregator_batch_index": 1 }).build(),
+        ];
+
+        block_lookup_collection.create_indexes(block_lookup_indexes, None).await?;
+        info!("Created indexes for block batch lookup collection");
+
         Ok(())
     }
 
@@ -193,6 +211,10 @@ impl MongoDbClient {
         self.database.collection(SNOS_BATCHES_COLLECTION)
     }
 
+    fn get_block_batch_lookup_collection(&self) -> Collection<BlockBatchLookup> {
+        self.database.collection(BLOCK_BATCH_LOOKUPS_COLLECTION)
+    }
+
     pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
@@ -203,6 +225,238 @@ impl MongoDbClient {
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
         self.get_collection(LOCKS_COLLECTION)
+    }
+
+    async fn upsert_block_batch_lookup_range(
+        &self,
+        start_block: u64,
+        end_block: u64,
+        fields_to_set: Document,
+    ) -> Result<(), DatabaseError> {
+        if start_block > end_block || fields_to_set.is_empty() {
+            return Ok(());
+        }
+
+        let now = Utc::now().round_subsecs(0);
+
+        for chunk_start in (start_block..=end_block).step_by(BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE) {
+            let chunk_end = (chunk_start.saturating_add(BLOCK_BATCH_LOOKUP_WRITE_CHUNK_SIZE as u64).saturating_sub(1))
+                .min(end_block);
+            let updates = (chunk_start..=chunk_end)
+                .map(|block_number| {
+                    let mut set_doc = fields_to_set.clone();
+                    set_doc.insert("updated_at", Bson::DateTime(now.into()));
+
+                    doc! {
+                        "q": { "block_number": block_number as i64 },
+                        "u": {
+                            "$set": set_doc,
+                            "$setOnInsert": {
+                                "block_number": block_number as i64,
+                                "created_at": Bson::DateTime(now.into()),
+                            },
+                        },
+                        "upsert": true,
+                        "multi": false,
+                    }
+                })
+                .map(Bson::Document)
+                .collect::<Vec<_>>();
+
+            let command_result = self
+                .database
+                .run_command(
+                    doc! {
+                        "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
+                        "updates": Bson::Array(updates),
+                        "ordered": false,
+                    },
+                    None,
+                )
+                .await?;
+
+            Self::ensure_bulk_update_command_succeeded(&command_result)?;
+        }
+
+        Ok(())
+    }
+
+    fn ensure_bulk_update_command_succeeded(command_result: &Document) -> Result<(), DatabaseError> {
+        if let Some(Bson::Array(write_errors)) = command_result.get("writeErrors") {
+            if !write_errors.is_empty() {
+                let write_error_details =
+                    write_errors.iter().map(Self::format_bulk_update_write_error).collect::<Vec<_>>().join("; ");
+
+                return Err(DatabaseError::UpdateFailed(format!(
+                    "Failed to upsert block batch lookups: {write_error_details}"
+                )));
+            }
+        }
+
+        if let Some(Bson::Document(write_concern_error)) = command_result.get("writeConcernError") {
+            let message = write_concern_error
+                .get_str("errmsg")
+                .map(str::to_owned)
+                .unwrap_or_else(|_| write_concern_error.to_string());
+
+            return Err(DatabaseError::UpdateFailed(format!(
+                "Failed to upsert block batch lookups due to write concern error: {message}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn format_bulk_update_write_error(write_error: &Bson) -> String {
+        match write_error {
+            Bson::Document(write_error_document) => {
+                let index = write_error_document
+                    .get_i32("index")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let code = write_error_document
+                    .get_i32("code")
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let message = write_error_document
+                    .get_str("errmsg")
+                    .map(str::to_owned)
+                    .unwrap_or_else(|_| write_error_document.to_string());
+
+                format!("update {index} (code {code}): {message}")
+            }
+            _ => write_error.to_string(),
+        }
+    }
+
+    async fn unset_block_batch_lookup_range_fields(
+        &self,
+        start_block: u64,
+        end_block: u64,
+        fields_to_unset: &[&str],
+    ) -> Result<(), DatabaseError> {
+        if start_block > end_block || fields_to_unset.is_empty() {
+            return Ok(());
+        }
+
+        let mut unset_doc = Document::new();
+        for field in fields_to_unset {
+            unset_doc.insert(*field, "");
+        }
+
+        self.get_block_batch_lookup_collection()
+            .update_many(
+                doc! {
+                    "block_number": {
+                        "$gte": start_block as i64,
+                        "$lte": end_block as i64,
+                    }
+                },
+                doc! {
+                    "$unset": unset_doc,
+                    "$set": { "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()) },
+                },
+                None,
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn sync_aggregator_batch_lookup(
+        &self,
+        previous_batch: Option<&AggregatorBatch>,
+        updated_batch: &AggregatorBatch,
+    ) -> Result<(), DatabaseError> {
+        if let Some(previous_batch) = previous_batch {
+            if previous_batch.start_block == updated_batch.start_block
+                && previous_batch.end_block == updated_batch.end_block
+            {
+                return Ok(());
+            }
+
+            if previous_batch.start_block == updated_batch.start_block {
+                if previous_batch.end_block < updated_batch.end_block {
+                    return self
+                        .upsert_block_batch_lookup_range(
+                            previous_batch.end_block.saturating_add(1),
+                            updated_batch.end_block,
+                            doc! { "aggregator_batch_index": updated_batch.index as i64 },
+                        )
+                        .await;
+                }
+
+                self.unset_block_batch_lookup_range_fields(
+                    updated_batch.end_block.saturating_add(1),
+                    previous_batch.end_block,
+                    &["aggregator_batch_index"],
+                )
+                .await?;
+                return Ok(());
+            }
+
+            self.unset_block_batch_lookup_range_fields(
+                previous_batch.start_block,
+                previous_batch.end_block,
+                &["aggregator_batch_index"],
+            )
+            .await?;
+        }
+
+        self.upsert_block_batch_lookup_range(
+            updated_batch.start_block,
+            updated_batch.end_block,
+            doc! { "aggregator_batch_index": updated_batch.index as i64 },
+        )
+        .await
+    }
+
+    async fn sync_snos_batch_lookup(
+        &self,
+        previous_batch: Option<&SnosBatch>,
+        updated_batch: &SnosBatch,
+    ) -> Result<(), DatabaseError> {
+        if let Some(previous_batch) = previous_batch {
+            if previous_batch.start_block == updated_batch.start_block
+                && previous_batch.end_block == updated_batch.end_block
+            {
+                return Ok(());
+            }
+
+            if previous_batch.start_block == updated_batch.start_block {
+                if previous_batch.end_block < updated_batch.end_block {
+                    return self
+                        .upsert_block_batch_lookup_range(
+                            previous_batch.end_block.saturating_add(1),
+                            updated_batch.end_block,
+                            doc! { "snos_batch_index": updated_batch.index as i64 },
+                        )
+                        .await;
+                }
+
+                self.unset_block_batch_lookup_range_fields(
+                    updated_batch.end_block.saturating_add(1),
+                    previous_batch.end_block,
+                    &["snos_batch_index"],
+                )
+                .await?;
+                return Ok(());
+            }
+
+            self.unset_block_batch_lookup_range_fields(
+                previous_batch.start_block,
+                previous_batch.end_block,
+                &["snos_batch_index"],
+            )
+            .await?;
+        }
+
+        self.upsert_block_batch_lookup_range(
+            updated_batch.start_block,
+            updated_batch.end_block,
+            doc! { "snos_batch_index": updated_batch.index as i64 },
+        )
+        .await
     }
 
     /// find_one - Find one document in a collection
@@ -453,6 +707,32 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
+    }
+
+    async fn get_jobs_by_internal_ids_and_type(
+        &self,
+        internal_ids: Vec<u64>,
+        job_type: &JobType,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        if internal_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let start = Instant::now();
+        let internal_ids =
+            internal_ids.into_iter().map(|internal_id| Bson::Int64(internal_id as i64)).collect::<Vec<_>>();
+        let filter = doc! {
+            "internal_id": { "$in": internal_ids },
+            "job_type": bson::to_bson(&job_type)?,
+        };
+        let options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
+
+        let jobs = self.get_job_collection().find(filter, options).await?.try_collect::<Vec<JobItem>>().await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_internal_ids_and_type")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
     }
 
     async fn update_job(&self, current_job: &JobItem, update: JobItemUpdates) -> Result<JobItem, DatabaseError> {
@@ -868,6 +1148,7 @@ impl DatabaseClient for MongoDbClient {
         update: &AggregatorBatchUpdates,
     ) -> Result<AggregatorBatch, DatabaseError> {
         let start = Instant::now();
+        let previous_batch = self.get_aggregator_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -904,7 +1185,9 @@ impl DatabaseClient for MongoDbClient {
             "$set": non_null_updates
         };
 
-        self.update_aggregator_batch(filter, update, options, start, batch.index).await
+        let updated_batch = self.update_aggregator_batch(filter, update, options, start, batch.index).await?;
+        self.sync_aggregator_batch_lookup(previous_batch.as_ref(), &updated_batch).await?;
+        Ok(updated_batch)
     }
 
     async fn update_aggregator_batch(
@@ -973,6 +1256,7 @@ impl DatabaseClient for MongoDbClient {
 
                 let attributes = [KeyValue::new("db_operation_name", "create_batch")];
                 MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+                self.sync_aggregator_batch_lookup(None, &batch).await?;
                 Ok(batch)
             }
             Err(err) => {
@@ -992,6 +1276,7 @@ impl DatabaseClient for MongoDbClient {
             Ok(_) => {
                 let duration = start.elapsed();
                 tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
+                self.sync_snos_batch_lookup(None, &batch).await?;
                 Ok(batch)
             }
             Err(err) => {
@@ -1010,6 +1295,7 @@ impl DatabaseClient for MongoDbClient {
         update: &SnosBatchUpdates,
     ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
+        let previous_batch = self.get_snos_batch_collection().find_one(doc! { "_id": batch.id }, None).await?;
         let filter = doc! {
             "_id": batch.id,
         };
@@ -1052,6 +1338,7 @@ impl DatabaseClient for MongoDbClient {
                 let attributes = [KeyValue::new("db_operation_name", "update_or_create_snos_batch")];
                 let duration = start.elapsed();
                 MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+                self.sync_snos_batch_lookup(previous_batch.as_ref(), &updated_batch).await?;
                 Ok(updated_batch)
             }
             None => {
@@ -1067,12 +1354,31 @@ impl DatabaseClient for MongoDbClient {
         block_number: u64,
     ) -> Result<Option<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
-            "start_block": { "$lte": block_number as i64 },
-            "end_block": { "$gte": block_number as i64 }
-        };
+        let batch = match self.get_block_batch_lookup(block_number).await? {
+            Some(lookup) => match lookup.aggregator_batch_index {
+                Some(aggregator_batch_index) => {
+                    self.get_aggregator_batch_collection()
+                        .find_one(doc! { "index": aggregator_batch_index as i64 }, None)
+                        .await?
+                }
+                None => {
+                    let filter = doc! {
+                        "start_block": { "$lte": block_number as i64 },
+                        "end_block": { "$gte": block_number as i64 }
+                    };
 
-        let batch = self.get_aggregator_batch_collection().find_one(filter, None).await?;
+                    self.get_aggregator_batch_collection().find_one(filter, None).await?
+                }
+            },
+            None => {
+                let filter = doc! {
+                    "start_block": { "$lte": block_number as i64 },
+                    "end_block": { "$gte": block_number as i64 }
+                };
+
+                self.get_aggregator_batch_collection().find_one(filter, None).await?
+            }
+        };
 
         debug!("Retrieved aggregator batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batch_for_block")];
@@ -1080,6 +1386,20 @@ impl DatabaseClient for MongoDbClient {
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
+    }
+
+    async fn get_block_batch_lookup(&self, block_number: u64) -> Result<Option<BlockBatchLookup>, DatabaseError> {
+        let start = Instant::now();
+        let lookup = self
+            .get_block_batch_lookup_collection()
+            .find_one(doc! { "block_number": block_number as i64 }, None)
+            .await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_block_batch_lookup")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
+        Ok(lookup)
     }
 
     async fn get_start_snos_batch_for_aggregator(
@@ -1494,7 +1814,7 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mongodb::bson::doc;
+    use mongodb::bson::{doc, Bson};
     use mongodb::options::ClientOptions;
     use serde::{Deserialize, Serialize};
     use std::env;
@@ -1546,5 +1866,39 @@ mod tests {
         // find_one (should be None)
         let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
         assert_eq!(found, None);
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_accepts_successful_response() {
+        assert!(MongoDbClient::ensure_bulk_update_command_succeeded(&doc! { "ok": 1 }).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_rejects_write_errors() {
+        let error = MongoDbClient::ensure_bulk_update_command_succeeded(&doc! {
+            "ok": 1,
+            "writeErrors": [Bson::Document(doc! {
+                "index": 3,
+                "code": 11000,
+                "errmsg": "duplicate key error",
+            })],
+        })
+        .expect_err("expected write error to fail command");
+
+        assert!(error.to_string().contains("duplicate key error"));
+    }
+
+    #[test]
+    fn test_ensure_bulk_update_command_succeeded_rejects_write_concern_error() {
+        let error = MongoDbClient::ensure_bulk_update_command_succeeded(&doc! {
+            "ok": 1,
+            "writeConcernError": {
+                "code": 64,
+                "errmsg": "waiting for replication timed out",
+            },
+        })
+        .expect_err("expected write concern error to fail command");
+
+        assert!(error.to_string().contains("waiting for replication timed out"));
     }
 }
