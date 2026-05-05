@@ -97,10 +97,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
     }
 
     /// Subscribe to transaction statuses. See [`WatchTransactionStatus`] for more details.
-    pub fn watch_transaction_status(
-        self: &Arc<Self>,
-        transaction_hash: Felt,
-    ) -> anyhow::Result<WatchTransactionStatus<D>> {
+    pub fn watch_transaction_status(&self, transaction_hash: Felt) -> anyhow::Result<WatchTransactionStatus<D>> {
         Ok(WatchTransactionStatus::new(
             &self.backend,
             self.watch_transaction_status.watch(transaction_hash, || self.get_transaction_status(&transaction_hash))?,
