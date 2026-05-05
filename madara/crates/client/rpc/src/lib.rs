@@ -846,10 +846,11 @@ pub enum NewTransactionsWatchError {
     Lagged,
 }
 
+pub type NewTransactionsWatchOutput = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>;
+pub type NewTransactionsWatchFuture<'a> = Pin<Box<dyn Future<Output = NewTransactionsWatchOutput> + Send + 'a>>;
+
 pub trait NewTransactionsWatch: Send {
-    fn recv(
-        &mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>> + Send + '_>>;
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_>;
 }
 
 pub trait NewTransactionsWatcher: Send + Sync {
@@ -910,10 +911,7 @@ struct BroadcastNewTransactionsWatch {
 }
 
 impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
-    fn recv(
-        &mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>> + Send + '_>>
-    {
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_> {
         Box::pin(async move {
             match self.receiver.recv().await {
                 Ok(tx) => Ok(Some(tx)),
