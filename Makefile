@@ -116,8 +116,16 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
+E2E_BINARY_PROFILE ?= debug
+ifeq ($(E2E_BINARY_PROFILE),release)
+E2E_CARGO_PROFILE_FLAG := --release
+else ifeq ($(E2E_BINARY_PROFILE),debug)
+E2E_CARGO_PROFILE_FLAG :=
+else
+E2E_CARGO_PROFILE_FLAG := --profile $(E2E_BINARY_PROFILE)
+endif
 AWS_REGION ?= us-east-1
-PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.4/pathfinder-aarch64-apple-darwin.tar.gz
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.22.3-karnot.1/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -283,45 +291,20 @@ test-e2e: check-e2e-env check-e2e-mac check-e2e-dependencies pull-e2e-docker-ima
 
 .PHONY: check-e2e-env
 check-e2e-env:
-	@echo -e "$(DIM)Checking for MADARA_ORCHESTRATOR_ATLANTIC_API_KEY in .env.e2e...$(RESET)"
+	@echo -e "$(DIM)Checking E2E environment...$(RESET)"
 	@if [ ! -f .env.e2e ]; then \
 		echo -e "$(WARN)⚠️  WARNING: .env.e2e file not found!$(RESET)"; \
-		echo -e "$(WARN)⚠️  Please create .env.e2e and add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY$(RESET)"; \
-		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
-		read -r; \
-	elif ! grep -v "^[[:space:]]*#" .env.e2e | grep -q "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"; then \
-		echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY not found in .env.e2e$(RESET)"; \
-		echo -e "$(WARN)⚠️  Please add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY to .env.e2e$(RESET)"; \
+		echo -e "$(WARN)⚠️  Please create .env.e2e before running local E2E tests$(RESET)"; \
 		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
 		read -r; \
 	else \
-		API_KEY=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY" | cut -d '=' -f 2 | tr -d ' "'); \
-		if [ -z "$$API_KEY" ]; then \
-			echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY is empty in .env.e2e$(RESET)"; \
-			echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
-			read -r; \
-		else \
-			MASKED_KEY=$$(echo $$API_KEY | sed 's/\(.\{4\}\).*/\1****/'); \
-			echo -e "$(PASS)✅ Found MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: $$MASKED_KEY$(RESET)"; \
-		fi; \
+		echo -e "$(PASS)✅ Found .env.e2e$(RESET)"; \
 	fi
-	@# Check for CARGO_TARGET_DIR in .env.e2e
-	@if [ -f .env.e2e ]; then \
-		if grep -v "^[[:space:]]*#" .env.e2e | grep -q "CARGO_TARGET_DIR"; then \
-			ENV_TARGET_DIR=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "CARGO_TARGET_DIR" | cut -d '=' -f 2 | tr -d ' "'); \
-			if [ "$$ENV_TARGET_DIR" != "$(CARGO_TARGET_DIR)" ]; then \
-				echo -e "$(WARN)⚠️  WARNING: CARGO_TARGET_DIR in .env.e2e ($$ENV_TARGET_DIR) differs from Makefile value$(RESET)"; \
-				echo -e "$(INFO)Updating .env.e2e to use: $(CARGO_TARGET_DIR)$(RESET)"; \
-				sed -i.bak '/^[[:space:]]*CARGO_TARGET_DIR/d' .env.e2e && rm -f .env.e2e.bak; \
-				echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
-			else \
-				echo -e "$(PASS)✅ CARGO_TARGET_DIR already set correctly: $(CARGO_TARGET_DIR)$(RESET)"; \
-			fi; \
-		else \
-			echo -e "$(INFO)Adding CARGO_TARGET_DIR to .env.e2e: $(CARGO_TARGET_DIR)$(RESET)"; \
-			echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
-		fi; \
-	fi
+	@echo -e "$(PASS)✅ Using CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)$(RESET)"
+	@echo -e "$(PASS)✅ Using MADARA_E2E_BINARY_PROFILE=$(E2E_BINARY_PROFILE)$(RESET)"
+	@E2E_PROVER="$${MADARA_ORCHESTRATOR_PROVER:-$$(sed -n 's/^MADARA_ORCHESTRATOR_PROVER=//p' .env.e2e 2>/dev/null | tail -n 1)}"; \
+	E2E_PROVER="$${E2E_PROVER:-mock}"; \
+	echo -e "$(PASS)✅ Using MADARA_ORCHESTRATOR_PROVER=$$E2E_PROVER$(RESET)"
 
 .PHONY: check-e2e-mac
 check-e2e-mac:
@@ -382,16 +365,16 @@ pull-e2e-docker-images:
 .PHONY: build-e2e-binaries
 build-e2e-binaries:
 	@echo -e "$(DIM)Building E2E binaries...$(RESET)"
-	@mkdir -p $(CARGO_TARGET_DIR)/release
+	@mkdir -p $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)
 	@# Build Madara
 	@echo -e "$(INFO)Building Madara...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara $(E2E_CARGO_PROFILE_FLAG)
 	@# Build Orchestrator
 	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator $(E2E_CARGO_PROFILE_FLAG)
 	@# Build Bootstrapper V2
 	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 $(E2E_CARGO_PROFILE_FLAG)
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
@@ -400,10 +383,10 @@ build-e2e-binaries:
 .PHONY: download-pathfinder-mac
 download-pathfinder-mac:
 	@echo -e "$(DIM)Downloading Pathfinder binary for Mac...$(RESET)"
-	@mkdir -p $(CARGO_TARGET_DIR)/release
-	@if [ ! -f $(CARGO_TARGET_DIR)/release/pathfinder ]; then \
+	@mkdir -p $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)
+	@if [ ! -f $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/pathfinder ]; then \
 		curl -L -o pathfinder.tar.gz $(PATHFINDER_URL_MAC); \
-		tar -xf pathfinder.tar.gz -C $(CARGO_TARGET_DIR)/release/; \
+		tar -xf pathfinder.tar.gz -C $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/; \
 		rm pathfinder.tar.gz; \
 		echo -e "$(PASS)✅ Pathfinder downloaded$(RESET)"; \
 	else \
@@ -413,10 +396,10 @@ download-pathfinder-mac:
 .PHONY: make-e2e-binaries-executable
 make-e2e-binaries-executable:
 	@echo -e "$(DIM)Making binaries executable...$(RESET)"
-	@chmod +x $(CARGO_TARGET_DIR)/release/madara
-	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper-v2
-	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
-	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
+	@chmod +x $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/madara
+	@chmod +x $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/bootstrapper-v2
+	@chmod +x $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/pathfinder
+	@chmod +x $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)/orchestrator
 	@chmod +x test_utils/scripts/deploy_dummy_verifier.sh
 	@echo -e "$(PASS)✅ Binaries are executable$(RESET)"
 
@@ -425,6 +408,7 @@ run-e2e:
 	@echo -e "$(DIM)Running E2E bridge tests...$(RESET)"
 	@AWS_REGION=$(AWS_REGION) \
 	CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) \
+	MADARA_E2E_BINARY_PROFILE=$(E2E_BINARY_PROFILE) \
 	RUST_LOG=info cargo test \
 		--package e2e test_bridge_deposit_and_withdraw \
 		-- --test-threads=10 --nocapture
