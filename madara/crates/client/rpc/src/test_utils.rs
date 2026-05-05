@@ -1,5 +1,8 @@
 use crate::Starknet;
-use crate::{NewTransactionsWatch, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch, TxStatusWatcher};
+use crate::{
+    NewTransactionsWatch, NewTransactionsWatchError, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch,
+    TxStatusWatcher,
+};
 use jsonrpsee::core::async_trait;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
@@ -157,16 +160,20 @@ impl NewTransactionsWatch for TestNewTransactionsWatch {
         &mut self,
     ) -> std::pin::Pin<
         Box<
-            dyn std::future::Future<Output = Option<Arc<mp_transactions::validated::ValidatedTransaction>>> + Send + '_,
+            dyn std::future::Future<
+                    Output = Result<
+                        Option<Arc<mp_transactions::validated::ValidatedTransaction>>,
+                        NewTransactionsWatchError,
+                    >,
+                > + Send
+                + '_,
         >,
     > {
         Box::pin(async move {
-            loop {
-                match self.receiver.recv().await {
-                    Ok(tx) => return Some(tx),
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
-                }
+            match self.receiver.recv().await {
+                Ok(tx) => Ok(Some(tx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Err(NewTransactionsWatchError::Lagged),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => Ok(None),
             }
         })
     }

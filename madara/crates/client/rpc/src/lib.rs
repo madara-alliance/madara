@@ -841,8 +841,15 @@ pub trait TxStatusWatcher: Send + Sync {
     fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewTransactionsWatchError {
+    Lagged,
+}
+
 pub trait NewTransactionsWatch: Send {
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<Arc<ValidatedTransaction>>> + Send + '_>>;
+    fn recv(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>> + Send + '_>>;
 }
 
 pub trait NewTransactionsWatcher: Send + Sync {
@@ -903,12 +910,15 @@ struct BroadcastNewTransactionsWatch {
 }
 
 impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<Arc<ValidatedTransaction>>> + Send + '_>> {
+    fn recv(
+        &mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>> + Send + '_>>
+    {
         Box::pin(async move {
             match self.receiver.recv().await {
-                Ok(tx) => Some(tx),
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => None,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+                Ok(tx) => Ok(Some(tx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Err(NewTransactionsWatchError::Lagged),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => Ok(None),
             }
         })
     }
