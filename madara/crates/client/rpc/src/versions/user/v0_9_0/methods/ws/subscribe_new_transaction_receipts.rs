@@ -58,7 +58,9 @@ async fn subscribe_new_transaction_receipts_inner(
                         block_stream.set_start_from(reorg.first_reverted_block_n);
                         continue;
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        return Err(super::missed_reorg_notifications_error());
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         return Err(crate::errors::StarknetWsApiError::Internal);
                     }
