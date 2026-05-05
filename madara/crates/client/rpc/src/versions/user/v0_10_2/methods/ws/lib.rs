@@ -330,6 +330,66 @@ mod test {
     }
 
     #[tokio::test]
+    async fn subscribe_new_heads_reorg_during_backfill_v0_10_2() {
+        const BACKFILL_BLOCKS: u64 = 1_025;
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut block_0_hash = Felt::ZERO;
+        let mut block_1_hash = Felt::ZERO;
+        let mut previous_head_hash = Felt::ZERO;
+        for n in 0..BACKFILL_BLOCKS {
+            let (block_hash, _header) = add_block_at_with_hash(&backend, n);
+            if n == 0 {
+                block_0_hash = block_hash;
+            } else if n == 1 {
+                block_1_hash = block_hash;
+            }
+            previous_head_hash = block_hash;
+        }
+
+        let mut sub = raw_subscribe_new_heads(&client, BlockId::Number(0)).await;
+        backend.revert_to(&block_0_hash).expect("Revert should succeed");
+
+        let expected_reorg = serde_json::to_value(mp_rpc::v0_10_2::ReorgData {
+            starting_block_hash: block_1_hash,
+            starting_block_number: 1,
+            ending_block_hash: previous_head_hash,
+            ending_block_number: BACKFILL_BLOCKS - 1,
+        })
+        .expect("Failed to serialize expected reorg notification");
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let next = sub
+                    .next()
+                    .await
+                    .expect("Subscription closed unexpectedly")
+                    .expect("Failed to retrieve backfill item");
+
+                if next == expected_reorg {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("Timed out waiting for reorg notification after replay backfill");
+
+        let (_replacement_hash, replacement_head) = add_block_at_with_hash(&backend, 1);
+
+        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for replacement head")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve replacement head");
+        let item: SubscriptionItem<mp_rpc::v0_10_2::BlockHeader> =
+            serde_json::from_value(next).expect("Failed to deserialize replacement head");
+
+        assert_eq!(item.result, replacement_head);
+    }
+
+    #[tokio::test]
     async fn unsubscribe_rejects_invalid_string_id_v0_10_2() {
         let (_backend, starknet) = rpc_test_setup();
         let (_handle, server_url) = start_server(starknet).await;
