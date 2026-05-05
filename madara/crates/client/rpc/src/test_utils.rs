@@ -156,19 +156,7 @@ impl NewTransactionsWatcher for TestNewTransactionsWatcher {
 
 #[cfg(test)]
 impl NewTransactionsWatch for TestNewTransactionsWatch {
-    fn recv(
-        &mut self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = Result<
-                        Option<Arc<mp_transactions::validated::ValidatedTransaction>>,
-                        NewTransactionsWatchError,
-                    >,
-                > + Send
-                + '_,
-        >,
-    > {
+    fn recv(&mut self) -> crate::NewTransactionsWatchFuture<'_> {
         Box::pin(async move {
             match self.receiver.recv().await {
                 Ok(tx) => Ok(Some(tx)),
