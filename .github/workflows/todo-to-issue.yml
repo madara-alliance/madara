@@ -1,0 +1,106 @@
+name: TODO to Issue
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  todo-to-issue:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TODO to Issue
+        id: todo-to-issue
+        uses: alstr/todo-to-issue-action@v5
+        with:
+          CLOSE_ISSUES: "true"
+          INSERT_ISSUE_URLS: "false"
+          AUTO_ASSIGN: "true"
+          IDENTIFIERS: '[{"name": "TODO", "labels": ["todo"]}, {"name": "FIXME", "labels": ["todo:fixme"]}, {"name": "HACK", "labels": ["todo:hack"]}]'
+
+      - name: Comment on closed issues with resolving PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = context.sha;
+
+            // Find the PR associated with this merge commit
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: sha,
+            });
+
+            const mergedPr = prs.find(pr => pr.merge_commit_sha === sha);
+            if (!mergedPr) {
+              console.log('No merged PR found for this commit, skipping.');
+              return;
+            }
+
+            const prNumber = mergedPr.number;
+            console.log(`Found merged PR #${prNumber}`);
+
+            // Search for issues with "todo" label closed in the last 2 minutes
+            const now = new Date();
+            const twoMinutesAgo = new Date(now.getTime() - 2 * 60 * 1000);
+            const since = twoMinutesAgo.toISOString();
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              labels: 'todo',
+              since: since,
+              per_page: 100,
+            });
+
+            // Also check todo:fixme and todo:hack labels
+            const { data: fixmeIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              labels: 'todo:fixme',
+              since: since,
+              per_page: 100,
+            });
+
+            const { data: hackIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              labels: 'todo:hack',
+              since: since,
+              per_page: 100,
+            });
+
+            // Deduplicate by issue number
+            const allIssues = new Map();
+            [...issues, ...fixmeIssues, ...hackIssues].forEach(issue => {
+              if (!issue.pull_request) {
+                allIssues.set(issue.number, issue);
+              }
+            });
+
+            console.log(`Found ${allIssues.size} recently closed TODO issues`);
+
+            for (const [issueNumber, issue] of allIssues) {
+              // Verify the issue was closed recently (within this workflow run)
+              const closedAt = new Date(issue.closed_at);
+              if (closedAt >= twoMinutesAgo) {
+                console.log(`Commenting on issue #${issueNumber}`);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: `Resolved by the merge of #${prNumber} to main.`,
+                });
+              }
+            }
