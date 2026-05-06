@@ -14,8 +14,8 @@ use opentelemetry_sdk::trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracer
 use opentelemetry_sdk::Resource;
 use std::{env, fmt::Display, time::Duration};
 use tracing_core::LevelFilter;
-use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_log::LogTracer;
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::EnvFilter;

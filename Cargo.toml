@@ -61,7 +61,7 @@ rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "heemankv/dup-hash-frontier-cache", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", rev = "0cf9fbb2f49501fb613f29ba793a5ba8caf9e307", features = [
   "std",
 ] }
 
