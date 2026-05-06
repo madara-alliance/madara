@@ -1,4 +1,7 @@
-use crate::errors::{ErrorExtWs, StarknetWsApiError};
+use crate::{
+    constants::MAX_EVENTS_KEYS,
+    errors::{ErrorExtWs, StarknetWsApiError},
+};
 use anyhow::Context;
 use mc_db::{subscription::SubscribeNewBlocksTag, EventFilter};
 use mp_rpc::v0_8_1::{BlockId, BlockTag, EmittedEvent};
@@ -13,6 +16,11 @@ pub async fn subscribe_events(
     keys: Option<Vec<Vec<Felt>>>,
     block_id: Option<BlockId>,
 ) -> Result<(), StarknetWsApiError> {
+    if let Err(err) = validate_keys(&keys) {
+        subscription_sink.reject(err).await;
+        return Ok(());
+    }
+
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let mut next_block_n = starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1));
@@ -103,6 +111,15 @@ pub async fn subscribe_events(
     }
 }
 
+fn validate_keys(keys: &Option<Vec<Vec<Felt>>>) -> Result<(), StarknetWsApiError> {
+    let total_keys = keys.as_ref().map(|patterns| patterns.iter().map(Vec::len).sum::<usize>()).unwrap_or(0);
+    if total_keys > MAX_EVENTS_KEYS {
+        return Err(StarknetWsApiError::TooManyKeysInFilter);
+    }
+
+    Ok(())
+}
+
 async fn send_block_events(
     starknet: &crate::Starknet,
     sink: &jsonrpsee::server::SubscriptionSink,
@@ -145,6 +162,7 @@ async fn send_event(
 #[cfg(test)]
 mod test {
     use crate::{
+        constants::MAX_EVENTS_KEYS,
         versions::user::v0_8_1::{StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server},
         Starknet,
     };
@@ -363,6 +381,28 @@ mod test {
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
             assert_eq!(received.result, event);
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_events_rejects_too_many_keys(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (_backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let err = client
+            .subscribe_events(None, Some(vec![vec![Felt::ONE; MAX_EVENTS_KEYS + 1]]), None)
+            .await
+            .expect_err("Subscription should fail");
+
+        match err {
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyKeysInFilter.into());
+            }
+            other => panic!("Unexpected error: {other:?}"),
         }
     }
 
