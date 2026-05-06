@@ -55,10 +55,15 @@ impl JobHandlerTrait for ProvingJobHandler {
         })?;
 
         debug!("Parsing Cairo PIE file");
-        let cairo_pie = Box::new(CairoPie::from_bytes(cairo_pie_file.to_vec().as_slice()).map_err(|e| {
+        let mut cairo_pie = Box::new(CairoPie::from_bytes(cairo_pie_file.to_vec().as_slice()).map_err(|e| {
             error!(error = %e, "Failed to parse Cairo PIE file");
             ProvingError::CairoPIENotReadable(e.to_string())
         })?);
+
+        if std::env::var("FAULT_INJECT_CORRUPT_PIE").as_deref() == Ok("true") {
+            warn!("FAULT INJECTION: corrupting Cairo PIE execution resources");
+            cairo_pie.execution_resources.n_steps = 0;
+        }
 
         debug!("Submitting task to prover client");
 

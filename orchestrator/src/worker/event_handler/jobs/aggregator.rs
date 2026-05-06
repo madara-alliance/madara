@@ -437,7 +437,13 @@ impl AggregatorJobHandler {
         prover_label: &str,
     ) -> Result<AggregatorRunnerOutput, JobError> {
         let chain_details = config.chain_details();
-        let chain_id = AggregatorFelt::from_hex(&format!("0x{}", hex::encode(&chain_details.chain_id)))
+        let chain_id_hex = if std::env::var("FAULT_INJECT_CORRUPT_AR").as_deref() == Ok("true") {
+            warn!("FAULT INJECTION: corrupting chain_id for aggregator");
+            "0xDEADBEEF".to_string()
+        } else {
+            format!("0x{}", hex::encode(&chain_details.chain_id))
+        };
+        let chain_id = AggregatorFelt::from_hex(&chain_id_hex)
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse chain_id: {}", e))))?;
         let fee_token_address = AggregatorFelt::from_hex(chain_details.strk_fee_token_address.as_str())
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse fee_token_address: {}", e))))?;

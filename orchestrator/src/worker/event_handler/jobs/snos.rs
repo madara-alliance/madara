@@ -52,8 +52,14 @@ pub trait ChainDetailsExt {
 
 impl ChainDetailsExt for ChainDetails {
     fn to_chain_config(&self) -> ChainConfig {
+        let chain_id = if std::env::var("FAULT_INJECT_CORRUPT_SNOS").as_deref() == Ok("true") {
+            warn!("FAULT INJECTION: corrupting chain_id for SNOS execution");
+            "FAULT_INJECTED_WRONG_CHAIN".to_string()
+        } else {
+            self.chain_id.clone()
+        };
         ChainConfig {
-            chain_id: ChainId::Other(self.chain_id.clone()),
+            chain_id: ChainId::Other(chain_id),
             strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.strk_fee_token_address))
                 .expect("Invalid STRK fee token address"),
             eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.eth_fee_token_address))

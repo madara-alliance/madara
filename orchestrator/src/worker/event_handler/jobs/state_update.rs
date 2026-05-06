@@ -385,8 +385,15 @@ impl StateUpdateJobHandler {
         &self,
         config: Arc<Config>,
         nonce: u64,
-        artifacts: StateUpdateArtifacts,
+        mut artifacts: StateUpdateArtifacts,
     ) -> Result<String, JobError> {
+        if std::env::var("FAULT_INJECT_CORRUPT_BLOB").as_deref() == Ok("true") {
+            warn!("FAULT INJECTION: corrupting blob data before state update submission");
+            for blob in artifacts.blob_data.iter_mut() {
+                blob.iter_mut().for_each(|b| *b = 0);
+            }
+        }
+
         // Get the snos settlement client
         let settlement_client = config.settlement_client();
 
