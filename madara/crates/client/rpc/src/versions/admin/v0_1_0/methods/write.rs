@@ -1,7 +1,7 @@
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_db::MadaraStorageRead;
+use mc_db::{FaultInjection, FaultType, MadaraStorageRead};
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
@@ -273,6 +273,37 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         self.backend.set_custom_header(custom_block_headers);
+        Ok(())
+    }
+
+    async fn inject_fault(&self, fault: FaultType, block_count: u64) -> RpcResult<()> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+        if !self.fault_injection_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --fault-injection flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+        if block_count == 0 {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "block_count must be at least 1".to_string().into(),
+            }
+            .into());
+        }
+
+        tracing::warn!(
+            target: "rpc::admin",
+            "FAULT INJECTION: setting fault {:?} for {} block(s)",
+            fault, block_count,
+        );
+
+        self.backend.set_fault_injection(FaultInjection { fault_type: fault, remaining_blocks: block_count });
+
         Ok(())
     }
 }

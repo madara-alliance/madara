@@ -163,6 +163,19 @@ pub use storage::{
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FaultType {
+    CorruptStateDiff,
+    CorruptBlockHash,
+}
+
+#[derive(Debug, Clone)]
+pub struct FaultInjection {
+    pub fault_type: FaultType,
+    pub remaining_blocks: u64,
+}
+
 /// Timing information collected during the close_block DB operations.
 /// All durations are captured for structured logging.
 #[derive(Debug, Clone, Default)]
@@ -322,6 +335,8 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// - **Must clear** after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
     pub custom_header: Mutex<Option<CustomHeader>>,
+
+    pub fault_injection: Mutex<Option<FaultInjection>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -373,6 +388,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             custom_header: Mutex::new(None),
+            fault_injection: Mutex::new(None),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -465,6 +481,28 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header);
+    }
+
+    pub fn set_fault_injection(&self, fault: FaultInjection) {
+        let mut guard = self.fault_injection.lock().expect("Poisoned lock");
+        *guard = Some(fault);
+    }
+
+    /// Check if a fault of the given type is active. If so, decrement the
+    /// remaining block counter (removing the fault when it reaches zero) and
+    /// return `true` so the caller can apply the corruption.
+    pub fn consume_fault(&self, fault_type: FaultType) -> bool {
+        let mut guard = self.fault_injection.lock().expect("Poisoned lock");
+        if let Some(ref mut fault) = *guard {
+            if fault.fault_type == fault_type && fault.remaining_blocks > 0 {
+                fault.remaining_blocks -= 1;
+                if fault.remaining_blocks == 0 {
+                    *guard = None;
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
@@ -757,6 +795,18 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         block.state_diff = state_diff;
 
+        // Fault injection: add a fake storage entry so SNOS re-execution diverges.
+        if self.inner.consume_fault(FaultType::CorruptStateDiff) {
+            tracing::warn!("FAULT INJECTION: corrupting state diff for block #{}", block.header.block_number);
+            block.state_diff.storage_diffs.push(mp_state_update::ContractStorageDiffItem {
+                address: Felt::from(0xFA017u64),
+                storage_entries: vec![mp_state_update::StorageEntry {
+                    key: Felt::from(0xDEADu64),
+                    value: Felt::from(0xBEEFu64),
+                }],
+            });
+        }
+
         // Write the block & apply to global trie
 
         let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override, fetch_duration)?;
@@ -879,6 +929,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                 guard.take();
             }
         }
+
+        // Fault injection: corrupt the block hash so full nodes detect a mismatch.
+        let block_hash = if self.inner.consume_fault(FaultType::CorruptBlockHash) {
+            tracing::warn!("FAULT INJECTION: corrupting block hash for block #{}", block.header.block_number);
+            block_hash + Felt::ONE
+        } else {
+            block_hash
+        };
 
         // Phase 2: Persist the staged trie changes to RocksDB.
         let contract_trie_root_duration = staged_tries.contract_trie_root_duration;

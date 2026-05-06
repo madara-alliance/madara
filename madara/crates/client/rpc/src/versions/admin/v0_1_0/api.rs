@@ -1,6 +1,7 @@
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mc_db::FaultType;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -87,6 +88,11 @@ pub trait MadaraWriteRpcApi {
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
+
+    /// Inject a fault for testing/drill purposes. The fault auto-clears after
+    /// `block_count` blocks. Requires both `--rpc-unsafe` and `--fault-injection`.
+    #[method(name = "injectFault")]
+    async fn inject_fault(&self, fault: FaultType, block_count: u64) -> RpcResult<()>;
 }
 
 /// This is an admin method, so semver is different!

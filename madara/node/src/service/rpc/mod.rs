@@ -77,6 +77,7 @@ impl Service for RpcService {
 
         let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
         let rpc_unsafe_enabled = self.config.rpc_unsafe;
+        let fault_injection_enabled = self.config.fault_injection;
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
@@ -90,6 +91,7 @@ impl Service for RpcService {
             );
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
+            starknet.set_fault_injection_enabled(fault_injection_enabled);
 
             let metrics = RpcMetrics::register()?;
 

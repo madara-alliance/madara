@@ -97,6 +97,12 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_UNSAFE", long, default_value_t = false, requires = "rpc_admin")]
     pub rpc_unsafe: bool,
 
+    /// Enables the `injectFault` RPC method for chaos/drill testing. Allows
+    /// injecting faults like corrupted state diffs or block hashes.
+    /// Requires `--rpc-unsafe` to be enabled. Never enable in production.
+    #[arg(env = "MADARA_FAULT_INJECTION", long, default_value_t = false, requires = "rpc_unsafe")]
+    pub fault_injection: bool,
+
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in mebibytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MIB)]
     pub rpc_max_request_size: u32,
