@@ -32,6 +32,7 @@ sysinfo = "0.30.12"
 time = { workspace = true, features = ["formatting", "local-offset", "macros"] }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
+tracing-log = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
