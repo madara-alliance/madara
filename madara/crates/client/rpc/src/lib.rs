@@ -1040,7 +1040,10 @@ impl WsSubscriptionHandle {
 
     fn cancel(&self) {
         self.cancelled.store(true, std::sync::atomic::Ordering::Release);
+        // Wake currently-registered waiters and also leave a stored permit behind for the
+        // race where cancellation lands before a waiter has fully registered with `Notify`.
         self.notify.notify_waiters();
+        self.notify.notify_one();
     }
 
     async fn cancelled(&self) {
@@ -1203,7 +1206,7 @@ impl Drop for WsSubscriptionGuard {
 
 #[cfg(test)]
 mod test {
-    use super::{resolve_live_confirmed_head, LiveConfirmedHeadResolution};
+    use super::{resolve_live_confirmed_head, LiveConfirmedHeadResolution, WsSubscriptionHandle};
     use crate::{errors::StarknetWsApiError, test_utils::rpc_test_setup};
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use starknet_types_core::felt::Felt;
@@ -1259,5 +1262,35 @@ mod test {
             LiveConfirmedHeadResolution::Block(_) => panic!("Expected missing block to retry backfill"),
             LiveConfirmedHeadResolution::Reorg(_) => panic!("Expected missing block without reorg to retry backfill"),
         }
+    }
+
+    #[tokio::test]
+    async fn ws_subscription_handle_cancel_wakes_all_waiters() {
+        let handle = Arc::new(WsSubscriptionHandle::new());
+        let handle_1 = Arc::clone(&handle);
+        let handle_2 = Arc::clone(&handle);
+
+        let waiter_1 = tokio::spawn(async move { handle_1.cancelled().await });
+        let waiter_2 = tokio::spawn(async move { handle_2.cancelled().await });
+
+        tokio::task::yield_now().await;
+        handle.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            waiter_1.await.expect("First waiter should complete");
+            waiter_2.await.expect("Second waiter should complete");
+        })
+        .await
+        .expect("Cancellation should wake all waiters");
+    }
+
+    #[tokio::test]
+    async fn ws_subscription_handle_cancelled_returns_immediately_after_cancel() {
+        let handle = WsSubscriptionHandle::new();
+        handle.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), handle.cancelled())
+            .await
+            .expect("Cancelled handle should resolve immediately");
     }
 }
