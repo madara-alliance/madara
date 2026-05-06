@@ -12,6 +12,11 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
     finality_status: Option<Vec<FinalityStatus>>,
     sender_address: Option<Vec<Felt>>,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
+    if sender_address.as_ref().map_or(0, Vec::len) as u64 > super::ADDRESS_FILTER_LIMIT {
+        subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await;
+        return Ok(());
+    }
+
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
 
