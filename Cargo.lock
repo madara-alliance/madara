@@ -10035,6 +10035,7 @@ dependencies = [
  "time",
  "tracing",
  "tracing-core",
+ "tracing-log",
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
