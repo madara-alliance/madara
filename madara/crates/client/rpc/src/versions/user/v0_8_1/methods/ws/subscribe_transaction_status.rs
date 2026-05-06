@@ -44,7 +44,7 @@ pub async fn subscribe_transaction_status(
                         "SubscribeTransactionStatus failed to parse string subscription id",
                     )
                     .await?;
-                    return Err(crate::errors::StarknetWsApiError::Internal);
+                    return Ok(());
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
