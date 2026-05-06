@@ -1,6 +1,6 @@
 use super::ContractTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::{GlobalTrie, WrappedBonsaiError};
+use crate::rocksdb::trie::{GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -22,8 +22,33 @@ struct ContractLeaf {
 
 /// Holds uncommitted contract tries between staged root computation and final commit.
 pub struct StagedContractTries {
-    contract_storage_trie: GlobalTrie<Pedersen>,
+    backend: RocksDBStorage,
+    contract_storage_trie: SharedContractStorageTrie,
     contract_trie: GlobalTrie<Pedersen>,
+    committed: bool,
+}
+
+impl Drop for StagedContractTries {
+    fn drop(&mut self) {
+        if !self.committed {
+            tracing::debug!("dropping staged contract tries without commit, resetting cached contract storage trie");
+            self.backend.reset_cached_contract_storage_trie();
+        }
+    }
+}
+
+struct ResetCachedStorageTrieOnDrop {
+    backend: RocksDBStorage,
+    armed: bool,
+}
+
+impl Drop for ResetCachedStorageTrieOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            tracing::debug!("staged contract trie computation aborted, resetting cached contract storage trie");
+            self.backend.reset_cached_contract_storage_trie();
+        }
+    }
 }
 
 impl StagedContractTries {
@@ -31,11 +56,16 @@ impl StagedContractTries {
         let mut timings = ContractTrieTimings::default();
 
         let storage_commit_start = Instant::now();
-        self.contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        let mut contract_storage_trie = self
+            .contract_storage_trie
+            .lock()
+            .expect("Poisoned cached contract storage trie");
+        contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
         timings.storage_commit = storage_commit_start.elapsed();
         let storage_commit_secs = timings.storage_commit.as_secs_f64();
         metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
         metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
+        drop(contract_storage_trie);
 
         let contract_commit_start = Instant::now();
         self.contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
@@ -44,6 +74,7 @@ impl StagedContractTries {
         metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
         metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
 
+        self.committed = true;
         Ok(timings)
     }
 }
@@ -59,10 +90,18 @@ pub fn contract_trie_root_staged(
     block_number: u64,
 ) -> Result<(Felt, StagedContractTries)> {
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
+    let cached_contract_storage_trie = backend.cached_contract_storage_trie();
+    let mut reset_cached_trie = ResetCachedStorageTrieOnDrop { backend: backend.clone(), armed: true };
 
-    let mut contract_storage_trie = backend.contract_storage_trie();
+    let mut contract_storage_trie = cached_contract_storage_trie
+        .lock()
+        .expect("Poisoned cached contract storage trie");
 
-    tracing::trace!("contract_storage_trie inserting");
+    tracing::debug!(
+        "contract_storage_trie using cached frontier, touched_contracts={}, storage_diff_entries={}",
+        storage_diffs.len(),
+        storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>(),
+    );
 
     for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
         for StorageEntry { key, value } in storage_entries {
@@ -85,11 +124,13 @@ pub fn contract_trie_root_staged(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
+    let contract_storage_trie_ref: &GlobalTrie<Pedersen> = &contract_storage_trie;
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
-            let storage_root =
-                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
+            let storage_root = contract_storage_trie_ref
+                .root_hash_staged(&contract_address.to_bytes_be())
+                .map_err(WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
@@ -97,6 +138,7 @@ pub fn contract_trie_root_staged(
             anyhow::Ok((bv, leaf_hash))
         })
         .collect::<Result<_>>()?;
+    drop(contract_storage_trie);
 
     let mut contract_trie = backend.contract_trie();
 
@@ -108,7 +150,16 @@ pub fn contract_trie_root_staged(
 
     tracing::trace!("contract_trie staged root computed");
 
-    Ok((root_hash, StagedContractTries { contract_storage_trie, contract_trie }))
+    reset_cached_trie.armed = false;
+    Ok((
+        root_hash,
+        StagedContractTries {
+            backend: backend.clone(),
+            contract_storage_trie: cached_contract_storage_trie,
+            contract_trie,
+            committed: false,
+        },
+    ))
 }
 
 /// Calculates the contract trie root (single-phase: inserts + commits immediately).
