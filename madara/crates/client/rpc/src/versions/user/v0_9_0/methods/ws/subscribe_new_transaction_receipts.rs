@@ -31,6 +31,11 @@ async fn subscribe_new_transaction_receipts_inner(
     sender_address: Option<Vec<Felt>>,
     emit_reorg_notifications: bool,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
+    if sender_address.as_ref().map_or(0, Vec::len) as u64 > super::ADDRESS_FILTER_LIMIT {
+        subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await;
+        return Ok(());
+    }
+
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
 
@@ -446,6 +451,29 @@ mod test {
     }
 
     #[tokio::test]
+    async fn subscribe_new_transaction_receipts_rejects_too_many_sender_addresses_v0_9() {
+        let (_backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_v0_9_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let size = super::super::ADDRESS_FILTER_LIMIT as usize + 1;
+        let err = StarknetWsRpcApiV0_9_0Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![FinalityStatus::AcceptedOnL2]),
+            Some(vec![SENDER_ADDRESS; size]),
+        )
+        .await
+        .expect_err("Subscription should fail");
+
+        match err {
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyAddressesInFilter.into());
+            }
+            other => panic!("Unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn subscribe_new_transaction_receipts_reorg_then_resume_v0_9() {
         let (backend, starknet) = rpc_test_setup();
         let (_handle, server_url) = start_v0_9_server(starknet).await;
@@ -546,5 +574,28 @@ mod test {
                 block_number: 1,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transaction_receipts_rejects_too_many_sender_addresses_v0_10() {
+        let (_backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_v0_10_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let size = super::super::ADDRESS_FILTER_LIMIT as usize + 1;
+        let err = StarknetWsRpcApiV0_10_0Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![FinalityStatusV10::AcceptedOnL2]),
+            Some(vec![SENDER_ADDRESS; size]),
+        )
+        .await
+        .expect_err("Subscription should fail");
+
+        match err {
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyAddressesInFilter.into());
+            }
+            other => panic!("Unexpected error: {other:?}"),
+        }
     }
 }
