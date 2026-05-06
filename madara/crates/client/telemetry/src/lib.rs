@@ -14,7 +14,6 @@ use opentelemetry_sdk::trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracer
 use opentelemetry_sdk::Resource;
 use std::{env, fmt::Display, time::Duration};
 use tracing_core::LevelFilter;
-use tracing_log::LogTracer;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -126,11 +125,6 @@ impl TelemetryService {
     /// Initializes local tracing and, when configured, installs the OTEL
     /// collectors and global providers.
     pub fn setup(&mut self) -> anyhow::Result<()> {
-        // Some dependencies, including bonsai-trie, emit through the `log`
-        // facade rather than `tracing`. Install the bridge so `RUST_LOG`
-        // filters and the local subscriber see those records as well.
-        let _ = LogTracer::init();
-
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().event_format(CustomFormatter::new()))
             .with(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?);
