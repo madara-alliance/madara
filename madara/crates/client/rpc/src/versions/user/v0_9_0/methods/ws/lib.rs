@@ -47,7 +47,7 @@ impl StarknetWsRpcApiV0_9_0Server for crate::Starknet {
         finality_status: Option<Vec<TxnStatusWithoutL1>>,
         sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_new_transactions(self, subscription_sink, finality_status, sender_address).await?)
+        Ok(subscribe_new_transactions_with_reorg(self, subscription_sink, finality_status, sender_address).await?)
     }
 
     async fn subscribe_new_transaction_receipts(
@@ -56,7 +56,8 @@ impl StarknetWsRpcApiV0_9_0Server for crate::Starknet {
         finality_status: Option<Vec<FinalityStatus>>,
         sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_new_transaction_receipts(self, subscription_sink, finality_status, sender_address).await?)
+        Ok(subscribe_new_transaction_receipts_with_reorg(self, subscription_sink, finality_status, sender_address)
+            .await?)
     }
 
     async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {
