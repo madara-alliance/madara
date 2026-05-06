@@ -28,6 +28,7 @@ pub async fn subscribe_transaction_status(
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
     let mut allow_current = true;
+    let mut last_emitted = None;
     loop {
         let Some(update) = next_update(&sink, &ctx, &mut watch, &mut reorgs, allow_current).await? else {
             return Ok(());
@@ -36,7 +37,12 @@ pub async fn subscribe_transaction_status(
             SubscriptionUpdate::Snapshot(snapshot) => {
                 allow_current = false;
 
-                send_txn_status(&sink, transaction_hash, snapshot).await?;
+                if let Some(status) = map_txn_status(snapshot) {
+                    if last_emitted.as_ref() != Some(&status) {
+                        send_txn_status(&sink, transaction_hash, status.clone()).await?;
+                        last_emitted = Some(status);
+                    }
+                }
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     crate::close_ws_subscription(
                         starknet,
@@ -65,6 +71,17 @@ enum SubscriptionUpdate {
     Snapshot(crate::TxStatusSnapshot),
     Reorg(mc_db::ReorgNotification),
     WatcherClosed,
+}
+
+fn map_txn_status(snapshot: crate::TxStatusSnapshot) -> Option<mp_rpc::v0_8_1::TxnStatus> {
+    match snapshot {
+        crate::TxStatusSnapshot::Received => Some(mp_rpc::v0_8_1::TxnStatus::Received),
+        crate::TxStatusSnapshot::Candidate => None,
+        crate::TxStatusSnapshot::PreConfirmed | crate::TxStatusSnapshot::AcceptedOnL2 => {
+            Some(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2)
+        }
+        crate::TxStatusSnapshot::AcceptedOnL1 => Some(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1),
+    }
 }
 
 async fn next_update(
@@ -101,17 +118,8 @@ async fn next_update(
 async fn send_txn_status(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     tx_hash: mp_convert::Felt,
-    snapshot: crate::TxStatusSnapshot,
+    status: mp_rpc::v0_8_1::TxnStatus,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let status = match snapshot {
-        crate::TxStatusSnapshot::Received => mp_rpc::v0_8_1::TxnStatus::Received,
-        crate::TxStatusSnapshot::Candidate | crate::TxStatusSnapshot::PreConfirmed => {
-            mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
-        }
-        crate::TxStatusSnapshot::AcceptedOnL2 => mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2,
-        crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1,
-    };
-
     let txn_status = mp_rpc::v0_8_1::NewTxnStatus { transaction_hash: tx_hash, status };
     let item = super::SubscriptionItem::new(sink.subscription_id(), txn_status);
     let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
@@ -277,6 +285,51 @@ mod test {
                 });
             }
         );
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
+            Some(Ok(SubscriptionItem { result: status, .. })) => {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
+                    transaction_hash: TX_HASH,
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_transaction_status_candidate_is_silent_and_preconfirmed_is_deduped() {
+        let (_backend, starknet, watcher) = starknet_with_status_watcher();
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonrpsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
+        tokio::time::timeout(Duration::from_millis(200), sub.next())
+            .await
+            .expect_err("Candidate should not emit a public v0.8.1 status");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
+            Some(Ok(SubscriptionItem { result: status, .. })) => {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
+                    transaction_hash: TX_HASH,
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
+                });
+            }
+        );
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        tokio::time::timeout(Duration::from_millis(200), sub.next())
+            .await
+            .expect_err("AcceptedOnL2 should not be re-emitted after preconfirmed collapse");
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
         assert_matches!(
