@@ -1,4 +1,4 @@
-use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
+use crate::errors::{ErrorExtWs, StarknetWsApiError};
 use mc_db::subscription::SubscribeNewBlocksTag;
 use mp_rpc::v0_10_2::{BlockHeader, BlockId, BlockTag};
 
@@ -120,14 +120,25 @@ pub async fn subscribe_new_heads(
 
             let next_block_n =
                 next_block_n.expect("Confirmed block subscription should always yield a confirmed block number");
-            let block_view =
-                starknet.backend.block_view_on_confirmed(next_block_n).ok_or_else_internal_server_error(|| {
-                    format!("Failed to retrieve block info for block {next_block_n}")
-                })?;
-            let block_info = block_view
-                .get_block_info()
-                .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
-            send_block_header(&sink, block_info, next_block_n).await?;
+            match crate::resolve_live_confirmed_head(
+                &starknet.backend,
+                &mut reorgs,
+                next_block_n,
+                super::missed_reorg_notifications_error(),
+            )? {
+                crate::LiveConfirmedHeadResolution::Block(block_info) => {
+                    send_block_header(&sink, *block_info, next_block_n).await?;
+                }
+                crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
+                }
+                crate::LiveConfirmedHeadResolution::RetryBackfill => {
+                    block_n = next_block_n;
+                    continue 'backfill;
+                }
+            }
         }
     }
 }
