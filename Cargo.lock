@@ -3064,7 +3064,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/madara-alliance/bonsai-trie?branch=heemankv%2Fdup-hash-frontier-cache#0cf9fbb2f49501fb613f29ba793a5ba8caf9e307"
+source = "git+https://github.com/madara-alliance/bonsai-trie?rev=0cf9fbb2f49501fb613f29ba793a5ba8caf9e307#0cf9fbb2f49501fb613f29ba793a5ba8caf9e307"
 dependencies = [
  "bitvec",
  "derive_more 0.99.20",

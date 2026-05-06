@@ -9,7 +9,7 @@ use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 pub const BONSAI_CONTRACT_FLAT_COLUMN: Column = Column::new("bonsai_contract_flat").set_point_lookup();
 pub const BONSAI_CONTRACT_TRIE_COLUMN: Column = Column::new("bonsai_contract_trie").set_point_lookup();
@@ -22,7 +22,7 @@ pub const BONSAI_CLASS_TRIE_COLUMN: Column = Column::new("bonsai_class_trie").se
 pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log");
 
 pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
-pub(crate) type SharedContractStorageTrie = Arc<Mutex<GlobalTrie<Pedersen>>>;
+pub(crate) type SharedContractStorageTrie = Arc<RwLock<GlobalTrie<Pedersen>>>;
 pub(crate) type LazySharedContractStorageTrie = OnceLock<SharedContractStorageTrie>;
 
 pub use bonsai_trie::id::BasicId;
@@ -78,14 +78,14 @@ impl RocksDBStorage {
         self.contract_storage_hot_cache
             .get_or_init(|| {
                 tracing::debug!("initializing cached contract storage trie");
-                Arc::new(Mutex::new(self.fresh_contract_storage_trie()))
+                Arc::new(RwLock::new(self.fresh_contract_storage_trie()))
             })
             .clone()
     }
     pub(crate) fn reset_cached_contract_storage_trie(&self) {
         if let Some(cached_trie) = self.contract_storage_hot_cache.get() {
             tracing::debug!("resetting cached contract storage trie");
-            let mut guard = cached_trie.lock().expect("Poisoned cached contract storage trie");
+            let mut guard = cached_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
             *guard = self.fresh_contract_storage_trie();
         }
     }
