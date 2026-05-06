@@ -103,7 +103,7 @@ async fn next_matching_transaction(
             }
         };
 
-        if sender_address.contains(&tx.contract_address) {
+        if sender_address.is_empty() || sender_address.contains(&tx.contract_address) {
             return Ok(Some(tx));
         }
     }
@@ -248,6 +248,28 @@ mod test {
                 assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_2.hash));
             }
         );
+    }
+
+    #[tokio::test]
+    async fn subscribe_pending_transactions_empty_filter_matches_all() {
+        let (starknet, watcher) = starknet_with_new_transactions_watcher();
+        let tx_1 = invoke_tx(SENDER_ADDRESS);
+        let tx_2 = invoke_tx(Felt::ONE);
+        let (client, _server_handle) = ws_client(starknet).await;
+
+        let mut sub = client.subscribe_pending_transactions(false, vec![]).await.expect("Failed subscription");
+
+        watcher.send_transaction(tx_1.clone());
+        watcher.send_transaction(tx_2.clone());
+
+        for expected_hash in [tx_1.hash, tx_2.hash] {
+            assert_matches!(
+                tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
+                Some(Ok(SubscriptionItem { result: tx, .. })) => {
+                    assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(expected_hash));
+                }
+            );
+        }
     }
 
     #[tokio::test]
