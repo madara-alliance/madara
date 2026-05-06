@@ -423,6 +423,19 @@ mod test {
         .expect("starknet_V0_10_0_subscribeNewTransactions")
     }
 
+    async fn raw_subscribe_new_transactions_v0_9(
+        client: &jsonrpsee::ws_client::WsClient,
+    ) -> jsonrpsee::core::client::Subscription<Value> {
+        SubscriptionClientT::subscribe(
+            client,
+            "starknet_V0_9_0_subscribeNewTransactions",
+            ObjectParams::new(),
+            "starknet_V0_9_0_unsubscribe",
+        )
+        .await
+        .expect("starknet_V0_9_0_subscribeNewTransactions")
+    }
+
     #[tokio::test]
     async fn subscribe_new_transactions_default_finality_emits_confirmed_transactions_v0_10() {
         let (backend, starknet) = rpc_test_setup();
@@ -674,6 +687,107 @@ mod test {
         );
 
         let transaction_hash = Felt::from_hex_unchecked("0x9898");
+        let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 1,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![tx.clone()],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store replacement confirmed block 1");
+
+        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for replacement transaction")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve replacement transaction");
+        let item: super::super::SubscriptionItem<TxnWithHashAndStatus> =
+            serde_json::from_value(next).expect("Failed to deserialize replacement transaction item");
+
+        assert_eq!(
+            item.result,
+            TxnWithHashAndStatus {
+                transaction: TxnWithHash { transaction: tx.transaction.to_rpc_v0_8(), transaction_hash },
+                finality_status: TxnStatusWithoutL1::AcceptedOnL2,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transactions_reorg_then_resume_v0_9() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_v0_9_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let block_0_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 0,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block 0")
+            .block_hash;
+        let block_1_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 1,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block 1")
+            .block_hash;
+
+        let mut sub = raw_subscribe_new_transactions_v0_9(&client).await;
+
+        backend.revert_to(&block_0_hash).expect("Revert should succeed");
+
+        let reorg = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for reorg notification")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve reorg notification");
+
+        assert_eq!(
+            reorg,
+            serde_json::to_value(mp_rpc::v0_9_0::ReorgData {
+                starting_block_hash: block_1_hash,
+                starting_block_number: 1,
+                ending_block_hash: block_1_hash,
+                ending_block_number: 1,
+            })
+            .expect("Failed to serialize expected reorg notification")
+        );
+
+        let transaction_hash = Felt::from_hex_unchecked("0x9797");
         let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
         backend
             .write_access()
