@@ -188,7 +188,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
 async fn atlantic_client_get_query_by_dedup_id_found() {
     // Use a known dedup_id that already exists on Atlantic (avoids submitting a new job)
     // This job exists in Project Madara_CI
-    let dedup_id = "3771be1d-9fa2-4c2e-bab9-76a0a67d10f7";
+    let dedup_id = "5d36e358-200a-45c3-a375-0b47004d879f";
 
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
