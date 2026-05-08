@@ -706,8 +706,8 @@ impl MadaraStorageWrite for RocksDBStorage {
     ///
     /// # Notes
     ///
-    /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
-    ///   are missing source-block mappings, this function fails early without mutating chain state.
+    /// * L1-message preflight runs before destructive writes. Nonces missing source-block
+    ///   mappings are logged as warnings and still cleaned up, but don't affect L1 sync rewind.
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
     /// * This function does not stop services or shutdown the process. Lifecycle side-effects
@@ -790,8 +790,8 @@ impl MadaraStorageWrite for RocksDBStorage {
 
         if !missing_source_block_nonces.is_empty() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
-            bail!(
-                "Cannot revert: missing L1 handler L1 block mapping for {} L1 message nonce(s) scheduled for cleanup (sample={sample:?}).",
+            tracing::warn!(
+                "Revert: {} L1 message nonce(s) have no L1 block mapping (sample={sample:?}). These nonces will still be cleaned up but won't affect L1 sync rewind.",
                 missing_source_block_nonces.len()
             );
         }

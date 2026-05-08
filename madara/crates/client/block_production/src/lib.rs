@@ -803,6 +803,10 @@ impl BlockProductionTask {
                     }
                     None => {
                         tracing::debug!("EndFinalBlock(None) received - executor completed without block");
+                        if self.backend.has_preconfirmed_block() {
+                            tracing::info!("Clearing preconfirmed block from database on shutdown");
+                            self.backend.write_access().clear_preconfirmed()?;
+                        }
                     }
                 }
             }

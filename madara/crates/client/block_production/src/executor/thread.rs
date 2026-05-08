@@ -289,55 +289,21 @@ impl ExecutorThread {
                         }
                     },
                     // Channel closed. Exit gracefully.
-                    // Before exiting, check if we have an executing block that needs to be closed.
-                    // This ensures graceful shutdown closes the block using the executor's existing state.
+                    // Discard the preconfirmed block — do not close or save it.
+                    // On restart the block will be gone and any preconfirmed txns will be lost.
                     WaitTxBatchOutcome::Exit => {
                         match state {
-                            ExecutorThreadState::Executing(mut execution_state) => {
-                                tracing::debug!(
-                                    "Shutting down executor, closing block block_n={}",
+                            ExecutorThreadState::Executing(execution_state) => {
+                                tracing::info!(
+                                    "Shutting down executor, discarding preconfirmed block block_n={}",
                                     execution_state.exec_ctx.block_number
                                 );
-
-                                // Finalize the block to get execution summary
-                                // This uses the executor's current state - no re-execution needed
-                                let finalize_start = Instant::now();
-                                match execution_state.executor.finalize() {
-                                    Ok(block_exec_summary) => {
-                                        let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                                        self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-
-                                        // Send EndFinalBlock message so main loop can close the block during shutdown
-                                        if self
-                                            .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Some(Box::new(
-                                                block_exec_summary,
-                                            ))))
-                                            .is_err()
-                                        {
-                                            // Receiver closed - main loop already shut down
-                                            // Block will remain preconfirmed and be handled on restart
-                                            tracing::warn!(
-                                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        // Finalization failed - log error but continue shutdown
-                                        // Block will remain preconfirmed and be handled on restart
-                                        if self
-                                            .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
-                                            .is_err()
-                                        {
-                                            tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
-                                        }
-                                        tracing::warn!(
-                                            "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
-                                            e
-                                        );
-                                    }
+                                if self
+                                    .replies_sender
+                                    .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
+                                    .is_err()
+                                {
+                                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
                                 }
                             }
                             ExecutorThreadState::NewBlock(_) => {
