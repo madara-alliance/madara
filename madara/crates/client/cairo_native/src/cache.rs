@@ -318,18 +318,8 @@ fn handle_metadata_validation_error(
                 "native_cache_host_mismatch_skipping_disk_load"
             );
         }
-        NativeCacheMetadataError::Write { path: metadata_path, reason } => {
-            super::metrics::metrics().record_cache_metadata_write_error();
-            tracing::warn!(
-                target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                path = %path.display(),
-                metadata_path = %metadata_path.display(),
-                error = %reason,
-                elapsed = ?elapsed,
-                elapsed_ms = elapsed.as_millis(),
-                "native_cache_metadata_write_error_skipping_disk_load"
-            );
+        NativeCacheMetadataError::Write { .. } => {
+            unreachable!("validate_metadata_for_so only returns read-phase metadata errors")
         }
     }
 
