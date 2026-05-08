@@ -183,6 +183,17 @@ Key services run concurrently:
 **Multi-tier caching**: In-memory + disk-based compiled classes
 **Configuration**: Compilation semaphore, blocking vs async modes, retry logic, per-contract opt-out
 
+**Persisted native cache contract**:
+
+- On disk, one cache entry is the compiled `.so` plus its `.meta.json` sidecar
+- Lookup requires both files; if either file is missing or invalid, the remaining file is deleted and the class is recompiled
+- Bump `NATIVE_CACHE_ABI_VERSION` in `mc-class-exec` whenever a change:
+  - adds, removes, or reinterprets host fingerprint fields
+  - changes how persisted native artifacts are validated or loaded
+  - changes the metadata sidecar contract
+  - adopts a cairo-native/compiler/runtime change that should invalidate existing artifacts
+- Do not bump it for host-only differences already covered by fingerprint fields such as `arch`, `os`, or `cpu_vendor`
+
 ### RPC Server Architecture
 
 **Framework**: jsonrpsee (HTTP + WebSocket on same port)

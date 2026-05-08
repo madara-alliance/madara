@@ -7,10 +7,14 @@ use std::sync::LazyLock;
 
 // Maintainers:
 // Bump this when persisted native artifacts should be considered incompatible
-// even on the same host. Typical reasons:
-// - changing how Madara interprets or validates cached native artifacts
-// - changing the metadata sidecar contract
-// - adopting a cairo-native/compiler/runtime change that should force recompilation
+// even on the same host. Update it in the same change that:
+// - adds, removes, or reinterprets fields in `NativeHostFingerprint`
+// - changes how Madara validates or loads persisted native artifacts
+// - changes the `.meta.json` sidecar contract
+// - adopts a cairo-native/compiler/runtime change that should force recompilation
+//
+// Mirror the reason in `madara/CLAUDE.md` so follow-up agents know why the cache
+// was invalidated and what future changes should update this value again.
 //
 // Do not bump this for host-only differences such as `arch`, `os`, or `cpu_vendor`;
 // those are already part of the fingerprint and are validated separately.
@@ -144,6 +148,9 @@ fn detect_cpu_vendor() -> String {
 
     #[cfg(not(target_os = "linux"))]
     {
+        // Production nodes share Cairo Native disk cache only on Linux today.
+        // Keep non-Linux builds working for local development and tests without
+        // adding platform-specific probes that do not affect deployed nodes.
         "unknown".to_string()
     }
 }
