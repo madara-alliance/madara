@@ -380,8 +380,10 @@ pub async fn get_free_port() -> Result<u16, io::Error> {
 
 /// Get the binary path
 pub fn get_binary_path(binary_name: &str) -> PathBuf {
-    let mut path = REPO_ROOT.clone();
-    path.push(BINARY_DIR);
+    let mut path =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| REPO_ROOT.join(DEFAULT_BINARY_TARGET_DIR), PathBuf::from);
+    let profile = std::env::var_os("MADARA_E2E_BINARY_PROFILE").unwrap_or_else(|| DEFAULT_BINARY_PROFILE.into());
+    path.push(PathBuf::from(profile));
     path.push(binary_name);
     path
 }

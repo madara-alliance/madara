@@ -13,11 +13,17 @@ use crate::services::{
     mock_prover::{MockProverConfigBuilder, MockProverError},
     mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError},
     mongodb::{MongoConfig, MongoError},
-    orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode},
+    orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode, ProverKind},
     pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
 };
 use std::env;
 use std::time::Duration;
+
+fn e2e_prover_kind() -> Result<ProverKind, SetupError> {
+    let prover = env::var("MADARA_ORCHESTRATOR_PROVER").unwrap_or_else(|_| ProverKind::Mock.to_string());
+
+    ProverKind::try_from(prover).map_err(SetupError::OtherError)
+}
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -326,6 +332,7 @@ impl SetupConfigBuilder {
     }
 
     pub async fn build_l2_config(self) -> Result<SetupConfig, SetupError> {
+        let prover_kind = e2e_prover_kind()?;
         let mongodb_config = MongoConfigBuilder::new().port(get_free_port().await?).logs((false, true)).build();
 
         let localstack_port = get_free_port().await?;
@@ -391,6 +398,7 @@ impl SetupConfigBuilder {
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port().await?)
+            .prover(prover_kind)
             .admin_enabled(true)
             .da_on_ethereum(true)
             .settle_on_ethereum(true)
@@ -402,10 +410,8 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
-            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
-            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY", env::var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY").unwrap_or_default())
             .logs((true, true))
             .build();
 
@@ -455,15 +461,10 @@ impl SetupConfigBuilder {
             .orchestrator_run_config
             .builder()
             .ethereum_rpc_url(anvil_config.endpoint())
-            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", madara_config.rpc_endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
-            .env_var(
-                "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY",
-                env::var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY").unwrap_or_default(),
-            )
             .build();
 
         // Setting some envs
