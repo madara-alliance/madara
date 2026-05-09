@@ -22,15 +22,7 @@ use std::time::Duration;
 fn e2e_prover_kind() -> Result<ProverKind, SetupError> {
     let prover = env::var("MADARA_ORCHESTRATOR_PROVER").unwrap_or_else(|_| ProverKind::Mock.to_string());
 
-    match prover.to_ascii_lowercase().as_str() {
-        "sharp" => Ok(ProverKind::Sharp),
-        "atlantic" => Ok(ProverKind::Atlantic),
-        "mock" => Ok(ProverKind::Mock),
-        invalid => Err(SetupError::OtherError(format!(
-            "Invalid MADARA_ORCHESTRATOR_PROVER value `{}`. Expected one of: sharp, atlantic, mock",
-            invalid
-        ))),
-    }
+    ProverKind::try_from(prover).map_err(SetupError::OtherError)
 }
 
 #[derive(Debug, PartialEq, serde::Serialize)]
