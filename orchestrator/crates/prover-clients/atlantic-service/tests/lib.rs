@@ -188,7 +188,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
 async fn atlantic_client_get_query_by_dedup_id_found() {
     // Use a known dedup_id that already exists on Atlantic (avoids submitting a new job)
     // This job exists in Project Madara_CI
-    let dedup_id = "3771be1d-9fa2-4c2e-bab9-76a0a67d10f7";
+    let dedup_id = "5d36e358-200a-45c3-a375-0b47004d879f";
 
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -349,22 +349,24 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
 
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
-        // We don't need to send the steps because it's a mock fact hash.
+        // Atlantic still validates the declared job size for mocked fact-hash jobs.
+        // The Fibonacci fixture is small enough to fit the S bucket.
         .submit_task(Task::CreateJob(CreateJobInfo {
             cairo_pie: Box::new(cairo_pie),
             bucket_id: None,
             bucket_job_index: None,
-            num_steps: None,
+            num_steps: Some(1_000_000),
             dedup_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
         .expect("Failed to submit task to Atlantic service");
 
     let mut current_retry = 0;
+    let mut last_status = None;
 
     loop {
         if current_retry >= MAX_RETRIES {
-            panic!("Maximum retries reached. Test timed out.");
+            panic!("Maximum retries reached for Atlantic job {task_result}. Last status: {last_status:#?}");
         }
 
         // Wait before checking status again
@@ -374,6 +376,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         // Get the current status of the job
         let status_result =
             atlantic_service.atlantic_client.get_job_status(&task_result).await.expect("Failed to get job status");
+        last_status = Some(status_result.atlantic_query.clone());
 
         match status_result.atlantic_query.status {
             AtlanticQueryStatus::Done => {

@@ -38,6 +38,27 @@ pub enum ProverKind {
     Mock,
 }
 
+impl TryFrom<&str> for ProverKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_ascii_lowercase().as_str() {
+            "sharp" => Ok(Self::Sharp),
+            "atlantic" => Ok(Self::Atlantic),
+            "mock" => Ok(Self::Mock),
+            invalid => Err(format!("Invalid prover kind `{invalid}`. Expected one of: sharp, atlantic, mock")),
+        }
+    }
+}
+
+impl TryFrom<String> for ProverKind {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_from(value.as_str())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
     #[error("Repository root not found")]
@@ -554,5 +575,25 @@ impl OrchestratorConfigBuilder {
 impl Default for OrchestratorConfigBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProverKind;
+
+    #[test]
+    fn prover_kind_try_from_accepts_supported_values() {
+        assert_eq!(ProverKind::try_from("sharp"), Ok(ProverKind::Sharp));
+        assert_eq!(ProverKind::try_from("ATLANTIC"), Ok(ProverKind::Atlantic));
+        assert_eq!(ProverKind::try_from(String::from("mock")), Ok(ProverKind::Mock));
+    }
+
+    #[test]
+    fn prover_kind_try_from_rejects_unknown_values() {
+        let error = ProverKind::try_from("stone").unwrap_err();
+
+        assert!(error.contains("stone"));
+        assert!(error.contains("sharp, atlantic, mock"));
     }
 }
