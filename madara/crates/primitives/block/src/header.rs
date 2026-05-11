@@ -123,6 +123,7 @@ pub struct GasPrices {
     pub strk_l2_gas_price: u128,
 }
 
+#[cfg(feature = "replay")]
 #[derive(Default, Clone, Serialize, Deserialize, Debug)]
 pub struct CustomHeader {
     pub block_n: u64,
@@ -131,6 +132,7 @@ pub struct CustomHeader {
     pub expected_block_hash: Felt,
 }
 
+#[cfg(feature = "replay")]
 impl CustomHeader {
     pub fn is_block_hash_as_expected(&self, block_hash: &Felt) -> bool {
         self.expected_block_hash == *block_hash

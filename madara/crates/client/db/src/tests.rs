@@ -1,4 +1,5 @@
 #![cfg(any(test, feature = "testing"))]
+#[cfg(feature = "replay")]
 pub mod test_custom_header;
 pub mod test_external_outbox;
 pub mod test_messages_status;

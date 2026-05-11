@@ -11,11 +11,13 @@ use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
+#[cfg(feature = "replay")]
+use std::time::UNIX_EPOCH;
 use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
 
 // TODO: add these to metrics
@@ -192,12 +194,23 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
+    #[cfg(feature = "replay")]
     let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header(block_n) {
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
         let gas_prices = custom_header.gas_prices;
         (block_timestamp, gas_prices)
     } else {
+        let l1_gas_quote = backend
+            .get_last_l1_gas_quote()
+            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+        let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
+        (SystemTime::now(), gas_prices)
+    };
+
+    #[cfg(not(feature = "replay"))]
+    let (block_timestamp, gas_prices) = {
         let l1_gas_quote = backend
             .get_last_l1_gas_quote()
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;

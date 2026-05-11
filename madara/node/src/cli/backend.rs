@@ -61,12 +61,6 @@ pub struct BackendParams {
     #[serde(default)]
     pub no_save_preconfirmed: bool,
 
-    /// Enable replay-specific runtime features such as staged custom block headers
-    /// and replay-oriented admin operations.
-    #[clap(env = "MADARA_ENABLE_REPLAY_FEATURES", long, default_value_t = false)]
-    #[serde(default)]
-    pub enable_replay_features: bool,
-
     /// Skip creating backup before database migration.
     /// WARNING: Without backup, there's no recovery if migration fails.
     /// Only use if you have external snapshots/backups.
@@ -263,7 +257,6 @@ impl BackendParams {
         MadaraBackendConfig {
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
-            replay_features: self.enable_replay_features,
             unsafe_starting_block: self.unsafe_starting_block,
             skip_migration_backup: self.skip_migration_backup,
             execution_read_cache: mc_db::ExecutionReadCacheConfig {

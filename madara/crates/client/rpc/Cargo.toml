@@ -22,6 +22,9 @@ mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
 assert_matches = { workspace = true }
 
+[features]
+replay = ["mc-db/replay", "mp-block/replay"]
+
 [dependencies]
 
 # Madara

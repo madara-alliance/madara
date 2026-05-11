@@ -2,6 +2,7 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::constant::ORCHESTRATOR_VERSION;
+#[cfg(feature = "replay")]
 use crate::worker::event_handler::triggers::batching::replay_bounds;
 use crate::worker::event_handler::triggers::batching::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
@@ -71,6 +72,7 @@ impl JobTrigger for SnosBatchingTrigger {
             info!("Processing SNOS batches for blocks {} to {}", start_block, end_block);
 
             let mut state = state_handler.load_batch_state().await?;
+            #[cfg(feature = "replay")]
             let mut replay_bounds_error: Option<replay_bounds::ReplayBoundsError> = None;
 
             for block_num in start_block..=end_block {
@@ -97,6 +99,7 @@ impl JobTrigger for SnosBatchingTrigger {
                     }
                 };
 
+                #[cfg(feature = "replay")]
                 if let Some(ref_client) = config.replay_bounds_client() {
                     if let Err(e) =
                         replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
@@ -131,6 +134,7 @@ impl JobTrigger for SnosBatchingTrigger {
                 }
             }
 
+            #[cfg(feature = "replay")]
             if let Some(e) = replay_bounds_error {
                 return Err(color_eyre::eyre::eyre!("Replay bounds validation failed: {}", e));
             }

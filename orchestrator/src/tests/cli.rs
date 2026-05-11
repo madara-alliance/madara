@@ -151,13 +151,19 @@ fn prover_selection_parser() {
     args.extend(["--prover", "MOCK"]);
     Cli::try_parse_from(args).expect("uppercase --prover MOCK should parse (ignore_case=true)");
 
-    // 9. Replay bounds must stay behind the explicit replay feature flag.
-    let mut args = baseline();
-    args.extend(["--prover", "mock", "--replay-bounds-rpc-url", "http://localhost:9546"]);
-    Cli::try_parse_from(args).expect_err("expected clap to reject replay bounds without --enable-replay-features");
+    #[cfg(feature = "replay")]
+    // 9. Replay bounds should parse cleanly when the replay feature is compiled in.
+    {
+        let mut args = baseline();
+        args.extend(["--prover", "mock", "--replay-bounds-rpc-url", "http://localhost:9546"]);
+        Cli::try_parse_from(args).expect("replay bounds should parse when the replay feature is enabled");
+    }
 
-    // 10. Replay bounds should parse cleanly once replay features are explicitly enabled.
-    let mut args = baseline();
-    args.extend(["--prover", "mock", "--enable-replay-features", "--replay-bounds-rpc-url", "http://localhost:9546"]);
-    Cli::try_parse_from(args).expect("replay bounds should parse when replay features are enabled");
+    #[cfg(not(feature = "replay"))]
+    // 9. Replay bounds should not be accepted when the replay feature is not compiled in.
+    {
+        let mut args = baseline();
+        args.extend(["--prover", "mock", "--replay-bounds-rpc-url", "http://localhost:9546"]);
+        Cli::try_parse_from(args).expect_err("expected clap to reject replay bounds without the replay feature");
+    }
 }

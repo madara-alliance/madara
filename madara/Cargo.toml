@@ -168,3 +168,4 @@ zeroize.workspace = true
 
 [features]
 default = []
+replay = ["mc-block-production/replay", "mc-db/replay", "mc-rpc/replay", "mp-block/replay"]

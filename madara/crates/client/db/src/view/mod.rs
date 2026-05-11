@@ -1,5 +1,7 @@
 use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
+#[cfg(feature = "replay")]
+use std::time::{Duration, UNIX_EPOCH};
 
 mod block;
 mod block_confirmed;
@@ -70,6 +72,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .context("Parent block should be found")?
                     .get_block_info()?;
 
+                #[cfg(feature = "replay")]
                 let (block_timestamp, gas_prices) =
                     if let Some(custom_header) = self.get_custom_header(parent_block_number + 1) {
                         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
@@ -95,6 +98,20 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                         };
                         (SystemTime::now(), gas_prices)
                     };
+
+                #[cfg(not(feature = "replay"))]
+                let (block_timestamp, gas_prices) = {
+                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
+                        self.calculate_gas_prices(
+                            &quote,
+                            parent_block_info.header.gas_prices.strk_l2_gas_price,
+                            parent_block_info.total_l2_gas_used,
+                        )?
+                    } else {
+                        parent_block_info.header.gas_prices
+                    };
+                    (SystemTime::now(), gas_prices)
+                };
 
                 PreconfirmedBlock::new(PreconfirmedHeader {
                     block_number: *parent_block_number + 1,

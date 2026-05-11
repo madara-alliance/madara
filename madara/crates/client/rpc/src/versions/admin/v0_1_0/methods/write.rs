@@ -1,9 +1,14 @@
+#[cfg(feature = "replay")]
+use crate::versions::admin::v0_1_0::MadaraReplayWriteRpcApiV0_1_0Server;
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
+#[cfg(feature = "replay")]
 use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
+#[cfg(feature = "replay")]
 use mp_block::header::CustomHeader;
+#[cfg(feature = "replay")]
 use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
@@ -11,15 +16,23 @@ use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+#[cfg(feature = "replay")]
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
+#[cfg(feature = "replay")]
 use std::time::Duration;
+#[cfg(feature = "replay")]
 use tokio::time::Instant;
 
+#[cfg(feature = "replay")]
 const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
+#[cfg(feature = "replay")]
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(feature = "replay")]
 const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
+#[cfg(feature = "replay")]
 const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
 
+#[cfg(feature = "replay")]
 fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
     tokio::spawn(async move {
         tokio::time::sleep(REVERT_SHUTDOWN_DELAY).await;
@@ -28,6 +41,7 @@ fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
 }
 
 // Only include services controlled by ServiceMonitor.
+#[cfg(feature = "replay")]
 fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
     [
         MadaraServiceId::L1Sync,
@@ -37,14 +51,6 @@ fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
         MadaraServiceId::Gateway,
         MadaraServiceId::Mempool,
     ]
-}
-
-fn replay_features_disabled_error() -> jsonrpsee::types::ErrorObjectOwned {
-    jsonrpsee::types::ErrorObjectOwned::owned(
-        63,
-        "Replay features are disabled. Enable them with --enable-replay-features.",
-        None::<()>,
-    )
 }
 
 #[async_trait]
@@ -122,6 +128,23 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    async fn add_l1_handler_message(
+        &self,
+        l1_handler_message: L1HandlerTransactionWithFee,
+    ) -> RpcResult<L1HandlerTransactionResult> {
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .submit_l1_handler_transaction(l1_handler_message)
+            .await
+            .map_err(StarknetRpcApiError::from)?)
+    }
+}
+
+#[cfg(feature = "replay")]
+#[async_trait]
+impl MadaraReplayWriteRpcApiV0_1_0Server for Starknet {
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
     /// Coordinated revert: stop all other services, wait for ack, revert DB, then exit.
@@ -132,9 +155,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
             }
             .into());
-        }
-        if !self.replay_features_enabled {
-            return Err(replay_features_disabled_error());
         }
 
         // Validate revert target and snap sync constraints early (before shutdown).
@@ -260,20 +280,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         Ok(())
     }
-
-    async fn add_l1_handler_message(
-        &self,
-        l1_handler_message: L1HandlerTransactionWithFee,
-    ) -> RpcResult<L1HandlerTransactionResult> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .submit_l1_handler_transaction(l1_handler_message)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
-    }
-
+    #[cfg(feature = "replay")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
@@ -282,9 +289,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
             .into());
         }
-        if !self.replay_features_enabled {
-            return Err(replay_features_disabled_error());
-        }
 
         self.backend.set_custom_header(custom_block_headers).map_err(StarknetRpcApiError::from)?;
 
@@ -292,11 +296,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "replay"))]
 mod tests {
     use super::services_to_stop_for_revert;
     use crate::{
-        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
+        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraReplayWriteRpcApiV0_1_0Server, Starknet,
     };
     use mc_db::{
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
@@ -312,7 +316,6 @@ mod tests {
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
         let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
-        rpc.set_replay_features_enabled(true);
         rpc
     }
 
@@ -378,10 +381,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_block_header_updates_fake_preconfirmed_view() {
-        let backend = MadaraBackend::open_for_testing_with_config(
-            Arc::new(ChainConfig::madara_test()),
-            mc_db::MadaraBackendConfig { replay_features: true, ..Default::default() },
-        );
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         add_test_block(&backend, 0, vec![]);
 
         let rpc = make_starknet(backend.clone(), ServiceContext::default());
@@ -407,49 +407,5 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
         assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
-    }
-
-    #[tokio::test]
-    async fn set_block_header_requires_replay_features() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let mut rpc = Starknet::new(
-            backend,
-            Arc::new(TestTransactionProvider),
-            Default::default(),
-            None,
-            ServiceContext::default(),
-        );
-        rpc.set_rpc_unsafe_enabled(true);
-
-        let err = rpc
-            .set_block_header(CustomHeader {
-                block_n: 1,
-                expected_block_hash: Felt::from(0x1234_u64),
-                ..Default::default()
-            })
-            .await
-            .expect_err("set block header should require replay features");
-
-        assert!(err.message().contains("--enable-replay-features"), "unexpected error: {err}");
-    }
-
-    #[tokio::test]
-    async fn revert_to_and_shutdown_requires_replay_features() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let block_0_hash = add_test_block(&backend, 0, vec![]);
-
-        let mut rpc = Starknet::new(
-            backend.clone(),
-            Arc::new(TestTransactionProvider),
-            Default::default(),
-            None,
-            ServiceContext::default(),
-        );
-        rpc.set_rpc_unsafe_enabled(true);
-
-        let err = rpc.revert_to_and_shutdown(block_0_hash).await.expect_err("revert should require replay features");
-
-        assert!(err.message().contains("--enable-replay-features"), "unexpected error: {err}");
-        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
     }
 }

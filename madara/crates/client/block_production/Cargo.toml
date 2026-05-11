@@ -37,6 +37,7 @@ criterion = { workspace = true }
 m-cairo-test-contracts.workspace = true
 
 [features]
+replay = ["mc-db/replay", "mp-block/replay"]
 testing = ["mc-db/testing", "mockall", "mc-settlement-client/testing"]
 
 [dependencies]

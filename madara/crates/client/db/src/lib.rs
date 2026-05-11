@@ -122,6 +122,7 @@ use crate::sync_status::SyncStatusCell;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
+#[cfg(feature = "replay")]
 use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
@@ -136,7 +137,9 @@ use prelude::*;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(feature = "replay")]
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 pub mod metrics;
 use metrics::metrics;
@@ -311,16 +314,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     _temp_dir: Option<tempfile::TempDir>,
 
     /// Custom headers used during block replay to ensure deterministic execution.
-    ///
-    /// When replaying a block, we must match the exact timestamp and gas configuration
-    /// from the original block to reproduce the expected block hash. These per-block
-    /// overrides are applied during transaction validation and execution, along with the
-    /// expected block hash to validate against after block creation.
-    /// # Important Notes
-    /// - Custom headers are keyed by block number because replay can prepare future blocks ahead of time
-    /// - **Must verify** that the block number matches before use
-    /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
-    /// - Access is thread-safe via Mutex to allow concurrent operations
+    #[cfg(feature = "replay")]
     pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 }
 
@@ -343,8 +337,6 @@ pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
-    /// Enables replay-specific backend behavior such as staged custom headers.
-    pub replay_features: bool,
     pub unsafe_starting_block: Option<u64>,
     /// Skip creating backup before migration.
     /// WARNING: Without backup, there's no recovery if migration fails.
@@ -374,6 +366,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            #[cfg(feature = "replay")]
             custom_headers: Mutex::new(Default::default()),
         };
         backend.init().context("Initializing madara backend")?;
@@ -457,28 +450,18 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 }
 
 impl<D> MadaraBackend<D> {
-    pub fn replay_features_enabled(&self) -> bool {
-        self.config.replay_features
-    }
-
+    #[cfg(feature = "replay")]
     pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
-        if !self.replay_features_enabled() {
-            return None;
-        }
         self.custom_headers.lock().expect("Poisoned lock").get(&block_n).cloned()
     }
 
+    #[cfg(feature = "replay")]
     pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
-        if !self.replay_features_enabled() {
-            return None;
-        }
         self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
     }
 
+    #[cfg(feature = "replay")]
     pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
-        if !self.replay_features_enabled() {
-            return 0;
-        }
         let mut guard = self.custom_headers.lock().expect("Poisoned lock");
         let initial_len = guard.len();
         guard.retain(|stored_block_n, _| *stored_block_n > block_n);
@@ -487,11 +470,8 @@ impl<D> MadaraBackend<D> {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
+    #[cfg(feature = "replay")]
     pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
-        ensure!(
-            self.replay_features_enabled(),
-            "Replay features are disabled. Enable them with --enable-replay-features."
-        );
         let chain_tip = self.chain_tip.borrow();
         tracing::debug!(
             target: "custom_header",
@@ -902,40 +882,43 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
-            tracing::debug!(
-                target: "custom_header",
-                block_n = block.header.block_number,
-                consumed_timestamp = header.timestamp,
-                consumed_gas_prices = ?header.gas_prices,
-                block_timestamp = block.header.block_timestamp.0,
-                block_gas_prices = ?block.header.gas_prices,
-                "consuming custom header during block close"
-            );
-            if !header.is_block_hash_as_expected(&block_hash) {
-                let msg = format!(
-                    "Block hash mismatch at block #{}: expected={}, computed={}. \
-                     No data has been persisted.",
-                    block.header.block_number, header.expected_block_hash, block_hash,
-                );
-                tracing::warn!(
+        #[cfg(feature = "replay")]
+        {
+            if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+                tracing::debug!(
                     target: "custom_header",
                     block_n = block.header.block_number,
-                    expected = ?header.expected_block_hash,
-                    computed = ?block_hash,
-                    "{msg}"
+                    consumed_timestamp = header.timestamp,
+                    consumed_gas_prices = ?header.gas_prices,
+                    block_timestamp = block.header.block_timestamp.0,
+                    block_gas_prices = ?block.header.gas_prices,
+                    "consuming custom header during block close"
                 );
-                anyhow::bail!(msg);
+                if !header.is_block_hash_as_expected(&block_hash) {
+                    let msg = format!(
+                        "Block hash mismatch at block #{}: expected={}, computed={}. \
+                         No data has been persisted.",
+                        block.header.block_number, header.expected_block_hash, block_hash,
+                    );
+                    tracing::warn!(
+                        target: "custom_header",
+                        block_n = block.header.block_number,
+                        expected = ?header.expected_block_hash,
+                        computed = ?block_hash,
+                        "{msg}"
+                    );
+                    anyhow::bail!(msg);
+                }
             }
-        }
-        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
-        if cleared_headers > 0 {
-            tracing::debug!(
-                target: "custom_header",
-                block_n = block.header.block_number,
-                cleared_headers,
-                "cleared staged custom headers through closed block"
-            );
+            let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
+            if cleared_headers > 0 {
+                tracing::debug!(
+                    target: "custom_header",
+                    block_n = block.header.block_number,
+                    cleared_headers,
+                    "cleared staged custom headers through closed block"
+                );
+            }
         }
 
         // Phase 2: Persist the staged trie changes to RocksDB.

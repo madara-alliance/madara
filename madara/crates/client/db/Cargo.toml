@@ -108,6 +108,7 @@ starknet-core = { workspace = true }
 
 [features]
 default = []
+replay = ["mp-block/replay"]
 testing = [
   "tempfile",
   "starknet_api/testing",

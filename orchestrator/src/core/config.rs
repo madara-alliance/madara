@@ -202,6 +202,7 @@ pub struct Config {
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// Optional reference node client for replay bounds validation
+    #[cfg(feature = "replay")]
     replay_bounds_client: Option<Arc<JsonRpcClient<HttpTransport>>>,
     /// The Madara feeder gateway client for fetching builtins
     madara_feeder_gateway_client: Arc<RestClient>,
@@ -250,6 +251,7 @@ impl Config {
             params,
             chain_details,
             madara_rpc_client,
+            #[cfg(feature = "replay")]
             replay_bounds_client: None,
             madara_feeder_gateway_client,
             batch_rpc_client,
@@ -266,12 +268,6 @@ impl Config {
 
     /// new - create config from the run command
     pub async fn from_run_cmd(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
-        if run_cmd.replay_bounds_rpc_url.is_some() && !run_cmd.enable_replay_features {
-            return Err(OrchestratorError::ConfigError(
-                "Replay bounds validation requires --enable-replay-features".to_string(),
-            ));
-        }
-
         let cloud_provider =
             CloudProvider::try_from(run_cmd.clone()).context("Failed to create cloud provider from run command")?;
         let provider_config = Arc::new(cloud_provider);
@@ -318,6 +314,7 @@ impl Config {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
         let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
+        #[cfg(feature = "replay")]
         let replay_bounds_client = run_cmd
             .replay_bounds_rpc_url
             .as_ref()
@@ -343,6 +340,7 @@ impl Config {
                 })?;
         info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
+        #[cfg(feature = "replay")]
         if let Some(ref url) = run_cmd.replay_bounds_rpc_url {
             info!(reference_rpc_url = %url, "Replay bounds validation enabled");
         }
@@ -364,6 +362,7 @@ impl Config {
             params,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
+            #[cfg(feature = "replay")]
             replay_bounds_client,
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             batch_rpc_client,
@@ -559,6 +558,7 @@ impl Config {
     }
 
     /// Returns the replay bounds reference client, if configured
+    #[cfg(feature = "replay")]
     pub fn replay_bounds_client(&self) -> Option<&Arc<JsonRpcClient<HttpTransport>>> {
         self.replay_bounds_client.as_ref()
     }

@@ -1,4 +1,5 @@
 pub mod aggregator;
+#[cfg(feature = "replay")]
 pub mod replay_bounds;
 pub mod snos;
 pub mod utils;
