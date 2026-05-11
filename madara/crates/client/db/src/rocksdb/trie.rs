@@ -26,6 +26,7 @@ pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 pub(crate) type SharedContractStorageTrie = Arc<ContractStorageTrieCache>;
 pub(crate) type LazySharedContractStorageTrie = OnceLock<SharedContractStorageTrie>;
 
+#[derive(Debug)]
 pub(crate) struct ContractStorageTrieCache {
     trie: RwLock<GlobalTrie<Pedersen>>,
     generation: AtomicU64,
