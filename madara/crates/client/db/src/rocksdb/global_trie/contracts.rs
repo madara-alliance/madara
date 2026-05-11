@@ -123,22 +123,25 @@ pub fn contract_trie_root_staged(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
-    let contract_storage_trie = cached_contract_storage_trie.read().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let contract_storage_trie_ref: &GlobalTrie<Pedersen> = &contract_storage_trie;
+    {
+        let contract_storage_trie =
+            cached_contract_storage_trie.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+        for (contract_address, leaf) in contract_leafs.iter_mut() {
+            leaf.storage_root = Some(
+                contract_storage_trie.root_hash_staged(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?,
+            );
+        }
+    }
+
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
-        .map(|(contract_address, mut leaf)| {
-            let storage_root = contract_storage_trie_ref
-                .root_hash_staged(&contract_address.to_bytes_be())
-                .map_err(WrappedBonsaiError)?;
-            leaf.storage_root = Some(storage_root);
+        .map(|(contract_address, leaf)| {
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             anyhow::Ok((bv, leaf_hash))
         })
         .collect::<Result<_>>()?;
-    drop(contract_storage_trie);
 
     let mut contract_trie = backend.contract_trie();
 
