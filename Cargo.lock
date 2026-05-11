@@ -1086,8 +1086,8 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apollo_compilation_utils"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.17.0",
@@ -1104,8 +1104,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_compile_to_native"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_compile_to_native_types",
@@ -1117,8 +1117,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_compile_to_native_types"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_config",
  "serde",
@@ -1127,8 +1127,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_config"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -1145,8 +1145,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_infra_utils"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -1167,8 +1167,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_metrics"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_time",
  "indexmap 2.13.1",
@@ -1181,8 +1181,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_proc_macros"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1192,8 +1192,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_sizeof"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_sizeof_macros",
  "starknet-types-core 0.2.4",
@@ -1201,8 +1201,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_sizeof_macros"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1211,8 +1211,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_starknet_os_program"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_infra_utils",
  "cairo-vm",
@@ -1226,8 +1226,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_time"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "chrono",
 ]
@@ -2763,7 +2763,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2783,7 +2783,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2803,7 +2803,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -2920,8 +2920,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -2971,8 +2971,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier_test_utils"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -3095,7 +3095,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "starknet-rust",
+ "starknet-rust 0.18.0",
  "strum 0.27.2",
  "strum_macros 0.27.2",
  "thiserror 2.0.17",
@@ -5011,9 +5011,9 @@ dependencies = [
 
 [[package]]
 name = "cairo-native"
-version = "0.9.0-rc.5"
+version = "0.9.0-rc.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9950a82462e862001b66def6d99927d7067a8816af6b11e4623d4796c04907e9"
+checksum = "fe61376fbdfb4c121e4d5ca997fa6eee18b4891d8fe22226f60fe27983467339"
 dependencies = [
  "aquamarine",
  "ark-ec",
@@ -5321,7 +5321,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5330,7 +5330,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6236,12 +6236,12 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust",
- "starknet-rust-accounts",
+ "starknet-rust 0.19.0-rc.2",
+ "starknet-rust-accounts 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "testcontainers",
@@ -6281,7 +6281,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "testcontainers",
@@ -6565,15 +6565,42 @@ dependencies = [
 
 [[package]]
 name = "ethbloom"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c22d4b5885b6aa2fe5e8b9329fb8d232bf739e434e6b87347c63bdd00c120f60"
+dependencies = [
+ "crunchy",
+ "fixed-hash",
+ "impl-rlp 0.3.0",
+ "impl-serde 0.4.0",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "ethbloom"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c321610643004cf908ec0f5f2aa0d8f1f8e14b540562a2887a1111ff1ecbf7b"
 dependencies = [
  "crunchy",
  "fixed-hash",
- "impl-rlp",
+ "impl-rlp 0.4.0",
  "impl-serde 0.5.0",
  "tiny-keccak",
+]
+
+[[package]]
+name = "ethereum-types"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d215cbf040552efcbe99a38372fe80ab9d00268e20012b79fcd0f073edd8ee"
+dependencies = [
+ "ethbloom 0.13.0",
+ "fixed-hash",
+ "impl-rlp 0.3.0",
+ "impl-serde 0.4.0",
+ "primitive-types 0.12.2",
+ "uint 0.9.5",
 ]
 
 [[package]]
@@ -6582,9 +6609,9 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7326303c6c18bb03c7a3c4c22d4032ae60dfe673ca9109602aa4d8154b2637e"
 dependencies = [
- "ethbloom",
+ "ethbloom 0.14.1",
  "fixed-hash",
- "impl-rlp",
+ "impl-rlp 0.4.0",
  "impl-serde 0.5.0",
  "primitive-types 0.14.0",
  "uint 0.10.0",
@@ -7056,7 +7083,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-alpha.1#27e65af93ff6108a662fa5691ef578ea61c3ea37"
+source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2#3af39ab119bd123ab998910b7e6b000bf154def6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7075,7 +7102,7 @@ dependencies = [
  "serde_json",
  "shared_execution_objects",
  "starknet-os-types",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
@@ -7808,7 +7835,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -8183,6 +8210,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d40b9d5e17727407e55028eafc22b2dc68781786e6d7eb8a21103f5058e3a14"
 dependencies = [
  "parity-scale-codec",
+]
+
+[[package]]
+name = "impl-rlp"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f28220f89297a075ddc7245cd538076ee98b01f2a9c23a53a4f1105d5a322808"
+dependencies = [
+ "rlp 0.5.2",
 ]
 
 [[package]]
@@ -9365,13 +9401,13 @@ dependencies = [
  "serde_with 3.16.1",
  "serde_yaml",
  "sha3",
- "starknet-rust",
- "starknet-rust-accounts",
- "starknet-rust-contract",
+ "starknet-rust 0.19.0-rc.2",
+ "starknet-rust-accounts 0.19.0-rc.2",
+ "starknet-rust-contract 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
  "syn 2.0.117",
@@ -9635,7 +9671,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde_json",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-signers",
+ "starknet-rust-signers 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
  "tokio",
@@ -9668,9 +9704,9 @@ dependencies = [
  "reqwest 0.12.26",
  "rstest 0.18.2",
  "serde_json",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-providers",
+ "starknet-rust-providers 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
  "tempfile",
@@ -9747,10 +9783,10 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
  "starknet_api",
  "testcontainers",
  "thiserror 2.0.17",
@@ -9950,11 +9986,11 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust-accounts",
+ "starknet-rust-accounts 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
  "tempfile",
@@ -10281,7 +10317,7 @@ checksum = "7e0603425789b4a70fcc4ac4f5a46a566c116ee3e2a6b768dc623f7719c611de"
 dependencies = [
  "assert-json-diff",
  "bytes",
- "colored 2.2.0",
+ "colored 3.0.0",
  "futures-core",
  "http 1.4.0",
  "http-body 1.0.1",
@@ -10544,7 +10580,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-providers",
+ "starknet-rust-providers 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
  "starknet_api",
  "thiserror 2.0.17",
@@ -11243,7 +11279,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
@@ -11321,7 +11357,7 @@ dependencies = [
  "axum 0.7.9",
  "color-eyre",
  "mockall 0.13.1",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
 ]
 
 [[package]]
@@ -11343,7 +11379,7 @@ dependencies = [
  "reqwest 0.12.26",
  "rstest 0.18.2",
  "serde",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "tokio",
  "tokio-test",
  "tracing",
@@ -11411,7 +11447,7 @@ dependencies = [
  "opentelemetry_sdk",
  "orchestrator-utils",
  "serde",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -11468,7 +11504,7 @@ dependencies = [
  "color-eyre",
  "mockall 0.13.1",
  "orchestrator-utils",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
 ]
 
 [[package]]
@@ -11509,7 +11545,7 @@ dependencies = [
  "mockall 0.13.1",
  "orchestrator-da-client-interface",
  "serde",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "tracing",
  "url",
 ]
@@ -11542,10 +11578,10 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-rust",
- "starknet-rust-accounts",
+ "starknet-rust 0.19.0-rc.2",
+ "starknet-rust-accounts 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-providers",
+ "starknet-rust-providers 0.19.0-rc.2",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -11638,8 +11674,8 @@ dependencies = [
 
 [[package]]
 name = "papyrus_common"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "cairo-lang-starknet-classes",
  "indexmap 2.13.1",
@@ -12283,6 +12319,7 @@ checksum = "0b34d9fd68ae0b74a41b21c03c2f62847aa0ffea044eee893b4c140b37e244e2"
 dependencies = [
  "fixed-hash",
  "impl-codec 0.6.0",
+ "impl-rlp 0.3.0",
  "impl-serde 0.4.0",
  "uint 0.9.5",
 ]
@@ -12295,7 +12332,7 @@ checksum = "721a1da530b5a2633218dc9f75713394c983c352be88d2d7c9ee85e2c4c21794"
 dependencies = [
  "fixed-hash",
  "impl-codec 0.7.1",
- "impl-rlp",
+ "impl-rlp 0.4.0",
  "impl-serde 0.5.0",
  "uint 0.10.0",
 ]
@@ -12406,7 +12443,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12419,7 +12456,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -13021,7 +13058,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-alpha.1#27e65af93ff6108a662fa5691ef578ea61c3ea37"
+source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2#3af39ab119bd123ab998910b7e6b000bf154def6"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -13036,7 +13073,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-os-types",
- "starknet-rust",
+ "starknet-rust 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
  "starknet-types-core 0.2.4",
@@ -14111,8 +14148,8 @@ dependencies = [
 
 [[package]]
 name = "shared_execution_objects"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "blockifier",
  "serde",
@@ -14447,7 +14484,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-alpha.1#27e65af93ff6108a662fa5691ef578ea61c3ea37"
+source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2#3af39ab119bd123ab998910b7e6b000bf154def6"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -14467,16 +14504,46 @@ dependencies = [
 
 [[package]]
 name = "starknet-rust"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77925c9cd079af3657250a4cad7c5352bae5ebf1161e5a466b86fb33d2833319"
+dependencies = [
+ "starknet-rust-accounts 0.17.0",
+ "starknet-rust-contract 0.17.0",
+ "starknet-rust-core 0.17.0",
+ "starknet-rust-core-derive 0.1.0",
+ "starknet-rust-macros 0.2.6",
+ "starknet-rust-providers 0.17.0",
+ "starknet-rust-signers 0.15.0",
+]
+
+[[package]]
+name = "starknet-rust"
 version = "0.19.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50b6146f9696cc1bab30018143d4b653b6f4ecd729791431efc92c3e90514024"
 dependencies = [
- "starknet-rust-accounts",
- "starknet-rust-contract",
+ "starknet-rust-accounts 0.19.0-rc.2",
+ "starknet-rust-contract 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-macros",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-macros 0.19.0-rc.2",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
+]
+
+[[package]]
+name = "starknet-rust-accounts"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "989a4d2cdc6c8fd7f7f942ccac6e0e151d47a7546da78690f3b9c9c5477751f2"
+dependencies = [
+ "async-trait",
+ "auto_impl",
+ "starknet-rust-core 0.17.0",
+ "starknet-rust-crypto 0.9.0",
+ "starknet-rust-providers 0.17.0",
+ "starknet-rust-signers 0.15.0",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -14489,9 +14556,24 @@ dependencies = [
  "auto_impl",
  "starknet-rust-core 0.19.0-rc.2",
  "starknet-rust-crypto 0.19.0-rc.2",
- "starknet-rust-providers",
- "starknet-rust-signers",
+ "starknet-rust-providers 0.19.0-rc.2",
+ "starknet-rust-signers 0.19.0-rc.2",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "starknet-rust-contract"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22fdecc1831151ee84d7f86b8d0551c6bc5a0d5990ca58fe81b0d20fea58660a"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_with 3.16.1",
+ "starknet-rust-accounts 0.17.0",
+ "starknet-rust-core 0.17.0",
+ "starknet-rust-providers 0.17.0",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -14501,9 +14583,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9823c26cb78c4e6df65f9f6ee59cd299f85a93694dc8322fe1fe3b868af065e"
 dependencies = [
  "serde_json",
- "starknet-rust-accounts",
+ "starknet-rust-accounts 0.19.0-rc.2",
  "starknet-rust-core 0.19.0-rc.2",
- "starknet-rust-providers",
+ "starknet-rust-providers 0.19.0-rc.2",
 ]
 
 [[package]]
@@ -14527,6 +14609,30 @@ dependencies = [
  "sha3",
  "starknet-rust-core-derive 0.1.0",
  "starknet-rust-crypto 0.8.1",
+ "starknet-types-core 0.2.4",
+]
+
+[[package]]
+name = "starknet-rust-core"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "295694e002d92939c1e67050772b9e225adc791efbb2a72dc41d250d7595fcfc"
+dependencies = [
+ "base64 0.21.7",
+ "crypto-bigint 0.5.5",
+ "flate2",
+ "foldhash 0.1.5",
+ "hex",
+ "indexmap 2.13.1",
+ "num-traits",
+ "semver 1.0.27",
+ "serde",
+ "serde_json",
+ "serde_json_pythonic",
+ "serde_with 3.16.1",
+ "sha3",
+ "starknet-rust-core-derive 0.1.0",
+ "starknet-rust-crypto 0.9.0",
  "starknet-types-core 0.2.4",
 ]
 
@@ -14599,6 +14705,27 @@ dependencies = [
 
 [[package]]
 name = "starknet-rust-crypto"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96f4c2c74d8eca6f5f084b44bbe43f20b9923b4f26b1586f0ced57a79ef7edb4"
+dependencies = [
+ "blake2",
+ "crypto-bigint 0.5.5",
+ "digest 0.10.7",
+ "hex",
+ "hmac",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rfc6979 0.4.0",
+ "sha2",
+ "starknet-rust-curve 0.6.0",
+ "starknet-types-core 0.2.4",
+ "zeroize",
+]
+
+[[package]]
+name = "starknet-rust-crypto"
 version = "0.19.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bf77ef1ab88a77d148667c04fe4861cd781c69d3ce1d46c1feeef9fb9cacba5"
@@ -14638,6 +14765,16 @@ dependencies = [
 
 [[package]]
 name = "starknet-rust-macros"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9323171dc16cbfa62d18b0f3d7b2d67b7f277d24467670e29911d5e01aee1b89"
+dependencies = [
+ "starknet-rust-core 0.17.0",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "starknet-rust-macros"
 version = "0.19.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "545290f65fd6dba0750efad65af70c7a7168872875a96bd97cf22ad914d76c08"
@@ -14648,13 +14785,34 @@ dependencies = [
 
 [[package]]
 name = "starknet-rust-providers"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bf7e54bc8a0926ac7bbd21ddba1bb54afabd9821aadb55f212135285a4ddb74"
+dependencies = [
+ "async-trait",
+ "auto_impl",
+ "ethereum-types 0.14.1",
+ "flate2",
+ "getrandom 0.2.16",
+ "log",
+ "reqwest 0.12.26",
+ "serde",
+ "serde_json",
+ "serde_with 3.16.1",
+ "starknet-rust-core 0.17.0",
+ "thiserror 1.0.69",
+ "url",
+]
+
+[[package]]
+name = "starknet-rust-providers"
 version = "0.19.0-rc.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f4b352ab86502a900bbe0c532979a48c09b8416732a8e947335bea409e3af81"
 dependencies = [
  "async-trait",
  "auto_impl",
- "ethereum-types",
+ "ethereum-types 0.16.0",
  "flate2",
  "getrandom 0.2.16",
  "log",
@@ -14665,6 +14823,23 @@ dependencies = [
  "starknet-rust-core 0.19.0-rc.2",
  "thiserror 2.0.17",
  "url",
+]
+
+[[package]]
+name = "starknet-rust-signers"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03e18965a181de93ee82588b88e1ae05d5fec33d7ca5beedc4b464bda6a33d59"
+dependencies = [
+ "async-trait",
+ "auto_impl",
+ "crypto-bigint 0.5.5",
+ "eth-keystore",
+ "getrandom 0.2.16",
+ "rand 0.8.5",
+ "starknet-rust-core 0.17.0",
+ "starknet-rust-crypto 0.9.0",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -14727,8 +14902,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_api"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_infra_utils",
  "apollo_sizeof",
@@ -14765,8 +14940,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_committer"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_config",
  "async-trait",
@@ -14791,8 +14966,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_os"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_starknet_os_program",
  "ark-bls12-381",
@@ -14839,8 +15014,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_patricia"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "async-recursion",
  "derive_more 2.1.1",
@@ -14860,8 +15035,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_patricia_storage"
-version = "0.18.0-dev.2"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.4#d67b8d8d468ddc8c48ec8dc4547f601dc1b5e4e7"
+version = "0.18.0-rc.1"
+source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
 dependencies = [
  "apollo_config",
  "hex",
@@ -16621,7 +16796,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

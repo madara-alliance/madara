@@ -13,7 +13,8 @@ pub static REPO_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().expect("Failed to get workspace root").to_path_buf()
 });
 pub const DEFAULT_SERVICE_HOST: &str = "127.0.0.1";
-pub const BINARY_DIR: &str = "target/release";
+pub const DEFAULT_BINARY_TARGET_DIR: &str = "target";
+pub const DEFAULT_BINARY_PROFILE: &str = "release";
 pub const DATA_DIR: &str = "e2e_data";
 pub const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
 

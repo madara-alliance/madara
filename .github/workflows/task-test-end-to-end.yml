@@ -6,12 +6,7 @@ name: Task - Test E2E
 # It builds all required binaries and runs the e2e test suite
 on:
   workflow_dispatch:
-  workflow_call:
-    secrets:
-      ETHEREUM_SEPOLIA_RPC:
-        required: false
-      MADARA_ORCHESTRATOR_ATLANTIC_API_KEY:
-        required: true
+  workflow_call: {}
 
 jobs:
   test-end-to-end:
@@ -73,8 +68,6 @@ jobs:
       - name: Run E2E test
         env:
           AWS_REGION: us-east-1
-          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC }}
-          MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
         run: |
           RUST_LOG=info cargo test \
           --package e2e test_bridge_deposit_and_withdraw \
