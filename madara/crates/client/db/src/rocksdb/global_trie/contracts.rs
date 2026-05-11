@@ -235,7 +235,8 @@ mod contract_trie_root_tests {
     use crate::{rocksdb::global_trie::tests::setup_test_backend, test_utils::add_test_block, MadaraBackend};
     use mp_chain_config::ChainConfig;
     use rstest::*;
-    use std::sync::Arc;
+    use std::sync::{mpsc, Arc, Barrier};
+    use std::thread;
 
     fn sample_contract_address() -> Felt {
         Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
@@ -426,5 +427,100 @@ mod contract_trie_root_tests {
 
         let err = staged.commit(1).unwrap_err();
         assert!(format!("{err:#}").contains("generation changed before staged commit"));
+    }
+
+    #[rstest]
+    fn test_concurrent_stale_drop_does_not_reset_live_post_reset_cache(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+
+        let (_stale_root, stale_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(2u64)), 1).unwrap();
+
+        let start_barrier = Arc::new(Barrier::new(2));
+        let finish_barrier = Arc::new(Barrier::new(2));
+        let (fresh_root_tx, fresh_root_rx) = mpsc::channel();
+        let backend_for_worker = backend.clone();
+        let start_barrier_for_worker = start_barrier.clone();
+        let finish_barrier_for_worker = finish_barrier.clone();
+
+        let worker = thread::spawn(move || {
+            start_barrier_for_worker.wait();
+            backend_for_worker.db.reset_cached_contract_storage_trie();
+
+            let (_fresh_root, fresh_staged) = contract_trie_root_staged(
+                &backend_for_worker.db,
+                &[],
+                &[],
+                &[],
+                &sample_storage_diffs(Felt::from(3u64)),
+                2,
+            )
+            .unwrap();
+
+            let fresh_cache_root = cached_storage_root(&backend_for_worker, contract_address);
+            fresh_root_tx.send(fresh_cache_root).unwrap();
+
+            finish_barrier_for_worker.wait();
+            drop(fresh_staged);
+        });
+
+        start_barrier.wait();
+        let fresh_cache_root = fresh_root_rx.recv().unwrap();
+        drop(stale_staged);
+
+        assert_eq!(cached_storage_root(&backend, contract_address), fresh_cache_root);
+
+        finish_barrier.wait();
+        worker.join().unwrap();
+    }
+
+    #[rstest]
+    fn test_concurrent_stale_commit_fails_without_clobbering_live_post_reset_cache(
+        setup_test_backend: Arc<MadaraBackend>,
+    ) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+
+        let (_stale_root, stale_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(2u64)), 1).unwrap();
+
+        let start_barrier = Arc::new(Barrier::new(2));
+        let finish_barrier = Arc::new(Barrier::new(2));
+        let (fresh_root_tx, fresh_root_rx) = mpsc::channel();
+        let backend_for_worker = backend.clone();
+        let start_barrier_for_worker = start_barrier.clone();
+        let finish_barrier_for_worker = finish_barrier.clone();
+
+        let worker = thread::spawn(move || {
+            start_barrier_for_worker.wait();
+            backend_for_worker.db.reset_cached_contract_storage_trie();
+
+            let (_fresh_root, fresh_staged) = contract_trie_root_staged(
+                &backend_for_worker.db,
+                &[],
+                &[],
+                &[],
+                &sample_storage_diffs(Felt::from(3u64)),
+                2,
+            )
+            .unwrap();
+
+            let fresh_cache_root = cached_storage_root(&backend_for_worker, contract_address);
+            fresh_root_tx.send(fresh_cache_root).unwrap();
+
+            finish_barrier_for_worker.wait();
+            drop(fresh_staged);
+        });
+
+        start_barrier.wait();
+        let fresh_cache_root = fresh_root_rx.recv().unwrap();
+
+        let err = stale_staged.commit(1).unwrap_err();
+        assert!(format!("{err:#}").contains("generation changed before staged commit"));
+        assert_eq!(cached_storage_root(&backend, contract_address), fresh_cache_root);
+
+        finish_barrier.wait();
+        worker.join().unwrap();
     }
 }
