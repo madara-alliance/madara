@@ -460,8 +460,12 @@ mod test {
     #[test]
     fn test_load_missing_class_hashes() {
         let missed_class_hashes = &MISSED_CLASS_HASHES;
-        assert_eq!(missed_class_hashes.len(), 40);
-        assert_eq!(missed_class_hashes.values().map(|v| v.len()).sum::<usize>(), 59);
+        assert_eq!(missed_class_hashes.len(), 41);
+        assert_eq!(missed_class_hashes.values().map(|v| v.len()).sum::<usize>(), 60);
+        assert_eq!(
+            missed_class_hashes.get(&2930).cloned().unwrap_or_default(),
+            vec![Felt::from_hex_unchecked("0x3131fa018d520a037686ce3efddeab8f28895662f019ca3ca18a626650f7d1e")]
+        );
         assert_eq!(
             missed_class_hashes.get(&5982).cloned().unwrap_or_default(),
             vec![Felt::from_hex_unchecked("0x26fe8ea36ec7703569cfe4693b05102940bf122647c4dbf0abc0bb919ce27bd")]
