@@ -24,6 +24,7 @@ struct ContractLeaf {
 pub struct StagedContractTries {
     backend: RocksDBStorage,
     contract_storage_trie: SharedContractStorageTrie,
+    cache_generation: u64,
     contract_trie: GlobalTrie<Pedersen>,
     committed: bool,
 }
@@ -32,13 +33,14 @@ impl Drop for StagedContractTries {
     fn drop(&mut self) {
         if !self.committed {
             tracing::debug!("dropping staged contract tries without commit, resetting cached contract storage trie");
-            self.backend.reset_cached_contract_storage_trie();
+            self.backend.reset_cached_contract_storage_trie_if_generation(self.cache_generation);
         }
     }
 }
 
 struct ResetCachedStorageTrieOnDrop {
     backend: RocksDBStorage,
+    cache_generation: Option<u64>,
     armed: bool,
 }
 
@@ -46,7 +48,9 @@ impl Drop for ResetCachedStorageTrieOnDrop {
     fn drop(&mut self) {
         if self.armed {
             tracing::debug!("staged contract trie computation aborted, resetting cached contract storage trie");
-            self.backend.reset_cached_contract_storage_trie();
+            if let Some(cache_generation) = self.cache_generation {
+                self.backend.reset_cached_contract_storage_trie_if_generation(cache_generation);
+            }
         }
     }
 }
@@ -58,6 +62,10 @@ impl StagedContractTries {
         let storage_commit_start = Instant::now();
         let mut contract_storage_trie =
             self.contract_storage_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+        anyhow::ensure!(
+            self.contract_storage_trie.generation() == self.cache_generation,
+            "cached contract storage trie generation changed before staged commit"
+        );
         contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
         timings.storage_commit = storage_commit_start.elapsed();
         let storage_commit_secs = timings.storage_commit.as_secs_f64();
@@ -89,11 +97,15 @@ pub fn contract_trie_root_staged(
 ) -> Result<(Felt, StagedContractTries)> {
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
     let cached_contract_storage_trie = backend.cached_contract_storage_trie();
-    let mut reset_cached_trie = ResetCachedStorageTrieOnDrop { backend: backend.clone(), armed: true };
+    let mut reset_cached_trie =
+        ResetCachedStorageTrieOnDrop { backend: backend.clone(), cache_generation: None, armed: true };
+    let cache_generation;
 
     {
         let mut contract_storage_trie =
             cached_contract_storage_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache_generation = cached_contract_storage_trie.generation();
+        reset_cached_trie.cache_generation = Some(cache_generation);
 
         tracing::debug!(
             "contract_storage_trie using cached frontier, touched_contracts={}, storage_diff_entries={}",
@@ -159,6 +171,7 @@ pub fn contract_trie_root_staged(
         StagedContractTries {
             backend: backend.clone(),
             contract_storage_trie: cached_contract_storage_trie,
+            cache_generation,
             contract_trie,
             committed: false,
         },
@@ -379,5 +392,39 @@ mod contract_trie_root_tests {
         assert_eq!(cached_storage_root(&backend, contract_address), Felt::ZERO);
 
         drop(staged);
+    }
+
+    #[rstest]
+    fn test_stale_staged_drop_does_not_reset_newer_cache_generation(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = sample_contract_address();
+
+        let (_stale_root, stale_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(2u64)), 1).unwrap();
+
+        backend.db.reset_cached_contract_storage_trie();
+
+        let (_fresh_root, fresh_staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(3u64)), 2).unwrap();
+        let fresh_cache_root = cached_storage_root(&backend, contract_address);
+
+        drop(stale_staged);
+
+        assert_eq!(cached_storage_root(&backend, contract_address), fresh_cache_root);
+
+        drop(fresh_staged);
+    }
+
+    #[rstest]
+    fn test_stale_staged_commit_fails_after_cache_reset(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+
+        let (_root_hash, staged) =
+            contract_trie_root_staged(&backend.db, &[], &[], &[], &sample_storage_diffs(Felt::from(2u64)), 1).unwrap();
+
+        backend.db.reset_cached_contract_storage_trie();
+
+        let err = staged.commit(1).unwrap_err();
+        assert!(format!("{err:#}").contains("generation changed before staged commit"));
     }
 }
