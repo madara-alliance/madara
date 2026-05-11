@@ -39,6 +39,14 @@ fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
     ]
 }
 
+fn replay_features_disabled_error() -> jsonrpsee::types::ErrorObjectOwned {
+    jsonrpsee::types::ErrorObjectOwned::owned(
+        63,
+        "Replay features are disabled. Enable them with --enable-replay-features.",
+        None::<()>,
+    )
+}
+
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -124,6 +132,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
             }
             .into());
+        }
+        if !self.replay_features_enabled {
+            return Err(replay_features_disabled_error());
         }
 
         // Validate revert target and snap sync constraints early (before shutdown).
@@ -271,6 +282,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
             .into());
         }
+        if !self.replay_features_enabled {
+            return Err(replay_features_disabled_error());
+        }
 
         self.backend.set_custom_header(custom_block_headers).map_err(StarknetRpcApiError::from)?;
 
@@ -298,6 +312,7 @@ mod tests {
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
         let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
+        rpc.set_replay_features_enabled(true);
         rpc
     }
 
@@ -363,7 +378,10 @@ mod tests {
 
     #[tokio::test]
     async fn set_block_header_updates_fake_preconfirmed_view() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_test()),
+            mc_db::MadaraBackendConfig { replay_features: true, ..Default::default() },
+        );
         add_test_block(&backend, 0, vec![]);
 
         let rpc = make_starknet(backend.clone(), ServiceContext::default());
@@ -389,5 +407,49 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
         assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+    }
+
+    #[tokio::test]
+    async fn set_block_header_requires_replay_features() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mut rpc = Starknet::new(
+            backend,
+            Arc::new(TestTransactionProvider),
+            Default::default(),
+            None,
+            ServiceContext::default(),
+        );
+        rpc.set_rpc_unsafe_enabled(true);
+
+        let err = rpc
+            .set_block_header(CustomHeader {
+                block_n: 1,
+                expected_block_hash: Felt::from(0x1234_u64),
+                ..Default::default()
+            })
+            .await
+            .expect_err("set block header should require replay features");
+
+        assert!(err.message().contains("--enable-replay-features"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn revert_to_and_shutdown_requires_replay_features() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+
+        let mut rpc = Starknet::new(
+            backend.clone(),
+            Arc::new(TestTransactionProvider),
+            Default::default(),
+            None,
+            ServiceContext::default(),
+        );
+        rpc.set_rpc_unsafe_enabled(true);
+
+        let err = rpc.revert_to_and_shutdown(block_0_hash).await.expect_err("revert should require replay features");
+
+        assert!(err.message().contains("--enable-replay-features"), "unexpected error: {err}");
+        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
     }
 }

@@ -343,6 +343,8 @@ pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
+    /// Enables replay-specific backend behavior such as staged custom headers.
+    pub replay_features: bool,
     pub unsafe_starting_block: Option<u64>,
     /// Skip creating backup before migration.
     /// WARNING: Without backup, there's no recovery if migration fails.
@@ -455,15 +457,28 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 }
 
 impl<D> MadaraBackend<D> {
+    pub fn replay_features_enabled(&self) -> bool {
+        self.config.replay_features
+    }
+
     pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        if !self.replay_features_enabled() {
+            return None;
+        }
         self.custom_headers.lock().expect("Poisoned lock").get(&block_n).cloned()
     }
 
     pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        if !self.replay_features_enabled() {
+            return None;
+        }
         self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
     }
 
     pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
+        if !self.replay_features_enabled() {
+            return 0;
+        }
         let mut guard = self.custom_headers.lock().expect("Poisoned lock");
         let initial_len = guard.len();
         guard.retain(|stored_block_n, _| *stored_block_n > block_n);
@@ -473,6 +488,10 @@ impl<D> MadaraBackend<D> {
 
 impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
+        ensure!(
+            self.replay_features_enabled(),
+            "Replay features are disabled. Enable them with --enable-replay-features."
+        );
         let chain_tip = self.chain_tip.borrow();
         tracing::debug!(
             target: "custom_header",

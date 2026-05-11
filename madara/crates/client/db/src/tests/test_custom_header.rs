@@ -17,6 +17,14 @@ fn test_block(block_number: u64) -> FullBlockWithoutCommitments {
     }
 }
 
+fn replay_backend_config() -> MadaraBackendConfig {
+    MadaraBackendConfig { replay_features: true, ..Default::default() }
+}
+
+fn open_replay_backend(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
+    MadaraBackend::open_for_testing_with_config(chain_config, replay_backend_config())
+}
+
 fn discover_block_hash(chain_config: Arc<ChainConfig>, block_number: u64) -> Felt {
     let backend = MadaraBackend::open_for_testing(chain_config);
     backend
@@ -64,7 +72,7 @@ fn custom_header_hash_match_succeeds() {
     let chain_config: Arc<ChainConfig> = ChainConfig::madara_test().into();
     let known_hash = discover_block_hash(chain_config.clone(), 0);
 
-    let backend = MadaraBackend::open_for_testing(chain_config);
+    let backend = open_replay_backend(chain_config);
     backend
         .set_custom_header(CustomHeader { block_n: 0, expected_block_hash: known_hash, ..Default::default() })
         .expect("custom header should be staged");
@@ -78,7 +86,7 @@ fn custom_header_hash_match_succeeds() {
 
 #[test]
 fn custom_header_hash_mismatch_returns_error() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let backend = open_replay_backend(ChainConfig::madara_test().into());
     backend
         .set_custom_header(CustomHeader {
             block_n: 0,
@@ -96,7 +104,7 @@ fn custom_header_hash_mismatch_returns_error() {
 
 #[test]
 fn custom_header_for_future_block_is_ignored_while_closing_current_block() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let backend = open_replay_backend(ChainConfig::madara_test().into());
     backend
         .set_custom_header(CustomHeader {
             block_n: 5,
@@ -114,7 +122,7 @@ fn custom_header_for_future_block_is_ignored_while_closing_current_block() {
 
 #[test]
 fn custom_header_for_future_block_is_not_consumed() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let backend = open_replay_backend(ChainConfig::madara_test().into());
     backend
         .set_custom_header(CustomHeader {
             block_n: 5,
@@ -135,7 +143,7 @@ fn custom_header_cleared_after_successful_validation() {
     let chain_config: Arc<ChainConfig> = ChainConfig::madara_test().into();
     let known_hash = discover_block_hash(chain_config.clone(), 0);
 
-    let backend = MadaraBackend::open_for_testing(chain_config);
+    let backend = open_replay_backend(chain_config);
     backend
         .set_custom_header(CustomHeader { block_n: 0, expected_block_hash: known_hash, ..Default::default() })
         .expect("custom header should be staged");
@@ -148,7 +156,7 @@ fn custom_header_cleared_after_successful_validation() {
 
 #[test]
 fn custom_header_lifecycle_matches_storage_contract() {
-    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let backend = open_replay_backend(Arc::new(ChainConfig::madara_test()));
     let initial = sample_custom_header(7, 1);
     let replacement = sample_custom_header(7, 2);
 
@@ -173,7 +181,7 @@ fn custom_header_lifecycle_matches_storage_contract() {
 
 #[test]
 fn custom_header_does_not_mutate_live_preconfirmed_header_when_block_is_already_open() {
-    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let backend = open_replay_backend(Arc::new(ChainConfig::madara_test()));
     let original_header = PreconfirmedHeader {
         block_number: 0,
         block_timestamp: 111_u64.into(),
@@ -203,7 +211,7 @@ fn custom_header_does_not_mutate_live_preconfirmed_header_when_block_is_already_
 
 #[test]
 fn clear_custom_headers_through_prunes_stale_entries() {
-    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let backend = open_replay_backend(Arc::new(ChainConfig::madara_test()));
     let header_3 = sample_custom_header(3, 1);
     let header_4 = sample_custom_header(4, 2);
     let header_5 = sample_custom_header(5, 3);
@@ -225,7 +233,7 @@ fn clear_custom_headers_through_prunes_stale_entries() {
 
 #[test]
 fn no_persistence_on_hash_mismatch() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let backend = open_replay_backend(ChainConfig::madara_test().into());
 
     assert!(backend.latest_confirmed_block_n().is_none(), "DB should start empty");
 
@@ -258,7 +266,7 @@ fn hash_mismatch_no_persistence_survives_restart() {
         let backend = MadaraBackend::open_rocksdb(
             temp_dir.path(),
             chain_config.clone(),
-            MadaraBackendConfig { save_preconfirmed: false, ..Default::default() },
+            MadaraBackendConfig { save_preconfirmed: false, replay_features: true, ..Default::default() },
             RocksDBConfig::default(),
             cairo_native_config.clone(),
         )
@@ -285,7 +293,7 @@ fn hash_mismatch_no_persistence_survives_restart() {
         let backend = MadaraBackend::open_rocksdb(
             temp_dir.path(),
             chain_config,
-            MadaraBackendConfig { save_preconfirmed: false, ..Default::default() },
+            MadaraBackendConfig { save_preconfirmed: false, replay_features: true, ..Default::default() },
             RocksDBConfig::default(),
             cairo_native_config,
         )
@@ -296,4 +304,16 @@ fn hash_mismatch_no_persistence_survives_restart() {
             "After restart, block 0 should not exist — staged tries were never committed"
         );
     }
+}
+
+#[test]
+fn custom_header_rejected_when_replay_features_disabled() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    let err =
+        backend.set_custom_header(CustomHeader::default()).expect_err("custom headers should require replay flag");
+    assert!(
+        err.to_string().contains("Replay features are disabled"),
+        "unexpected error when replay features are disabled: {err}"
+    );
 }

@@ -266,6 +266,12 @@ impl Config {
 
     /// new - create config from the run command
     pub async fn from_run_cmd(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
+        if run_cmd.replay_bounds_rpc_url.is_some() && !run_cmd.enable_replay_features {
+            return Err(OrchestratorError::ConfigError(
+                "Replay bounds validation requires --enable-replay-features".to_string(),
+            ));
+        }
+
         let cloud_provider =
             CloudProvider::try_from(run_cmd.clone()).context("Failed to create cloud provider from run command")?;
         let provider_config = Arc::new(cloud_provider);

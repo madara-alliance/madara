@@ -169,10 +169,14 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", long)]
     pub madara_feeder_gateway_url: Option<Url>,
 
+    /// Enable replay-specific orchestrator features such as replay bounds validation.
+    #[arg(env = "MADARA_ORCHESTRATOR_ENABLE_REPLAY_FEATURES", long, default_value_t = false)]
+    pub enable_replay_features: bool,
+
     /// RPC URL of the reference/original node for replay bounds validation.
     /// When set, the orchestrator validates that each block's hash from Madara
     /// matches the reference node before including it in a batch.
-    #[arg(env = "MADARA_ORCHESTRATOR_REPLAY_BOUNDS_RPC_URL", long)]
+    #[arg(env = "MADARA_ORCHESTRATOR_REPLAY_BOUNDS_RPC_URL", long, requires = "enable_replay_features")]
     pub replay_bounds_rpc_url: Option<Url>,
 
     #[arg(env = "MADARA_ORCHESTRATOR_BOUNCER_WEIGHTS_LIMIT_FILE", long)]
