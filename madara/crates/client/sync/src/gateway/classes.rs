@@ -168,3 +168,31 @@ impl PipelineSteps for ClassesSyncSteps {
         Ok(ApplyOutcome::Success(()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn fixup_missed_mainnet_classes_leaves_unknown_blocks_unchanged() {
+        let existing = Felt::from_hex_unchecked("0x123");
+        let mut classes = HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]);
+
+        fixup_missed_mainnet_classes(2597, &mut classes);
+
+        assert_eq!(classes, HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]));
+    }
+
+    #[test]
+    fn fixup_missed_mainnet_classes_adds_known_post_2597_repairs() {
+        let existing = Felt::from_hex_unchecked("0x123");
+        let repaired = Felt::from_hex_unchecked("0x26fe8ea36ec7703569cfe4693b05102940bf122647c4dbf0abc0bb919ce27bd");
+        let mut classes = HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]);
+
+        fixup_missed_mainnet_classes(5982, &mut classes);
+
+        assert_eq!(classes.get(&existing), Some(&DeclaredClassCompiledClass::Legacy));
+        assert_eq!(classes.get(&repaired), Some(&DeclaredClassCompiledClass::Legacy));
+    }
+}

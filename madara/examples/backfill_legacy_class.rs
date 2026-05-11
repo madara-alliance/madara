@@ -31,8 +31,13 @@ fn raise_fdlimit() {
     let _ = fdlimit::raise_fd_limit();
 }
 
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).try_init();
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_tracing();
     setup_rayon_threadpool()?;
     raise_fdlimit();
 
