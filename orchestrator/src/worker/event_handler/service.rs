@@ -137,6 +137,7 @@ impl JobHandlerService {
     /// * `Created` -> `LockedForProcessing` -> `PendingVerification`
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
+    /// * `LockedForProcessing` -> `Failed` (on processing error or panic — message is ACKed, no SQS retry)
     ///
     /// # Metrics
     /// * Updates block gauge
@@ -150,6 +151,14 @@ impl JobHandlerService {
     /// * Automatically adds the job to verification queue upon successful processing
     /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
     ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///
+    /// # Failure handling
+    /// Processing errors (including transient ones) immediately move the job to `Failed` and ACK the
+    /// SQS message. There are no SQS-level retries for explicit failures — job handlers that talk to
+    /// external APIs (SHARP, Atlantic, Ethereum, Starknet) implement their own internal retry logic
+    /// before surfacing an error. SQS `maxReceiveCount` only protects against implicit failures
+    /// (OOM, consumer crash) where the handler never reaches the error path.
+    /// Failed jobs can be retried via the `retry_job` endpoint.
     ///
     /// # Important
     /// The queue visibility timeout MUST be greater than the job healing timeout configured via
