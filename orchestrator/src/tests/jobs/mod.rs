@@ -1213,15 +1213,14 @@ async fn move_job_to_failed_accumulates_failure_history() {
     );
 }
 
-/// Tests that failure history is preserved through multiple retry attempts until DLQ.
-/// This test verifies the end-to-end error accumulation:
-/// 1. Job fails processing (error stored via reset_job_for_retry)
-/// 2. Job eventually goes to DLQ (final reason set, previous appended to history)
-/// 3. The complete history is preserved in chronological order (oldest first)
+/// Tests that a processing failure immediately marks the job as Failed.
+/// This test verifies that when process_job fails:
+/// 1. process_job returns Ok (so the message is ACKed, no SQS retries)
+/// 2. Job status is set to Failed with the failure reason
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn failure_history_preserved_through_retries_to_dlq() {
+async fn process_job_failure_marks_job_as_failed() {
     let _test_lock = acquire_test_lock();
 
     // Set up mock alert client
@@ -1255,14 +1254,15 @@ async fn failure_history_preserved_through_retries_to_dlq() {
     let ctx_guard = get_job_handler_context_safe();
     ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Process job - this should fail and store error in failure_reason via reset_job_for_retry
+    // Process job - should return Ok so the message is ACKed (no SQS retries)
     let result = JobHandlerService::process_job(job_id, services.config.clone()).await;
-    assert!(result.is_err(), "process_job should return error for retry");
+    assert!(result.is_ok(), "process_job should return Ok to ACK the message");
 
-    // Verify the failure reason was recorded with attempt number
-    // process_attempt_no is incremented to 1 before processing, so error shows "attempt 1"
-    let job_after_first_failure = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    let failure_reason = job_after_first_failure.metadata.common.failure_reason.as_ref().unwrap();
+    // Verify job is marked as Failed with the failure reason
+    let failed_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+
+    let failure_reason = failed_job.metadata.common.failure_reason.as_ref().unwrap();
     assert!(
         failure_reason.contains("Processing attempt") && failure_reason.contains("failed"),
         "failure_reason should contain attempt info. Got: {}",
@@ -1272,34 +1272,5 @@ async fn failure_history_preserved_through_retries_to_dlq() {
         failure_reason.contains("Simulated processing failure"),
         "failure_reason should contain original error. Got: {}",
         failure_reason
-    );
-    assert!(
-        job_after_first_failure.metadata.common.previous_failure_reasons.is_empty(),
-        "No previous failures should exist yet"
-    );
-
-    // Now simulate the job going to DLQ by calling move_job_to_failed
-    let dlq_reason = "Job moved to DLQ after exhausting retries (last status: Created)";
-    JobService::move_job_to_failed(&job_after_first_failure, services.config.clone(), dlq_reason.to_string())
-        .await
-        .unwrap();
-
-    // Verify final state has complete accumulated history
-    let final_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    assert_eq!(final_job.status, JobStatus::Failed);
-
-    // Most recent error should be in failure_reason
-    assert_eq!(
-        final_job.metadata.common.failure_reason,
-        Some(dlq_reason.to_string()),
-        "failure_reason should be the DLQ message"
-    );
-    // Previous error should be in history
-    assert_eq!(final_job.metadata.common.previous_failure_reasons.len(), 1, "Should have one previous failure");
-    assert!(
-        final_job.metadata.common.previous_failure_reasons[0].contains("Processing attempt")
-            && final_job.metadata.common.previous_failure_reasons[0].contains("failed"),
-        "Previous error should be preserved. Got: {}",
-        final_job.metadata.common.previous_failure_reasons[0]
     );
 }
