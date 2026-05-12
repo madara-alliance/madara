@@ -76,15 +76,14 @@ impl From<f64> for FixedPoint {
 #[cfg(test)]
 mod tests {
     use super::FixedPoint;
+    use rstest::rstest;
 
-    #[test]
-    fn integer_f64s_convert_exactly() {
-        let one = FixedPoint::from(1.0);
-        assert_eq!(one.value(), 1);
-        assert_eq!(one.decimals(), 0);
-
-        let two = FixedPoint::from(2.0);
-        assert_eq!(two.value(), 2);
-        assert_eq!(two.decimals(), 0);
+    #[rstest]
+    #[case(1.0, 1)]
+    #[case(2.0, 2)]
+    fn integer_f64s_convert_exactly(#[case] input: f64, #[case] expected_value: u128) {
+        let fixed_point = FixedPoint::from(input);
+        assert_eq!(fixed_point.value(), expected_value);
+        assert_eq!(fixed_point.decimals(), 0);
     }
 }
