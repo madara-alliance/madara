@@ -314,6 +314,17 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     _temp_dir: Option<tempfile::TempDir>,
 
     /// Custom headers used during block replay to ensure deterministic execution.
+    ///
+    /// When replaying a block, we must match the exact timestamp and gas configuration
+    /// from the original block to reproduce the expected block hash. These per-block
+    /// overrides are applied during transaction validation and execution, along with the
+    /// expected block hash to validate against after block creation.
+    ///
+    /// # Important Notes
+    /// - Custom headers are keyed by block number because replay can prepare future blocks ahead of time
+    /// - **Must verify** that the block number matches before use
+    /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
+    /// - Access is thread-safe via `Mutex` to allow concurrent operations
     #[cfg(feature = "replay")]
     pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 }

@@ -29,6 +29,39 @@ impl<D: MadaraStorageRead> ExecutedTransactionWithBlockView<D> {
     }
 }
 
+fn current_fake_preconfirmed_timestamp_and_gas_prices<D: MadaraStorageRead>(
+    backend: &MadaraBackend<D>,
+    parent_gas_prices: &mp_block::header::GasPrices,
+    parent_total_l2_gas_used: u128,
+) -> Result<(SystemTime, mp_block::header::GasPrices)> {
+    let gas_prices = if let Some(quote) = backend.get_last_l1_gas_quote() {
+        backend.calculate_gas_prices(&quote, parent_gas_prices.strk_l2_gas_price, parent_total_l2_gas_used)?
+    } else {
+        parent_gas_prices.clone()
+    };
+    Ok((SystemTime::now(), gas_prices))
+}
+
+#[cfg(feature = "replay")]
+fn replay_fake_preconfirmed_timestamp_and_gas_prices<D: MadaraStorageRead>(
+    backend: &MadaraBackend<D>,
+    block_n: u64,
+) -> Option<(SystemTime, mp_block::header::GasPrices)> {
+    backend.get_custom_header(block_n).map(|custom_header| {
+        // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+        let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+        let gas_prices = custom_header.gas_prices;
+        tracing::debug!(
+            target: "custom_header",
+            block_n,
+            timestamp = custom_header.timestamp,
+            gas_prices = ?gas_prices,
+            "building fake preconfirmed block from stored custom header"
+        );
+        (block_timestamp, gas_prices)
+    })
+}
+
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on the last confirmed block. This view is used to query content from that block.
     /// Returns [`None`] if the database has no blocks.
@@ -72,46 +105,15 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .context("Parent block should be found")?
                     .get_block_info()?;
 
+                let (block_timestamp, gas_prices) = current_fake_preconfirmed_timestamp_and_gas_prices(
+                    self,
+                    &parent_block_info.header.gas_prices,
+                    parent_block_info.total_l2_gas_used,
+                )?;
                 #[cfg(feature = "replay")]
                 let (block_timestamp, gas_prices) =
-                    if let Some(custom_header) = self.get_custom_header(parent_block_number + 1) {
-                        // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
-                        let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
-                        let gas_prices = custom_header.gas_prices;
-                        tracing::debug!(
-                            target: "custom_header",
-                            block_n = parent_block_number + 1,
-                            timestamp = custom_header.timestamp,
-                            gas_prices = ?gas_prices,
-                            "building fake preconfirmed block from stored custom header"
-                        );
-                        (block_timestamp, gas_prices)
-                    } else {
-                        let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
-                            self.calculate_gas_prices(
-                                &quote,
-                                parent_block_info.header.gas_prices.strk_l2_gas_price,
-                                parent_block_info.total_l2_gas_used,
-                            )?
-                        } else {
-                            parent_block_info.header.gas_prices
-                        };
-                        (SystemTime::now(), gas_prices)
-                    };
-
-                #[cfg(not(feature = "replay"))]
-                let (block_timestamp, gas_prices) = {
-                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
-                        self.calculate_gas_prices(
-                            &quote,
-                            parent_block_info.header.gas_prices.strk_l2_gas_price,
-                            parent_block_info.total_l2_gas_used,
-                        )?
-                    } else {
-                        parent_block_info.header.gas_prices
-                    };
-                    (SystemTime::now(), gas_prices)
-                };
+                    replay_fake_preconfirmed_timestamp_and_gas_prices(self, parent_block_number + 1)
+                        .unwrap_or((block_timestamp, gas_prices));
 
                 PreconfirmedBlock::new(PreconfirmedHeader {
                     block_number: *parent_block_number + 1,
