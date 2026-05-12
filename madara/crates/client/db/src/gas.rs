@@ -98,3 +98,19 @@ fn calculate_gas_price(
         Ok(previous_gas_price.saturating_sub(price_change))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bigdecimal::{BigDecimal, ToPrimitive};
+    use mp_convert::FixedPoint;
+
+    #[test]
+    fn exact_one_strk_per_eth_keeps_fixed_l2_gas_price_in_wei() {
+        let strk_per_eth = FixedPoint::from(1.0);
+        let strk_per_eth = BigDecimal::new(strk_per_eth.value().into(), strk_per_eth.decimals().into());
+
+        let eth_l2_gas_price = (BigDecimal::from(25000u128) / strk_per_eth).to_u128().unwrap();
+
+        assert_eq!(eth_l2_gas_price, 25000);
+    }
+}
