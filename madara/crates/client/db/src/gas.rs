@@ -103,14 +103,20 @@ fn calculate_gas_price(
 mod tests {
     use bigdecimal::{BigDecimal, ToPrimitive};
     use mp_convert::FixedPoint;
+    use rstest::rstest;
 
-    #[test]
-    fn exact_one_strk_per_eth_keeps_fixed_l2_gas_price_in_wei() {
-        let strk_per_eth = FixedPoint::from(1.0);
+    #[rstest]
+    #[case(1.0, 25000, 25000)]
+    fn exact_one_strk_per_eth_keeps_fixed_l2_gas_price_in_wei(
+        #[case] strk_per_eth_input: f64,
+        #[case] strk_l2_gas_price: u128,
+        #[case] expected_eth_l2_gas_price: u128,
+    ) {
+        let strk_per_eth = FixedPoint::from(strk_per_eth_input);
         let strk_per_eth = BigDecimal::new(strk_per_eth.value().into(), strk_per_eth.decimals().into());
 
-        let eth_l2_gas_price = (BigDecimal::from(25000u128) / strk_per_eth).to_u128().unwrap();
+        let eth_l2_gas_price = (BigDecimal::from(strk_l2_gas_price) / strk_per_eth).to_u128().unwrap();
 
-        assert_eq!(eth_l2_gas_price, 25000);
+        assert_eq!(eth_l2_gas_price, expected_eth_l2_gas_price);
     }
 }
