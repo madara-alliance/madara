@@ -3,7 +3,6 @@ use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 #[cfg(feature = "replay")]
 use mp_block::header::CustomHeader;
-#[cfg(feature = "replay")]
 use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
@@ -69,6 +68,15 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
 
+    /// Revert the blockchain to a specific block hash, then shut down the node.
+    ///
+    /// This is the preferred reorg workflow for Madara because it coordinates
+    /// an in-process stop of other services (so they ack as "actually down")
+    /// before mutating the DB state, and then exits the process so Kubernetes
+    /// (or another supervisor) can restart cleanly.
+    #[method(name = "revertToAndShutdown")]
+    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
+
     /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
     async fn add_l1_handler_message(
@@ -80,15 +88,6 @@ pub trait MadaraWriteRpcApi {
 #[cfg(feature = "replay")]
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraReplayWriteRpcApi {
-    /// Revert the blockchain to a specific block hash, then shut down the node.
-    ///
-    /// This is the preferred reorg workflow for Madara because it coordinates
-    /// an in-process stop of other services (so they ack as "actually down")
-    /// before mutating the DB state, and then exits the process so Kubernetes
-    /// (or another supervisor) can restart cleanly.
-    #[method(name = "revertToAndShutdown")]
-    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
-
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
