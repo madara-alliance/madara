@@ -337,7 +337,6 @@ impl JobHandlerService {
                     "Failed to process job, marking as failed"
                 );
                 let reason = format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, e);
-                MetricsRecorder::record_job_failed(&job, &e.to_string());
                 MetricsRecorder::record_job_state_transition(
                     JobStatus::LockedForProcessing,
                     JobStatus::Failed,
@@ -355,7 +354,6 @@ impl JobHandlerService {
                 error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing, marking as failed");
                 let reason =
                     format!("Processing attempt {} panicked: {}", job.metadata.common.process_attempt_no, panic_msg);
-                MetricsRecorder::record_job_failed(&job, &format!("panic: {}", panic_msg));
                 MetricsRecorder::record_job_state_transition(
                     JobStatus::LockedForProcessing,
                     JobStatus::Failed,
