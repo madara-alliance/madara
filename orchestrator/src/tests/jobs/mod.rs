@@ -348,20 +348,13 @@ async fn process_job_handles_panic() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
-    // Process job should return an error so message can be nacked and retried
+    // Process job should return Ok (message ACKed) and mark job as Failed
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Job handler panicked with message: Simulated panic in process_job"));
+    assert!(result.is_ok());
 
-    // DB checks - verify the job was reset to original state for retry
+    // DB checks - verify the job was marked as Failed
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(job_in_db.status, JobStatus::Created);
-
-    // process_started_at should be cleared
-    assert!(job_in_db.metadata.common.process_started_at.is_none());
+    assert_eq!(job_in_db.status, JobStatus::Failed);
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is not
@@ -594,17 +587,13 @@ async fn process_job_job_handler_returns_error_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Process job should return an error so message can be nacked and retried
+    // Process job should return Ok (message ACKed) and mark job as Failed
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains(failure_reason));
+    assert!(result.is_ok());
 
-    // DB checks - verify the job was reset to original state for retry
+    // DB checks - verify the job was marked as Failed
     let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(final_job_in_db.status, JobStatus::Created);
-
-    // process_started_at should be cleared
-    assert!(final_job_in_db.metadata.common.process_started_at.is_none());
+    assert_eq!(final_job_in_db.status, JobStatus::Failed);
 }
 
 /// Tests `verify_job` function when job is having expected status
