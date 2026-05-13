@@ -41,6 +41,25 @@ pub enum ExecutionError {
 /// Registry of known contracts and their implementations.
 pub struct ContractRegistry;
 
+#[derive(Clone, Copy)]
+enum ParadexContractFamily {
+    Paraclear,
+    Oracle,
+    AssetsManager,
+}
+
+fn infer_paradex_contract_family(selector: Felt) -> Option<ParadexContractFamily> {
+    if paraclear::supports_selector(selector) {
+        Some(ParadexContractFamily::Paraclear)
+    } else if oracle::supports_selector(selector) {
+        Some(ParadexContractFamily::Oracle)
+    } else if assets_manager::supports_selector(selector) {
+        Some(ParadexContractFamily::AssetsManager)
+    } else {
+        None
+    }
+}
+
 impl ContractRegistry {
     /// Get the human-readable name for a contract given its class hash.
     ///
@@ -93,6 +112,24 @@ impl ContractRegistry {
                 return paraclear::get_function_name(selector);
             }
         }
+        if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
+            if class_hash == oracle_hash {
+                return oracle::get_function_name(selector);
+            }
+        }
+        if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
+            if class_hash == assets_manager_hash {
+                return assets_manager::get_function_name(selector);
+            }
+        }
+        if config::supports_runtime_class_hash(class_hash) {
+            return match infer_paradex_contract_family(selector) {
+                Some(ParadexContractFamily::Paraclear) => paraclear::get_function_name(selector),
+                Some(ParadexContractFamily::Oracle) => oracle::get_function_name(selector),
+                Some(ParadexContractFamily::AssetsManager) => assets_manager::get_function_name(selector),
+                None => None,
+            };
+        }
         None
     }
 
@@ -125,7 +162,7 @@ impl ContractRegistry {
                 return true;
             }
         }
-        false
+        config::supports_runtime_class_hash(class_hash)
     }
 
     /// Check if a (class_hash, selector) pair is supported.
@@ -144,8 +181,6 @@ impl ContractRegistry {
             if class_hash == paraclear_hash {
                 return paraclear::supports_selector(selector);
             }
-        } else if paraclear::supports_selector(selector) {
-            return true;
         }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
@@ -156,6 +191,9 @@ impl ContractRegistry {
             if class_hash == assets_manager_hash {
                 return assets_manager::supports_selector(selector);
             }
+        }
+        if config::supports_runtime_class_hash(class_hash) {
+            return infer_paradex_contract_family(selector).is_some();
         }
         false
     }
@@ -207,15 +245,6 @@ impl ContractRegistry {
                     block_timestamp,
                 ));
             }
-        } else if paraclear::supports_selector(selector) {
-            return Some(paraclear::execute_with_timestamp(
-                state,
-                contract_address,
-                selector,
-                calldata,
-                caller,
-                block_timestamp,
-            ));
         }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
@@ -227,7 +256,72 @@ impl ContractRegistry {
                 return Some(assets_manager::execute(state, contract_address, selector, calldata, caller));
             }
         }
+        if config::supports_runtime_class_hash(class_hash) {
+            return match infer_paradex_contract_family(selector) {
+                Some(ParadexContractFamily::Paraclear) => Some(paraclear::execute_with_timestamp(
+                    state,
+                    contract_address,
+                    selector,
+                    calldata,
+                    caller,
+                    block_timestamp,
+                )),
+                Some(ParadexContractFamily::Oracle) => {
+                    Some(oracle::execute(state, contract_address, selector, calldata, caller))
+                }
+                Some(ParadexContractFamily::AssetsManager) => {
+                    Some(assets_manager::execute(state, contract_address, selector, calldata, caller))
+                }
+                None => None,
+            };
+        }
 
         None // Contract not supported
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use starknet_types_core::felt::Felt;
+
+    use super::{config, ContractRegistry, ExecutionError};
+    use crate::{
+        contracts::paradex::oracle, state::mock::MockStateReader, types::ContractAddress, RustExecRuntimeConfig,
+    };
+
+    #[test]
+    fn generic_supported_class_hash_allows_oracle_selector_dispatch() {
+        let oracle_class_hash = Felt::from_hex_unchecked("0x1234");
+        config::initialize_runtime_config(RustExecRuntimeConfig {
+            supported_contract_class_hashes: HashSet::from([oracle_class_hash]),
+            ..Default::default()
+        });
+
+        let selector = crate::storage::function_selector("set_prices_and_funding_snapshot");
+        assert!(oracle::supports_selector(selector));
+        assert!(ContractRegistry::supports_class_hash(oracle_class_hash));
+        assert!(ContractRegistry::supports_function(oracle_class_hash, selector));
+        assert_eq!(
+            ContractRegistry::get_function_name(oracle_class_hash, selector),
+            Some("set_prices_and_funding_snapshot".to_string())
+        );
+
+        let state = MockStateReader::new();
+        let result = ContractRegistry::execute_with_timestamp(
+            &state,
+            ContractAddress(Felt::from_hex_unchecked("0x99")),
+            oracle_class_hash,
+            selector,
+            &[],
+            ContractAddress(Felt::ZERO),
+            0,
+        );
+
+        assert!(matches!(
+            result,
+            Some(Err(ExecutionError::ExecutionFailed(message))) if message.contains("calldata underflow")
+        ));
     }
 }

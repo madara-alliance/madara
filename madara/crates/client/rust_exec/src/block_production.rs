@@ -1,6 +1,6 @@
 //! Block production integration for rust-exec.
 //!
-//! This module is responsible for executing `settle_trade_v3` transactions using rust-exec
+//! This module is responsible for executing rust-exec supported transactions
 //! while producing Blockifier-compatible outputs:
 //! - `TransactionExecutionInfo`
 //! - `StateMaps`
@@ -15,22 +15,19 @@ use blockifier::blockifier::transaction_executor::{
     TransactionExecutionOutput, TransactionExecutor, TransactionExecutorError, TransactionExecutorResult,
     BLOCK_STATE_ACCESS_ERR,
 };
-use blockifier::bouncer::BouncerWeights;
-use blockifier::execution::call_info::ExecutionSummary;
-use blockifier::fee::gas_usage::get_onchain_data_segment_length;
-use blockifier::fee::resources::MessageResources;
+use blockifier::bouncer::{get_tx_weights, BouncerWeights};
+use blockifier::execution::call_info::{BuiltinCounterMap, ExecutionSummary};
+use blockifier::fee::resources::TransactionResources;
 use blockifier::state::cached_state::StateChangesKeys;
 use blockifier::state::state_api::{StateReader as BlockifierStateReader, UpdatableState};
 use blockifier::transaction::transaction_execution::Transaction;
 
 use mp_convert::ToFelt;
-use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 
 use crate::blockifier_integration::{
     rust_execute_transaction_blockifier_output, RustBlockifierOutput, RustExecStateAdapter, RustExecutionOutcome,
 };
-use crate::constants;
 use crate::hash_agg;
 use crate::initialize_runtime_config;
 use crate::storage_agg;
@@ -72,25 +69,35 @@ struct RustExecOptions {
     update_bouncer: bool,
 }
 
-fn rust_bouncer_delta(
+fn rust_bouncer_delta<S: BlockifierStateReader>(
+    state_reader: &S,
+    bouncer: &blockifier::bouncer::Bouncer,
     tx_execution_summary: &ExecutionSummary,
     tx_state_changes_keys: &StateChangesKeys,
-    is_first: bool,
-) -> BouncerWeights {
-    let (sierra_gas, proving_gas) = constants::settle_trade_v3_bouncer_gas(is_first);
-    let message_resources = MessageResources::new(tx_execution_summary.l2_to_l1_payload_lengths.clone(), None);
-    let l1_gas = usize::try_from(message_resources.get_starknet_gas_cost().l1_gas.0).unwrap_or(usize::MAX);
-    let n_events = tx_execution_summary.event_summary.n_events;
+    tx_builtin_counters: &BuiltinCounterMap,
+    tx_resources: &TransactionResources,
+    versioned_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
+) -> TransactionExecutorResult<BouncerWeights> {
+    let marginal_state_changes_keys = tx_state_changes_keys.difference(&bouncer.state_changes_keys);
+    let already_executed_class_hashes = bouncer.get_executed_class_hashes();
+    let marginal_executed_class_hashes =
+        tx_execution_summary.executed_class_hashes.difference(&already_executed_class_hashes).cloned().collect();
+    let n_marginal_visited_storage_entries =
+        tx_execution_summary.visited_storage_entries.difference(&bouncer.visited_storage_entries).count();
 
-    BouncerWeights {
-        l1_gas,
-        message_segment_length: message_resources.message_segment_length,
-        n_events,
-        state_diff_size: get_onchain_data_segment_length(&tx_state_changes_keys.count()),
-        sierra_gas: GasAmount(sierra_gas),
-        n_txs: 1,
-        proving_gas: GasAmount(proving_gas),
-    }
+    let tx_weights = get_tx_weights(
+        state_reader,
+        &marginal_executed_class_hashes,
+        n_marginal_visited_storage_entries,
+        tx_resources,
+        &marginal_state_changes_keys,
+        versioned_constants,
+        tx_builtin_counters,
+        &bouncer.bouncer_config,
+    )
+    .map_err(TransactionExecutorError::TransactionExecutionError)?;
+
+    Ok(tx_weights.bouncer_weights)
 }
 
 fn log_hash_agg(tx_hash: Felt, outcome: &RustExecutionOutcome, hash_stats: hash_agg::HashAggSnapshot) {
@@ -228,24 +235,14 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
             let tx_hash = Transaction::tx_hash(tx).to_felt();
 
             // C-022: Pre-execution bouncer pre-check.
-            // Before executing, verify the block can fit at least the minimum known bouncer
-            // delta (hardcoded gas + n_txs=1). If even these don't fit, skip execution
+            // Before executing, verify the block can fit the minimum guaranteed delta
+            // (`n_txs = 1`). If even this cannot fit, skip execution
             // entirely — the tx remains deferred in the caller's suffix.
             if options.update_bouncer {
                 let ps = phase_state.as_deref_mut().expect("rust phase state missing");
                 let bouncer = executor.bouncer.lock().expect("Bouncer lock poisoned");
                 let projected_current = ps.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
-                let is_first = ps.first_tx_in_block;
-                let (sierra_gas, proving_gas) = constants::settle_trade_v3_bouncer_gas(is_first);
-                let min_tx_delta = BouncerWeights {
-                    l1_gas: 0,
-                    message_segment_length: 0,
-                    n_events: 0,
-                    state_diff_size: 0,
-                    sierra_gas: GasAmount(sierra_gas),
-                    proving_gas: GasAmount(proving_gas),
-                    n_txs: 1,
-                };
+                let min_tx_delta = BouncerWeights { n_txs: 1, ..BouncerWeights::empty() };
                 if let Some(projected_min) = projected_current.checked_add(min_tx_delta) {
                     if !bouncer.bouncer_config.has_room(projected_min) {
                         tracing::info!(
@@ -287,9 +284,16 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     let phase_state = phase_state.as_deref_mut().expect("rust phase state missing");
                     let projected_current =
                         phase_state.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
-                    let is_first = phase_state.first_tx_in_block;
-                    let tx_projected_delta =
-                        rust_bouncer_delta(&tx_execution_summary, &tx_state_changes_keys, is_first);
+                    let tx_projected_delta = rust_bouncer_delta(
+                        &block_state,
+                        &bouncer,
+                        &tx_execution_summary,
+                        &tx_state_changes_keys,
+                        &tx_builtin_counters,
+                        &execution_info.receipt.resources,
+                        executor.block_context.versioned_constants(),
+                    )
+                    .expect("failed to compute rust tx bouncer delta");
                     let projected_next = projected_current
                         .checked_add(tx_projected_delta)
                         .expect("Rust projected bouncer weights overflowed");
@@ -381,14 +385,15 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
     results
 }
 
-/// Execute `settle_trade_v3` transactions with rust-exec, producing Blockifier-compatible outputs.
+/// Execute rust-exec supported transactions, producing Blockifier-compatible outputs.
 ///
 /// Semantics:
 /// - Runs rust-exec against the executor's current `CachedState`.
 /// - Applies the rust-exec produced state diff to that `CachedState`.
 /// - Produces a `TransactionExecutionInfo` (receipt/call-info) and `StateMaps` (tx diff).
-/// - Uses hardcoded fee/resources for `settle_trade_v3` (see [`constants`]).
-/// - Updates the executor bouncer with a hardcoded delta (sierra/proving gas).
+/// - Uses selector-specific fee/resource bridges when rust-exec requires them
+///   (for example `settle_trade_v3`).
+/// - Updates the executor bouncer using the same resource inputs Blockifier uses.
 ///
 /// If the bouncer cannot fit a tx, execution stops early and returns fewer results than `txs.len()`
 /// (matching Blockifier behavior).

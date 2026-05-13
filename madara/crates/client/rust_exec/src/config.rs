@@ -6,6 +6,7 @@
 
 use once_cell::sync::{Lazy, OnceCell};
 use starknet_types_core::felt::Felt;
+use std::collections::HashSet;
 use std::env;
 
 /// Environment variable name for Account class hash
@@ -50,6 +51,7 @@ pub struct RustExecRuntimeConfig {
     pub paraclear_class_hash: Felt,
     pub paraclear_oracle_class_hash: Felt,
     pub assets_manager_class_hash: Felt,
+    pub supported_contract_class_hashes: HashSet<Felt>,
     pub settle_trade_fixed_fee: u128,
 }
 
@@ -66,6 +68,7 @@ impl Default for RustExecRuntimeConfig {
             paraclear_class_hash: Felt::ZERO,
             paraclear_oracle_class_hash: Felt::ZERO,
             assets_manager_class_hash: Felt::ZERO,
+            supported_contract_class_hashes: HashSet::new(),
             settle_trade_fixed_fee: crate::constants::SETTLE_TRADE_V3_FIXED_FEE_AMOUNT,
         }
     }
@@ -86,8 +89,12 @@ pub static ACCOUNT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(
     Err(_) => None,
 });
 
+fn nonzero(value: Felt) -> Option<Felt> {
+    (value != Felt::ZERO).then_some(value)
+}
+
 pub fn account_class_hash() -> Option<Felt> {
-    runtime_config().map(|cfg| cfg.account_class_hash).or(*ACCOUNT_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.account_class_hash)).or(*ACCOUNT_CLASS_HASH)
 }
 
 /// Parsed class hash for ERC20, read from environment at startup.
@@ -104,7 +111,7 @@ pub static ERC20_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(EN
 });
 
 pub fn erc20_class_hash() -> Option<Felt> {
-    runtime_config().map(|cfg| cfg.erc20_class_hash).or(*ERC20_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.erc20_class_hash)).or(*ERC20_CLASS_HASH)
 }
 
 /// Parsed class hash for Paraclear, read from environment at startup.
@@ -121,7 +128,7 @@ pub static PARACLEAR_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::va
 });
 
 pub fn paraclear_class_hash() -> Option<Felt> {
-    runtime_config().map(|cfg| cfg.paraclear_class_hash).or(*PARACLEAR_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_class_hash)).or(*PARACLEAR_CLASS_HASH)
 }
 
 /// Parsed class hash for Paraclear Oracle, read from environment at startup.
@@ -139,7 +146,7 @@ pub static PARACLEAR_ORACLE_CLASS_HASH: Lazy<Option<Felt>> =
     });
 
 pub fn paraclear_oracle_class_hash() -> Option<Felt> {
-    runtime_config().map(|cfg| cfg.paraclear_oracle_class_hash).or(*PARACLEAR_ORACLE_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_oracle_class_hash)).or(*PARACLEAR_ORACLE_CLASS_HASH)
 }
 
 /// Parsed class hash for AssetsManager, read from environment at startup.
@@ -157,7 +164,11 @@ pub static ASSETS_MANAGER_CLASS_HASH: Lazy<Option<Felt>> =
     });
 
 pub fn assets_manager_class_hash() -> Option<Felt> {
-    runtime_config().map(|cfg| cfg.assets_manager_class_hash).or(*ASSETS_MANAGER_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.assets_manager_class_hash)).or(*ASSETS_MANAGER_CLASS_HASH)
+}
+
+pub fn supports_runtime_class_hash(class_hash: Felt) -> bool {
+    runtime_config().map(|cfg| cfg.supported_contract_class_hashes.contains(&class_hash)).unwrap_or(false)
 }
 
 pub fn runtime_config() -> Option<&'static RustExecRuntimeConfig> {

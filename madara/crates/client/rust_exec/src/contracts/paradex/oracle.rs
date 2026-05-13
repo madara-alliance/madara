@@ -276,16 +276,28 @@ fn funding_index_data_base(
 
 // ── set_prices_and_funding_snapshot implementation ───────────────────────────
 
-/// Decode a TickData from calldata. Each TickData is 4 consecutive felts:
-/// [asset_key, asset_value, decimals, last_updated_timestamp]
+/// Decode an `Array<TickData>` from calldata.
+///
+/// Starknet ABI encodes arrays of structs as:
+/// `[len, item_0_fields..., item_1_fields..., ...]`
+/// where `len` is the number of structs, not the number of flattened felts.
+/// Each `TickData` contributes 4 felts:
+/// `[asset_key, asset_value, decimals, last_updated_timestamp]`.
 fn decode_tick_data_array(input: &[Felt]) -> Result<(Vec<TickData>, &[Felt]), ExecutionError> {
-    let (items, rest) = decode_felt_array(input)?;
-    if items.len() % 4 != 0 {
+    let len = take_felt(input)?;
+    let tick_count = felt_to_u32(len)? as usize;
+    let flat_len = tick_count
+        .checked_mul(4)
+        .ok_or_else(|| ExecutionError::ExecutionFailed("TickData array length overflow".to_string()))?;
+    if input.len() < 1 + flat_len {
         return Err(ExecutionError::ExecutionFailed(format!(
-            "TickData array length {} is not a multiple of 4",
-            items.len()
+            "TickData array underflow: expected {} felts for {} TickData items, got {}",
+            flat_len,
+            tick_count,
+            input.len().saturating_sub(1)
         )));
     }
+    let items = &input[1..1 + flat_len];
     let ticks: Vec<TickData> = items
         .chunks_exact(4)
         .map(|chunk| TickData {
@@ -295,7 +307,7 @@ fn decode_tick_data_array(input: &[Felt]) -> Result<(Vec<TickData>, &[Felt]), Ex
             last_updated_timestamp: chunk[3],
         })
         .collect();
-    Ok((ticks, rest))
+    Ok((ticks, &input[1 + flat_len..]))
 }
 
 /// Mirrors Cairo's `_assert_timestamp_monotonic`: new timestamp must be >= current.
