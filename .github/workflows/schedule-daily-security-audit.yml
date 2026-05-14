@@ -13,7 +13,7 @@ jobs:
     if: ${{ github.repository_owner == 'madara-alliance' || github.event_name != 'schedule' }}
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v5
       - uses: actions-rs/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
