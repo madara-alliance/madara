@@ -5,7 +5,7 @@ members = [
   "e2e",
   "e2e-tests",
   "bootstrapper-v2",
-  # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
+  # "bootstrapper",  # Deprecated legacy bootstrapper
   "build-artifacts",
   "test_utils/crates/mock-atlantic-server",
 ]
@@ -14,7 +14,7 @@ default-members = [
   "madara",
   "orchestrator",
   "bootstrapper-v2",
-  # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
+  # "bootstrapper",  # Deprecated legacy bootstrapper
 ]
 resolver = "2"
 
