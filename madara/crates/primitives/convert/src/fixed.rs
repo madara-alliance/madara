@@ -44,6 +44,9 @@ impl From<f64> for FixedPoint {
         }
 
         let max_u128 = u128::MAX as f64;
+        if value.fract() == 0.0 && value <= max_u128 {
+            return Self { value: value as u128, decimals: 0 };
+        }
 
         let mut scale = 0u32;
 
@@ -67,5 +70,20 @@ impl From<f64> for FixedPoint {
         let mantissa = scaled.round() as u128;
 
         Self { value: mantissa, decimals }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FixedPoint;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(1.0, 1)]
+    #[case(2.0, 2)]
+    fn integer_f64s_convert_exactly(#[case] input: f64, #[case] expected_value: u128) {
+        let fixed_point = FixedPoint::from(input);
+        assert_eq!(fixed_point.value(), expected_value);
+        assert_eq!(fixed_point.decimals(), 0);
     }
 }
