@@ -309,8 +309,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 /// Tests `process_job` function when job handler panics during execution.
 /// This test verifies that:
 /// 1. The panic is properly caught and handled
-/// 2. The job is reset to its original state for retry
-/// 3. An error is returned so the message can be nacked
+/// 2. The job is marked as Failed immediately
+/// 3. The message is ACKed and a failure alert is sent
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
@@ -319,10 +319,14 @@ async fn process_job_handles_panic() {
     // This prevents Mockall's global context from being interfered with by parallel tests
     let _test_lock = acquire_test_lock();
 
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     // Building config
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
@@ -348,13 +352,24 @@ async fn process_job_handles_panic() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
-    // Process job should return Ok (message ACKed) and mark job as Failed
+    // Process job should return Ok so message is ACKed after the panic is recorded as a job failure
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "process_job should return Ok after marking the job as Failed");
 
-    // DB checks - verify the job was marked as Failed
+    // DB checks - verify the job was moved to Failed with the panic reason recorded
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(job_in_db.status, JobStatus::Failed);
+    let failure_reason = job_in_db.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt") && failure_reason.contains("panicked"),
+        "failure_reason should contain panic attempt info. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("Simulated panic in process_job"),
+        "failure_reason should contain the panic message. Got: {}",
+        failure_reason
+    );
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is not
@@ -551,13 +566,16 @@ async fn process_job_two_workers_process_same_job_works() {
 }
 
 /// Tests `process_job` function when the job handler returns an error.
-/// The job should be reset to its original state and an error returned for retry.
+/// The job should be marked as Failed immediately and the message should be ACKed.
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn process_job_job_handler_returns_error_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
@@ -573,6 +591,7 @@ async fn process_job_job_handler_returns_error_works() {
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
     let db_client = services.config.database();
@@ -587,13 +606,24 @@ async fn process_job_job_handler_returns_error_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Process job should return Ok (message ACKed) and mark job as Failed
+    // Process job should return Ok so message is ACKed after the failure is recorded
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "process_job should return Ok after marking the job as Failed");
 
-    // DB checks - verify the job was marked as Failed
+    // DB checks - verify the job was moved to Failed with the processing error recorded
     let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(final_job_in_db.status, JobStatus::Failed);
+    let recorded_reason = final_job_in_db.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        recorded_reason.contains("Processing attempt") && recorded_reason.contains("failed"),
+        "failure_reason should contain attempt info. Got: {}",
+        recorded_reason
+    );
+    assert!(
+        recorded_reason.contains(failure_reason),
+        "failure_reason should contain the original error. Got: {}",
+        recorded_reason
+    );
 }
 
 /// Tests `verify_job` function when job is having expected status
