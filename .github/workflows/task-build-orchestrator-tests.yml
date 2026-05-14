@@ -69,3 +69,4 @@ jobs:
         with:
           name: orchestrator-tests-${{ steps.generate-hash.outputs.orchestrator-tests-hash }}
           path: target/nextest/orchestrator-tests.tar.zst
+          retention-days: 3
