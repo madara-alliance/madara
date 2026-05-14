@@ -50,6 +50,9 @@ pub enum MadaraError {
     #[error("Class hash not found for contract: {0}")]
     ClassHashNotFound(String),
 
+    #[error("Required field '{0}' not found in base layer addresses")]
+    MissingBaseLayerAddress(String),
+
     #[error("Provider error: {0}")]
     ProviderError(#[from] starknet::providers::ProviderError),
 

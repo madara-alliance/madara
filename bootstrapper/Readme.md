@@ -1,9 +1,5 @@
 # Madara Bootstrapper
 
-> Archived status:
-> This is the legacy `bootstrapper` v1. It is deprecated, unmaintained, and kept in this repository for reference only.
-> Use `bootstrapper-v2` for active development and supported workflows.
-
 [![Coverage Status](https://coveralls.io/repos/github/madara-alliance/madara-bootstrapper/badge.svg?branch=main)](https://coveralls.io/github/madara-alliance/madara-bootstrapper?branch=main)
 
 Madara Bootstrapper is a tool that helps to deploy the **Token Bridge** & **Eth Bridge** contract
@@ -23,12 +19,10 @@ in the [Information](#information) section.
   - [Information](#information)
     - [Contract Descriptions](#contract-descriptions)
 
-**Legacy Support Status:**
+**Currently Supported:**
 
-- Legacy reference only
-- No active maintenance
-- No new features planned
-- Use `bootstrapper-v2` for supported flows
+- Madara App Chain <----> Ethereum / EVM based chains
+- More coming soon...
 
 ## Testing
 

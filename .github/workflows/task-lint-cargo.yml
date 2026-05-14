@@ -32,6 +32,9 @@ jobs:
         with:
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
 
+      - name: Run Make artifacts
+        run: yes | make artifacts
+
       - name: Cargo fmt
         run: |
           cargo fmt --all -- --check
@@ -40,9 +43,6 @@ jobs:
         uses: ./.github/actions/setup-python-cairo
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
-
-      - name: Run Make artifacts
-        run: yes | make artifacts
 
       - name: Cargo Clippy
         run: |

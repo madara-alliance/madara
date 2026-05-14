@@ -74,7 +74,6 @@ Targets:
 
   - build-madara                  Build Madara with Cairo 0 environment setup
   - build-orchestrator            Build Orchestrator with Cairo 0 environment setup
-  - build-bootstrapper-v2         Build Bootstrapper V2
 
   [ CODE QUALITY ]
 
@@ -114,7 +113,6 @@ DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
 VENV           := sequencer_venv
 VENV_ACTIVATE  := . $(VENV)/bin/activate
-WITH_CAIRO     := $(VENV_ACTIVATE) &&
 
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
@@ -142,12 +140,6 @@ PASS           := \033[1;32m
 WARN           := \033[1;31m
 
 RESET          := \033[0m
-
-define MAYBE_SETUP_CAIRO
-	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
-		$(MAKE) --silent setup-cairo; \
-	fi
-endef
 
 .PHONY: all
 all: help
@@ -235,26 +227,22 @@ setup-cairo:
 	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
 
 .PHONY: build-madara
-build-madara: setup-cairo
+build-madara:
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
-	@$(WITH_CAIRO) cargo build --bin madara --release
+	@$(VENV_ACTIVATE) && cargo build --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: build-orchestrator
 build-orchestrator: setup-cairo
 	@echo -e "$(DIM)Building Orchestrator with Cairo 0 environment...$(RESET)"
-	@$(WITH_CAIRO) cargo build --bin orchestrator --release
-	@echo -e "$(PASS)✅ Build complete!$(RESET)"
-
-.PHONY: build-bootstrapper-v2
-build-bootstrapper-v2:
-	@echo -e "$(DIM)Building Bootstrapper V2...$(RESET)"
-	@cargo build --package bootstrapper-v2 --bin bootstrapper-v2 --release
+	@$(VENV_ACTIVATE) && cargo build --bin orchestrator --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
 check:
-	$(MAYBE_SETUP_CAIRO)
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
@@ -264,18 +252,23 @@ check:
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
-	@$(WITH_CAIRO) cargo clippy --workspace --all-features --no-deps -- -D warnings
-	@$(WITH_CAIRO) cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --no-deps -- -D warnings
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
 fmt:
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
-	@echo -e "$(INFO)Running prettier...$(RESET)"
+	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@npm install
 	@npx prettier --write .
+	@echo -e "$(PASS)Code formatting complete!$(RESET)"
+	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
@@ -283,9 +276,9 @@ fmt:
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e
-test-orchestrator-e2e: setup-cairo
+test-orchestrator-e2e:
 	@echo -e "$(DIM)Running E2E tests...$(RESET)"
-	@$(WITH_CAIRO) RUST_LOG=info cargo nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast
+	@RUST_LOG=info cargo nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast
 	@echo -e "$(PASS)E2E tests completed!$(RESET)"
 
 # ============================================================================ #
@@ -370,21 +363,21 @@ pull-e2e-docker-images:
 
 
 .PHONY: build-e2e-binaries
-build-e2e-binaries: setup-cairo
+build-e2e-binaries:
 	@echo -e "$(DIM)Building E2E binaries...$(RESET)"
 	@mkdir -p $(CARGO_TARGET_DIR)/$(E2E_BINARY_PROFILE)
 	@# Build Madara
 	@echo -e "$(INFO)Building Madara...$(RESET)"
-	@$(WITH_CAIRO) CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara $(E2E_CARGO_PROFILE_FLAG)
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --bin madara $(E2E_CARGO_PROFILE_FLAG)
 	@# Build Orchestrator
 	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
-	@$(WITH_CAIRO) CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator $(E2E_CARGO_PROFILE_FLAG)
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator $(E2E_CARGO_PROFILE_FLAG)
 	@# Build Bootstrapper V2
 	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
-	@$(WITH_CAIRO) CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p bootstrapper-v2 --bin bootstrapper-v2 $(E2E_CARGO_PROFILE_FLAG)
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 $(E2E_CARGO_PROFILE_FLAG)
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
-	@$(WITH_CAIRO) CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
 	@echo -e "$(PASS)✅ All binaries built$(RESET)"
 
 .PHONY: download-pathfinder-mac
@@ -411,9 +404,9 @@ make-e2e-binaries-executable:
 	@echo -e "$(PASS)✅ Binaries are executable$(RESET)"
 
 .PHONY: run-e2e
-run-e2e: setup-cairo
+run-e2e:
 	@echo -e "$(DIM)Running E2E bridge tests...$(RESET)"
-	@$(WITH_CAIRO) AWS_REGION=$(AWS_REGION) \
+	@AWS_REGION=$(AWS_REGION) \
 	CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) \
 	MADARA_E2E_BINARY_PROFILE=$(E2E_BINARY_PROFILE) \
 	RUST_LOG=info cargo test \
@@ -430,9 +423,9 @@ clean-up-after-e2e:
 # ============================================================================ #
 
 .PHONY: test-orchestrator
-test-orchestrator: setup-cairo
+test-orchestrator:
 	@echo -e "$(DIM)Running unit tests with coverage...$(RESET)"
-	@$(WITH_CAIRO) RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+	@RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
 		--release \
 		--features testing \
 		--lcov \
@@ -447,10 +440,10 @@ test: test-e2e test-orchestrator
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
 .PHONY: pre-push
-pre-push:
+pre-push: setup-cairo
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
-	@$(MAKE) --silent check
+	@$(VENV_ACTIVATE) && $(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook
@@ -460,38 +453,38 @@ git-hook:
 .PHONY: setup-l2
 setup-l2: setup-cairo
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l2-localstack
-setup-l2-localstack: setup-cairo
+setup-l2-localstack:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer and Localstack...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: setup-l3
-setup-l3: setup-cairo
+setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3-localstack
-setup-l3-localstack: setup-cairo
+setup-l3-localstack:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer and Localstack...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2
-run-orchestrator-l2: setup-cairo
+run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover atlantic --da-on-ethereum 2>&1
+	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --prover atlantic --da-on-ethereum 2>&1
 
 
 .PHONY: run-orchestrator-l3
-run-orchestrator-l3: setup-cairo
+run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@$(WITH_CAIRO) cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --mock-atlantic-server --da-on-starknet 2>&1
+	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --mock-atlantic-server --da-on-starknet 2>&1
 
 .PHONY: watch-orchestrator
-watch-orchestrator: setup-cairo
+watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
-	@$(WITH_CAIRO) cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --da-on-starknet' 2>&1
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --prover atlantic --da-on-starknet' 2>&1
 
 # Run the mock Atlantic server with enhanced CLI
 # Usage: make run-mock-atlantic-server
@@ -520,16 +513,14 @@ run-mock-atlantic-server:
 	fi; \
 	$$CMD
 
-.PHONY: setup-bootstrapper setup-bootstrapper-v2
-setup-bootstrapper: setup-bootstrapper-v2
-
-setup-bootstrapper-v2:
-	@echo -e "$(DIM)Setting up bootstrapper-v2 artifacts...$(RESET)"
+.PHONY: setup-bootstrapper
+setup-bootstrapper:
+	@echo -e "$(DIM)Setting up bootstrapper...$(RESET)"
 	@cp -r ./build-artifacts/bootstrapper/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
 	@cp -r ./build-artifacts/bootstrapper/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
 	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
 	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
-	@echo -e "$(PASS)Bootstrapper v2 setup complete!$(RESET)"
+	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
 
 # ============================================================================ #
 #                          LLVM 19 SETUP FOR CAIRO NATIVE                       #

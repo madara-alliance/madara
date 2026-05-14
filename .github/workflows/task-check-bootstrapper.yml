@@ -26,7 +26,7 @@ jobs:
           cache-key: bootstrapper-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
           cache-workspaces: bootstrapper -> bootstrapper/target
 
-      # Check bootstrapper (standalone project)
+      # Check Bootstrapper (standalone project)
       - name: Cargo check
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
