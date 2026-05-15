@@ -273,9 +273,11 @@ impl MigrationRunner {
                 migration.to_version
             );
 
-            let context = MigrationContext::new(db, self.abort_flag.clone()).with_progress_callback(Box::new(|p| {
-                tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
-            }));
+            let context = MigrationContext::new(db, &self.base_path, self.abort_flag.clone()).with_progress_callback(
+                Box::new(|p| {
+                    tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
+                }),
+            );
 
             let start = std::time::Instant::now();
             if let Err(e) = (migration.migrate)(&context) {
