@@ -2826,7 +2826,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2846,7 +2846,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2866,7 +2866,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -6999,7 +6999,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=33846d17e4030e72abba774168e58885119d339a#33846d17e4030e72abba774168e58885119d339a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7711,7 +7711,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -12198,7 +12198,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -12211,7 +12211,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -12753,7 +12753,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=33846d17e4030e72abba774168e58885119d339a#33846d17e4030e72abba774168e58885119d339a"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -14138,7 +14138,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=9d3ad533b3f3c4849663ad180e4a92671cb07e6b#9d3ad533b3f3c4849663ad180e4a92671cb07e6b"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=33846d17e4030e72abba774168e58885119d339a#33846d17e4030e72abba774168e58885119d339a"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
