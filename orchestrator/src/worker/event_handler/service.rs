@@ -9,9 +9,7 @@ use uuid::Uuid;
 
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
-use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
@@ -138,6 +136,7 @@ impl JobHandlerService {
     /// * `Created` -> `LockedForProcessing` -> `PendingVerification`
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
+    /// * `LockedForProcessing` -> `Failed` (on processing error or panic — message is ACKed, no SQS retry)
     ///
     /// # Metrics
     /// * Updates block gauge
@@ -151,6 +150,14 @@ impl JobHandlerService {
     /// * Automatically adds the job to verification queue upon successful processing
     /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
     ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///
+    /// # Failure handling
+    /// Processing errors (including transient ones) immediately move the job to `Failed` and ACK the
+    /// SQS message. There are no SQS-level retries for explicit failures — job handlers that talk to
+    /// external APIs (SHARP, Atlantic, Ethereum, Starknet) implement their own internal retry logic
+    /// before surfacing an error. SQS `maxReceiveCount` only protects against implicit failures
+    /// (OOM, consumer crash) where the handler never reaches the error path.
+    /// Failed jobs can be retried via the `retry_job` endpoint.
     ///
     /// # Important
     /// The queue visibility timeout MUST be greater than the job healing timeout configured via
@@ -273,9 +280,6 @@ impl JobHandlerService {
             return Ok(());
         }
 
-        // Save original status to restore on failure
-        let original_status = job.status.clone();
-
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
         // it would fail to update the job in the database because the version would be outdated
@@ -330,9 +334,15 @@ impl JobHandlerService {
                     internal_id = %job.internal_id,
                     status = ?job.status,
                     error = ?e,
-                    "Failed to process job, resetting state for retry"
+                    "Failed to process job, marking as failed"
                 );
-                return Err(Self::reset_job_for_retry(&mut job, config.clone(), original_status, e).await);
+                let reason = format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, e);
+                MetricsRecorder::record_job_state_transition(
+                    JobStatus::LockedForProcessing,
+                    JobStatus::Failed,
+                    &job.job_type,
+                );
+                return JobService::move_job_to_failed(&job, config.clone(), reason).await;
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -341,10 +351,15 @@ impl JobHandlerService {
                     .or_else(|| panic.downcast_ref::<&str>().copied())
                     .unwrap_or("Unknown panic message");
 
-                error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing, resetting state for retry");
-                let panic_error =
-                    JobError::Other(OtherError::from(format!("Job handler panicked with message: {}", panic_msg)));
-                return Err(Self::reset_job_for_retry(&mut job, config.clone(), original_status, panic_error).await);
+                error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing, marking as failed");
+                let reason =
+                    format!("Processing attempt {} panicked: {}", job.metadata.common.process_attempt_no, panic_msg);
+                MetricsRecorder::record_job_state_transition(
+                    JobStatus::LockedForProcessing,
+                    JobStatus::Failed,
+                    &job.job_type,
+                );
+                return JobService::move_job_to_failed(&job, config.clone(), reason).await;
             }
         };
 
@@ -870,44 +885,6 @@ impl JobHandlerService {
                     "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
                 );
                 internal_id as f64
-            }
-        }
-    }
-
-    /// Resets job state to allow retry when the message comes back from the queue.
-    ///
-    /// Clears `process_started_at`, appends the error to failure history, and restores
-    /// the job to its original status. If the DB update fails, returns an error combining
-    /// both the original error and the DB error context.
-    async fn reset_job_for_retry(
-        job: &mut JobItem,
-        config: Arc<Config>,
-        original_status: JobStatus,
-        original_error: JobError,
-    ) -> JobError {
-        job.metadata.common.process_started_at = None;
-        // Move current failure_reason to history, then set new error
-        let new_error =
-            format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, original_error);
-        if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
-            job.metadata.common.previous_failure_reasons.push(previous_reason);
-        }
-        job.metadata.common.failure_reason = Some(new_error);
-        match config
-            .database()
-            .update_job(
-                job,
-                JobItemUpdates::new().update_status(original_status).update_metadata(job.metadata.clone()).build(),
-            )
-            .await
-        {
-            Ok(_) => original_error,
-            Err(db_err) => {
-                error!(job_id = ?job.id, error = ?db_err, "Failed to reset job state for retry");
-                JobError::Other(OtherError::from(format!(
-                    "Failed to reset job state: {}. Original error: {}",
-                    db_err, original_error
-                )))
             }
         }
     }
