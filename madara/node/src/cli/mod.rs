@@ -353,6 +353,7 @@ impl RunCmd {
 mod tests {
     use super::RunCmd;
     use clap::Parser;
+    use figment::{providers::Json, Figment};
 
     #[test]
     fn full_node_does_not_run_or_save_mempool() {
@@ -376,6 +377,15 @@ mod tests {
 
         assert!(run_cmd.should_run_mempool());
         assert!(!run_cmd.should_save_mempool_to_db());
+    }
+
+    #[test]
+    fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../configs/args/config.json");
+        let run_cmd: RunCmd =
+            Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
+
+        assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
     }
 }
 

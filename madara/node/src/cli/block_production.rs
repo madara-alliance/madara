@@ -11,6 +11,7 @@ pub struct BlockProductionParams {
     /// Discard any open preconfirmed block on sequencer startup instead of re-executing and closing it.
     /// This permanently drops the preconfirmed transactions: they are neither replayed nor re-queued.
     /// The current runtime execution config is then persisted for subsequent block production.
+    #[serde(default)]
     #[arg(env = "MADARA_DISCARD_PRECONFIRMED_ON_STARTUP", long)]
     pub discard_preconfirmed_on_startup: bool,
 
