@@ -215,3 +215,44 @@ pub struct BlockSettlementStatusResponse {
     pub block_jobs: Vec<SettlementJobResponseItem>,
     pub aggregator_proof_jobs: Vec<SettlementJobResponseItem>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnosBatchMetricsResponse {
+    pub state_diff_size: usize,
+    pub sierra_gas: u64,
+    pub proving_gas: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnosBatchDetailsResponse {
+    pub index: u64,
+    pub aggregator_batch_index: Option<u64>,
+    pub start_block: u64,
+    pub end_block: u64,
+    pub status: SnosBatchStatus,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+    pub metrics: SnosBatchMetricsResponse,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AggregatorBatchDetailsResponse {
+    pub index: u64,
+    pub start_block: u64,
+    pub end_block: u64,
+    pub status: AggregatorBatchStatus,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+    pub blob_len: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BatchDetailsResponse {
+    pub snos_batch: SnosBatchDetailsResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aggregator_batch: Option<AggregatorBatchDetailsResponse>,
+}
