@@ -309,8 +309,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 /// Tests `process_job` function when job handler panics during execution.
 /// This test verifies that:
 /// 1. The panic is properly caught and handled
-/// 2. The job is reset to its original state for retry
-/// 3. An error is returned so the message can be nacked
+/// 2. The job is marked as Failed immediately
+/// 3. The message is ACKed and a failure alert is sent
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
@@ -319,10 +319,14 @@ async fn process_job_handles_panic() {
     // This prevents Mockall's global context from being interfered with by parallel tests
     let _test_lock = acquire_test_lock();
 
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     // Building config
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
@@ -348,20 +352,24 @@ async fn process_job_handles_panic() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
-    // Process job should return an error so message can be nacked and retried
+    // Process job should return Ok so message is ACKed after the panic is recorded as a job failure
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Job handler panicked with message: Simulated panic in process_job"));
+    assert!(result.is_ok(), "process_job should return Ok after marking the job as Failed");
 
-    // DB checks - verify the job was reset to original state for retry
+    // DB checks - verify the job was moved to Failed with the panic reason recorded
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(job_in_db.status, JobStatus::Created);
-
-    // process_started_at should be cleared
-    assert!(job_in_db.metadata.common.process_started_at.is_none());
+    assert_eq!(job_in_db.status, JobStatus::Failed);
+    let failure_reason = job_in_db.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt") && failure_reason.contains("panicked"),
+        "failure_reason should contain panic attempt info. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("Simulated panic in process_job"),
+        "failure_reason should contain the panic message. Got: {}",
+        failure_reason
+    );
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is not
@@ -558,13 +566,16 @@ async fn process_job_two_workers_process_same_job_works() {
 }
 
 /// Tests `process_job` function when the job handler returns an error.
-/// The job should be reset to its original state and an error returned for retry.
+/// The job should be marked as Failed immediately and the message should be ACKed.
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn process_job_job_handler_returns_error_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
@@ -580,6 +591,7 @@ async fn process_job_job_handler_returns_error_works() {
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
     let db_client = services.config.database();
@@ -594,17 +606,24 @@ async fn process_job_job_handler_returns_error_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Process job should return an error so message can be nacked and retried
+    // Process job should return Ok so message is ACKed after the failure is recorded
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains(failure_reason));
+    assert!(result.is_ok(), "process_job should return Ok after marking the job as Failed");
 
-    // DB checks - verify the job was reset to original state for retry
+    // DB checks - verify the job was moved to Failed with the processing error recorded
     let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(final_job_in_db.status, JobStatus::Created);
-
-    // process_started_at should be cleared
-    assert!(final_job_in_db.metadata.common.process_started_at.is_none());
+    assert_eq!(final_job_in_db.status, JobStatus::Failed);
+    let recorded_reason = final_job_in_db.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        recorded_reason.contains("Processing attempt") && recorded_reason.contains("failed"),
+        "failure_reason should contain attempt info. Got: {}",
+        recorded_reason
+    );
+    assert!(
+        recorded_reason.contains(failure_reason),
+        "failure_reason should contain the original error. Got: {}",
+        recorded_reason
+    );
 }
 
 /// Tests `verify_job` function when job is having expected status
@@ -1213,15 +1232,14 @@ async fn move_job_to_failed_accumulates_failure_history() {
     );
 }
 
-/// Tests that failure history is preserved through multiple retry attempts until DLQ.
-/// This test verifies the end-to-end error accumulation:
-/// 1. Job fails processing (error stored via reset_job_for_retry)
-/// 2. Job eventually goes to DLQ (final reason set, previous appended to history)
-/// 3. The complete history is preserved in chronological order (oldest first)
+/// Tests that a processing failure immediately marks the job as Failed.
+/// This test verifies that when process_job fails:
+/// 1. process_job returns Ok (so the message is ACKed, no SQS retries)
+/// 2. Job status is set to Failed with the failure reason
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
-async fn failure_history_preserved_through_retries_to_dlq() {
+async fn process_job_failure_marks_job_as_failed() {
     let _test_lock = acquire_test_lock();
 
     // Set up mock alert client
@@ -1255,14 +1273,15 @@ async fn failure_history_preserved_through_retries_to_dlq() {
     let ctx_guard = get_job_handler_context_safe();
     ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Process job - this should fail and store error in failure_reason via reset_job_for_retry
+    // Process job - should return Ok so the message is ACKed (no SQS retries)
     let result = JobHandlerService::process_job(job_id, services.config.clone()).await;
-    assert!(result.is_err(), "process_job should return error for retry");
+    assert!(result.is_ok(), "process_job should return Ok to ACK the message");
 
-    // Verify the failure reason was recorded with attempt number
-    // process_attempt_no is incremented to 1 before processing, so error shows "attempt 1"
-    let job_after_first_failure = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    let failure_reason = job_after_first_failure.metadata.common.failure_reason.as_ref().unwrap();
+    // Verify job is marked as Failed with the failure reason
+    let failed_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+
+    let failure_reason = failed_job.metadata.common.failure_reason.as_ref().unwrap();
     assert!(
         failure_reason.contains("Processing attempt") && failure_reason.contains("failed"),
         "failure_reason should contain attempt info. Got: {}",
@@ -1272,34 +1291,5 @@ async fn failure_history_preserved_through_retries_to_dlq() {
         failure_reason.contains("Simulated processing failure"),
         "failure_reason should contain original error. Got: {}",
         failure_reason
-    );
-    assert!(
-        job_after_first_failure.metadata.common.previous_failure_reasons.is_empty(),
-        "No previous failures should exist yet"
-    );
-
-    // Now simulate the job going to DLQ by calling move_job_to_failed
-    let dlq_reason = "Job moved to DLQ after exhausting retries (last status: Created)";
-    JobService::move_job_to_failed(&job_after_first_failure, services.config.clone(), dlq_reason.to_string())
-        .await
-        .unwrap();
-
-    // Verify final state has complete accumulated history
-    let final_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    assert_eq!(final_job.status, JobStatus::Failed);
-
-    // Most recent error should be in failure_reason
-    assert_eq!(
-        final_job.metadata.common.failure_reason,
-        Some(dlq_reason.to_string()),
-        "failure_reason should be the DLQ message"
-    );
-    // Previous error should be in history
-    assert_eq!(final_job.metadata.common.previous_failure_reasons.len(), 1, "Should have one previous failure");
-    assert!(
-        final_job.metadata.common.previous_failure_reasons[0].contains("Processing attempt")
-            && final_job.metadata.common.previous_failure_reasons[0].contains("failed"),
-        "Previous error should be preserved. Got: {}",
-        final_job.metadata.common.previous_failure_reasons[0]
     );
 }
