@@ -67,7 +67,11 @@ impl ServiceManager {
         // self.setup_mock_prover(&mut services).await?;
 
         // Orchestration
-        self.setup_orchestration(&mut services).await?;
+        if self.config.enable_orchestrator() {
+            self.setup_orchestration(&mut services).await?;
+        } else {
+            println!("⏭️ Skipping orchestrator setup for this E2E flow");
+        }
 
         println!("✅ Setup completed successfully in {:?}", start.elapsed());
         Ok(())
@@ -79,14 +83,20 @@ impl ServiceManager {
         // Start infrastructure
         self.start_infrastructure(&mut services).await?;
         self.setup_localstack_infrastructure().await?;
-        self.restore_mongodb_database(&services).await?;
+        if self.config.enable_orchestrator() {
+            self.restore_mongodb_database(&services).await?;
+        }
 
         // // Start runtime services
         self.start_anvil(&mut services).await?;
         self.start_madara(&mut services).await?;
         self.start_pathfinder(&mut services).await?;
         // self.start_mock_prover(&mut services).await?;
-        self.start_orchestrator(&mut services).await?;
+        if self.config.enable_orchestrator() {
+            self.start_orchestrator(&mut services).await?;
+        } else {
+            println!("⏭️ Skipping orchestrator runtime startup for this E2E flow");
+        }
 
         Ok(services)
     }

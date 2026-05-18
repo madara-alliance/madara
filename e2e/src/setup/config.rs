@@ -128,6 +128,7 @@ pub struct SetupConfig {
     // General Configurations
     pub layer: Layer,
     pub timeouts: Timeouts,
+    pub enable_orchestrator: bool,
 
     // Individual Component Configurations
     pub anvil_config: AnvilConfig,
@@ -148,6 +149,7 @@ impl Default for SetupConfig {
         Self {
             layer: Layer::L2,
             timeouts: Timeouts::default(),
+            enable_orchestrator: true,
             anvil_config: AnvilConfig::default(),
             localstack_config: LocalstackConfig::default(),
             mongo_config: MongoConfig::default(),
@@ -177,6 +179,11 @@ impl SetupConfig {
     /// Get Timeout Config
     pub fn get_timeouts(&self) -> &Timeouts {
         &self.timeouts
+    }
+
+    /// Whether orchestration should be part of the setup/runtime flow.
+    pub fn enable_orchestrator(&self) -> bool {
+        self.enable_orchestrator
     }
 
     /// Get Localstack Config
@@ -258,6 +265,12 @@ impl SetupConfigBuilder {
     /// Set Timeouts
     pub fn timeouts(mut self, timeouts: Timeouts) -> Self {
         self.config.timeouts = timeouts;
+        self
+    }
+
+    /// Enable or disable orchestrator setup/runtime steps.
+    pub fn enable_orchestrator(mut self, enable_orchestrator: bool) -> Self {
+        self.config.enable_orchestrator = enable_orchestrator;
         self
     }
 

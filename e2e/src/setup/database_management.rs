@@ -28,9 +28,10 @@ impl DatabaseManager {
 
     pub async fn create_data_directory(&self, dir_name: &str) -> Result<(), SetupError> {
         let data_dump_dir = REPO_ROOT.join(dir_name);
-        if !data_dump_dir.exists() {
-            fs::create_dir_all(data_dump_dir).await.map_err(|e| SetupError::OtherError(e.to_string()))?;
+        if data_dump_dir.exists() {
+            fs::remove_dir_all(&data_dump_dir).await.map_err(|e| SetupError::OtherError(e.to_string()))?;
         }
+        fs::create_dir_all(data_dump_dir).await.map_err(|e| SetupError::OtherError(e.to_string()))?;
         Ok(())
     }
 
@@ -42,7 +43,7 @@ impl DatabaseManager {
         Ok(())
     }
 
-    pub async fn check_existing_state(&self) -> Result<DBState, SetupError> {
+    pub async fn check_existing_state(&self, enable_orchestrator: bool) -> Result<DBState, SetupError> {
         // check if the folder exists or not
         if self.check_data_directory(DATA_DIR).is_err() {
             return Ok(DBState::NotReady);
@@ -61,7 +62,7 @@ impl DatabaseManager {
         println!("🔔 Pre Existing DB Status: {:?}", status);
 
         if status == DBState::ReadyToUse {
-            self.validate_required_files(&data_dir)?;
+            self.validate_required_files(&data_dir, enable_orchestrator)?;
         }
 
         Ok(status)
@@ -99,13 +100,18 @@ impl DatabaseManager {
         Ok(())
     }
 
-    fn validate_required_files(&self, data_dir: &Path) -> Result<(), SetupError> {
+    fn validate_required_files(&self, data_dir: &Path, enable_orchestrator: bool) -> Result<(), SetupError> {
         let anvil_json_exists = data_dir.join(ANVIL_DATABASE_FILE).exists();
         let madara_db_exists = data_dir.join(MADARA_DATABASE_DIR).exists();
         let mock_verifier_exists = data_dir.join(MOCK_VERIFIER_ADDRESS_FILE).exists();
         let orchestrator_dir_exists = data_dir.join(ORCHESTRATOR_DATABASE_NAME).exists();
 
-        if anvil_json_exists && madara_db_exists && mock_verifier_exists && orchestrator_dir_exists {
+        let has_required_files = anvil_json_exists
+            && madara_db_exists
+            && mock_verifier_exists
+            && (!enable_orchestrator || orchestrator_dir_exists);
+
+        if has_required_files {
             Ok(())
         } else {
             let mut missing = Vec::new();
@@ -118,7 +124,7 @@ impl DatabaseManager {
             if !mock_verifier_exists {
                 missing.push(MOCK_VERIFIER_ADDRESS_FILE);
             }
-            if !orchestrator_dir_exists {
+            if enable_orchestrator && !orchestrator_dir_exists {
                 missing.push(ORCHESTRATOR_DATABASE_NAME);
             }
             Err(SetupError::OtherError(format!("Database files missing despite ReadyToUse status: {:?}", missing)))

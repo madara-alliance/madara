@@ -43,7 +43,7 @@ impl ChainSetup {
     pub async fn setup(&mut self, test_name: &str) -> Result<(), SetupError> {
         println!("🚀 Starting Chain Setup for {:?} layer...", self.config.layer);
 
-        let db_status = self.database_manager.check_existing_state().await?;
+        let db_status = self.database_manager.check_existing_state(self.config.enable_orchestrator()).await?;
 
         match db_status {
             DBState::ReadyToUse => {
@@ -58,7 +58,10 @@ impl ChainSetup {
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
-                let setup_config = SetupConfigBuilder::new(None).build_l2_config().await?;
+                let mut setup_config = SetupConfigBuilder::new(None).build_l2_config().await?;
+                setup_config.enable_orchestrator = test_config.enable_orchestrator();
+                setup_config.madara_config =
+                    apply_madara_runtime_overrides(setup_config.madara_config, test_config.get_madara_config());
                 self.config = Arc::new(setup_config);
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.setup_new_chain().await?;
@@ -120,6 +123,23 @@ impl ChainSetup {
     pub fn config(&self) -> &SetupConfig {
         &self.config
     }
+}
+
+fn apply_madara_runtime_overrides(
+    base: crate::services::madara::MadaraConfig,
+    overrides: &crate::services::madara::MadaraConfig,
+) -> crate::services::madara::MadaraConfig {
+    let mut builder = base.builder();
+
+    for arg in overrides.additional_args() {
+        builder = builder.arg(arg);
+    }
+
+    for (key, value) in overrides.environment_vars() {
+        builder = builder.env_var(key, value);
+    }
+
+    builder.build()
 }
 
 impl Drop for ChainSetup {
