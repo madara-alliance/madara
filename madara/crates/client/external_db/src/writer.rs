@@ -256,11 +256,11 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
                 confirmation.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
             match sink.delete_by_hashes(&self.chain_id, hashes).await {
                 Ok(deleted) => {
-                    self.metrics.mongodb_up.record(1, &[]);
-                    self.metrics.transactions_deleted.add(deleted, &[]);
                     self.source.mark_processed(confirmation.block_number).await.with_context(|| {
                         format!("Marking retention block {} as processed", confirmation.block_number)
                     })?;
+                    self.metrics.mongodb_up.record(1, &[]);
+                    self.metrics.transactions_deleted.add(deleted, &[]);
                 }
                 Err(err) => {
                     // This is a Mongo operation; mark Mongo as down and count it as a Mongo error for alerting.
@@ -954,7 +954,7 @@ mod tests {
     /// Backend confirmation source should fail loudly if L1-confirmed blocks are missing from local DB.
     #[tokio::test]
     async fn backend_source_errors_when_confirmed_block_missing() {
-        let backend = Arc::new(MadaraBackend::open_for_testing(ChainConfig::madara_test().into()));
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
         backend.set_latest_l1_confirmed(Some(0)).unwrap();
 
         let metrics = Arc::new(ExternalDbMetrics::register());
