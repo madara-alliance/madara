@@ -226,6 +226,26 @@ fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
     )
 }
 
+const TRIE_KEY_KIND: u8 = 0;
+const FLAT_KEY_KIND: u8 = 1;
+const TRIE_LOG_KEY_SEPARATOR: u8 = 0x00;
+const TRIE_LOG_NEW_VALUE: u8 = 0x00;
+const TRIE_LOG_OLD_VALUE: u8 = 0x01;
+
+#[derive(Default)]
+struct TrieLogChange {
+    old_value: Option<ByteVec>,
+    new_value: Option<ByteVec>,
+}
+
+fn database_key_from_parts<'a>(key_kind: u8, key: &'a [u8]) -> DatabaseKey<'a> {
+    match key_kind {
+        TRIE_KEY_KIND => DatabaseKey::Trie(key),
+        FLAT_KEY_KIND => DatabaseKey::Flat(key),
+        _ => panic!("invalid trie-log key kind {key_kind}"),
+    }
+}
+
 /// The backing database for a bonsai storage view. This is used
 /// to implement historical access (for storage proofs), by applying
 /// changes from the trie-log without modifying the real database.
@@ -250,6 +270,21 @@ impl fmt::Debug for BonsaiTransaction {
     }
 }
 
+impl BonsaiTransaction {
+    fn apply_change(&mut self, key_kind: u8, key: &[u8], value: Option<&[u8]>) -> Result<(), TrieError> {
+        let key = database_key_from_parts(key_kind, key);
+        match value {
+            Some(value) => {
+                self.insert(&key, value, None)?;
+            }
+            None => {
+                self.remove(&key, None)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 // TODO: a lot of this is not really used yet, this whole abstraction does not really make sense anyway, this needs to be modified
 // upstream in bonsai-trie
 impl BonsaiDatabase for BonsaiTransaction {
@@ -267,7 +302,7 @@ impl BonsaiDatabase for BonsaiTransaction {
             return Ok(val.clone());
         }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -277,8 +312,11 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
+        if let Some(val) = self.changed.get(&to_changed_key(key)) {
+            return Ok(val.is_some());
+        }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
     }
 
     fn insert(
@@ -323,20 +361,26 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
     #[tracing::instrument(skip(self))]
     fn transaction(&self, requested_id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
         tracing::trace!("Generating RocksDB transaction");
-        let (id, snapshot) = self.snapshots.get_closest(requested_id.as_u64());
+        let requested_id_u64 = requested_id.as_u64();
+        let (snapshot_id, snapshot) = self.snapshots.get_closest(requested_id_u64);
 
-        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={id:?}");
+        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={snapshot_id:?}");
 
-        id.map(|id| {
-            (
-                BasicId::new(id),
-                BonsaiTransaction {
-                    snapshot,
-                    column_mapping: self.column_mapping.clone(),
-                    changed: Default::default(),
-                },
-            )
-        })
+        let snapshot_id = snapshot_id?;
+        let mut txn =
+            BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: Default::default() };
+
+        if let Err(error) = self.replay_trie_logs_into_transaction(&mut txn, snapshot_id, requested_id_u64) {
+            tracing::error!(
+                ?error,
+                requested_id = requested_id_u64,
+                snapshot_id,
+                "failed to reconstruct historical trie state from trie logs"
+            );
+            return None;
+        }
+
+        Some((requested_id, txn))
     }
 
     fn merge<'a>(&mut self, _transaction: Self::Transaction<'a>) -> Result<(), Self::DatabaseError>
@@ -344,5 +388,198 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
         Self: 'a,
     {
         unreachable!("unused for now")
+    }
+}
+
+impl BonsaiDB {
+    fn replay_trie_logs_into_transaction(
+        &self,
+        txn: &mut BonsaiTransaction,
+        snapshot_id: u64,
+        requested_id: u64,
+    ) -> Result<(), TrieError> {
+        if snapshot_id == requested_id {
+            return Ok(());
+        }
+
+        if snapshot_id > requested_id {
+            for block_id in ((requested_id + 1)..=snapshot_id).rev() {
+                let changes = self.load_trie_log_changes(BasicId::new(block_id))?;
+                for ((key_kind, key), change) in changes {
+                    txn.apply_change(key_kind, &key, change.old_value.as_deref())?;
+                }
+            }
+            return Ok(());
+        }
+
+        for block_id in (snapshot_id + 1)..=requested_id {
+            let changes = self.load_trie_log_changes(BasicId::new(block_id))?;
+            for ((key_kind, key), change) in changes {
+                txn.apply_change(key_kind, &key, change.new_value.as_deref())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_trie_log_changes(&self, block_id: BasicId) -> Result<BTreeMap<(u8, ByteVec), TrieLogChange>, TrieError> {
+        let prefix = block_id.to_bytes();
+        let trie_log_entries = self.get_by_prefix(&DatabaseKey::TrieLog(&prefix))?;
+        let mut changes = BTreeMap::new();
+
+        for (encoded_key, value) in trie_log_entries {
+            let key_len = encoded_key.len();
+            if key_len < prefix.len() + 3 {
+                panic!("invalid trie-log key length {}", key_len);
+            }
+            if encoded_key[prefix.len()] != TRIE_LOG_KEY_SEPARATOR {
+                panic!("invalid trie-log key separator");
+            }
+
+            let change_type = encoded_key[key_len - 1];
+            let key_kind = encoded_key[key_len - 2];
+            let key_bytes = ByteVec::from(&encoded_key[prefix.len() + 1..key_len - 2]);
+            let change = changes.entry((key_kind, key_bytes)).or_insert_with(TrieLogChange::default);
+
+            match change_type {
+                TRIE_LOG_NEW_VALUE => change.new_value = Some(value),
+                TRIE_LOG_OLD_VALUE => change.old_value = Some(value),
+                _ => panic!("invalid trie-log change type {change_type}"),
+            }
+        }
+
+        Ok(changes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitvec::view::AsBits;
+    use starknet_types_core::felt::Felt;
+
+    fn create_test_storage(config: crate::rocksdb::RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
+        let temp_dir = tempfile::TempDir::with_prefix("bonsai-transaction-test").unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
+        (temp_dir, storage)
+    }
+
+    #[test]
+    fn contract_storage_transactional_state_uses_historical_snapshot_for_exact_block() {
+        let (_temp_dir, storage) = create_test_storage(crate::rocksdb::RocksDBConfig {
+            max_saved_trie_logs: Some(16),
+            max_kept_snapshots: Some(16),
+            snapshot_interval: 1,
+            ..Default::default()
+        });
+
+        let contract = Felt::from_hex_unchecked("0x1234");
+        let key = Felt::from_hex_unchecked("0x5678");
+        let identifier = contract.to_bytes_be();
+        let key_bits = key.to_bytes_be();
+
+        let mut trie = storage.contract_storage_trie();
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::ONE).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+        let root_at_0 = trie.root_hash(&identifier).unwrap();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::TWO).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        storage.snapshots.set_new_head(1);
+        let root_at_1 = trie.root_hash(&identifier).unwrap();
+
+        assert_ne!(root_at_0, root_at_1);
+
+        let historical = storage
+            .contract_storage_trie()
+            .get_transactional_state(BasicId::new(0), storage.contract_storage_trie().get_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(historical.root_hash(&identifier).unwrap(), root_at_0);
+        assert_eq!(historical.get(&identifier, &key_bits.as_bits()[5..]).unwrap(), Some(Felt::ONE));
+    }
+
+    #[test]
+    fn contract_storage_transactional_state_reconstructs_between_snapshots() {
+        let (_temp_dir, storage) = create_test_storage(crate::rocksdb::RocksDBConfig {
+            max_saved_trie_logs: Some(16),
+            max_kept_snapshots: Some(16),
+            snapshot_interval: 4,
+            ..Default::default()
+        });
+
+        let contract = Felt::from_hex_unchecked("0x4321");
+        let key = Felt::from_hex_unchecked("0x8765");
+        let identifier = contract.to_bytes_be();
+        let key_bits = key.to_bytes_be();
+
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::ONE).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::TWO).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        storage.snapshots.set_new_head(1);
+        let root_at_1 = trie.root_hash(&identifier).unwrap();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::THREE).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+        storage.snapshots.set_new_head(2);
+
+        let historical = storage
+            .contract_storage_trie()
+            .get_transactional_state(BasicId::new(1), storage.contract_storage_trie().get_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(historical.root_hash(&identifier).unwrap(), root_at_1);
+        assert_eq!(historical.get(&identifier, &key_bits.as_bits()[5..]).unwrap(), Some(Felt::TWO));
+    }
+
+    #[test]
+    fn contract_storage_transactional_state_reconstructs_multiple_reverse_steps() {
+        let (_temp_dir, storage) = create_test_storage(crate::rocksdb::RocksDBConfig {
+            max_saved_trie_logs: Some(16),
+            max_kept_snapshots: Some(16),
+            snapshot_interval: 5,
+            ..Default::default()
+        });
+
+        let contract = Felt::from_hex_unchecked("0xaaaa");
+        let key = Felt::from_hex_unchecked("0xbbbb");
+        let identifier = contract.to_bytes_be();
+        let key_bits = key.to_bytes_be();
+
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::ONE).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::TWO).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        storage.snapshots.set_new_head(1);
+        let root_at_1 = trie.root_hash(&identifier).unwrap();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::THREE).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+        storage.snapshots.set_new_head(2);
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::from(4_u8)).unwrap();
+        trie.commit(BasicId::new(3)).unwrap();
+        storage.snapshots.set_new_head(3);
+
+        let historical = storage
+            .contract_storage_trie()
+            .get_transactional_state(BasicId::new(1), storage.contract_storage_trie().get_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(historical.root_hash(&identifier).unwrap(), root_at_1);
+        assert_eq!(historical.get(&identifier, &key_bits.as_bits()[5..]).unwrap(), Some(Felt::TWO));
     }
 }
