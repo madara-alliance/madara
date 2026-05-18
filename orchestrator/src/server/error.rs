@@ -149,6 +149,10 @@ pub enum BlockRouteError {
     #[error("Invalid Block Number: {0}")]
     InvalidBlockNumber(String),
 
+    /// Indicates that the provided query parameters are invalid
+    #[error("Invalid query: {0}")]
+    InvalidQuery(String),
+
     /// Indicates that the requested block could not be found in the system
     #[error("Batch not found: {0}")]
     NotFound(String),
@@ -181,6 +185,10 @@ impl IntoResponse for BlockRouteError {
         match self {
             BlockRouteError::InvalidBlockNumber(id) => {
                 (StatusCode::BAD_REQUEST, Json(ApiResponse::error(format!("Invalid Block Number: {}", id))))
+                    .into_response()
+            }
+            BlockRouteError::InvalidQuery(message) => {
+                (StatusCode::BAD_REQUEST, Json(ApiResponse::error(format!("Invalid query: {}", message))))
                     .into_response()
             }
             BlockRouteError::NotFound(id) => {

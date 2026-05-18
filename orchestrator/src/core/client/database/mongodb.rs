@@ -1078,6 +1078,22 @@ impl DatabaseClient for MongoDbClient {
         Ok(batches)
     }
 
+    async fn get_snos_batches(&self, limit: Option<i64>, descending: bool) -> Result<Vec<SnosBatch>, DatabaseError> {
+        let start = Instant::now();
+        let sort_direction = if descending { -1 } else { 1 };
+        let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(limit).build();
+
+        let batches: Vec<SnosBatch> =
+            self.get_snos_batch_collection().find(doc! {}, find_options).await?.try_collect().await?;
+
+        debug!(batch_count = batches.len(), descending, category = "db_call", "Retrieved SNOS batches");
+        let attributes = [KeyValue::new("db_operation_name", "get_snos_batches")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
+        Ok(batches)
+    }
+
     async fn update_snos_batch_status_by_index(
         &self,
         index: u64,
@@ -1115,6 +1131,26 @@ impl DatabaseClient for MongoDbClient {
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_indexes")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+        Ok(batches)
+    }
+
+    async fn get_aggregator_batches(
+        &self,
+        limit: Option<i64>,
+        descending: bool,
+    ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
+        let start = Instant::now();
+        let sort_direction = if descending { -1 } else { 1 };
+        let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(limit).build();
+
+        let batches: Vec<AggregatorBatch> =
+            self.get_aggregator_batch_collection().find(doc! {}, find_options).await?.try_collect().await?;
+
+        debug!(batch_count = batches.len(), descending, category = "db_call", "Retrieved aggregator batches");
+        let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches")];
+        let duration = start.elapsed();
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
         Ok(batches)
     }
 
@@ -1448,6 +1484,7 @@ impl DatabaseClient for MongoDbClient {
         status: AggregatorBatchStatus,
         limit: Option<i64>,
         orchestrator_version: Option<String>,
+        descending: bool,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
         let mut filter = doc! {
@@ -1456,13 +1493,13 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             filter.insert("orchestrator_version", version.as_str());
         }
-        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
-        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
+        let sort_direction = if descending { -1 } else { 1 };
+        let find_options = FindOptions::builder().sort(doc! {"index": sort_direction}).limit(limit).build();
 
         let batches: Vec<AggregatorBatch> =
             self.get_aggregator_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
-        debug!("Retrieved aggregator batches by status");
+        debug!(status = %status, batch_count = batches.len(), descending, "Retrieved aggregator batches by status");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_status")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
@@ -1476,6 +1513,7 @@ impl DatabaseClient for MongoDbClient {
         status: SnosBatchStatus,
         limit: Option<i64>,
         orchestrator_version: Option<String>,
+        descending: bool,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
         let mut filter = doc! {
@@ -1484,8 +1522,8 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             filter.insert("orchestrator_version", version.as_str());
         }
-        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
-        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
+        let sort_direction = if descending { -1 } else { 1 };
+        let find_options = FindOptions::builder().sort(doc! {"index": sort_direction}).limit(limit).build();
 
         let batches: Vec<SnosBatch> =
             self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
@@ -1493,6 +1531,7 @@ impl DatabaseClient for MongoDbClient {
         tracing::debug!(
             status = %status,
             batch_count = batches.len(),
+            descending,
             category = "db_call",
             "Retrieved SNOS batches by status"
         );

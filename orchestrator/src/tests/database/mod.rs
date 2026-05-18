@@ -704,21 +704,24 @@ async fn test_get_snos_batches_by_status() {
     database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
     // Test without version filter - should return all closed batches
-    let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
+    let closed_batches =
+        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None, false).await.unwrap();
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with current version filter - should only return batch 1
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
-    let current_version_batches =
-        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version)).await.unwrap();
+    let current_version_batches = database_client
+        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version), false)
+        .await
+        .unwrap();
     assert_eq!(current_version_batches.len(), 1);
     assert_eq!(current_version_batches[0].index, 1);
 
     // Test with old version filter - should only return batch 3
     let old_version_batches = database_client
-        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some("old-version".to_string()))
+        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some("old-version".to_string()), false)
         .await
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
@@ -726,7 +729,7 @@ async fn test_get_snos_batches_by_status() {
 
     // Test with limit
     let limited_batches =
-        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1), None).await.unwrap();
+        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1), None, false).await.unwrap();
     assert_eq!(limited_batches.len(), 1);
 }
 
@@ -985,15 +988,17 @@ async fn test_get_aggregator_batches_by_status() {
     database_client.create_aggregator_batch(batch3.clone()).await.unwrap();
 
     // Test without version filter - should return all closed batches
-    let closed_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, None).await.unwrap();
+    let closed_batches = database_client
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, None, false)
+        .await
+        .unwrap();
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with current version filter - should only return batch 1
     let current_version_batches = database_client
-        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some(current_version))
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some(current_version), false)
         .await
         .unwrap();
     assert_eq!(current_version_batches.len(), 1);
@@ -1001,15 +1006,17 @@ async fn test_get_aggregator_batches_by_status() {
 
     // Test with old version filter - should only return batch 3
     let old_version_batches = database_client
-        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some("old-version".to_string()))
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some("old-version".to_string()), false)
         .await
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
     assert_eq!(old_version_batches[0].index, 3);
 
     // Test with limit
-    let limited_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1), None).await.unwrap();
+    let limited_batches = database_client
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1), None, false)
+        .await
+        .unwrap();
     assert_eq!(limited_batches.len(), 1);
 }
 

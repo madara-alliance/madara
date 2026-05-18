@@ -9,7 +9,9 @@ use rstest::*;
 use uuid::Uuid;
 
 use crate::core::config::Config;
-use crate::server::types::{ApiResponse, BlockSettlementStatusResponse};
+use crate::server::types::{
+    ApiResponse, BlockAggregatorBatchResponse, BlockSettlementStatusResponse, BlockSnosBatchResponse,
+};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{build_batch, build_job_item, build_snos_batch};
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
@@ -24,6 +26,9 @@ use crate::types::jobs::types::{JobStatus, JobType};
 #[fixture]
 async fn setup_blocks_server() -> (SocketAddr, Arc<Config>) {
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+    if std::env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").is_err() {
+        std::env::set_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", "http://localhost:8545");
+    }
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -192,6 +197,84 @@ async fn test_get_block_settlement_status_for_batched_block(#[future] setup_bloc
     assert_eq!(data.aggregator_proof_jobs.len(), 2);
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_block.id));
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_other_batch.id));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_snos_batch_mapping(#[future] setup_blocks_server: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 105;
+
+    let aggregator_batch = build_batch(11, 100, 119);
+    let mut snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+    snos_batch.end_block = 109;
+    snos_batch.num_blocks = 10;
+    snos_batch.status = SnosBatchStatus::Completed;
+
+    config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    config.database().create_snos_batch(snos_batch.clone()).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/{}/snos-batch", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockSnosBatchResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let data = response_body.data.expect("missing snos batch mapping payload");
+    assert_eq!(data.block_number, block_number);
+    assert_eq!(data.batch.index, snos_batch.index);
+    assert_eq!(data.batch.start_block, snos_batch.start_block);
+    assert_eq!(data.batch.end_block, snos_batch.end_block);
+    assert_eq!(data.batch.aggregator_batch_index, Some(aggregator_batch.index));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_aggregator_batch_mapping(#[future] setup_blocks_server: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 115;
+
+    let mut aggregator_batch = build_batch(11, 100, 119);
+    aggregator_batch.status = AggregatorBatchStatus::ReadyForStateUpdate;
+
+    let mut snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+    snos_batch.end_block = 119;
+    snos_batch.num_blocks = 20;
+    snos_batch.status = SnosBatchStatus::Completed;
+
+    config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    config.database().create_snos_batch(snos_batch).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/{}/aggregator-batch", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockAggregatorBatchResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    let data = response_body.data.expect("missing aggregator batch mapping payload");
+    assert_eq!(data.block_number, block_number);
+    assert_eq!(data.batch.index, aggregator_batch.index);
+    assert_eq!(data.batch.start_block, aggregator_batch.start_block);
+    assert_eq!(data.batch.end_block, aggregator_batch.end_block);
+    assert_eq!(data.batch.status, aggregator_batch.status);
 }
 
 #[rstest]

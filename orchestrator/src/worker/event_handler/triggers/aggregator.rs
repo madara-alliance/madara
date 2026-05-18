@@ -56,6 +56,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 AggregatorBatchStatus::Closed,
                 Some(batch_fetch_limit),
                 Some(ORCHESTRATOR_VERSION.to_string()),
+                false,
             )
             .await?;
 

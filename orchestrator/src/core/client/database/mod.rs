@@ -202,6 +202,13 @@ pub trait DatabaseClient: Send + Sync {
     /// * `indexes` - Vector of SNOS batch IDs to retrieve
     async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError>;
 
+    /// Get SNOS batches ordered by index.
+    ///
+    /// # Arguments
+    /// * `limit` - Optional limit on number of results
+    /// * `descending` - Whether to sort by descending index
+    async fn get_snos_batches(&self, limit: Option<i64>, descending: bool) -> Result<Vec<SnosBatch>, DatabaseError>;
+
     /// Update SNOS batch status by its sequential ID
     ///
     /// # Arguments
@@ -224,6 +231,7 @@ pub trait DatabaseClient: Send + Sync {
         status: SnosBatchStatus,
         limit: Option<i64>,
         orchestrator_version: Option<String>,
+        descending: bool,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Get SNOS batches that don't have corresponding SNOS jobs
@@ -301,6 +309,17 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_aggregator_batches_by_indexes(&self, indexes: Vec<u64>)
         -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
+    /// Get aggregator batches ordered by index.
+    ///
+    /// # Arguments
+    /// * `limit` - Optional limit on number of results
+    /// * `descending` - Whether to sort by descending index
+    async fn get_aggregator_batches(
+        &self,
+        limit: Option<i64>,
+        descending: bool,
+    ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
+
     /// Update aggregator batch status by its index
     ///
     /// # Arguments
@@ -373,6 +392,7 @@ pub trait DatabaseClient: Send + Sync {
         status: AggregatorBatchStatus,
         limit: Option<i64>,
         orchestrator_version: Option<String>,
+        descending: bool,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
     // ================================================================================

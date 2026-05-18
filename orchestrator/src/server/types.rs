@@ -29,6 +29,32 @@ pub struct JobStatusQuery {
     pub status: JobStatus,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BatchSortOrder {
+    #[default]
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SnosBatchQuery {
+    pub index: Option<u64>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub sort: BatchSortOrder,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AggregatorBatchQuery {
+    pub index: Option<u64>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub sort: BatchSortOrder,
+}
+
 /// Represents query parameters for priority queue selection.
 #[derive(Deserialize)]
 pub struct PriorityQuery {
@@ -155,6 +181,18 @@ pub struct BlockStatusResponse {
     pub batch_number: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlockSnosBatchResponse {
+    pub block_number: u64,
+    pub batch: SettlementSnosBatchResponse,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlockAggregatorBatchResponse {
+    pub block_number: u64,
+    pub batch: SettlementAggregatorBatchResponse,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SettlementJobTimestampsResponse {
     #[serde(default, with = "chrono::serde::ts_seconds_option")]
@@ -242,4 +280,14 @@ pub struct BatchDetailsResponse {
     pub snos_batch: SnosBatchDetailsResponse,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregator_batch: Option<AggregatorBatchDetailsResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnosBatchListResponse {
+    pub batches: Vec<SnosBatchDetailsResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AggregatorBatchListResponse {
+    pub batches: Vec<AggregatorBatchDetailsResponse>,
 }
