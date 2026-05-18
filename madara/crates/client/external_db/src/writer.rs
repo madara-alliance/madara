@@ -140,6 +140,7 @@ struct L1Confirmation {
 #[async_trait::async_trait]
 trait L1ConfirmationSource: Send + Sync {
     async fn poll_confirmations(&mut self) -> anyhow::Result<Vec<L1Confirmation>>;
+    async fn mark_processed(&mut self, block_number: u64) -> anyhow::Result<()>;
 }
 
 /// L1 confirmation source backed by the local database.
@@ -153,9 +154,14 @@ struct BackendL1ConfirmationSource {
 
 impl BackendL1ConfirmationSource {
     /// Create a confirmation source for the given backend.
-    fn new(backend: Arc<MadaraBackend>, retention_delay: Duration, metrics: Arc<ExternalDbMetrics>) -> Self {
+    fn new(
+        backend: Arc<MadaraBackend>,
+        retention_delay: Duration,
+        metrics: Arc<ExternalDbMetrics>,
+    ) -> anyhow::Result<Self> {
         let block_time = backend.chain_config().block_time;
-        Self { backend, last_deleted: None, retention_delay, block_time, metrics }
+        let last_deleted = backend.get_external_db_retention_cursor().context("Loading external DB retention cursor")?;
+        Ok(Self { backend, last_deleted, retention_delay, block_time, metrics })
     }
 }
 
@@ -199,14 +205,21 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
         let mut confirmations = Vec::new();
         for block_number in start..=eligible_latest {
             let Some(view) = self.backend.block_view_on_confirmed(block_number) else {
-                continue;
+                anyhow::bail!("Confirmed block {block_number} is missing from local DB state");
             };
             let info = view.get_block_info().with_context(|| format!("Block info missing for block {block_number}"))?;
             confirmations.push(L1Confirmation { block_number, tx_hashes: info.tx_hashes });
         }
 
-        self.last_deleted = Some(eligible_latest);
         Ok(confirmations)
+    }
+
+    async fn mark_processed(&mut self, block_number: u64) -> anyhow::Result<()> {
+        self.backend
+            .write_external_db_retention_cursor(block_number)
+            .with_context(|| format!("Persisting external DB retention cursor for block {block_number}"))?;
+        self.last_deleted = Some(block_number);
+        Ok(())
     }
 }
 
@@ -228,6 +241,10 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
         let confirmations = self.source.poll_confirmations().await?;
         for confirmation in confirmations {
             if confirmation.tx_hashes.is_empty() {
+                self.source
+                    .mark_processed(confirmation.block_number)
+                    .await
+                    .with_context(|| format!("Marking empty retention block {} as processed", confirmation.block_number))?;
                 continue;
             }
             tracing::debug!(
@@ -241,6 +258,9 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
                 Ok(deleted) => {
                     self.metrics.mongodb_up.record(1, &[]);
                     self.metrics.transactions_deleted.add(deleted, &[]);
+                    self.source.mark_processed(confirmation.block_number).await.with_context(|| {
+                        format!("Marking retention block {} as processed", confirmation.block_number)
+                    })?;
                 }
                 Err(err) => {
                     // This is a Mongo operation; mark Mongo as down and count it as a Mongo error for alerting.
@@ -311,7 +331,8 @@ impl ExternalDbWorker {
                 self.backend.clone(),
                 Duration::from_secs(self.config.retention_delay_secs),
                 self.metrics.clone(),
-            ),
+            )
+            .context("Initializing external DB retention source")?,
             self.metrics.clone(),
             self.chain_id.clone(),
         );
@@ -657,14 +678,23 @@ mod tests {
 
     struct FakeSink {
         responses: Mutex<Vec<anyhow::Result<InsertManySummary>>>,
+        delete_responses: Mutex<Vec<anyhow::Result<u64>>>,
         calls: Mutex<Vec<Vec<MempoolTransactionDocument>>>,
         delete_calls: Mutex<Vec<(String, Vec<String>)>>,
     }
 
     impl FakeSink {
         fn new(responses: Vec<anyhow::Result<InsertManySummary>>) -> Self {
+            Self::with_delete_responses(responses, Vec::new())
+        }
+
+        fn with_delete_responses(
+            responses: Vec<anyhow::Result<InsertManySummary>>,
+            delete_responses: Vec<anyhow::Result<u64>>,
+        ) -> Self {
             Self {
                 responses: Mutex::new(responses),
+                delete_responses: Mutex::new(delete_responses),
                 calls: Mutex::new(Vec::new()),
                 delete_calls: Mutex::new(Vec::new()),
             }
@@ -685,7 +715,12 @@ mod tests {
         async fn delete_by_hashes(&self, chain_id: &str, hashes: Vec<String>) -> anyhow::Result<u64> {
             let deleted = hashes.len() as u64;
             self.delete_calls.lock().unwrap().push((chain_id.to_string(), hashes));
-            Ok(deleted)
+            let mut delete_responses = self.delete_responses.lock().unwrap();
+            if delete_responses.is_empty() {
+                Ok(deleted)
+            } else {
+                delete_responses.remove(0)
+            }
         }
     }
 
@@ -825,11 +860,12 @@ mod tests {
 
     struct FakeL1Source {
         batches: Mutex<Vec<Vec<L1Confirmation>>>,
+        processed: Mutex<Vec<u64>>,
     }
 
     impl FakeL1Source {
         fn new(batches: Vec<Vec<L1Confirmation>>) -> Self {
-            Self { batches: Mutex::new(batches) }
+            Self { batches: Mutex::new(batches), processed: Mutex::new(Vec::new()) }
         }
     }
 
@@ -837,6 +873,11 @@ mod tests {
     impl L1ConfirmationSource for FakeL1Source {
         async fn poll_confirmations(&mut self) -> anyhow::Result<Vec<L1Confirmation>> {
             Ok(self.batches.lock().unwrap().remove(0))
+        }
+
+        async fn mark_processed(&mut self, block_number: u64) -> anyhow::Result<()> {
+            self.processed.lock().unwrap().push(block_number);
+            Ok(())
         }
     }
 
@@ -857,6 +898,7 @@ mod tests {
 
         scheduler.tick(&sink).await.unwrap();
         assert_eq!(sink.delete_calls.lock().unwrap().len(), 1);
+        assert_eq!(scheduler.source.processed.lock().unwrap().as_slice(), &[1]);
     }
 
     /// Retention should be a no-op when there are no confirmations.
@@ -869,6 +911,60 @@ mod tests {
 
         scheduler.tick(&sink).await.unwrap();
         assert!(sink.delete_calls.lock().unwrap().is_empty());
+        assert!(scheduler.source.processed.lock().unwrap().is_empty());
+    }
+
+    /// Empty confirmed blocks still advance the processed cursor without issuing Mongo deletes.
+    #[tokio::test]
+    async fn retention_marks_empty_blocks_processed() {
+        let metrics = Arc::new(ExternalDbMetrics::register());
+        let sink = FakeSink::new(Vec::new());
+        let confirmations = vec![L1Confirmation { block_number: 3, tx_hashes: Vec::new() }];
+        let mut scheduler =
+            RetentionScheduler::new(FakeL1Source::new(vec![confirmations]), metrics, "MADARA_TEST".to_string());
+
+        scheduler.tick(&sink).await.unwrap();
+
+        assert!(sink.delete_calls.lock().unwrap().is_empty());
+        assert_eq!(scheduler.source.processed.lock().unwrap().as_slice(), &[3]);
+    }
+
+    /// Failed retention deletes must not advance the failed block or later blocks.
+    #[tokio::test]
+    async fn retention_retries_failed_block_without_advancing_cursor() {
+        let metrics = Arc::new(ExternalDbMetrics::register());
+        let sink = FakeSink::with_delete_responses(
+            Vec::new(),
+            vec![Ok(1), Err(anyhow::anyhow!("mongo down")), Ok(1)],
+        );
+        let block_1 = L1Confirmation { block_number: 1, tx_hashes: vec![Felt::from_hex_unchecked("0x1")] };
+        let block_2 = L1Confirmation { block_number: 2, tx_hashes: vec![Felt::from_hex_unchecked("0x2")] };
+        let mut scheduler = RetentionScheduler::new(
+            FakeL1Source::new(vec![vec![block_1.clone(), block_2.clone()], vec![block_2]]),
+            metrics,
+            "MADARA_TEST".to_string(),
+        );
+
+        let err = scheduler.tick(&sink).await.unwrap_err();
+        assert!(format!("{err:#}").contains("Mongo delete_many"));
+        assert_eq!(scheduler.source.processed.lock().unwrap().as_slice(), &[1]);
+
+        scheduler.tick(&sink).await.unwrap();
+        assert_eq!(scheduler.source.processed.lock().unwrap().as_slice(), &[1, 2]);
+        assert_eq!(sink.delete_calls.lock().unwrap().len(), 3);
+    }
+
+    /// Backend confirmation source should fail loudly if L1-confirmed blocks are missing from local DB.
+    #[tokio::test]
+    async fn backend_source_errors_when_confirmed_block_missing() {
+        let backend = Arc::new(MadaraBackend::open_for_testing(ChainConfig::madara_test().into()));
+        backend.set_latest_l1_confirmed(Some(0)).unwrap();
+
+        let metrics = Arc::new(ExternalDbMetrics::register());
+        let mut source = BackendL1ConfirmationSource::new(backend, Duration::ZERO, metrics).unwrap();
+
+        let err = source.poll_confirmations().await.unwrap_err();
+        assert!(format!("{err:#}").contains("Confirmed block 0 is missing from local DB state"));
     }
 
     /// Document conversion should recognize all transaction types.

@@ -130,3 +130,16 @@ async fn outbox_duplicate_write_appends_entry() {
     assert!(outbox.iter().any(|entry| entry.tx == tx));
     assert!(outbox.iter().any(|entry| entry.tx == updated));
 }
+
+#[test]
+fn external_db_retention_cursor_roundtrip() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    assert_eq!(backend.get_external_db_retention_cursor().unwrap(), None);
+
+    backend.write_external_db_retention_cursor(7).unwrap();
+    assert_eq!(backend.get_external_db_retention_cursor().unwrap(), Some(7));
+
+    backend.write_external_db_retention_cursor(12).unwrap();
+    assert_eq!(backend.get_external_db_retention_cursor().unwrap(), Some(12));
+}
