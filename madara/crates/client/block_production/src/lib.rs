@@ -672,7 +672,7 @@ impl BlockProductionTask {
             let n_txs = preconfirmed_view.num_executed_transactions();
 
             tracing::warn!(
-                "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled",
+                "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled; these transactions are permanently lost and will not be re-queued",
                 block_number,
                 n_txs
             );
@@ -1109,14 +1109,19 @@ pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
-    use mc_db::MadaraBackend;
+    use mc_db::{
+        preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
+        test_utils::l1_handler_tx_with_receipt,
+        MadaraBackend,
+    };
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
     };
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_chain_config::ChainConfig;
+    use mp_block::header::PreconfirmedHeader;
+    use mp_chain_config::{ChainConfig, RuntimeExecutionConfig};
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
     use mp_rpc::v0_9_0::{
@@ -2103,40 +2108,30 @@ pub(crate) mod tests {
         let devnet_setup = devnet_setup.await;
 
         let initial_no_charge_fee = true;
-        let tx_validator_with_no_fee = Arc::new(TransactionValidator::new(
-            Arc::clone(&devnet_setup.mempool) as _,
-            Arc::clone(&devnet_setup.backend),
-            TransactionValidatorConfig { disable_validation: false, disable_fee: initial_no_charge_fee },
-        ));
+        let chain_config = devnet_setup.backend.chain_config();
+        let exec_constants =
+            chain_config.exec_constants_by_protocol_version(chain_config.latest_protocol_version).unwrap();
+        let saved_runtime_config =
+            RuntimeExecutionConfig::from_current_config(chain_config, exec_constants, initial_no_charge_fee).unwrap();
 
-        sign_and_add_invoke_tx(
-            &devnet_setup.contracts.0[0],
-            &devnet_setup.contracts.0[1],
-            &devnet_setup.backend,
-            &tx_validator_with_no_fee,
-            Felt::ZERO,
-        )
-        .await;
+        devnet_setup.backend.write_access().write_runtime_exec_config(&saved_runtime_config).unwrap();
+        devnet_setup
+            .backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: l1_handler_tx_with_receipt(55, Felt::from(0x1234_u64)),
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: Some(0),
+                }],
+                [],
+            ))
+            .unwrap();
 
-        let mut initial_block_production_task = BlockProductionTask::new(
-            devnet_setup.backend.clone(),
-            devnet_setup.mempool.clone(),
-            devnet_setup.metrics.clone(),
-            Arc::new(devnet_setup.l1_client.clone()),
-            initial_no_charge_fee,
-            false,
-        );
-
-        let mut notifications = initial_block_production_task.subscribe_state_notifications();
-        let initial_task = AbortOnDrop::spawn(async move {
-            initial_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
-        });
-
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         assert!(devnet_setup.backend.has_preconfirmed_block());
-
-        drop(initial_task);
-        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let current_no_charge_fee = false;
         let mut restart_block_production_task = BlockProductionTask::new(
