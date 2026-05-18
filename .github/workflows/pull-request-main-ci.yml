@@ -119,7 +119,6 @@ jobs:
 
   # Run integration tests
   test-madara:
-    if: github.event.pull_request.draft == false
     needs: [build-madara, build-madara-tests]
     uses: ./.github/workflows/task-test-madara.yml
     with:
@@ -129,7 +128,6 @@ jobs:
 
   # Run migration tests
   test-migration:
-    if: github.event.pull_request.draft == false
     needs: [build-madara, build-migration-tests]
     uses: ./.github/workflows/task-test-migration.yml
     with:
@@ -139,7 +137,6 @@ jobs:
 
   # Run JavaScript tests against the built binary
   test-js:
-    if: github.event.pull_request.draft == false
     needs: [build-madara, build-cairo-artifacts]
     uses: ./.github/workflows/task-test-js.yml
     with:
@@ -148,7 +145,6 @@ jobs:
 
   # Run CLI tests against the built binary
   test-cli:
-    if: github.event.pull_request.draft == false
     needs: build-madara
     uses: ./.github/workflows/task-test-cli.yml
     with:
@@ -196,7 +192,7 @@ jobs:
   # Check Orchestrator binary
   # (We don't re-use the Orchestrator binary in other tests)
   check-orchestrator:
-    if: github.event.pull_request.draft == false && needs.detect-orchestrator-runtime-changes.outputs.should-run == 'true'
+    if: needs.detect-orchestrator-runtime-changes.outputs.should-run == 'true'
     needs: [lint-code-style, detect-orchestrator-runtime-changes]
     uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
@@ -209,7 +205,6 @@ jobs:
 
   # Run integration tests
   test-orchestrator:
-    if: github.event.pull_request.draft == false
     needs: [build-madara, build-cairo-artifacts, build-orchestrator-tests]
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
@@ -233,7 +228,6 @@ jobs:
 
   # Deprecating bootstrapper V1
   check-bootstrapper:
-    if: github.event.pull_request.draft == false
     needs: lint-code-style
     uses: ./.github/workflows/task-do-nothing-check-bootstrapper.yml
     secrets: inherit
