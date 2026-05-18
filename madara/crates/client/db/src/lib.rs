@@ -1047,6 +1047,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.db.get_l1_messaging_sync_tip()
     }
+    pub fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
+        self.db.get_external_db_retention_cursor()
+    }
     pub fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         self.db.get_pending_message_to_l2(core_contract_nonce)
     }
@@ -1107,6 +1110,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)
+    }
+    pub fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
+        self.db.write_external_db_retention_cursor(block_n)
     }
     pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)

@@ -14,6 +14,7 @@ pub const PRECONFIRMED_COLUMN: Column = Column::new("preconfirmed");
 const META_DEVNET_KEYS_KEY: &[u8] = b"DEVNET_KEYS";
 const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
+const META_EXTERNAL_DB_RETENTION_CURSOR_KEY: &[u8] = b"EXTERNAL_DB_RETENTION_CURSOR";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
 const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
@@ -75,6 +76,26 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>> {
         let Some(data) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_CONFIRMED_ON_L1_TIP_KEY)? else {
+            return Ok(None);
+        };
+        Ok(Some(u64::from_be_bytes(data[..].try_into().context("Malformated block_n in DB")?)))
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
+        self.db.put_cf_opt(
+            &self.get_column(META_COLUMN),
+            META_EXTERNAL_DB_RETENTION_CURSOR_KEY,
+            block_n.to_be_bytes(),
+            &self.writeopts,
+        )?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
+        let Some(data) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_EXTERNAL_DB_RETENTION_CURSOR_KEY)?
+        else {
             return Ok(None);
         };
         Ok(Some(u64::from_be_bytes(data[..].try_into().context("Malformated block_n in DB")?)))
