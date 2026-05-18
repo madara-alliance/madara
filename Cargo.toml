@@ -163,6 +163,7 @@ tracing-subscriber = { version = "0.3.18", features = [
 ] }
 tracing-test = "0.2.5"
 tracing-opentelemetry = "0.31.0"
+tracing-log = "0.2.0"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
@@ -312,7 +313,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "33846d17e4030e72abba774168e58885119d339a", features = [
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "6752d108ceb4f8adca60ad0dcd71ba49ca5a1c77", features = [
   "cairo_native",
 ] }
 
