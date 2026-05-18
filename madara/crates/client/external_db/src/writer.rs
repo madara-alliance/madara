@@ -160,7 +160,8 @@ impl BackendL1ConfirmationSource {
         metrics: Arc<ExternalDbMetrics>,
     ) -> anyhow::Result<Self> {
         let block_time = backend.chain_config().block_time;
-        let last_deleted = backend.get_external_db_retention_cursor().context("Loading external DB retention cursor")?;
+        let last_deleted =
+            backend.get_external_db_retention_cursor().context("Loading external DB retention cursor")?;
         Ok(Self { backend, last_deleted, retention_delay, block_time, metrics })
     }
 }
@@ -241,10 +242,9 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
         let confirmations = self.source.poll_confirmations().await?;
         for confirmation in confirmations {
             if confirmation.tx_hashes.is_empty() {
-                self.source
-                    .mark_processed(confirmation.block_number)
-                    .await
-                    .with_context(|| format!("Marking empty retention block {} as processed", confirmation.block_number))?;
+                self.source.mark_processed(confirmation.block_number).await.with_context(|| {
+                    format!("Marking empty retention block {} as processed", confirmation.block_number)
+                })?;
                 continue;
             }
             tracing::debug!(
@@ -933,10 +933,7 @@ mod tests {
     #[tokio::test]
     async fn retention_retries_failed_block_without_advancing_cursor() {
         let metrics = Arc::new(ExternalDbMetrics::register());
-        let sink = FakeSink::with_delete_responses(
-            Vec::new(),
-            vec![Ok(1), Err(anyhow::anyhow!("mongo down")), Ok(1)],
-        );
+        let sink = FakeSink::with_delete_responses(Vec::new(), vec![Ok(1), Err(anyhow::anyhow!("mongo down")), Ok(1)]);
         let block_1 = L1Confirmation { block_number: 1, tx_hashes: vec![Felt::from_hex_unchecked("0x1")] };
         let block_2 = L1Confirmation { block_number: 2, tx_hashes: vec![Felt::from_hex_unchecked("0x2")] };
         let mut scheduler = RetentionScheduler::new(
