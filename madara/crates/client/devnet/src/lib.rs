@@ -409,6 +409,7 @@ mod tests {
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
+            false,
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(

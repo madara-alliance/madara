@@ -322,6 +322,7 @@ pub struct BlockProductionTask {
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     no_charge_fee: bool,
+    discard_preconfirmed_on_startup: bool,
 }
 
 impl BlockProductionTask {
@@ -330,6 +331,8 @@ impl BlockProductionTask {
     /// # Parameters
     ///
     /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
+    /// * `discard_preconfirmed_on_startup`: Drops any recovered preconfirmed block instead of
+    ///   re-executing and closing it during sequencer startup.
     ///
     /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
     pub fn new(
@@ -338,6 +341,7 @@ impl BlockProductionTask {
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
+        discard_preconfirmed_on_startup: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -352,6 +356,7 @@ impl BlockProductionTask {
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
+            discard_preconfirmed_on_startup,
         }
     }
 
@@ -657,6 +662,31 @@ impl BlockProductionTask {
             // Even if there's no preconfirmed block, save the current runtime exec config
             // This ensures the config is persisted for future restarts
             self.save_current_runtime_exec_config()?;
+            return Ok(());
+        }
+
+        if self.discard_preconfirmed_on_startup {
+            let preconfirmed_view =
+                self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
+            let block_number = preconfirmed_view.block_number();
+            let n_txs = preconfirmed_view.num_executed_transactions();
+
+            tracing::warn!(
+                "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled",
+                block_number,
+                n_txs
+            );
+
+            let backend = self.backend.clone();
+            global_spawn_rayon_task(move || {
+                backend.write_access().clear_preconfirmed().context("Discarding preconfirmed block on startup")
+            })
+            .await?;
+
+            self.save_current_runtime_exec_config()
+                .context("Saving runtime execution config after discarding preconfirmed block")?;
+
+            tracing::info!("🧹 Discarded preconfirmed block #{} on startup", block_number);
             return Ok(());
         }
 
@@ -1134,6 +1164,7 @@ pub(crate) mod tests {
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
                 false, /* no_charge_fee = false */
+                false, /* discard_preconfirmed_on_startup = false */
             )
         }
     }
@@ -1997,6 +2028,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             initial_no_charge_fee,
+            false,
         );
 
         let mut notifications = block_production_task.subscribe_state_notifications();
@@ -2027,6 +2059,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             restart_no_charge_fee, // Current config: no_charge_fee = false
+            false,
         );
 
         // Start the block production task.
@@ -2056,6 +2089,83 @@ pub(crate) mod tests {
         assert_eq!(
             updated_config.no_charge_fee, restart_no_charge_fee,
             "Config should be updated with current value after re-execution completes"
+        );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_discard_preconfirmed_on_startup_replaces_runtime_exec_config(
+        #[future]
+        #[from(devnet_setup)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let devnet_setup = devnet_setup.await;
+
+        let initial_no_charge_fee = true;
+        let tx_validator_with_no_fee = Arc::new(TransactionValidator::new(
+            Arc::clone(&devnet_setup.mempool) as _,
+            Arc::clone(&devnet_setup.backend),
+            TransactionValidatorConfig { disable_validation: false, disable_fee: initial_no_charge_fee },
+        ));
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &tx_validator_with_no_fee,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut initial_block_production_task = BlockProductionTask::new(
+            devnet_setup.backend.clone(),
+            devnet_setup.mempool.clone(),
+            devnet_setup.metrics.clone(),
+            Arc::new(devnet_setup.l1_client.clone()),
+            initial_no_charge_fee,
+            false,
+        );
+
+        let mut notifications = initial_block_production_task.subscribe_state_notifications();
+        let initial_task = AbortOnDrop::spawn(async move {
+            initial_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
+        });
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        assert!(devnet_setup.backend.has_preconfirmed_block());
+
+        drop(initial_task);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let current_no_charge_fee = false;
+        let mut restart_block_production_task = BlockProductionTask::new(
+            devnet_setup.backend.clone(),
+            devnet_setup.mempool.clone(),
+            devnet_setup.metrics.clone(),
+            Arc::new(devnet_setup.l1_client.clone()),
+            current_no_charge_fee,
+            true,
+        );
+
+        restart_block_production_task.setup_initial_state().await.unwrap();
+
+        assert!(!devnet_setup.backend.has_preconfirmed_block(), "Preconfirmed block should be discarded on startup");
+        assert_eq!(
+            devnet_setup.backend.latest_confirmed_block_n(),
+            Some(0),
+            "Discarding startup recovery should keep the latest confirmed block unchanged"
+        );
+
+        let updated_config = devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should be able to read runtime exec config")
+            .expect("Runtime exec config should exist after discarding");
+
+        assert_eq!(
+            updated_config.no_charge_fee, current_no_charge_fee,
+            "Discarding startup recovery should replace the saved runtime config with the current one"
         );
     }
 
