@@ -225,28 +225,15 @@ pub struct SnosBatchMetricsResponse {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnosBatchDetailsResponse {
-    pub index: u64,
-    pub aggregator_batch_index: Option<u64>,
-    pub start_block: u64,
-    pub end_block: u64,
-    pub status: SnosBatchStatus,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub created_at: DateTime<Utc>,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub updated_at: DateTime<Utc>,
+    #[serde(flatten)]
+    pub batch: SettlementSnosBatchResponse,
     pub metrics: SnosBatchMetricsResponse,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AggregatorBatchDetailsResponse {
-    pub index: u64,
-    pub start_block: u64,
-    pub end_block: u64,
-    pub status: AggregatorBatchStatus,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub created_at: DateTime<Utc>,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub updated_at: DateTime<Utc>,
+    #[serde(flatten)]
+    pub batch: SettlementAggregatorBatchResponse,
     pub blob_len: usize,
 }
 

@@ -4,15 +4,17 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
+use tracing::{instrument, warn};
 
 use super::super::error::BlockRouteError;
 use super::super::types::{
-    AggregatorBatchDetailsResponse, ApiResponse, BatchDetailsResponse, BlockRouteResult, SnosBatchDetailsResponse,
-    SnosBatchMetricsResponse,
+    AggregatorBatchDetailsResponse, ApiResponse, BatchDetailsResponse, BlockRouteResult,
+    SettlementAggregatorBatchResponse, SettlementSnosBatchResponse, SnosBatchDetailsResponse, SnosBatchMetricsResponse,
 };
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, SnosBatch};
 
+#[instrument(skip(config), fields(snos_batch_index = %snos_batch_index))]
 async fn handle_snos_batch_details(
     Path(snos_batch_index): Path<u64>,
     State(config): State<Arc<Config>>,
@@ -37,6 +39,14 @@ async fn handle_snos_batch_details(
         None => None,
     };
 
+    if snos_batch.aggregator_batch_index.is_some() && aggregator_batch.is_none() {
+        warn!(
+            snos_batch_index = %snos_batch.index,
+            aggregator_batch_index = ?snos_batch.aggregator_batch_index,
+            "SNOS batch references a missing aggregator batch"
+        );
+    }
+
     Ok(Json(ApiResponse::<BatchDetailsResponse>::success_with_data(
         BatchDetailsResponse {
             snos_batch: snapshot_snos_batch_details(&snos_batch),
@@ -49,13 +59,15 @@ async fn handle_snos_batch_details(
 
 fn snapshot_snos_batch_details(batch: &SnosBatch) -> SnosBatchDetailsResponse {
     SnosBatchDetailsResponse {
-        index: batch.index,
-        aggregator_batch_index: batch.aggregator_batch_index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
+        batch: SettlementSnosBatchResponse {
+            index: batch.index,
+            aggregator_batch_index: batch.aggregator_batch_index,
+            start_block: batch.start_block,
+            end_block: batch.end_block,
+            status: batch.status.clone(),
+            created_at: batch.created_at,
+            updated_at: batch.updated_at,
+        },
         metrics: SnosBatchMetricsResponse {
             state_diff_size: batch.builtin_weights.state_diff_size,
             sierra_gas: batch.builtin_weights.sierra_gas.0,
@@ -66,12 +78,14 @@ fn snapshot_snos_batch_details(batch: &SnosBatch) -> SnosBatchDetailsResponse {
 
 fn snapshot_aggregator_batch_details(batch: &AggregatorBatch) -> AggregatorBatchDetailsResponse {
     AggregatorBatchDetailsResponse {
-        index: batch.index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
+        batch: SettlementAggregatorBatchResponse {
+            index: batch.index,
+            start_block: batch.start_block,
+            end_block: batch.end_block,
+            status: batch.status.clone(),
+            created_at: batch.created_at,
+            updated_at: batch.updated_at,
+        },
         blob_len: batch.blob_len,
     }
 }

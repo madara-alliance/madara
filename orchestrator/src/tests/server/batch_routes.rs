@@ -76,24 +76,24 @@ async fn test_get_snos_batch_details_with_parent_aggregator(#[future] setup_batc
     );
 
     let data = response_body.data.expect("missing batch details payload");
-    assert_eq!(data.snos_batch.index, snos_batch.index);
-    assert_eq!(data.snos_batch.aggregator_batch_index, Some(aggregator_batch.index));
-    assert_eq!(data.snos_batch.start_block, snos_batch.start_block);
-    assert_eq!(data.snos_batch.end_block, snos_batch.end_block);
-    assert_eq!(data.snos_batch.status, snos_batch.status);
-    assert_eq!(data.snos_batch.created_at, snos_batch.created_at);
-    assert_eq!(data.snos_batch.updated_at, snos_batch.updated_at);
+    assert_eq!(data.snos_batch.batch.index, snos_batch.index);
+    assert_eq!(data.snos_batch.batch.aggregator_batch_index, Some(aggregator_batch.index));
+    assert_eq!(data.snos_batch.batch.start_block, snos_batch.start_block);
+    assert_eq!(data.snos_batch.batch.end_block, snos_batch.end_block);
+    assert_eq!(data.snos_batch.batch.status, snos_batch.status);
+    assert_eq!(data.snos_batch.batch.created_at, snos_batch.created_at);
+    assert_eq!(data.snos_batch.batch.updated_at, snos_batch.updated_at);
     assert_eq!(data.snos_batch.metrics.state_diff_size, 333);
     assert_eq!(data.snos_batch.metrics.sierra_gas, 444);
     assert_eq!(data.snos_batch.metrics.proving_gas, 555);
 
     let aggregator = data.aggregator_batch.expect("missing aggregator batch");
-    assert_eq!(aggregator.index, aggregator_batch.index);
-    assert_eq!(aggregator.start_block, aggregator_batch.start_block);
-    assert_eq!(aggregator.end_block, aggregator_batch.end_block);
-    assert_eq!(aggregator.status, aggregator_batch.status);
-    assert_eq!(aggregator.created_at, aggregator_batch.created_at);
-    assert_eq!(aggregator.updated_at, aggregator_batch.updated_at);
+    assert_eq!(aggregator.batch.index, aggregator_batch.index);
+    assert_eq!(aggregator.batch.start_block, aggregator_batch.start_block);
+    assert_eq!(aggregator.batch.end_block, aggregator_batch.end_block);
+    assert_eq!(aggregator.batch.status, aggregator_batch.status);
+    assert_eq!(aggregator.batch.created_at, aggregator_batch.created_at);
+    assert_eq!(aggregator.batch.updated_at, aggregator_batch.updated_at);
     assert_eq!(aggregator.blob_len, aggregator_batch.blob_len);
 }
 
@@ -130,7 +130,7 @@ async fn test_get_snos_batch_details_without_parent_aggregator(
     let response_body: ApiResponse<BatchDetailsResponse> = serde_json::from_slice(&body_bytes).unwrap();
 
     let data = response_body.data.expect("missing batch details payload");
-    assert_eq!(data.snos_batch.index, snos_batch.index);
+    assert_eq!(data.snos_batch.batch.index, snos_batch.index);
     assert_eq!(data.snos_batch.metrics.state_diff_size, 901);
     assert_eq!(data.snos_batch.metrics.sierra_gas, 902);
     assert_eq!(data.snos_batch.metrics.proving_gas, 903);
