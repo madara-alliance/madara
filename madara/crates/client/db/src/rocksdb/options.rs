@@ -479,10 +479,16 @@ impl Column {
     ///
     /// ## Compaction Strategy
     ///
-    /// We use Universal Compaction which:
-    /// - Has lower write amplification than Level Compaction
-    /// - Better for write-heavy workloads (like blockchain sync)
-    /// - Trade-off: Higher space amplification
+    /// Two styles are used depending on the column's write pattern:
+    ///
+    /// - **Universal** (default for most CFs): lower write amplification, well-suited
+    ///   to random-write CFs where memtables dedup and SSTs have overlapping ranges.
+    ///   Trade-off: higher space amplification, deferred big merges.
+    /// - **Leveled** (CFs marked with `set_log_cf()`, i.e. `bonsai_*_log`): continuously
+    ///   drains L0 -> L1 as soon as `level0_file_num_compaction_trigger=4` is exceeded.
+    ///   Required for append-only log CFs where universal's size-ratio / size-amp
+    ///   heuristics fail to fire and L0 SSTs accumulate past the stop trigger,
+    ///   stalling the entire DB via `atomic_flush`.
     ///
     /// ## Compression
     ///
