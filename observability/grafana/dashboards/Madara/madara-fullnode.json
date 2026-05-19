@@ -40,7 +40,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max(2 * l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$node\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$node\"} - 1)", "legendFormat": "L2 Block", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max(2 * l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"} - 1)", "legendFormat": "L2 Block", "refId": "A" }],
       "title": "L2 Block",
       "type": "stat"
     },
@@ -68,7 +68,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "Txns Synced", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "Txns Synced", "refId": "A" }],
       "title": "Txns Synced",
       "type": "stat"
     },
@@ -96,7 +96,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "Events Synced", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "Events Synced", "refId": "A" }],
       "title": "Events Synced",
       "type": "stat"
     },
@@ -124,7 +124,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "L1 Block", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "L1 Block", "refId": "A" }],
       "title": "L1 Block",
       "type": "stat"
     },
@@ -148,8 +148,8 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.5, rate(l2_latest_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m]))", "legendFormat": "{{pod}} - Latest Block Sync", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.5, rate(l2_avg_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m]))", "legendFormat": "{{pod}} - Avg Sync Time", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.5, rate(l2_latest_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m]))", "legendFormat": "{{pod}} - Latest Block Sync", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.5, rate(l2_avg_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m]))", "legendFormat": "{{pod}} - Avg Sync Time", "refId": "B" }
       ],
       "title": "Block Sync Time",
       "type": "timeseries"
@@ -174,8 +174,8 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m])", "legendFormat": "{{pod}} - Transactions/s", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(event_count_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m])", "legendFormat": "{{pod}} - Events/s", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])", "legendFormat": "{{pod}} - Transactions/s", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(event_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])", "legendFormat": "{{pod}} - Events/s", "refId": "B" }
       ],
       "title": "Sync Throughput",
       "type": "timeseries"
@@ -200,8 +200,8 @@
       "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_wei{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "{{pod}} - L1 Gas (Wei)", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_strk{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "{{pod}} - L1 Gas (STRK)", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_wei{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "{{pod}} - L1 Gas (Wei)", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_strk{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "{{pod}} - L1 Gas (STRK)", "refId": "B" }
       ],
       "title": "L1 Gas Prices",
       "type": "timeseries"
@@ -230,7 +230,7 @@
       "id": 10,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "2 * l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$node\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$node\"} - 1", "legendFormat": "{{pod}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "2 * l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"} - 1", "legendFormat": "{{pod}}", "refId": "A" }],
       "title": "L2 Block Height by Node",
       "type": "timeseries"
     },
@@ -250,7 +250,7 @@
       "id": 11,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "{{pod}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "{{pod}}", "refId": "A" }],
       "title": "L1 Block Height by Node",
       "type": "timeseries"
     },
@@ -270,7 +270,7 @@
       "id": 12,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "{{pod}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "{{pod}}", "refId": "A" }],
       "title": "Total Transactions Synced by Node",
       "type": "timeseries"
     },
@@ -290,7 +290,7 @@
       "id": 13,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$node\"}", "legendFormat": "{{pod}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}", "legendFormat": "{{pod}}", "refId": "A" }],
       "title": "Total Events Synced by Node",
       "type": "timeseries"
     },
@@ -325,7 +325,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"})", "legendFormat": "Total Calls", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"})", "legendFormat": "Total Calls", "refId": "A" }],
       "title": "Total Calls",
       "type": "stat"
     },
@@ -352,7 +352,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m]))", "legendFormat": "RPS (5m)", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m]))", "legendFormat": "RPS (5m)", "refId": "A" }],
       "title": "RPS (5m)",
       "type": "stat"
     },
@@ -379,7 +379,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", success=\"true\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m])), 1e-9)", "legendFormat": "Success Rate", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", success=\"true\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])), 1e-9)", "legendFormat": "Success Rate", "refId": "A" }],
       "title": "Success Rate",
       "type": "stat"
     },
@@ -413,7 +413,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m])))", "legendFormat": "Latency p90", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])))", "legendFormat": "Latency p90", "refId": "A" }],
       "title": "Latency p90",
       "type": "stat"
     },
@@ -447,7 +447,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m])))", "legendFormat": "Latency p99", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])))", "legendFormat": "Latency p99", "refId": "A" }],
       "title": "Latency p99",
       "type": "stat"
     },
@@ -474,7 +474,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$node\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"})", "legendFormat": "In-Flight", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"})", "legendFormat": "In-Flight", "refId": "A" }],
       "title": "In-Flight",
       "type": "stat"
     },
@@ -494,7 +494,7 @@
       "id": 107,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m]))", "legendFormat": "Requests/s", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m]))", "legendFormat": "Requests/s", "refId": "A" }],
       "title": "RPC Request Rate",
       "type": "timeseries"
     },
@@ -519,9 +519,9 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m])))", "legendFormat": "p50", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m])))", "legendFormat": "p90", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\"}[5m])))", "legendFormat": "p99", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])))", "legendFormat": "p90", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])))", "legendFormat": "p99", "refId": "C" }
       ],
       "title": "RPC Latency Percentiles",
       "type": "timeseries"
@@ -546,8 +546,8 @@
       "options": { "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", success=\"true\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m])), 1e-9)", "legendFormat": "Success Rate", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", success=\"false\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\"}[5m])), 1e-9)", "legendFormat": "Error Rate", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", success=\"true\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])), 1e-9)", "legendFormat": "Success Rate", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", success=\"false\"}[5m])) / clamp_min(sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\"}[5m])), 1e-9)", "legendFormat": "Error Rate", "refId": "B" }
       ],
       "title": "RPC Success/Error Rate",
       "type": "timeseries"
@@ -568,7 +568,7 @@
       "id": 110,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", method=~\"starknet_.*\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"starknet_.*\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
       "title": "Top Starknet RPC Methods",
       "type": "timeseries"
     },
@@ -588,7 +588,7 @@
       "id": 111,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", method=~\"starknet_.*\", success=\"false\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"starknet_.*\", success=\"false\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
       "title": "Top Starknet RPC Methods Failure",
       "type": "timeseries"
     },
@@ -612,8 +612,8 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", method=~\"starknet_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p90", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.99, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", method=~\"starknet_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p99", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"starknet_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p90", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.99, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"starknet_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p99", "refId": "B" }
       ],
       "title": "Top Starknet RPC Method Latency",
       "type": "timeseries"
@@ -634,7 +634,7 @@
       "id": 113,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", method=~\"madara_.*\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"madara_.*\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
       "title": "Top Madara Admin Methods",
       "type": "timeseries"
     },
@@ -654,7 +654,7 @@
       "id": 114,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", method=~\"madara_.*\", success=\"false\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"madara_.*\", success=\"false\"}[5m])))", "legendFormat": "{{method}}", "refId": "A" }],
       "title": "Top Madara Admin Methods Failure",
       "type": "timeseries"
     },
@@ -678,8 +678,8 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", method=~\"madara_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p90", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.99, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", method=~\"madara_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p99", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"madara_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p90", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(10, histogram_quantile(0.99, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$node\", pod=~\".*fullnode.*\", method=~\"madara_.*\"}[5m]))) >= 0)", "legendFormat": "{{method}} p99", "refId": "B" }
       ],
       "title": "Top Madara Admin Method Latency",
       "type": "timeseries"
@@ -692,7 +692,7 @@
     "list": [
       { "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" }, "hide": 0, "includeAll": false, "multi": false, "name": "DS_PROMETHEUS", "options": [], "query": "prometheus", "refresh": 1, "regex": "", "skipUrlSync": false, "type": "datasource" },
       { "allValue": ".*", "current": { "selected": true, "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "definition": "label_values(l2_block_number_sum, namespace)", "hide": 0, "includeAll": true, "label": "Namespace", "multi": true, "name": "namespace", "options": [], "query": { "query": "label_values(l2_block_number_sum, namespace)", "refId": "StandardVariableQuery" }, "refresh": 2, "regex": "", "skipUrlSync": false, "sort": 1, "type": "query" },
-      { "allValue": ".*", "current": { "selected": true, "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "definition": "label_values(l2_block_number_sum{namespace=~\"$namespace\"}, pod)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": { "query": "label_values(l2_block_number_sum{namespace=~\"$namespace\"}, pod)", "refId": "StandardVariableQuery" }, "refresh": 2, "regex": "", "skipUrlSync": false, "sort": 1, "type": "query" }
+      { "allValue": ".*fullnode.*", "current": { "selected": true, "text": "All", "value": "$__all" }, "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "definition": "label_values(l2_block_number_sum{namespace=~\"$namespace\", pod=~\".*fullnode.*\"}, pod)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": { "query": "label_values(l2_block_number_sum{namespace=~\"$namespace\", pod=~\".*fullnode.*\"}, pod)", "refId": "StandardVariableQuery" }, "refresh": 2, "regex": "", "skipUrlSync": false, "sort": 1, "type": "query" }
     ]
   },
   "time": { "from": "now-15m", "to": "now" },
