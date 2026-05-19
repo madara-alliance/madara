@@ -849,7 +849,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"})",
           "legendFormat": "Total Calls",
           "refId": "A"
         }
@@ -909,7 +909,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "RPS (5m)",
           "refId": "A"
         }
@@ -969,7 +969,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}",
           "legendFormat": "WS Sessions",
           "refId": "A"
         }
@@ -1037,7 +1037,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "Latency p50",
           "refId": "A"
         }
@@ -1105,7 +1105,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "Latency p99",
           "refId": "A"
         }
@@ -1165,7 +1165,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"})",
           "legendFormat": "In-Flight",
           "refId": "A"
         }
@@ -1258,7 +1258,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Requests/s",
           "refId": "A"
         }
@@ -1397,7 +1397,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p50 (all methods)",
           "refId": "A"
         },
@@ -1406,7 +1406,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p90 (all methods)",
           "refId": "B"
         },
@@ -1415,7 +1415,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p99 (all methods)",
           "refId": "C"
         }
@@ -1539,7 +1539,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"true\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\", success=\"true\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         },
@@ -1548,7 +1548,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"false\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\", success=\"false\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Error Rate",
           "refId": "B"
         }
@@ -1640,7 +1640,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -1733,7 +1733,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}",
           "legendFormat": "Active Sessions",
           "refId": "A"
         }
@@ -1826,7 +1826,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(5, histogram_quantile(0.50, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))",
+          "expr": "topk(5, histogram_quantile(0.50, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))))",
           "legendFormat": "{{method}} p50",
           "refId": "A"
         },
@@ -1835,7 +1835,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(5, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))",
+          "expr": "topk(5, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))))",
           "legendFormat": "{{method}} p90",
           "refId": "B"
         }
@@ -7396,7 +7396,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)",
+        "definition": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
         "hide": 0,
         "includeAll": true,
         "label": "Pod",
@@ -7404,7 +7404,7 @@
         "name": "pod",
         "options": [],
         "query": {
-          "query": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)",
+          "query": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
