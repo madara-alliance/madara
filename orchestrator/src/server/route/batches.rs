@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::{Query, State};
@@ -140,57 +141,51 @@ fn apply_limit<T>(items: &mut Vec<T>, limit: Option<i64>) {
 }
 
 fn parse_snos_status(status: Option<&str>) -> Result<Option<BatchStatusFilter<SnosBatchStatus>>, BlockRouteError> {
-    let Some(status) = status else {
-        return Ok(None);
-    };
-
-    let parsed = match status.trim().to_ascii_lowercase().as_str() {
-        "closed" => BatchStatusFilter::Closed,
-        "open" => BatchStatusFilter::Exact(SnosBatchStatus::Open),
-        "snosjobcreated" => BatchStatusFilter::Exact(SnosBatchStatus::SnosJobCreated),
-        "completed" => BatchStatusFilter::Exact(SnosBatchStatus::Completed),
-        _ => return Err(BlockRouteError::InvalidQuery(format!("unsupported snos batch status '{}'", status))),
-    };
-
-    Ok(Some(parsed))
+    parse_status("snos", status)
 }
 
 fn matches_snos_status(batch: &SnosBatch, filter: &BatchStatusFilter<SnosBatchStatus>) -> bool {
-    match filter {
-        BatchStatusFilter::Closed => batch.status.is_closed(),
-        BatchStatusFilter::Exact(status) => &batch.status == status,
-    }
+    matches_status(&batch.status, filter, SnosBatchStatus::is_closed)
 }
 
 fn parse_aggregator_status(
     status: Option<&str>,
 ) -> Result<Option<BatchStatusFilter<AggregatorBatchStatus>>, BlockRouteError> {
-    let Some(status) = status else {
-        return Ok(None);
-    };
-
-    let parsed = match status.trim().to_ascii_lowercase().as_str() {
-        "closed" => BatchStatusFilter::Closed,
-        "open" => BatchStatusFilter::Exact(AggregatorBatchStatus::Open),
-        "pendingaggregatorrun" => BatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorRun),
-        "pendingaggregatorverification" => {
-            BatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorVerification)
-        }
-        "readyforstateupdate" => BatchStatusFilter::Exact(AggregatorBatchStatus::ReadyForStateUpdate),
-        "completed" => BatchStatusFilter::Exact(AggregatorBatchStatus::Completed),
-        "aggregationfailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::AggregationFailed),
-        "verificationfailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::VerificationFailed),
-        "stateupdatefailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::StateUpdateFailed),
-        _ => return Err(BlockRouteError::InvalidQuery(format!("unsupported aggregator batch status '{}'", status))),
-    };
-
-    Ok(Some(parsed))
+    parse_status("aggregator", status)
 }
 
 fn matches_aggregator_status(batch: &AggregatorBatch, filter: &BatchStatusFilter<AggregatorBatchStatus>) -> bool {
+    matches_status(&batch.status, filter, AggregatorBatchStatus::is_closed)
+}
+
+fn parse_status<T>(kind: &str, status: Option<&str>) -> Result<Option<BatchStatusFilter<T>>, BlockRouteError>
+where
+    T: FromStr,
+{
+    let Some(status) = status else {
+        return Ok(None);
+    };
+    let status = status.trim();
+
+    if status.eq_ignore_ascii_case("closed") {
+        return Ok(Some(BatchStatusFilter::Closed));
+    }
+
+    status
+        .to_ascii_lowercase()
+        .parse()
+        .map(BatchStatusFilter::Exact)
+        .map(Some)
+        .map_err(|_| BlockRouteError::InvalidQuery(format!("unsupported {kind} batch status '{status}'")))
+}
+
+fn matches_status<T>(status: &T, filter: &BatchStatusFilter<T>, is_closed: impl Fn(&T) -> bool) -> bool
+where
+    T: PartialEq,
+{
     match filter {
-        BatchStatusFilter::Closed => batch.status.is_closed(),
-        BatchStatusFilter::Exact(status) => &batch.status == status,
+        BatchStatusFilter::Closed => is_closed(status),
+        BatchStatusFilter::Exact(expected) => status == expected,
     }
 }
 
