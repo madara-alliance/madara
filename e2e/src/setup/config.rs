@@ -365,6 +365,10 @@ impl SetupConfigBuilder {
             .gateway_port(get_free_port().await?)
             .database_path(get_database_path(DATA_DIR, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
+            .env_var("MADARA_DB_MAX_SAVED_TRIE_LOGS", "10000")
+            .env_var("MADARA_DB_MAX_SNAPSHOTS", "1000")
+            .env_var("MADARA_DB_SNAPSHOT_INTERVAL", "5")
+            .env_var("MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", "10000")
             .logs((true, true))
             .build();
 

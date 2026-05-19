@@ -22,6 +22,7 @@ use alloy::{primitives::U256, sol};
 
 use crate::services::constants::ANVIL_CHAIN_ID;
 use crate::setup::ChainSetup;
+use crate::tests::storage_proof::assert_storage_proofs_match_for_changed_keys;
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::Felt,
@@ -89,7 +90,6 @@ async fn test_bridge_deposit_and_withdraw(
     }
 }
 
-#[allow(dead_code)]
 async fn run_bridge_test(setup: ChainSetup) -> TestResult<()> {
     let test_config = setup.config().clone();
 
@@ -112,10 +112,17 @@ async fn run_bridge_test(setup: ChainSetup) -> TestResult<()> {
     // Test withdrawal flow (L2 -> L1)
     test_withdrawal_flow(&l2_context, &setup, &addresses).await?;
 
+    let services =
+        setup.lifecycle_manager.services.as_ref().ok_or_else(|| "Runtime services are not available".to_string())?;
+    let madara = services.madara_service.as_ref().ok_or_else(|| "Madara service is not available".to_string())?;
+    let pathfinder =
+        services.pathfinder_service.as_ref().ok_or_else(|| "Pathfinder service is not available".to_string())?;
+
+    assert_storage_proofs_match_for_changed_keys(madara.rpc_endpoint(), pathfinder.endpoint()).await?;
+
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn setup_l2_context(test_config: &SetupConfig, addresses: &DeployedAddresses) -> TestResult<L2Context> {
     let provider = JsonRpcClient::new(HttpTransport::new(test_config.get_madara_config().rpc_endpoint()));
 
@@ -149,7 +156,6 @@ async fn setup_l2_context(test_config: &SetupConfig, addresses: &DeployedAddress
     Ok(L2Context { account, address, eth_token_address, eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
-#[allow(dead_code)]
 async fn setup_l1_context(addresses: &DeployedAddresses) -> TestResult<L1Context> {
     let eth_bridge_address = Address::from_str(&addresses.l1_eth_bridge_address)
         .map_err(|e| format!("Failed to parse L1 ETH bridge address: {}", e))?;
@@ -163,7 +169,6 @@ async fn setup_l1_context(addresses: &DeployedAddresses) -> TestResult<L1Context
     Ok(L1Context { eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
-#[allow(dead_code)]
 async fn test_eth_deposit_flow(
     l1_context: &L1Context,
     l2_context: &mut L2Context,
@@ -200,7 +205,6 @@ async fn test_eth_deposit_flow(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn test_erc20_deposit_flow(
     l1_context: &L1Context,
     l2_context: &mut L2Context,
@@ -291,7 +295,6 @@ async fn execute_eth_l1_deposit(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn execute_erc20_l1_deposit(
     l1_context: &L1Context,
     deposit_amount: U256,
@@ -372,7 +375,6 @@ async fn execute_erc20_l1_deposit(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn test_withdrawal_flow(
     l2_context: &L2Context,
     setup: &ChainSetup,
@@ -427,7 +429,6 @@ async fn test_withdrawal_flow(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let l1_recipient_felt =
         Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
@@ -460,7 +461,6 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     Ok(result.transaction_hash)
 }
 
-#[allow(dead_code)]
 async fn execute_erc20_l2_withdrawal(l2_context: &L2Context, addresses: &DeployedAddresses) -> TestResult<Felt> {
     let l1_recipient_felt =
         Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
