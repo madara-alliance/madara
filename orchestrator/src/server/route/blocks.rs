@@ -9,9 +9,9 @@ use tracing::{error, instrument};
 
 use super::super::types::{
     ApiResponse, BlockAggregatorBatchResponse, BlockRouteResult, BlockSettlementStatusResponse, BlockSnosBatchResponse,
-    SettlementJobResponseItem, SettlementJobTimestampsResponse, SettlementSnosBatchResponse,
+    SettlementAggregatorBatchResponse, SettlementJobResponseItem, SettlementJobTimestampsResponse,
+    SettlementSnosBatchResponse,
 };
-use super::batches::{snapshot_aggregator_batch, snapshot_snos_batch};
 use crate::core::config::Config;
 use crate::server::error::BlockRouteError;
 use crate::types::batch::SnosBatchStatus;
@@ -45,7 +45,7 @@ async fn handle_block_to_snos_batch(
         .ok_or_else(|| BlockRouteError::NotFound(format!("No SNOS batch found for block {}", block_number)))?;
 
     Ok(Json(ApiResponse::<BlockSnosBatchResponse>::success_with_data(
-        BlockSnosBatchResponse { block_number, batch: snapshot_snos_batch(&snos_batch) },
+        BlockSnosBatchResponse { block_number, batch: (&snos_batch).into() },
         Some(format!("Successfully fetched SNOS batch for block {}", block_number)),
     ))
     .into_response())
@@ -58,7 +58,7 @@ async fn handle_block_to_aggregator_batch(
 ) -> BlockRouteResult {
     match config.database().get_aggregator_batch_for_block(block_number).await {
         Ok(Some(batch)) => Ok(Json(ApiResponse::<BlockAggregatorBatchResponse>::success_with_data(
-            BlockAggregatorBatchResponse { block_number, batch: snapshot_aggregator_batch(&batch) },
+            BlockAggregatorBatchResponse { block_number, batch: (&batch).into() },
             Some(format!("Successfully fetched aggregator batch for block {}", block_number)),
         ))
         .into_response()),
@@ -145,7 +145,7 @@ async fn handle_block_settlement_status(
             .collect::<HashMap<_, _>>();
 
         if let Some(block_snos_batch) = matching_snos_batch {
-            snos_batch_response = Some(snapshot_snos_batch(block_snos_batch));
+            snos_batch_response = Some(block_snos_batch.into());
 
             if let Some(proof_job) = proof_jobs_by_internal_id.get(&block_snos_batch.index).cloned() {
                 push_job_if_missing(&mut block_jobs, proof_job);
@@ -176,7 +176,7 @@ async fn handle_block_settlement_status(
             }
         }
     } else {
-        snos_batch_response = block_snos_batch.as_ref().map(snapshot_snos_batch).or_else(|| {
+        snos_batch_response = block_snos_batch.as_ref().map(SettlementSnosBatchResponse::from).or_else(|| {
             block_jobs.iter().find_map(|job| match &job.metadata.specific {
                 JobSpecificMetadata::Snos(metadata) => Some(SettlementSnosBatchResponse {
                     index: metadata.snos_batch_index,
@@ -196,7 +196,7 @@ async fn handle_block_settlement_status(
         BlockSettlementStatusResponse {
             block_number,
             snos_batch: snos_batch_response,
-            aggregator_batch: aggregator_batch.as_ref().map(snapshot_aggregator_batch),
+            aggregator_batch: aggregator_batch.as_ref().map(SettlementAggregatorBatchResponse::from),
             block_jobs: block_jobs.iter().map(snapshot_job).collect(),
             aggregator_proof_jobs,
         },

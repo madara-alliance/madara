@@ -8,26 +8,19 @@ use tracing::instrument;
 
 use super::super::error::BlockRouteError;
 use super::super::types::{
-    AggregatorBatchDetailsResponse, AggregatorBatchListResponse, AggregatorBatchQuery, ApiResponse, BatchSortOrder,
-    BlockRouteResult, SettlementAggregatorBatchResponse, SettlementSnosBatchResponse, SnosBatchDetailsResponse,
-    SnosBatchListResponse, SnosBatchMetricsResponse, SnosBatchQuery,
+    AggregatorBatchListResponse, ApiResponse, BatchQuery, BatchSortOrder, BlockRouteResult, SnosBatchListResponse,
 };
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, SnosBatch, SnosBatchStatus};
 
-enum SnosBatchStatusFilter {
+enum BatchStatusFilter<T> {
     Closed,
-    Exact(SnosBatchStatus),
-}
-
-enum AggregatorBatchStatusFilter {
-    Closed,
-    Exact(AggregatorBatchStatus),
+    Exact(T),
 }
 
 #[instrument(skip(config), fields(index = ?query.index, status = ?query.status, limit = ?query.limit, sort = ?query.sort))]
 async fn handle_query_snos_batches(
-    Query(query): Query<SnosBatchQuery>,
+    Query(query): Query<BatchQuery>,
     State(config): State<Arc<Config>>,
 ) -> BlockRouteResult {
     let limit = validate_limit(query.limit)?;
@@ -48,12 +41,12 @@ async fn handle_query_snos_batches(
         batches
     } else if let Some(filter) = status_filter {
         match filter {
-            SnosBatchStatusFilter::Exact(status) => config
+            BatchStatusFilter::Exact(status) => config
                 .database()
                 .get_snos_batches_by_status(status, limit, None, descending)
                 .await
                 .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
-            SnosBatchStatusFilter::Closed => {
+            BatchStatusFilter::Closed => {
                 let mut batches = config
                     .database()
                     .get_snos_batches(None, descending)
@@ -73,7 +66,7 @@ async fn handle_query_snos_batches(
     };
 
     Ok(Json(ApiResponse::<SnosBatchListResponse>::success_with_data(
-        SnosBatchListResponse { batches: batches.iter().map(snapshot_snos_batch_details).collect() },
+        SnosBatchListResponse { batches: batches.iter().map(Into::into).collect() },
         Some("Successfully fetched SNOS batches".to_string()),
     ))
     .into_response())
@@ -81,7 +74,7 @@ async fn handle_query_snos_batches(
 
 #[instrument(skip(config), fields(index = ?query.index, status = ?query.status, limit = ?query.limit, sort = ?query.sort))]
 async fn handle_query_aggregator_batches(
-    Query(query): Query<AggregatorBatchQuery>,
+    Query(query): Query<BatchQuery>,
     State(config): State<Arc<Config>>,
 ) -> BlockRouteResult {
     let limit = validate_limit(query.limit)?;
@@ -102,12 +95,12 @@ async fn handle_query_aggregator_batches(
         batches
     } else if let Some(filter) = status_filter {
         match filter {
-            AggregatorBatchStatusFilter::Exact(status) => config
+            BatchStatusFilter::Exact(status) => config
                 .database()
                 .get_aggregator_batches_by_status(status, limit, None, descending)
                 .await
                 .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
-            AggregatorBatchStatusFilter::Closed => {
+            BatchStatusFilter::Closed => {
                 let mut batches = config
                     .database()
                     .get_aggregator_batches(None, descending)
@@ -127,7 +120,7 @@ async fn handle_query_aggregator_batches(
     };
 
     Ok(Json(ApiResponse::<AggregatorBatchListResponse>::success_with_data(
-        AggregatorBatchListResponse { batches: batches.iter().map(snapshot_aggregator_batch_details).collect() },
+        AggregatorBatchListResponse { batches: batches.iter().map(Into::into).collect() },
         Some("Successfully fetched aggregator batches".to_string()),
     ))
     .into_response())
@@ -146,107 +139,63 @@ fn apply_limit<T>(items: &mut Vec<T>, limit: Option<i64>) {
     }
 }
 
-fn parse_snos_status(status: Option<&str>) -> Result<Option<SnosBatchStatusFilter>, BlockRouteError> {
+fn parse_snos_status(status: Option<&str>) -> Result<Option<BatchStatusFilter<SnosBatchStatus>>, BlockRouteError> {
     let Some(status) = status else {
         return Ok(None);
     };
 
-    let parsed = match status.trim().to_ascii_lowercase().as_str() {
-        "open" => SnosBatchStatusFilter::Exact(SnosBatchStatus::Open),
-        "closed" => SnosBatchStatusFilter::Closed,
-        "snosjobcreated" | "snos_job_created" | "snos-job-created" => {
-            SnosBatchStatusFilter::Exact(SnosBatchStatus::SnosJobCreated)
-        }
-        "completed" => SnosBatchStatusFilter::Exact(SnosBatchStatus::Completed),
+    let parsed = match normalize_status_token(status).as_str() {
+        "closed" => BatchStatusFilter::Closed,
+        "open" => BatchStatusFilter::Exact(SnosBatchStatus::Open),
+        "snosjobcreated" => BatchStatusFilter::Exact(SnosBatchStatus::SnosJobCreated),
+        "completed" => BatchStatusFilter::Exact(SnosBatchStatus::Completed),
         _ => return Err(BlockRouteError::InvalidQuery(format!("unsupported snos batch status '{}'", status))),
     };
 
     Ok(Some(parsed))
 }
 
-fn matches_snos_status(batch: &SnosBatch, filter: &SnosBatchStatusFilter) -> bool {
+fn matches_snos_status(batch: &SnosBatch, filter: &BatchStatusFilter<SnosBatchStatus>) -> bool {
     match filter {
-        SnosBatchStatusFilter::Closed => batch.status.is_closed(),
-        SnosBatchStatusFilter::Exact(status) => &batch.status == status,
+        BatchStatusFilter::Closed => batch.status.is_closed(),
+        BatchStatusFilter::Exact(status) => &batch.status == status,
     }
 }
 
-fn parse_aggregator_status(status: Option<&str>) -> Result<Option<AggregatorBatchStatusFilter>, BlockRouteError> {
+fn parse_aggregator_status(
+    status: Option<&str>,
+) -> Result<Option<BatchStatusFilter<AggregatorBatchStatus>>, BlockRouteError> {
     let Some(status) = status else {
         return Ok(None);
     };
 
-    let parsed = match status.trim().to_ascii_lowercase().as_str() {
-        "open" => AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::Open),
-        "closed" => AggregatorBatchStatusFilter::Closed,
-        "pendingaggregatorrun" | "pending_aggregator_run" | "pending-aggregator-run" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorRun)
+    let parsed = match normalize_status_token(status).as_str() {
+        "closed" => BatchStatusFilter::Closed,
+        "open" => BatchStatusFilter::Exact(AggregatorBatchStatus::Open),
+        "pendingaggregatorrun" => BatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorRun),
+        "pendingaggregatorverification" => {
+            BatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorVerification)
         }
-        "pendingaggregatorverification" | "pending_aggregator_verification" | "pending-aggregator-verification" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorVerification)
-        }
-        "readyforstateupdate" | "ready_for_state_update" | "ready-for-state-update" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::ReadyForStateUpdate)
-        }
-        "completed" => AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::Completed),
-        "aggregationfailed" | "aggregation_failed" | "aggregation-failed" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::AggregationFailed)
-        }
-        "verificationfailed" | "verification_failed" | "verification-failed" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::VerificationFailed)
-        }
-        "stateupdatefailed" | "state_update_failed" | "state-update-failed" => {
-            AggregatorBatchStatusFilter::Exact(AggregatorBatchStatus::StateUpdateFailed)
-        }
+        "readyforstateupdate" => BatchStatusFilter::Exact(AggregatorBatchStatus::ReadyForStateUpdate),
+        "completed" => BatchStatusFilter::Exact(AggregatorBatchStatus::Completed),
+        "aggregationfailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::AggregationFailed),
+        "verificationfailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::VerificationFailed),
+        "stateupdatefailed" => BatchStatusFilter::Exact(AggregatorBatchStatus::StateUpdateFailed),
         _ => return Err(BlockRouteError::InvalidQuery(format!("unsupported aggregator batch status '{}'", status))),
     };
 
     Ok(Some(parsed))
 }
 
-fn matches_aggregator_status(batch: &AggregatorBatch, filter: &AggregatorBatchStatusFilter) -> bool {
+fn normalize_status_token(status: &str) -> String {
+    status.chars().filter(|ch| ch.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+fn matches_aggregator_status(batch: &AggregatorBatch, filter: &BatchStatusFilter<AggregatorBatchStatus>) -> bool {
     match filter {
-        AggregatorBatchStatusFilter::Closed => batch.status.is_closed(),
-        AggregatorBatchStatusFilter::Exact(status) => &batch.status == status,
+        BatchStatusFilter::Closed => batch.status.is_closed(),
+        BatchStatusFilter::Exact(status) => &batch.status == status,
     }
-}
-
-pub(super) fn snapshot_snos_batch(batch: &SnosBatch) -> SettlementSnosBatchResponse {
-    SettlementSnosBatchResponse {
-        index: batch.index,
-        aggregator_batch_index: batch.aggregator_batch_index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
-    }
-}
-
-pub(super) fn snapshot_aggregator_batch(batch: &AggregatorBatch) -> SettlementAggregatorBatchResponse {
-    SettlementAggregatorBatchResponse {
-        index: batch.index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
-    }
-}
-
-fn snapshot_snos_batch_details(batch: &SnosBatch) -> SnosBatchDetailsResponse {
-    SnosBatchDetailsResponse {
-        batch: snapshot_snos_batch(batch),
-        metrics: SnosBatchMetricsResponse {
-            state_diff_size: batch.builtin_weights.state_diff_size,
-            sierra_gas: batch.builtin_weights.sierra_gas.0,
-            proving_gas: batch.builtin_weights.proving_gas.0,
-        },
-    }
-}
-
-fn snapshot_aggregator_batch_details(batch: &AggregatorBatch) -> AggregatorBatchDetailsResponse {
-    AggregatorBatchDetailsResponse { batch: snapshot_aggregator_batch(batch), blob_len: batch.blob_len }
 }
 
 pub(super) fn batch_router(config: Arc<Config>) -> Router {

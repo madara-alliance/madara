@@ -1,4 +1,4 @@
-use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, SnosBatch, SnosBatchStatus};
 use crate::types::jobs::types::{JobStatus, JobType};
 use axum::response::Response;
 use chrono::{DateTime, Utc};
@@ -38,16 +38,7 @@ pub enum BatchSortOrder {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SnosBatchQuery {
-    pub index: Option<u64>,
-    pub status: Option<String>,
-    pub limit: Option<i64>,
-    #[serde(default)]
-    pub sort: BatchSortOrder,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AggregatorBatchQuery {
+pub struct BatchQuery {
     pub index: Option<u64>,
     pub status: Option<String>,
     pub limit: Option<i64>,
@@ -276,13 +267,6 @@ pub struct AggregatorBatchDetailsResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BatchDetailsResponse {
-    pub snos_batch: SnosBatchDetailsResponse,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aggregator_batch: Option<AggregatorBatchDetailsResponse>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnosBatchListResponse {
     pub batches: Vec<SnosBatchDetailsResponse>,
 }
@@ -290,4 +274,50 @@ pub struct SnosBatchListResponse {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AggregatorBatchListResponse {
     pub batches: Vec<AggregatorBatchDetailsResponse>,
+}
+
+impl From<&SnosBatch> for SettlementSnosBatchResponse {
+    fn from(batch: &SnosBatch) -> Self {
+        Self {
+            index: batch.index,
+            aggregator_batch_index: batch.aggregator_batch_index,
+            start_block: batch.start_block,
+            end_block: batch.end_block,
+            status: batch.status.clone(),
+            created_at: batch.created_at,
+            updated_at: batch.updated_at,
+        }
+    }
+}
+
+impl From<&AggregatorBatch> for SettlementAggregatorBatchResponse {
+    fn from(batch: &AggregatorBatch) -> Self {
+        Self {
+            index: batch.index,
+            start_block: batch.start_block,
+            end_block: batch.end_block,
+            status: batch.status.clone(),
+            created_at: batch.created_at,
+            updated_at: batch.updated_at,
+        }
+    }
+}
+
+impl From<&SnosBatch> for SnosBatchDetailsResponse {
+    fn from(batch: &SnosBatch) -> Self {
+        Self {
+            batch: batch.into(),
+            metrics: SnosBatchMetricsResponse {
+                state_diff_size: batch.builtin_weights.state_diff_size,
+                sierra_gas: batch.builtin_weights.sierra_gas.0,
+                proving_gas: batch.builtin_weights.proving_gas.0,
+            },
+        }
+    }
+}
+
+impl From<&AggregatorBatch> for AggregatorBatchDetailsResponse {
+    fn from(batch: &AggregatorBatch) -> Self {
+        Self { batch: batch.into(), blob_len: batch.blob_len }
+    }
 }
