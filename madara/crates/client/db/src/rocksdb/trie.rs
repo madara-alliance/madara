@@ -29,8 +29,12 @@ pub use bonsai_trie::ProofNode;
 /// Wrapper because bonsai requires a special DBError trait implementation.
 /// TODO: Remove that upstream in bonsai-trie, this is dumb.
 #[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct TrieError(#[from] rocksdb::Error);
+pub enum TrieError {
+    #[error(transparent)]
+    RocksDb(#[from] rocksdb::Error),
+    #[error("Invalid bonsai trie-log format: {0}")]
+    InvalidTrieLogFormat(String),
+}
 impl DBError for TrieError {}
 
 /// Wrapper because bonsai's error type does not implement [std::error::Error].
@@ -226,6 +230,10 @@ fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
     )
 }
 
+// These constants mirror the trie-log encoding in
+// `bonsai-trie` commit `13e8f7b`:
+// `/src/changes.rs::{KEY_SEPARATOR, NEW_VALUE, OLD_VALUE}` and the key layout
+// produced by `key_old_value` / `key_new_value`.
 const TRIE_KEY_KIND: u8 = 0;
 const FLAT_KEY_KIND: u8 = 1;
 const TRIE_LOG_KEY_SEPARATOR: u8 = 0x00;
@@ -238,11 +246,11 @@ struct TrieLogChange {
     new_value: Option<ByteVec>,
 }
 
-fn database_key_from_parts<'a>(key_kind: u8, key: &'a [u8]) -> DatabaseKey<'a> {
+fn database_key_from_parts<'a>(key_kind: u8, key: &'a [u8]) -> Result<DatabaseKey<'a>, TrieError> {
     match key_kind {
-        TRIE_KEY_KIND => DatabaseKey::Trie(key),
-        FLAT_KEY_KIND => DatabaseKey::Flat(key),
-        _ => panic!("invalid trie-log key kind {key_kind}"),
+        TRIE_KEY_KIND => Ok(DatabaseKey::Trie(key)),
+        FLAT_KEY_KIND => Ok(DatabaseKey::Flat(key)),
+        _ => Err(TrieError::InvalidTrieLogFormat(format!("unsupported key kind byte {key_kind}"))),
     }
 }
 
@@ -272,7 +280,7 @@ impl fmt::Debug for BonsaiTransaction {
 
 impl BonsaiTransaction {
     fn apply_change(&mut self, key_kind: u8, key: &[u8], value: Option<&[u8]>) -> Result<(), TrieError> {
-        let key = database_key_from_parts(key_kind, key);
+        let key = database_key_from_parts(key_kind, key)?;
         match value {
             Some(value) => {
                 self.insert(&key, value, None)?;
@@ -430,10 +438,16 @@ impl BonsaiDB {
         for (encoded_key, value) in trie_log_entries {
             let key_len = encoded_key.len();
             if key_len < prefix.len() + 3 {
-                panic!("invalid trie-log key length {}", key_len);
+                return Err(TrieError::InvalidTrieLogFormat(format!(
+                    "key length {key_len} is shorter than prefix+metadata length {}",
+                    prefix.len() + 3
+                )));
             }
             if encoded_key[prefix.len()] != TRIE_LOG_KEY_SEPARATOR {
-                panic!("invalid trie-log key separator");
+                return Err(TrieError::InvalidTrieLogFormat(format!(
+                    "expected separator byte {TRIE_LOG_KEY_SEPARATOR:#04x} after prefix, got {:#04x}",
+                    encoded_key[prefix.len()]
+                )));
             }
 
             let change_type = encoded_key[key_len - 1];
@@ -444,7 +458,9 @@ impl BonsaiDB {
             match change_type {
                 TRIE_LOG_NEW_VALUE => change.new_value = Some(value),
                 TRIE_LOG_OLD_VALUE => change.old_value = Some(value),
-                _ => panic!("invalid trie-log change type {change_type}"),
+                _ => {
+                    return Err(TrieError::InvalidTrieLogFormat(format!("unsupported change type byte {change_type}")));
+                }
             }
         }
 

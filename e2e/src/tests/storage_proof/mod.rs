@@ -245,7 +245,6 @@ fn single_contract_leaf(proof: &Value) -> Result<Value, String> {
     }))
 }
 
-#[allow(dead_code)]
 fn assert_json_eq(
     left: &Value,
     right: &Value,
