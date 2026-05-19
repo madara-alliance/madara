@@ -98,7 +98,7 @@ use std::path::PathBuf;
 
 use crate::rocksdb::column::{Column, ColumnMemoryBudget};
 use anyhow::{Context, Result};
-use rocksdb::{DBCompressionType, Env, Options, SliceTransform, WriteOptions};
+use rocksdb::{DBCompactionStyle, DBCompressionType, Env, Options, SliceTransform, WriteOptions};
 use serde::{Deserialize, Serialize};
 
 const KiB: usize = 1024;
@@ -505,25 +505,44 @@ impl Column {
         // Zstd provides excellent compression with good read/write performance.
         options.set_compression_type(DBCompressionType::Zstd);
 
-        // Configure memory budget and compaction based on column tier.
-        // optimize_universal_style_compaction sets:
-        // - write_buffer_size (memtable size)
-        // - Universal compaction settings
-        // - Appropriate L0 thresholds for the budget
-        match self.budget_tier {
-            ColumnMemoryBudget::Blocks => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_blocks_budget_bytes);
-            }
-            ColumnMemoryBudget::Contracts => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_contracts_budget_bytes);
-            }
-            ColumnMemoryBudget::Other => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_other_budget_bytes);
-            }
+        let budget_bytes = match self.budget_tier {
+            ColumnMemoryBudget::Blocks => config.memtable_blocks_budget_bytes,
+            ColumnMemoryBudget::Contracts => config.memtable_contracts_budget_bytes,
+            ColumnMemoryBudget::Other => config.memtable_other_budget_bytes,
+        };
+
+        options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+
+        if self.log_cf {
+            // Leveled compaction for write-heavy, append-only log CFs (Bonsai TrieLog).
+            // Universal compaction defers work and then does one giant merge, which
+            // falls behind on append-mostly workloads and accumulates L0 files until
+            // writes stall. Leveled drains L0 -> L1 continuously in many small,
+            // parallelisable jobs, keeping L0 file counts low at steady state.
+            options.set_compaction_style(DBCompactionStyle::Level);
+            options.set_write_buffer_size(budget_bytes / 4);
+            options.set_max_write_buffer_number(config.max_write_buffer_number);
+            options.set_min_write_buffer_number_to_merge(2);
+            options.set_level_zero_file_num_compaction_trigger(4);
+            options.set_max_bytes_for_level_base(512 * MiB as u64);
+            options.set_max_bytes_for_level_multiplier(10.0);
+            options.set_target_file_size_base(64 * MiB as u64);
+            options.set_target_file_size_multiplier(1);
+            options.set_num_levels(7);
+        } else {
+            // Universal compaction for everything else (lower write amp, fine
+            // for read-heavy or balanced CFs). Sets write_buffer_size, memtable
+            // counts, L0 thresholds, and num_levels for the given memory budget.
+            options.optimize_universal_style_compaction(budget_bytes);
         }
+
+        // IMPORTANT: `optimize_universal_style_compaction` resets the L0 stall
+        // triggers to RocksDB's hardcoded defaults (slowdown=20, stop=36),
+        // ignoring whatever we set globally / via CLI / via env. Re-apply them
+        // here so our configured values actually take effect per-CF. Setting
+        // them on the leveled branch is harmless (matches the explicit values).
+        options.set_level_zero_slowdown_writes_trigger(config.level_zero_slowdown_writes_trigger);
+        options.set_level_zero_stop_writes_trigger(config.level_zero_stop_writes_trigger);
 
         // Point lookup optimization for columns that primarily do single-key gets.
         // Adds a bloom filter in the block cache for faster negative lookups.
