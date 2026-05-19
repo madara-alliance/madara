@@ -79,7 +79,7 @@ impl Column {
         self.point_lookup = true;
         self
     }
-    pub const fn as_log_cf(mut self) -> Self {
+    pub const fn set_log_cf(mut self) -> Self {
         self.log_cf = true;
         self
     }
