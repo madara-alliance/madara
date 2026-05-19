@@ -18,7 +18,7 @@ enum BatchStatusFilter<T> {
     Exact(T),
 }
 
-#[instrument(skip(config), fields(index = ?query.index, status = ?query.status, limit = ?query.limit, sort = ?query.sort))]
+#[instrument(skip(config))]
 async fn handle_query_snos_batches(
     Query(query): Query<BatchQuery>,
     State(config): State<Arc<Config>>,
@@ -72,7 +72,7 @@ async fn handle_query_snos_batches(
     .into_response())
 }
 
-#[instrument(skip(config), fields(index = ?query.index, status = ?query.status, limit = ?query.limit, sort = ?query.sort))]
+#[instrument(skip(config))]
 async fn handle_query_aggregator_batches(
     Query(query): Query<BatchQuery>,
     State(config): State<Arc<Config>>,
@@ -144,7 +144,7 @@ fn parse_snos_status(status: Option<&str>) -> Result<Option<BatchStatusFilter<Sn
         return Ok(None);
     };
 
-    let parsed = match normalize_status_token(status).as_str() {
+    let parsed = match status.trim().to_ascii_lowercase().as_str() {
         "closed" => BatchStatusFilter::Closed,
         "open" => BatchStatusFilter::Exact(SnosBatchStatus::Open),
         "snosjobcreated" => BatchStatusFilter::Exact(SnosBatchStatus::SnosJobCreated),
@@ -169,7 +169,7 @@ fn parse_aggregator_status(
         return Ok(None);
     };
 
-    let parsed = match normalize_status_token(status).as_str() {
+    let parsed = match status.trim().to_ascii_lowercase().as_str() {
         "closed" => BatchStatusFilter::Closed,
         "open" => BatchStatusFilter::Exact(AggregatorBatchStatus::Open),
         "pendingaggregatorrun" => BatchStatusFilter::Exact(AggregatorBatchStatus::PendingAggregatorRun),
@@ -185,10 +185,6 @@ fn parse_aggregator_status(
     };
 
     Ok(Some(parsed))
-}
-
-fn normalize_status_token(status: &str) -> String {
-    status.chars().filter(|ch| ch.is_ascii_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
 
 fn matches_aggregator_status(batch: &AggregatorBatch, filter: &BatchStatusFilter<AggregatorBatchStatus>) -> bool {
