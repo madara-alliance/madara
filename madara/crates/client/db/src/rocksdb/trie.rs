@@ -14,13 +14,13 @@ use std::sync::{Arc, LockResult, OnceLock, RwLock, RwLockReadGuard, RwLockWriteG
 
 pub const BONSAI_CONTRACT_FLAT_COLUMN: Column = Column::new("bonsai_contract_flat").set_point_lookup();
 pub const BONSAI_CONTRACT_TRIE_COLUMN: Column = Column::new("bonsai_contract_trie").set_point_lookup();
-pub const BONSAI_CONTRACT_LOG_COLUMN: Column = Column::new("bonsai_contract_log");
+pub const BONSAI_CONTRACT_LOG_COLUMN: Column = Column::new("bonsai_contract_log").as_log_cf();
 pub const BONSAI_CONTRACT_STORAGE_FLAT_COLUMN: Column = Column::new("bonsai_contract_storage_flat").set_point_lookup();
 pub const BONSAI_CONTRACT_STORAGE_TRIE_COLUMN: Column = Column::new("bonsai_contract_storage_trie").set_point_lookup();
-pub const BONSAI_CONTRACT_STORAGE_LOG_COLUMN: Column = Column::new("bonsai_contract_storage_log");
+pub const BONSAI_CONTRACT_STORAGE_LOG_COLUMN: Column = Column::new("bonsai_contract_storage_log").as_log_cf();
 pub const BONSAI_CLASS_FLAT_COLUMN: Column = Column::new("bonsai_class_flat").set_point_lookup();
 pub const BONSAI_CLASS_TRIE_COLUMN: Column = Column::new("bonsai_class_trie").set_point_lookup();
-pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log");
+pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log").as_log_cf();
 
 pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 pub(crate) type SharedContractStorageTrie = Arc<ContractStorageTrieCache>;
