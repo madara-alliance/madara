@@ -2,11 +2,17 @@ use crate::{versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server, Starknet, Sta
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::{
-    admin::{GetMempoolTxnHashesParams, MempoolTxnHashInfo},
+    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolNonceFilter, MempoolTxnHashInfo},
     v0_10_2::TxnWithHashAndProofFacts,
 };
-use mp_transactions::TransactionWithHash;
+use mp_transactions::{validated::ValidatedTransaction, TransactionWithHash};
 use std::time::Duration;
+
+fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
+    let nonce = transaction.transaction.nonce();
+    nonce_filter.nonce_after.is_none_or(|lower| nonce > lower)
+        && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
+}
 
 #[async_trait]
 impl MadaraReadRpcApiV0_1_0Server for Starknet {
@@ -21,27 +27,30 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
         &self,
         params: Option<GetMempoolTxnHashesParams>,
     ) -> RpcResult<Vec<MempoolTxnHashInfo>> {
-        let include_ttl = params.unwrap_or_default().include_ttl;
+        let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool.snapshot_transactions().await;
 
         Ok(transactions
             .into_iter()
+            .filter(|snapshot| matches_nonce_filter(&snapshot.transaction, params.nonce_filter))
             .map(|snapshot| MempoolTxnHashInfo {
                 transaction_hash: snapshot.transaction.hash,
-                remaining_ttl_ms: include_ttl.then(|| {
+                remaining_ttl_ms: params.include_ttl.then(|| {
                     snapshot.remaining_ttl.unwrap_or(Duration::ZERO).as_millis().try_into().unwrap_or(u64::MAX)
                 }),
             })
             .collect())
     }
 
-    async fn get_mempool_txns(&self) -> RpcResult<Vec<TxnWithHashAndProofFacts>> {
+    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<TxnWithHashAndProofFacts>> {
+        let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool.snapshot_transactions().await;
 
         Ok(transactions
             .into_iter()
+            .filter(|snapshot| matches_nonce_filter(&snapshot.transaction, params.nonce_filter))
             .map(|snapshot| {
                 let validated_transaction = snapshot.transaction;
                 let tx = TransactionWithHash::new(validated_transaction.transaction, validated_transaction.hash);
@@ -109,7 +118,7 @@ mod tests {
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
         let tx1 = mempool_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
-        let tx2 = mempool_tx(Felt::from(22_u64), Felt::ZERO, Felt::from(202_u64), base + 1_000);
+        let tx2 = mempool_tx(Felt::from(22_u64), Felt::from(2_u64), Felt::from(202_u64), base + 1_000);
 
         mempool.accept_tx(tx2.clone()).await.unwrap();
         mempool.accept_tx(tx1.clone()).await.unwrap();
@@ -118,24 +127,51 @@ mod tests {
         assert_eq!(hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx1.hash, tx2.hash]);
         assert!(hashes.iter().all(|entry| entry.remaining_ttl_ms.is_none()));
 
-        let hashes_with_ttl =
-            rpc.get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { include_ttl: true })).await.unwrap();
+        let hashes_with_ttl = rpc
+            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { include_ttl: true, ..Default::default() }))
+            .await
+            .unwrap();
         assert_eq!(
             hashes_with_ttl.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(),
             vec![tx1.hash, tx2.hash]
         );
         assert!(hashes_with_ttl.iter().all(|entry| entry.remaining_ttl_ms.is_some()));
+
+        let filtered_hashes = rpc
+            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams {
+                nonce_filter: MempoolNonceFilter { nonce_after: Some(Felt::from(1_u64)), nonce_before: None },
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        assert_eq!(filtered_hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx2.hash]);
     }
 
     #[tokio::test]
     async fn get_mempool_txns_returns_full_transactions() {
         let (mempool, rpc) = make_starknet_with_mempool();
-        let tx = mempool_tx(Felt::from(33_u64), Felt::ZERO, Felt::from(303_u64), TxTimestamp::now().0);
+        let base = TxTimestamp::now().0;
+        let tx1 = mempool_tx(Felt::from(33_u64), Felt::ZERO, Felt::from(303_u64), base);
+        let tx2 = mempool_tx(Felt::from(44_u64), Felt::from(3_u64), Felt::from(404_u64), base + 1_000);
 
-        mempool.accept_tx(tx.clone()).await.unwrap();
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
 
-        let transactions = rpc.get_mempool_txns().await.unwrap();
-        assert_eq!(transactions.len(), 1);
-        assert_eq!(transactions[0].transaction_hash, tx.hash);
+        let transactions = rpc.get_mempool_txns(None).await.unwrap();
+        assert_eq!(transactions.len(), 2);
+        assert_eq!(transactions[0].transaction_hash, tx1.hash);
+        assert_eq!(transactions[1].transaction_hash, tx2.hash);
+
+        let filtered_transactions = rpc
+            .get_mempool_txns(Some(GetMempoolTxnsParams {
+                nonce_filter: MempoolNonceFilter {
+                    nonce_after: Some(Felt::from(1_u64)),
+                    nonce_before: Some(Felt::from(4_u64)),
+                },
+            }))
+            .await
+            .unwrap();
+        assert_eq!(filtered_transactions.len(), 1);
+        assert_eq!(filtered_transactions[0].transaction_hash, tx2.hash);
     }
 }

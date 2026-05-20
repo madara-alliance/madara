@@ -31,8 +31,24 @@ pub enum MempoolContractAddressField {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+pub struct MempoolNonceFilter {
+    pub nonce_after: Option<Felt>,
+    pub nonce_before: Option<Felt>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GetMempoolTxnHashesParams {
     pub include_ttl: bool,
+    #[serde(flatten)]
+    pub nonce_filter: MempoolNonceFilter,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GetMempoolTxnsParams {
+    #[serde(flatten)]
+    pub nonce_filter: MempoolNonceFilter,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +64,8 @@ pub struct FlushMempoolTxnsParams {
     pub contract_address: Option<Felt>,
     pub contract_address_field: Option<MempoolContractAddressField>,
     pub transaction_hashes: Option<Vec<Felt>>,
+    #[serde(flatten)]
+    pub nonce_filter: MempoolNonceFilter,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
