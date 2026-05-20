@@ -313,7 +313,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "d313670437bd70be24480e8feb15fd12711558d9", features = [
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "69b6fe98195fc85ce5fd6dc57ca0fbe5718f1496", features = [
   "cairo_native",
 ] }
 
