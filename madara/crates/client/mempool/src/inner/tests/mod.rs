@@ -813,6 +813,66 @@ fn test_evict_oldest_full_mode_removes_oldest_transaction() {
 }
 
 #[test]
+fn test_evict_oldest_full_mode_drops_nonce_suffix_for_evicted_account() {
+    let mut fcfs_mempool = MempoolTester::new(InnerMempoolConfig {
+        score_function: ScoreFunction::Timestamp,
+        full_mode: MempoolFullMode::EvictOldest,
+        max_transactions: 4,
+        max_declare_transactions: Some(2),
+        ttl: Some(Duration::from_secs(20)),
+    });
+
+    let tx5 = TestTx {
+        nonce: felt!("0x5"),
+        contract_address: felt!("0x100"),
+        arrived_at: 1000,
+        tip: None,
+        tx_hash: felt!("0x105"),
+        is_declare: false,
+    };
+    let tx6 = TestTx {
+        nonce: felt!("0x6"),
+        contract_address: felt!("0x100"),
+        arrived_at: 2000,
+        tip: None,
+        tx_hash: felt!("0x106"),
+        is_declare: false,
+    };
+    let tx7 = TestTx {
+        nonce: felt!("0x7"),
+        contract_address: felt!("0x100"),
+        arrived_at: 3000,
+        tip: None,
+        tx_hash: felt!("0x107"),
+        is_declare: false,
+    };
+    let other_tx = TestTx {
+        nonce: felt!("0x2"),
+        contract_address: felt!("0x200"),
+        arrived_at: 4000,
+        tip: None,
+        tx_hash: felt!("0x200"),
+        is_declare: false,
+    };
+    let new_tx = TestTx {
+        nonce: felt!("0x2"),
+        contract_address: felt!("0x300"),
+        arrived_at: 5000,
+        tip: None,
+        tx_hash: felt!("0x300"),
+        is_declare: false,
+    };
+
+    assert_matches!(fcfs_mempool.insert_tx(tx5.clone(), felt!("0x5")), Ok(()));
+    assert_matches!(fcfs_mempool.insert_tx(tx6.clone(), felt!("0x5")), Ok(()));
+    assert_matches!(fcfs_mempool.insert_tx(tx7.clone(), felt!("0x5")), Ok(()));
+    assert_matches!(fcfs_mempool.insert_tx(other_tx.clone(), felt!("0x1")), Ok(()));
+    assert_matches!(fcfs_mempool.insert_tx(new_tx.clone(), felt!("0x1")), Ok(()));
+
+    assert_eq!(fcfs_mempool.transactions(), [other_tx, new_tx].into());
+}
+
+#[test]
 fn test_reject_new_full_mode_never_evicts_existing_transactions() {
     let mut fcfs_mempool = MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,

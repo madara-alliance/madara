@@ -270,7 +270,7 @@ impl InnerMempool {
             return false;
         };
 
-        let account_update = self.accounts.remove_tx(tx_key);
+        let account_update = self.accounts.remove_tx_and_higher_nonces(tx_key);
         self.apply_update(account_update, removed_txs);
         true
     }
