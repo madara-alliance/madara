@@ -43,4 +43,8 @@ impl TimestampQueue {
     pub fn oldest(&self) -> Option<&TxKey> {
         self.0.first().map(|entry| &entry.1)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &TxKey> {
+        self.0.iter().map(|(_, tx_key)| tx_key)
+    }
 }

@@ -129,8 +129,8 @@ use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashSet, sync::Arc};
 use topic_pubsub::TopicWatchPubsub;
 use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
@@ -185,6 +185,18 @@ impl MempoolConfig {
 pub struct ExternalOutboxConfig {
     pub enabled: bool,
     pub strict: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionAddressMatch {
+    Sender,
+    To,
+}
+
+#[derive(Debug, Clone)]
+pub struct MempoolTransactionSnapshot {
+    pub transaction: ValidatedTransaction,
+    pub remaining_ttl: Option<Duration>,
 }
 
 impl ExternalOutboxConfig {
@@ -415,6 +427,67 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     pub async fn is_empty(&self) -> bool {
         self.inner.read().await.is_empty()
+    }
+
+    pub async fn snapshot_transactions(&self) -> Vec<MempoolTransactionSnapshot> {
+        let now = TxTimestamp::now();
+        let ttl = self.ttl;
+        let lock = self.inner.read().await;
+
+        lock.transactions_by_arrival()
+            .map(|transaction| MempoolTransactionSnapshot {
+                transaction: transaction.clone(),
+                remaining_ttl: ttl.map(|ttl| {
+                    transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                }),
+            })
+            .collect()
+    }
+
+    pub async fn flush_all_transactions(&self) -> Vec<ValidatedTransaction> {
+        self.flush_transactions_matching(|_| true).await
+    }
+
+    pub async fn flush_transactions_by_hashes(
+        &self,
+        transaction_hashes: impl IntoIterator<Item = Felt>,
+    ) -> Vec<ValidatedTransaction> {
+        let transaction_hashes = transaction_hashes.into_iter().collect::<HashSet<_>>();
+        self.flush_transactions_matching(move |tx| transaction_hashes.contains(&tx.hash)).await
+    }
+
+    pub async fn flush_transactions_by_contract_address(
+        &self,
+        contract_address: Felt,
+        address_match: TransactionAddressMatch,
+    ) -> Vec<ValidatedTransaction> {
+        self.flush_transactions_matching(move |tx| match address_match {
+            TransactionAddressMatch::Sender => tx.sender_contract_address() == Some(contract_address),
+            TransactionAddressMatch::To => tx.to_contract_address() == Some(contract_address),
+        })
+        .await
+    }
+
+    async fn flush_transactions_matching(
+        &self,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<ValidatedTransaction> {
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        let summary = {
+            let mut lock = self.inner.write().await;
+            let tx_hashes =
+                lock.transactions_by_arrival().filter(|tx| predicate(tx)).map(|tx| tx.hash).collect::<HashSet<_>>();
+            lock.remove_transaction_hashes(&tx_hashes, &mut removed_txs);
+            lock.summary()
+        };
+
+        self.metrics.record_mempool_state(&summary);
+        self.on_txs_removed(&removed_txs);
+        if !removed_txs.is_empty() {
+            tracing::info!("🔖 Flushed {} transactions from the mempool [{summary}]", removed_txs.len());
+        }
+
+        removed_txs.into_vec()
     }
 
     pub async fn get_transaction<R>(

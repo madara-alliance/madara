@@ -13,7 +13,8 @@ use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
 };
-use std::{fmt, time::Duration};
+use starknet_types_core::felt::Felt;
+use std::{collections::HashSet, fmt, time::Duration};
 
 pub(crate) mod accounts;
 pub(crate) mod by_tx_hash_index;
@@ -343,6 +344,43 @@ impl InnerMempool {
 
     pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&ValidatedTransaction> {
         self.accounts.get_transaction(contract_address, nonce).map(|tx| &tx.inner)
+    }
+
+    pub fn transactions_by_arrival(&self) -> impl Iterator<Item = &ValidatedTransaction> {
+        self.timestamp_queue.iter().map(|tx_key| {
+            &self
+                .accounts
+                .get_tx_by_key(tx_key)
+                .expect("Invariant violation: timestamp queue key must resolve to a transaction")
+                .inner
+        })
+    }
+
+    pub fn remove_transaction_hashes(
+        &mut self,
+        tx_hashes: &HashSet<Felt>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
+        if tx_hashes.is_empty() {
+            return;
+        }
+
+        let tx_keys = self
+            .timestamp_queue
+            .iter()
+            .filter_map(|tx_key| {
+                let tx = self
+                    .accounts
+                    .get_tx_by_key(tx_key)
+                    .expect("Invariant violation: timestamp queue key must resolve to a transaction");
+                tx_hashes.contains(&tx.inner.hash).then_some(*tx_key)
+            })
+            .collect::<Vec<_>>();
+
+        for tx_key in tx_keys {
+            let account_update = self.accounts.remove_tx(&tx_key);
+            self.apply_update(account_update, removed_txs);
+        }
     }
 
     pub fn contains_tx_by_hash(&self, tx_hash: &TransactionHash) -> bool {

@@ -3,8 +3,12 @@ use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{
+    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnHashesParams,
+    MempoolTxnHashInfo,
+};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
+use mp_rpc::v0_10_2::TxnWithHashAndProofFacts;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
@@ -87,6 +91,10 @@ pub trait MadaraWriteRpcApi {
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
+
+    /// Flush transactions from the mempool using an admin-only filter.
+    #[method(name = "flushMempoolTxns")]
+    async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }
 
 /// This is an admin method, so semver is different!
@@ -95,6 +103,17 @@ pub trait MadaraReadRpcApi {
     /// Get the builtins  for the given block number
     #[method(name = "getBlockBuiltinWeights")]
     async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
+
+    /// List all mempool transaction hashes, optionally including each transaction's remaining TTL.
+    #[method(name = "getMempoolTxnHashes")]
+    async fn get_mempool_txn_hashes(
+        &self,
+        params: Option<GetMempoolTxnHashesParams>,
+    ) -> RpcResult<Vec<MempoolTxnHashInfo>>;
+
+    /// List all transactions currently in the mempool.
+    #[method(name = "getMempoolTxns")]
+    async fn get_mempool_txns(&self) -> RpcResult<Vec<TxnWithHashAndProofFacts>>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

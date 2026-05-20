@@ -20,3 +20,37 @@ impl BroadcastedDeclareTxnV0 {
         self.is_query
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MempoolContractAddressField {
+    #[default]
+    Sender,
+    To,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GetMempoolTxnHashesParams {
+    pub include_ttl: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MempoolTxnHashInfo {
+    pub transaction_hash: Felt,
+    pub remaining_ttl_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FlushMempoolTxnsParams {
+    pub all: bool,
+    pub contract_address: Option<Felt>,
+    pub contract_address_field: Option<MempoolContractAddressField>,
+    pub transaction_hashes: Option<Vec<Felt>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlushMempoolTxnsResult {
+    pub removed_transaction_hashes: Vec<Felt>,
+}

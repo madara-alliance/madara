@@ -1,12 +1,12 @@
-use crate::{Transaction, TransactionWithHash};
+use crate::{InvokeTransaction, Transaction, TransactionWithHash};
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use serde::{Deserialize, Serialize};
 use starknet_api::executable_transaction::{
-    AccountTransaction as ApiAccountTransaction, DeclareTransaction, DeployAccountTransaction, InvokeTransaction,
-    L1HandlerTransaction,
+    AccountTransaction as ApiAccountTransaction, DeclareTransaction, DeployAccountTransaction,
+    InvokeTransaction as ApiInvokeTransaction, L1HandlerTransaction,
 };
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use std::time::{Duration, SystemTime};
@@ -140,7 +140,7 @@ impl ValidatedTransaction {
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
 
                 starknet_api::executable_transaction::Transaction::Account(ApiAccountTransaction::Invoke(
-                    InvokeTransaction { tx, tx_hash },
+                    ApiInvokeTransaction { tx, tx_hash },
                 ))
             }
             Transaction::Deploy(_) => return Err(ValidatedToBlockifierTxError::DeployNotSupported),
@@ -155,6 +155,26 @@ impl ValidatedTransaction {
             _ => tx,
         };
         Ok((tx, self.arrived_at, self.declared_class))
+    }
+
+    pub fn sender_contract_address(&self) -> Option<Felt> {
+        match &self.transaction {
+            Transaction::Invoke(_) | Transaction::Declare(_) | Transaction::DeployAccount(_) => {
+                Some(self.contract_address)
+            }
+            Transaction::L1Handler(_) | Transaction::Deploy(_) => None,
+        }
+    }
+
+    pub fn to_contract_address(&self) -> Option<Felt> {
+        match &self.transaction {
+            Transaction::Invoke(InvokeTransaction::V0(tx)) => Some(tx.contract_address),
+            Transaction::L1Handler(tx) => Some(tx.contract_address),
+            Transaction::DeployAccount(_) => Some(self.contract_address),
+            Transaction::Invoke(InvokeTransaction::V1(_) | InvokeTransaction::V3(_))
+            | Transaction::Declare(_)
+            | Transaction::Deploy(_) => None,
+        }
     }
 }
 

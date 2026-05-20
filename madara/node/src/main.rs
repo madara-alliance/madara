@@ -398,6 +398,7 @@ async fn main() -> anyhow::Result<()> {
         backend.clone(),
         tx_submit.clone(),
         service_block_production.handle(),
+        service_mempool.mempool(),
     );
 
     // Feeder gateway
