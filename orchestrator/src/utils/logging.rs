@@ -8,6 +8,7 @@ use tracing::{
     Event, Level, Subscriber,
 };
 use tracing_error::ErrorLayer;
+use tracing_log::NormalizeEvent;
 use tracing_subscriber::field::{MakeVisitor, VisitFmt, VisitOutput};
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
@@ -115,7 +116,8 @@ where
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
-        let meta = event.metadata();
+        let normalized_meta = event.normalized_metadata();
+        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
         let now = Utc::now().format("%y-%m-%d %H:%M:%S").to_string();
 
         // Extract queue from span fields
@@ -257,7 +259,8 @@ where
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
-        let meta = event.metadata();
+        let normalized_meta = event.normalized_metadata();
+        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
         let ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
         // Extract event message and fields
