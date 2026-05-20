@@ -404,13 +404,7 @@ pub fn init_logging() {
     tracing_log::LogTracer::init().expect("Failed to install log to tracing bridge");
 
     // Read from `RUST_LOG` environment variable, with fallback to default
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        // Fallback if RUST_LOG is not set or invalid
-        EnvFilter::builder()
-            .with_default_directive(Level::INFO.into())
-            .parse("orchestrator=info")
-            .expect("Invalid filter directive and Logger control")
-    });
+    let env_filter = build_env_filter();
 
     // Check LOG_FORMAT environment variable
     let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
@@ -450,6 +444,16 @@ pub fn init_logging() {
             .with(ErrorLayer::new(PlainFields::new()));
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
     }
+}
+
+fn build_env_filter() -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| fallback_env_filter())
+}
+
+fn fallback_env_filter() -> EnvFilter {
+    // Keep orchestrator INFO logs by default, but require explicit target
+    // opt-in for bridged SNOS logs and other third-party crates.
+    EnvFilter::builder().parse("error,orchestrator=info").expect("Invalid filter directive and Logger control")
 }
 
 /// Extract service/package name from the tracing target
