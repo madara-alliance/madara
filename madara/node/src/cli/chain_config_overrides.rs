@@ -3,7 +3,7 @@ use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
 use mp_chain_config::{
     deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
-    L1DataAvailabilityMode, L2GasPrice, MempoolMode, SettlementChainKind, StarknetVersion,
+    L1DataAvailabilityMode, L2GasPrice, MempoolFullMode, MempoolMode, SettlementChainKind, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -70,6 +70,8 @@ pub struct ChainConfigOverrideParams {
     ///
     ///   * mempool_ttl: max age of transactions in the mempool.
     ///     Transactions which are too old will be removed.
+    ///
+    ///   * mempool_full_mode: what to do when the mempool reaches capacity.
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
 }
@@ -94,6 +96,8 @@ pub struct ChainConfigOverridesInner {
     pub eth_gps_statement_verifier: String,
     #[serde(default)]
     pub mempool_mode: MempoolMode,
+    #[serde(default)]
+    pub mempool_full_mode: MempoolFullMode,
     #[serde(default)]
     pub mempool_min_tip_bump: f64,
     pub mempool_max_transactions: usize,
@@ -132,6 +136,7 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
             mempool_mode: chain_config.mempool_mode,
+            mempool_full_mode: chain_config.mempool_full_mode,
             mempool_min_tip_bump: chain_config.mempool_min_tip_bump,
             mempool_max_transactions: chain_config.mempool_max_transactions,
             mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
@@ -195,16 +200,46 @@ impl ChainConfigOverrideParams {
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
             private_key: chain_config.private_key,
-            mempool_mode: chain_config.mempool_mode,
-            mempool_min_tip_bump: chain_config.mempool_min_tip_bump,
-            mempool_max_transactions: chain_config.mempool_max_transactions,
-            mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
-            mempool_ttl: chain_config.mempool_ttl,
+            mempool_mode: chain_config_overrides.mempool_mode,
+            mempool_full_mode: chain_config_overrides.mempool_full_mode,
+            mempool_min_tip_bump: chain_config_overrides.mempool_min_tip_bump,
+            mempool_max_transactions: chain_config_overrides.mempool_max_transactions,
+            mempool_max_declare_transactions: chain_config_overrides.mempool_max_declare_transactions,
+            mempool_ttl: chain_config_overrides.mempool_ttl,
             l2_gas_price: chain_config_overrides.l2_gas_price,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,
             l1_messages_finality_blocks: chain_config.l1_messages_finality_blocks,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_override_chain_config_updates_mempool_fields() {
+        let params = ChainConfigOverrideParams {
+            overrides: vec![
+                ("mempool_mode".into(), serde_yaml::from_str::<Value>("Tip").unwrap()),
+                ("mempool_full_mode".into(), serde_yaml::from_str::<Value>("reject_new").unwrap()),
+                ("mempool_min_tip_bump".into(), serde_yaml::from_str::<Value>("0.25").unwrap()),
+                ("mempool_max_transactions".into(), serde_yaml::from_str::<Value>("123").unwrap()),
+                ("mempool_max_declare_transactions".into(), serde_yaml::from_str::<Value>("7").unwrap()),
+                ("mempool_ttl".into(), serde_yaml::from_str::<Value>("10s").unwrap()),
+            ],
+        };
+
+        let chain_config = params.override_chain_config(ChainConfig::madara_test()).unwrap();
+
+        assert!(matches!(chain_config.mempool_mode, MempoolMode::Tip));
+        assert!(matches!(chain_config.mempool_full_mode, MempoolFullMode::RejectNew));
+        assert_eq!(chain_config.mempool_min_tip_bump, 0.25);
+        assert_eq!(chain_config.mempool_max_transactions, 123);
+        assert_eq!(chain_config.mempool_max_declare_transactions, Some(7));
+        assert_eq!(chain_config.mempool_ttl, Some(Duration::from_secs(10)));
     }
 }

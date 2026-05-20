@@ -73,6 +73,7 @@ The new format makes it explicit which pricing strategy is being used, preventin
 - `no_empty_blocks` (default: false): Skip empty block production
 - `bouncer_config` (default: default): Block size limits configuration
 - `mempool_mode` (default: Timestamp): Mempool ordering mode
+- `mempool_full_mode` (default: evict_less_desirable): Full-mempool behavior
 - `mempool_min_tip_bump` (default: 0.1): Minimum tip increase ratio
 - `mempool_max_declare_transactions` (optional): Max declare transactions limit
 - `mempool_ttl` (optional): Transaction time-to-live in mempool

@@ -7,6 +7,7 @@ use crate::inner::{
     timestamp_queue::TimestampQueue,
     tx::{EvictionScore, MempoolTransaction, ScoreFunction},
 };
+use mp_chain_config::MempoolFullMode;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
@@ -46,6 +47,7 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
+    pub full_mode: MempoolFullMode,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Option<Duration>,
@@ -212,11 +214,20 @@ impl InnerMempool {
                 if !err.can_trigger_eviction_policy() {
                     return Err(err.into());
                 }
-                // Try to make space by evicting less desirable transactions.
-                let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
-                tracing::debug!("Try make room: {new_tx_eviction_score:?}");
-                if !self.try_make_room_for(&new_tx_eviction_score, removed_txs) {
-                    return Err(err.into()); // Failed to make room
+                let made_room = match self.config.full_mode {
+                    MempoolFullMode::EvictLessDesirable => {
+                        let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
+                        tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
+                        self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
+                    }
+                    MempoolFullMode::EvictOldest => {
+                        tracing::debug!("Try make room by evicting oldest transaction");
+                        self.try_make_room_by_evicting_oldest(removed_txs)
+                    }
+                    MempoolFullMode::RejectNew => false,
+                };
+                if !made_room {
+                    return Err(err.into());
                 }
                 // We made room!
 
@@ -238,7 +249,7 @@ impl InnerMempool {
 
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
-    fn try_make_room_for(
+    fn try_make_room_for_less_desirable_tx(
         &mut self,
         new_tx: &EvictionScore,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
@@ -252,6 +263,16 @@ impl InnerMempool {
         self.apply_update(account_update, removed_txs);
 
         true // we made room! :)
+    }
+
+    fn try_make_room_by_evicting_oldest(&mut self, removed_txs: &mut impl Extend<ValidatedTransaction>) -> bool {
+        let Some(tx_key) = self.timestamp_queue.oldest() else {
+            return false;
+        };
+
+        let account_update = self.accounts.remove_tx(tx_key);
+        self.apply_update(account_update, removed_txs);
+        true
     }
 
     /// Update an account nonce. This gets rid of all obselete transactions, and needs to be called everytime

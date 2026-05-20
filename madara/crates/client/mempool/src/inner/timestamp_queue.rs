@@ -39,4 +39,8 @@ impl TimestampQueue {
         // Oldest is first (min `arrived_at`)
         self.0.first().filter(|tx| tx.0 < ts).map(|e| &e.1)
     }
+
+    pub fn oldest(&self) -> Option<&TxKey> {
+        self.0.first().map(|entry| &entry.1)
+    }
 }

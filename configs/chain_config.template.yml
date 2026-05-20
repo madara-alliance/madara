@@ -40,3 +40,4 @@ bouncer_config:
 sequencer_address: ""
 eth_core_contract_address: ""
 eth_gps_statement_verifier: ""
+mempool_full_mode: ""
