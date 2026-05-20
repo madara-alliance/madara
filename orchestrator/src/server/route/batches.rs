@@ -47,16 +47,7 @@ async fn handle_query_snos_batches(
                 .get_snos_batches_by_status(status, limit, None, descending)
                 .await
                 .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
-            BatchStatusFilter::Closed => {
-                let mut batches = config
-                    .database()
-                    .get_snos_batches(None, descending)
-                    .await
-                    .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?;
-                batches.retain(|batch| batch.status.is_closed());
-                apply_limit(&mut batches, limit);
-                batches
-            }
+            BatchStatusFilter::Closed => get_closed_snos_batches(config.as_ref(), limit, descending).await?,
         }
     } else {
         config
@@ -101,16 +92,7 @@ async fn handle_query_aggregator_batches(
                 .get_aggregator_batches_by_status(status, limit, None, descending)
                 .await
                 .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
-            BatchStatusFilter::Closed => {
-                let mut batches = config
-                    .database()
-                    .get_aggregator_batches(None, descending)
-                    .await
-                    .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?;
-                batches.retain(|batch| batch.status.is_closed());
-                apply_limit(&mut batches, limit);
-                batches
-            }
+            BatchStatusFilter::Closed => get_closed_aggregator_batches(config.as_ref(), limit, descending).await?,
         }
     } else {
         config
@@ -138,6 +120,65 @@ fn apply_limit<T>(items: &mut Vec<T>, limit: Option<i64>) {
     if let Some(limit) = limit {
         items.truncate(limit as usize);
     }
+}
+
+async fn get_closed_snos_batches(
+    config: &Config,
+    limit: Option<i64>,
+    descending: bool,
+) -> Result<Vec<SnosBatch>, BlockRouteError> {
+    let mut batches = Vec::new();
+
+    for status in [SnosBatchStatus::SnosJobCreated, SnosBatchStatus::Completed] {
+        batches.extend(
+            config
+                .database()
+                .get_snos_batches_by_status(status, limit, None, descending)
+                .await
+                .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
+        );
+    }
+
+    batches.sort_by_key(|batch| batch.index);
+    if descending {
+        batches.reverse();
+    }
+    apply_limit(&mut batches, limit);
+    Ok(batches)
+}
+
+async fn get_closed_aggregator_batches(
+    config: &Config,
+    limit: Option<i64>,
+    descending: bool,
+) -> Result<Vec<AggregatorBatch>, BlockRouteError> {
+    let mut batches = Vec::new();
+
+    for status in [
+        AggregatorBatchStatus::Closed,
+        AggregatorBatchStatus::PendingAggregatorRun,
+        AggregatorBatchStatus::PendingAggregatorVerification,
+        AggregatorBatchStatus::ReadyForStateUpdate,
+        AggregatorBatchStatus::Completed,
+        AggregatorBatchStatus::AggregationFailed,
+        AggregatorBatchStatus::VerificationFailed,
+        AggregatorBatchStatus::StateUpdateFailed,
+    ] {
+        batches.extend(
+            config
+                .database()
+                .get_aggregator_batches_by_status(status, limit, None, descending)
+                .await
+                .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?,
+        );
+    }
+
+    batches.sort_by_key(|batch| batch.index);
+    if descending {
+        batches.reverse();
+    }
+    apply_limit(&mut batches, limit);
+    Ok(batches)
 }
 
 fn parse_snos_status(status: Option<&str>) -> Result<Option<BatchStatusFilter<SnosBatchStatus>>, BlockRouteError> {

@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::core::config::Config;
 use crate::server::types::{
     ApiResponse, BlockAggregatorBatchResponse, BlockSettlementStatusResponse, BlockSnosBatchResponse,
+    BlockStatusResponse,
 };
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{build_batch, build_job_item, build_snos_batch};
@@ -275,6 +276,41 @@ async fn test_get_block_aggregator_batch_mapping(#[future] setup_blocks_server: 
     assert_eq!(data.batch.start_block, aggregator_batch.start_block);
     assert_eq!(data.batch.end_block, aggregator_batch.end_block);
     assert_eq!(data.batch.status, aggregator_batch.status);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_batch_mapping_legacy_route(#[future] setup_blocks_server: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 115;
+
+    let mut aggregator_batch = build_batch(11, 100, 119);
+    aggregator_batch.status = AggregatorBatchStatus::ReadyForStateUpdate;
+
+    let mut snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+    snos_batch.end_block = 119;
+    snos_batch.num_blocks = 20;
+    snos_batch.status = SnosBatchStatus::Completed;
+
+    config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    config.database().create_snos_batch(snos_batch).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/batch-for-block/{}", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(response_body.data.expect("missing legacy batch mapping payload").batch_number, aggregator_batch.index);
 }
 
 #[rstest]
