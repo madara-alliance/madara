@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mp_convert::hex_serde::{U128AsHex, U64AsHex};
+use mp_convert::hex_serde::{U128AsHex, U128AsHexOrNumber, U64AsHex};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_api::{block::FeeType, transaction::TransactionVersion};
@@ -390,7 +390,7 @@ impl InvokeTransactionV3 {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransactionWithFee {
     pub tx: L1HandlerTransaction,
-    #[serde_as(as = "U128AsHex")]
+    #[serde_as(as = "U128AsHexOrNumber")]
     pub paid_fee_on_l1: u128,
 }
 
@@ -1105,6 +1105,24 @@ mod tests {
         let roundtrip: L1HandlerTransactionWithFee =
             serde_json::from_value(value).expect("deserialization should succeed");
         assert_eq!(roundtrip, tx);
+    }
+
+    #[test]
+    fn test_l1_handler_transaction_with_fee_accepts_numeric_fee_in_json() {
+        let value = json!({
+            "tx": {
+                "version": "0x0",
+                "nonce": 7,
+                "contract_address": "0x1234",
+                "entry_point_selector": "0x5678",
+                "calldata": ["0x9abc"]
+            },
+            "paid_fee_on_l1": 30000
+        });
+
+        let parsed: L1HandlerTransactionWithFee =
+            serde_json::from_value(value).expect("numeric deserialization should succeed");
+        assert_eq!(parsed.paid_fee_on_l1, 30_000);
     }
 
     pub(crate) fn dummy_tx_invoke_v0() -> InvokeTransactionV0 {
