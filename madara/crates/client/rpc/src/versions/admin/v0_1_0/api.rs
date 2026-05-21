@@ -30,6 +30,41 @@ pub enum ServiceRequest {
     Restart,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReplayBlockRequest {
+    pub custom_header: CustomHeader,
+    pub transactions: Vec<ReplayBlockTransaction>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ReplayBlockResult {
+    pub block_number: u64,
+    pub block_hash: Felt,
+    pub transaction_hashes: Vec<Felt>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ReplayBlockTransaction {
+    Invoke { transaction_hash: Felt, invoke_transaction: BroadcastedInvokeTxn },
+    DeclareV0 { transaction_hash: Felt, declare_transaction: BroadcastedDeclareTxnV0 },
+    Declare { transaction_hash: Felt, declare_transaction: BroadcastedDeclareTxn },
+    DeployAccount { transaction_hash: Felt, deploy_account_transaction: BroadcastedDeployAccountTxn },
+    L1Handler { transaction_hash: Felt, l1_handler_message: L1HandlerTransactionWithFee },
+}
+
+impl ReplayBlockTransaction {
+    pub fn expected_tx_hash(&self) -> Felt {
+        match self {
+            Self::Invoke { transaction_hash, .. }
+            | Self::DeclareV0 { transaction_hash, .. }
+            | Self::Declare { transaction_hash, .. }
+            | Self::DeployAccount { transaction_hash, .. }
+            | Self::L1Handler { transaction_hash, .. } => *transaction_hash,
+        }
+    }
+}
+
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
@@ -112,6 +147,14 @@ pub trait MadaraWriteRpcApi {
     /// Returns replay boundary status for a given block, if configured and still retained.
     #[method(name = "getReplayBoundaryStatus")]
     async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>>;
+
+    /// Replays a full Starknet block inside Madara and only returns after the block is confirmed.
+    ///
+    /// The replay request stages the custom header, submits the ordered transactions, waits until all
+    /// expected transaction hashes are present in the current preconfirmed block, force-closes the block,
+    /// and then waits until the confirmed block is written to the database.
+    #[method(name = "replayBlock")]
+    async fn replay_block(&self, replay_block_request: ReplayBlockRequest) -> RpcResult<ReplayBlockResult>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
