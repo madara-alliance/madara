@@ -670,8 +670,15 @@ impl BlockProductionTask {
                 self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
             let block_number = preconfirmed_view.block_number();
             let n_txs = preconfirmed_view.num_executed_transactions();
+            let tx_hashes: Vec<_> = preconfirmed_view
+                .get_block_info()
+                .tx_hashes
+                .into_iter()
+                .map(|tx_hash| format!("{tx_hash:#x}"))
+                .collect();
 
             tracing::warn!(
+                discarded_transaction_hashes = ?tx_hashes,
                 "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled; these transactions are permanently lost and will not be re-queued",
                 block_number,
                 n_txs
