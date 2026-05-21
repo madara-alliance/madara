@@ -15,6 +15,31 @@ use async_trait::async_trait;
 pub use error::DatabaseError;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum BatchIndexSort {
+    #[default]
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct SnosBatchDbQuery {
+    pub indexes: Option<Vec<u64>>,
+    pub statuses: Option<Vec<SnosBatchStatus>>,
+    pub limit: Option<i64>,
+    pub orchestrator_version: Option<String>,
+    pub sort: BatchIndexSort,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct AggregatorBatchDbQuery {
+    pub indexes: Option<Vec<u64>>,
+    pub statuses: Option<Vec<AggregatorBatchStatus>>,
+    pub limit: Option<i64>,
+    pub orchestrator_version: Option<String>,
+    pub sort: BatchIndexSort,
+}
+
 /// Trait defining database operations for the orchestrator
 ///
 /// This trait provides a comprehensive interface for all database operations
@@ -196,18 +221,8 @@ pub trait DatabaseClient: Send + Sync {
     /// Returns the SNOS batch with the highest `snos_batch_id`, or `None` if no batches exist.
     async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>;
 
-    /// Get SNOS batches by their sequential IDs
-    ///
-    /// # Arguments
-    /// * `indexes` - Vector of SNOS batch IDs to retrieve
-    async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError>;
-
-    /// Get SNOS batches ordered by index.
-    ///
-    /// # Arguments
-    /// * `limit` - Optional limit on number of results
-    /// * `descending` - Whether to sort by descending index
-    async fn get_snos_batches(&self, limit: Option<i64>, descending: bool) -> Result<Vec<SnosBatch>, DatabaseError>;
+    /// Get SNOS batches ordered by index, optionally filtered by index, status, and orchestrator version.
+    async fn get_snos_batches(&self, query: SnosBatchDbQuery) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update SNOS batch status by its sequential ID
     ///
@@ -219,20 +234,6 @@ pub trait DatabaseClient: Send + Sync {
         index: u64,
         status: SnosBatchStatus,
     ) -> Result<SnosBatch, DatabaseError>;
-
-    /// Get SNOS batches by status
-    ///
-    /// # Arguments
-    /// * `status` - The status to filter by
-    /// * `limit` - Optional limit on number of results
-    /// * `orchestrator_version` - Optional orchestrator version filter
-    async fn get_snos_batches_by_status(
-        &self,
-        status: SnosBatchStatus,
-        limit: Option<i64>,
-        orchestrator_version: Option<String>,
-        descending: bool,
-    ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Get SNOS batches that don't have corresponding SNOS jobs
     ///
@@ -302,22 +303,10 @@ pub trait DatabaseClient: Send + Sync {
         orchestrator_version: Option<String>,
     ) -> Result<Option<AggregatorBatch>, DatabaseError>;
 
-    /// Get aggregator batches by their indexes
-    ///
-    /// # Arguments
-    /// * `indexes` - Vector of aggregator batch indexes to retrieve
-    async fn get_aggregator_batches_by_indexes(&self, indexes: Vec<u64>)
-        -> Result<Vec<AggregatorBatch>, DatabaseError>;
-
-    /// Get aggregator batches ordered by index.
-    ///
-    /// # Arguments
-    /// * `limit` - Optional limit on number of results
-    /// * `descending` - Whether to sort by descending index
+    /// Get aggregator batches ordered by index, optionally filtered by index, status, and orchestrator version.
     async fn get_aggregator_batches(
         &self,
-        limit: Option<i64>,
-        descending: bool,
+        query: AggregatorBatchDbQuery,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
     /// Update aggregator batch status by its index
@@ -380,20 +369,6 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         aggregator_index: u64,
     ) -> Result<Option<SnosBatch>, DatabaseError>;
-
-    /// Get aggregator batches by status
-    ///
-    /// # Arguments
-    /// * `status` - The status to filter by
-    /// * `limit` - Optional limit on number of results
-    /// * `orchestrator_version` - Optional orchestrator version filter
-    async fn get_aggregator_batches_by_status(
-        &self,
-        status: AggregatorBatchStatus,
-        limit: Option<i64>,
-        orchestrator_version: Option<String>,
-        descending: bool,
-    ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
     // ================================================================================
     // Batch Relationship Management Methods

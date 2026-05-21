@@ -172,18 +172,6 @@ pub struct BlockStatusResponse {
     pub batch_number: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BlockSnosBatchResponse {
-    pub block_number: u64,
-    pub batch: SettlementSnosBatchResponse,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BlockAggregatorBatchResponse {
-    pub block_number: u64,
-    pub batch: SettlementAggregatorBatchResponse,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SettlementJobTimestampsResponse {
     #[serde(default, with = "chrono::serde::ts_seconds_option")]

@@ -19,7 +19,7 @@ use uuid::Uuid;
 /// Error states can occur at any point and include: BatchCreationFailed, AggregationFailed,
 /// VerificationFailed, StateUpdateFailed
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, Display, EnumString, Eq, Default)]
-#[strum(serialize_all = "lowercase")]
+#[strum(ascii_case_insensitive)]
 pub enum AggregatorBatchStatus {
     /// Batch is open and new blocks can be added to it
     #[default]
@@ -262,7 +262,7 @@ impl AggregatorBatch {
 /// Represents the lifecycle states of a SNOS batch. SNOS batches have a simpler
 /// lifecycle compared to aggregator batches.
 #[derive(Serialize, Deserialize, Eq, PartialEq, Display, EnumString, Debug, Clone, Default)]
-#[strum(serialize_all = "lowercase")]
+#[strum(ascii_case_insensitive)]
 pub enum SnosBatchStatus {
     /// Batch is open and new blocks can be added to it
     #[default]
