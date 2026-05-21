@@ -181,7 +181,7 @@ pub struct RocksDBStorage {
     inner: Arc<RocksDBStorageInner>,
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
-    metrics: Arc<DbMetrics>,
+    metrics: DbMetrics,
 }
 
 impl RocksDBStorage {
@@ -208,7 +208,7 @@ impl RocksDBStorage {
         Ok(Self {
             inner,
             snapshots: snapshot.into(),
-            metrics: Arc::new(DbMetrics::register().context("Registering database metrics")?),
+            metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
