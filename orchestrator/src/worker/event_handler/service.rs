@@ -17,7 +17,7 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
-use crate::types::queue::QueueNameForJobType;
+use crate::types::queue::{JobState, QueueNameForJobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -211,6 +211,7 @@ impl JobHandlerService {
 
                     // Record orphaned job metric
                     MetricsRecorder::record_orphaned_job(&job);
+                    let healing_workload = MetricsRecorder::start_healing_workload(&job.job_type);
 
                     // Reset process_started_at to allow fresh processing
                     job.metadata.common.process_started_at = None;
@@ -229,6 +230,9 @@ impl JobHandlerService {
                         .inspect_err(|e| {
                             error!(job_id = ?id, error = ?e, "Failed to heal stale job");
                         })?;
+
+                    MetricsRecorder::record_healed_job(&job.job_type);
+                    healing_workload.finish_success();
 
                     info!(
                         job_id = ?id,
@@ -310,6 +314,7 @@ impl JobHandlerService {
         // Record queue wait time only after readiness succeeds and the job is locked for processing.
         let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
         MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
+        let workload = MetricsRecorder::start_job_workload(&job.job_type, JobState::Processing);
 
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
@@ -409,6 +414,7 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
+        workload.finish_success();
 
         Ok(())
     }
@@ -480,6 +486,7 @@ impl JobHandlerService {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
                 e
             })?;
+        let workload = MetricsRecorder::start_job_workload(&job.job_type, JobState::Verification);
 
         let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
         Span::current().record("verification_status", format!("{:?}", &verification_status));
@@ -591,7 +598,7 @@ impl JobHandlerService {
                         JobStatus::Failed,
                         &job.job_type,
                     );
-                    return JobService::move_job_to_failed(
+                    let move_result = JobService::move_job_to_failed(
                         &job,
                         config.clone(),
                         format!(
@@ -600,6 +607,17 @@ impl JobHandlerService {
                         ),
                     )
                     .await;
+
+                    match move_result {
+                        Ok(()) => {
+                            workload.finish_success();
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            workload.finish_error();
+                            return Err(e);
+                        }
+                    }
                 }
             }
             JobVerificationStatus::Pending => {
@@ -678,6 +696,7 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
+        workload.finish_success();
         Ok(())
     }
 
