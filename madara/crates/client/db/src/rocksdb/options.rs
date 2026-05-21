@@ -184,11 +184,13 @@ impl std::fmt::Display for DbWriteMode {
 
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
-    /// Enable statistics. Statistics will be put in the `LOG` file in the db folder. This can have an effect on performance.
+    /// Enable statistics for compaction/stall monitoring. Uses ExceptDetailedTimers by default
+    /// which has minimal overhead but enables all counter-based metrics (write amplification,
+    /// compaction throughput, stall time). Disable only if profiling shows measurable impact.
     pub enable_statistics: bool,
     /// Dump statistics every `statistics_period_sec`.
     pub statistics_period_sec: u32,
-    /// Statistics level. This can have an effect on performance.
+    /// Statistics level. ExceptDetailedTimers is recommended for production.
     pub statistics_level: StatsLevel,
     /// Memory budget for blocks-related columns
     pub memtable_blocks_budget_bytes: usize,
@@ -242,9 +244,9 @@ pub struct RocksDBConfig {
 impl Default for RocksDBConfig {
     fn default() -> Self {
         Self {
-            enable_statistics: false,
+            enable_statistics: true,
             statistics_period_sec: 60,
-            statistics_level: StatsLevel::All,
+            statistics_level: StatsLevel::ExceptDetailedTimers,
             // TODO: these might not be the best defaults at all
             memtable_blocks_budget_bytes: 1 * GiB,
             memtable_contracts_budget_bytes: 128 * MiB,
@@ -440,8 +442,8 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // ═══════════════════════════════════════════════════════════════════════════
     // STATISTICS (Optional, for debugging)
     // ═══════════════════════════════════════════════════════════════════════════
-    // Statistics add overhead but are invaluable for diagnosing performance issues.
-    // Enable temporarily with --db-enable-statistics to debug stalls.
+    // Statistics are enabled by default with ExceptDetailedTimers level for production
+    // monitoring of compaction throughput, write amplification, and stall detection.
     if config.enable_statistics {
         options.enable_statistics();
         options.set_statistics_level(config.statistics_level);

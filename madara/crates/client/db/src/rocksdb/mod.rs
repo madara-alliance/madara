@@ -26,6 +26,7 @@ use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use rocksdb::Options as RocksDBOptions;
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
 use std::{fmt, path::Path, sync::Arc};
 
@@ -82,6 +83,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
+    global_opts: RocksDBOptions,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }
@@ -180,7 +182,7 @@ pub struct RocksDBStorage {
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
     contract_storage_hot_cache: Arc<trie::LazySharedContractStorageTrie>,
-    metrics: DbMetrics,
+    metrics: Arc<DbMetrics>,
 }
 
 impl RocksDBStorage {
@@ -195,7 +197,7 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -208,7 +210,7 @@ impl RocksDBStorage {
             inner,
             snapshots: snapshot.into(),
             contract_storage_hot_cache: Default::default(),
-            metrics: DbMetrics::register().context("Registering database metrics")?,
+            metrics: Arc::new(DbMetrics::register().context("Registering database metrics")?),
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
