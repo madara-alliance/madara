@@ -248,6 +248,13 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Clear the saved runtime execution configuration from the database.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn clear_runtime_exec_config(&self) -> Result<()> {
+        self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_RUNTIME_EXEC_CONFIG_KEY, &self.writeopts)?;
+        Ok(())
+    }
+
     /// Get the runtime execution configuration from the database.
     /// Note: This requires a backend_chain_config to reconstruct the full ChainConfig.
     #[tracing::instrument(skip(self))]

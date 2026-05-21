@@ -268,6 +268,11 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Starting madara backend")?;
 
+    if !run_cmd.is_sequencer() {
+        backend.clear_runtime_exec_config().context("Clearing saved runtime execution config for full-node startup")?;
+        tracing::info!("🧹 Ensured full-node startup is not carrying saved sequencer runtime execution config");
+    }
+
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
     tracing::info!("💼 Starting chain with block: {}", chain_tip);
 
