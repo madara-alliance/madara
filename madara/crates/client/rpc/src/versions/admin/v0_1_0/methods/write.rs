@@ -1,4 +1,9 @@
-use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use crate::{
+    versions::admin::v0_1_0::{
+        MadaraWriteRpcApiV0_1_0Server, ReplayBlockRequest, ReplayBlockResult, ReplayBlockTransaction,
+    },
+    Starknet, StarknetRpcApiError,
+};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraStorageRead;
@@ -13,12 +18,14 @@ use mp_rpc::v0_9_0::{
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
 use std::time::Duration;
-use tokio::time::Instant;
+use tokio::time::{timeout, Instant};
 
 const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
 const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
+const REPLAY_BLOCK_PRECONFIRMED_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const REPLAY_BLOCK_CONFIRM_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
     tokio::spawn(async move {
@@ -37,6 +44,82 @@ fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
         MadaraServiceId::Gateway,
         MadaraServiceId::Mempool,
     ]
+}
+
+async fn wait_for_preconfirmed_alignment<D: MadaraStorageRead>(
+    backend: &std::sync::Arc<mc_db::MadaraBackend<D>>,
+    block_n: u64,
+    expected_tx_hashes: &[Felt],
+) -> anyhow::Result<()> {
+    if expected_tx_hashes.is_empty() {
+        return Ok(());
+    }
+
+    timeout(REPLAY_BLOCK_PRECONFIRMED_TIMEOUT, async {
+        let mut chain_tip = backend.watch_chain_tip();
+
+        loop {
+            if let Some(mut view) = backend.block_view_on_preconfirmed() {
+                if view.block_number() != block_n {
+                    chain_tip.recv().await;
+                    continue;
+                }
+
+                let actual_tx_hashes = view.get_block_info().tx_hashes;
+
+                if actual_tx_hashes.len() > expected_tx_hashes.len() {
+                    anyhow::bail!(
+                        "Preconfirmed block #{} already has {} transactions, expected at most {}",
+                        block_n,
+                        actual_tx_hashes.len(),
+                        expected_tx_hashes.len()
+                    );
+                }
+
+                for (idx, (actual, expected)) in actual_tx_hashes.iter().zip(expected_tx_hashes.iter()).enumerate() {
+                    if actual != expected {
+                        anyhow::bail!(
+                            "Preconfirmed block #{} diverged at tx index {}: expected {:#x}, found {:#x}",
+                            block_n,
+                            idx,
+                            expected,
+                            actual
+                        );
+                    }
+                }
+
+                if actual_tx_hashes.len() == expected_tx_hashes.len() {
+                    return Ok(());
+                }
+
+                view.wait_until_outdated().await;
+                continue;
+            }
+
+            chain_tip.recv().await;
+        }
+    })
+    .await
+    .context("Timed out waiting for replayed transactions to reach the preconfirmed block")?
+}
+
+async fn wait_for_confirmed_block<D: MadaraStorageRead>(
+    backend: &std::sync::Arc<mc_db::MadaraBackend<D>>,
+    block_n: u64,
+) -> anyhow::Result<Felt> {
+    timeout(REPLAY_BLOCK_CONFIRM_TIMEOUT, async {
+        let mut chain_tip = backend.watch_chain_tip();
+
+        loop {
+            if let Some(view) = backend.block_view_on_confirmed(block_n) {
+                return view.get_block_info().map(|info| info.block_hash);
+            }
+
+            chain_tip.recv().await;
+        }
+    })
+    .await
+    .context(format!("Timed out waiting for block #{} to be confirmed", block_n))?
 }
 
 #[async_trait]
@@ -275,6 +358,129 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         self.backend.set_custom_header(custom_block_headers).map_err(StarknetRpcApiError::from)?;
 
         Ok(())
+    }
+
+    async fn replay_block(&self, replay_block_request: ReplayBlockRequest) -> RpcResult<ReplayBlockResult> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        let block_prod_handle = self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+
+        let block_n = replay_block_request.custom_header.block_n;
+        let expected_parent = block_n.checked_sub(1);
+        let latest_confirmed = self.backend.latest_confirmed_block_n();
+
+        if latest_confirmed >= Some(block_n) {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: format!(
+                    "Cannot replay block {} because latest confirmed block is already {:?}",
+                    block_n, latest_confirmed
+                )
+                .into(),
+            }
+            .into());
+        }
+
+        if latest_confirmed != expected_parent && !(block_n == 0 && latest_confirmed.is_none()) {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: format!(
+                    "Cannot replay block {} on top of latest confirmed block {:?}",
+                    block_n, latest_confirmed
+                )
+                .into(),
+            }
+            .into());
+        }
+
+        if let Some(preconfirmed) = self.backend.block_view_on_preconfirmed() {
+            if preconfirmed.block_number() == block_n && preconfirmed.num_executed_transactions() > 0 {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: format!(
+                        "Cannot replay block {} because a preconfirmed block with {} executed transactions already exists",
+                        block_n,
+                        preconfirmed.num_executed_transactions()
+                    )
+                    .into(),
+                }
+                .into());
+            }
+        }
+
+        let expected_tx_hashes =
+            replay_block_request.transactions.iter().map(ReplayBlockTransaction::expected_tx_hash).collect::<Vec<_>>();
+
+        self.backend.set_custom_header(replay_block_request.custom_header).map_err(StarknetRpcApiError::from)?;
+
+        for tx in replay_block_request.transactions {
+            let expected_tx_hash = tx.expected_tx_hash();
+
+            let actual_tx_hash = match tx {
+                ReplayBlockTransaction::Invoke { invoke_transaction, .. } => {
+                    block_prod_handle
+                        .submit_invoke_transaction(invoke_transaction)
+                        .await
+                        .map_err(StarknetRpcApiError::from)?
+                        .transaction_hash
+                }
+                ReplayBlockTransaction::DeclareV0 { declare_transaction, .. } => {
+                    block_prod_handle
+                        .submit_declare_v0_transaction(declare_transaction)
+                        .await
+                        .map_err(StarknetRpcApiError::from)?
+                        .transaction_hash
+                }
+                ReplayBlockTransaction::Declare { declare_transaction, .. } => {
+                    block_prod_handle
+                        .submit_declare_transaction(declare_transaction)
+                        .await
+                        .map_err(StarknetRpcApiError::from)?
+                        .transaction_hash
+                }
+                ReplayBlockTransaction::DeployAccount { deploy_account_transaction, .. } => {
+                    block_prod_handle
+                        .submit_deploy_account_transaction(deploy_account_transaction)
+                        .await
+                        .map_err(StarknetRpcApiError::from)?
+                        .transaction_hash
+                }
+                ReplayBlockTransaction::L1Handler { l1_handler_message, .. } => {
+                    block_prod_handle
+                        .submit_l1_handler_transaction(l1_handler_message)
+                        .await
+                        .map_err(StarknetRpcApiError::from)?
+                        .transaction_hash
+                }
+            };
+
+            if actual_tx_hash != expected_tx_hash {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: format!(
+                        "Replay transaction hash mismatch for block #{}: expected {:#x}, got {:#x}",
+                        block_n, expected_tx_hash, actual_tx_hash
+                    )
+                    .into(),
+                }
+                .into());
+            }
+        }
+
+        wait_for_preconfirmed_alignment(&self.backend, block_n, &expected_tx_hashes)
+            .await
+            .map_err(StarknetRpcApiError::from)?;
+
+        block_prod_handle
+            .close_block()
+            .await
+            .context("Force-closing replayed block")
+            .map_err(StarknetRpcApiError::from)?;
+
+        let block_hash = wait_for_confirmed_block(&self.backend, block_n).await.map_err(StarknetRpcApiError::from)?;
+
+        Ok(ReplayBlockResult { block_number: block_n, block_hash, transaction_hashes: expected_tx_hashes })
     }
 }
 
