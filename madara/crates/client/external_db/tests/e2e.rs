@@ -138,9 +138,12 @@ async fn start_mongo_container() -> ContainerAsync<GenericImage> {
         match image.start().await {
             Ok(node) => return node,
             Err(err) if attempt < MAX_ATTEMPTS => {
-                eprintln!(
-                    "MongoDB testcontainer start attempt {attempt}/{MAX_ATTEMPTS} failed: {err:#}. Retrying in {:?}...",
-                    RETRY_DELAY
+                tracing::warn!(
+                    attempt,
+                    max_attempts = MAX_ATTEMPTS,
+                    retry_delay = ?RETRY_DELAY,
+                    error = %err,
+                    "mongo_testcontainer_start_failed_retrying"
                 );
                 tokio::time::sleep(RETRY_DELAY).await;
             }
