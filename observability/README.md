@@ -222,8 +222,8 @@ observability/
 | `block_produced_no`          | Gauge   | Current block number  |
 | `block_produced_count`       | Counter | Total blocks produced |
 | `transaction_counter`        | Counter | Total transactions    |
-| `block_transaction_count`    | Gauge   | Transactions in the last closed block |
-| `block_empty_streak`         | Gauge   | Consecutive closed blocks with 0 transactions since the last non-empty block or node restart |
+| `block_transaction_count`    | Gauge   | Tx count in the last closed block |
+| `block_empty_streak`         | Gauge   | Empty closed-block streak since last non-empty block or restart |
 | `accepted_transaction_count` | Counter | Mempool transactions  |
 
 ### Sync Service
