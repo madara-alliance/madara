@@ -304,6 +304,14 @@ pub(crate) enum TaskState {
     Executing(CurrentBlockState),
 }
 
+fn next_empty_block_streak(current_streak: u64, tx_count: usize) -> u64 {
+    if tx_count == 0 {
+        current_streak.saturating_add(1)
+    } else {
+        0
+    }
+}
+
 /// The block production task consumes transactions from the mempool in batches.
 ///
 /// This is to allow optimistic concurrency. However, the block may get full during batch execution,
@@ -315,6 +323,7 @@ pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
+    empty_block_streak: u64,
     metrics: Arc<BlockProductionMetrics>,
     state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
     handle: BlockProductionHandle,
@@ -349,6 +358,7 @@ impl BlockProductionTask {
             backend: backend.clone(),
             mempool,
             current_state: None,
+            empty_block_streak: 0,
             metrics,
             handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
             state_notifications: None,
@@ -938,6 +948,7 @@ impl BlockProductionTask {
 
         let time_to_close = start_time.elapsed();
         let block_production_time = state.block_start_time.elapsed();
+        self.empty_block_streak = next_empty_block_streak(self.empty_block_streak, n_txs);
 
         // Emit structured log event for Loki querying (close_block_complete)
         // All timing values converted to milliseconds for human-readability
@@ -947,6 +958,7 @@ impl BlockProductionTask {
             target: "close_block",
             block_number = state.block_number,
             tx_count = n_txs,
+            empty_block_streak = self.empty_block_streak,
             event_count = event_count,
             // High-level timing
             close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
@@ -998,6 +1010,8 @@ impl BlockProductionTask {
         self.metrics.block_counter.add(1, &[]);
         self.metrics.block_gauge.record(state.block_number, &[]);
         self.metrics.transaction_counter.add(n_txs as u64, &[]);
+        self.metrics.block_transaction_count.record(n_txs as u64, &[]);
+        self.metrics.block_empty_streak.record(self.empty_block_streak, &[]);
         self.metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
         self.metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &[]);
         self.metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
@@ -1524,6 +1538,15 @@ pub(crate) mod tests {
     // - State diffs are sorted before comparison to handle ordering differences
     // - The test verifies that `paid_fee_on_l1` is preserved for L1 handler transactions
     // - The test ensures that re-execution produces deterministic results
+    #[rstest::rstest]
+    #[case(0, 0, 1)]
+    #[case(1, 0, 2)]
+    #[case(u64::MAX, 0, u64::MAX)]
+    #[case(4, 3, 0)]
+    fn test_next_empty_block_streak(#[case] current_streak: u64, #[case] tx_count: usize, #[case] expected: u64) {
+        assert_eq!(super::next_empty_block_streak(current_streak, tx_count), expected);
+    }
+
     #[rstest::rstest]
     #[timeout(Duration::from_secs(100))]
     #[tokio::test]

@@ -32,6 +32,8 @@ pub struct BlockProductionMetrics {
     pub executor_finalize_last: Gauge<f64>,
 
     // Block data gauges
+    pub block_transaction_count: Gauge<u64>,
+    pub block_empty_streak: Gauge<u64>,
     pub block_event_count: Gauge<u64>,
     pub block_state_diff_length: Gauge<u64>,
     pub block_declared_classes_count: Gauge<u64>,
@@ -183,6 +185,18 @@ impl BlockProductionMetrics {
         );
 
         // Block data gauges
+        let block_transaction_count = register_gauge_metric_instrument(
+            &meter,
+            "block_transaction_count".to_string(),
+            "Number of executed transactions in the closed block".to_string(),
+            "tx".to_string(),
+        );
+        let block_empty_streak = register_gauge_metric_instrument(
+            &meter,
+            "block_empty_streak".to_string(),
+            "Current count of consecutive closed blocks with zero transactions".to_string(),
+            "block".to_string(),
+        );
         let block_event_count = register_gauge_metric_instrument(
             &meter,
             "block_event_count".to_string(),
@@ -279,6 +293,8 @@ impl BlockProductionMetrics {
             close_preconfirmed_last,
             executor_finalize_duration,
             executor_finalize_last,
+            block_transaction_count,
+            block_empty_streak,
             block_event_count,
             block_state_diff_length,
             block_declared_classes_count,
