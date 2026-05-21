@@ -888,27 +888,26 @@ mod tests {
 
         let class_hash = create_unique_test_class_hash();
 
-        // Create config with very short timeout to force compilation failure
+        // Simulate an already-running compilation so blocking mode exercises the
+        // timeout path without spawning a detached native compiler thread.
         let config = Arc::new(
             config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Blocking)
-                .with_compilation_timeout(Duration::from_millis(1)) // Very short timeout
+                .with_compilation_timeout(Duration::from_millis(1))
                 .build(),
         );
 
         // Verify caches don't have our unique class_hash
         assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache initially");
         assert!(
-            !compilation::is_compilation_in_progress(&class_hash),
-            "Class should not be in compilation_in_progress initially"
-        );
-        assert!(
             !compilation::has_failed_compilation(&class_hash),
             "Class should not be in failed_compilations initially"
         );
 
-        // Compilation timeout expected in blocking mode with very short timeout
+        compilation::insert_compilation_in_progress(class_hash);
+        assert!(compilation::is_compilation_in_progress(&class_hash), "Class should be in compilation_in_progress");
+
         let result = handle_sierra_class(
             &sierra_class,
             &class_hash.to_felt(),
@@ -916,42 +915,31 @@ mod tests {
             &sierra_class.info,
             config.clone(),
         );
+        compilation::remove_compilation_in_progress(&class_hash);
 
-        // In blocking mode, compilation failures/timeouts should return an error (not fall back to VM)
-        // This is the key difference from async mode - blocking mode waits and fails if compilation fails
         assert!(
             result.is_err(),
             "Blocking mode should return error on compilation timeout/failure, not fall back to VM"
         );
         let error = result.unwrap_err();
-        // Verify error message contains timeout or compilation failure indication
         let error_msg = format!("{:?}", error);
         assert!(
-            error_msg.contains("timeout") || error_msg.contains("Compilation") || error_msg.contains("failed"),
-            "Error message should indicate compilation timeout or failure: {}",
+            error_msg.contains("timeout") || error_msg.contains("Timeout"),
+            "Error message should indicate compilation timeout: {}",
             error_msg
         );
 
-        // Expected: compilation timeout/failure in blocking mode
-        // Verify class is not cached after failure
         assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache after compilation failure");
         assert!(
             !compilation::is_compilation_in_progress(&class_hash),
             "Class should not be in compilation_in_progress after failure"
         );
-        // In blocking mode, failures don't go to FAILED_COMPILATIONS (that's async mode only)
-
-        // Metrics assertions - compilation timeout/failure
         assert_counters!(
             CACHE_MEMORY_MISS: 1,
-            CACHE_DISK_MISS: 1,
-            COMPILATIONS_STARTED: 1,
-            VM_FALLBACKS: 0, // No VM fallback in blocking mode
+            COMPILATION_IN_PROGRESS_SKIP: 1,
+            COMPILATIONS_STARTED: 0,
+            VM_FALLBACKS: 0,
         );
-        use std::sync::atomic::Ordering;
-        let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
-            + test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed);
-        assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
     }
 
     /// Tests the memory cache timeout scenario.
@@ -1405,8 +1393,8 @@ mod tests {
             configured_timeout
         );
 
-        // Attempt compilation with very short timeout - should timeout
-        // In blocking mode, timeouts should return an error (not fall back to VM)
+        compilation::insert_compilation_in_progress(class_hash);
+        let start = Instant::now();
         let result = handle_sierra_class(
             &sierra_class,
             &class_hash.to_felt(),
@@ -1414,23 +1402,28 @@ mod tests {
             &sierra_class.info,
             config.clone(),
         );
+        let elapsed = start.elapsed();
+        compilation::remove_compilation_in_progress(&class_hash);
 
-        // In blocking mode, compilation timeouts should return an error (not fall back to VM)
-        // This is the key difference from async mode - blocking mode waits and fails if compilation times out
         assert!(result.is_err(), "Blocking mode should return error on compilation timeout, not fall back to VM");
         let error = result.unwrap_err();
-        // Verify error message contains timeout indication
         let error_msg = format!("{:?}", error);
         assert!(
             error_msg.contains("timeout") || error_msg.contains("Timeout"),
             "Error message should indicate compilation timeout: {}",
             error_msg
         );
+        assert!(
+            elapsed >= configured_timeout,
+            "Blocking mode should wait at least the configured timeout before failing"
+        );
+        assert!(elapsed < Duration::from_secs(1), "Blocking mode timeout should still fail promptly in tests");
 
-        // Verify timeout metrics were recorded (no VM fallback in blocking mode)
         assert_counters!(
-            COMPILATIONS_TIMEOUT: 1,
-            VM_FALLBACKS: 0, // No VM fallback in blocking mode
+            CACHE_MEMORY_MISS: 1,
+            COMPILATION_IN_PROGRESS_SKIP: 1,
+            COMPILATIONS_STARTED: 0,
+            VM_FALLBACKS: 0,
         );
     }
 
