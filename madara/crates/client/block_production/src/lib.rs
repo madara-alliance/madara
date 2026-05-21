@@ -323,6 +323,7 @@ pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
+    // This is process-local state used only for metrics emission, so it resets on node restart.
     empty_block_streak: u64,
     metrics: Arc<BlockProductionMetrics>,
     state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
