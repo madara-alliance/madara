@@ -169,49 +169,49 @@ impl DbMetrics {
         // Compaction & I/O throughput counters
         let bytes_written = register_counter_metric_instrument(
             &meter,
-            "db_bytes_written_total".to_string(),
+            "db_bytes_written".to_string(),
             "Cumulative bytes written by application (Put/Merge/Delete)".to_string(),
             "".to_string(),
         );
 
         let flush_write_bytes = register_counter_metric_instrument(
             &meter,
-            "db_flush_write_bytes_total".to_string(),
+            "db_flush_write_bytes".to_string(),
             "Cumulative bytes written by memtable flushes to L0".to_string(),
             "".to_string(),
         );
 
         let compact_read_bytes = register_counter_metric_instrument(
             &meter,
-            "db_compact_read_bytes_total".to_string(),
+            "db_compact_read_bytes".to_string(),
             "Cumulative bytes read during compaction".to_string(),
             "".to_string(),
         );
 
         let compact_write_bytes = register_counter_metric_instrument(
             &meter,
-            "db_compact_write_bytes_total".to_string(),
+            "db_compact_write_bytes".to_string(),
             "Cumulative bytes written during compaction".to_string(),
             "".to_string(),
         );
 
         let stall_micros = register_counter_metric_instrument(
             &meter,
-            "db_stall_micros_total".to_string(),
+            "db_stall_micros".to_string(),
             "Cumulative microseconds spent in write stalls".to_string(),
             "".to_string(),
         );
 
         let block_cache_hit = register_counter_metric_instrument(
             &meter,
-            "db_block_cache_hit_total".to_string(),
+            "db_block_cache_hit".to_string(),
             "Cumulative block cache hits".to_string(),
             "".to_string(),
         );
 
         let block_cache_miss = register_counter_metric_instrument(
             &meter,
-            "db_block_cache_miss_total".to_string(),
+            "db_block_cache_miss".to_string(),
             "Cumulative block cache misses (each miss = a disk read)".to_string(),
             "".to_string(),
         );
