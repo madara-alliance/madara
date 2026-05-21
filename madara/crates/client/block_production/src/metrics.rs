@@ -194,7 +194,7 @@ impl BlockProductionMetrics {
         let block_empty_streak = register_gauge_metric_instrument(
             &meter,
             "block_empty_streak".to_string(),
-            "Current count of consecutive closed blocks with zero transactions".to_string(),
+            "Current count of consecutive closed blocks with zero transactions; resets on node restart".to_string(),
             "block".to_string(),
         );
         let block_event_count = register_gauge_metric_instrument(
