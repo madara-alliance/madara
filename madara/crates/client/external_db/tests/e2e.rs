@@ -15,7 +15,7 @@ use starknet_signers::SigningKey;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
-use testcontainers::{ContainerAsync, GenericImage, core::IntoContainerPort, runners::AsyncRunner};
+use testcontainers::{core::IntoContainerPort, runners::AsyncRunner, ContainerAsync, GenericImage};
 use tokio::sync::OnceCell;
 
 const DEVNET_STRK_CONTRACT_ADDRESS: Felt =
@@ -91,7 +91,11 @@ async fn wait_for_tx_in_block<P: Provider + Sync>(provider: &P, tx_hash: Felt, t
     wait_for_cond(
         || async {
             let receipt = provider.get_transaction_receipt(tx_hash).await?;
-            if receipt.block.is_block() { Ok(()) } else { Err(anyhow::anyhow!("tx not in block yet")) }
+            if receipt.block.is_block() {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("tx not in block yet"))
+            }
         },
         Duration::from_millis(500),
         timeout_attempts,
@@ -323,7 +327,11 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     wait_for_cond(
         || async {
             let block = rpc.block_hash_and_number().await?;
-            if block.block_number >= 11 { Ok(()) } else { Err(anyhow::anyhow!("chain not at 11 blocks yet")) }
+            if block.block_number >= 11 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("chain not at 11 blocks yet"))
+            }
         },
         Duration::from_millis(500),
         60,
@@ -346,7 +354,11 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     wait_for_cond(
         || async {
             let count = collection.count_documents(mongodb::bson::doc! { "tx_hash": { "$in": &tx_ids } }).await?;
-            if count >= tx_ids.len() as u64 { Ok(()) } else { Err(anyhow::anyhow!("mongo not updated yet")) }
+            if count >= tx_ids.len() as u64 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("mongo not updated yet"))
+            }
         },
         Duration::from_millis(200),
         60,
@@ -422,7 +434,11 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     wait_for_cond(
         || async {
             let block = rpc.block_hash_and_number().await?;
-            if block.block_number >= target_block { Ok(()) } else { Err(anyhow::anyhow!("chain not caught up yet")) }
+            if block.block_number >= target_block {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("chain not caught up yet"))
+            }
         },
         Duration::from_millis(500),
         80,
