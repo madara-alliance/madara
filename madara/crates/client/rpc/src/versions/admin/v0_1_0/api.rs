@@ -27,7 +27,7 @@ pub enum ServiceRequest {
     Restart,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReplayBlockRequest {
     pub custom_header: CustomHeader,
     pub transactions: Vec<ReplayBlockTransaction>,
