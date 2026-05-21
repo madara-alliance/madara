@@ -218,6 +218,14 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
     run_cmd.args_preset.greet();
 
+    let external_db_requested = run_cmd.external_db_params.is_enabled();
+    if external_db_requested && !run_cmd.should_run_mempool() {
+        tracing::warn!(
+            "External DB was configured, but this node is running in full-node mode. \
+             External DB is only enabled on sequencer/devnet nodes, so it will be skipped."
+        );
+    }
+
     let sys_info = SysInfo::probe();
     sys_info.show();
 
@@ -356,11 +364,15 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.no_charge_fee,
     )?;
 
-    let service_external_db = run_cmd
-        .external_db_params
-        .to_config()
-        .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
-        .transpose()?;
+    let service_external_db = if run_cmd.should_run_external_db() {
+        run_cmd
+            .external_db_params
+            .to_config()
+            .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
+            .transpose()?
+    } else {
+        None
+    };
     let external_db_configured = service_external_db.is_some();
 
     // Add transaction provider
