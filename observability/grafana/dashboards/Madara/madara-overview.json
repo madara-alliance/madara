@@ -3237,7 +3237,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Flush Rate (ingest \u2192 L0)",
           "refId": "A"
         },
@@ -3246,7 +3246,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Compaction Write Rate",
           "refId": "B"
         },
@@ -3255,7 +3255,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_read_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_read_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Compaction Read Rate",
           "refId": "C"
         },
@@ -3264,7 +3264,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_bytes_written_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_bytes_written{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "App Write Rate",
           "refId": "D"
         }
@@ -3326,7 +3326,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Write Amplification (compact/flush)",
           "refId": "A"
         }
@@ -3389,7 +3389,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_stall_micros_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / 1e6",
+          "expr": "rate(db_stall_micros{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / 1e6",
           "legendFormat": "Stall Fraction",
           "refId": "A"
         }
@@ -3452,7 +3452,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(db_block_cache_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(db_block_cache_miss{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Cache Hit Rate",
           "refId": "A"
         }

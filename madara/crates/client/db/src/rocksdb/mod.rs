@@ -182,7 +182,7 @@ pub struct RocksDBStorage {
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
     contract_storage_hot_cache: Arc<trie::LazySharedContractStorageTrie>,
-    metrics: Arc<DbMetrics>,
+    metrics: DbMetrics,
 }
 
 impl RocksDBStorage {
@@ -210,7 +210,7 @@ impl RocksDBStorage {
             inner,
             snapshots: snapshot.into(),
             contract_storage_hot_cache: Default::default(),
-            metrics: Arc::new(DbMetrics::register().context("Registering database metrics")?),
+            metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
