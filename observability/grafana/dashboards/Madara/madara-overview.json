@@ -849,7 +849,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"})",
           "legendFormat": "Total Calls",
           "refId": "A"
         }
@@ -909,7 +909,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "RPS (5m)",
           "refId": "A"
         }
@@ -969,7 +969,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}",
           "legendFormat": "WS Sessions",
           "refId": "A"
         }
@@ -1037,7 +1037,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "Latency p50",
           "refId": "A"
         }
@@ -1105,7 +1105,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "Latency p99",
           "refId": "A"
         }
@@ -1165,7 +1165,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"})",
           "legendFormat": "In-Flight",
           "refId": "A"
         }
@@ -1258,7 +1258,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Requests/s",
           "refId": "A"
         }
@@ -1397,7 +1397,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p50 (all methods)",
           "refId": "A"
         },
@@ -1406,7 +1406,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p90 (all methods)",
           "refId": "B"
         },
@@ -1415,7 +1415,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "p99 (all methods)",
           "refId": "C"
         }
@@ -1539,7 +1539,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"true\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\", success=\"true\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         },
@@ -1548,7 +1548,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"false\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\", success=\"false\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
           "legendFormat": "Error Rate",
           "refId": "B"
         }
@@ -1640,7 +1640,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -1733,7 +1733,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}",
           "legendFormat": "Active Sessions",
           "refId": "A"
         }
@@ -1826,7 +1826,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(5, histogram_quantile(0.50, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))",
+          "expr": "topk(5, histogram_quantile(0.50, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))))",
           "legendFormat": "{{method}} p50",
           "refId": "A"
         },
@@ -1835,7 +1835,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "topk(5, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))",
+          "expr": "topk(5, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))))",
           "legendFormat": "{{method}} p90",
           "refId": "B"
         }
@@ -5609,84 +5609,84 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_block_total_ms=\"close_block_total_ms\" | unwrap close_block_total_ms [$__interval])",
           "legendFormat": "Total Close Block",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json merklization_ms=\"merklization_ms\" | unwrap merklization_ms [$__interval])",
           "legendFormat": "Merklization",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json commitments_ms=\"commitments_ms\" | unwrap commitments_ms [$__interval])",
           "legendFormat": "Commitments",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json db_write_ms=\"db_write_ms\" | unwrap db_write_ms [$__interval])",
           "legendFormat": "DB Write",
           "refId": "D"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json block_hash_ms=\"block_hash_ms\" | unwrap block_hash_ms [$__interval])",
           "legendFormat": "Block Hash",
           "refId": "E"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_preconfirmed_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_preconfirmed_ms=\"close_preconfirmed_ms\" | unwrap close_preconfirmed_ms [$__interval])",
           "legendFormat": "Close Preconfirmed",
           "refId": "F"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap get_full_block_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json get_full_block_ms=\"get_full_block_ms\" | unwrap get_full_block_ms [$__interval])",
           "legendFormat": "Get Full Block",
           "refId": "G"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_trie_ms=\"contract_trie_ms\" | unwrap contract_trie_ms [$__interval])",
           "legendFormat": "Contract Trie",
           "refId": "H"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json class_trie_ms=\"class_trie_ms\" | unwrap class_trie_ms [$__interval])",
           "legendFormat": "Class Trie",
           "refId": "I"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_storage_trie_commit_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_storage_trie_commit_ms=\"contract_storage_trie_commit_ms\" | unwrap contract_storage_trie_commit_ms [$__interval])",
           "legendFormat": "Contract Storage Trie Commit",
           "refId": "J"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_commit_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_trie_commit_ms=\"contract_trie_commit_ms\" | unwrap contract_trie_commit_ms [$__interval])",
           "legendFormat": "Contract Trie Commit",
           "refId": "K"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_commit_ms [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json class_trie_commit_ms=\"class_trie_commit_ms\" | unwrap class_trie_commit_ms [$__interval])",
           "legendFormat": "Class Trie Commit",
           "refId": "L"
         }
@@ -5739,7 +5739,7 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.50, {container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_block_total_ms=\"close_block_total_ms\" | unwrap close_block_total_ms [$__interval])",
           "legendFormat": "Close Block Total (p50)",
           "refId": "A"
         }
@@ -5795,84 +5795,84 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json tx_count=\"tx_count\" | unwrap tx_count [$__interval])",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json event_count=\"event_count\" | unwrap event_count [$__interval])",
           "legendFormat": "Event Count",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_executed=\"txs_executed\" | unwrap txs_executed [$__interval])",
           "legendFormat": "Txs Executed",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_reverted=\"txs_reverted\" | unwrap txs_reverted [$__interval])",
           "legendFormat": "Txs Reverted",
           "refId": "D"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json state_diff_len=\"state_diff_len\" | unwrap state_diff_len [$__interval])",
           "legendFormat": "State Diff Length",
           "refId": "E"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap batches_executed [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json batches_executed=\"batches_executed\" | unwrap batches_executed [$__interval])",
           "legendFormat": "Batches Executed",
           "refId": "F"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_added_to_block [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_added_to_block=\"txs_added_to_block\" | unwrap txs_added_to_block [$__interval])",
           "legendFormat": "Txs Added to Block",
           "refId": "G"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_rejected [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_rejected=\"txs_rejected\" | unwrap txs_rejected [$__interval])",
           "legendFormat": "Txs Rejected",
           "refId": "H"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap classes_declared [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json classes_declared=\"classes_declared\" | unwrap classes_declared [$__interval])",
           "legendFormat": "Classes Declared",
           "refId": "I"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap deployed_contracts [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json deployed_contracts=\"deployed_contracts\" | unwrap deployed_contracts [$__interval])",
           "legendFormat": "Deployed Contracts",
           "refId": "J"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap storage_diffs [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json storage_diffs=\"storage_diffs\" | unwrap storage_diffs [$__interval])",
           "legendFormat": "Storage Diffs",
           "refId": "K"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap nonce_updates [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json nonce_updates=\"nonce_updates\" | unwrap nonce_updates [$__interval])",
           "legendFormat": "Nonce Updates",
           "refId": "L"
         }
@@ -5925,42 +5925,42 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap l2_gas_consumed [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json l2_gas_consumed=\"l2_gas_consumed\" | unwrap l2_gas_consumed [$__interval])",
           "legendFormat": "L2 Gas Consumed",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_l1_gas [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_l1_gas=\"bouncer_l1_gas\" | unwrap bouncer_l1_gas [$__interval])",
           "legendFormat": "Bouncer L1 Gas",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_sierra_gas [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_sierra_gas=\"bouncer_sierra_gas\" | unwrap bouncer_sierra_gas [$__interval])",
           "legendFormat": "Bouncer Sierra Gas",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_n_events [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_n_events=\"bouncer_n_events\" | unwrap bouncer_n_events [$__interval])",
           "legendFormat": "Bouncer Events",
           "refId": "D"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_message_segment_length [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_message_segment_length=\"bouncer_message_segment_length\" | unwrap bouncer_message_segment_length [$__interval])",
           "legendFormat": "Bouncer Msg Segment Len",
           "refId": "E"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_state_diff_size [$__interval]) by ()",
+          "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_state_diff_size=\"bouncer_state_diff_size\" | unwrap bouncer_state_diff_size [$__interval])",
           "legendFormat": "Bouncer State Diff Size",
           "refId": "F"
         }
@@ -7396,7 +7396,7 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)",
+        "definition": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
         "hide": 0,
         "includeAll": true,
         "label": "Pod",
@@ -7404,7 +7404,7 @@
         "name": "pod",
         "options": [],
         "query": {
-          "query": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)",
+          "query": "label_values(block_produced_no{namespace=~\"$namespace\", pod!~\".*fullnode.*\"}, pod)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,
