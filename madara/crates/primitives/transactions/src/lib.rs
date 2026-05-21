@@ -386,9 +386,11 @@ impl InvokeTransactionV3 {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransactionWithFee {
     pub tx: L1HandlerTransaction,
+    #[serde_as(as = "U128AsHex")]
     pub paid_fee_on_l1: u128,
 }
 
@@ -802,6 +804,7 @@ impl From<mp_rpc::v0_7_1::DaMode> for DataAvailabilityMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_tx_with_hash() {
@@ -1081,6 +1084,27 @@ mod tests {
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);
+    }
+
+    #[test]
+    fn test_l1_handler_transaction_with_fee_uses_hex_fee_in_json() {
+        let tx = L1HandlerTransactionWithFee::new(
+            L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: 7,
+                contract_address: Felt::from_hex_unchecked("0x1234"),
+                entry_point_selector: Felt::from_hex_unchecked("0x5678"),
+                calldata: Arc::new(vec![Felt::from_hex_unchecked("0x9abc")]),
+            },
+            128_328,
+        );
+
+        let value = serde_json::to_value(&tx).expect("serialization should succeed");
+        assert_eq!(value["paid_fee_on_l1"], json!("0x1f548"));
+
+        let roundtrip: L1HandlerTransactionWithFee =
+            serde_json::from_value(value).expect("deserialization should succeed");
+        assert_eq!(roundtrip, tx);
     }
 
     pub(crate) fn dummy_tx_invoke_v0() -> InvokeTransactionV0 {
