@@ -661,6 +661,19 @@ impl JobHandlerService {
                             "SNS alert sent successfully for verification timeout"
                         );
                     }
+
+                    attributes.push(KeyValue::new(
+                        "operation_job_status",
+                        JobStatus::VerificationTimeout.to_string(),
+                    ));
+
+                    debug!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
+                    let duration = start.elapsed();
+                    MetricsRecorder::record_successful_job_operation(1.0, &attributes);
+                    MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
+                    Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
+                    workload.finish_error();
+                    return Ok(());
                 } else {
                     config
                         .database()
@@ -696,10 +709,7 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
-        match operation_job_status {
-            Some(JobStatus::VerificationTimeout) => workload.finish_error(),
-            _ => workload.finish_success(),
-        }
+        workload.finish_success();
         Ok(())
     }
 
