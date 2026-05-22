@@ -23,6 +23,7 @@ mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
+mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
@@ -46,4 +47,9 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 rstest.workspace = true
+mc-class-exec.workspace = true
+mc-mempool.workspace = true
+mp-chain-config.workspace = true
+tempfile.workspace = true

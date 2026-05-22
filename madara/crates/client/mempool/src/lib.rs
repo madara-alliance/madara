@@ -434,6 +434,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     pub async fn get_consumer(&self) -> MempoolConsumer {
         MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
     }
+
+    pub async fn num_transactions(&self) -> usize {
+        self.inner.read().await.num_transactions()
+    }
+
+    pub async fn oldest_transaction_arrived_at(&self) -> Option<TxTimestamp> {
+        self.inner.read().await.oldest_transaction_arrived_at()
+    }
 }
 
 /// A view into the mempool, intended for consuming transactions. This is expected to be used by block production to

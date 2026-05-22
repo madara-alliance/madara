@@ -1,7 +1,9 @@
 use super::handler::{
-    handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_traces,
-    handle_get_class_by_hash, handle_get_compiled_class_by_class_hash, handle_get_contract_addresses,
-    handle_get_public_key, handle_get_signature, handle_get_state_update,
+    handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_hash_by_id,
+    handle_get_block_id_by_hash, handle_get_block_traces, handle_get_class_by_hash,
+    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses,
+    handle_get_number_of_transactions_in_backlog, handle_get_oldest_transaction_age, handle_get_public_key,
+    handle_get_signature, handle_get_state_update, handle_get_transaction, handle_get_transaction_status,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
 use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
@@ -25,7 +27,9 @@ pub(crate) async fn main_router(
         (path, _, true) if path.starts_with("gateway/") => {
             Ok(gateway_router(req, path, add_transaction_provider).await?)
         }
-        (path, true, _) if path.starts_with("feeder_gateway/") => Ok(feeder_gateway_router(req, path, backend).await?),
+        (path, true, _) if path.starts_with("feeder_gateway/") => {
+            Ok(feeder_gateway_router(req, path, backend, add_transaction_provider).await?)
+        }
         (path, _, true)
             if path.starts_with("madara/trusted_add_validated_transaction")
                 && config.enable_trusted_add_validated_transaction =>
@@ -46,6 +50,7 @@ async fn feeder_gateway_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
@@ -59,6 +64,18 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_state_update") => {
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_transaction") => {
+            Ok(handle_get_transaction(req, backend, add_transaction_provider).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_transaction_status") => {
+            Ok(handle_get_transaction_status(req, backend, add_transaction_provider).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_hash_by_id") => {
+            Ok(handle_get_block_hash_by_id(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_id_by_hash") => {
+            Ok(handle_get_block_id_by_hash(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_traces") => {
             Ok(handle_get_block_traces(req, backend).await.unwrap_or_else(Into::into))
@@ -74,6 +91,12 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_public_key") => {
             Ok(handle_get_public_key(backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_oldest_transaction_age") => {
+            Ok(handle_get_oldest_transaction_age(add_transaction_provider).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_number_of_transactions_in_backlog") => {
+            Ok(handle_get_number_of_transactions_in_backlog(add_transaction_provider).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_bouncer_weights") => {
             Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))

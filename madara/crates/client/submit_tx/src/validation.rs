@@ -19,6 +19,7 @@ use mc_mempool::{MempoolInsertionError, TxInsertionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -479,5 +480,21 @@ impl SubmitTransaction for TransactionValidator {
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
         self.inner.subscribe_new_transactions().await
+    }
+
+    async fn feeder_transaction_status(&self, hash: Felt) -> Option<ProviderTransactionStatus> {
+        self.inner.feeder_transaction_status(hash).await
+    }
+
+    async fn feeder_transaction(&self, hash: Felt) -> Option<ProviderTransactionResponse> {
+        self.inner.feeder_transaction(hash).await
+    }
+
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        self.inner.oldest_transaction_age().await
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        self.inner.number_of_transactions_in_backlog().await
     }
 }

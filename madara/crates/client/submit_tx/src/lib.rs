@@ -110,6 +110,7 @@
 use async_trait::async_trait;
 use mc_db::MadaraStorage;
 use mc_mempool::Mempool;
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -155,6 +156,40 @@ pub trait SubmitTransaction: Send + Sync {
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
+
+    /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
+    ///
+    /// The default implementation falls back to the lighter `received_transaction` hook.
+    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
+        match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionStatus::received()),
+            Some(false) => Some(ProviderTransactionStatus::not_received()),
+            None => None,
+        }
+    }
+
+    /// Returns the exact feeder gateway transaction payload when the backend can provide it.
+    ///
+    /// The default implementation falls back to the lighter `received_transaction` hook.
+    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
+        match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionResponse::received()),
+            Some(false) => Some(ProviderTransactionResponse::not_received()),
+            None => None,
+        }
+    }
+
+    /// Returns the oldest queued transaction arrival timestamp in Unix seconds.
+    ///
+    /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
+    /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        None
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Submit a L1HandlerTransaction.
@@ -175,6 +210,40 @@ pub trait SubmitValidatedTransaction: Send + Sync {
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
+
+    /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
+    ///
+    /// The default implementation falls back to the lighter `received_transaction` hook.
+    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
+        match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionStatus::received()),
+            Some(false) => Some(ProviderTransactionStatus::not_received()),
+            None => None,
+        }
+    }
+
+    /// Returns the exact feeder gateway transaction payload when the backend can provide it.
+    ///
+    /// The default implementation falls back to the lighter `received_transaction` hook.
+    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
+        match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionResponse::received()),
+            Some(false) => Some(ProviderTransactionResponse::not_received()),
+            None => None,
+        }
+    }
+
+    /// Returns the oldest queued transaction arrival timestamp in Unix seconds.
+    ///
+    /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
+    /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        None
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        None
+    }
 }
 
 #[async_trait]
@@ -187,5 +256,18 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
     }
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
         None
+    }
+
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        Some(
+            self.oldest_transaction_arrived_at()
+                .await
+                .map(|timestamp| timestamp.0 / 1_000)
+                .unwrap_or_else(|| mp_transactions::validated::TxTimestamp::now().0 / 1_000),
+        )
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        Some(self.num_transactions().await as u64)
     }
 }

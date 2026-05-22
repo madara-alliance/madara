@@ -1,6 +1,7 @@
 use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionStatus};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -122,19 +123,37 @@ impl SubmitTransaction for GatewayProvider {
             .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
     }
 
-    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        // The gateway cannot inform us about the status of transactions it has received since this
-        // is forwarded to a remote node which does not expose any endpoint to query this state. By
-        // default, all transactions which pass through the gateway will be automatically considered
-        // as received.
-        None
+    async fn received_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        self.get_transaction_status(hash)
+            .await
+            .ok()
+            .map(|status| !matches!(status.tx_status, TransactionStatus::NotReceived))
     }
 
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
-        // We cannot subscribe to new transactions from the gateway for the same reasons as above
+        // The feeder gateway does not expose a push-based transaction stream.
         None
+    }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Option<ProviderTransactionStatus> {
+        self.get_transaction_status(hash).await.ok()
+    }
+
+    async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
+        self.get_transaction(hash).await.ok()
+    }
+
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        self.get_oldest_transaction_age().await.ok()
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        self.get_number_of_transactions_in_backlog().await.ok()
     }
 }
 
@@ -147,18 +166,36 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
         self.add_validated_transaction(tx).await.map_err(map_gateway_error)
     }
 
-    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        // The gateway cannot inform us about the status of transactions it has received since this
-        // is forwarded to a remote node which does not expose any endpoint to query this state. By
-        // default, all transactions which pass through the gateway will be automatically considered
-        // as received.
-        None
+    async fn received_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        self.get_transaction_status(hash)
+            .await
+            .ok()
+            .map(|status| !matches!(status.tx_status, TransactionStatus::NotReceived))
     }
 
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
-        // We cannot subscribe to new transactions from the gateway for the same reasons as above
+        // The feeder gateway does not expose a push-based transaction stream.
         None
+    }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Option<ProviderTransactionStatus> {
+        self.get_transaction_status(hash).await.ok()
+    }
+
+    async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
+        self.get_transaction(hash).await.ok()
+    }
+
+    async fn oldest_transaction_age(&self) -> Option<u64> {
+        self.get_oldest_transaction_age().await.ok()
+    }
+
+    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
+        self.get_number_of_transactions_in_backlog().await.ok()
     }
 }

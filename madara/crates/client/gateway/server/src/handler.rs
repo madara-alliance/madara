@@ -20,6 +20,8 @@ use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
+    feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionExecutionStatus, TransactionStatus},
+    transaction::Transaction as GatewayTransaction,
     user_transaction::{
         AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
         UserTransaction,
@@ -35,6 +37,7 @@ use mp_gateway::{
 };
 use mp_rpc::v0_9_0::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedTransaction;
+use mp_transactions::TransactionWithHash;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
@@ -118,6 +121,139 @@ fn parse_add_transaction_request_with_max_body_size(
     })
 }
 
+fn parse_transaction_hash(params: &std::collections::HashMap<String, String>) -> Result<Felt, GatewayError> {
+    let transaction_hash = params.get("transactionHash").ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field transactionHash is required.".into())
+    })?;
+
+    Felt::from_hex(transaction_hash)
+        .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()).into())
+}
+
+fn parse_block_hash(params: &std::collections::HashMap<String, String>) -> Result<Felt, GatewayError> {
+    let block_hash = params.get("blockHash").ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockHash is required.".into())
+    })?;
+
+    Felt::from_hex(block_hash)
+        .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()).into())
+}
+
+fn parse_block_id(params: &std::collections::HashMap<String, String>) -> Result<u64, GatewayError> {
+    let block_id = params
+        .get("blockId")
+        .ok_or_else(|| StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockId is required.".into()))?;
+
+    block_id.parse().map_err(|e: std::num::ParseIntError| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()).into()
+    })
+}
+
+fn execution_status(receipt: &mp_receipt::TransactionReceipt) -> (TransactionExecutionStatus, Option<String>) {
+    match receipt.execution_result() {
+        mp_receipt::ExecutionResult::Succeeded => (TransactionExecutionStatus::Succeeded, None),
+        mp_receipt::ExecutionResult::Reverted { reason } => {
+            (TransactionExecutionStatus::Reverted, Some(reason.clone()))
+        }
+    }
+}
+
+fn transaction_status_from_block(
+    block: &mc_db::MadaraBlockView,
+) -> Result<(TransactionStatus, Option<Felt>, Option<u64>), GatewayError> {
+    if block.is_confirmed() {
+        let block_info = block.as_confirmed().context("Confirmed block view expected")?.get_block_info()?;
+        let status = if block.is_on_l1() { TransactionStatus::AcceptedOnL1 } else { TransactionStatus::AcceptedOnL2 };
+        Ok((status, Some(block_info.block_hash), Some(block_info.header.block_number)))
+    } else {
+        Ok((TransactionStatus::PreConfirmed, None, Some(block.block_number())))
+    }
+}
+
+fn gateway_transaction(transaction: &mp_block::TransactionWithReceipt) -> GatewayTransaction {
+    GatewayTransaction::new(
+        TransactionWithHash {
+            transaction: transaction.transaction.clone(),
+            hash: *transaction.receipt.transaction_hash(),
+        },
+        transaction.receipt.contract_address().copied(),
+    )
+}
+
+async fn transaction_status_response(
+    transaction_hash: Felt,
+    backend: &Arc<MadaraBackend>,
+    add_transaction_provider: &Arc<dyn SubmitTransaction>,
+) -> Result<ProviderTransactionStatus, GatewayError> {
+    let view = backend.view_on_latest();
+
+    if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
+        let transaction = res.get_transaction()?;
+        let (tx_status, block_hash, _) = transaction_status_from_block(&res.block)?;
+        let (execution_status, tx_revert_reason) = execution_status(&transaction.receipt);
+
+        Ok(ProviderTransactionStatus::with_status(tx_status, Some(execution_status), block_hash, tx_revert_reason))
+    } else if let Some(status) = add_transaction_provider.feeder_transaction_status(transaction_hash).await? {
+        Ok(status)
+    } else {
+        Ok(ProviderTransactionStatus::not_received())
+    }
+}
+
+async fn transaction_response(
+    transaction_hash: Felt,
+    backend: &Arc<MadaraBackend>,
+    add_transaction_provider: &Arc<dyn SubmitTransaction>,
+) -> Result<ProviderTransactionResponse, GatewayError> {
+    let view = backend.view_on_latest();
+
+    if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
+        let transaction = res.get_transaction()?;
+        let (status, block_hash, block_number) = transaction_status_from_block(&res.block)?;
+        let (execution_status, _) = execution_status(&transaction.receipt);
+
+        Ok(ProviderTransactionResponse::with_status(
+            status,
+            Some(execution_status),
+            block_hash,
+            block_number,
+            Some(res.transaction_index),
+            Some(gateway_transaction(&transaction)),
+        ))
+    } else if let Some(response) = add_transaction_provider.feeder_transaction(transaction_hash).await? {
+        Ok(response)
+    } else {
+        Ok(ProviderTransactionResponse::not_received())
+    }
+}
+
+fn block_hash_by_id_response(block_id: u64, backend: &Arc<MadaraBackend>) -> Result<Felt, GatewayError> {
+    let Some(latest_confirmed) = backend.latest_confirmed_block_n() else {
+        return Err(StarknetError::block_not_found().into());
+    };
+
+    if block_id > latest_confirmed {
+        return Err(StarknetError::new(
+            StarknetErrorCode::MalformedRequest,
+            format!("Block ID should be in the range [0, {}); got: {}.", latest_confirmed + 1, block_id),
+        )
+        .into());
+    }
+
+    let block = backend.block_view_on_confirmed(block_id).ok_or_else(StarknetError::block_not_found)?;
+    Ok(block.get_block_info()?.block_hash)
+}
+
+fn block_id_by_hash_response(block_hash: Felt, backend: &Arc<MadaraBackend>) -> Result<u64, GatewayError> {
+    backend
+        .view_on_latest()
+        .find_block_by_hash(&block_hash)?
+        .ok_or_else(|| {
+            StarknetError::new(StarknetErrorCode::BlockNotFound, format!("Block hash {block_hash:#x} does not exist."))
+        })
+        .map_err(Into::into)
+}
+
 pub async fn handle_get_preconfirmed_block(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
@@ -157,6 +293,48 @@ pub async fn handle_get_preconfirmed_block(
     };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block))
+}
+
+pub async fn handle_get_transaction(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let transaction_hash = parse_transaction_hash(&params)?;
+    let response = transaction_response(transaction_hash, &backend, &add_transaction_provider).await?;
+    Ok(create_json_response(hyper::StatusCode::OK, &response))
+}
+
+pub async fn handle_get_transaction_status(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let transaction_hash = parse_transaction_hash(&params)?;
+    let response = transaction_status_response(transaction_hash, &backend, &add_transaction_provider).await?;
+    Ok(create_json_response(hyper::StatusCode::OK, &response))
+}
+
+pub async fn handle_get_block_hash_by_id(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_id = parse_block_id(&params)?;
+    let block_hash = block_hash_by_id_response(block_id, &backend)?;
+    Ok(create_json_response(hyper::StatusCode::OK, &block_hash))
+}
+
+pub async fn handle_get_block_id_by_hash(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_hash = parse_block_hash(&params)?;
+    let block_id = block_id_by_hash_response(block_hash, &backend)?;
+    Ok(create_json_response(hyper::StatusCode::OK, &block_id))
 }
 
 pub async fn handle_get_block_bouncer_config(
@@ -477,12 +655,18 @@ async fn invoke_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use flate2::{write::GzEncoder, Compression};
     use hyper::header::HeaderValue;
+    use mc_submit_tx::{SubmitTransactionError, TransactionValidatorConfig};
+    use mp_receipt::ExecutionResult;
     use rstest::rstest;
     use std::io::Write;
 
     const TEST_PATH: &str = "/gateway/add_transaction";
+    const TX_HASH: Felt = starknet_types_core::felt::Felt::from_hex_unchecked(
+        "0x3ccaabf599097d1965e1ef8317b830e76eb681016722c9364ed6e59f3252908",
+    );
 
     fn request_headers(content_encoding: Option<&'static str>) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -555,5 +739,412 @@ mod tests {
         let error = malformed_request(error);
 
         assert!(error.message.contains("Read input is too large"));
+    }
+
+    fn backend_for_tests() -> Arc<MadaraBackend> {
+        let chain_config = Arc::new(mp_chain_config::ChainConfig::madara_test());
+        let builder = mc_class_exec::config::NativeConfig::builder();
+        let max_concurrent = builder.max_concurrent_compilations();
+        mc_class_exec::init_compilation_semaphore(max_concurrent);
+
+        let base_path = tempfile::TempDir::with_prefix("madara-gateway-server-test").unwrap().keep();
+        mc_db::MadaraBackend::open_rocksdb(
+            &base_path,
+            chain_config,
+            Default::default(),
+            mc_db::rocksdb::RocksDBConfig::default(),
+            Arc::new(builder.build()),
+        )
+        .expect("backend should open")
+    }
+
+    #[derive(Clone)]
+    struct StubSubmitTransaction {
+        status: Option<ProviderTransactionStatus>,
+        transaction: Option<ProviderTransactionResponse>,
+    }
+
+    impl StubSubmitTransaction {
+        fn with_status(status: ProviderTransactionStatus) -> Arc<dyn SubmitTransaction> {
+            Arc::new(Self { status: Some(status), transaction: None })
+        }
+
+        fn with_transaction(transaction: ProviderTransactionResponse) -> Arc<dyn SubmitTransaction> {
+            Arc::new(Self { status: None, transaction: Some(transaction) })
+        }
+    }
+
+    #[async_trait]
+    impl SubmitTransaction for StubSubmitTransaction {
+        async fn submit_declare_transaction(
+            &self,
+            _tx: mp_rpc::v0_9_0::BroadcastedDeclareTxn,
+        ) -> Result<mp_rpc::v0_9_0::ClassAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_deploy_account_transaction(
+            &self,
+            _tx: mp_rpc::v0_9_0::BroadcastedDeployAccountTxn,
+        ) -> Result<mp_rpc::v0_9_0::ContractAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_invoke_transaction(
+            &self,
+            _tx: mp_rpc::v0_10_2::BroadcastedInvokeTxn,
+        ) -> Result<mp_rpc::v0_9_0::AddInvokeTransactionResult, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn received_transaction(&self, _hash: Felt) -> Option<bool> {
+            None
+        }
+
+        async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
+            None
+        }
+
+        async fn feeder_transaction_status(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+            Ok(self.status.clone())
+        }
+
+        async fn feeder_transaction(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+            Ok(self.transaction.clone())
+        }
+    }
+
+    fn submit_provider() -> (Arc<MadaraBackend>, Arc<dyn SubmitTransaction>) {
+        let backend = backend_for_tests();
+        let mempool = Arc::new(mc_mempool::Mempool::new(Arc::clone(&backend), mc_mempool::MempoolConfig::default()));
+        let validation = TransactionValidatorConfig { disable_validation: true, disable_fee: false };
+        let provider: Arc<dyn SubmitTransaction> =
+            Arc::new(mc_submit_tx::TransactionValidator::new(mempool, Arc::clone(&backend), validation));
+
+        (backend, provider)
+    }
+
+    fn submit_invoke_tx() -> mp_rpc::v0_10_2::BroadcastedInvokeTxn {
+        mp_rpc::v0_10_2::BroadcastedInvokeTxn::V3(mp_rpc::v0_10_2::BroadcastedInvokeTxnV3 {
+            inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                calldata: Default::default(),
+                sender_address: Default::default(),
+                signature: Default::default(),
+                nonce: Default::default(),
+                resource_bounds: mp_rpc::v0_10_0::ResourceBoundsMapping {
+                    l1_gas: mp_rpc::v0_10_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                    l2_gas: mp_rpc::v0_10_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                    l1_data_gas: mp_rpc::v0_10_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                },
+                tip: Default::default(),
+                paymaster_data: Default::default(),
+                account_deployment_data: Default::default(),
+                nonce_data_availability_mode: mp_rpc::v0_10_0::DaMode::L1,
+                fee_data_availability_mode: mp_rpc::v0_10_0::DaMode::L1,
+            },
+            proof: None,
+            proof_facts: None,
+        })
+    }
+
+    fn tx_with_receipt() -> mp_block::TransactionWithReceipt {
+        let tx = mp_rpc::v0_9_0::BroadcastedInvokeTxn::V3(mp_rpc::v0_9_0::InvokeTxnV3 {
+            calldata: Default::default(),
+            sender_address: Default::default(),
+            signature: Default::default(),
+            nonce: Default::default(),
+            resource_bounds: mp_rpc::v0_9_0::ResourceBoundsMapping {
+                l1_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l2_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l1_data_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+            },
+            tip: Default::default(),
+            paymaster_data: Default::default(),
+            account_deployment_data: Default::default(),
+            nonce_data_availability_mode: mp_rpc::v0_9_0::DaMode::L1,
+            fee_data_availability_mode: mp_rpc::v0_9_0::DaMode::L1,
+        });
+
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::Invoke(tx.into()),
+            receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                transaction_hash: TX_HASH,
+                execution_result: ExecutionResult::Succeeded,
+                ..Default::default()
+            }),
+        }
+    }
+
+    fn preconfirmed_tx() -> mc_db::preconfirmed::PreconfirmedExecutedTransaction {
+        mc_db::preconfirmed::PreconfirmedExecutedTransaction {
+            transaction: tx_with_receipt(),
+            state_diff: Default::default(),
+            declared_class: None,
+            arrived_at: mp_transactions::validated::TxTimestamp::now(),
+            paid_fee_on_l1: None,
+        }
+    }
+
+    fn empty_block(block_number: u64) -> mp_block::FullBlockWithoutCommitments {
+        mp_block::FullBlockWithoutCommitments {
+            header: mp_block::header::PreconfirmedHeader { block_number, ..Default::default() },
+            state_diff: Default::default(),
+            transactions: vec![],
+            events: Default::default(),
+        }
+    }
+
+    fn full_block(block_number: u64) -> mp_block::FullBlockWithoutCommitments {
+        mp_block::FullBlockWithoutCommitments {
+            header: mp_block::header::PreconfirmedHeader { block_number, ..Default::default() },
+            state_diff: Default::default(),
+            transactions: vec![tx_with_receipt()],
+            events: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_returns_not_received_for_unknown_hash() {
+        let (backend, provider) = submit_provider();
+
+        let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(status, ProviderTransactionStatus::not_received());
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_returns_received_when_in_mempool() {
+        let (backend, provider) = submit_provider();
+        let tx_hash = provider.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
+
+        let status = transaction_status_response(tx_hash, &backend, &provider).await.unwrap();
+
+        assert_eq!(status, ProviderTransactionStatus::received());
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_uses_submit_provider_payload_when_backend_misses() {
+        let backend = backend_for_tests();
+        let expected = ProviderTransactionStatus::with_status(
+            TransactionStatus::AcceptedOnL2,
+            Some(TransactionExecutionStatus::Succeeded),
+            Some(Felt::ONE),
+            None,
+        );
+        let provider = StubSubmitTransaction::with_status(expected.clone());
+
+        let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(status, expected);
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_returns_preconfirmed_for_preconfirmed_backend_tx() {
+        let backend = backend_for_tests();
+        backend
+            .write_access()
+            .new_preconfirmed(mc_db::preconfirmed::PreconfirmedBlock::new_with_content(
+                mp_block::header::PreconfirmedHeader { block_number: 0, ..Default::default() },
+                [preconfirmed_tx()],
+                std::iter::empty::<Arc<mp_transactions::validated::ValidatedTransaction>>(),
+            ))
+            .expect("Failed to persist preconfirmed block");
+        let provider = StubSubmitTransaction::with_status(ProviderTransactionStatus::not_received());
+
+        let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(status.tx_status, TransactionStatus::PreConfirmed);
+        assert_eq!(status.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(status.execution_status, Some(TransactionExecutionStatus::Succeeded));
+        assert_eq!(status.block_hash, None);
+    }
+
+    #[tokio::test]
+    async fn get_transaction_returns_confirmed_payload() {
+        let (backend, provider) = submit_provider();
+        backend
+            .write_access()
+            .add_full_block_with_classes(&full_block(0), &[], true)
+            .expect("Failed to persist confirmed block");
+
+        let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(response.status, TransactionStatus::AcceptedOnL2);
+        assert_eq!(response.finality_status, TransactionStatus::AcceptedOnL2);
+        assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
+        assert_eq!(response.block_number, Some(0));
+        assert_eq!(response.transaction_index, Some(0));
+        assert!(response.block_hash.is_some());
+        assert!(response.transaction.is_some());
+    }
+
+    #[tokio::test]
+    async fn get_transaction_returns_received_with_payload() {
+        let (backend, provider) = submit_provider();
+        let tx_hash = provider.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
+
+        let response = transaction_response(tx_hash, &backend, &provider).await.unwrap();
+
+        assert_eq!(response.status, TransactionStatus::Received);
+        assert_eq!(response.finality_status, TransactionStatus::Received);
+        assert_eq!(response.execution_status, None);
+        assert_eq!(response.block_hash, None);
+        assert_eq!(response.block_number, None);
+        assert_eq!(response.transaction_index, None);
+        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(tx_hash));
+    }
+
+    #[tokio::test]
+    async fn get_transaction_uses_submit_provider_payload_when_backend_misses() {
+        let backend = backend_for_tests();
+        let expected = ProviderTransactionResponse::with_status(
+            TransactionStatus::AcceptedOnL2,
+            Some(TransactionExecutionStatus::Succeeded),
+            Some(Felt::ONE),
+            Some(7),
+            Some(2),
+            None,
+        );
+        let provider = StubSubmitTransaction::with_transaction(expected.clone());
+
+        let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(response, expected);
+    }
+
+    #[derive(Clone)]
+    struct FailingSubmitTransaction;
+
+    #[async_trait]
+    impl SubmitTransaction for FailingSubmitTransaction {
+        async fn submit_declare_transaction(
+            &self,
+            _tx: mp_rpc::v0_9_0::BroadcastedDeclareTxn,
+        ) -> Result<mp_rpc::v0_9_0::ClassAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_deploy_account_transaction(
+            &self,
+            _tx: mp_rpc::v0_9_0::BroadcastedDeployAccountTxn,
+        ) -> Result<mp_rpc::v0_9_0::ContractAndTxnHash, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_invoke_transaction(
+            &self,
+            _tx: mp_rpc::v0_10_2::BroadcastedInvokeTxn,
+        ) -> Result<mp_rpc::v0_9_0::AddInvokeTransactionResult, SubmitTransactionError> {
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn received_transaction(&self, _hash: Felt) -> Option<bool> {
+            None
+        }
+
+        async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
+            None
+        }
+
+        async fn feeder_transaction_status(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+            Err(SubmitTransactionError::Internal(anyhow::anyhow!("upstream feeder failure")))
+        }
+
+        async fn feeder_transaction(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+            Err(SubmitTransactionError::Internal(anyhow::anyhow!("upstream feeder failure")))
+        }
+    }
+
+    #[tokio::test]
+    async fn get_transaction_status_propagates_submit_provider_errors() {
+        let backend = backend_for_tests();
+        let provider: Arc<dyn SubmitTransaction> = Arc::new(FailingSubmitTransaction);
+
+        let err = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap_err();
+
+        assert!(matches!(err, GatewayError::InternalServerError));
+    }
+
+    #[tokio::test]
+    async fn get_transaction_propagates_submit_provider_errors() {
+        let backend = backend_for_tests();
+        let provider: Arc<dyn SubmitTransaction> = Arc::new(FailingSubmitTransaction);
+
+        let err = transaction_response(TX_HASH, &backend, &provider).await.unwrap_err();
+
+        assert!(matches!(err, GatewayError::InternalServerError));
+    }
+
+    #[tokio::test]
+    async fn get_transaction_returns_preconfirmed_payload_for_preconfirmed_backend_tx() {
+        let backend = backend_for_tests();
+        backend
+            .write_access()
+            .new_preconfirmed(mc_db::preconfirmed::PreconfirmedBlock::new_with_content(
+                mp_block::header::PreconfirmedHeader { block_number: 0, ..Default::default() },
+                [preconfirmed_tx()],
+                std::iter::empty::<Arc<mp_transactions::validated::ValidatedTransaction>>(),
+            ))
+            .expect("Failed to persist preconfirmed block");
+        let provider = StubSubmitTransaction::with_status(ProviderTransactionStatus::not_received());
+
+        let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(response.status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
+        assert_eq!(response.block_hash, None);
+        assert_eq!(response.block_number, Some(0));
+        assert_eq!(response.transaction_index, Some(0));
+        assert!(response.transaction.is_some());
+    }
+
+    #[tokio::test]
+    async fn get_block_hash_by_id_and_block_id_by_hash_roundtrip() {
+        let (backend, _) = submit_provider();
+        backend
+            .write_access()
+            .add_full_block_with_classes(&empty_block(0), &[], true)
+            .expect("Failed to persist confirmed block");
+        backend
+            .write_access()
+            .add_full_block_with_classes(&empty_block(1), &[], true)
+            .expect("Failed to persist confirmed block");
+
+        let block_hash = block_hash_by_id_response(0, &backend).unwrap();
+        let block_id = block_id_by_hash_response(block_hash, &backend).unwrap();
+        let latest_block_hash = block_hash_by_id_response(1, &backend).unwrap();
+        let latest_block_id = block_id_by_hash_response(latest_block_hash, &backend).unwrap();
+
+        assert_eq!(block_id, 0);
+        assert_eq!(latest_block_id, 1);
+    }
+
+    #[tokio::test]
+    async fn get_block_hash_by_id_rejects_out_of_range_requests() {
+        let (backend, _) = submit_provider();
+        backend
+            .write_access()
+            .add_full_block_with_classes(&empty_block(0), &[], true)
+            .expect("Failed to persist confirmed block");
+
+        let err = block_hash_by_id_response(1, &backend).unwrap_err();
+
+        assert!(matches!(
+            err,
+            GatewayError::StarknetError(StarknetError { code: StarknetErrorCode::MalformedRequest, .. })
+        ));
     }
 }
