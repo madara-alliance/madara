@@ -13,6 +13,8 @@ use std::{
 };
 use tokio::net::TcpListener;
 
+use crate::metrics::{metrics, request_labels_from_path, status_class_label};
+
 #[derive(Debug, Clone)]
 pub struct GatewayServerConfig {
     pub feeder_gateway_enable: bool,
@@ -72,6 +74,7 @@ pub async fn start_server(
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
                     async move {
+                        let http_method = req.method().clone();
                         let path = req
                             .uri()
                             .path()
@@ -79,23 +82,58 @@ pub async fn start_server(
                             .filter(|segment| !segment.is_empty())
                             .collect::<Vec<_>>()
                             .join("/");
+                        let labels = request_labels_from_path(&path);
                         let start = Instant::now();
                         let Ok(res) =
                             main_router(req, &path, db_backend, add_transaction_provider, submit_validated, config)
                                 .await;
 
+                        let duration = start.elapsed();
+                        metrics().record_request(labels, http_method.as_str(), res.status(), duration);
+
                         let status = res.status().as_u16() as i64;
                         let res_len = res.body().len() as u64;
-                        let response_time = start.elapsed().as_micros();
+                        let response_time = duration.as_micros();
 
                         tracing::info!(
                             target: "gateway_calls",
-                            method = &path,
+                            service = labels.service,
+                            endpoint = labels.endpoint,
+                            http_method = http_method.as_str(),
+                            route = &path,
                             status = status,
                             res_len = res_len,
-                            response_time = response_time,
+                            response_time_us = response_time,
                             "{path} {status} {res_len} - {response_time} micros"
                         );
+
+                        if res.status().is_client_error() {
+                            tracing::warn!(
+                                target: "gateway_errors",
+                                service = labels.service,
+                                endpoint = labels.endpoint,
+                                http_method = http_method.as_str(),
+                                route = &path,
+                                status = status,
+                                status_class = status_class_label(res.status()),
+                                res_len = res_len,
+                                response_time_us = response_time,
+                                "Gateway request returned a client error"
+                            );
+                        } else if res.status().is_server_error() {
+                            tracing::error!(
+                                target: "gateway_errors",
+                                service = labels.service,
+                                endpoint = labels.endpoint,
+                                http_method = http_method.as_str(),
+                                route = &path,
+                                status = status,
+                                status_class = status_class_label(res.status()),
+                                res_len = res_len,
+                                response_time_us = response_time,
+                                "Gateway request returned a server error"
+                            );
+                        }
 
                         Ok::<_, Infallible>(res)
                     }

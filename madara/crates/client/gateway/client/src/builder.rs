@@ -21,6 +21,7 @@ use tower::Service;
 use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
+use crate::metrics::{metrics, request_labels_from_path, retry_reason};
 use crate::request_builder::url_join_segment;
 
 type BodyTy = Full<Bytes>;
@@ -121,26 +122,36 @@ impl RetryPolicy {
     }
 }
 
-impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
+impl<Req: Clone> retry::Policy<Request<Req>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
     #[tracing::instrument(skip(self, result), fields(module = "RetryPolicy"))]
     fn retry(
         &self,
-        _: &Req,
+        req: &Request<Req>,
         result: Result<&Response<Incoming>, &Box<dyn Error + Send + Sync>>,
     ) -> Option<Self::Future> {
         let pause_until = self.pause_until.clone();
+        let request_labels = request_labels_from_path(req.uri().path());
+        let http_method = req.method().as_str().to_string();
 
         match result {
             Ok(response) => {
                 if response.status() == StatusCode::TOO_MANY_REQUESTS {
                     let retry_after = get_retry_after(response).unwrap_or(Duration::from_secs(10)); // Default 10 seconds
+                    metrics().record_retry(request_labels, &http_method, retry_reason::RATE_LIMITED);
 
                     let next_policy = self.clone();
                     let fut = async move {
                         if (*pause_until.read().await).is_none() {
-                            tracing::info!(retry_after = ?retry_after, "⏳ Rate limited, retrying");
+                            tracing::warn!(
+                                target: "gateway_client_retries",
+                                service = request_labels.service,
+                                endpoint = request_labels.endpoint,
+                                http_method = %http_method,
+                                retry_after_secs = retry_after.as_secs_f64(),
+                                "Gateway client request rate limited, retrying"
+                            );
                         }
 
                         *pause_until.write().await = Some(Instant::now() + retry_after);
@@ -156,7 +167,8 @@ impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + S
                     None
                 }
             }
-            Err(_) if self.max_retries > 0 => {
+            Err(error) if self.max_retries > 0 => {
+                metrics().record_retry(request_labels, &http_method, retry_reason::TRANSPORT);
                 // If the request failed, retry after backoff duration
                 let next_policy = RetryPolicy {
                     max_retries: self.max_retries - 1,
@@ -164,6 +176,16 @@ impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + S
                     pause_until: self.pause_until.clone(),
                 };
                 let sleep = tokio::time::sleep(self.backoff);
+                tracing::warn!(
+                    target: "gateway_client_retries",
+                    service = request_labels.service,
+                    endpoint = request_labels.endpoint,
+                    http_method = %http_method,
+                    retry_backoff_secs = self.backoff.as_secs_f64(),
+                    retries_remaining = self.max_retries - 1,
+                    error = %error,
+                    "Gateway client transport error, retrying"
+                );
                 let fut = async move {
                     sleep.await;
                     next_policy
@@ -175,7 +197,7 @@ impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + S
         }
     }
 
-    fn clone_request(&self, req: &Req) -> Option<Req> {
+    fn clone_request(&self, req: &Request<Req>) -> Option<Request<Req>> {
         Some(req.clone())
     }
 }

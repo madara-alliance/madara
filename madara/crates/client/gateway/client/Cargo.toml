@@ -21,6 +21,7 @@ deny_unknown_fields = ["mp-gateway/deny_unknown_fields"]
 [dependencies]
 
 # Madara
+mc-telemetry.workspace = true
 mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
@@ -44,6 +45,7 @@ http-body-util.workspace = true
 hyper = { workspace = true, features = ["full"] }
 hyper-tls.workspace = true
 hyper-util.workspace = true
+opentelemetry = { workspace = true, features = ["metrics"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio.workspace = true
