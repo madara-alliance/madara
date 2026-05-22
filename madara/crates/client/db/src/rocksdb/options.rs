@@ -75,7 +75,6 @@
 //! ### 1. MemTable Settings
 //! - `write_buffer_size`: Size of single memtable (larger = fewer flushes, more memory)
 //! - `max_write_buffer_number`: Max memtables before stall (higher = more buffer)
-//! - `min_write_buffer_number_to_merge`: Memtables to merge before flush (reduces L0 files)
 //!
 //! ### 2. L0 Thresholds
 //! - `level_zero_slowdown_writes_trigger`: Start throttling (gradual slowdown)
@@ -382,11 +381,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // providing much more headroom during write bursts.
     options.set_max_write_buffer_number(config.max_write_buffer_number);
 
-    // Merge 2 memtables before flushing to L0.
-    // This reduces L0 file count (fewer files = less read amplification)
-    // and removes duplicate keys, reducing overall data size.
-    options.set_min_write_buffer_number_to_merge(2);
-
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION - L0 THRESHOLDS
     // ═══════════════════════════════════════════════════════════════════════════
@@ -530,13 +524,9 @@ impl Column {
             options.set_compaction_style(DBCompactionStyle::Level);
             options.set_write_buffer_size(budget_bytes / 4);
             options.set_max_write_buffer_number(config.max_write_buffer_number);
-            options.set_min_write_buffer_number_to_merge(2);
-            options.set_level_zero_file_num_compaction_trigger(4);
+            // 2x default (256 MiB) so L1 absorbs more data before triggering L1->L2 compaction,
+            // reducing write amplification for these append-heavy log CFs.
             options.set_max_bytes_for_level_base(512 * MiB as u64);
-            options.set_max_bytes_for_level_multiplier(10.0);
-            options.set_target_file_size_base(64 * MiB as u64);
-            options.set_target_file_size_multiplier(1);
-            options.set_num_levels(7);
         } else {
             // Universal compaction for everything else (lower write amp, fine
             // for read-heavy or balanced CFs). Sets write_buffer_size, memtable
@@ -544,11 +534,8 @@ impl Column {
             options.optimize_universal_style_compaction(budget_bytes);
         }
 
-        // IMPORTANT: `optimize_universal_style_compaction` resets the L0 stall
-        // triggers to RocksDB's hardcoded defaults (slowdown=20, stop=36),
-        // ignoring whatever we set globally / via CLI / via env. Re-apply them
-        // here so our configured values actually take effect per-CF. Setting
-        // them on the leveled branch is harmless (matches the explicit values).
+        // L0 stall thresholds are CF-scoped in RocksDB, so the global-level
+        // values don't propagate to named CFs. Set them explicitly here.
         options.set_level_zero_slowdown_writes_trigger(config.level_zero_slowdown_writes_trigger);
         options.set_level_zero_stop_writes_trigger(config.level_zero_stop_writes_trigger);
 

@@ -80,6 +80,10 @@ impl DbMetrics {
                 .build(),
         );
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // STORAGE METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
+
         let db_size = register_gauge_metric_instrument(
             &meter,
             "db_size".to_string(),
@@ -93,6 +97,10 @@ impl DbMetrics {
             "Size of each RocksDB column family in bytes".to_string(),
             "".to_string(),
         );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // MEMORY METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
 
         let mem_table_total = register_gauge_metric_instrument(
             &meter,
@@ -122,6 +130,10 @@ impl DbMetrics {
             "".to_string(),
         );
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LSM TREE & MEMTABLE METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
+
         let level_files_count = register_gauge_metric_instrument(
             &meter,
             "db_level_files_count".to_string(),
@@ -132,7 +144,7 @@ impl DbMetrics {
         let num_immutable_memtables = register_gauge_metric_instrument(
             &meter,
             "db_num_immutable_memtables".to_string(),
-            "Number of immutable memtables waiting to be flushed".to_string(),
+            "Number of immutable memtables waiting to be flushed (stall when >= max_write_buffer_number)".to_string(),
             "".to_string(),
         );
 
@@ -142,6 +154,10 @@ impl DbMetrics {
             "Total size of all memtables in bytes".to_string(),
             "".to_string(),
         );
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // WRITE STALL DETECTION METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
 
         let is_write_stopped = register_gauge_metric_instrument(
             &meter,
@@ -157,7 +173,10 @@ impl DbMetrics {
             "".to_string(),
         );
 
-        // Compaction & I/O throughput gauges (cumulative ticker values)
+        // ═══════════════════════════════════════════════════════════════════════════
+        // COMPACTION & I/O THROUGHPUT (cumulative ticker values, requires statistics)
+        // ═══════════════════════════════════════════════════════════════════════════
+
         let bytes_written = register_gauge_metric_instrument(
             &meter,
             "db_bytes_written_total".to_string(),
@@ -207,7 +226,10 @@ impl DbMetrics {
             "".to_string(),
         );
 
-        // Compaction activity gauges
+        // ═══════════════════════════════════════════════════════════════════════════
+        // COMPACTION ACTIVITY
+        // ═══════════════════════════════════════════════════════════════════════════
+
         let running_compactions = register_gauge_metric_instrument(
             &meter,
             "db_running_compactions".to_string(),
@@ -322,6 +344,7 @@ impl DbMetrics {
         // WRITE STALL DETECTION
         // ═══════════════════════════════════════════════════════════════════════════
 
+        // Global property (not per-CF): 1 if writes are completely blocked
         if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.is-write-stopped") {
             self.is_write_stopped.record(val, &[]);
         }
