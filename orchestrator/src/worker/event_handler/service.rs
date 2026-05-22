@@ -696,7 +696,10 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
-        workload.finish_success();
+        match operation_job_status {
+            Some(JobStatus::VerificationTimeout) => workload.finish_error(),
+            _ => workload.finish_success(),
+        }
         Ok(())
     }
 
