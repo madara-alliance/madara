@@ -150,6 +150,7 @@
 #![allow(clippy::result_large_err)]
 
 use blockifier::{
+    execution::errors::{ConstructorEntryPointExecutionError, EntryPointExecutionError, PreExecutionError},
     state::cached_state::{CommitmentStateDiff, StateMaps},
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
@@ -203,6 +204,32 @@ pub enum Error {
     },
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
+}
+
+fn is_entrypoint_not_found(error: &EntryPointExecutionError) -> bool {
+    matches!(
+        error,
+        EntryPointExecutionError::PreExecutionError(
+            PreExecutionError::EntryPointNotFound(_) | PreExecutionError::NoEntryPointOfTypeFound(_)
+        )
+    )
+}
+
+fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) -> bool {
+    match error {
+        TransactionExecutionError::ExecutionError { error, .. }
+        | TransactionExecutionError::ValidateTransactionError { error, .. } => is_entrypoint_not_found(error),
+        TransactionExecutionError::ContractConstructorExecutionFailed(
+            ConstructorEntryPointExecutionError::ExecutionError { error, .. },
+        ) => is_entrypoint_not_found(error),
+        _ => false,
+    }
+}
+
+impl Error {
+    pub fn is_entrypoint_not_found(&self) -> bool {
+        matches!(self, Self::CallContract(error) if transaction_error_is_entrypoint_not_found(&error.err))
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
