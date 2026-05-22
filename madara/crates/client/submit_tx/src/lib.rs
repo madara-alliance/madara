@@ -109,20 +109,99 @@
 //! [`StatefulValidator`]: blockifier::blockifier::stateful_validator::StatefulValidator
 use async_trait::async_trait;
 use mc_db::MadaraStorage;
-use mc_mempool::Mempool;
-use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
+use mc_mempool::{Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus};
+use mp_gateway::{
+    feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionStatus},
+    transaction::Transaction as GatewayTransaction,
+};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{
+    validated::ValidatedTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee, TransactionWithHash,
+};
 
 mod error;
 mod validation;
 
 pub use error::*;
 pub use validation::{TransactionValidator, TransactionValidatorConfig};
+
+fn gateway_transaction(transaction: &ValidatedTransaction) -> GatewayTransaction {
+    GatewayTransaction::new(
+        TransactionWithHash { transaction: transaction.transaction.clone(), hash: transaction.hash },
+        Some(transaction.contract_address),
+    )
+}
+
+fn feeder_status_from_mempool(status: &MempoolTransactionStatus) -> ProviderTransactionStatus {
+    match status {
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Received(_)) => {
+            ProviderTransactionStatus::received()
+        }
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Candidate { .. }) => {
+            ProviderTransactionStatus::with_status(TransactionStatus::Candidate, None, None, None)
+        }
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Executed { .. }) => {
+            ProviderTransactionStatus::with_status(TransactionStatus::PreConfirmed, None, None, None)
+        }
+        MempoolTransactionStatus::Confirmed { is_on_l1, .. } => ProviderTransactionStatus::with_status(
+            if *is_on_l1 { TransactionStatus::AcceptedOnL1 } else { TransactionStatus::AcceptedOnL2 },
+            None,
+            None,
+            None,
+        ),
+    }
+}
+
+fn feeder_transaction_from_mempool(status: &MempoolTransactionStatus) -> ProviderTransactionResponse {
+    match status {
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Received(transaction)) => {
+            ProviderTransactionResponse::with_status(
+                TransactionStatus::Received,
+                None,
+                None,
+                None,
+                None,
+                Some(gateway_transaction(transaction)),
+            )
+        }
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Candidate {
+            view,
+            transaction_index,
+            transaction,
+        }) => ProviderTransactionResponse::with_status(
+            TransactionStatus::Candidate,
+            None,
+            None,
+            Some(view.header.block_number),
+            Some(*transaction_index),
+            Some(gateway_transaction(transaction)),
+        ),
+        MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Executed { view, transaction_index }) => {
+            ProviderTransactionResponse::with_status(
+                TransactionStatus::PreConfirmed,
+                None,
+                None,
+                Some(view.header.block_number),
+                Some(*transaction_index),
+                None,
+            )
+        }
+        MempoolTransactionStatus::Confirmed { block_number, transaction_index, is_on_l1 } => {
+            ProviderTransactionResponse::with_status(
+                if *is_on_l1 { TransactionStatus::AcceptedOnL1 } else { TransactionStatus::AcceptedOnL2 },
+                None,
+                None,
+                Some(*block_number),
+                Some(*transaction_index),
+                None,
+            )
+        }
+    }
+}
 
 /// Abstraction layer over where transactions are submitted.
 ///
@@ -264,6 +343,22 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
         None
     }
 
+    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
+        match self.get_transaction_status(&hash) {
+            Ok(Some(status)) => Some(feeder_status_from_mempool(&status)),
+            Ok(None) => Some(ProviderTransactionStatus::not_received()),
+            Err(_) => None,
+        }
+    }
+
+    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
+        match self.get_transaction_status(&hash) {
+            Ok(Some(status)) => Some(feeder_transaction_from_mempool(&status)),
+            Ok(None) => Some(ProviderTransactionResponse::not_received()),
+            Err(_) => None,
+        }
+    }
+
     async fn oldest_transaction_age(&self) -> Option<u64> {
         Some(
             self.oldest_transaction_arrived_at()
@@ -276,5 +371,72 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
 
     async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
         Some(self.num_transactions().await as u64)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mc_db::preconfirmed::PreconfirmedBlock;
+    use mp_rpc::v0_9_0::{BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
+
+    fn validated_invoke_tx(hash: Felt) -> ValidatedTransaction {
+        let tx = BroadcastedInvokeTxn::V3(InvokeTxnV3 {
+            calldata: Default::default(),
+            sender_address: Felt::ONE,
+            signature: Default::default(),
+            nonce: Default::default(),
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l2_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+            },
+            tip: Default::default(),
+            paymaster_data: Default::default(),
+            account_deployment_data: Default::default(),
+            nonce_data_availability_mode: DaMode::L1,
+            fee_data_availability_mode: DaMode::L1,
+        });
+
+        ValidatedTransaction {
+            transaction: mp_transactions::Transaction::Invoke(tx.into()),
+            paid_fee_on_l1: None,
+            contract_address: Felt::ONE,
+            arrived_at: mp_transactions::validated::TxTimestamp::now(),
+            declared_class: None,
+            hash,
+            charge_fee: true,
+        }
+    }
+
+    #[test]
+    fn feeder_transaction_from_mempool_includes_received_payload() {
+        let tx = Arc::new(validated_invoke_tx(Felt::TWO));
+        let response = feeder_transaction_from_mempool(&MempoolTransactionStatus::Preconfirmed(
+            PreConfirmationStatus::Received(Arc::clone(&tx)),
+        ));
+
+        assert_eq!(response.status, TransactionStatus::Received);
+        assert_eq!(response.finality_status, TransactionStatus::Received);
+        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(Felt::TWO));
+        assert_eq!(response.transaction.as_ref().map(|tx| *tx.contract_address()), Some(Felt::ONE));
+    }
+
+    #[test]
+    fn feeder_transaction_from_mempool_includes_candidate_payload() {
+        let tx = Arc::new(validated_invoke_tx(Felt::THREE));
+        let view = Arc::new(PreconfirmedBlock::new(Default::default()));
+        let response = feeder_transaction_from_mempool(&MempoolTransactionStatus::Preconfirmed(
+            PreConfirmationStatus::Candidate { view, transaction_index: 3, transaction: Arc::clone(&tx) },
+        ));
+
+        assert_eq!(response.status, TransactionStatus::Candidate);
+        assert_eq!(response.finality_status, TransactionStatus::Candidate);
+        assert_eq!(response.block_number, Some(0));
+        assert_eq!(response.transaction_index, Some(3));
+        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(Felt::THREE));
+        assert_eq!(response.transaction.as_ref().map(|tx| *tx.contract_address()), Some(Felt::ONE));
     }
 }
