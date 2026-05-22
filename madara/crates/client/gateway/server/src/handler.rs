@@ -9,7 +9,9 @@ use crate::helpers::{block_view_from_params, not_found_response, view_from_param
 use anyhow::Context;
 use bincode::Options;
 use bytes::Buf;
+use flate2::read::GzDecoder;
 use http_body_util::BodyExt;
+use hyper::header::{HeaderMap, CONTENT_ENCODING, CONTENT_TYPE};
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
@@ -36,7 +38,92 @@ use mp_transactions::validated::ValidatedTransaction;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+use std::{borrow::Cow, io::Read, sync::Arc};
+
+const GZIP_MAGIC_BYTES: [u8; 2] = [0x1f, 0x8b];
+const BODY_PREFIX_HEX_BYTES: usize = 8;
+
+fn header_value(headers: &HeaderMap, name: &'static str) -> String {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .unwrap_or_else(|| "<missing>".to_string())
+}
+
+fn body_prefix_hex(body: &[u8]) -> String {
+    if body.is_empty() {
+        return "<empty>".to_string();
+    }
+
+    body.iter().take(BODY_PREFIX_HEX_BYTES).map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" ")
+}
+
+fn body_starts_with_gzip_magic(body: &[u8]) -> bool {
+    body.starts_with(&GZIP_MAGIC_BYTES)
+}
+
+fn is_gzip_encoded(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(',').any(|encoding| encoding.trim().eq_ignore_ascii_case("gzip")))
+        .unwrap_or(false)
+}
+
+fn log_add_transaction_decode_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &std::io::Error) {
+    tracing::warn!(
+        target: "gateway_errors",
+        request_path = path,
+        content_type = %header_value(headers, CONTENT_TYPE.as_str()),
+        content_encoding = %header_value(headers, CONTENT_ENCODING.as_str()),
+        body_len = body.len(),
+        first_bytes_hex = %body_prefix_hex(body),
+        looks_gzip = body_starts_with_gzip_magic(body),
+        decode_error = %error,
+        "Failed to decode gateway/add_transaction request body"
+    );
+}
+
+fn log_add_transaction_parse_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &serde_json::Error) {
+    tracing::warn!(
+        target: "gateway_errors",
+        request_path = path,
+        content_type = %header_value(headers, CONTENT_TYPE.as_str()),
+        content_encoding = %header_value(headers, CONTENT_ENCODING.as_str()),
+        body_len = body.len(),
+        first_bytes_hex = %body_prefix_hex(body),
+        looks_gzip = body_starts_with_gzip_magic(body),
+        serde_error = %error,
+        "Failed to parse gateway/add_transaction request body"
+    );
+}
+
+fn parse_add_transaction_request(
+    path: &str,
+    headers: &HeaderMap,
+    raw_body: &[u8],
+) -> Result<UserTransaction, GatewayError> {
+    let decoded_body = if is_gzip_encoded(headers) {
+        let mut decoder = GzDecoder::new(raw_body);
+        let mut decoded_body = Vec::new();
+        if let Err(error) = decoder.read_to_end(&mut decoded_body) {
+            log_add_transaction_decode_failure(path, headers, raw_body, &error);
+            return Err(GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::MalformedRequest,
+                format!("Failed to decode gzip request body: {error}"),
+            )));
+        }
+        Cow::Owned(decoded_body)
+    } else {
+        Cow::Borrowed(raw_body)
+    };
+
+    serde_json::from_slice::<UserTransaction>(decoded_body.as_ref()).map_err(|error| {
+        log_add_transaction_parse_failure(path, headers, raw_body, &error);
+        GatewayError::StarknetError(StarknetError::malformed_request(error))
+    })
+}
 
 pub async fn handle_get_preconfirmed_block(
     req: Request<Incoming>,
@@ -324,10 +411,13 @@ pub async fn handle_add_transaction(
     req: Request<Incoming>,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, GatewayError> {
-    let whole_body = req.collect().await.context("Failed to read request body")?.aggregate();
+    let path = req.uri().path().to_owned();
+    let headers = req.headers().clone();
+    let mut whole_body = req.collect().await.context("Failed to read request body")?.aggregate();
+    let body_len = whole_body.remaining();
+    let whole_body = whole_body.copy_to_bytes(body_len);
 
-    let transaction = serde_json::from_reader::<_, UserTransaction>(whole_body.reader())
-        .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
+    let transaction = parse_add_transaction_request(&path, &headers, whole_body.as_ref())?;
 
     let response = match transaction {
         UserTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
