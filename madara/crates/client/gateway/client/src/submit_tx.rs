@@ -1,7 +1,7 @@
 use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
-use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionStatus};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -123,11 +123,10 @@ impl SubmitTransaction for GatewayProvider {
             .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
     }
 
-    async fn received_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        self.get_transaction_status(hash)
-            .await
-            .ok()
-            .map(|status| !matches!(status.tx_status, TransactionStatus::NotReceived))
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        // Keep this as a cheap capability probe. Rich feeder lookups are available through the
+        // explicit `feeder_transaction*` hooks below.
+        None
     }
 
     async fn subscribe_new_transactions(
@@ -166,11 +165,10 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
         self.add_validated_transaction(tx).await.map_err(map_gateway_error)
     }
 
-    async fn received_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        self.get_transaction_status(hash)
-            .await
-            .ok()
-            .map(|status| !matches!(status.tx_status, TransactionStatus::NotReceived))
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        // Keep this as a cheap capability probe. Rich feeder lookups are available through the
+        // explicit `feeder_transaction*` hooks below.
+        None
     }
 
     async fn subscribe_new_transactions(

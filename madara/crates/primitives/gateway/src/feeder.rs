@@ -5,12 +5,12 @@ use starknet_types_core::felt::Felt;
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TransactionStatus {
+    #[default]
     NotReceived,
     Received,
     Pending,
     Rejected,
     AcceptedOnL1,
-    #[default]
     AcceptedOnL2,
     Reverted,
     Aborted,

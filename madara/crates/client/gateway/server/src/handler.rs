@@ -1112,6 +1112,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_transaction_returns_preconfirmed_payload_for_preconfirmed_backend_tx() {
+        let backend = backend_for_tests();
+        backend
+            .write_access()
+            .new_preconfirmed(mc_db::preconfirmed::PreconfirmedBlock::new_with_content(
+                mp_block::header::PreconfirmedHeader { block_number: 0, ..Default::default() },
+                [preconfirmed_tx()],
+                std::iter::empty::<Arc<mp_transactions::validated::ValidatedTransaction>>(),
+            ))
+            .expect("Failed to persist preconfirmed block");
+        let provider = StubSubmitTransaction::with_status(ProviderTransactionStatus::not_received());
+
+        let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
+
+        assert_eq!(response.status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
+        assert_eq!(response.block_hash, None);
+        assert_eq!(response.block_number, Some(0));
+        assert_eq!(response.transaction_index, Some(0));
+        assert!(response.transaction.is_some());
+    }
+
+    #[tokio::test]
     async fn get_block_hash_by_id_and_block_id_by_hash_roundtrip() {
         let (backend, _) = submit_provider();
         backend

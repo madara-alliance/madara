@@ -183,6 +183,9 @@ pub trait SubmitTransaction: Send + Sync {
     ///
     /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
     /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
+    ///
+    /// Official Starknet feeder behavior currently returns the current timestamp for an empty
+    /// queue, so implementors should not treat "empty" as a special null-like case here.
     async fn oldest_transaction_age(&self) -> Option<u64> {
         None
     }
@@ -237,6 +240,9 @@ pub trait SubmitValidatedTransaction: Send + Sync {
     ///
     /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
     /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
+    ///
+    /// Official Starknet feeder behavior currently returns the current timestamp for an empty
+    /// queue, so implementors should not treat "empty" as a special null-like case here.
     async fn oldest_transaction_age(&self) -> Option<u64> {
         None
     }
@@ -262,6 +268,7 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
         Some(
             self.oldest_transaction_arrived_at()
                 .await
+                // Match the official feeder behavior for an empty backlog.
                 .map(|timestamp| timestamp.0 / 1_000)
                 .unwrap_or_else(|| mp_transactions::validated::TxTimestamp::now().0 / 1_000),
         )
