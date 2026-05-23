@@ -676,6 +676,13 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     }
 }
 
+impl<D: MadaraStorage> MadaraBackend<D> {
+    /// Clear any saved runtime execution configuration from the database.
+    pub fn clear_runtime_exec_config(&self) -> Result<()> {
+        self.db.clear_runtime_exec_config()
+    }
+}
+
 /// Structure holding exclusive access to write the blocks and the tip of the chain.
 ///
 /// Note: All of the associated functions need to be called in a rayon thread pool context.
