@@ -45,26 +45,6 @@ const BODY_PREFIX_HEX_BYTES: usize = 8;
 // Match the default RPC request size until the gateway has dedicated body-size configuration.
 const MAX_DECOMPRESSED_ADD_TRANSACTION_BODY_BYTES: u64 = 15 * 1024 * 1024;
 
-fn header_value(headers: &HeaderMap, name: &'static str) -> String {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned)
-        .unwrap_or_else(|| "<missing>".to_string())
-}
-
-fn body_prefix_hex(body: &[u8]) -> String {
-    if body.is_empty() {
-        return "<empty>".to_string();
-    }
-
-    body.iter().take(BODY_PREFIX_HEX_BYTES).map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" ")
-}
-
-fn body_starts_with_gzip_magic(body: &[u8]) -> bool {
-    body.starts_with(&GZIP_MAGIC_BYTES)
-}
-
 fn is_gzip_encoded(headers: &HeaderMap) -> bool {
     headers
         .get(CONTENT_ENCODING)
@@ -73,31 +53,23 @@ fn is_gzip_encoded(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-fn log_add_transaction_decode_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &std::io::Error) {
-    tracing::warn!(
-        target: "gateway_errors",
-        request_path = path,
-        content_type = %header_value(headers, CONTENT_TYPE.as_str()),
-        content_encoding = %header_value(headers, CONTENT_ENCODING.as_str()),
-        body_len = body.len(),
-        first_bytes_hex = %body_prefix_hex(body),
-        looks_gzip = body_starts_with_gzip_magic(body),
-        decode_error = %error,
-        "Failed to decode gateway/add_transaction request body"
-    );
-}
+fn log_add_transaction_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &dyn std::fmt::Display) {
+    let content_type = headers.get(CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("<missing>").to_owned();
+    let content_encoding =
+        headers.get(CONTENT_ENCODING).and_then(|v| v.to_str().ok()).unwrap_or("<missing>").to_owned();
+    let first_bytes: String =
+        body.iter().take(BODY_PREFIX_HEX_BYTES).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
 
-fn log_add_transaction_parse_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &serde_json::Error) {
     tracing::warn!(
         target: "gateway_errors",
         request_path = path,
-        content_type = %header_value(headers, CONTENT_TYPE.as_str()),
-        content_encoding = %header_value(headers, CONTENT_ENCODING.as_str()),
+        content_type,
+        content_encoding,
         body_len = body.len(),
-        first_bytes_hex = %body_prefix_hex(body),
-        looks_gzip = body_starts_with_gzip_magic(body),
-        serde_error = %error,
-        "Failed to parse gateway/add_transaction request body"
+        first_bytes_hex = first_bytes,
+        looks_gzip = body.starts_with(&GZIP_MAGIC_BYTES),
+        error = %error,
+        "Failed to process gateway/add_transaction request body"
     );
 }
 
@@ -129,7 +101,7 @@ fn parse_add_transaction_request_with_max_body_size(
 ) -> Result<UserTransaction, GatewayError> {
     let decoded_body = if is_gzip_encoded(headers) {
         let decoded_body = decode_gzip_request_body(raw_body, max_decompressed_body_bytes).map_err(|error| {
-            log_add_transaction_decode_failure(path, headers, raw_body, &error);
+            log_add_transaction_failure(path, headers, raw_body, &error);
             GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::MalformedRequest,
                 format!("Failed to decode gzip request body: {error}"),
@@ -141,93 +113,9 @@ fn parse_add_transaction_request_with_max_body_size(
     };
 
     serde_json::from_slice::<UserTransaction>(decoded_body.as_ref()).map_err(|error| {
-        log_add_transaction_parse_failure(path, headers, raw_body, &error);
+        log_add_transaction_failure(path, headers, raw_body, &error);
         GatewayError::StarknetError(StarknetError::malformed_request(error))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use flate2::{write::GzEncoder, Compression};
-    use hyper::header::HeaderValue;
-    use rstest::rstest;
-    use std::io::Write;
-
-    const TEST_PATH: &str = "/gateway/add_transaction";
-
-    fn request_headers(content_encoding: Option<&'static str>) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        if let Some(content_encoding) = content_encoding {
-            headers.insert(CONTENT_ENCODING, HeaderValue::from_static(content_encoding));
-        }
-        headers
-    }
-
-    fn invoke_transaction_body(calldata_len: usize) -> Vec<u8> {
-        let calldata = vec!["0x1"; calldata_len];
-        serde_json::to_vec(&serde_json::json!({
-            "type": "INVOKE_FUNCTION",
-            "version": "0x1",
-            "sender_address": "0x1",
-            "calldata": calldata,
-            "signature": ["0x2"],
-            "max_fee": "0x0",
-            "nonce": "0x0"
-        }))
-        .expect("valid invoke transaction body")
-    }
-
-    fn gzip_body(body: &[u8]) -> Vec<u8> {
-        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(body).expect("write gzip body");
-        encoder.finish().expect("finalize gzip body")
-    }
-
-    fn malformed_request(error: GatewayError) -> StarknetError {
-        match error {
-            GatewayError::StarknetError(error) => {
-                assert_eq!(error.code, StarknetErrorCode::MalformedRequest);
-                error
-            }
-            error => panic!("expected malformed request error, got {error:?}"),
-        }
-    }
-
-    #[rstest]
-    #[case(None)]
-    #[case(Some("gzip"))]
-    fn parse_add_transaction_request_accepts_plain_and_gzip_bodies(#[case] content_encoding: Option<&'static str>) {
-        let raw_body = invoke_transaction_body(1);
-        let headers = request_headers(content_encoding);
-        let body = if content_encoding.is_some() { gzip_body(&raw_body) } else { raw_body };
-
-        let transaction = parse_add_transaction_request(TEST_PATH, &headers, &body).expect("body should parse");
-
-        assert!(matches!(transaction, UserTransaction::InvokeFunction(UserInvokeFunctionTransaction::V1(_))));
-    }
-
-    #[test]
-    fn parse_add_transaction_request_rejects_invalid_gzip_body() {
-        let headers = request_headers(Some("gzip"));
-        let error = parse_add_transaction_request(TEST_PATH, &headers, br#"{"not":"gzip"}"#)
-            .expect_err("gzip body should fail");
-        let error = malformed_request(error);
-
-        assert!(error.message.starts_with("Failed to decode gzip request body:"));
-    }
-
-    #[test]
-    fn parse_add_transaction_request_rejects_oversized_gzip_body() {
-        let raw_body = invoke_transaction_body(64);
-        let headers = request_headers(Some("gzip"));
-        let body = gzip_body(&raw_body);
-        let error = parse_add_transaction_request_with_max_body_size(TEST_PATH, &headers, &body, 64)
-            .expect_err("oversized decompressed body should fail");
-        let error = malformed_request(error);
-
-        assert!(error.message.contains("Read input is too large"));
-    }
 }
 
 pub async fn handle_get_preconfirmed_block(
@@ -583,5 +471,89 @@ async fn invoke_transaction(
             &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
         ),
         Err(e) => GatewayError::from(e).into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::{write::GzEncoder, Compression};
+    use hyper::header::HeaderValue;
+    use rstest::rstest;
+    use std::io::Write;
+
+    const TEST_PATH: &str = "/gateway/add_transaction";
+
+    fn request_headers(content_encoding: Option<&'static str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(content_encoding) = content_encoding {
+            headers.insert(CONTENT_ENCODING, HeaderValue::from_static(content_encoding));
+        }
+        headers
+    }
+
+    fn invoke_transaction_body(calldata_len: usize) -> Vec<u8> {
+        let calldata = vec!["0x1"; calldata_len];
+        serde_json::to_vec(&serde_json::json!({
+            "type": "INVOKE_FUNCTION",
+            "version": "0x1",
+            "sender_address": "0x1",
+            "calldata": calldata,
+            "signature": ["0x2"],
+            "max_fee": "0x0",
+            "nonce": "0x0"
+        }))
+        .expect("valid invoke transaction body")
+    }
+
+    fn gzip_body(body: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(body).expect("write gzip body");
+        encoder.finish().expect("finalize gzip body")
+    }
+
+    fn malformed_request(error: GatewayError) -> StarknetError {
+        match error {
+            GatewayError::StarknetError(error) => {
+                assert_eq!(error.code, StarknetErrorCode::MalformedRequest);
+                error
+            }
+            error => panic!("expected malformed request error, got {error:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some("gzip"))]
+    fn parse_add_transaction_request_accepts_plain_and_gzip_bodies(#[case] content_encoding: Option<&'static str>) {
+        let raw_body = invoke_transaction_body(1);
+        let headers = request_headers(content_encoding);
+        let body = if content_encoding.is_some() { gzip_body(&raw_body) } else { raw_body };
+
+        let transaction = parse_add_transaction_request(TEST_PATH, &headers, &body).expect("body should parse");
+
+        assert!(matches!(transaction, UserTransaction::InvokeFunction(UserInvokeFunctionTransaction::V1(_))));
+    }
+
+    #[test]
+    fn parse_add_transaction_request_rejects_invalid_gzip_body() {
+        let headers = request_headers(Some("gzip"));
+        let error = parse_add_transaction_request(TEST_PATH, &headers, br#"{"not":"gzip"}"#)
+            .expect_err("gzip body should fail");
+        let error = malformed_request(error);
+
+        assert!(error.message.starts_with("Failed to decode gzip request body:"));
+    }
+
+    #[test]
+    fn parse_add_transaction_request_rejects_oversized_gzip_body() {
+        let raw_body = invoke_transaction_body(64);
+        let headers = request_headers(Some("gzip"));
+        let body = gzip_body(&raw_body);
+        let error = parse_add_transaction_request_with_max_body_size(TEST_PATH, &headers, &body, 64)
+            .expect_err("oversized decompressed body should fail");
+        let error = malformed_request(error);
+
+        assert!(error.message.contains("Read input is too large"));
     }
 }
