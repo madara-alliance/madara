@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -85,6 +86,26 @@ impl SubmitTransaction for SubmitTransactionSwitch {
             None => None,
         }
     }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        match self.provider().ok() {
+            Some(provider) => provider.feeder_transaction_status(hash).await,
+            None => Ok(None),
+        }
+    }
+
+    async fn feeder_transaction(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        match self.provider().ok() {
+            Some(provider) => provider.feeder_transaction(hash).await,
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -123,6 +144,26 @@ impl SubmitValidatedTransaction for SubmitValidatedTransactionSwitch {
         match self.validated_provider().ok() {
             Some(provider) => provider.subscribe_new_transactions().await,
             None => None,
+        }
+    }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        match self.validated_provider().ok() {
+            Some(provider) => provider.feeder_transaction_status(hash).await,
+            None => Ok(None),
+        }
+    }
+
+    async fn feeder_transaction(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        match self.validated_provider().ok() {
+            Some(provider) => provider.feeder_transaction(hash).await,
+            None => Ok(None),
         }
     }
 }

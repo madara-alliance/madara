@@ -238,24 +238,34 @@ pub trait SubmitTransaction: Send + Sync {
 
     /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
     ///
-    /// The default implementation falls back to the lighter `received_transaction` hook.
-    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
-        match self.received_transaction(hash).await {
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction_status(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
             Some(true) => Some(ProviderTransactionStatus::received()),
             Some(false) => Some(ProviderTransactionStatus::not_received()),
             None => None,
-        }
+        })
     }
 
     /// Returns the exact feeder gateway transaction payload when the backend can provide it.
     ///
-    /// The default implementation falls back to the lighter `received_transaction` hook.
-    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
-        match self.received_transaction(hash).await {
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
             Some(true) => Some(ProviderTransactionResponse::received()),
             Some(false) => Some(ProviderTransactionResponse::not_received()),
             None => None,
-        }
+        })
     }
 }
 
@@ -280,24 +290,34 @@ pub trait SubmitValidatedTransaction: Send + Sync {
 
     /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
     ///
-    /// The default implementation falls back to the lighter `received_transaction` hook.
-    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
-        match self.received_transaction(hash).await {
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction_status(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
             Some(true) => Some(ProviderTransactionStatus::received()),
             Some(false) => Some(ProviderTransactionStatus::not_received()),
             None => None,
-        }
+        })
     }
 
     /// Returns the exact feeder gateway transaction payload when the backend can provide it.
     ///
-    /// The default implementation falls back to the lighter `received_transaction` hook.
-    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
-        match self.received_transaction(hash).await {
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
             Some(true) => Some(ProviderTransactionResponse::received()),
             Some(false) => Some(ProviderTransactionResponse::not_received()),
             None => None,
-        }
+        })
     }
 }
 
@@ -313,19 +333,25 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
         None
     }
 
-    async fn feeder_transaction_status(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionStatus> {
+    async fn feeder_transaction_status(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
         match self.get_transaction_status(&hash) {
-            Ok(Some(status)) => Some(feeder_status_from_mempool(&status)),
-            Ok(None) => Some(ProviderTransactionStatus::not_received()),
-            Err(_) => None,
+            Ok(Some(status)) => Ok(Some(feeder_status_from_mempool(&status))),
+            Ok(None) => Ok(Some(ProviderTransactionStatus::not_received())),
+            Err(err) => Err(SubmitTransactionError::Internal(err)),
         }
     }
 
-    async fn feeder_transaction(&self, hash: mp_convert::Felt) -> Option<ProviderTransactionResponse> {
+    async fn feeder_transaction(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         match self.get_transaction_status(&hash) {
-            Ok(Some(status)) => Some(feeder_transaction_from_mempool(&status)),
-            Ok(None) => Some(ProviderTransactionResponse::not_received()),
-            Err(_) => None,
+            Ok(Some(status)) => Ok(Some(feeder_transaction_from_mempool(&status))),
+            Ok(None) => Ok(Some(ProviderTransactionResponse::not_received())),
+            Err(err) => Err(SubmitTransactionError::Internal(err)),
         }
     }
 }

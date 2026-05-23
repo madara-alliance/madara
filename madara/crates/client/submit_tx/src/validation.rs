@@ -482,11 +482,17 @@ impl SubmitTransaction for TransactionValidator {
         self.inner.subscribe_new_transactions().await
     }
 
-    async fn feeder_transaction_status(&self, hash: Felt) -> Option<ProviderTransactionStatus> {
+    async fn feeder_transaction_status(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
         self.inner.feeder_transaction_status(hash).await
     }
 
-    async fn feeder_transaction(&self, hash: Felt) -> Option<ProviderTransactionResponse> {
+    async fn feeder_transaction(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         self.inner.feeder_transaction(hash).await
     }
 }

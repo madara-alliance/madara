@@ -139,12 +139,15 @@ impl SubmitTransaction for GatewayProvider {
     async fn feeder_transaction_status(
         &self,
         hash: starknet_types_core::felt::Felt,
-    ) -> Option<ProviderTransactionStatus> {
-        self.get_transaction_status(hash).await.ok()
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        self.get_transaction_status(hash).await.map(Some).map_err(map_gateway_error)
     }
 
-    async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
-        self.get_transaction(hash).await.ok()
+    async fn feeder_transaction(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        self.get_transaction(hash).await.map(Some).map_err(map_gateway_error)
     }
 }
 
@@ -173,11 +176,14 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
     async fn feeder_transaction_status(
         &self,
         hash: starknet_types_core::felt::Felt,
-    ) -> Option<ProviderTransactionStatus> {
-        self.get_transaction_status(hash).await.ok()
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        self.get_transaction_status(hash).await.map(Some).map_err(map_gateway_error)
     }
 
-    async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
-        self.get_transaction(hash).await.ok()
+    async fn feeder_transaction(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        self.get_transaction(hash).await.map(Some).map_err(map_gateway_error)
     }
 }
