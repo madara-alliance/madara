@@ -21,8 +21,8 @@ deny_unknown_fields = ["mp-gateway/deny_unknown_fields"]
 [dependencies]
 
 # Madara
-mc-telemetry.workspace = true
 mc-submit-tx.workspace = true
+mc-telemetry.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
