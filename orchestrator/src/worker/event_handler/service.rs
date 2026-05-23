@@ -635,8 +635,6 @@ impl JobHandlerService {
                             error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationTimeout");
                             JobError::from(e)
                         })?;
-                    operation_job_status = Some(JobStatus::VerificationTimeout);
-
                     MetricsRecorder::record_job_state_transition(
                         JobStatus::PendingVerification,
                         JobStatus::VerificationTimeout,
@@ -697,8 +695,8 @@ impl JobHandlerService {
             }
         };
 
-        if let Some(job_status) = operation_job_status {
-            attributes.push(KeyValue::new("operation_job_status", format!("{}", job_status)));
+        if let Some(job_status) = operation_job_status.as_ref() {
+            attributes.push(KeyValue::new("operation_job_status", job_status.to_string()));
         }
 
         debug!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
@@ -706,9 +704,10 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
-        match operation_job_status {
-            Some(JobStatus::VerificationFailed) => workload.finish_error(),
-            _ => workload.finish_success(),
+        if operation_job_status == Some(JobStatus::VerificationFailed) {
+            workload.finish_error();
+        } else {
+            workload.finish_success();
         }
         Ok(())
     }
