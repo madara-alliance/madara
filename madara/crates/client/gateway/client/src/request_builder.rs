@@ -91,7 +91,9 @@ impl<'a> RequestBuilder<'a> {
     pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
         let telemetry = self.telemetry("GET");
         let start = Instant::now();
-        self.send_request(Method::GET, Bytes::new(), None, &telemetry, start).await
+        let response = self.send_request(Method::GET, Bytes::new(), None, &telemetry, start).await?;
+        record_successful_request(&telemetry, response.status(), start.elapsed());
+        Ok(response)
     }
 
     pub async fn send_post_bincode<T, D>(self, body: D) -> Result<T, SequencerError>

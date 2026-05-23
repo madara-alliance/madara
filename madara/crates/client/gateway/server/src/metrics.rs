@@ -55,7 +55,6 @@ impl GatewayServerMetrics {
                 KeyValue::new("endpoint", labels.endpoint),
                 KeyValue::new("http_method", http_method.to_string()),
                 KeyValue::new("status_code", status_code.as_u16().to_string()),
-                KeyValue::new("status_class", status_class),
             ],
         );
 
@@ -78,7 +77,9 @@ pub(crate) fn metrics() -> &'static GatewayServerMetrics {
 }
 
 pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
-    match path.trim_matches('/') {
+    let normalized = path.trim_matches('/');
+
+    match normalized {
         "health" => RequestLabels { service: "health", endpoint: "health" },
         "gateway/add_transaction" => RequestLabels { service: "gateway", endpoint: "add_transaction" },
         "madara/trusted_add_validated_transaction" => {
@@ -104,9 +105,11 @@ pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
         "feeder_gateway/get_block_bouncer_weights" => {
             RequestLabels { service: "feeder_gateway", endpoint: "get_block_bouncer_weights" }
         }
-        _ if path.starts_with("feeder_gateway/") => RequestLabels { service: "feeder_gateway", endpoint: "unknown" },
-        _ if path.starts_with("gateway/") => RequestLabels { service: "gateway", endpoint: "unknown" },
-        _ if path.starts_with("madara/") => RequestLabels { service: "madara", endpoint: "unknown" },
+        _ if normalized.starts_with("feeder_gateway/") => {
+            RequestLabels { service: "feeder_gateway", endpoint: "unknown" }
+        }
+        _ if normalized.starts_with("gateway/") => RequestLabels { service: "gateway", endpoint: "unknown" },
+        _ if normalized.starts_with("madara/") => RequestLabels { service: "madara", endpoint: "unknown" },
         _ => RequestLabels { service: "unknown", endpoint: "unknown" },
     }
 }
@@ -140,6 +143,12 @@ mod tests {
     fn collapses_unknown_route() {
         let labels = request_labels_from_path("unknown/path");
         assert_eq!(labels, RequestLabels { service: "unknown", endpoint: "unknown" });
+    }
+
+    #[test]
+    fn classifies_slash_prefixed_unknown_gateway_route() {
+        let labels = request_labels_from_path("/gateway/something_else");
+        assert_eq!(labels, RequestLabels { service: "gateway", endpoint: "unknown" });
     }
 
     #[test]
