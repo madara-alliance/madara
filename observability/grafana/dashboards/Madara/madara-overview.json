@@ -3180,6 +3180,452 @@
         "x": 0,
         "y": 84
       },
+      "id": 420,
+      "panels": [],
+      "title": "RocksDB Compaction & I/O Throughput",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisLabel": "bytes/sec",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      },
+      "id": 421,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Flush Rate (ingest \u2192 L0)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Compaction Write Rate",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_compact_read_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Compaction Read Rate",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_bytes_written{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "App Write Rate",
+          "refId": "D"
+        }
+      ],
+      "title": "Ingest vs Compaction Throughput",
+      "description": "Compares application write rate against compaction throughput.\nIf flush rate sustained above compaction ceiling (disk_bw / WA), a stall is coming.\nCompaction read+write combined should stay below disk throughput (125 MB/s for gp3 default).",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisLabel": "ratio",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "none",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 85
+      },
+      "id": 422,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "legendFormat": "Write Amplification (compact/flush)",
+          "refId": "A"
+        }
+      ],
+      "title": "Write Amplification",
+      "description": "Ratio of compaction output bytes to flush bytes.\nLeveled compaction: typically 10-25x. Universal: 5-10x.\nHigher WA = more disk bandwidth consumed by background work.",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "red",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "fillOpacity": 30,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 93
+      },
+      "id": 423,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_stall_micros{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / 1e6",
+          "legendFormat": "Stall Fraction",
+          "refId": "A"
+        }
+      ],
+      "title": "Write Stall Time Fraction",
+      "description": "Fraction of time spent in write stalls. Any non-zero value means RocksDB is throttling writes.\nThis is the earliest canary for compaction falling behind.",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "green",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 93
+      },
+      "id": 424,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(db_block_cache_miss{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Cache Hit Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Block Cache Hit Rate",
+      "description": "Fraction of block reads served from cache vs disk.\nLow hit rate = high read amplification hitting IOPS.",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "none",
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Delayed Write Rate"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "Bps"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 93
+      },
+      "id": 425,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_running_compactions{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Running Compactions",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_running_flushes{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Running Flushes",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_actual_delayed_write_rate{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Delayed Write Rate",
+          "refId": "C"
+        }
+      ],
+      "title": "Compaction Activity & Write Throttle",
+      "description": "Running compaction/flush jobs and the throttled write rate.\n0 compactions when L0 is growing = compaction not triggering.\nDelayed write rate > 0 = RocksDB is actively throttling writes.",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "bytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 101
+      },
+      "id": 426,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"} > 0",
+          "legendFormat": "{{column}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pending Compaction Bytes (per Column Family)",
+      "description": "Per-CF pending compaction bytes. Only leveled compaction CFs (bonsai_*_log) report meaningful values.\nUniversal compaction CFs always report 0 \u2014 this is a known RocksDB limitation, not a bug.",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 111
+      },
       "id": 200,
       "panels": [],
       "title": "Cairo Native Execution",
@@ -3213,7 +3659,7 @@
         "h": 4,
         "w": 3,
         "x": 0,
-        "y": 85
+        "y": 112
       },
       "id": 201,
       "options": {
@@ -3272,7 +3718,7 @@
         "h": 4,
         "w": 3,
         "x": 3,
-        "y": 85
+        "y": 112
       },
       "id": 202,
       "options": {
@@ -3331,7 +3777,7 @@
         "h": 4,
         "w": 3,
         "x": 6,
-        "y": 85
+        "y": 112
       },
       "id": 203,
       "options": {
@@ -3390,7 +3836,7 @@
         "h": 4,
         "w": 3,
         "x": 9,
-        "y": 85
+        "y": 112
       },
       "id": 204,
       "options": {
@@ -3449,7 +3895,7 @@
         "h": 4,
         "w": 3,
         "x": 12,
-        "y": 85
+        "y": 112
       },
       "id": 205,
       "options": {
@@ -3508,7 +3954,7 @@
         "h": 4,
         "w": 3,
         "x": 15,
-        "y": 85
+        "y": 112
       },
       "id": 206,
       "options": {
@@ -3571,7 +4017,7 @@
         "h": 4,
         "w": 3,
         "x": 18,
-        "y": 85
+        "y": 112
       },
       "id": 212,
       "options": {
@@ -3634,7 +4080,7 @@
         "h": 4,
         "w": 3,
         "x": 21,
-        "y": 85
+        "y": 112
       },
       "id": 213,
       "options": {
@@ -3725,7 +4171,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 89
+        "y": 116
       },
       "id": 207,
       "options": {
@@ -3858,7 +4304,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 89
+        "y": 116
       },
       "id": 208,
       "options": {
@@ -3978,7 +4424,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 89
+        "y": 116
       },
       "id": 209,
       "options": {
@@ -4114,7 +4560,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 97
+        "y": 124
       },
       "id": 210,
       "options": {
@@ -4260,7 +4706,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 97
+        "y": 124
       },
       "id": 211,
       "options": {
@@ -4308,7 +4754,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 132
       },
       "id": 300,
       "panels": [],
@@ -4375,7 +4821,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 106
+        "y": 133
       },
       "id": 301,
       "options": {
@@ -4505,7 +4951,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 106
+        "y": 133
       },
       "id": 302,
       "options": {
@@ -4680,7 +5126,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 114
+        "y": 141
       },
       "id": 309,
       "options": {
@@ -4792,7 +5238,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 114
+        "y": 141
       },
       "id": 314,
       "options": {
@@ -4903,7 +5349,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 122
+        "y": 149
       },
       "id": 303,
       "options": {
@@ -5022,7 +5468,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 114
+        "y": 141
       },
       "id": 304,
       "options": {
@@ -5141,7 +5587,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 122
+        "y": 149
       },
       "id": 305,
       "options": {
@@ -5271,7 +5717,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 122
+        "y": 149
       },
       "id": 306,
       "options": {
@@ -5410,7 +5856,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 130
+        "y": 157
       },
       "id": 307,
       "options": {
@@ -5522,7 +5968,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 130
+        "y": 157
       },
       "id": 308,
       "options": {
@@ -5587,7 +6033,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 157
+        "y": 184
       },
       "options": {
         "legend": {
@@ -5607,84 +6053,120 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_block_total_ms=\"close_block_total_ms\" | unwrap close_block_total_ms [$__interval])",
           "legendFormat": "Total Close Block",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json merklization_ms=\"merklization_ms\" | unwrap merklization_ms [$__interval])",
           "legendFormat": "Merklization",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json commitments_ms=\"commitments_ms\" | unwrap commitments_ms [$__interval])",
           "legendFormat": "Commitments",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json db_write_ms=\"db_write_ms\" | unwrap db_write_ms [$__interval])",
           "legendFormat": "DB Write",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json block_hash_ms=\"block_hash_ms\" | unwrap block_hash_ms [$__interval])",
           "legendFormat": "Block Hash",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_preconfirmed_ms=\"close_preconfirmed_ms\" | unwrap close_preconfirmed_ms [$__interval])",
           "legendFormat": "Close Preconfirmed",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json get_full_block_ms=\"get_full_block_ms\" | unwrap get_full_block_ms [$__interval])",
           "legendFormat": "Get Full Block",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_trie_ms=\"contract_trie_ms\" | unwrap contract_trie_ms [$__interval])",
           "legendFormat": "Contract Trie",
           "refId": "H"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json class_trie_ms=\"class_trie_ms\" | unwrap class_trie_ms [$__interval])",
           "legendFormat": "Class Trie",
           "refId": "I"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_storage_trie_commit_ms=\"contract_storage_trie_commit_ms\" | unwrap contract_storage_trie_commit_ms [$__interval])",
           "legendFormat": "Contract Storage Trie Commit",
           "refId": "J"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json contract_trie_commit_ms=\"contract_trie_commit_ms\" | unwrap contract_trie_commit_ms [$__interval])",
           "legendFormat": "Contract Trie Commit",
           "refId": "K"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json class_trie_commit_ms=\"class_trie_commit_ms\" | unwrap class_trie_commit_ms [$__interval])",
           "legendFormat": "Class Trie Commit",
@@ -5721,14 +6203,18 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 167
+        "y": 194
       },
       "options": {
         "legend": {
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -5737,7 +6223,10 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "quantile_over_time(0.50, {container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json close_block_total_ms=\"close_block_total_ms\" | unwrap close_block_total_ms [$__interval])",
           "legendFormat": "Close Block Total (p50)",
@@ -5773,7 +6262,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 167
+        "y": 194
       },
       "options": {
         "legend": {
@@ -5793,84 +6282,120 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json tx_count=\"tx_count\" | unwrap tx_count [$__interval])",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json event_count=\"event_count\" | unwrap event_count [$__interval])",
           "legendFormat": "Event Count",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_executed=\"txs_executed\" | unwrap txs_executed [$__interval])",
           "legendFormat": "Txs Executed",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_reverted=\"txs_reverted\" | unwrap txs_reverted [$__interval])",
           "legendFormat": "Txs Reverted",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json state_diff_len=\"state_diff_len\" | unwrap state_diff_len [$__interval])",
           "legendFormat": "State Diff Length",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json batches_executed=\"batches_executed\" | unwrap batches_executed [$__interval])",
           "legendFormat": "Batches Executed",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_added_to_block=\"txs_added_to_block\" | unwrap txs_added_to_block [$__interval])",
           "legendFormat": "Txs Added to Block",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json txs_rejected=\"txs_rejected\" | unwrap txs_rejected [$__interval])",
           "legendFormat": "Txs Rejected",
           "refId": "H"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json classes_declared=\"classes_declared\" | unwrap classes_declared [$__interval])",
           "legendFormat": "Classes Declared",
           "refId": "I"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json deployed_contracts=\"deployed_contracts\" | unwrap deployed_contracts [$__interval])",
           "legendFormat": "Deployed Contracts",
           "refId": "J"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json storage_diffs=\"storage_diffs\" | unwrap storage_diffs [$__interval])",
           "legendFormat": "Storage Diffs",
           "refId": "K"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json nonce_updates=\"nonce_updates\" | unwrap nonce_updates [$__interval])",
           "legendFormat": "Nonce Updates",
@@ -5907,14 +6432,18 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 177
+        "y": 204
       },
       "options": {
         "legend": {
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -5923,42 +6452,60 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json l2_gas_consumed=\"l2_gas_consumed\" | unwrap l2_gas_consumed [$__interval])",
           "legendFormat": "L2 Gas Consumed",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_l1_gas=\"bouncer_l1_gas\" | unwrap bouncer_l1_gas [$__interval])",
           "legendFormat": "Bouncer L1 Gas",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_sierra_gas=\"bouncer_sierra_gas\" | unwrap bouncer_sierra_gas [$__interval])",
           "legendFormat": "Bouncer Sierra Gas",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_n_events=\"bouncer_n_events\" | unwrap bouncer_n_events [$__interval])",
           "legendFormat": "Bouncer Events",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_message_segment_length=\"bouncer_message_segment_length\" | unwrap bouncer_message_segment_length [$__interval])",
           "legendFormat": "Bouncer Msg Segment Len",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({container=\"madara\", namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json bouncer_state_diff_size=\"bouncer_state_diff_size\" | unwrap bouncer_state_diff_size [$__interval])",
           "legendFormat": "Bouncer State Diff Size",
@@ -5991,7 +6538,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 187
+        "y": 214
       },
       "panelLinks": null,
       "targets": null,
@@ -6010,7 +6557,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6071,7 +6618,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6132,7 +6679,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6193,7 +6740,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6254,7 +6801,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6319,7 +6866,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 188
+        "y": 215
       },
       "fieldConfig": {
         "defaults": {
@@ -6380,7 +6927,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 192
+        "y": 219
       },
       "options": {
         "legend": {
@@ -6484,7 +7031,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 192
+        "y": 219
       },
       "options": {
         "legend": {
@@ -6620,7 +7167,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 200
+        "y": 227
       },
       "options": {
         "legend": {
@@ -6740,7 +7287,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 200
+        "y": 227
       },
       "options": {
         "legend": {
@@ -6844,7 +7391,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 208
+        "y": 235
       },
       "options": {
         "legend": {
@@ -6998,7 +7545,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 208
+        "y": 235
       },
       "options": {
         "legend": {
@@ -7095,7 +7642,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 216
+        "y": 243
       },
       "id": 413,
       "panels": [],
@@ -7130,7 +7677,7 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 217
+        "y": 244
       },
       "id": 414,
       "options": {
@@ -7188,7 +7735,7 @@
         "h": 6,
         "w": 12,
         "x": 6,
-        "y": 217
+        "y": 244
       },
       "id": 415,
       "options": {
@@ -7263,7 +7810,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 217
+        "y": 244
       },
       "id": 416,
       "options": {
