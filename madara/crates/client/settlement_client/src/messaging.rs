@@ -188,7 +188,7 @@ async fn run_message_sync(
                         pending_events.push_back(msg);
                     }
                     Some(Err(e)) => {
-                        tracing::warn!("L1 event stream error: {e:#}");
+                        return Err(e);
                     }
                     None => {
                         // Stream ended - return error to trigger reconnection
