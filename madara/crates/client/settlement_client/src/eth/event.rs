@@ -4,12 +4,16 @@ use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::MessageToL2WithMetadata;
 use alloy::contract::EventPoller;
 use alloy::rpc::types::Log;
-use futures::Stream;
+use alloy::sol_types::SolEvent;
+use futures::{Stream, StreamExt};
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+use std::future::Future;
 use std::iter;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
+use tokio::time::{Instant, Sleep};
 
 // Event conversion
 impl TryFrom<(LogMessageToL2, Log)> for MessageToL2WithMetadata {
@@ -61,6 +65,62 @@ impl TryFrom<LogMessageToL2> for L1HandlerTransactionWithFee {
     }
 }
 
+/// Workaround for an alloy bug (unfixed through v2.0.5) where providers like
+/// Alchemy return HTTP 400 with a JSON-RPC "filter not found" body. Alloy's HTTP
+/// transport wraps non-2xx responses as `RpcError::Transport(HttpError)` before
+/// parsing the JSON-RPC body, so the poller's "filter not found" detection (which
+/// only inspects `RpcError::ErrorResp`) never fires. The poller retries the dead
+/// filter forever.
+///
+/// `LivenessStream` detects this by exploiting the fact that a healthy poller yields
+/// a `Vec<Log>` batch every ~7s (even if empty), while a stuck poller yields nothing.
+/// If `max_silence` elapses with no batch, the stream terminates so the caller can
+/// reconnect with a fresh filter.
+pub(crate) struct LivenessStream<S> {
+    inner: S,
+    max_silence: Duration,
+    deadline: Pin<Box<Sleep>>,
+}
+
+impl<S> LivenessStream<S> {
+    pub fn new(inner: S, max_silence: Duration) -> Self {
+        Self { inner, max_silence, deadline: Box::pin(tokio::time::sleep(max_silence)) }
+    }
+}
+
+impl<S: Stream + Unpin> Stream for LivenessStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.deadline.as_mut().poll(cx).is_ready() {
+            tracing::warn!(
+                "⟠ L1 event poller silent for {:?} — likely a dropped filter \
+                 (alloy HTTP 400 workaround). Terminating stream to trigger reconnection.",
+                self.max_silence
+            );
+            return Poll::Ready(None);
+        }
+
+        match Pin::new(&mut self.inner).poll_next(cx) {
+            Poll::Ready(Some(item)) => {
+                let max_silence = self.max_silence;
+                self.deadline.as_mut().reset(Instant::now() + max_silence);
+                Poll::Ready(Some(item))
+            }
+            other => other,
+        }
+    }
+}
+
+/// How long the poller can be silent before we assume the filter is dead.
+/// The alloy poller polls every ~7s, so 60s allows ~8 missed cycles.
+const POLLER_LIVENESS_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn decode_log(log: &Log) -> alloy::sol_types::Result<LogMessageToL2> {
+    let log_data: &alloy::primitives::LogData = log.as_ref();
+    LogMessageToL2::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
+}
+
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
 type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
 
@@ -70,7 +130,14 @@ pub struct EthereumEventStream {
 
 impl EthereumEventStream {
     pub fn new(watcher: EventPoller<LogMessageToL2>) -> Self {
-        let stream = watcher.into_stream();
+        // Don't use `watcher.into_stream()` — alloy's PollerStream swallows transport
+        // errors internally and retries forever, hiding the "filter not found" case
+        // from Alchemy (HTTP 400). Instead, wrap the raw poller with a liveness check
+        // that terminates the stream when the poller stops yielding batches.
+        let poller_stream = watcher.poller.into_stream();
+        let stream = LivenessStream::new(poller_stream, POLLER_LIVENESS_TIMEOUT)
+            .flat_map(futures::stream::iter)
+            .map(|log: Log| decode_log(&log).map(|e| (e, log)));
         Self { stream: Box::pin(stream) }
     }
 }
@@ -100,6 +167,10 @@ pub mod eth_event_stream_tests {
     use futures::StreamExt;
     use rstest::*;
     use std::str::FromStr;
+
+    fn receiver_stream<T: Send + 'static>(rx: tokio::sync::mpsc::Receiver<T>) -> Pin<Box<dyn Stream<Item = T> + Send>> {
+        Box::pin(futures::stream::unfold(rx, |mut rx| async { rx.recv().await.map(|item| (item, rx)) }))
+    }
 
     #[fixture]
     fn mock_event(#[default(1)] index: u64) -> LogMessageToL2 {
@@ -273,5 +344,62 @@ pub mod eth_event_stream_tests {
         assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
             assert_eq!(*field, "block_hash in Ethereum log", "Error should mention missing block hash");
         });
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_liveness_stream_terminates_on_silence() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<i32>(10);
+        let mut stream = LivenessStream::new(receiver_stream(rx), Duration::from_secs(5));
+
+        tx.send(42).await.unwrap();
+        assert_eq!(stream.next().await, Some(42));
+
+        // Advance past the liveness timeout with no further items
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        assert!(stream.next().await.is_none(), "stream should terminate after silence timeout");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_liveness_stream_resets_on_activity() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<i32>(10);
+        let mut stream = LivenessStream::new(receiver_stream(rx), Duration::from_secs(5));
+
+        // Send items at 3s intervals — each resets the 5s deadline
+        for i in 0..3 {
+            tokio::time::advance(Duration::from_secs(3)).await;
+            tx.send(i).await.unwrap();
+            assert_eq!(stream.next().await, Some(i), "item {i} should pass through");
+        }
+
+        // Now go silent for longer than the timeout
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert!(stream.next().await.is_none(), "stream should terminate after silence");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_ethereum_event_stream_terminates_on_stuck_poller() {
+        // Simulate a poller that yields one batch then goes silent (mimicking the
+        // alloy poller stuck in an HTTP 400 error-retry loop).
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<Log>>(10);
+        let inner = receiver_stream(rx);
+        let liveness = LivenessStream::new(inner, Duration::from_secs(5));
+        let decoded_stream =
+            liveness.flat_map(futures::stream::iter).map(|log: Log| decode_log(&log).map(|e| (e, log)));
+        let mut stream = EthereumEventStream { stream: Box::pin(decoded_stream) };
+
+        // Send one empty batch (normal poller heartbeat)
+        tx.send(vec![]).await.unwrap();
+
+        // The empty batch produces no items after flat_map, but the liveness
+        // deadline was reset. Advance less than the timeout to confirm no termination.
+        tokio::time::advance(Duration::from_secs(3)).await;
+
+        // Now the poller "gets stuck" — no more batches arrive.
+        // Advance past the liveness timeout.
+        tokio::time::advance(Duration::from_secs(6)).await;
+
+        // The stream should terminate (EthereumEventStream yields None).
+        assert!(stream.next().await.is_none(), "stream should terminate when poller is stuck");
     }
 }
