@@ -388,18 +388,25 @@ pub mod eth_event_stream_tests {
             liveness.flat_map(futures::stream::iter).map(|log: Log| decode_log(&log).map(|e| (e, log)));
         let mut stream = EthereumEventStream { stream: Box::pin(decoded_stream) };
 
-        // Send one empty batch (normal poller heartbeat)
+        // Advance 3s, then send an empty batch (normal poller heartbeat).
+        // Advancing first ensures the deadline reset pushes it forward from
+        // time=3+5=8s instead of the original time=0+5=5s.
+        tokio::time::advance(Duration::from_secs(3)).await;
         tx.send(vec![]).await.unwrap();
 
-        // The empty batch produces no items after flat_map, but the liveness
-        // deadline was reset. Advance less than the timeout to confirm no termination.
-        tokio::time::advance(Duration::from_secs(3)).await;
+        // Poll once so LivenessStream processes the empty batch and resets the
+        // deadline to time=8s. flat_map produces no items from an empty vec,
+        // so poll returns Pending.
+        assert!(futures::poll!(stream.next()).is_pending());
+
+        // Advance to time=7s — past the ORIGINAL 5s deadline but before the
+        // reset deadline (8s). Stream should survive.
+        tokio::time::advance(Duration::from_secs(4)).await;
+        assert!(futures::poll!(stream.next()).is_pending(), "stream should survive past original deadline");
 
         // Now the poller "gets stuck" — no more batches arrive.
-        // Advance past the liveness timeout.
-        tokio::time::advance(Duration::from_secs(6)).await;
-
-        // The stream should terminate (EthereumEventStream yields None).
+        // Advance to time=9s — past the reset deadline (8s).
+        tokio::time::advance(Duration::from_secs(2)).await;
         assert!(stream.next().await.is_none(), "stream should terminate when poller is stuck");
     }
 }
