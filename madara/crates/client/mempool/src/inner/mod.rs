@@ -344,10 +344,6 @@ impl InnerMempool {
         self.limiter.num_transactions()
     }
 
-    pub fn oldest_transaction_arrived_at(&self) -> Option<TxTimestamp> {
-        self.timestamp_queue.oldest_arrived_at()
-    }
-
     pub fn num_accounts(&self) -> usize {
         self.accounts.num_accounts()
     }

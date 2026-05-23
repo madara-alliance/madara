@@ -152,15 +152,5 @@ mod tests {
 
         assert_eq!(client.get_block_hash_by_id(block_number).await.unwrap(), block_hash);
         assert_eq!(client.get_block_id_by_hash(block_hash).await.unwrap(), block_number);
-        wait_for_cond(
-            || async {
-                let backlog = client.get_number_of_transactions_in_backlog().await?;
-                ensure!(backlog == 0, "backlog still non-empty: {backlog}");
-                Ok(())
-            },
-            Duration::from_millis(250),
-            20,
-        )
-        .await;
     }
 }

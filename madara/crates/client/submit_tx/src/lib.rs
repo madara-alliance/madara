@@ -257,21 +257,6 @@ pub trait SubmitTransaction: Send + Sync {
             None => None,
         }
     }
-
-    /// Returns the oldest queued transaction arrival timestamp in Unix seconds.
-    ///
-    /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
-    /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
-    ///
-    /// Official Starknet feeder behavior currently returns the current timestamp for an empty
-    /// queue, so implementors should not treat "empty" as a special null-like case here.
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        None
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        None
-    }
 }
 
 /// Submit a L1HandlerTransaction.
@@ -314,21 +299,6 @@ pub trait SubmitValidatedTransaction: Send + Sync {
             None => None,
         }
     }
-
-    /// Returns the oldest queued transaction arrival timestamp in Unix seconds.
-    ///
-    /// The feeder gateway endpoint is historically named `get_oldest_transaction_age`, but the
-    /// sequencer response uses an epoch-seconds timestamp rather than a computed duration.
-    ///
-    /// Official Starknet feeder behavior currently returns the current timestamp for an empty
-    /// queue, so implementors should not treat "empty" as a special null-like case here.
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        None
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        None
-    }
 }
 
 #[async_trait]
@@ -357,20 +327,6 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
             Ok(None) => Some(ProviderTransactionResponse::not_received()),
             Err(_) => None,
         }
-    }
-
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        Some(
-            self.oldest_transaction_arrived_at()
-                .await
-                // Match the official feeder behavior for an empty backlog.
-                .map(|timestamp| timestamp.0 / 1_000)
-                .unwrap_or_else(|| mp_transactions::validated::TxTimestamp::now().0 / 1_000),
-        )
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        Some(self.num_transactions().await as u64)
     }
 }
 

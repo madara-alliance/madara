@@ -489,12 +489,4 @@ impl SubmitTransaction for TransactionValidator {
     async fn feeder_transaction(&self, hash: Felt) -> Option<ProviderTransactionResponse> {
         self.inner.feeder_transaction(hash).await
     }
-
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        self.inner.oldest_transaction_age().await
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        self.inner.number_of_transactions_in_backlog().await
-    }
 }

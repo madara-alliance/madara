@@ -146,14 +146,6 @@ impl SubmitTransaction for GatewayProvider {
     async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
         self.get_transaction(hash).await.ok()
     }
-
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        self.get_oldest_transaction_age().await.ok()
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        self.get_number_of_transactions_in_backlog().await.ok()
-    }
 }
 
 #[async_trait]
@@ -187,13 +179,5 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
 
     async fn feeder_transaction(&self, hash: starknet_types_core::felt::Felt) -> Option<ProviderTransactionResponse> {
         self.get_transaction(hash).await.ok()
-    }
-
-    async fn oldest_transaction_age(&self) -> Option<u64> {
-        self.get_oldest_transaction_age().await.ok()
-    }
-
-    async fn number_of_transactions_in_backlog(&self) -> Option<u64> {
-        self.get_number_of_transactions_in_backlog().await.ok()
     }
 }

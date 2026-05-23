@@ -1,8 +1,7 @@
 use super::handler::{
     handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_hash_by_id,
     handle_get_block_id_by_hash, handle_get_block_traces, handle_get_class_by_hash,
-    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses,
-    handle_get_number_of_transactions_in_backlog, handle_get_oldest_transaction_age, handle_get_public_key,
+    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key,
     handle_get_signature, handle_get_state_update, handle_get_transaction, handle_get_transaction_status,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
@@ -91,12 +90,6 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_public_key") => {
             Ok(handle_get_public_key(backend).await.unwrap_or_else(Into::into))
-        }
-        (&Method::GET, "feeder_gateway/get_oldest_transaction_age") => {
-            Ok(handle_get_oldest_transaction_age(add_transaction_provider).await.unwrap_or_else(Into::into))
-        }
-        (&Method::GET, "feeder_gateway/get_number_of_transactions_in_backlog") => {
-            Ok(handle_get_number_of_transactions_in_backlog(add_transaction_provider).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_bouncer_weights") => {
             Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))

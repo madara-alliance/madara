@@ -167,28 +167,6 @@ impl GatewayProvider {
         .await
     }
 
-    pub async fn get_oldest_transaction_age(&self) -> Result<u64, SequencerError> {
-        self.retry_get(|| async {
-            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_oldest_transaction_age")
-                .expect("Failed to add URI segment. This should not fail in prod.");
-
-            request.send_get::<u64>().await
-        })
-        .await
-    }
-
-    pub async fn get_number_of_transactions_in_backlog(&self) -> Result<u64, SequencerError> {
-        self.retry_get(|| async {
-            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-                .add_uri_segment("get_number_of_transactions_in_backlog")
-                .expect("Failed to add URI segment. This should not fail in prod.");
-
-            request.send_get::<u64>().await
-        })
-        .await
-    }
-
     pub async fn get_state_update_with_block(
         &self,
         block_id: BlockId,
@@ -547,7 +525,6 @@ mod tests {
 
         assert_eq!(client_mainnet_fixture.get_block_hash_by_id(0).await.unwrap(), block.block_hash);
         assert_eq!(client_mainnet_fixture.get_block_id_by_hash(block.block_hash).await.unwrap(), 0);
-        assert!(client_mainnet_fixture.get_oldest_transaction_age().await.unwrap() > 0);
     }
 
     // INFO:
