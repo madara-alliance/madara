@@ -2,12 +2,12 @@
 //!
 //! ## Capacity Planning Metrics (requires statistics enabled, which is the default)
 //!
-//! Key queries for Grafana:
-//! - Ingest rate: `rate(db_bytes_written[5m])`
-//! - Compaction throughput: `rate(db_compact_write_bytes[5m])`
-//! - Write amplification: `rate(db_compact_write_bytes[5m]) / rate(db_flush_write_bytes[5m])`
-//! - Stall fraction: `rate(db_stall_micros[5m]) / 1e6`
-//! - Cache hit rate: `rate(db_block_cache_hit[5m]) / (rate(db_block_cache_hit[5m]) + rate(db_block_cache_miss[5m]))`
+//! Key queries for Grafana (OTLP pipeline appends `_total` to cumulative gauges):
+//! - Ingest rate: `rate(db_bytes_written_total[5m])`
+//! - Compaction throughput: `rate(db_compact_write_bytes_total[5m])`
+//! - Write amplification: `rate(db_compact_write_bytes_total[5m]) / rate(db_flush_write_bytes_total[5m])`
+//! - Stall fraction: `rate(db_stall_micros_total[5m]) / 1e6`
+//! - Cache hit rate: `rate(db_block_cache_hit_total[5m]) / (rate(db_block_cache_hit_total[5m]) + rate(db_block_cache_miss_total[5m]))`
 //!
 //! ## Write Stall Detection
 //!
