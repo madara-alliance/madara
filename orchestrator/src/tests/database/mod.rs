@@ -1,4 +1,4 @@
-use crate::core::client::database::DatabaseError;
+use crate::core::client::database::{AggregatorBatchDbQuery, BatchIndexSort, DatabaseError, SnosBatchDbQuery};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{
     build_aggregator_batch_with_version, build_batch, build_job_item, build_job_item_with_version, build_snos_batch,
@@ -640,11 +640,11 @@ async fn test_get_jobs_by_block_number() {
     assert!(retrieved_jobs.contains(&jobs[1]));
 }
 
-/// Test for `get_snos_batches_by_indices` operation in database trait.
+/// Test for indexed `get_snos_batches` filtering in database trait.
 /// Creates multiple SNOS batches and retrieves by their indices.
 #[rstest]
 #[tokio::test]
-async fn test_get_snos_batches_by_indices() {
+async fn test_get_snos_batches_by_indices_filter() {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
@@ -656,9 +656,10 @@ async fn test_get_snos_batches_by_indices() {
         database_client.create_snos_batch(batch.clone()).await.unwrap();
     }
 
-    let retrieved_batches = database_client.get_snos_batches_by_indices(vec![1, 3]).await.unwrap();
-
-    println!("{:?}", retrieved_batches);
+    let retrieved_batches = database_client
+        .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![1, 3]), ..Default::default() })
+        .await
+        .unwrap();
 
     assert_eq!(retrieved_batches.len(), 2);
     assert_eq!(retrieved_batches[0].index, 1);
@@ -683,11 +684,11 @@ async fn test_update_snos_batch_status_by_index() {
     assert_eq!(updated_batch.index, 1);
 }
 
-/// Test for `get_snos_batches_by_status` operation in database trait.
+/// Test for status `get_snos_batches` filtering in database trait.
 /// Creates SNOS batches with different statuses and versions, tests filtering.
 #[rstest]
 #[tokio::test]
-async fn test_get_snos_batches_by_status() {
+async fn test_get_snos_batches_by_status_filter() {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
@@ -704,30 +705,59 @@ async fn test_get_snos_batches_by_status() {
     database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
     // Test without version filter - should return all closed batches
-    let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
+    let closed_batches = database_client
+        .get_snos_batches(SnosBatchDbQuery { statuses: Some(vec![SnosBatchStatus::Closed]), ..Default::default() })
+        .await
+        .unwrap();
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with current version filter - should only return batch 1
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
-    let current_version_batches =
-        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version)).await.unwrap();
+    let current_version_batches = database_client
+        .get_snos_batches(SnosBatchDbQuery {
+            statuses: Some(vec![SnosBatchStatus::Closed]),
+            orchestrator_version: Some(current_version),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_eq!(current_version_batches.len(), 1);
     assert_eq!(current_version_batches[0].index, 1);
 
     // Test with old version filter - should only return batch 3
     let old_version_batches = database_client
-        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some("old-version".to_string()))
+        .get_snos_batches(SnosBatchDbQuery {
+            statuses: Some(vec![SnosBatchStatus::Closed]),
+            orchestrator_version: Some("old-version".to_string()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
     assert_eq!(old_version_batches[0].index, 3);
 
     // Test with limit
-    let limited_batches =
-        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1), None).await.unwrap();
+    let limited_batches = database_client
+        .get_snos_batches(SnosBatchDbQuery {
+            statuses: Some(vec![SnosBatchStatus::Closed]),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_eq!(limited_batches.len(), 1);
+
+    let descending_batches = database_client
+        .get_snos_batches(SnosBatchDbQuery {
+            statuses: Some(vec![SnosBatchStatus::Closed]),
+            sort: BatchIndexSort::Desc,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(descending_batches.iter().map(|batch| batch.index).collect::<Vec<_>>(), vec![3, 1]);
 }
 
 /// Test for `get_snos_batches_without_jobs` operation in database trait.
@@ -808,11 +838,11 @@ async fn test_get_snos_batches_without_jobs_returns_oldest_missing_across_large_
     assert_eq!(first_two_missing_batches.iter().map(|batch| batch.index).collect::<Vec<_>>(), vec![1, backlog_size]);
 }
 
-/// Test for `get_aggregator_batches_by_indexes` operation in database trait.
+/// Test for indexed `get_aggregator_batches` filtering in database trait.
 /// Creates multiple aggregator batches and retrieves by their indexes.
 #[rstest]
 #[tokio::test]
-async fn test_get_aggregator_batches_by_indexes(
+async fn test_get_aggregator_batches_by_indexes_filter(
     #[from(build_batch)]
     #[with(1, 100, 200)]
     batch1: AggregatorBatch,
@@ -831,7 +861,10 @@ async fn test_get_aggregator_batches_by_indexes(
     database_client.create_aggregator_batch(batch2.clone()).await.unwrap();
     database_client.create_aggregator_batch(batch3.clone()).await.unwrap();
 
-    let retrieved_batches = database_client.get_aggregator_batches_by_indexes(vec![1, 3]).await.unwrap();
+    let retrieved_batches = database_client
+        .get_aggregator_batches(AggregatorBatchDbQuery { indexes: Some(vec![1, 3]), ..Default::default() })
+        .await
+        .unwrap();
 
     assert_eq!(retrieved_batches.len(), 2);
     assert_eq!(retrieved_batches[0].index, 1);
@@ -963,11 +996,11 @@ async fn test_get_block_batch_lookup_after_batch_updates() {
     assert!(lookup.created_at.is_some());
 }
 
-/// Test for `get_aggregator_batches_by_status` operation in database trait.
+/// Test for status `get_aggregator_batches` filtering in database trait.
 /// Creates aggregator batches with different statuses and versions, tests filtering.
 #[rstest]
 #[tokio::test]
-async fn test_get_aggregator_batches_by_status() {
+async fn test_get_aggregator_batches_by_status_filter() {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
@@ -985,15 +1018,24 @@ async fn test_get_aggregator_batches_by_status() {
     database_client.create_aggregator_batch(batch3.clone()).await.unwrap();
 
     // Test without version filter - should return all closed batches
-    let closed_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, None).await.unwrap();
+    let closed_batches = database_client
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Closed]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with current version filter - should only return batch 1
     let current_version_batches = database_client
-        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some(current_version))
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Closed]),
+            orchestrator_version: Some(current_version),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(current_version_batches.len(), 1);
@@ -1001,16 +1043,36 @@ async fn test_get_aggregator_batches_by_status() {
 
     // Test with old version filter - should only return batch 3
     let old_version_batches = database_client
-        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some("old-version".to_string()))
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Closed]),
+            orchestrator_version: Some("old-version".to_string()),
+            ..Default::default()
+        })
         .await
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
     assert_eq!(old_version_batches[0].index, 3);
 
     // Test with limit
-    let limited_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1), None).await.unwrap();
+    let limited_batches = database_client
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Closed]),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert_eq!(limited_batches.len(), 1);
+
+    let descending_batches = database_client
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Closed]),
+            sort: BatchIndexSort::Desc,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(descending_batches.iter().map(|batch| batch.index).collect::<Vec<_>>(), vec![3, 1]);
 }
 
 /// Test for `get_snos_batches_by_aggregator_index` operation in database trait.

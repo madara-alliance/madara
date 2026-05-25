@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::database::{MockDatabaseClient, SnosBatchDbQuery};
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
@@ -92,12 +92,13 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         .returning(move |_, _, _, _| Ok(snos_jobs.clone()));
 
     let expected_proving_jobs = if incomplete_runs { 4 } else { 5 };
-    db.expect_get_snos_batches_by_indices().times(expected_proving_jobs).withf(|indices| indices.len() == 1).returning(
-        |indices| {
-            let index = indices[0];
+    db.expect_get_snos_batches()
+        .times(expected_proving_jobs)
+        .withf(|query: &SnosBatchDbQuery| query.indexes.as_ref().is_some_and(|indices| indices.len() == 1))
+        .returning(|query: SnosBatchDbQuery| {
+            let index = query.indexes.and_then(|indices| indices.first().copied()).expect("missing SNOS batch index");
             Ok(vec![SnosBatch { index, start_block: index, end_block: index, num_blocks: 1, ..Default::default() }])
-        },
-    );
+        });
 
     // Set up expectations for each job
     for i in 1..=num_jobs {

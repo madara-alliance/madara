@@ -9,7 +9,7 @@ use rstest::*;
 use uuid::Uuid;
 
 use crate::core::config::Config;
-use crate::server::types::{ApiResponse, BlockSettlementStatusResponse};
+use crate::server::types::{ApiResponse, BlockSettlementStatusResponse, BlockStatusResponse};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{build_batch, build_job_item, build_snos_batch};
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
@@ -24,6 +24,9 @@ use crate::types::jobs::types::{JobStatus, JobType};
 #[fixture]
 async fn setup_blocks_server() -> (SocketAddr, Arc<Config>) {
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+    if std::env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").is_err() {
+        std::env::set_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", "http://localhost:8545");
+    }
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -192,6 +195,41 @@ async fn test_get_block_settlement_status_for_batched_block(#[future] setup_bloc
     assert_eq!(data.aggregator_proof_jobs.len(), 2);
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_block.id));
     assert!(data.aggregator_proof_jobs.iter().any(|job| job.id == proof_job_for_other_batch.id));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_block_batch_mapping_legacy_route(#[future] setup_blocks_server: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_blocks_server.await;
+    let block_number = 115;
+
+    let mut aggregator_batch = build_batch(11, 100, 119);
+    aggregator_batch.status = AggregatorBatchStatus::ReadyForStateUpdate;
+
+    let mut snos_batch = build_snos_batch(21, Some(aggregator_batch.index), 100);
+    snos_batch.end_block = 119;
+    snos_batch.num_blocks = 20;
+    snos_batch.status = SnosBatchStatus::Completed;
+
+    config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
+    config.database().create_snos_batch(snos_batch).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/blocks/batch-for-block/{}", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<BlockStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(response_body.data.expect("missing legacy batch mapping payload").batch_number, aggregator_batch.index);
 }
 
 #[rstest]
