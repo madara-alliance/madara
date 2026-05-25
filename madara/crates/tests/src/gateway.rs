@@ -111,7 +111,7 @@ mod tests {
         let mut node = MadaraCmdBuilder::new().label("gateway").enable_gateway().args(args).run();
         node.wait_for_ready().await;
 
-        let mut account = devnet_account(&node, RpcBlockId::Tag(BlockTag::Latest)).await;
+        let account = devnet_account(&node, RpcBlockId::Tag(BlockTag::Latest)).await;
         let tx_hash = account.execute_v3(transfer_call()).send().await.unwrap().transaction_hash;
 
         let receipt = wait_for_cond(
@@ -131,18 +131,18 @@ mod tests {
 
         let status = client.get_transaction_status(tx_hash).await.unwrap();
         assert_eq!(
-            serde_json::to_value(&status.tx_status).unwrap(),
+            serde_json::to_value(status.tx_status).unwrap(),
             serde_json::Value::String("ACCEPTED_ON_L2".into())
         );
         assert_eq!(
-            serde_json::to_value(&status.execution_status).unwrap(),
+            serde_json::to_value(status.execution_status).unwrap(),
             serde_json::Value::String("SUCCEEDED".into())
         );
         assert_eq!(status.block_hash, Some(block_hash));
 
         let transaction = client.get_transaction(tx_hash).await.unwrap();
         assert_eq!(
-            serde_json::to_value(&transaction.status).unwrap(),
+            serde_json::to_value(transaction.status).unwrap(),
             serde_json::Value::String("ACCEPTED_ON_L2".into())
         );
         assert_eq!(transaction.block_hash, Some(block_hash));
