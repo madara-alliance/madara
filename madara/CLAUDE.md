@@ -187,7 +187,9 @@ Key services run concurrently:
 
 - On disk, one cache entry is the compiled `.so` plus its `.meta.json` sidecar
 - Lookup requires both files; if either file is missing or invalid, the remaining file is deleted and the class is recompiled
-- The cache ABI version is composed from the resolved `cairo-native` Cargo.lock version, so cairo-native dependency bumps invalidate persisted artifacts automatically.
+- The cache ABI version is composed from the resolved `cairo-native`
+  Cargo.lock version, so cairo-native dependency bumps invalidate persisted
+  artifacts automatically.
 - Do not bump it for host-only differences already covered by fingerprint fields such as `arch`, `os`, or `cpu_vendor`
 
 ### RPC Server Architecture
