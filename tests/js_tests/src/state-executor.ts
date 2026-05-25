@@ -16,6 +16,7 @@ logger.setLogLevel("ERROR");
 import { AdminClient } from "./admin-client";
 import { BlockTracker } from "./block-tracker";
 import { loadContractSierra, loadContractCasm } from "./contract-loader";
+import { waitForPreConfirmedTransaction } from "./transaction-waiter";
 import { resolveValue } from "./ref-resolver";
 import {
   DEFAULT_ACCOUNT_ADDRESS,
@@ -162,7 +163,7 @@ async function executeDeclare(
   );
 
   incrementNonce(ctx, DEFAULT_ACCOUNT_ADDRESS, nonce);
-  await provider.waitForTransaction(response.transaction_hash);
+  await waitForPreConfirmedTransaction(ctx.rpcUrl, response.transaction_hash);
 
   return {
     transaction_hash: response.transaction_hash,
@@ -195,7 +196,7 @@ async function executeDeploy(
   );
 
   incrementNonce(ctx, DEFAULT_ACCOUNT_ADDRESS, nonce);
-  await provider.waitForTransaction(response.transaction_hash);
+  await waitForPreConfirmedTransaction(ctx.rpcUrl, response.transaction_hash);
 
   return {
     transaction_hash: response.transaction_hash,
@@ -240,7 +241,7 @@ async function executeInvoke(
   );
 
   incrementNonce(ctx, DEFAULT_ACCOUNT_ADDRESS, nonce);
-  await provider.waitForTransaction(response.transaction_hash);
+  await waitForPreConfirmedTransaction(ctx.rpcUrl, response.transaction_hash);
 
   return {
     transaction_hash: response.transaction_hash,
@@ -290,7 +291,10 @@ async function executeDeployAccount(
       { nonce: fundNonce },
     );
     incrementNonce(ctx, DEFAULT_ACCOUNT_ADDRESS, fundNonce);
-    await provider.waitForTransaction(fundResponse.transaction_hash);
+    await waitForPreConfirmedTransaction(
+      ctx.rpcUrl,
+      fundResponse.transaction_hash,
+    );
   }
 
   // Create account instance and deploy
@@ -308,7 +312,7 @@ async function executeDeployAccount(
     addressSalt: publicKey,
   });
 
-  await provider.waitForTransaction(response.transaction_hash);
+  await waitForPreConfirmedTransaction(ctx.rpcUrl, response.transaction_hash);
 
   return {
     transaction_hash: response.transaction_hash,
