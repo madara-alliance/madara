@@ -468,7 +468,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         .await
     }
 
-    async fn flush_transactions_matching(
+    /// Remove all matching transactions while holding a single inner write lock so selection and
+    /// removal observe the same mempool state.
+    pub async fn flush_transactions_matching(
         &self,
         mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
     ) -> Vec<ValidatedTransaction> {
