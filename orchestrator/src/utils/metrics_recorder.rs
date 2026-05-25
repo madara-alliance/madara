@@ -681,8 +681,8 @@ mod tests {
         ACTIVE_WORKLOAD_SLOTS.clear();
     }
 
-    fn active_slots_for(descriptor: WorkloadDescriptor) -> i64 {
-        ACTIVE_WORKLOAD_SLOTS.get(&descriptor.key()).map(|entry| *entry).unwrap_or(0)
+    fn active_slots_for(descriptor: WorkloadDescriptor) -> u64 {
+        ACTIVE_WORKLOAD_SLOTS.get(&descriptor).map(|entry| *entry).unwrap_or(0)
     }
 
     #[test]
