@@ -36,12 +36,21 @@ pub struct MempoolNonceFilter {
     pub nonce_before: Option<Felt>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+const DEFAULT_GET_MEMPOOL_TXN_HASHES_LIMIT: usize = 100;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GetMempoolTxnHashesParams {
     pub include_ttl: bool,
+    pub limit: usize,
     #[serde(flatten)]
     pub nonce_filter: MempoolNonceFilter,
+}
+
+impl Default for GetMempoolTxnHashesParams {
+    fn default() -> Self {
+        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_HASHES_LIMIT, nonce_filter: Default::default() }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

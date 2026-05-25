@@ -199,6 +199,12 @@ pub struct MempoolTransactionSnapshot {
     pub remaining_ttl: Option<Duration>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MempoolTransactionHashSnapshot {
+    pub transaction_hash: Felt,
+    pub remaining_ttl: Option<Duration>,
+}
+
 impl ExternalOutboxConfig {
     pub fn enabled(strict: bool) -> Self {
         Self { enabled: true, strict }
@@ -439,6 +445,35 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 transaction: transaction.clone(),
                 remaining_ttl: ttl.map(|ttl| {
                     transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                }),
+            })
+            .collect()
+    }
+
+    pub async fn snapshot_transaction_hashes_matching(
+        &self,
+        limit: usize,
+        include_ttl: bool,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionHashSnapshot> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let now = TxTimestamp::now();
+        let ttl = self.ttl;
+        let lock = self.inner.read().await;
+
+        lock.transactions_by_arrival()
+            .filter(|transaction| predicate(transaction))
+            .take(limit)
+            .map(|transaction| MempoolTransactionHashSnapshot {
+                transaction_hash: transaction.hash,
+                remaining_ttl: include_ttl.then(|| {
+                    ttl.map(|ttl| {
+                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                    })
+                    .unwrap_or(Duration::ZERO)
                 }),
             })
             .collect()

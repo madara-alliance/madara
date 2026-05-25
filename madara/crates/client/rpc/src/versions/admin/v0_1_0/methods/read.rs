@@ -29,16 +29,17 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
     ) -> RpcResult<Vec<MempoolTxnHashInfo>> {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
-        let transactions = mempool.snapshot_transactions().await;
+        let transactions = mempool
+            .snapshot_transaction_hashes_matching(params.limit, params.include_ttl, |tx| {
+                matches_nonce_filter(tx, params.nonce_filter)
+            })
+            .await;
 
         Ok(transactions
             .into_iter()
-            .filter(|snapshot| matches_nonce_filter(&snapshot.transaction, params.nonce_filter))
             .map(|snapshot| MempoolTxnHashInfo {
-                transaction_hash: snapshot.transaction.hash,
-                remaining_ttl_ms: params.include_ttl.then(|| {
-                    snapshot.remaining_ttl.unwrap_or(Duration::ZERO).as_millis().try_into().unwrap_or(u64::MAX)
-                }),
+                transaction_hash: snapshot.transaction_hash,
+                remaining_ttl_ms: snapshot.remaining_ttl.map(|ttl| ttl.as_millis().try_into().unwrap_or(u64::MAX)),
             })
             .collect())
     }
@@ -115,6 +116,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_mempool_txn_hashes_returns_oldest_first_and_optional_ttl() {
+        assert_eq!(GetMempoolTxnHashesParams::default().limit, 100);
+
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
         let tx1 = mempool_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
@@ -145,6 +148,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(filtered_hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx2.hash]);
+    }
+
+    #[tokio::test]
+    async fn get_mempool_txn_hashes_honors_explicit_limit() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = mempool_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
+        let tx2 = mempool_tx(Felt::from(22_u64), Felt::from(1_u64), Felt::from(202_u64), base + 1_000);
+        let tx3 = mempool_tx(Felt::from(33_u64), Felt::from(2_u64), Felt::from(303_u64), base + 2_000);
+
+        mempool.accept_tx(tx3.clone()).await.unwrap();
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+
+        let hashes = rpc
+            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { limit: 2, ..Default::default() }))
+            .await
+            .unwrap();
+
+        assert_eq!(hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx1.hash, tx2.hash]);
     }
 
     #[tokio::test]

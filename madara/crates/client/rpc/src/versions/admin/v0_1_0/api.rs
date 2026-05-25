@@ -104,7 +104,8 @@ pub trait MadaraReadRpcApi {
     #[method(name = "getBlockBuiltinWeights")]
     async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
 
-    /// List all mempool transaction hashes, optionally including each transaction's remaining TTL.
+    /// List mempool transaction hashes in oldest-first arrival order.
+    /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
     #[method(name = "getMempoolTxnHashes")]
     async fn get_mempool_txn_hashes(
         &self,
