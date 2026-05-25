@@ -643,25 +643,6 @@ fn gateway_method_label<'a>(endpoint: Option<&'a str>, route: &'a str) -> &'a st
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{gateway_call_label, gateway_method_label};
-
-    #[test]
-    fn formats_gateway_service_label() {
-        assert_eq!(gateway_call_label("gateway"), "GATEWAY");
-        assert_eq!(gateway_call_label("feeder_gateway"), "FEEDER_GATEWAY");
-        assert_eq!(gateway_call_label("madara"), "MADARA");
-    }
-
-    #[test]
-    fn preserves_route_for_unknown_gateway_endpoint() {
-        assert_eq!(gateway_method_label(Some("unknown"), "gateway/something_else"), "gateway/something_else");
-        assert_eq!(gateway_method_label(None, "gateway/add_transaction"), "gateway/add_transaction");
-        assert_eq!(gateway_method_label(Some("get_block"), "feeder_gateway/get_block"), "get_block");
-    }
-}
-
 impl<S, N> FormatEvent<S, N> for CustomFormatter
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
@@ -692,5 +673,24 @@ where
             (&Level::DEBUG, _) => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().blue()),
             (&Level::TRACE, _) => self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().cyan()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gateway_call_label, gateway_method_label};
+
+    #[test]
+    fn formats_gateway_service_label() {
+        assert_eq!(gateway_call_label("gateway"), "GATEWAY");
+        assert_eq!(gateway_call_label("feeder_gateway"), "FEEDER_GATEWAY");
+        assert_eq!(gateway_call_label("madara"), "MADARA");
+    }
+
+    #[test]
+    fn preserves_route_for_unknown_gateway_endpoint() {
+        assert_eq!(gateway_method_label(Some("unknown"), "gateway/something_else"), "gateway/something_else");
+        assert_eq!(gateway_method_label(None, "gateway/add_transaction"), "gateway/add_transaction");
+        assert_eq!(gateway_method_label(Some("get_block"), "feeder_gateway/get_block"), "get_block");
     }
 }

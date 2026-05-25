@@ -88,6 +88,7 @@ impl<'a> RequestBuilder<'a> {
         unpack(response, &telemetry, start).await
     }
 
+    #[allow(dead_code)]
     pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
         let telemetry = self.telemetry("GET");
         let start = Instant::now();
@@ -198,9 +199,8 @@ impl<'a> RequestBuilder<'a> {
         telemetry: &RequestTelemetry,
         start: Instant,
     ) -> Result<Response<Incoming>, SequencerError> {
-        let uri = self.build_uri().map_err(|error| {
+        let uri = self.build_uri().inspect_err(|error| {
             record_failed_request(telemetry, None, error_kind::REQUEST_BUILD, start.elapsed(), &error);
-            error
         })?;
 
         let mut req_builder = Request::builder().method(http_method).uri(uri);
