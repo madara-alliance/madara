@@ -130,10 +130,7 @@ mod tests {
         let client = local_gateway_client(&node);
 
         let status = client.get_transaction_status(tx_hash).await.unwrap();
-        assert_eq!(
-            serde_json::to_value(status.tx_status).unwrap(),
-            serde_json::Value::String("ACCEPTED_ON_L2".into())
-        );
+        assert_eq!(serde_json::to_value(status.tx_status).unwrap(), serde_json::Value::String("ACCEPTED_ON_L2".into()));
         assert_eq!(
             serde_json::to_value(status.execution_status).unwrap(),
             serde_json::Value::String("SUCCEEDED".into())
