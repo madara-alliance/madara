@@ -2348,6 +2348,11 @@ pub(crate) mod tests {
         //   - block 1 timestamp set at open (near T0)
         //   - block 2 timestamp set after 3s wait (near T0 + 3s + 3s)
         assert!(
+            delta >= 2,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. Timestamps may have stalled or gone backward."
+        );
+        assert!(
             delta <= 4,
             "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
              but got {delta}s. This likely means the timestamp is still being set after the block_time wait."
