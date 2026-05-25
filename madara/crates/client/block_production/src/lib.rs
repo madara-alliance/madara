@@ -2399,10 +2399,8 @@ pub(crate) mod tests {
         // when the tx arrives (~3s from now), not when block 1 closed (~3s ago).
         tokio::time::sleep(Duration::from_secs(3)).await;
 
-        let wall_clock_before_tx = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let wall_clock_before_tx =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 
         sign_and_add_invoke_tx(
             &devnet_setup.contracts.0[1],

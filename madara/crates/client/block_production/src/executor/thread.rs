@@ -251,11 +251,8 @@ impl ExecutorThread {
         // the timestamp reflects when the block actually started executing.
         // Otherwise use the time captured when the previous block closed, so that
         // consecutive blocks have timestamps spaced by ~block_time.
-        let block_timestamp = if self.backend.chain_config().no_empty_blocks {
-            SystemTime::now()
-        } else {
-            state.block_start_time
-        };
+        let block_timestamp =
+            if self.backend.chain_config().no_empty_blocks { SystemTime::now() } else { state.block_start_time };
         let exec_ctx = create_execution_context(
             &self.backend,
             state.state_adaptor.block_n(),
