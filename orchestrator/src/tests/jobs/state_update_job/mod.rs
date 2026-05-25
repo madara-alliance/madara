@@ -1,7 +1,7 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
 
-use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::database::{AggregatorBatchDbQuery, MockDatabaseClient};
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
 use crate::error::job::state_update::StateUpdateError;
@@ -166,7 +166,8 @@ async fn test_process_job_l2_with_da_segment(
     let mut database_client = MockDatabaseClient::new();
 
     // Mock database batch lookup
-    database_client.expect_get_aggregator_batches_by_indexes().returning(move |_| {
+    database_client.expect_get_aggregator_batches().returning(move |query: AggregatorBatchDbQuery| {
+        assert_eq!(query.indexes, Some(vec![batch_index]));
         Ok(vec![AggregatorBatch::new(
             batch_index,
             end_block + 1,

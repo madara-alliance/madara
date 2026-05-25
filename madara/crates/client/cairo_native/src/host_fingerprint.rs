@@ -5,20 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-// Maintainers:
-// Bump this when persisted native artifacts should be considered incompatible
-// even on the same host. Update it in the same change that:
-// - adds, removes, or reinterprets fields in `NativeHostFingerprint`
-// - changes how Madara validates or loads persisted native artifacts
-// - changes the `.meta.json` sidecar contract
-// - adopts a cairo-native/compiler/runtime change that should force recompilation
-//
-// Mirror the reason in `madara/CLAUDE.md` so follow-up agents know why the cache
-// was invalidated and what future changes should update this value again.
-//
-// Do not bump this for host-only differences such as `arch`, `os`, or `cpu_vendor`;
-// those are already part of the fingerprint and are validated separately.
-const NATIVE_CACHE_ABI_VERSION: &str = "madara-cairo-native-v1";
+const CAIRO_NATIVE_VERSION: &str = env!("MADARA_CAIRO_NATIVE_VERSION");
 
 static CURRENT_FINGERPRINT: LazyLock<NativeHostFingerprint> = LazyLock::new(NativeHostFingerprint::detect);
 
@@ -37,7 +24,7 @@ impl NativeHostFingerprint {
 
     fn detect() -> Self {
         Self {
-            native_cache_abi_version: NATIVE_CACHE_ABI_VERSION.to_string(),
+            native_cache_abi_version: format!("cairo-native-{CAIRO_NATIVE_VERSION}"),
             arch: std::env::consts::ARCH.to_string(),
             cpu_vendor: detect_cpu_vendor(),
             os: std::env::consts::OS.to_string(),
@@ -195,6 +182,11 @@ mod tests {
 
         let cached = validate_metadata_for_so(&so_path).expect("metadata should match current host");
         assert_eq!(&cached, NativeHostFingerprint::current());
+    }
+
+    #[test]
+    fn native_cache_abi_version_matches_expected_cairo_native_version() {
+        assert_eq!(NativeHostFingerprint::current().native_cache_abi_version, "cairo-native-0.9.0-rc.6");
     }
 
     #[test]

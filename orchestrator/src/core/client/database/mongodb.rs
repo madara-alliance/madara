@@ -2,7 +2,7 @@ use super::error::DatabaseError;
 use crate::core::client::database::constant::{
     AGGREGATOR_BATCHES_COLLECTION, BLOCK_BATCH_LOOKUPS_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
-use crate::core::client::database::DatabaseClient;
+use crate::core::client::database::{AggregatorBatchDbQuery, BatchIndexSort, DatabaseClient, SnosBatchDbQuery};
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
@@ -1062,19 +1062,34 @@ impl DatabaseClient for MongoDbClient {
         Ok(batch)
     }
 
-    async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError> {
+    async fn get_snos_batches(&self, query: SnosBatchDbQuery) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
-            "index": {
-                "$in": indexes.iter().map(|id| bson::to_bson(id).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
-            }
+        let mut filter = doc! {};
+        if let Some(indexes) = query.indexes {
+            let serialized_indexes: Result<Vec<Bson>, _> = indexes.iter().map(bson::to_bson).collect();
+            filter.insert("index", doc! { "$in": serialized_indexes? });
+        }
+        if let Some(statuses) = query.statuses {
+            let serialized_statuses: Result<Vec<Bson>, _> = statuses.iter().map(bson::to_bson).collect();
+            filter.insert("status", doc! { "$in": serialized_statuses? });
+        }
+        if let Some(version) = &query.orchestrator_version {
+            filter.insert("orchestrator_version", version.as_str());
+        }
+        let sort_direction = match query.sort {
+            BatchIndexSort::Asc => 1,
+            BatchIndexSort::Desc => -1,
         };
+        let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(query.limit).build();
 
-        let batches: Vec<SnosBatch> = self.get_snos_batch_collection().find(filter, None).await?.try_collect().await?;
-        debug!(batch_count = batches.len(), category = "db_call", "Retrieved SNOS batches by indices");
-        let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_indices")];
+        let batches: Vec<SnosBatch> =
+            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
+
+        debug!(batch_count = batches.len(), sort = ?query.sort, category = "db_call", "Retrieved SNOS batches");
+        let attributes = [KeyValue::new("db_operation_name", "get_snos_batches")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
         Ok(batches)
     }
 
@@ -1098,23 +1113,37 @@ impl DatabaseClient for MongoDbClient {
         self.update_snos_batch(filter, update, options, start, index).await
     }
 
-    async fn get_aggregator_batches_by_indexes(
+    async fn get_aggregator_batches(
         &self,
-        indexes: Vec<u64>,
+        query: AggregatorBatchDbQuery,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
-            "index": {
-                "$in": indexes.iter().map(|index| bson::to_bson(index).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
-            }
+        let mut filter = doc! {};
+        if let Some(indexes) = query.indexes {
+            let serialized_indexes: Result<Vec<Bson>, _> = indexes.iter().map(bson::to_bson).collect();
+            filter.insert("index", doc! { "$in": serialized_indexes? });
+        }
+        if let Some(statuses) = query.statuses {
+            let serialized_statuses: Result<Vec<Bson>, _> = statuses.iter().map(bson::to_bson).collect();
+            filter.insert("status", doc! { "$in": serialized_statuses? });
+        }
+        if let Some(version) = &query.orchestrator_version {
+            filter.insert("orchestrator_version", version.as_str());
+        }
+        let sort_direction = match query.sort {
+            BatchIndexSort::Asc => 1,
+            BatchIndexSort::Desc => -1,
         };
+        let find_options = FindOptions::builder().sort(doc! { "index": sort_direction }).limit(query.limit).build();
 
         let batches: Vec<AggregatorBatch> =
-            self.get_aggregator_batch_collection().find(filter, None).await?.try_collect().await?;
-        debug!(batch_count = batches.len(), category = "db_call", "Retrieved aggregator batches by indexes");
-        let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_indexes")];
+            self.get_aggregator_batch_collection().find(filter, find_options).await?.try_collect().await?;
+
+        debug!(batch_count = batches.len(), sort = ?query.sort, category = "db_call", "Retrieved aggregator batches");
+        let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches")];
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+
         Ok(batches)
     }
 
@@ -1442,67 +1471,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    /// Get aggregator batches filtered by status
-    async fn get_aggregator_batches_by_status(
-        &self,
-        status: AggregatorBatchStatus,
-        limit: Option<i64>,
-        orchestrator_version: Option<String>,
-    ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
-        let start = Instant::now();
-        let mut filter = doc! {
-            "status": status.to_string(),
-        };
-        if let Some(version) = &orchestrator_version {
-            filter.insert("orchestrator_version", version.as_str());
-        }
-        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
-        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
-
-        let batches: Vec<AggregatorBatch> =
-            self.get_aggregator_batch_collection().find(filter, find_options).await?.try_collect().await?;
-
-        debug!("Retrieved aggregator batches by status");
-        let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_status")];
-        let duration = start.elapsed();
-        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
-
-        Ok(batches)
-    }
-
-    /// Get SNOS batches filtered by status
-    async fn get_snos_batches_by_status(
-        &self,
-        status: SnosBatchStatus,
-        limit: Option<i64>,
-        orchestrator_version: Option<String>,
-    ) -> Result<Vec<SnosBatch>, DatabaseError> {
-        let start = Instant::now();
-        let mut filter = doc! {
-            "status": status.to_string(),
-        };
-        if let Some(version) = &orchestrator_version {
-            filter.insert("orchestrator_version", version.as_str());
-        }
-        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
-        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
-
-        let batches: Vec<SnosBatch> =
-            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
-
-        tracing::debug!(
-            status = %status,
-            batch_count = batches.len(),
-            category = "db_call",
-            "Retrieved SNOS batches by status"
-        );
-        let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_status")];
-        let duration = start.elapsed();
-        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
-
-        Ok(batches)
-    }
-
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,
@@ -1511,13 +1479,13 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
-        // Convert enums to Bson strings for MongoDB queries
-        let snos_batch_status_str = snos_batch_status.to_string();
+        // Keep the query value aligned with serde's stored enum representation.
+        let snos_batch_status_bson = bson::to_bson(&snos_batch_status)?;
         let snos_job_type_bson = Bson::String(format!("{:?}", JobType::SnosRun));
 
         // Build match filter with optional orchestrator version
         let mut match_filter = doc! {
-            "status": snos_batch_status_str
+            "status": snos_batch_status_bson
         };
         if let Some(version) = &orchestrator_version {
             match_filter.insert("orchestrator_version", version.as_str());

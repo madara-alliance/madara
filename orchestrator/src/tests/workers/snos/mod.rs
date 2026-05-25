@@ -1,6 +1,6 @@
 #![allow(clippy::await_holding_lock)]
 
-use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::database::{MockDatabaseClient, SnosBatchDbQuery};
 use crate::core::client::queue::MockQueueClient;
 use crate::core::config::StarknetVersion;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
@@ -75,10 +75,10 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
         let job_item = get_job_item_mock_by_id(block_num, uuid);
         let job_item_clone = job_item.clone();
 
-        db.expect_get_snos_batches_by_indices()
+        db.expect_get_snos_batches()
             .withf({
                 let snos_batch_num = block_num;
-                move |i| *i == vec![snos_batch_num]
+                move |query: &SnosBatchDbQuery| query.indexes.as_ref().is_some_and(|i| *i == vec![snos_batch_num])
             })
             .times(1)
             .returning(|_| Ok(Vec::new()));
@@ -193,8 +193,8 @@ async fn test_create_snos_job_for_existing_batch(
         let job_item = get_job_item_mock_by_id(snos_batch_num, uuid);
         let job_item_clone = job_item.clone();
 
-        db.expect_get_snos_batches_by_indices()
-            .withf(move |i| *i == vec![snos_batch_num])
+        db.expect_get_snos_batches()
+            .withf(move |query: &SnosBatchDbQuery| query.indexes.as_ref().is_some_and(|i| *i == vec![snos_batch_num]))
             .times(1)
             .returning(|_| Ok(Vec::new()));
 

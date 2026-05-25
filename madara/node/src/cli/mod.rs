@@ -344,6 +344,10 @@ impl RunCmd {
         self.is_sequencer()
     }
 
+    pub fn should_run_external_db(&self) -> bool {
+        self.should_run_mempool() && self.external_db_params.is_enabled()
+    }
+
     pub fn should_save_mempool_to_db(&self) -> bool {
         self.should_run_mempool() && !self.validator_params.no_mempool_saving
     }
@@ -363,6 +367,7 @@ mod tests {
         let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
 
         assert!(!run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_run_external_db());
         assert!(!run_cmd.should_save_mempool_to_db());
     }
 
@@ -371,6 +376,7 @@ mod tests {
         let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
 
         assert!(run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_run_external_db());
         assert!(run_cmd.should_save_mempool_to_db());
     }
 
@@ -380,6 +386,23 @@ mod tests {
 
         assert!(run_cmd.should_run_mempool());
         assert!(!run_cmd.should_save_mempool_to_db());
+    }
+
+    #[test]
+    fn sequencer_runs_external_db_only_when_enabled() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        assert!(!disabled.should_run_external_db());
+
+        let enabled = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--external-db-enabled",
+            "--external-db-mongodb-uri",
+            "mongodb://localhost:27017",
+        ]);
+        assert!(enabled.should_run_external_db());
     }
 
     #[test]

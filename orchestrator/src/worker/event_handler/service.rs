@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::jobs::external_id::ExternalId;
@@ -844,7 +845,11 @@ impl JobHandlerService {
     }
 
     async fn resolve_aggregator_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
-        match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
+        match config
+            .database()
+            .get_aggregator_batches(AggregatorBatchDbQuery { indexes: Some(vec![internal_id]), ..Default::default() })
+            .await
+        {
             Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
             Ok(_) => {
                 warn!(
@@ -867,7 +872,11 @@ impl JobHandlerService {
     }
 
     async fn resolve_snos_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
-        match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
+        match config
+            .database()
+            .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![internal_id]), ..Default::default() })
+            .await
+        {
             Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
             Ok(_) => {
                 warn!(
