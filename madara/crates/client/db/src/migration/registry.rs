@@ -74,6 +74,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v12→v13: clear Cairo Native disk cache for metadata sidecars",
             migrate: super::revisions::revision_0013::migrate,
         },
+        Migration {
+            from_version: 13,
+            to_version: 14,
+            name: "v13→v14: seed external DB retention cursor from L1 tip",
+            migrate: super::revisions::revision_0014::migrate,
+        },
     ]
 }
 
