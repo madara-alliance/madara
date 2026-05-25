@@ -97,10 +97,7 @@ mod tests {
         }
     }
 
-    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
-        let mut chain_config = ChainConfig::madara_test();
-        chain_config.mempool_ttl = Some(Duration::from_secs(60));
-
+    fn make_starknet_with_chain_config(chain_config: ChainConfig) -> (Arc<Mempool>, Starknet) {
         let backend = MadaraBackend::open_for_testing(Arc::new(chain_config));
         let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
         let mut rpc = Starknet::new(
@@ -112,6 +109,12 @@ mod tests {
         );
         rpc.set_mempool(mempool.clone());
         (mempool, rpc)
+    }
+
+    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.mempool_ttl = Some(Duration::from_secs(60));
+        make_starknet_with_chain_config(chain_config)
     }
 
     #[tokio::test]
@@ -168,6 +171,24 @@ mod tests {
             .unwrap();
 
         assert_eq!(hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx1.hash, tx2.hash]);
+    }
+
+    #[tokio::test]
+    async fn get_mempool_txn_hashes_without_configured_ttl_reports_no_remaining_ttl() {
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.mempool_ttl = None;
+        let (mempool, rpc) = make_starknet_with_chain_config(chain_config);
+        let tx = mempool_tx(Felt::from(55_u64), Felt::ZERO, Felt::from(505_u64), TxTimestamp::now().0);
+
+        mempool.accept_tx(tx).await.unwrap();
+
+        let hashes = rpc
+            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { include_ttl: true, ..Default::default() }))
+            .await
+            .unwrap();
+
+        assert_eq!(hashes.len(), 1);
+        assert_eq!(hashes[0].remaining_ttl_ms, None);
     }
 
     #[tokio::test]

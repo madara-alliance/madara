@@ -469,12 +469,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             .take(limit)
             .map(|transaction| MempoolTransactionHashSnapshot {
                 transaction_hash: transaction.hash,
-                remaining_ttl: include_ttl.then(|| {
+                remaining_ttl: if include_ttl {
                     ttl.map(|ttl| {
                         transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
                     })
-                    .unwrap_or(Duration::ZERO)
-                }),
+                } else {
+                    None
+                },
             })
             .collect()
     }
