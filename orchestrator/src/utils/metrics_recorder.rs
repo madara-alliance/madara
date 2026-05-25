@@ -1,6 +1,7 @@
 use chrono::Utc;
 use dashmap::{mapref::entry::Entry, DashMap};
 use once_cell::sync::Lazy;
+use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::KeyValue;
 use std::time::Instant;
 
@@ -10,7 +11,8 @@ use crate::types::jobs::WorkerTriggerType;
 use crate::types::queue::{JobState, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
-static ACTIVE_WORKLOAD_SLOTS: Lazy<DashMap<WorkloadKey, i64>> = Lazy::new(DashMap::new);
+// Keep descriptors at zero so the async gauge can publish drained workloads as 0 on later scrapes.
+static ACTIVE_WORKLOAD_SLOTS: Lazy<DashMap<WorkloadDescriptor, u64>> = Lazy::new(DashMap::new);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum WorkKind {
@@ -125,15 +127,6 @@ impl WorkloadDescriptor {
         Self { work_kind, work_phase, work_class, source_job_type }
     }
 
-    fn key(self) -> WorkloadKey {
-        WorkloadKey {
-            work_kind: self.work_kind,
-            work_phase: self.work_phase,
-            work_class: self.work_class,
-            source_job_type: self.source_job_type,
-        }
-    }
-
     fn active_attributes(self) -> [KeyValue; 4] {
         [
             KeyValue::new("work_kind", self.work_kind.as_str()),
@@ -154,14 +147,6 @@ impl WorkloadDescriptor {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct WorkloadKey {
-    work_kind: WorkKind,
-    work_phase: WorkPhase,
-    work_class: WorkClass,
-    source_job_type: Option<WorkKind>,
-}
-
 pub struct WorkloadTracker {
     descriptor: WorkloadDescriptor,
     started_at: Instant,
@@ -170,9 +155,7 @@ pub struct WorkloadTracker {
 
 impl WorkloadTracker {
     fn start(descriptor: WorkloadDescriptor) -> Self {
-        let active_slots = increment_active_slots(descriptor);
-        ORCHESTRATOR_METRICS.workload_active_slots.record(active_slots as f64, &descriptor.active_attributes());
-
+        increment_active_slots(descriptor);
         Self { descriptor, started_at: Instant::now(), finished: false }
     }
 
@@ -192,14 +175,12 @@ impl WorkloadTracker {
         self.finished = true;
         let duration_seconds = self.started_at.elapsed().as_secs_f64();
         let completed_attributes = self.descriptor.completed_attributes(outcome);
-        let active_attributes = self.descriptor.active_attributes();
 
         ORCHESTRATOR_METRICS.workload_busy_seconds_total.add(duration_seconds, &completed_attributes);
         ORCHESTRATOR_METRICS.workload_runs_total.add(1.0, &completed_attributes);
         ORCHESTRATOR_METRICS.workload_duration_seconds.record(duration_seconds, &completed_attributes);
 
-        let active_slots = decrement_active_slots(self.descriptor);
-        ORCHESTRATOR_METRICS.workload_active_slots.record(active_slots as f64, &active_attributes);
+        decrement_active_slots(self.descriptor);
     }
 }
 
@@ -209,42 +190,41 @@ impl Drop for WorkloadTracker {
     }
 }
 
-fn increment_active_slots(descriptor: WorkloadDescriptor) -> i64 {
-    let key = descriptor.key();
-    match ACTIVE_WORKLOAD_SLOTS.entry(key) {
+fn increment_active_slots(descriptor: WorkloadDescriptor) {
+    match ACTIVE_WORKLOAD_SLOTS.entry(descriptor) {
         Entry::Occupied(mut entry) => {
             let value = entry.get_mut();
             *value += 1;
-            *value
         }
         Entry::Vacant(entry) => {
             entry.insert(1);
-            1
         }
     }
 }
 
-fn decrement_active_slots(descriptor: WorkloadDescriptor) -> i64 {
-    let key = descriptor.key();
-    match ACTIVE_WORKLOAD_SLOTS.entry(key) {
+fn decrement_active_slots(descriptor: WorkloadDescriptor) {
+    match ACTIVE_WORKLOAD_SLOTS.entry(descriptor) {
         Entry::Occupied(mut entry) => {
-            let updated = {
-                let value = entry.get_mut();
-                let updated = (*value - 1).max(0);
-                if updated > 0 {
-                    *value = updated;
-                }
-                updated
-            };
-            if updated == 0 {
-                entry.remove();
-                0
-            } else {
-                updated
-            }
+            let value = entry.get_mut();
+            *value = value.saturating_sub(1);
         }
-        Entry::Vacant(_) => 0,
+        Entry::Vacant(entry) => {
+            entry.insert(0);
+        }
     }
+}
+
+pub fn register_workload_active_slots_observer(meter: &Meter) -> ObservableGauge<u64> {
+    meter
+        .u64_observable_gauge("workload_active_slots")
+        .with_description("Current active workload slots by kind, phase, and class")
+        .with_unit("slots")
+        .with_callback(|observer| {
+            for active_slots in ACTIVE_WORKLOAD_SLOTS.iter() {
+                observer.observe(*active_slots.value(), &active_slots.key().active_attributes());
+            }
+        })
+        .build()
 }
 
 fn workload_descriptor_for_job(job_type: &JobType, job_state: JobState) -> WorkloadDescriptor {
@@ -358,6 +338,7 @@ impl MetricsRecorder {
 
     pub fn record_workload_capacity_for_queue(queue_type: &QueueType, max_slots: usize) {
         if let Some(descriptor) = workload_descriptor_for_queue(queue_type) {
+            ACTIVE_WORKLOAD_SLOTS.entry(descriptor).or_insert(0);
             ORCHESTRATOR_METRICS.workload_capacity_slots.record(max_slots as f64, &descriptor.active_attributes());
         }
     }

@@ -1,9 +1,10 @@
 use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::utils::job_status_metrics::JobStatusTracker;
+use crate::utils::metrics_recorder::register_workload_active_slots_observer;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge, Histogram};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, ObservableGauge};
 use orchestrator_utils::metrics::lib::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument, Metrics,
 };
@@ -78,7 +79,7 @@ pub struct OrchestratorMetrics {
     pub cleanup_artifacts_tagged: Counter<f64>,
     pub cleanup_failures_total: Counter<f64>,
     // Workload metrics
-    pub workload_active_slots: Gauge<f64>,
+    pub workload_active_slots: ObservableGauge<u64>,
     pub workload_busy_seconds_total: Counter<f64>,
     pub workload_runs_total: Counter<f64>,
     pub workload_duration_seconds: Histogram<f64>,
@@ -443,12 +444,7 @@ impl Metrics for OrchestratorMetrics {
             "errors".to_string(),
         );
 
-        let workload_active_slots = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "workload_active_slots".to_string(),
-            "Current active workload slots by kind, phase, and class".to_string(),
-            "slots".to_string(),
-        );
+        let workload_active_slots = register_workload_active_slots_observer(&orchestrator_meter);
 
         let workload_busy_seconds_total = register_counter_metric_instrument(
             &orchestrator_meter,
