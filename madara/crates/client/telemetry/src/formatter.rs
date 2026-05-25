@@ -25,6 +25,8 @@ impl<F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result> fmt::Display for DisplayFrom
 
 struct RpcCallEvent<'a> {
     pub method: &'a str,
+    pub service: Option<&'a str>,
+    pub endpoint: Option<&'a str>,
     pub status: i64,
     pub res_len: u64,
     pub response_time: u128,
@@ -33,6 +35,8 @@ struct RpcCallEvent<'a> {
 #[derive(Default)]
 struct RpcCallEventVisitor {
     method: String,
+    service: Option<String>,
+    endpoint: Option<String>,
     status: Option<i64>,
     res_len: Option<u64>,
     response_time: Option<u128>,
@@ -40,9 +44,22 @@ struct RpcCallEventVisitor {
 
 impl Visit for RpcCallEventVisitor {
     fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "method" {
-            self.method.clear();
-            self.method.push_str(value);
+        match field.name() {
+            "method" => {
+                self.method.clear();
+                self.method.push_str(value);
+            }
+            "route" if self.method.is_empty() => {
+                self.method.clear();
+                self.method.push_str(value);
+            }
+            "service" => {
+                self.service = Some(value.to_string());
+            }
+            "endpoint" => {
+                self.endpoint = Some(value.to_string());
+            }
+            _ => {}
         }
     }
 
@@ -59,7 +76,7 @@ impl Visit for RpcCallEventVisitor {
     }
 
     fn record_u128(&mut self, field: &Field, value: u128) {
-        if field.name() == "response_time" {
+        if field.name() == "response_time" || field.name() == "response_time_us" {
             self.response_time = Some(value)
         }
     }
@@ -72,6 +89,8 @@ impl Visit for RpcCallEventVisitor {
 impl RpcCallEventVisitor {
     fn _clear(&mut self) {
         self.method.clear();
+        self.service = None;
+        self.endpoint = None;
         self.status = None;
         self.res_len = None;
         self.response_time = None;
@@ -83,6 +102,8 @@ impl RpcCallEventVisitor {
         }
         Some(RpcCallEvent {
             method: &self.method,
+            service: self.service.as_deref(),
+            endpoint: self.endpoint.as_deref(),
             status: self.status?,
             res_len: self.res_len?,
             response_time: self.response_time?,
@@ -547,12 +568,14 @@ impl CustomFormatter {
         let time_style = if rpc_call_event.response_time <= 5000 { Style::new() } else { Style::new().yellow() };
 
         if target == "gateway_calls" {
+            let service_label = gateway_call_label(rpc_call_event.service.unwrap_or("gateway"));
+            let method_label = gateway_method_label(rpc_call_event.endpoint, rpc_call_event.method);
             writeln!(
                 writer,
                 "{} {} {} {} {} bytes - {:.3?}",
                 self.timestamp_fmt(ts),
-                Style::new().blue().apply_to("GATEWAY"),
-                rpc_call_event.method,
+                Style::new().blue().apply_to(service_label),
+                method_label,
                 status_style.apply_to(&rpc_call_event.status),
                 rpc_call_event.res_len,
                 // Conversion from micros u128 to u64 should be safe here.
@@ -606,6 +629,36 @@ impl CustomFormatter {
 
         let json_str = serde_json::to_string(&serde_json::Value::Object(json_obj)).unwrap_or_else(|_| "{}".to_string());
         writeln!(writer, "{}", json_str)
+    }
+}
+
+fn gateway_call_label(service: &str) -> String {
+    service.to_ascii_uppercase()
+}
+
+fn gateway_method_label<'a>(endpoint: Option<&'a str>, route: &'a str) -> &'a str {
+    match endpoint {
+        Some("unknown") | None => route,
+        Some(endpoint) => endpoint,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gateway_call_label, gateway_method_label};
+
+    #[test]
+    fn formats_gateway_service_label() {
+        assert_eq!(gateway_call_label("gateway"), "GATEWAY");
+        assert_eq!(gateway_call_label("feeder_gateway"), "FEEDER_GATEWAY");
+        assert_eq!(gateway_call_label("madara"), "MADARA");
+    }
+
+    #[test]
+    fn preserves_route_for_unknown_gateway_endpoint() {
+        assert_eq!(gateway_method_label(Some("unknown"), "gateway/something_else"), "gateway/something_else");
+        assert_eq!(gateway_method_label(None, "gateway/add_transaction"), "gateway/add_transaction");
+        assert_eq!(gateway_method_label(Some("get_block"), "feeder_gateway/get_block"), "get_block");
     }
 }
 

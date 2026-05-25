@@ -6,6 +6,11 @@ use super::{
     },
 };
 use crate::helpers::{block_view_from_params, not_found_response, view_from_params};
+use crate::metrics::{
+    add_transaction_error_code, add_transaction_error_code_from_gateway_error,
+    add_transaction_error_code_from_submit_error, add_transaction_result, add_transaction_result_from_gateway_error,
+    add_transaction_result_from_submit_error, add_transaction_tx_type, metrics,
+};
 use anyhow::Context;
 use bincode::Options;
 use bytes::Buf;
@@ -15,7 +20,7 @@ use hyper::header::{HeaderMap, CONTENT_ENCODING, CONTENT_TYPE};
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
@@ -38,7 +43,7 @@ use mp_transactions::validated::ValidatedTransaction;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use std::{borrow::Cow, io::Read, sync::Arc};
+use std::{borrow::Cow, io::Read, sync::Arc, time::Duration, time::Instant};
 
 const GZIP_MAGIC_BYTES: [u8; 2] = [0x1f, 0x8b];
 const BODY_PREFIX_HEX_BYTES: usize = 8;
@@ -53,7 +58,13 @@ fn is_gzip_encoded(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
-fn log_add_transaction_failure(path: &str, headers: &HeaderMap, body: &[u8], error: &dyn std::fmt::Display) {
+fn log_add_transaction_request_failure(
+    path: &str,
+    headers: &HeaderMap,
+    body: &[u8],
+    error_code: &'static str,
+    error: &dyn std::fmt::Display,
+) {
     let content_type = headers.get(CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("<missing>").to_owned();
     let content_encoding =
         headers.get(CONTENT_ENCODING).and_then(|v| v.to_str().ok()).unwrap_or("<missing>").to_owned();
@@ -62,6 +73,10 @@ fn log_add_transaction_failure(path: &str, headers: &HeaderMap, body: &[u8], err
 
     tracing::warn!(
         target: "gateway_errors",
+        service = "gateway",
+        endpoint = "add_transaction",
+        tx_type = add_transaction_tx_type::UNKNOWN,
+        error_code,
         request_path = path,
         content_type,
         content_encoding,
@@ -71,6 +86,86 @@ fn log_add_transaction_failure(path: &str, headers: &HeaderMap, body: &[u8], err
         error = %error,
         "Failed to process gateway/add_transaction request body"
     );
+}
+
+fn log_gateway_add_transaction_error(tx_type: &'static str, error: &GatewayError, duration: Duration) {
+    let error_code = add_transaction_error_code_from_gateway_error(error);
+    let duration_ms = duration.as_secs_f64() * 1000.0;
+
+    match error {
+        GatewayError::StarknetError(error) => tracing::warn!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result = add_transaction_result::REJECTED,
+            error_code,
+            duration_ms,
+            message = %error.message,
+            "Gateway add_transaction rejected"
+        ),
+        GatewayError::InternalServerError => tracing::error!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result = add_transaction_result::INTERNAL_ERROR,
+            error_code,
+            duration_ms,
+            "Gateway add_transaction failed with an internal server error"
+        ),
+        GatewayError::Unsupported => tracing::warn!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result = add_transaction_result::UNSUPPORTED,
+            error_code,
+            duration_ms,
+            "Gateway add_transaction is unsupported"
+        ),
+    }
+}
+
+fn log_submit_transaction_error(tx_type: &'static str, error: &SubmitTransactionError, duration: Duration) {
+    let error_code = add_transaction_error_code_from_submit_error(error);
+    let result = add_transaction_result_from_submit_error(error);
+    let duration_ms = duration.as_secs_f64() * 1000.0;
+
+    match error {
+        SubmitTransactionError::Rejected(error) => tracing::warn!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            error = %error,
+            "Gateway add_transaction rejected"
+        ),
+        SubmitTransactionError::Internal(error) => tracing::error!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            error = %error,
+            "Gateway add_transaction failed"
+        ),
+        SubmitTransactionError::Unsupported => tracing::warn!(
+            target: "gateway_errors",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            "Gateway add_transaction is unsupported"
+        ),
+    }
 }
 
 fn decode_gzip_request_body(raw_body: &[u8], max_decompressed_body_bytes: u64) -> Result<Vec<u8>, std::io::Error> {
@@ -101,7 +196,7 @@ fn parse_add_transaction_request_with_max_body_size(
 ) -> Result<UserTransaction, GatewayError> {
     let decoded_body = if is_gzip_encoded(headers) {
         let decoded_body = decode_gzip_request_body(raw_body, max_decompressed_body_bytes).map_err(|error| {
-            log_add_transaction_failure(path, headers, raw_body, &error);
+            log_add_transaction_request_failure(path, headers, raw_body, "malformed_request", &error);
             GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::MalformedRequest,
                 format!("Failed to decode gzip request body: {error}"),
@@ -113,7 +208,7 @@ fn parse_add_transaction_request_with_max_body_size(
     };
 
     serde_json::from_slice::<UserTransaction>(decoded_body.as_ref()).map_err(|error| {
-        log_add_transaction_failure(path, headers, raw_body, &error);
+        log_add_transaction_request_failure(path, headers, raw_body, "malformed_request", &error);
         GatewayError::StarknetError(StarknetError::malformed_request(error))
     })
 }
@@ -404,18 +499,32 @@ pub async fn handle_add_transaction(
     req: Request<Incoming>,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, GatewayError> {
+    let started_at = Instant::now();
     let path = req.uri().path().to_owned();
     let headers = req.headers().clone();
     let mut whole_body = req.collect().await.context("Failed to read request body")?.aggregate();
     let body_len = whole_body.remaining();
     let whole_body = whole_body.copy_to_bytes(body_len);
 
-    let transaction = parse_add_transaction_request(&path, &headers, whole_body.as_ref())?;
+    let transaction = match parse_add_transaction_request(&path, &headers, whole_body.as_ref()) {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            metrics().record_add_transaction(
+                add_transaction_tx_type::UNKNOWN,
+                add_transaction_result_from_gateway_error(&error),
+                add_transaction_error_code_from_gateway_error(&error),
+                started_at.elapsed(),
+            );
+            return Err(error);
+        }
+    };
 
     let response = match transaction {
-        UserTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
-        UserTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
-        UserTransaction::InvokeFunction(tx) => invoke_transaction(tx, add_transaction_provider).await,
+        UserTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider, started_at).await,
+        UserTransaction::DeployAccount(tx) => {
+            deploy_account_transaction(tx, add_transaction_provider, started_at).await
+        }
+        UserTransaction::InvokeFunction(tx) => invoke_transaction(tx, add_transaction_provider, started_at).await,
     };
 
     Ok(response)
@@ -424,53 +533,119 @@ pub async fn handle_add_transaction(
 async fn declare_transaction(
     tx: UserDeclareTransaction,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
+    started_at: Instant,
 ) -> Response<String> {
     let tx: BroadcastedDeclareTxn = match tx.try_into() {
         Ok(tx) => tx,
         Err(e) => {
             let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());
-            return GatewayError::StarknetError(error).into();
+            let error = GatewayError::StarknetError(error);
+            let duration = started_at.elapsed();
+            metrics().record_add_transaction(
+                add_transaction_tx_type::DECLARE,
+                add_transaction_result_from_gateway_error(&error),
+                add_transaction_error_code_from_gateway_error(&error),
+                duration,
+            );
+            log_gateway_add_transaction_error(add_transaction_tx_type::DECLARE, &error, duration);
+            return error.into();
         }
     };
 
     match add_transaction_provider.submit_declare_transaction(tx).await {
-        Ok(result) => create_json_response(
-            hyper::StatusCode::OK,
-            &AddTransactionResult::from(AddDeclareTransactionResult {
-                class_hash: result.class_hash,
-                transaction_hash: result.transaction_hash,
-            }),
-        ),
-        Err(e) => GatewayError::from(e).into(),
+        Ok(result) => {
+            metrics().record_add_transaction(
+                add_transaction_tx_type::DECLARE,
+                add_transaction_result::SUCCESS,
+                add_transaction_error_code::NONE,
+                started_at.elapsed(),
+            );
+            create_json_response(
+                hyper::StatusCode::OK,
+                &AddTransactionResult::from(AddDeclareTransactionResult {
+                    class_hash: result.class_hash,
+                    transaction_hash: result.transaction_hash,
+                }),
+            )
+        }
+        Err(error) => {
+            let duration = started_at.elapsed();
+            metrics().record_add_transaction(
+                add_transaction_tx_type::DECLARE,
+                add_transaction_result_from_submit_error(&error),
+                add_transaction_error_code_from_submit_error(&error),
+                duration,
+            );
+            log_submit_transaction_error(add_transaction_tx_type::DECLARE, &error, duration);
+            GatewayError::from_submit_transaction_error_unlogged(error).into()
+        }
     }
 }
 
 async fn deploy_account_transaction(
     tx: UserDeployAccountTransaction,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
+    started_at: Instant,
 ) -> Response<String> {
     match add_transaction_provider.submit_deploy_account_transaction(tx.into()).await {
-        Ok(result) => create_json_response(
-            hyper::StatusCode::OK,
-            &AddTransactionResult::from(AddDeployAccountTransactionResult {
-                address: result.contract_address,
-                transaction_hash: result.transaction_hash,
-            }),
-        ),
-        Err(e) => GatewayError::from(e).into(),
+        Ok(result) => {
+            metrics().record_add_transaction(
+                add_transaction_tx_type::DEPLOY_ACCOUNT,
+                add_transaction_result::SUCCESS,
+                add_transaction_error_code::NONE,
+                started_at.elapsed(),
+            );
+            create_json_response(
+                hyper::StatusCode::OK,
+                &AddTransactionResult::from(AddDeployAccountTransactionResult {
+                    address: result.contract_address,
+                    transaction_hash: result.transaction_hash,
+                }),
+            )
+        }
+        Err(error) => {
+            let duration = started_at.elapsed();
+            metrics().record_add_transaction(
+                add_transaction_tx_type::DEPLOY_ACCOUNT,
+                add_transaction_result_from_submit_error(&error),
+                add_transaction_error_code_from_submit_error(&error),
+                duration,
+            );
+            log_submit_transaction_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
+            GatewayError::from_submit_transaction_error_unlogged(error).into()
+        }
     }
 }
 
 async fn invoke_transaction(
     tx: UserInvokeFunctionTransaction,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
+    started_at: Instant,
 ) -> Response<String> {
     match add_transaction_provider.submit_invoke_transaction(tx.into()).await {
-        Ok(result) => create_json_response(
-            hyper::StatusCode::OK,
-            &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
-        ),
-        Err(e) => GatewayError::from(e).into(),
+        Ok(result) => {
+            metrics().record_add_transaction(
+                add_transaction_tx_type::INVOKE,
+                add_transaction_result::SUCCESS,
+                add_transaction_error_code::NONE,
+                started_at.elapsed(),
+            );
+            create_json_response(
+                hyper::StatusCode::OK,
+                &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
+            )
+        }
+        Err(error) => {
+            let duration = started_at.elapsed();
+            metrics().record_add_transaction(
+                add_transaction_tx_type::INVOKE,
+                add_transaction_result_from_submit_error(&error),
+                add_transaction_error_code_from_submit_error(&error),
+                duration,
+            );
+            log_submit_transaction_error(add_transaction_tx_type::INVOKE, &error, duration);
+            GatewayError::from_submit_transaction_error_unlogged(error).into()
+        }
     }
 }
 

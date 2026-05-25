@@ -125,7 +125,7 @@ impl RetryPolicy {
 impl<Req: Clone> retry::Policy<Request<Req>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
-    #[tracing::instrument(skip(self, result), fields(module = "RetryPolicy"))]
+    #[tracing::instrument(skip(self, req, result), fields(module = "RetryPolicy"))]
     fn retry(
         &self,
         req: &Request<Req>,

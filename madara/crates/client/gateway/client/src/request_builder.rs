@@ -353,12 +353,11 @@ fn record_failed_request(
     );
 
     let status_code = http_status.map(|status| status.as_u16()).unwrap_or_default();
-    let log_target = "gateway_client_errors";
     let duration_ms = duration.as_secs_f64() * 1000.0;
 
     if matches!(failure_kind, error_kind::INVALID_STARKNET) {
         tracing::warn!(
-            target: log_target,
+            target: "gateway_client_errors",
             service = telemetry.labels.service,
             endpoint = telemetry.labels.endpoint,
             http_method = telemetry.http_method,
@@ -370,7 +369,7 @@ fn record_failed_request(
         );
     } else {
         tracing::error!(
-            target: log_target,
+            target: "gateway_client_errors",
             service = telemetry.labels.service,
             endpoint = telemetry.labels.endpoint,
             http_method = telemetry.http_method,

@@ -94,20 +94,21 @@ pub async fn start_server(
                         let status = res.status().as_u16() as i64;
                         let res_len = res.body().len() as u64;
                         let response_time = duration.as_micros();
+                        let is_add_transaction = labels.service == "gateway" && labels.endpoint == "add_transaction";
 
                         tracing::info!(
                             target: "gateway_calls",
                             service = labels.service,
                             endpoint = labels.endpoint,
                             http_method = http_method.as_str(),
-                            route = &path,
+                            method = &path,
                             status = status,
                             res_len = res_len,
-                            response_time_us = response_time,
+                            response_time = response_time,
                             "{path} {status} {res_len} - {response_time} micros"
                         );
 
-                        if res.status().is_client_error() {
+                        if !is_add_transaction && res.status().is_client_error() {
                             tracing::warn!(
                                 target: "gateway_errors",
                                 service = labels.service,
@@ -120,7 +121,7 @@ pub async fn start_server(
                                 response_time_us = response_time,
                                 "Gateway request returned a client error"
                             );
-                        } else if res.status().is_server_error() {
+                        } else if !is_add_transaction && res.status().is_server_error() {
                             tracing::error!(
                                 target: "gateway_errors",
                                 service = labels.service,

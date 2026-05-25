@@ -1,3 +1,7 @@
+use crate::metrics::{
+    add_transaction_error_code, add_transaction_error_code_from_submit_error, add_transaction_result,
+    add_transaction_result_from_submit_error, add_transaction_tx_type, metrics,
+};
 use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
@@ -7,6 +11,7 @@ use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use std::borrow::Cow;
+use std::time::{Duration, Instant};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
@@ -89,36 +94,205 @@ fn map_conv_error(error: UserTransactionConversionError) -> SubmitTransactionErr
     }
 }
 
+fn log_gateway_client_submit_error(tx_type: &'static str, error: &SubmitTransactionError, duration: Duration) {
+    let error_code = add_transaction_error_code_from_submit_error(error);
+    let result = add_transaction_result_from_submit_error(error);
+    let duration_ms = duration.as_secs_f64() * 1000.0;
+
+    match error {
+        SubmitTransactionError::Rejected(error) => tracing::warn!(
+            target: "gateway_client_transactions",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            error = %error,
+            "Gateway client add_transaction rejected"
+        ),
+        SubmitTransactionError::Internal(error) => tracing::error!(
+            target: "gateway_client_transactions",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            error = %error,
+            "Gateway client add_transaction failed"
+        ),
+        SubmitTransactionError::Unsupported => tracing::warn!(
+            target: "gateway_client_transactions",
+            service = "gateway",
+            endpoint = "add_transaction",
+            tx_type,
+            result,
+            error_code,
+            duration_ms,
+            "Gateway client add_transaction is unsupported"
+        ),
+    }
+}
+
+fn record_gateway_client_submit_success(tx_type: &'static str, duration: Duration) {
+    metrics().record_add_transaction(
+        tx_type,
+        add_transaction_result::SUCCESS,
+        add_transaction_error_code::NONE,
+        duration,
+    );
+}
+
 #[async_trait]
 impl SubmitTransaction for GatewayProvider {
     async fn submit_declare_transaction(
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
-        self.add_declare_transaction(tx.try_into().map_err(map_conv_error)?)
-            .await
-            .map_err(map_gateway_error)
-            .map(|res| ClassAndTxnHash { transaction_hash: res.transaction_hash, class_hash: res.class_hash })
+        let started_at = Instant::now();
+        let tx = match tx.try_into().map_err(map_conv_error) {
+            Ok(tx) => tx,
+            Err(error) => {
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::DECLARE,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    started_at.elapsed(),
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, started_at.elapsed());
+                return Err(error);
+            }
+        };
+
+        match self.add_declare_transaction(tx).await {
+            Ok(res) => {
+                let duration = started_at.elapsed();
+                record_gateway_client_submit_success(add_transaction_tx_type::DECLARE, duration);
+                tracing::info!(
+                    target: "gateway_client_transactions",
+                    service = "gateway",
+                    endpoint = "add_transaction",
+                    tx_type = add_transaction_tx_type::DECLARE,
+                    duration_ms = duration.as_secs_f64() * 1000.0,
+                    transaction_hash = %format_args!("{:#x}", res.transaction_hash),
+                    class_hash = %format_args!("{:#x}", res.class_hash),
+                    "Forwarded gateway add_transaction request"
+                );
+                Ok(ClassAndTxnHash { transaction_hash: res.transaction_hash, class_hash: res.class_hash })
+            }
+            Err(error) => {
+                let error = map_gateway_error(error);
+                let duration = started_at.elapsed();
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::DECLARE,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    duration,
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, duration);
+                Err(error)
+            }
+        }
     }
 
     async fn submit_deploy_account_transaction(
         &self,
         tx: BroadcastedDeployAccountTxn,
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
-        self.add_deploy_account_transaction(tx.try_into().map_err(map_conv_error)?)
-            .await
-            .map_err(map_gateway_error)
-            .map(|res| ContractAndTxnHash { transaction_hash: res.transaction_hash, contract_address: res.address })
+        let started_at = Instant::now();
+        let tx = match tx.try_into().map_err(map_conv_error) {
+            Ok(tx) => tx,
+            Err(error) => {
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::DEPLOY_ACCOUNT,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    started_at.elapsed(),
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, started_at.elapsed());
+                return Err(error);
+            }
+        };
+
+        match self.add_deploy_account_transaction(tx).await {
+            Ok(res) => {
+                let duration = started_at.elapsed();
+                record_gateway_client_submit_success(add_transaction_tx_type::DEPLOY_ACCOUNT, duration);
+                tracing::info!(
+                    target: "gateway_client_transactions",
+                    service = "gateway",
+                    endpoint = "add_transaction",
+                    tx_type = add_transaction_tx_type::DEPLOY_ACCOUNT,
+                    duration_ms = duration.as_secs_f64() * 1000.0,
+                    transaction_hash = %format_args!("{:#x}", res.transaction_hash),
+                    contract_address = %format_args!("{:#x}", res.address),
+                    "Forwarded gateway add_transaction request"
+                );
+                Ok(ContractAndTxnHash { transaction_hash: res.transaction_hash, contract_address: res.address })
+            }
+            Err(error) => {
+                let error = map_gateway_error(error);
+                let duration = started_at.elapsed();
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::DEPLOY_ACCOUNT,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    duration,
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
+                Err(error)
+            }
+        }
     }
 
     async fn submit_invoke_transaction(
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        self.add_invoke_transaction(tx.try_into().map_err(map_conv_error)?)
-            .await
-            .map_err(map_gateway_error)
-            .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
+        let started_at = Instant::now();
+        let tx = match tx.try_into().map_err(map_conv_error) {
+            Ok(tx) => tx,
+            Err(error) => {
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::INVOKE,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    started_at.elapsed(),
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, started_at.elapsed());
+                return Err(error);
+            }
+        };
+
+        match self.add_invoke_transaction(tx).await {
+            Ok(res) => {
+                let duration = started_at.elapsed();
+                record_gateway_client_submit_success(add_transaction_tx_type::INVOKE, duration);
+                tracing::info!(
+                    target: "gateway_client_transactions",
+                    service = "gateway",
+                    endpoint = "add_transaction",
+                    tx_type = add_transaction_tx_type::INVOKE,
+                    duration_ms = duration.as_secs_f64() * 1000.0,
+                    transaction_hash = %format_args!("{:#x}", res.transaction_hash),
+                    "Forwarded gateway add_transaction request"
+                );
+                Ok(AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
+            }
+            Err(error) => {
+                let error = map_gateway_error(error);
+                let duration = started_at.elapsed();
+                metrics().record_add_transaction(
+                    add_transaction_tx_type::INVOKE,
+                    add_transaction_result_from_submit_error(&error),
+                    add_transaction_error_code_from_submit_error(&error),
+                    duration,
+                );
+                log_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, duration);
+                Err(error)
+            }
+        }
     }
 
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
