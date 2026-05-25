@@ -515,7 +515,7 @@ mod tests {
         let tx_hash = *block.transactions[0].transaction_hash();
 
         let status = client_mainnet_fixture.get_transaction_status(tx_hash).await.unwrap();
-        assert_ne!(serde_json::to_value(&status.tx_status).unwrap(), serde_json::Value::String("NOT_RECEIVED".into()));
+        assert_ne!(serde_json::to_value(status.tx_status).unwrap(), serde_json::Value::String("NOT_RECEIVED".into()));
         assert_eq!(status.block_hash, Some(block.block_hash));
 
         let transaction = client_mainnet_fixture.get_transaction(tx_hash).await.unwrap();
