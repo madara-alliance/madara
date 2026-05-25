@@ -26,6 +26,7 @@ use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use rocksdb::Options as RocksDBOptions;
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
 use std::{fmt, path::Path, sync::Arc};
 
@@ -82,6 +83,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
+    global_opts: RocksDBOptions,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }
@@ -194,7 +196,7 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -591,6 +593,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
         tracing::debug!("Writing runtime execution config");
         self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
+    }
+    fn clear_runtime_exec_config(&self) -> Result<()> {
+        tracing::debug!("Clearing runtime execution config");
+        self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
     }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");
