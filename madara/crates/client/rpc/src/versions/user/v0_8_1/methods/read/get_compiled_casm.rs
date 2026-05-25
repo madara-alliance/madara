@@ -9,12 +9,10 @@ pub fn get_compiled_casm(starknet: &Starknet, class_hash: Felt) -> StarknetRpcRe
 
     let sierra = class.as_sierra().ok_or(StarknetRpcApiError::class_hash_not_found())?;
 
-    // Using `Value::from_str` to deserialize `compiled_class` from a JSON string stored in the database.
-    // Since `compiled_class` is stored as a raw JSON string in the DB, we need to parse it into a
-    // `serde_json::Value` to work with it as a structured JSON object for serialization.
+    // `compiled_class` is stored as raw JSON in the DB, so parse it back into a structured JSON value.
     let res = serde_json::Value::from_str(sierra.compiled.0.as_str()).map_err(|error| {
         StarknetRpcApiError::CompilationFailed {
-            error: format!("Error serializing compiled contract class: {error:#}").into(),
+            error: format!("Error deserializing compiled contract class from database: {error:#}").into(),
         }
     })?;
 
