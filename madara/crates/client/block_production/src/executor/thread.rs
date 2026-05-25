@@ -246,12 +246,22 @@ impl ExecutorThread {
         previous_l2_gas_used: u128,
     ) -> anyhow::Result<ExecutorStateExecuting> {
         let previous_l2_gas_price = state.state_adaptor.latest_gas_prices().strk_l2_gas_price;
+        // When no_empty_blocks is enabled, blocks are produced on-demand and the
+        // wait for the first tx can be arbitrarily long. Use wall-clock time so
+        // the timestamp reflects when the block actually started executing.
+        // Otherwise use the time captured when the previous block closed, so that
+        // consecutive blocks have timestamps spaced by ~block_time.
+        let block_timestamp = if self.backend.chain_config().no_empty_blocks {
+            SystemTime::now()
+        } else {
+            state.block_start_time
+        };
         let exec_ctx = create_execution_context(
             &self.backend,
             state.state_adaptor.block_n(),
             previous_l2_gas_price,
             previous_l2_gas_used,
-            state.block_start_time,
+            block_timestamp,
         )?;
 
         // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.

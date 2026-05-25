@@ -2358,4 +2358,76 @@ pub(crate) mod tests {
              but got {delta}s. This likely means the timestamp is still being set after the block_time wait."
         );
     }
+
+    // When no_empty_blocks=true, blocks are produced on-demand. The timestamp
+    // should reflect wall-clock time when the first tx arrives, not the time
+    // the previous block closed (which could be arbitrarily long ago).
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_no_empty_blocks_timestamp_uses_wall_clock(
+        #[future]
+        #[with(Duration::from_secs(30), false, true)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Submit a tx to trigger block 1.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Wait 3 seconds before submitting the next tx. With no_empty_blocks=true,
+        // the executor waits indefinitely. The block timestamp should reflect
+        // when the tx arrives (~3s from now), not when block 1 closed (~3s ago).
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let wall_clock_before_tx = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.contracts.0[2],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        // The timestamp should be within 1s of wall clock when the tx was submitted,
+        // not ~3s behind (which would indicate the stale captured time was used).
+        let drift = wall_clock_before_tx.saturating_sub(ts_2);
+        assert!(
+            drift <= 1,
+            "With no_empty_blocks=true, block timestamp should reflect wall-clock time \
+             when the first tx arrived, but it was {drift}s behind. \
+             This likely means a stale captured block_start_time was used."
+        );
+    }
 }
