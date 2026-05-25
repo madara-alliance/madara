@@ -2292,4 +2292,65 @@ pub(crate) mod tests {
         // No preconfirmed block should exist (still)
         assert!(!devnet_setup.backend.has_preconfirmed_block());
     }
+
+    // Regression test: when a non-empty block is followed by an empty block,
+    // the timestamp delta should be ~block_time, not ~2*block_time.
+    //
+    // Before the fix, create_execution_context() called SystemTime::now() lazily
+    // — only after wait_take_tx_batch() returned. For a non-empty block, txs
+    // arrive quickly so the timestamp is set near block-open time. For an empty
+    // block, the full block_time elapses before the timestamp is set.
+    // This made the delta between a non-empty and subsequent empty block ≈ 2*block_time.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_empty_block_timestamp_not_drifted(
+        #[future]
+        #[with(Duration::from_secs(3))]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        // Submit a transaction so block 1 is non-empty.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Block 1: non-empty (has our tx), closes after block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Block 2: empty, closes after another block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+
+        let ts_1 = block_1.get_block_info().unwrap().header.block_timestamp.0;
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        let delta = ts_2.saturating_sub(ts_1);
+
+        // With block_time=3s, the delta should be ~3s.
+        // Before the fix it would be ~6s (2 * block_time) because:
+        //   - block 1 timestamp set at open (near T0)
+        //   - block 2 timestamp set after 3s wait (near T0 + 3s + 3s)
+        assert!(
+            delta <= 4,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. This likely means the timestamp is still being set after the block_time wait."
+        );
+    }
 }

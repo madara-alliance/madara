@@ -14,6 +14,7 @@ use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
+    time::SystemTime,
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -31,6 +32,10 @@ struct ExecutorStateNewBlock {
     /// Keep the cached adaptor around to keep the cache around.
     state_adaptor: LayeredStateAdapter,
     consumed_l1_to_l2_nonces: HashSet<u64>,
+    /// Wall-clock time captured when the previous block closed.
+    /// Used as the next block's timestamp so that lazy execution context
+    /// creation does not skew the timestamp forward.
+    block_start_time: SystemTime,
 }
 
 /// Note: The reason this exists is because we want to create the new block execution context (meaning, the block header) as late as possible, as to have
@@ -230,6 +235,7 @@ impl ExecutorThread {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: cached_adapter,
             consumed_l1_to_l2_nonces: HashSet::new(),
+            block_start_time: SystemTime::now(),
         }))
     }
 
@@ -245,6 +251,7 @@ impl ExecutorThread {
             state.state_adaptor.block_n(),
             previous_l2_gas_price,
             previous_l2_gas_used,
+            state.block_start_time,
         )?;
 
         // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.
@@ -268,6 +275,7 @@ impl ExecutorThread {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
             consumed_l1_to_l2_nonces: HashSet::new(),
+            block_start_time: SystemTime::now(),
         }))
     }
 
