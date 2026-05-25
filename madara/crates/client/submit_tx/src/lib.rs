@@ -109,7 +109,7 @@
 //! [`StatefulValidator`]: blockifier::blockifier::stateful_validator::StatefulValidator
 use async_trait::async_trait;
 use mc_db::MadaraStorage;
-use mc_mempool::Mempool;
+use mc_mempool::{metrics::MempoolIngressSource, Mempool};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -172,6 +172,14 @@ pub trait SubmitL1HandlerTransaction: Send + Sync {
 pub trait SubmitValidatedTransaction: Send + Sync {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError>;
 
+    async fn submit_validated_transaction_with_source(
+        &self,
+        tx: ValidatedTransaction,
+        _source: MempoolIngressSource,
+    ) -> Result<(), SubmitTransactionError> {
+        self.submit_validated_transaction(tx).await
+    }
+
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
@@ -182,6 +190,15 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         Ok(self.accept_tx(tx).await?)
     }
+
+    async fn submit_validated_transaction_with_source(
+        &self,
+        tx: ValidatedTransaction,
+        source: MempoolIngressSource,
+    ) -> Result<(), SubmitTransactionError> {
+        Ok(self.accept_tx_from_source(tx, source).await?)
+    }
+
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
         Some(self.is_transaction_in_mempool(&hash))
     }

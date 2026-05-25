@@ -123,7 +123,9 @@
 use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
-use metrics::{ExternalDbOutboxMetrics, MempoolMetrics};
+use metrics::{
+    ExternalDbOutboxMetrics, MempoolAddRejectReason, MempoolIngressSource, MempoolMetrics, MempoolRemovalReason,
+};
 use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
@@ -216,13 +218,24 @@ pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
 
 impl<D: MadaraStorageRead> Mempool<D> {
     pub fn new(backend: Arc<MadaraBackend<D>>, config: MempoolConfig) -> Self {
+        let metrics = MempoolMetrics::register();
+        metrics.record_mempool_state(&MempoolStateSummary {
+            num_transactions: 0,
+            transaction_capacity: backend.chain_config().mempool_max_transactions,
+            num_accounts: 0,
+            ready_transactions: 0,
+            queued_transactions: 0,
+            oldest_transaction_age: None,
+            oldest_ready_transaction_age: None,
+        });
+
         Mempool {
             inner: MempoolInnerWithNotify::new(backend.chain_config()),
             ttl: backend.chain_config().mempool_ttl,
             backend,
             external_outbox: config.external_outbox,
             config,
-            metrics: MempoolMetrics::register(),
+            metrics,
             external_db_outbox_metrics: ExternalDbOutboxMetrics::register(),
             watch_transaction_status: Default::default(),
             preconfirmed_transactions_statuses: Default::default(),
@@ -246,7 +259,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             };
             let is_new_tx = false; // do not trigger metrics update and db update.
-            if let Err(err) = self.add_tx(tx, is_new_tx).await {
+            if let Err(err) = self.add_tx(tx, is_new_tx, MempoolIngressSource::DbRestore).await {
                 match err {
                     MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
@@ -258,12 +271,35 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Accept a new validated transaction.
     pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
-        self.add_tx(tx, /* is_new_tx */ true).await
+        self.accept_tx_from_source(tx, MempoolIngressSource::Unknown).await
+    }
+
+    /// Accept a new validated transaction from a known ingress path.
+    pub async fn accept_tx_from_source(
+        &self,
+        tx: ValidatedTransaction,
+        source: MempoolIngressSource,
+    ) -> Result<(), MempoolInsertionError> {
+        self.add_tx(tx, /* is_new_tx */ true, source).await
     }
 
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
-        tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
+    async fn add_tx(
+        &self,
+        tx: ValidatedTransaction,
+        is_new_tx: bool,
+        source: MempoolIngressSource,
+    ) -> Result<(), MempoolInsertionError> {
+        tracing::debug!(
+            "Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx} source={}",
+            tx.hash,
+            source.as_label()
+        );
+
+        let record_ingress_metrics = source.should_record_ingress_metrics();
+        if record_ingress_metrics {
+            self.metrics.record_add_attempt(source, &tx);
+        }
 
         let mut outbox_id = None;
         if is_new_tx && self.external_outbox.enabled {
@@ -277,6 +313,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     self.external_db_outbox_metrics.outbox_write_errors.add(1, &[]);
                     if self.external_outbox.strict {
                         self.external_db_outbox_metrics.outbox_strict_rejections.add(1, &[]);
+                        if record_ingress_metrics {
+                            self.metrics.record_add_rejected(source, &tx, MempoolAddRejectReason::Internal);
+                        }
                         return Err(MempoolInsertionError::Internal(anyhow::anyhow!("outbox write failed: {err:#}")));
                     }
                 }
@@ -291,7 +330,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let (ret, summary) = {
             let mut lock = self.inner.write().await;
             let ret = lock.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
-            (ret, lock.summary())
+            (ret, lock.summary(now))
         };
 
         if ret.is_err() {
@@ -304,6 +343,16 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
 
         self.metrics.record_mempool_state(&summary);
+
+        if let Err(err) = &ret {
+            if record_ingress_metrics {
+                self.metrics.record_add_rejected(source, &tx, MempoolAddRejectReason::from_inner_error(err));
+            }
+        }
+
+        if !removed_txs.is_empty() {
+            self.metrics.record_removed(MempoolRemovalReason::DisplacedByInsert, removed_txs.len() as u64);
+        }
 
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
@@ -318,6 +367,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 );
             }
             self.on_tx_added(&tx, is_new_tx);
+            if record_ingress_metrics {
+                self.metrics.record_add_success(source, &tx);
+            }
         }
         ret.map_err(Into::into)
     }
@@ -373,10 +425,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let summary = {
             let mut lock = self.inner.write().await;
             lock.remove_all_ttl_exceeded_txs(now, &mut removed_txs);
-            lock.summary()
+            lock.summary(now)
         };
 
         self.metrics.record_mempool_state(&summary);
+        if !removed_txs.is_empty() {
+            self.metrics.record_removed(MempoolRemovalReason::TtlExpired, removed_txs.len() as u64);
+        }
 
         self.on_txs_removed(&removed_txs);
         if !removed_txs.is_empty() {
@@ -432,7 +487,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
     /// This holds the lock to the inner mempool - use with care.
     pub async fn get_consumer(&self) -> MempoolConsumer {
-        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
+        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await, metrics: self.metrics.clone() }
     }
 }
 
@@ -444,11 +499,17 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 /// This holds the lock to the inner mempool - use with care.
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
+    metrics: MempoolMetrics,
 }
 impl Iterator for MempoolConsumer {
     type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
-        self.lock.pop_next_ready()
+        let next = self.lock.pop_next_ready();
+        if next.is_some() {
+            self.metrics.record_removed(MempoolRemovalReason::ConsumedForBlock, 1);
+            self.metrics.record_mempool_state(&self.lock.summary(TxTimestamp::now()));
+        }
+        next
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         let n_ready = self.lock.ready_transactions();
@@ -459,12 +520,18 @@ impl Iterator for MempoolConsumer {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::metrics::{test_counters, MempoolAddRejectReason, MempoolIngressSource, MempoolRemovalReason};
     use starknet_api::{core::ContractAddress, transaction::TransactionHash};
     use std::time::Duration;
 
     #[rstest::fixture]
     async fn backend() -> Arc<mc_db::MadaraBackend> {
-        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
+        let backend = test_backend_with_chain_config(mp_chain_config::ChainConfig::madara_test()).await;
+        backend
+    }
+
+    async fn test_backend_with_chain_config(chain_config: mp_chain_config::ChainConfig) -> Arc<mc_db::MadaraBackend> {
+        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(chain_config));
         let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
         genesis.add_devnet_contracts(10).unwrap();
         genesis.build_and_store(&backend).await.unwrap();
@@ -531,6 +598,83 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
+    async fn mempool_accept_tx_records_metrics(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        test_counters::capture(async {
+            let backend = backend.await;
+            let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+
+            assert_matches::assert_matches!(
+                mempool.accept_tx_from_source(tx_account.clone(), MempoolIngressSource::Rpc).await,
+                Ok(())
+            );
+
+            assert_eq!(
+                test_counters::ADD_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolIngressSource::Rpc, "invoke")]
+            );
+            assert_eq!(
+                test_counters::ADD_SUCCESSES.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolIngressSource::Rpc, "invoke")]
+            );
+            assert!(
+                test_counters::ADD_REJECTIONS.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+                "successful add should not record rejections"
+            );
+            assert_eq!(test_counters::MEMPOOL_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed), 1);
+            assert_eq!(
+                test_counters::MEMPOOL_READY_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed),
+                1
+            );
+            assert_eq!(
+                test_counters::MEMPOOL_QUEUED_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed),
+                0
+            );
+            assert_eq!(test_counters::MEMPOOL_ACCOUNTS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed), 1);
+            assert_eq!(
+                test_counters::MEMPOOL_CAPACITY_TRANSACTIONS_LAST.load(std::sync::atomic::Ordering::Relaxed),
+                backend.chain_config().mempool_max_transactions as u64
+            );
+        })
+        .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_duplicate_rejection_records_metrics(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        test_counters::capture(async {
+            let backend = backend.await;
+            let mempool = Mempool::new(backend, MempoolConfig::default());
+
+            assert_matches::assert_matches!(
+                mempool.accept_tx_from_source(tx_account.clone(), MempoolIngressSource::Gateway).await,
+                Ok(())
+            );
+            assert_matches::assert_matches!(
+                mempool.accept_tx_from_source(tx_account, MempoolIngressSource::Gateway).await,
+                Err(MempoolInsertionError::InnerMempool(TxInsertionError::DuplicateTxn))
+            );
+
+            assert_eq!(test_counters::ADD_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner()).len(), 2);
+            assert_eq!(test_counters::ADD_SUCCESSES.lock().unwrap_or_else(|e| e.into_inner()).len(), 1);
+            assert_eq!(
+                test_counters::ADD_REJECTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolIngressSource::Gateway, "invoke", MempoolAddRejectReason::DuplicateTxn)]
+            );
+            assert_eq!(test_counters::MEMPOOL_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed), 1);
+        })
+        .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
     async fn mempool_accept_persists_and_remove_clears_saved_tx(
         #[future] backend: Arc<mc_db::MadaraBackend>,
         tx_account: ValidatedTransaction,
@@ -584,6 +728,32 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
+    async fn mempool_take_tx_records_consumed_metric(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        test_counters::capture(async {
+            let backend = backend.await;
+            let mempool = Mempool::new(backend, MempoolConfig::default());
+
+            assert_matches::assert_matches!(
+                mempool.accept_tx_from_source(tx_account, MempoolIngressSource::Rpc).await,
+                Ok(())
+            );
+            let _ = mempool.get_consumer().await.next().expect("Mempool should contain a transaction");
+
+            assert_eq!(
+                test_counters::REMOVALS.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolRemovalReason::ConsumedForBlock, 1)]
+            );
+            assert_eq!(test_counters::MEMPOOL_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed), 0);
+        })
+        .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
     async fn mempool_accept_writes_outbox(
         #[future] backend: Arc<mc_db::MadaraBackend>,
         tx_account: ValidatedTransaction,
@@ -627,14 +797,46 @@ pub(crate) mod tests {
         #[future] backend: Arc<mc_db::MadaraBackend>,
         tx_account: ValidatedTransaction,
     ) {
-        let backend = backend.await;
-        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
-        let mempool = Mempool::new(backend.clone(), config);
+        test_counters::capture(async {
+            let backend = backend.await;
+            let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+            let mempool = Mempool::new(backend.clone(), config);
 
-        mc_db::set_external_outbox_write_failpoint(true);
-        let result = mempool.accept_tx(tx_account).await;
-        mc_db::set_external_outbox_write_failpoint(false);
+            mc_db::set_external_outbox_write_failpoint(true);
+            let result = mempool.accept_tx_from_source(tx_account, MempoolIngressSource::Rpc).await;
+            mc_db::set_external_outbox_write_failpoint(false);
 
-        assert_matches::assert_matches!(result, Err(MempoolInsertionError::Internal(_)));
+            assert_matches::assert_matches!(result, Err(MempoolInsertionError::Internal(_)));
+            assert_eq!(
+                test_counters::ADD_REJECTIONS.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolIngressSource::Rpc, "invoke", MempoolAddRejectReason::Internal)]
+            );
+        })
+        .await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_ttl_removal_records_metrics() {
+        test_counters::capture(async {
+            let mut chain_config = mp_chain_config::ChainConfig::madara_test();
+            chain_config.mempool_ttl = Some(Duration::from_millis(1));
+            let backend = test_backend_with_chain_config(chain_config).await;
+            let mempool = Mempool::new(backend, MempoolConfig::default());
+
+            let tx = tx_account(CONTRACT_ADDRESS);
+            assert_matches::assert_matches!(mempool.accept_tx_from_source(tx, MempoolIngressSource::Rpc).await, Ok(()));
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert_matches::assert_matches!(mempool.remove_ttl_exceeded_txs().await, Ok(()));
+
+            assert_eq!(
+                test_counters::REMOVALS.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+                &[(MempoolRemovalReason::TtlExpired, 1)]
+            );
+            assert_eq!(test_counters::MEMPOOL_TRANSACTIONS_CURRENT_LAST.load(std::sync::atomic::Ordering::Relaxed), 0);
+        })
+        .await;
     }
 }

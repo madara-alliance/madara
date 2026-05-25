@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use mc_mempool::metrics::MempoolIngressSource;
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
@@ -110,6 +111,14 @@ impl SubmitValidatedTransactionSwitch {
 impl SubmitValidatedTransaction for SubmitValidatedTransactionSwitch {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.validated_provider()?.submit_validated_transaction(tx).await
+    }
+
+    async fn submit_validated_transaction_with_source(
+        &self,
+        tx: ValidatedTransaction,
+        source: MempoolIngressSource,
+    ) -> Result<(), SubmitTransactionError> {
+        self.validated_provider()?.submit_validated_transaction_with_source(tx, source).await
     }
 
     async fn received_transaction(&self, hash: Felt) -> Option<bool> {

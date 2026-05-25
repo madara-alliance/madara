@@ -5,6 +5,7 @@ use crate::{
     },
     tx::{Score, TxSummary},
 };
+use mp_transactions::validated::TxTimestamp;
 use starknet_api::core::{ContractAddress, Nonce};
 use std::{
     collections::{btree_map, hash_map, BTreeMap, HashMap},
@@ -99,6 +100,10 @@ impl AccountState {
 
     pub fn last_queued_tx(&self) -> Option<&'_ MempoolTransaction> {
         self.queued_txs.last_key_value().map(|kv| kv.1)
+    }
+
+    pub fn first_queued_tx(&self) -> Option<&'_ MempoolTransaction> {
+        self.queued_txs.first_key_value().map(|kv| kv.1)
     }
 
     /// The eviction score of an account is based on the last queued transaction. This value is per-account,
@@ -403,5 +408,13 @@ impl Accounts {
     }
     pub fn num_accounts(&self) -> usize {
         self.accounts.len()
+    }
+
+    pub fn oldest_ready_arrived_at(&self) -> Option<TxTimestamp> {
+        self.accounts
+            .values()
+            .filter(|account| matches!(account.status(), AccountStatus::Ready(_)))
+            .filter_map(|account| account.first_queued_tx().map(|tx| tx.arrived_at()))
+            .min()
     }
 }

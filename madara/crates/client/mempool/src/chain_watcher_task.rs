@@ -1,4 +1,5 @@
 use crate::{
+    metrics::{MempoolIngressSource, MempoolRemovalReason},
     transaction_status::{PreConfirmationStatus, TransactionStatus},
     Mempool,
 };
@@ -266,7 +267,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         &mut removed_txs,
                     );
                 }
-                self.metrics.record_mempool_state(&guard.summary());
+                self.metrics.record_mempool_state(&guard.summary(mp_transactions::validated::TxTimestamp::now()));
+            }
+            if !removed_txs.is_empty() {
+                self.metrics.record_removed(MempoolRemovalReason::NonceAdvanced, removed_txs.len() as u64);
             }
             self.on_txs_removed(&removed_txs);
 
@@ -274,7 +278,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             for (tx_hash, tx) in removed {
                 if put_back_into_mempool {
                     // Try to add back to mempool.
-                    if let Err(err) = self.accept_tx((*tx).clone()).await {
+                    if let Err(err) = self.accept_tx_from_source((*tx).clone(), MempoolIngressSource::Reinsert).await {
                         // Re-insertion may fail for various valid reasons: the tx has reached its TTL, the tx is a L1HandlerTransaction..
                         // TODO: it may fail because of tip-bump / eviction score. Maybe we shouldn't drop the tx in these cases?
                         tracing::debug!("Could not add transaction {:#x} back into mempool: {err:#}", tx.hash);

@@ -15,7 +15,7 @@ use blockifier::{
 use mc_db::{MadaraBackend, MadaraBlockView};
 use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
-use mc_mempool::{MempoolInsertionError, TxInsertionError};
+use mc_mempool::{metrics::MempoolIngressSource, MempoolInsertionError, TxInsertionError};
 use mp_chain_config::StarknetVersion;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
@@ -236,6 +236,7 @@ pub struct TransactionValidator {
     inner: Arc<dyn SubmitValidatedTransaction>,
     backend: Arc<MadaraBackend>,
     config: TransactionValidatorConfig,
+    source: MempoolIngressSource,
 }
 
 impl fmt::Debug for TransactionValidator {
@@ -250,7 +251,16 @@ impl TransactionValidator {
         backend: Arc<MadaraBackend>,
         config: TransactionValidatorConfig,
     ) -> Self {
-        Self { inner, backend, config }
+        Self::new_with_source(inner, backend, config, MempoolIngressSource::Rpc)
+    }
+
+    pub fn new_with_source(
+        inner: Arc<dyn SubmitValidatedTransaction>,
+        backend: Arc<MadaraBackend>,
+        config: TransactionValidatorConfig,
+        source: MempoolIngressSource,
+    ) -> Self {
+        Self { inner, backend, config, source }
     }
 
     #[tracing::instrument(skip(self, tx, converted_class))]
@@ -311,7 +321,7 @@ impl TransactionValidator {
             converted_class,
             account_tx.execution_flags.charge_fee,
         );
-        self.inner.submit_validated_transaction(tx).await?;
+        self.inner.submit_validated_transaction_with_source(tx, self.source).await?;
 
         Ok(())
     }

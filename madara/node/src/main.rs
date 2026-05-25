@@ -117,6 +117,7 @@ use http::{HeaderName, HeaderValue};
 use mc_db::MadaraBackend;
 use mc_external_db::ExternalDbService;
 use mc_gateway_client::GatewayProvider;
+use mc_mempool::metrics::MempoolIngressSource;
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
@@ -370,38 +371,53 @@ async fn main() -> anyhow::Result<()> {
 
     // Add transaction provider
 
-    let mempool_tx_validator = Arc::new(TransactionValidator::new(
+    let rpc_mempool_tx_validator = Arc::new(TransactionValidator::new_with_source(
         service_mempool.mempool() as _,
         backend.clone(),
         run_cmd.validator_params.as_validator_config(),
+        MempoolIngressSource::Rpc,
+    ));
+
+    let gateway_mempool_tx_validator = Arc::new(TransactionValidator::new_with_source(
+        service_mempool.mempool() as _,
+        backend.clone(),
+        run_cmd.validator_params.as_validator_config(),
+        MempoolIngressSource::Gateway,
     ));
 
     let gateway_submit_tx: Arc<dyn SubmitTransaction> =
         if run_cmd.validator_params.validate_then_forward_txs_to.is_some() {
-            Arc::new(TransactionValidator::new(
+            Arc::new(TransactionValidator::new_with_source(
                 Arc::clone(&gateway_client) as _,
                 backend.clone(),
                 run_cmd.validator_params.as_validator_config(),
+                MempoolIngressSource::Gateway,
             ))
         } else {
             Arc::clone(&gateway_client) as _
         };
 
-    let tx_submit =
-        MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx) as _, Arc::clone(&mempool_tx_validator) as _);
+    let tx_submit_rpc = MakeSubmitTransactionSwitch::new(
+        Arc::clone(&gateway_submit_tx) as _,
+        Arc::clone(&rpc_mempool_tx_validator) as _,
+    );
+    let tx_submit_gateway = MakeSubmitTransactionSwitch::new(
+        Arc::clone(&gateway_submit_tx) as _,
+        Arc::clone(&gateway_mempool_tx_validator) as _,
+    );
     let validated_tx_submit =
         MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
 
     // User-facing RPC
 
-    let service_rpc_user = RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone());
+    let service_rpc_user = RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit_rpc.clone());
 
     // Admin-facing RPC (for node operators)
 
     let service_rpc_admin = RpcService::admin(
         run_cmd.rpc_params.clone(),
         backend.clone(),
-        tx_submit.clone(),
+        tx_submit_rpc.clone(),
         service_block_production.handle(),
     );
 
@@ -410,7 +426,7 @@ async fn main() -> anyhow::Result<()> {
     let service_gateway = GatewayService::new(
         run_cmd.gateway_params.clone(),
         backend.clone(),
-        tx_submit.clone(),
+        tx_submit_gateway.clone(),
         Some(validated_tx_submit.clone()),
     )
     .await
