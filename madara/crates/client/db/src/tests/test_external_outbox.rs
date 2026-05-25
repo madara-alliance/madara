@@ -7,6 +7,7 @@ use mp_convert::Felt;
 use mp_transactions::{
     validated::TxTimestamp, DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction,
 };
+use rstest::rstest;
 
 #[tokio::test]
 async fn outbox_write_read_roundtrip() {
@@ -129,4 +130,18 @@ async fn outbox_duplicate_write_appends_entry() {
     assert_ne!(outbox[0].id.uuid, outbox[1].id.uuid);
     assert!(outbox.iter().any(|entry| entry.tx == tx));
     assert!(outbox.iter().any(|entry| entry.tx == updated));
+}
+
+#[rstest]
+#[case(vec![7])]
+#[case(vec![7, 12])]
+fn external_db_retention_cursor_roundtrip(#[case] cursors: Vec<u64>) {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    assert_eq!(backend.get_external_db_retention_cursor().unwrap(), None);
+
+    for cursor in cursors {
+        backend.write_external_db_retention_cursor(cursor).unwrap();
+        assert_eq!(backend.get_external_db_retention_cursor().unwrap(), Some(cursor));
+    }
 }

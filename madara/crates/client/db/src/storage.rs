@@ -142,6 +142,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_chain_tip(&self) -> Result<StorageChainTip>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
+    fn get_external_db_retention_cursor(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
     fn get_runtime_exec_config(
@@ -195,6 +196,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.
     fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()>;
+    /// Write the highest block fully processed by external DB retention.
+    fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()>;
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()>;

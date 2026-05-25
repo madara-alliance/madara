@@ -329,6 +329,9 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
     }
+    fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
+        self.inner.get_external_db_retention_cursor().context("Getting external db retention cursor")
+    }
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
         self.inner.get_stored_chain_info().context("Getting stored chain info from db")
     }
@@ -496,6 +499,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
         tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
+    }
+    fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Write external db retention cursor block_n={block_n:?}");
+        self.inner.write_external_db_retention_cursor(block_n).context("Writing external db retention cursor")
     }
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         tracing::debug!(
