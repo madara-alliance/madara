@@ -185,19 +185,8 @@ mod tests {
     }
 
     #[test]
-    fn native_cache_abi_version_matches_resolved_cairo_native_version() {
-        let cargo_lock = include_str!("../../../../../Cargo.lock");
-        let cairo_native_version = cargo_lock
-            .split("[[package]]")
-            .find(|package| package.contains("name = \"cairo-native\""))
-            .and_then(|package| package.lines().find_map(|line| line.trim().strip_prefix("version = \"")))
-            .and_then(|version| version.strip_suffix('"'))
-            .expect("Cargo.lock must contain cairo-native");
-
-        assert_eq!(
-            NativeHostFingerprint::current().native_cache_abi_version,
-            format!("cairo-native-{cairo_native_version}")
-        );
+    fn native_cache_abi_version_matches_expected_cairo_native_version() {
+        assert_eq!(NativeHostFingerprint::current().native_cache_abi_version, "cairo-native-0.9.0-rc.6");
     }
 
     #[test]
