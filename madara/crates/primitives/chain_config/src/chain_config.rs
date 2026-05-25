@@ -173,7 +173,6 @@ pub enum MempoolMode {
 pub enum MempoolFullMode {
     #[default]
     EvictLessDesirable,
-    EvictOldest,
     RejectNew,
 }
 

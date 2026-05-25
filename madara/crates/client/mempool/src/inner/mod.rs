@@ -221,10 +221,6 @@ impl InnerMempool {
                         tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
                         self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
                     }
-                    MempoolFullMode::EvictOldest => {
-                        tracing::debug!("Try make room by evicting oldest transaction");
-                        self.try_make_room_by_evicting_oldest(removed_txs)
-                    }
                     MempoolFullMode::RejectNew => false,
                 };
                 if !made_room {
@@ -232,7 +228,7 @@ impl InnerMempool {
                 }
                 // We made room!
 
-                // Reborrow the insertion `entry`, as `try_make_room_for` had to borrow it mutably to make its modifications.
+                // Reborrow the insertion `entry`, as the eviction path had to borrow the account set mutably.
                 entry = self
                     .accounts
                     .tx_entry_for_insertion(&mempool_tx, account_nonce)
@@ -264,16 +260,6 @@ impl InnerMempool {
         self.apply_update(account_update, removed_txs);
 
         true // we made room! :)
-    }
-
-    fn try_make_room_by_evicting_oldest(&mut self, removed_txs: &mut impl Extend<ValidatedTransaction>) -> bool {
-        let Some(tx_key) = self.timestamp_queue.oldest() else {
-            return false;
-        };
-
-        let account_update = self.accounts.remove_tx_and_higher_nonces(tx_key);
-        self.apply_update(account_update, removed_txs);
-        true
     }
 
     /// Update an account nonce. This gets rid of all obselete transactions, and needs to be called everytime

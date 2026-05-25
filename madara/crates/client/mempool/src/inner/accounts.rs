@@ -79,25 +79,6 @@ impl AccountState {
         self.queued_txs.remove(nonce)
     }
 
-    /// Remove the transaction at `nonce` together with all later nonces from the same account.
-    /// This preserves nonce-chain consistency when a gap is introduced by eviction.
-    pub fn remove_tx_and_higher_nonces(
-        &mut self,
-        nonce: &Nonce,
-    ) -> Option<smallvec::SmallVec<[MempoolTransaction; 1]>> {
-        let _ = self.queued_txs.get(nonce)?;
-
-        let later_nonces = self.queued_txs.range(*nonce..).map(|(nonce, _)| *nonce).collect::<Vec<_>>();
-        Some(
-            later_nonces
-                .into_iter()
-                .map(|nonce| {
-                    self.queued_txs.remove(&nonce).expect("Invariant violation: nonce gathered for removal must exist")
-                })
-                .collect(),
-        )
-    }
-
     pub fn pop_first(&mut self) -> Option<MempoolTransaction> {
         self.queued_txs.pop_first().map(|kv| kv.1)
     }
@@ -388,26 +369,6 @@ impl Accounts {
             added_tx: None,
             account_data: data,
         }
-    }
-
-    /// Caller must supply a valid TxKey.
-    /// Removes the targeted transaction and all higher nonces from the same account.
-    pub fn remove_tx_and_higher_nonces(&mut self, TxKey(contract_address, nonce): &TxKey) -> AccountUpdate {
-        let Some((data, removed_txs)) = self.account_update_helper(contract_address, move |account_state| {
-            let Some(removed_txs) = account_state.remove_tx_and_higher_nonces(nonce) else {
-                unreachable!(
-                    "Invariant violation: TxKey has invalid nonce: contract_address={contract_address:?} nonce={nonce:?}."
-                )
-            };
-
-            Some(removed_txs)
-        }) else {
-            unreachable!(
-                "Invariant violation: TxKey has invalid contract_address: contract_address={contract_address:?} nonce={nonce:?}."
-            )
-        };
-
-        AccountUpdate { account_key: AccountKey(*contract_address), removed_txs, added_tx: None, account_data: data }
     }
 
     /// Caller must supply a valid AccountKey.
