@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: SocketDev/socket-basics@v2.0.3
+      - uses: SocketDev/socket-basics@aa80fcef76614b40e24e8194490bb5fc89b8edc2 # v2.0.3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           socket_security_api_key: ${{ secrets.SOCKET_SECURITY_API_KEY }}
