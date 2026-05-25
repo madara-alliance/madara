@@ -316,7 +316,7 @@ majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 # Keep this pinned to the requested SNOS 0.14.2 RC line while replay validation
 # targets that artifact set; do not move to the stable tag without rerunning replay fixtures.
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "6a9f5a7b46201f39ab670c0d956853d5cd1f82b8" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "c16e83a180cc2d29aebf28f4eb2937ecdf825f71" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
