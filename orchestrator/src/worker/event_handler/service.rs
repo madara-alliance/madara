@@ -610,7 +610,7 @@ impl JobHandlerService {
 
                     match move_result {
                         Ok(()) => {
-                            workload.finish_success();
+                            workload.finish_error();
                             return Ok(());
                         }
                         Err(e) => {
