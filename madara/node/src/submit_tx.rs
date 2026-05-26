@@ -107,6 +107,26 @@ impl TransactionLookup for TransactionLookupSwitch {
             None => None,
         }
     }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<mp_gateway::feeder::ProviderTransactionStatus>, SubmitTransactionError> {
+        match self.provider().ok() {
+            Some(provider) => provider.feeder_transaction_status(hash).await,
+            None => Ok(None),
+        }
+    }
+
+    async fn feeder_transaction(
+        &self,
+        hash: Felt,
+    ) -> Result<Option<mp_gateway::feeder::ProviderTransactionResponse>, SubmitTransactionError> {
+        match self.provider().ok() {
+            Some(provider) => provider.feeder_transaction(hash).await,
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Clone)]
