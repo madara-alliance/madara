@@ -81,8 +81,6 @@ pub struct OrchestratorMetrics {
     // Workload metrics
     pub workload_active_slots: ObservableGauge<u64>,
     pub workload_busy_seconds_total: Counter<f64>,
-    pub workload_runs_total: Counter<f64>,
-    pub workload_duration_seconds: Histogram<f64>,
     pub workload_capacity_slots: Gauge<f64>,
     pub healed_jobs_total: Counter<f64>,
 }
@@ -453,20 +451,6 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
-        let workload_runs_total = register_counter_metric_instrument(
-            &orchestrator_meter,
-            "workload_runs_total".to_string(),
-            "Total number of orchestrator workload runs".to_string(),
-            "runs".to_string(),
-        );
-
-        let workload_duration_seconds = register_histogram_metric_instrument(
-            &orchestrator_meter,
-            "workload_duration_seconds".to_string(),
-            "Duration of orchestrator workload runs".to_string(),
-            "s".to_string(),
-        );
-
         let workload_capacity_slots = register_gauge_metric_instrument(
             &orchestrator_meter,
             "workload_capacity_slots".to_string(),
@@ -529,8 +513,6 @@ impl Metrics for OrchestratorMetrics {
             cleanup_failures_total,
             workload_active_slots,
             workload_busy_seconds_total,
-            workload_runs_total,
-            workload_duration_seconds,
             workload_capacity_slots,
             healed_jobs_total,
         }

@@ -177,8 +177,6 @@ impl WorkloadTracker {
         let completed_attributes = self.descriptor.completed_attributes(outcome);
 
         ORCHESTRATOR_METRICS.workload_busy_seconds_total.add(duration_seconds, &completed_attributes);
-        ORCHESTRATOR_METRICS.workload_runs_total.add(1.0, &completed_attributes);
-        ORCHESTRATOR_METRICS.workload_duration_seconds.record(duration_seconds, &completed_attributes);
 
         decrement_active_slots(self.descriptor);
     }
