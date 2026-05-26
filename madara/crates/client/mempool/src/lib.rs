@@ -187,12 +187,6 @@ pub struct ExternalOutboxConfig {
     pub strict: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransactionAddressMatch {
-    Sender,
-    To,
-}
-
 #[derive(Debug, Clone)]
 pub struct MempoolTransactionSnapshot {
     pub transaction: ValidatedTransaction,
@@ -490,18 +484,6 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     ) -> Vec<ValidatedTransaction> {
         let transaction_hashes = transaction_hashes.into_iter().collect::<HashSet<_>>();
         self.flush_transactions_matching(move |tx| transaction_hashes.contains(&tx.hash)).await
-    }
-
-    pub async fn flush_transactions_by_contract_address(
-        &self,
-        contract_address: Felt,
-        address_match: TransactionAddressMatch,
-    ) -> Vec<ValidatedTransaction> {
-        self.flush_transactions_matching(move |tx| match address_match {
-            TransactionAddressMatch::Sender => tx.sender_contract_address() == Some(contract_address),
-            TransactionAddressMatch::To => tx.to_contract_address() == Some(contract_address),
-        })
-        .await
     }
 
     /// Remove all matching transactions while holding a single inner write lock so selection and
