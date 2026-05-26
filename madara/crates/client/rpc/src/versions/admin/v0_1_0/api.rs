@@ -94,6 +94,9 @@ pub trait MadaraWriteRpcApi {
 
     /// Flush transactions from the mempool using an admin-only filter.
     /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
+    /// Warning: nonce-range flushing can remove a transaction from the middle of an account nonce
+    /// chain, which leaves higher nonces from that same account pending until they are flushed or
+    /// naturally overtaken by account state changes.
     #[method(name = "flushMempoolTxns")]
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }

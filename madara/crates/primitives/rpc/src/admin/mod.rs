@@ -75,6 +75,8 @@ pub struct FlushMempoolTxnsParams {
     pub transaction_hashes: Option<Vec<Felt>>,
     /// Optional nonce range used to narrow the explicit base selector above.
     /// This filter is invalid unless `all`, `contract_address`, or `transaction_hashes` is also provided.
+    /// Warning: removing a non-tail nonce can leave higher nonces from the same account pending in
+    /// the mempool until they are flushed separately or displaced by account state changes.
     #[serde(flatten)]
     pub nonce_filter: MempoolNonceFilter,
 }

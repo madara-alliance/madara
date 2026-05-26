@@ -506,6 +506,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Remove all matching transactions while holding a single inner write lock so selection and
     /// removal observe the same mempool state.
+    ///
+    /// Warning: this removes only the transactions that match the predicate. If an operator uses a
+    /// nonce-based filter that removes a non-tail transaction from an account's nonce chain, any
+    /// higher nonces for that same account remain in the mempool as pending followers until they are
+    /// explicitly flushed or the account nonce catches up through some other path.
     pub async fn flush_transactions_matching(
         &self,
         mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
