@@ -39,3 +39,7 @@ mp-transactions.workspace = true
 mp-utils.workspace = true
 
 tokio.workspace = true
+
+[dev-dependencies]
+mc-class-exec.workspace = true
+tempfile.workspace = true
