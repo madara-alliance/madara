@@ -107,6 +107,10 @@ impl GatewayProvider {
         .await
     }
 
+    /// Fetches block bouncer weights from a remote Madara feeder gateway.
+    ///
+    /// This is a Madara-specific endpoint used by Orchestrator. It is not part of the standard
+    /// Starknet feeder gateway surface and should not be expected to exist on other feeder clients.
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block_bouncer_weights")

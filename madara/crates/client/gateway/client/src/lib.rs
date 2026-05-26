@@ -180,6 +180,25 @@
 //! }
 //! ```
 //!
+//! ### `get_block_bouncer_weights`
+//!
+//! > **This endpoint is unique to Madara.**
+//!
+//! Fetches the bouncer weights recorded for a given block from a remote Madara feeder gateway.
+//! This endpoint exists for Orchestrator integration and should not be expected to exist on other
+//! feeder clients.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_block_bouncer_weights",
+//!   "params": {
+//!     "blockNumber": 123,
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
 //! # Gateway Client
 //!
 //! The **Gateway**, which you will sometimes see referred to as _gw_ (but still most often as just
