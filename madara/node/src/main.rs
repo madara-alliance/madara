@@ -218,6 +218,14 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);
     run_cmd.args_preset.greet();
 
+    let external_db_requested = run_cmd.external_db_params.is_enabled();
+    if external_db_requested && !run_cmd.should_run_mempool() {
+        tracing::warn!(
+            "External DB was configured, but this node is running in full-node mode. \
+             External DB is only enabled on sequencer/devnet nodes, so it will be skipped."
+        );
+    }
+
     let sys_info = SysInfo::probe();
     sys_info.show();
 
@@ -267,6 +275,11 @@ async fn main() -> anyhow::Result<()> {
         cairo_native_config_arc.clone(),
     )
     .context("Starting madara backend")?;
+
+    if !run_cmd.is_sequencer() {
+        backend.clear_runtime_exec_config().context("Clearing saved runtime execution config for full-node startup")?;
+        tracing::info!("🧹 Ensured full-node startup is not carrying saved sequencer runtime execution config");
+    }
 
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
     tracing::info!("💼 Starting chain with block: {}", chain_tip);
@@ -356,11 +369,15 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.no_charge_fee,
     )?;
 
-    let service_external_db = run_cmd
-        .external_db_params
-        .to_config()
-        .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
-        .transpose()?;
+    let service_external_db = if run_cmd.should_run_external_db() {
+        run_cmd
+            .external_db_params
+            .to_config()
+            .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
+            .transpose()?
+    } else {
+        None
+    };
     let external_db_configured = service_external_db.is_some();
 
     // Add transaction provider

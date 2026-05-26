@@ -75,7 +75,6 @@
 //! ### 1. MemTable Settings
 //! - `write_buffer_size`: Size of single memtable (larger = fewer flushes, more memory)
 //! - `max_write_buffer_number`: Max memtables before stall (higher = more buffer)
-//! - `min_write_buffer_number_to_merge`: Memtables to merge before flush (reduces L0 files)
 //!
 //! ### 2. L0 Thresholds
 //! - `level_zero_slowdown_writes_trigger`: Start throttling (gradual slowdown)
@@ -98,7 +97,7 @@ use std::path::PathBuf;
 
 use crate::rocksdb::column::{Column, ColumnMemoryBudget};
 use anyhow::{Context, Result};
-use rocksdb::{DBCompressionType, Env, Options, SliceTransform, WriteOptions};
+use rocksdb::{DBCompactionStyle, DBCompressionType, Env, Options, SliceTransform, WriteOptions};
 use serde::{Deserialize, Serialize};
 
 const KiB: usize = 1024;
@@ -184,11 +183,13 @@ impl std::fmt::Display for DbWriteMode {
 
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
-    /// Enable statistics. Statistics will be put in the `LOG` file in the db folder. This can have an effect on performance.
+    /// Enable statistics for compaction/stall monitoring. Uses ExceptDetailedTimers by default
+    /// which has minimal overhead but enables all counter-based metrics (write amplification,
+    /// compaction throughput, stall time). Disable only if profiling shows measurable impact.
     pub enable_statistics: bool,
     /// Dump statistics every `statistics_period_sec`.
     pub statistics_period_sec: u32,
-    /// Statistics level. This can have an effect on performance.
+    /// Statistics level. ExceptDetailedTimers is recommended for production.
     pub statistics_level: StatsLevel,
     /// Memory budget for blocks-related columns
     pub memtable_blocks_budget_bytes: usize,
@@ -242,9 +243,9 @@ pub struct RocksDBConfig {
 impl Default for RocksDBConfig {
     fn default() -> Self {
         Self {
-            enable_statistics: false,
+            enable_statistics: true,
             statistics_period_sec: 60,
-            statistics_level: StatsLevel::All,
+            statistics_level: StatsLevel::ExceptDetailedTimers,
             // TODO: these might not be the best defaults at all
             memtable_blocks_budget_bytes: 1 * GiB,
             memtable_contracts_budget_bytes: 128 * MiB,
@@ -380,11 +381,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // providing much more headroom during write bursts.
     options.set_max_write_buffer_number(config.max_write_buffer_number);
 
-    // Merge 2 memtables before flushing to L0.
-    // This reduces L0 file count (fewer files = less read amplification)
-    // and removes duplicate keys, reducing overall data size.
-    options.set_min_write_buffer_number_to_merge(2);
-
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION - L0 THRESHOLDS
     // ═══════════════════════════════════════════════════════════════════════════
@@ -440,8 +436,8 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // ═══════════════════════════════════════════════════════════════════════════
     // STATISTICS (Optional, for debugging)
     // ═══════════════════════════════════════════════════════════════════════════
-    // Statistics add overhead but are invaluable for diagnosing performance issues.
-    // Enable temporarily with --db-enable-statistics to debug stalls.
+    // Statistics are enabled by default with ExceptDetailedTimers level for production
+    // monitoring of compaction throughput, write amplification, and stall detection.
     if config.enable_statistics {
         options.enable_statistics();
         options.set_statistics_level(config.statistics_level);
@@ -479,10 +475,16 @@ impl Column {
     ///
     /// ## Compaction Strategy
     ///
-    /// We use Universal Compaction which:
-    /// - Has lower write amplification than Level Compaction
-    /// - Better for write-heavy workloads (like blockchain sync)
-    /// - Trade-off: Higher space amplification
+    /// Two styles are used depending on the column's write pattern:
+    ///
+    /// - **Universal** (default for most CFs): lower write amplification, well-suited
+    ///   to random-write CFs where memtables dedup and SSTs have overlapping ranges.
+    ///   Trade-off: higher space amplification, deferred big merges.
+    /// - **Leveled** (CFs marked with `set_log_cf()`, i.e. `bonsai_*_log`): continuously
+    ///   drains L0 -> L1 as soon as `level0_file_num_compaction_trigger=4` is exceeded.
+    ///   Required for append-only log CFs where universal's size-ratio / size-amp
+    ///   heuristics fail to fire and L0 SSTs accumulate past the stop trigger,
+    ///   stalling the entire DB via `atomic_flush`.
     ///
     /// ## Compression
     ///
@@ -505,25 +507,37 @@ impl Column {
         // Zstd provides excellent compression with good read/write performance.
         options.set_compression_type(DBCompressionType::Zstd);
 
-        // Configure memory budget and compaction based on column tier.
-        // optimize_universal_style_compaction sets:
-        // - write_buffer_size (memtable size)
-        // - Universal compaction settings
-        // - Appropriate L0 thresholds for the budget
-        match self.budget_tier {
-            ColumnMemoryBudget::Blocks => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_blocks_budget_bytes);
-            }
-            ColumnMemoryBudget::Contracts => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_contracts_budget_bytes);
-            }
-            ColumnMemoryBudget::Other => {
-                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
-                options.optimize_universal_style_compaction(config.memtable_other_budget_bytes);
-            }
+        let budget_bytes = match self.budget_tier {
+            ColumnMemoryBudget::Blocks => config.memtable_blocks_budget_bytes,
+            ColumnMemoryBudget::Contracts => config.memtable_contracts_budget_bytes,
+            ColumnMemoryBudget::Other => config.memtable_other_budget_bytes,
+        };
+
+        options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+
+        if self.log_cf {
+            // Leveled compaction for write-heavy, append-only log CFs (Bonsai TrieLog).
+            // Universal compaction defers work and then does one giant merge, which
+            // falls behind on append-mostly workloads and accumulates L0 files until
+            // writes stall. Leveled drains L0 -> L1 continuously in many small,
+            // parallelisable jobs, keeping L0 file counts low at steady state.
+            options.set_compaction_style(DBCompactionStyle::Level);
+            options.set_write_buffer_size(budget_bytes / 4);
+            options.set_max_write_buffer_number(config.max_write_buffer_number);
+            // 2x default (256 MiB) so L1 absorbs more data before triggering L1->L2 compaction,
+            // reducing write amplification for these append-heavy log CFs.
+            options.set_max_bytes_for_level_base(512 * MiB as u64);
+        } else {
+            // Universal compaction for everything else (lower write amp, fine
+            // for read-heavy or balanced CFs). Sets write_buffer_size, memtable
+            // counts, L0 thresholds, and num_levels for the given memory budget.
+            options.optimize_universal_style_compaction(budget_bytes);
         }
+
+        // L0 stall thresholds are CF-scoped in RocksDB, so the global-level
+        // values don't propagate to named CFs. Set them explicitly here.
+        options.set_level_zero_slowdown_writes_trigger(config.level_zero_slowdown_writes_trigger);
+        options.set_level_zero_stop_writes_trigger(config.level_zero_stop_writes_trigger);
 
         // Point lookup optimization for columns that primarily do single-key gets.
         // Adds a bloom filter in the block cache for faster negative lookups.

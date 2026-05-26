@@ -26,6 +26,7 @@ use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use rocksdb::Options as RocksDBOptions;
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
 use std::{fmt, path::Path, sync::Arc};
 
@@ -82,6 +83,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
+    global_opts: RocksDBOptions,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }
@@ -194,7 +196,7 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -326,6 +328,9 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
+    }
+    fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
+        self.inner.get_external_db_retention_cursor().context("Getting external db retention cursor")
     }
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
         self.inner.get_stored_chain_info().context("Getting stored chain info from db")
@@ -495,6 +500,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
     }
+    fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Write external db retention cursor block_n={block_n:?}");
+        self.inner.write_external_db_retention_cursor(block_n).context("Writing external db retention cursor")
+    }
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         tracing::debug!(
             "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
@@ -591,6 +600,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
         tracing::debug!("Writing runtime execution config");
         self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
+    }
+    fn clear_runtime_exec_config(&self) -> Result<()> {
+        tracing::debug!("Clearing runtime execution config");
+        self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
     }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");

@@ -98,18 +98,22 @@ jobs:
   # still recompiles a large overlapping graph instead of cleanly reusing the
   # release build one-for-one.
   build-madara:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
   build-cairo-artifacts:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-cairo-artifacts.yml
     secrets: inherit
 
   build-madara-tests:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-madara-tests.yml
     secrets: inherit
 
   build-migration-tests:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-migration-tests.yml
     secrets: inherit
 
@@ -152,6 +156,7 @@ jobs:
   # ========================================================================= #
 
   detect-orchestrator-runtime-changes:
+    if: github.event.pull_request.draft == false
     runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       should-run: ${{ steps.set-output.outputs.should-run }}
@@ -194,6 +199,7 @@ jobs:
 
   # Build the archived orchestrator test binaries in parallel with Madara.
   build-orchestrator-tests:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-orchestrator-tests.yml
     secrets: inherit
 

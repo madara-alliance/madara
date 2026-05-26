@@ -12,6 +12,11 @@ pub struct Column {
     pub prefix_extractor_len: Option<usize>,
     pub budget_tier: ColumnMemoryBudget,
     pub point_lookup: bool,
+    /// Use Leveled compaction (instead of Universal) for this CF.
+    /// Set on write-heavy, append-only log CFs (Bonsai TrieLog) where Universal
+    /// compaction accumulates L0 files faster than it can drain them, leading
+    /// to write stalls. Leveled drains L0 -> L1 continuously instead.
+    pub log_cf: bool,
 }
 
 pub const ALL_COLUMNS: &[Column] = &[
@@ -54,6 +59,7 @@ impl Column {
             prefix_extractor_len: None,
             budget_tier: ColumnMemoryBudget::Other,
             point_lookup: false,
+            log_cf: false,
         }
     }
     pub const fn with_prefix_extractor_len(mut self, prefix_extractor_len: usize) -> Self {
@@ -71,6 +77,10 @@ impl Column {
     }
     pub const fn set_point_lookup(mut self) -> Self {
         self.point_lookup = true;
+        self
+    }
+    pub const fn set_log_cf(mut self) -> Self {
+        self.log_cf = true;
         self
     }
 }

@@ -10,7 +10,7 @@ pub struct MempoolService {
 
 impl MempoolService {
     pub fn new(run_cmd: &RunCmd, backend: Arc<MadaraBackend>) -> Self {
-        let external_outbox = if run_cmd.external_db_params.is_enabled() {
+        let external_outbox = if run_cmd.should_run_external_db() {
             ExternalOutboxConfig::enabled(run_cmd.external_db_params.external_db_strict_outbox)
         } else {
             ExternalOutboxConfig::default()

@@ -12,30 +12,23 @@ use super::super::types::{
     SettlementAggregatorBatchResponse, SettlementJobResponseItem, SettlementJobTimestampsResponse,
     SettlementSnosBatchResponse,
 };
+use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::server::error::BlockRouteError;
-use crate::types::batch::{AggregatorBatch, SnosBatch, SnosBatchStatus};
+use crate::types::batch::{AggregatorBatch, SnosBatchStatus};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 
 #[instrument(skip(config), fields(block_number = %block_number))]
 async fn handle_block_to_batch(Path(block_number): Path<u64>, State(config): State<Arc<Config>>) -> BlockRouteResult {
-    match config.database().get_aggregator_batch_for_block(block_number).await {
-        Ok(Some(batch)) => Ok(Json(ApiResponse::<BlockStatusResponse>::success_with_data(
-            BlockStatusResponse { batch_number: batch.index },
-            Some(format!("Successfully fetched batch for block {}", block_number)),
-        ))
-        .into_response()),
-        Ok(None) => {
-            tracing::warn!("No batch found for block {}, skipping for now", block_number);
-            Err(BlockRouteError::NotFound(format!("No batch found for block {}", block_number)))
-        }
-        Err(e) => {
-            error!(error = %e, "Failed to fetch batch for block");
-            Err(BlockRouteError::DatabaseError(e.to_string()))
-        }
-    }
+    let batch = get_aggregator_batch_for_block(block_number, &config).await?;
+
+    Ok(Json(ApiResponse::<BlockStatusResponse>::success_with_data(
+        BlockStatusResponse { batch_number: batch.index },
+        Some(format!("Successfully fetched batch for block {}", block_number)),
+    ))
+    .into_response())
 }
 
 #[instrument(skip(config), fields(block_number = %block_number))]
@@ -58,7 +51,10 @@ async fn handle_block_settlement_status(
     let aggregator_batch = match block_lookup.as_ref().and_then(|lookup| lookup.aggregator_batch_index) {
         Some(aggregator_batch_index) => config
             .database()
-            .get_aggregator_batches_by_indexes(vec![aggregator_batch_index])
+            .get_aggregator_batches(AggregatorBatchDbQuery {
+                indexes: Some(vec![aggregator_batch_index]),
+                ..Default::default()
+            })
             .await
             .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?
             .into_iter()
@@ -73,7 +69,7 @@ async fn handle_block_settlement_status(
     let block_snos_batch = match block_lookup.as_ref().and_then(|lookup| lookup.snos_batch_index) {
         Some(snos_batch_index) => config
             .database()
-            .get_snos_batches_by_indices(vec![snos_batch_index])
+            .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![snos_batch_index]), ..Default::default() })
             .await
             .map_err(|e| BlockRouteError::DatabaseError(e.to_string()))?
             .into_iter()
@@ -110,7 +106,7 @@ async fn handle_block_settlement_status(
             .collect::<HashMap<_, _>>();
 
         if let Some(block_snos_batch) = matching_snos_batch {
-            snos_batch_response = Some(snapshot_snos_batch(block_snos_batch));
+            snos_batch_response = Some(block_snos_batch.into());
 
             if let Some(proof_job) = proof_jobs_by_internal_id.get(&block_snos_batch.index).cloned() {
                 push_job_if_missing(&mut block_jobs, proof_job);
@@ -141,7 +137,7 @@ async fn handle_block_settlement_status(
             }
         }
     } else {
-        snos_batch_response = block_snos_batch.as_ref().map(snapshot_snos_batch).or_else(|| {
+        snos_batch_response = block_snos_batch.as_ref().map(SettlementSnosBatchResponse::from).or_else(|| {
             block_jobs.iter().find_map(|job| match &job.metadata.specific {
                 JobSpecificMetadata::Snos(metadata) => Some(SettlementSnosBatchResponse {
                     index: metadata.snos_batch_index,
@@ -161,7 +157,7 @@ async fn handle_block_settlement_status(
         BlockSettlementStatusResponse {
             block_number,
             snos_batch: snos_batch_response,
-            aggregator_batch: aggregator_batch.as_ref().map(snapshot_aggregator_batch),
+            aggregator_batch: aggregator_batch.as_ref().map(SettlementAggregatorBatchResponse::from),
             block_jobs: block_jobs.iter().map(snapshot_job).collect(),
             aggregator_proof_jobs,
         },
@@ -175,6 +171,23 @@ fn push_job_if_missing(jobs: &mut Vec<JobItem>, job: JobItem) {
         return;
     }
     jobs.push(job);
+}
+
+async fn get_aggregator_batch_for_block(
+    block_number: u64,
+    config: &Arc<Config>,
+) -> Result<AggregatorBatch, BlockRouteError> {
+    match config.database().get_aggregator_batch_for_block(block_number).await {
+        Ok(Some(batch)) => Ok(batch),
+        Ok(None) => {
+            tracing::warn!("No aggregator batch found for block {}, skipping for now", block_number);
+            Err(BlockRouteError::NotFound(format!("No aggregator batch found for block {}", block_number)))
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to fetch aggregator batch for block");
+            Err(BlockRouteError::DatabaseError(e.to_string()))
+        }
+    }
 }
 
 fn snapshot_job(job: &JobItem) -> SettlementJobResponseItem {
@@ -191,29 +204,6 @@ fn snapshot_job(job: &JobItem) -> SettlementJobResponseItem {
             verification_started_at: job.metadata.common.verification_started_at,
             verification_completed_at: job.metadata.common.verification_completed_at,
         },
-    }
-}
-
-fn snapshot_snos_batch(batch: &SnosBatch) -> SettlementSnosBatchResponse {
-    SettlementSnosBatchResponse {
-        index: batch.index,
-        aggregator_batch_index: batch.aggregator_batch_index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
-    }
-}
-
-fn snapshot_aggregator_batch(batch: &AggregatorBatch) -> SettlementAggregatorBatchResponse {
-    SettlementAggregatorBatchResponse {
-        index: batch.index,
-        start_block: batch.start_block,
-        end_block: batch.end_block,
-        status: batch.status.clone(),
-        created_at: batch.created_at,
-        updated_at: batch.updated_at,
     }
 }
 
