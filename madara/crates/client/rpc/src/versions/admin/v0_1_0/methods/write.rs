@@ -29,10 +29,12 @@ enum FlushMode {
     TransactionHashes { transaction_hashes: Vec<Felt>, nonce_filter: MempoolNonceFilter },
 }
 
-impl TryFrom<FlushMempoolTxnsParams> for FlushMode {
-    type Error = StarknetRpcApiError;
+fn invalid_flush_params(message: &'static str) -> jsonrpsee::types::ErrorObjectOwned {
+    jsonrpsee::types::ErrorObject::owned(jsonrpsee::types::ErrorCode::InvalidParams.code(), message, Some(()))
+}
 
-    fn try_from(params: FlushMempoolTxnsParams) -> Result<Self, Self::Error> {
+impl FlushMode {
+    fn from_params(params: FlushMempoolTxnsParams) -> RpcResult<Self> {
         let nonce_filter = params.nonce_filter;
         let using_all = params.all;
         let using_contract_address = params.contract_address.is_some();
@@ -44,9 +46,9 @@ impl TryFrom<FlushMempoolTxnsParams> for FlushMode {
             .filter(|selected| *selected)
             .count();
         if selected_filters > 1 {
-            return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "Provide at most one base flush filter: all, contract_address, or transaction_hashes".into(),
-            });
+            return Err(invalid_flush_params(
+                "Provide at most one base flush filter: all, contract_address, or transaction_hashes",
+            ));
         }
 
         if using_all {
@@ -69,13 +71,14 @@ impl TryFrom<FlushMempoolTxnsParams> for FlushMode {
         }
 
         if using_nonce_filter {
-            return Ok(Self::All { nonce_filter });
+            return Err(invalid_flush_params(
+                "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes",
+            ));
         }
 
-        Err(StarknetRpcApiError::ErrUnexpectedError {
-            error: "Provide at least one flush filter: all, contract_address, transaction_hashes, or a nonce range"
-                .into(),
-        })
+        Err(invalid_flush_params(
+            "Provide at least one base flush filter: all, contract_address, or transaction_hashes",
+        ))
     }
 }
 
@@ -364,7 +367,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult> {
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
-        let flush_mode = FlushMode::try_from(params)?;
+        let flush_mode = FlushMode::from_params(params)?;
         let removed_transactions = mempool.flush_transactions_matching(|tx| flush_mode.matches(tx)).await;
 
         Ok(FlushMempoolTxnsResult {
@@ -654,7 +657,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn flush_mempool_txns_can_filter_by_nonce_range() {
+    async fn flush_mempool_txns_can_filter_by_nonce_range_when_all_is_explicit() {
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
         let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(1001_u64), base);
@@ -667,6 +670,7 @@ mod tests {
 
         let result = rpc
             .flush_mempool_txns(FlushMempoolTxnsParams {
+                all: true,
                 nonce_filter: MempoolNonceFilter {
                     nonce_after: Some(Felt::from(1_u64)),
                     nonce_before: Some(Felt::from(4_u64)),
@@ -679,5 +683,27 @@ mod tests {
         assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
         let remaining = mempool.snapshot_transactions().await;
         assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_rejects_nonce_only_requests_without_base_filter() {
+        let (_, rpc) = make_starknet_with_mempool();
+
+        let err = rpc
+            .flush_mempool_txns(FlushMempoolTxnsParams {
+                nonce_filter: MempoolNonceFilter {
+                    nonce_after: Some(Felt::from(1_u64)),
+                    nonce_before: Some(Felt::from(4_u64)),
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
+        assert_eq!(
+            err.message(),
+            "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes"
+        );
     }
 }

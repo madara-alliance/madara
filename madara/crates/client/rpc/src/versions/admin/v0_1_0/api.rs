@@ -93,6 +93,7 @@ pub trait MadaraWriteRpcApi {
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 
     /// Flush transactions from the mempool using an admin-only filter.
+    /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
     #[method(name = "flushMempoolTxns")]
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }

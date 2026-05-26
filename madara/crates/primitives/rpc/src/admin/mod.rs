@@ -73,6 +73,8 @@ pub struct FlushMempoolTxnsParams {
     pub contract_address: Option<Felt>,
     pub contract_address_field: Option<MempoolContractAddressField>,
     pub transaction_hashes: Option<Vec<Felt>>,
+    /// Optional nonce range used to narrow the explicit base selector above.
+    /// This filter is invalid unless `all`, `contract_address`, or `transaction_hashes` is also provided.
     #[serde(flatten)]
     pub nonce_filter: MempoolNonceFilter,
 }
