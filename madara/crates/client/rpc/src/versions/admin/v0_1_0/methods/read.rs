@@ -6,7 +6,6 @@ use mp_rpc::{
     v0_10_2::TxnWithHashAndProofFacts,
 };
 use mp_transactions::{validated::ValidatedTransaction, TransactionWithHash};
-use std::time::Duration;
 
 fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
     let nonce = transaction.transaction.nonce();
@@ -78,6 +77,7 @@ mod tests {
     };
     use mp_utils::service::ServiceContext;
     use std::sync::Arc;
+    use std::time::Duration;
 
     fn mempool_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
         ValidatedTransaction {
