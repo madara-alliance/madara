@@ -417,7 +417,7 @@ mod tests {
                 error: "Mempool full: The mempool has reached the limit of 3 transactions".into(),
             }
         );
-        assert_eq!(error.code(), 67);
+        assert_eq!(i32::from(&error), 67);
         assert_eq!(error.data(), Some(json!("Mempool full: The mempool has reached the limit of 3 transactions")));
     }
 }
