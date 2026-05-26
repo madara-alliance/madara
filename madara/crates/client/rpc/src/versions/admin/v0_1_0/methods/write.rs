@@ -5,10 +5,7 @@ use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::{
-    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolContractAddressField,
-    MempoolNonceFilter,
-};
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolNonceFilter};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -25,7 +22,7 @@ const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
 
 enum FlushMode {
     All { nonce_filter: MempoolNonceFilter },
-    ContractAddress { contract_address: Felt, field: MempoolContractAddressField, nonce_filter: MempoolNonceFilter },
+    ContractAddress { contract_address: Felt, nonce_filter: MempoolNonceFilter },
     TransactionHashes { transaction_hashes: Vec<Felt>, nonce_filter: MempoolNonceFilter },
 }
 
@@ -56,11 +53,7 @@ impl FlushMode {
         }
 
         if let Some(contract_address) = params.contract_address {
-            return Ok(Self::ContractAddress {
-                contract_address,
-                field: params.contract_address_field.unwrap_or(MempoolContractAddressField::Sender),
-                nonce_filter,
-            });
+            return Ok(Self::ContractAddress { contract_address, nonce_filter });
         }
 
         if using_transaction_hashes {
@@ -92,14 +85,9 @@ impl FlushMode {
     fn matches(&self, transaction: &ValidatedTransaction) -> bool {
         match self {
             FlushMode::All { nonce_filter } => matches_nonce_filter(transaction, *nonce_filter),
-            FlushMode::ContractAddress { contract_address, field, nonce_filter } => {
-                let address_matches = match field {
-                    MempoolContractAddressField::Sender => {
-                        transaction.sender_contract_address() == Some(*contract_address)
-                    }
-                    MempoolContractAddressField::To => transaction.to_contract_address() == Some(*contract_address),
-                };
-                address_matches && matches_nonce_filter(transaction, *nonce_filter)
+            FlushMode::ContractAddress { contract_address, nonce_filter } => {
+                transaction.sender_contract_address() == Some(*contract_address)
+                    && matches_nonce_filter(transaction, *nonce_filter)
             }
             FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
                 transaction_hashes.contains(&transaction.hash) && matches_nonce_filter(transaction, *nonce_filter)
@@ -390,10 +378,10 @@ mod tests {
     use mp_block::header::{CustomHeader, GasPrices};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
-    use mp_rpc::admin::{FlushMempoolTxnsParams, MempoolContractAddressField, MempoolNonceFilter};
+    use mp_rpc::admin::{FlushMempoolTxnsParams, MempoolNonceFilter};
     use mp_transactions::{
         validated::{TxTimestamp, ValidatedTransaction},
-        InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, L1HandlerTransaction, Transaction,
+        InvokeTransaction, InvokeTransactionV1, L1HandlerTransaction, Transaction,
     };
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
@@ -424,24 +412,6 @@ mod tests {
             })),
             paid_fee_on_l1: None,
             contract_address: sender,
-            arrived_at: TxTimestamp(arrived_at),
-            declared_class: None,
-            hash,
-            charge_fee: true,
-        }
-    }
-
-    fn invoke_v0_tx(contract_address: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
-        ValidatedTransaction {
-            transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                max_fee: Felt::from(1_u64),
-                signature: vec![].into(),
-                contract_address,
-                entry_point_selector: Felt::from(123_u64),
-                calldata: vec![Felt::from(10_u64)].into(),
-            })),
-            paid_fee_on_l1: None,
-            contract_address,
             arrived_at: TxTimestamp(arrived_at),
             declared_class: None,
             hash,
@@ -588,7 +558,6 @@ mod tests {
         let result = rpc
             .flush_mempool_txns(FlushMempoolTxnsParams {
                 contract_address: Some(Felt::from(77_u64)),
-                contract_address_field: Some(MempoolContractAddressField::Sender),
                 ..Default::default()
             })
             .await
@@ -599,35 +568,6 @@ mod tests {
         assert_eq!(
             remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(),
             vec![to_match_only.hash, untouched.hash]
-        );
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_by_to_contract_address_filters_to_side_only() {
-        let (mempool, rpc) = make_starknet_with_mempool();
-        let base = TxTimestamp::now().0;
-        let sender_only = invoke_v1_tx(Felt::from(88_u64), Felt::ZERO, Felt::from(801_u64), base);
-        let to_match = invoke_v0_tx(Felt::from(77_u64), Felt::from(802_u64), base + 1_000);
-        let untouched = invoke_v1_tx(Felt::from(99_u64), Felt::ZERO, Felt::from(803_u64), base + 2_000);
-
-        mempool.accept_tx(sender_only.clone()).await.unwrap();
-        mempool.accept_tx(to_match.clone()).await.unwrap();
-        mempool.accept_tx(untouched.clone()).await.unwrap();
-
-        let result = rpc
-            .flush_mempool_txns(FlushMempoolTxnsParams {
-                contract_address: Some(Felt::from(77_u64)),
-                contract_address_field: Some(MempoolContractAddressField::To),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(result.removed_transaction_hashes, vec![to_match.hash]);
-        let remaining = mempool.snapshot_transactions().await;
-        assert_eq!(
-            remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(),
-            vec![sender_only.hash, untouched.hash]
         );
     }
 

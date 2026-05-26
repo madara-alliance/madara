@@ -5,10 +5,9 @@ use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::{
     BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnHashesParams,
-    GetMempoolTxnsParams, MempoolTxnHashInfo,
+    GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
-use mp_rpc::v0_10_2::TxnWithHashAndProofFacts;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
@@ -117,8 +116,10 @@ pub trait MadaraReadRpcApi {
     ) -> RpcResult<Vec<MempoolTxnHashInfo>>;
 
     /// List all transactions currently in the mempool.
+    /// Pass `include_ttl` to include `remaining_ttl_ms` for each entry when the node is configured
+    /// with a mempool TTL.
     #[method(name = "getMempoolTxns")]
-    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<TxnWithHashAndProofFacts>>;
+    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnInfo>>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

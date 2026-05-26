@@ -2,7 +2,7 @@ use crate::{versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server, Starknet, Sta
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::{
-    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolNonceFilter, MempoolTxnHashInfo},
+    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolNonceFilter, MempoolTxnHashInfo, MempoolTxnInfo},
     v0_10_2::TxnWithHashAndProofFacts,
 };
 use mp_transactions::{validated::ValidatedTransaction, TransactionWithHash};
@@ -11,6 +11,10 @@ fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: Mempoo
     let nonce = transaction.transaction.nonce();
     nonce_filter.nonce_after.is_none_or(|lower| nonce > lower)
         && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
+}
+
+fn ttl_to_ms(ttl: std::time::Duration) -> u64 {
+    ttl.as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 #[async_trait]
@@ -38,12 +42,12 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
             .into_iter()
             .map(|snapshot| MempoolTxnHashInfo {
                 transaction_hash: snapshot.transaction_hash,
-                remaining_ttl_ms: snapshot.remaining_ttl.map(|ttl| ttl.as_millis().try_into().unwrap_or(u64::MAX)),
+                remaining_ttl_ms: snapshot.remaining_ttl.map(ttl_to_ms),
             })
             .collect())
     }
 
-    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<TxnWithHashAndProofFacts>> {
+    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnInfo>> {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool.snapshot_transactions().await;
@@ -54,9 +58,12 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
             .map(|snapshot| {
                 let validated_transaction = snapshot.transaction;
                 let tx = TransactionWithHash::new(validated_transaction.transaction, validated_transaction.hash);
-                TxnWithHashAndProofFacts {
-                    transaction: tx.transaction.to_rpc_v0_10_2(false),
-                    transaction_hash: tx.hash,
+                MempoolTxnInfo {
+                    transaction: TxnWithHashAndProofFacts {
+                        transaction: tx.transaction.to_rpc_v0_10_2(false),
+                        transaction_hash: tx.hash,
+                    },
+                    remaining_ttl_ms: if params.include_ttl { snapshot.remaining_ttl.map(ttl_to_ms) } else { None },
                 }
             })
             .collect())
@@ -203,11 +210,17 @@ mod tests {
 
         let transactions = rpc.get_mempool_txns(None).await.unwrap();
         assert_eq!(transactions.len(), 2);
-        assert_eq!(transactions[0].transaction_hash, tx1.hash);
-        assert_eq!(transactions[1].transaction_hash, tx2.hash);
+        assert_eq!(transactions[0].transaction.transaction_hash, tx1.hash);
+        assert_eq!(transactions[1].transaction.transaction_hash, tx2.hash);
+        assert!(transactions.iter().all(|entry| entry.remaining_ttl_ms.is_none()));
+
+        let transactions_with_ttl =
+            rpc.get_mempool_txns(Some(GetMempoolTxnsParams { include_ttl: true, ..Default::default() })).await.unwrap();
+        assert!(transactions_with_ttl.iter().all(|entry| entry.remaining_ttl_ms.is_some()));
 
         let filtered_transactions = rpc
             .get_mempool_txns(Some(GetMempoolTxnsParams {
+                include_ttl: true,
                 nonce_filter: MempoolNonceFilter {
                     nonce_after: Some(Felt::from(1_u64)),
                     nonce_before: Some(Felt::from(4_u64)),
@@ -216,6 +229,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(filtered_transactions.len(), 1);
-        assert_eq!(filtered_transactions[0].transaction_hash, tx2.hash);
+        assert_eq!(filtered_transactions[0].transaction.transaction_hash, tx2.hash);
+        assert!(filtered_transactions[0].remaining_ttl_ms.is_some());
     }
 }
