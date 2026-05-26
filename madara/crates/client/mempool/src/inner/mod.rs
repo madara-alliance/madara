@@ -7,7 +7,7 @@ use crate::inner::{
     timestamp_queue::TimestampQueue,
     tx::{EvictionScore, MempoolTransaction, ScoreFunction},
 };
-use mp_chain_config::MempoolFullMode;
+use mp_chain_config::MempoolFullPolicy;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
@@ -48,7 +48,7 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
-    pub full_mode: MempoolFullMode,
+    pub full_mode: MempoolFullPolicy,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Option<Duration>,
@@ -216,12 +216,12 @@ impl InnerMempool {
                     return Err(err.into());
                 }
                 let made_room = match self.config.full_mode {
-                    MempoolFullMode::EvictLessDesirable => {
+                    MempoolFullPolicy::EvictLessDesirable => {
                         let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
                         tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
                         self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
                     }
-                    MempoolFullMode::RejectNew => false,
+                    MempoolFullPolicy::RejectNew => false,
                 };
                 if !made_room {
                     return Err(err.into());

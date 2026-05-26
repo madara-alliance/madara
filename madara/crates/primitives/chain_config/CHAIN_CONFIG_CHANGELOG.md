@@ -53,11 +53,11 @@ l2_gas_price:
 
 #### Additive Mempool Full Policy Configuration
 
-`mempool_full_mode` is an optional version 2 field that controls what Madara does when the mempool is full.
+`mempool_full_policy` is an optional version 2 field that controls what Madara does when the mempool is full.
 It is additive and backward-compatible within version `2` because it has a default value.
 
 ```yaml
-mempool_full_mode: evict_less_desirable
+mempool_full_policy: evict_less_desirable
 ```
 
 Supported values:
@@ -93,7 +93,7 @@ Supported values:
 - `no_empty_blocks` (default: false): Skip empty block production
 - `bouncer_config` (default: default): Block size limits configuration
 - `mempool_mode` (default: Timestamp): Mempool ordering mode
-- `mempool_full_mode` (default: `evict_less_desirable`): Full-mempool behavior
+- `mempool_full_policy` (default: `evict_less_desirable`): Full-mempool behavior
 - `mempool_min_tip_bump` (default: 0.1): Minimum tip increase ratio
 - `mempool_max_declare_transactions` (optional): Max declare transactions limit
 - `mempool_ttl` (optional): Transaction time-to-live in mempool
@@ -154,13 +154,13 @@ To migrate from a legacy or older versioned chain config to version `2`:
 3. Optionally configure full-mempool behavior:
 
    ```yaml
-   mempool_full_mode: reject_new
+   mempool_full_policy: reject_new
    ```
 
    If omitted, Madara defaults to:
 
    ```yaml
-   mempool_full_mode: evict_less_desirable
+   mempool_full_policy: evict_less_desirable
    ```
 
 4. Verify your config loads correctly:
@@ -185,7 +185,7 @@ l2_gas_price:
   min_price: 100000
   max_change_denominator: 48
 
-mempool_full_mode: evict_less_desirable
+mempool_full_policy: evict_less_desirable
 ```
 
 ---

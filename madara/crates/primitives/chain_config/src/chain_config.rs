@@ -170,7 +170,7 @@ pub enum MempoolMode {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum MempoolFullMode {
+pub enum MempoolFullPolicy {
     #[default]
     EvictLessDesirable,
     RejectNew,
@@ -288,8 +288,8 @@ pub struct ChainConfigV2 {
 
     #[serde(default)]
     pub mempool_mode: MempoolMode,
-    #[serde(default)]
-    pub mempool_full_mode: MempoolFullMode,
+    #[serde(default, alias = "mempool_full_mode")]
+    pub mempool_full_policy: MempoolFullPolicy,
     /// Minimum tip increase when replacing a transaction with the same (contract_address, nonce) pair in the mempool, as a ratio.
     /// Tip bumping allows users to increase the priority of their transaction in the mempool, so that they are included in a block sooner.
     /// This has no effect on FCFS (First-come-first-serve) mode mempools.
@@ -418,8 +418,8 @@ pub struct ChainConfig {
 
     #[serde(default)]
     pub mempool_mode: MempoolMode,
-    #[serde(default)]
-    pub mempool_full_mode: MempoolFullMode,
+    #[serde(default, alias = "mempool_full_mode")]
+    pub mempool_full_policy: MempoolFullPolicy,
     /// Minimum tip increase when replacing a transaction with the same (contract_address, nonce) pair in the mempool, as a ratio.
     /// Tip bumping allows users to increase the priority of their transaction in the mempool, so that they are included in a block sooner.
     /// This has no effect on FCFS (First-come-first-serve) mode mempools.
@@ -486,7 +486,7 @@ impl Clone for ChainConfig {
             eth_gps_statement_verifier: self.eth_gps_statement_verifier.clone(),
             private_key: None, // Intentionally not cloned for security
             mempool_mode: self.mempool_mode,
-            mempool_full_mode: self.mempool_full_mode,
+            mempool_full_policy: self.mempool_full_policy,
             mempool_min_tip_bump: self.mempool_min_tip_bump,
             mempool_max_transactions: self.mempool_max_transactions,
             mempool_max_declare_transactions: self.mempool_max_declare_transactions,
@@ -525,7 +525,7 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             eth_gps_statement_verifier: v2.eth_gps_statement_verifier,
             private_key: v2.private_key,
             mempool_mode: v2.mempool_mode,
-            mempool_full_mode: v2.mempool_full_mode,
+            mempool_full_policy: v2.mempool_full_policy,
             mempool_min_tip_bump: v2.mempool_min_tip_bump,
             mempool_max_transactions: v2.mempool_max_transactions,
             mempool_max_declare_transactions: v2.mempool_max_declare_transactions,
@@ -647,7 +647,7 @@ impl ChainConfig {
             private_key: Some(ZeroingPrivateKey::default()),
 
             mempool_mode: MempoolMode::Timestamp,
-            mempool_full_mode: MempoolFullMode::EvictLessDesirable,
+            mempool_full_policy: MempoolFullPolicy::EvictLessDesirable,
             mempool_max_transactions: 10_000,
             mempool_max_declare_transactions: Some(20),
             mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?

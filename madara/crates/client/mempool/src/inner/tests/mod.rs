@@ -2,7 +2,7 @@
 
 use crate::{limits::MempoolLimitReached, tx::ScoreFunction, InnerMempool, InnerMempoolConfig, TxInsertionError};
 use assert_matches::assert_matches;
-use mp_chain_config::MempoolFullMode;
+use mp_chain_config::MempoolFullPolicy;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use proptest::strategy::Strategy;
@@ -203,7 +203,7 @@ pub fn fcfs_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,
-        full_mode: MempoolFullMode::EvictLessDesirable,
+        full_mode: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -219,7 +219,7 @@ pub fn tip_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Tip { min_tip_bump },
-        full_mode: MempoolFullMode::EvictLessDesirable,
+        full_mode: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -765,7 +765,7 @@ fn test_eviction_fails_when_new_tx_has_worse_score(#[with(3)] mut fcfs_mempool: 
 fn test_reject_new_full_mode_never_evicts_existing_transactions() {
     let mut fcfs_mempool = MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,
-        full_mode: MempoolFullMode::RejectNew,
+        full_mode: MempoolFullPolicy::RejectNew,
         max_transactions: 3,
         max_declare_transactions: Some(2),
         ttl: Some(Duration::from_secs(20)),

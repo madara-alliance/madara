@@ -47,7 +47,7 @@ impl MempoolInnerWithNotify {
                     MempoolMode::Timestamp => ScoreFunction::Timestamp,
                     MempoolMode::Tip => ScoreFunction::Tip { min_tip_bump: config.mempool_min_tip_bump },
                 },
-                full_mode: config.mempool_full_mode,
+                full_mode: config.mempool_full_policy,
                 max_transactions: config.mempool_max_transactions,
                 max_declare_transactions: config.mempool_max_declare_transactions,
                 ttl: config.mempool_ttl,

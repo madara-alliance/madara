@@ -84,7 +84,7 @@ mempool_max_declare_transactions: 20
 # Behavior when the mempool is full.
 # - evict_less_desirable: current behavior, evict a less desirable transaction if the new one is better
 # - reject_new: reject new transactions once the mempool is full
-mempool_full_mode: evict_less_desirable
+mempool_full_policy: evict_less_desirable
 # Max age of a transaction in the mempool. Null for no age limit.
 # mempool_tx_max_age: "5h"
 mempool_ttl: null

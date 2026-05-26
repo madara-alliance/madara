@@ -429,21 +429,6 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.inner.read().await.is_empty()
     }
 
-    pub async fn snapshot_transactions(&self) -> Vec<MempoolTransactionSnapshot> {
-        let now = TxTimestamp::now();
-        let ttl = self.ttl;
-        let lock = self.inner.read().await;
-
-        lock.transactions_by_arrival()
-            .map(|transaction| MempoolTransactionSnapshot {
-                transaction: transaction.clone(),
-                remaining_ttl: ttl.map(|ttl| {
-                    transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
-                }),
-            })
-            .collect()
-    }
-
     pub async fn snapshot_transactions_matching(
         &self,
         limit: usize,
