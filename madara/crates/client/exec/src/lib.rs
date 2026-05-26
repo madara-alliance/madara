@@ -227,8 +227,12 @@ fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) 
 }
 
 impl Error {
-    pub fn is_entrypoint_not_found(&self) -> bool {
+    pub fn is_call_contract_entrypoint_not_found(&self) -> bool {
         matches!(self, Self::CallContract(error) if transaction_error_is_entrypoint_not_found(&error.err))
+    }
+
+    pub fn is_message_fee_execution_error(&self) -> bool {
+        matches!(self, Self::MessageFeeEstimation(_))
     }
 }
 

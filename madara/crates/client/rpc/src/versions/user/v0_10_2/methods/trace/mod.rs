@@ -3,8 +3,10 @@ mod trace_block_transactions;
 mod trace_transaction;
 
 use crate::versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server;
-use crate::{errors::StarknetRpcApiError, Starknet};
+use crate::Starknet;
 use jsonrpsee::core::{async_trait, RpcResult};
+use jsonrpsee::types::error::INVALID_PARAMS_CODE;
+use jsonrpsee::types::ErrorObjectOwned;
 use mp_rpc::v0_10_0::{BlockId, BlockTag};
 use mp_rpc::v0_10_2::{
     BroadcastedTxn, SimulateTransactionsResponse, SimulationFlag, TraceBlockTransactionsResponse, TraceFlag,
@@ -20,7 +22,7 @@ use starknet_types_core::felt::Felt;
 
 fn validate_trace_block_transactions_block_id(block_id: &BlockId) -> RpcResult<()> {
     if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
-        return Err(StarknetRpcApiError::CallOnPreConfirmed.into());
+        return Err(ErrorObjectOwned::owned(INVALID_PARAMS_CODE, "Invalid params", None::<()>));
     }
     Ok(())
 }
@@ -58,8 +60,8 @@ mod tests {
     fn trace_block_transactions_rejects_pre_confirmed_tag() {
         let err = validate_trace_block_transactions_block_id(&BlockId::Tag(BlockTag::PreConfirmed))
             .expect_err("pre_confirmed should be rejected for traceBlockTransactions");
-        assert_eq!(err.code(), 70);
-        assert_eq!(err.message(), "This method does not support being called on the pre_confirmed block");
+        assert_eq!(err.code(), INVALID_PARAMS_CODE);
+        assert_eq!(err.message(), "Invalid params");
     }
 
     #[test]

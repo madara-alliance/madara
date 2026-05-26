@@ -119,8 +119,6 @@ pub enum StarknetRpcApiError {
     StorageProofNotSupported,
     #[error("The proof field in the invoke v3 transaction is invalid")]
     InvalidProof,
-    #[error("This method does not support being called on the pre_confirmed block")]
-    CallOnPreConfirmed,
 }
 
 impl StarknetRpcApiError {
@@ -198,7 +196,6 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ReplacementTxnUnderpriced => 64,
             StarknetRpcApiError::FeeBelowMinimum => 65,
             StarknetRpcApiError::InvalidProof => 69,
-            StarknetRpcApiError::CallOnPreConfirmed => 70,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
@@ -257,7 +254,6 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::ReplacementTxnUnderpriced
             | StarknetRpcApiError::FeeBelowMinimum
             | StarknetRpcApiError::InvalidProof
-            | StarknetRpcApiError::CallOnPreConfirmed
             | StarknetRpcApiError::InternalServerError
             | StarknetRpcApiError::UnimplementedMethod => None,
         }
@@ -266,9 +262,14 @@ impl StarknetRpcApiError {
 
 impl From<mc_exec::Error> for StarknetRpcApiError {
     fn from(err: mc_exec::Error) -> Self {
-        if err.is_entrypoint_not_found() {
+        if err.is_call_contract_entrypoint_not_found() {
             return Self::EntrypointNotFound;
         }
+
+        if err.is_message_fee_execution_error() {
+            return Self::ContractError;
+        }
+
         Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
@@ -425,7 +426,6 @@ mod tests {
         assert_eq!(i32::from(&StarknetRpcApiError::EntrypointNotFound), 21);
         assert_eq!(i32::from(&StarknetRpcApiError::StorageProofNotSupported), 42);
         assert_eq!(i32::from(&StarknetRpcApiError::InvalidProof), 69);
-        assert_eq!(i32::from(&StarknetRpcApiError::CallOnPreConfirmed), 70);
     }
 
     #[test]
