@@ -958,9 +958,11 @@ impl MadaraStorageWrite for RocksDBStorage {
             }
         }
 
+        tracing::debug!("🌳 REORG: Reverting contract trie...");
         let mut contract_trie = self.contract_trie();
         revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
 
+        tracing::debug!("🌳 REORG: Reverting contract storage trie...");
         let mut contract_storage_trie = self.contract_storage_trie();
         revert_single_trie(
             "contract storage",
@@ -969,6 +971,7 @@ impl MadaraStorageWrite for RocksDBStorage {
             target_block_n,
         )?;
 
+        tracing::debug!("🌳 REORG: Reverting class trie...");
         let mut class_trie = self.class_trie();
         revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
 
