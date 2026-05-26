@@ -230,6 +230,7 @@ mod tests {
                     nonce_after: Some(Felt::from(1_u64)),
                     nonce_before: Some(Felt::from(4_u64)),
                 },
+                ..Default::default()
             }))
             .await
             .unwrap();
