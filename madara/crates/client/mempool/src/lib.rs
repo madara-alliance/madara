@@ -444,6 +444,36 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             .collect()
     }
 
+    pub async fn snapshot_transactions_matching(
+        &self,
+        limit: usize,
+        include_ttl: bool,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionSnapshot> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let now = TxTimestamp::now();
+        let ttl = self.ttl;
+        let lock = self.inner.read().await;
+
+        lock.transactions_by_arrival()
+            .filter(|transaction| predicate(transaction))
+            .take(limit)
+            .map(|transaction| MempoolTransactionSnapshot {
+                transaction: transaction.clone(),
+                remaining_ttl: if include_ttl {
+                    ttl.map(|ttl| {
+                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                    })
+                } else {
+                    None
+                },
+            })
+            .collect()
+    }
+
     pub async fn snapshot_transaction_hashes_matching(
         &self,
         limit: usize,

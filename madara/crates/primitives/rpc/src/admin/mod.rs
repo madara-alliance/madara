@@ -31,7 +31,7 @@ pub struct MempoolNonceFilter {
     pub nonce_before: Option<Felt>,
 }
 
-const DEFAULT_GET_MEMPOOL_TXN_HASHES_LIMIT: usize = 100;
+const DEFAULT_GET_MEMPOOL_TXN_LIMIT: usize = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -44,17 +44,25 @@ pub struct GetMempoolTxnHashesParams {
 
 impl Default for GetMempoolTxnHashesParams {
     fn default() -> Self {
-        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_HASHES_LIMIT, nonce_filter: Default::default() }
+        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GetMempoolTxnsParams {
     /// Include the remaining TTL for each transaction when the node has a mempool TTL configured.
     pub include_ttl: bool,
+    /// Maximum number of transactions to return.
+    pub limit: usize,
     #[serde(flatten)]
     pub nonce_filter: MempoolNonceFilter,
+}
+
+impl Default for GetMempoolTxnsParams {
+    fn default() -> Self {
+        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

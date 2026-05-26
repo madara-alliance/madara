@@ -115,7 +115,8 @@ pub trait MadaraReadRpcApi {
         params: Option<GetMempoolTxnHashesParams>,
     ) -> RpcResult<Vec<MempoolTxnHashInfo>>;
 
-    /// List all transactions currently in the mempool.
+    /// List mempool transactions in oldest-first arrival order.
+    /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
     /// Pass `include_ttl` to include `remaining_ttl_ms` for each entry when the node is configured
     /// with a mempool TTL.
     #[method(name = "getMempoolTxns")]
