@@ -348,12 +348,20 @@ impl InnerMempool {
         self.accounts.num_accounts()
     }
 
-    pub fn summary(&self) -> MempoolStateSummary {
+    pub fn summary(&self, now: TxTimestamp) -> MempoolStateSummary {
+        let num_transactions = self.num_transactions();
+        let ready_transactions = self.ready_transactions();
         MempoolStateSummary {
-            num_transactions: self.num_transactions(),
-            ready_transactions: self.ready_transactions(),
+            num_transactions,
             transaction_capacity: self.config.max_transactions,
             num_accounts: self.num_accounts(),
+            ready_transactions,
+            queued_transactions: num_transactions.saturating_sub(ready_transactions),
+            oldest_transaction_age: self.timestamp_queue.oldest().and_then(|arrived_at| now.duration_since(arrived_at)),
+            oldest_ready_transaction_age: self
+                .accounts
+                .oldest_ready_arrived_at()
+                .and_then(|arrived_at| now.duration_since(arrived_at)),
         }
     }
 }
@@ -363,14 +371,21 @@ pub struct MempoolStateSummary {
     pub transaction_capacity: usize,
     pub num_accounts: usize,
     pub ready_transactions: usize,
+    pub queued_transactions: usize,
+    pub oldest_transaction_age: Option<Duration>,
+    pub oldest_ready_transaction_age: Option<Duration>,
 }
 
 impl fmt::Display for MempoolStateSummary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}/{} transaction(s), {} account(s), {} ready",
-            self.num_transactions, self.transaction_capacity, self.num_accounts, self.ready_transactions
+            "{}/{} transaction(s), {} account(s), {} ready, {} queued",
+            self.num_transactions,
+            self.transaction_capacity,
+            self.num_accounts,
+            self.ready_transactions,
+            self.queued_transactions
         )
     }
 }
