@@ -9,7 +9,7 @@ use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_b
 use crate::service::GatewayServerConfig;
 use hyper::{body::Incoming, Method, Request, Response};
 use mc_db::MadaraBackend;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use std::{convert::Infallible, sync::Arc};
 
 // Main router to redirect to the appropriate sub-router
@@ -17,17 +17,16 @@ pub(crate) async fn main_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
+    transaction_lookup: Arc<dyn TransactionLookup>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     config: GatewayServerConfig,
 ) -> Result<Response<String>, Infallible> {
     match (path, config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
-        (path, _, true) if path.starts_with("gateway/") => {
-            Ok(gateway_router(req, path, add_transaction_provider).await?)
-        }
+        (path, _, true) if path.starts_with("gateway/") => Ok(gateway_router(req, path, transaction_submitter).await?),
         (path, true, _) if path.starts_with("feeder_gateway/") => {
-            Ok(feeder_gateway_router(req, path, backend, add_transaction_provider).await?)
+            Ok(feeder_gateway_router(req, path, backend, transaction_lookup).await?)
         }
         (path, _, true)
             if path.starts_with("madara/trusted_add_validated_transaction")
@@ -49,7 +48,7 @@ async fn feeder_gateway_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_lookup: Arc<dyn TransactionLookup>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
@@ -65,10 +64,10 @@ async fn feeder_gateway_router(
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_transaction") => {
-            Ok(handle_get_transaction(req, backend, add_transaction_provider).await.unwrap_or_else(Into::into))
+            Ok(handle_get_transaction(req, backend, transaction_lookup).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_transaction_status") => {
-            Ok(handle_get_transaction_status(req, backend, add_transaction_provider).await.unwrap_or_else(Into::into))
+            Ok(handle_get_transaction_status(req, backend, transaction_lookup).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_hash_by_id") => {
             Ok(handle_get_block_hash_by_id(req, backend).await.unwrap_or_else(Into::into))
@@ -105,11 +104,11 @@ async fn feeder_gateway_router(
 async fn gateway_router(
     req: Request<Incoming>,
     path: &str,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::POST, "gateway/add_transaction") => {
-            Ok(handle_add_transaction(req, add_transaction_provider).await.unwrap_or_else(Into::into))
+            Ok(handle_add_transaction(req, transaction_submitter).await.unwrap_or_else(Into::into))
         }
         _ => {
             tracing::debug!(target: "feeder_gateway", "Gateway received invalid request: {path}");

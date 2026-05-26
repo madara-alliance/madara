@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
-use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
+use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction, TransactionLookup};
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -12,7 +11,7 @@ use starknet_core::types::Felt;
 use std::sync::Arc;
 
 pub const ERROR: &str =
-    "Failed to retrieve add transaction provider, meaning neither l2 sync nor block production are running";
+    "Failed to retrieve transaction provider, meaning neither l2 sync nor block production are running";
 
 /// A simple struct whose sole purpose is to toggle between a L2 sync and local
 /// (sequencer) transaction provider depending on the state of the node as
@@ -72,7 +71,29 @@ impl SubmitTransaction for SubmitTransactionSwitch {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.provider()?.submit_invoke_transaction(tx).await
     }
+}
 
+#[derive(Clone)]
+pub struct TransactionLookupSwitch {
+    redirect_to_gateway: Arc<dyn TransactionLookup>,
+    mempool_with_validator: Arc<dyn TransactionLookup>,
+    ctx: ServiceContext,
+}
+
+impl TransactionLookupSwitch {
+    fn provider(&self) -> Result<&Arc<dyn TransactionLookup>, SubmitTransactionError> {
+        if self.ctx.service_status(MadaraServiceId::L2Sync).is_on() {
+            Ok(&self.redirect_to_gateway)
+        } else if self.ctx.service_status(MadaraServiceId::BlockProduction).is_on() {
+            Ok(&self.mempool_with_validator)
+        } else {
+            Err(SubmitTransactionError::Internal(anyhow::anyhow!(ERROR)))
+        }
+    }
+}
+
+#[async_trait]
+impl TransactionLookup for TransactionLookupSwitch {
     async fn received_transaction(&self, hash: Felt) -> Option<bool> {
         match self.provider().ok() {
             Some(provider) => provider.received_transaction(hash).await,
@@ -84,26 +105,6 @@ impl SubmitTransaction for SubmitTransactionSwitch {
         match self.provider().ok() {
             Some(provider) => provider.subscribe_new_transactions().await,
             None => None,
-        }
-    }
-
-    async fn feeder_transaction_status(
-        &self,
-        hash: Felt,
-    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
-        match self.provider().ok() {
-            Some(provider) => provider.feeder_transaction_status(hash).await,
-            None => Ok(None),
-        }
-    }
-
-    async fn feeder_transaction(
-        &self,
-        hash: Felt,
-    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
-        match self.provider().ok() {
-            Some(provider) => provider.feeder_transaction(hash).await,
-            None => Ok(None),
         }
     }
 }
@@ -132,40 +133,6 @@ impl SubmitValidatedTransaction for SubmitValidatedTransactionSwitch {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.validated_provider()?.submit_validated_transaction(tx).await
     }
-
-    async fn received_transaction(&self, hash: Felt) -> Option<bool> {
-        match self.validated_provider().ok() {
-            Some(provider) => provider.received_transaction(hash).await,
-            None => None,
-        }
-    }
-
-    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
-        match self.validated_provider().ok() {
-            Some(provider) => provider.subscribe_new_transactions().await,
-            None => None,
-        }
-    }
-
-    async fn feeder_transaction_status(
-        &self,
-        hash: Felt,
-    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
-        match self.validated_provider().ok() {
-            Some(provider) => provider.feeder_transaction_status(hash).await,
-            None => Ok(None),
-        }
-    }
-
-    async fn feeder_transaction(
-        &self,
-        hash: Felt,
-    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
-        match self.validated_provider().ok() {
-            Some(provider) => provider.feeder_transaction(hash).await,
-            None => Ok(None),
-        }
-    }
 }
 
 /// TODO: remove this when we have another way to get the service statuses.
@@ -185,6 +152,29 @@ impl MakeSubmitTransactionSwitch {
 
     pub fn make(&self, ctx: ServiceContext) -> SubmitTransactionSwitch {
         SubmitTransactionSwitch {
+            redirect_to_gateway: self.redirect_to_gateway.clone(),
+            mempool_with_validator: self.mempool_with_validator.clone(),
+            ctx,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct MakeTransactionLookupSwitch {
+    redirect_to_gateway: Arc<dyn TransactionLookup>,
+    mempool_with_validator: Arc<dyn TransactionLookup>,
+}
+
+impl MakeTransactionLookupSwitch {
+    pub fn new(
+        redirect_to_gateway: Arc<dyn TransactionLookup>,
+        mempool_with_validator: Arc<dyn TransactionLookup>,
+    ) -> Self {
+        Self { redirect_to_gateway, mempool_with_validator }
+    }
+
+    pub fn make(&self, ctx: ServiceContext) -> TransactionLookupSwitch {
+        TransactionLookupSwitch {
             redirect_to_gateway: self.redirect_to_gateway.clone(),
             mempool_with_validator: self.mempool_with_validator.clone(),
             ctx,

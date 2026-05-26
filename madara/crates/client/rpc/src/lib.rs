@@ -799,7 +799,7 @@ mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
-use mc_submit_tx::SubmitTransaction;
+use mc_submit_tx::{SubmitTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 
@@ -828,7 +828,8 @@ pub struct Starknet {
     backend: Arc<MadaraBackend>,
     ws_handles: Arc<WsSubscribeHandles>,
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
-    pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
+    pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
+    pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -838,7 +839,8 @@ pub struct Starknet {
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
-        add_transaction_provider: Arc<dyn SubmitTransaction>,
+        transaction_submitter: Arc<dyn SubmitTransaction>,
+        transaction_lookup: Arc<dyn TransactionLookup>,
         storage_proof_config: StorageProofConfig,
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
         ctx: ServiceContext,
@@ -847,7 +849,8 @@ impl Starknet {
         Self {
             backend,
             ws_handles,
-            add_transaction_provider,
+            transaction_submitter,
+            transaction_lookup,
             storage_proof_config,
             block_prod_handle,
             ctx,

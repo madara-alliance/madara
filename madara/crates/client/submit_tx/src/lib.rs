@@ -13,11 +13,12 @@
 //!
 //! # Architecture
 //!
-//! The module is structured around three core traits that define different submission pathways:
+//! The module is structured around four core traits:
 //!
 //! - [`SubmitTransaction`]: Public interface for submitting user transactions with full validation
 //! - [`SubmitL1HandlerTransaction`]: Specialized interface for L1-originated transactions
 //! - [`SubmitValidatedTransaction`]: Internal interface for pre-validated transactions
+//! - [`TransactionLookup`]: Read-side transaction monitoring and feeder-compatible lookups
 //!
 //! # Transaction Validation
 //!
@@ -90,7 +91,7 @@
 //!
 //! # Transaction Monitoring
 //!
-//! Implementations can provide transaction monitoring through:
+//! Implementations can provide transaction monitoring through [`TransactionLookup`]:
 //!
 //! - `received_transaction`: Check if a transaction hash exists
 //! - `subscribe_new_transactions`: Real-time updates via broadcast channel
@@ -101,6 +102,7 @@
 //! [`SubmitTransaction`]: crate::SubmitTransaction
 //! [`SubmitL1HandlerTransaction`]: crate::SubmitL1HandlerTransaction
 //! [`SubmitValidatedTransaction`]: crate::SubmitValidatedTransaction
+//! [`TransactionLookup`]: crate::TransactionLookup
 //! [`TransactionValidator`]: crate::TransactionValidator
 //! [`TransactionValidatorConfig`]: crate::TransactionValidatorConfig
 //! [`SubmitTransactionError`]: crate::SubmitTransactionError
@@ -235,6 +237,46 @@ fn feeder_transaction_from_mempool(status: &MempoolTransactionStatus) -> Provide
     }
 }
 
+/// Read-side transaction monitoring and feeder-compatible lookup surface.
+#[async_trait]
+pub trait TransactionLookup: Send + Sync {
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
+
+    /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
+    ///
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction_status(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionStatus::received()),
+            Some(false) => Some(ProviderTransactionStatus::not_received()),
+            None => None,
+        })
+    }
+
+    /// Returns the exact feeder gateway transaction payload when the backend can provide it.
+    ///
+    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
+    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
+    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
+    async fn feeder_transaction(
+        &self,
+        hash: mp_convert::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        Ok(match self.received_transaction(hash).await {
+            Some(true) => Some(ProviderTransactionResponse::received()),
+            Some(false) => Some(ProviderTransactionResponse::not_received()),
+            None => None,
+        })
+    }
+}
+
 /// Abstraction layer over where transactions are submitted.
 ///
 /// This is usually implemented by the local-run mempool or a client to another node's gateway interface,
@@ -263,42 +305,6 @@ pub trait SubmitTransaction: Send + Sync {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError>;
-
-    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
-
-    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
-
-    /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
-    ///
-    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
-    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
-    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
-    async fn feeder_transaction_status(
-        &self,
-        hash: mp_convert::Felt,
-    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionStatus::received()),
-            Some(false) => Some(ProviderTransactionStatus::not_received()),
-            None => None,
-        })
-    }
-
-    /// Returns the exact feeder gateway transaction payload when the backend can provide it.
-    ///
-    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
-    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
-    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
-    async fn feeder_transaction(
-        &self,
-        hash: mp_convert::Felt,
-    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionResponse::received()),
-            Some(false) => Some(ProviderTransactionResponse::not_received()),
-            None => None,
-        })
-    }
 }
 
 /// Submit a L1HandlerTransaction.
@@ -315,49 +321,14 @@ pub trait SubmitL1HandlerTransaction: Send + Sync {
 #[async_trait]
 pub trait SubmitValidatedTransaction: Send + Sync {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError>;
-
-    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
-
-    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
-
-    /// Returns the exact feeder gateway transaction status shape when the backend can provide it.
-    ///
-    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
-    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
-    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
-    async fn feeder_transaction_status(
-        &self,
-        hash: mp_convert::Felt,
-    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionStatus::received()),
-            Some(false) => Some(ProviderTransactionStatus::not_received()),
-            None => None,
-        })
-    }
-
-    /// Returns the exact feeder gateway transaction payload when the backend can provide it.
-    ///
-    /// `Ok(None)` means the backend does not provide richer feeder semantics and callers should
-    /// fall back to local handling. Errors should be propagated so gateway clients do not silently
-    /// downgrade transport or upstream failures into `NOT_RECEIVED`.
-    async fn feeder_transaction(
-        &self,
-        hash: mp_convert::Felt,
-    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionResponse::received()),
-            Some(false) => Some(ProviderTransactionResponse::not_received()),
-            None => None,
-        })
-    }
 }
 
+pub trait ValidatedTransactionProvider: SubmitValidatedTransaction + TransactionLookup {}
+
+impl<T> ValidatedTransactionProvider for T where T: SubmitValidatedTransaction + TransactionLookup + ?Sized {}
+
 #[async_trait]
-impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
-    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
-        Ok(self.accept_tx(tx).await?)
-    }
+impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
         Some(self.is_transaction_in_mempool(&hash))
     }
@@ -385,6 +356,13 @@ impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
             Ok(None) => Ok(Some(ProviderTransactionResponse::not_received())),
             Err(err) => Err(SubmitTransactionError::Internal(err)),
         }
+    }
+}
+
+#[async_trait]
+impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
+        Ok(self.accept_tx(tx).await?)
     }
 }
 

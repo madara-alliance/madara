@@ -15,7 +15,7 @@ use hyper::header::{HeaderMap, CONTENT_ENCODING, CONTENT_TYPE};
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
@@ -183,7 +183,7 @@ fn gateway_transaction(transaction: &mp_block::TransactionWithReceipt) -> Gatewa
 async fn transaction_status_response(
     transaction_hash: Felt,
     backend: &Arc<MadaraBackend>,
-    add_transaction_provider: &Arc<dyn SubmitTransaction>,
+    transaction_lookup: &Arc<dyn TransactionLookup>,
 ) -> Result<ProviderTransactionStatus, GatewayError> {
     let view = backend.view_on_latest();
 
@@ -193,7 +193,7 @@ async fn transaction_status_response(
         let (execution_status, tx_revert_reason) = execution_status(&transaction.receipt);
 
         Ok(ProviderTransactionStatus::with_status(tx_status, Some(execution_status), block_hash, tx_revert_reason))
-    } else if let Some(status) = add_transaction_provider.feeder_transaction_status(transaction_hash).await? {
+    } else if let Some(status) = transaction_lookup.feeder_transaction_status(transaction_hash).await? {
         Ok(status)
     } else {
         Ok(ProviderTransactionStatus::not_received())
@@ -203,7 +203,7 @@ async fn transaction_status_response(
 async fn transaction_response(
     transaction_hash: Felt,
     backend: &Arc<MadaraBackend>,
-    add_transaction_provider: &Arc<dyn SubmitTransaction>,
+    transaction_lookup: &Arc<dyn TransactionLookup>,
 ) -> Result<ProviderTransactionResponse, GatewayError> {
     let view = backend.view_on_latest();
 
@@ -220,7 +220,7 @@ async fn transaction_response(
             Some(res.transaction_index),
             Some(gateway_transaction(&transaction)),
         ))
-    } else if let Some(response) = add_transaction_provider.feeder_transaction(transaction_hash).await? {
+    } else if let Some(response) = transaction_lookup.feeder_transaction(transaction_hash).await? {
         Ok(response)
     } else {
         Ok(ProviderTransactionResponse::not_received())
@@ -298,22 +298,22 @@ pub async fn handle_get_preconfirmed_block(
 pub async fn handle_get_transaction(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_lookup: Arc<dyn TransactionLookup>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let transaction_hash = parse_transaction_hash(&params)?;
-    let response = transaction_response(transaction_hash, &backend, &add_transaction_provider).await?;
+    let response = transaction_response(transaction_hash, &backend, &transaction_lookup).await?;
     Ok(create_json_response(hyper::StatusCode::OK, &response))
 }
 
 pub async fn handle_get_transaction_status(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_lookup: Arc<dyn TransactionLookup>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
     let transaction_hash = parse_transaction_hash(&params)?;
-    let response = transaction_status_response(transaction_hash, &backend, &add_transaction_provider).await?;
+    let response = transaction_status_response(transaction_hash, &backend, &transaction_lookup).await?;
     Ok(create_json_response(hyper::StatusCode::OK, &response))
 }
 
@@ -580,7 +580,7 @@ pub async fn handle_add_validated_transaction(
 
 pub async fn handle_add_transaction(
     req: Request<Incoming>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, GatewayError> {
     let path = req.uri().path().to_owned();
     let headers = req.headers().clone();
@@ -591,9 +591,9 @@ pub async fn handle_add_transaction(
     let transaction = parse_add_transaction_request(&path, &headers, whole_body.as_ref())?;
 
     let response = match transaction {
-        UserTransaction::Declare(tx) => declare_transaction(tx, add_transaction_provider).await,
-        UserTransaction::DeployAccount(tx) => deploy_account_transaction(tx, add_transaction_provider).await,
-        UserTransaction::InvokeFunction(tx) => invoke_transaction(tx, add_transaction_provider).await,
+        UserTransaction::Declare(tx) => declare_transaction(tx, transaction_submitter).await,
+        UserTransaction::DeployAccount(tx) => deploy_account_transaction(tx, transaction_submitter).await,
+        UserTransaction::InvokeFunction(tx) => invoke_transaction(tx, transaction_submitter).await,
     };
 
     Ok(response)
@@ -601,7 +601,7 @@ pub async fn handle_add_transaction(
 
 async fn declare_transaction(
     tx: UserDeclareTransaction,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
     let tx: BroadcastedDeclareTxn = match tx.try_into() {
         Ok(tx) => tx,
@@ -611,7 +611,7 @@ async fn declare_transaction(
         }
     };
 
-    match add_transaction_provider.submit_declare_transaction(tx).await {
+    match transaction_submitter.submit_declare_transaction(tx).await {
         Ok(result) => create_json_response(
             hyper::StatusCode::OK,
             &AddTransactionResult::from(AddDeclareTransactionResult {
@@ -625,9 +625,9 @@ async fn declare_transaction(
 
 async fn deploy_account_transaction(
     tx: UserDeployAccountTransaction,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
-    match add_transaction_provider.submit_deploy_account_transaction(tx.into()).await {
+    match transaction_submitter.submit_deploy_account_transaction(tx.into()).await {
         Ok(result) => create_json_response(
             hyper::StatusCode::OK,
             &AddTransactionResult::from(AddDeployAccountTransactionResult {
@@ -641,9 +641,9 @@ async fn deploy_account_transaction(
 
 async fn invoke_transaction(
     tx: UserInvokeFunctionTransaction,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
-    match add_transaction_provider.submit_invoke_transaction(tx.into()).await {
+    match transaction_submitter.submit_invoke_transaction(tx.into()).await {
         Ok(result) => create_json_response(
             hyper::StatusCode::OK,
             &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
@@ -765,11 +765,11 @@ mod tests {
     }
 
     impl StubSubmitTransaction {
-        fn with_status(status: ProviderTransactionStatus) -> Arc<dyn SubmitTransaction> {
+        fn with_status(status: ProviderTransactionStatus) -> Arc<dyn TransactionLookup> {
             Arc::new(Self { status: Some(status), transaction: None })
         }
 
-        fn with_transaction(transaction: ProviderTransactionResponse) -> Arc<dyn SubmitTransaction> {
+        fn with_transaction(transaction: ProviderTransactionResponse) -> Arc<dyn TransactionLookup> {
             Arc::new(Self { status: None, transaction: Some(transaction) })
         }
     }
@@ -796,7 +796,10 @@ mod tests {
         ) -> Result<mp_rpc::v0_9_0::AddInvokeTransactionResult, SubmitTransactionError> {
             Err(SubmitTransactionError::Unsupported)
         }
+    }
 
+    #[async_trait]
+    impl TransactionLookup for StubSubmitTransaction {
         async fn received_transaction(&self, _hash: Felt) -> Option<bool> {
             None
         }
@@ -820,14 +823,13 @@ mod tests {
         }
     }
 
-    fn submit_provider() -> (Arc<MadaraBackend>, Arc<dyn SubmitTransaction>) {
+    fn submit_provider() -> (Arc<MadaraBackend>, Arc<dyn SubmitTransaction>, Arc<dyn TransactionLookup>) {
         let backend = backend_for_tests();
         let mempool = Arc::new(mc_mempool::Mempool::new(Arc::clone(&backend), mc_mempool::MempoolConfig::default()));
         let validation = TransactionValidatorConfig { disable_validation: true, disable_fee: false };
-        let provider: Arc<dyn SubmitTransaction> =
-            Arc::new(mc_submit_tx::TransactionValidator::new(mempool, Arc::clone(&backend), validation));
+        let provider = Arc::new(mc_submit_tx::TransactionValidator::new(mempool, Arc::clone(&backend), validation));
 
-        (backend, provider)
+        (backend, Arc::clone(&provider) as _, provider as _)
     }
 
     fn submit_invoke_tx() -> mp_rpc::v0_10_2::BroadcastedInvokeTxn {
@@ -911,19 +913,19 @@ mod tests {
 
     #[tokio::test]
     async fn get_transaction_status_returns_not_received_for_unknown_hash() {
-        let (backend, provider) = submit_provider();
+        let (backend, _, lookup) = submit_provider();
 
-        let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
+        let status = transaction_status_response(TX_HASH, &backend, &lookup).await.unwrap();
 
         assert_eq!(status, ProviderTransactionStatus::not_received());
     }
 
     #[tokio::test]
     async fn get_transaction_status_returns_received_when_in_mempool() {
-        let (backend, provider) = submit_provider();
-        let tx_hash = provider.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
+        let (backend, submitter, lookup) = submit_provider();
+        let tx_hash = submitter.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
 
-        let status = transaction_status_response(tx_hash, &backend, &provider).await.unwrap();
+        let status = transaction_status_response(tx_hash, &backend, &lookup).await.unwrap();
 
         assert_eq!(status, ProviderTransactionStatus::received());
     }
@@ -967,13 +969,14 @@ mod tests {
 
     #[tokio::test]
     async fn get_transaction_returns_confirmed_payload() {
-        let (backend, provider) = submit_provider();
+        let (backend, submitter, lookup) = submit_provider();
         backend
             .write_access()
             .add_full_block_with_classes(&full_block(0), &[], true)
             .expect("Failed to persist confirmed block");
 
-        let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
+        let _ = submitter;
+        let response = transaction_response(TX_HASH, &backend, &lookup).await.unwrap();
 
         assert_eq!(response.status, TransactionStatus::AcceptedOnL2);
         assert_eq!(response.finality_status, TransactionStatus::AcceptedOnL2);
@@ -986,10 +989,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_transaction_returns_received_with_payload() {
-        let (backend, provider) = submit_provider();
-        let tx_hash = provider.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
+        let (backend, submitter, lookup) = submit_provider();
+        let tx_hash = submitter.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
 
-        let response = transaction_response(tx_hash, &backend, &provider).await.unwrap();
+        let response = transaction_response(tx_hash, &backend, &lookup).await.unwrap();
 
         assert_eq!(response.status, TransactionStatus::Received);
         assert_eq!(response.finality_status, TransactionStatus::Received);
@@ -1043,7 +1046,10 @@ mod tests {
         ) -> Result<mp_rpc::v0_9_0::AddInvokeTransactionResult, SubmitTransactionError> {
             Err(SubmitTransactionError::Unsupported)
         }
+    }
 
+    #[async_trait]
+    impl TransactionLookup for FailingSubmitTransaction {
         async fn received_transaction(&self, _hash: Felt) -> Option<bool> {
             None
         }
@@ -1070,7 +1076,7 @@ mod tests {
     #[tokio::test]
     async fn get_transaction_status_propagates_submit_provider_errors() {
         let backend = backend_for_tests();
-        let provider: Arc<dyn SubmitTransaction> = Arc::new(FailingSubmitTransaction);
+        let provider: Arc<dyn TransactionLookup> = Arc::new(FailingSubmitTransaction);
 
         let err = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap_err();
 
@@ -1080,7 +1086,7 @@ mod tests {
     #[tokio::test]
     async fn get_transaction_propagates_submit_provider_errors() {
         let backend = backend_for_tests();
-        let provider: Arc<dyn SubmitTransaction> = Arc::new(FailingSubmitTransaction);
+        let provider: Arc<dyn TransactionLookup> = Arc::new(FailingSubmitTransaction);
 
         let err = transaction_response(TX_HASH, &backend, &provider).await.unwrap_err();
 
@@ -1113,7 +1119,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_block_hash_by_id_and_block_id_by_hash_roundtrip() {
-        let (backend, _) = submit_provider();
+        let (backend, _, _) = submit_provider();
         backend
             .write_access()
             .add_full_block_with_classes(&empty_block(0), &[], true)
@@ -1134,7 +1140,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_block_hash_by_id_rejects_out_of_range_requests() {
-        let (backend, _) = submit_provider();
+        let (backend, _, _) = submit_provider();
         backend
             .write_access()
             .add_full_block_with_classes(&empty_block(0), &[], true)

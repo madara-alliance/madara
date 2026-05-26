@@ -1,5 +1,8 @@
 use self::server::rpc_api_build;
-use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
+use crate::{
+    cli::RpcParams,
+    submit_tx::{MakeSubmitTransactionSwitch, MakeTransactionLookupSwitch},
+};
 use jsonrpsee::server::ServerHandle;
 use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
@@ -24,6 +27,7 @@ pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
+    transaction_lookup_provider: MakeTransactionLookupSwitch,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
@@ -34,11 +38,13 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
@@ -49,12 +55,14 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
         block_prod_handle: BlockProductionHandle,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
@@ -68,6 +76,7 @@ impl Service for RpcService {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
+        let transaction_lookup_provider = self.transaction_lookup_provider.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -80,10 +89,12 @@ impl Service for RpcService {
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
+            let transaction_lookup = Arc::new(transaction_lookup_provider.make(ctx.clone()));
 
             let mut starknet = Starknet::new(
                 backend.clone(),
                 submit_tx,
+                transaction_lookup,
                 config.storage_proof_config(),
                 block_prod_handle,
                 ctx.clone(),

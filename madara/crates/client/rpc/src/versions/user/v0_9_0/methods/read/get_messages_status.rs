@@ -69,7 +69,14 @@ mod tests {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), None, context)
+        Starknet::new(
+            backend,
+            std::sync::Arc::clone(&mempool_validator) as _,
+            mempool_validator,
+            Default::default(),
+            None,
+            context,
+        )
     }
 
     fn l1_hash_bytes(x: u8) -> [u8; 32] {

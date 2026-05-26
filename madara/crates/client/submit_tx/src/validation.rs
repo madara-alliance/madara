@@ -1,6 +1,6 @@
 use crate::{
     RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransaction,
-    SubmitTransactionError, SubmitValidatedTransaction,
+    SubmitTransactionError, TransactionLookup, ValidatedTransactionProvider,
 };
 use async_trait::async_trait;
 use blockifier::{
@@ -234,7 +234,7 @@ impl TransactionValidatorConfig {
 }
 
 pub struct TransactionValidator {
-    inner: Arc<dyn SubmitValidatedTransaction>,
+    inner: Arc<dyn ValidatedTransactionProvider>,
     backend: Arc<MadaraBackend>,
     config: TransactionValidatorConfig,
 }
@@ -247,7 +247,7 @@ impl fmt::Debug for TransactionValidator {
 
 impl TransactionValidator {
     pub fn new(
-        inner: Arc<dyn SubmitValidatedTransaction>,
+        inner: Arc<dyn ValidatedTransactionProvider>,
         backend: Arc<MadaraBackend>,
         config: TransactionValidatorConfig,
     ) -> Self {
@@ -473,7 +473,10 @@ impl SubmitTransaction for TransactionValidator {
         self.accept_tx(api_tx, None, arrived_at).await?;
         Ok(AddInvokeTransactionResult { transaction_hash: hash })
     }
+}
 
+#[async_trait]
+impl TransactionLookup for TransactionValidator {
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
         self.inner.received_transaction(hash).await
     }
