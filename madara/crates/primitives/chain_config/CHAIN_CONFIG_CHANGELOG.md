@@ -55,6 +55,7 @@ l2_gas_price:
 
 `mempool_full_policy` is an optional version 2 field that controls what Madara does when the mempool is full.
 It is additive and backward-compatible within version `2` because it has a default value.
+The legacy key `mempool_full_mode` is still accepted as an alias for backward compatibility.
 
 ```yaml
 mempool_full_policy: evict_less_desirable
@@ -162,6 +163,8 @@ To migrate from a legacy or older versioned chain config to version `2`:
    ```yaml
    mempool_full_policy: evict_less_desirable
    ```
+
+   Existing `mempool_full_mode` configs remain accepted as an alias within version `2`.
 
 4. Verify your config loads correctly:
 

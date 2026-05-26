@@ -517,7 +517,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             let mut lock = self.inner.write().await;
             let tx_hashes =
                 lock.transactions_by_arrival().filter(|tx| predicate(tx)).map(|tx| tx.hash).collect::<HashSet<_>>();
-            lock.remove_transaction_hashes(&tx_hashes, &mut removed_txs);
+            lock.remove_transactions_by_hashes(&tx_hashes, &mut removed_txs);
             lock.summary()
         };
 

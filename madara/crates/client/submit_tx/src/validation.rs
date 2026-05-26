@@ -196,7 +196,7 @@ impl From<MempoolInsertionError> for SubmitTransactionError {
                 rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
             }
             E::InnerMempool(TxInsertionError::Limit(limit)) => {
-                rejected(TransactionLimitExceeded, format!("Mempool full: {limit:#}"))
+                rejected(MempoolLimitReached, format!("Mempool full: {limit:#}"))
             }
             E::InnerMempool(TxInsertionError::NonceConflict) => rejected(
                 InvalidTransactionNonce,

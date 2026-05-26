@@ -90,7 +90,7 @@ pub enum StarknetRpcApiError {
     #[error("Account validation failed")]
     ValidationFailure { error: Cow<'static, str> },
     #[error("Mempool full")]
-    TransactionLimitExceeded { error: Cow<'static, str> },
+    MempoolLimitReached { error: Cow<'static, str> },
     #[error("Compilation failed")]
     CompilationFailed { error: Cow<'static, str> },
     #[error("Contract class size is too large")]
@@ -178,7 +178,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InsufficientMaxFee { .. } => 53,
             StarknetRpcApiError::InsufficientAccountBalance { .. } => 54,
             StarknetRpcApiError::ValidationFailure { .. } => 55,
-            StarknetRpcApiError::TransactionLimitExceeded { .. } => 67,
+            StarknetRpcApiError::MempoolLimitReached { .. } => 67,
             StarknetRpcApiError::CompilationFailed { .. } => 56,
             StarknetRpcApiError::ContractClassSizeTooLarge { .. } => 57,
             StarknetRpcApiError::NonAccount { .. } => 58,
@@ -210,7 +210,7 @@ impl StarknetRpcApiError {
             }
             StarknetRpcApiError::ErrUnexpectedError { error }
             | StarknetRpcApiError::ValidationFailure { error }
-            | StarknetRpcApiError::TransactionLimitExceeded { error }
+            | StarknetRpcApiError::MempoolLimitReached { error }
             | StarknetRpcApiError::ContractNotFound { error }
             | StarknetRpcApiError::ClassHashNotFound { error }
             | StarknetRpcApiError::InvalidContractClass { error }
@@ -285,7 +285,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             }
             StarknetErrorCode::ValidateFailure => StarknetRpcApiError::ValidationFailure { error: err.message.into() },
             StarknetErrorCode::TransactionLimitExceeded => {
-                StarknetRpcApiError::TransactionLimitExceeded { error: err.message.into() }
+                StarknetRpcApiError::MempoolLimitReached { error: err.message.into() }
             }
             StarknetErrorCode::UninitializedContract => StarknetRpcApiError::contract_not_found(),
             StarknetErrorCode::UndeclaredClass => StarknetRpcApiError::class_hash_not_found(),
@@ -355,7 +355,7 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
             | E::ValidateFailure // this might be a ContractError? TxnExecutionError?
             | E::UnauthorizedEntryPointForInvoke
             => ValidationFailure { error },
-            E::TransactionLimitExceeded => TransactionLimitExceeded { error },
+            E::MempoolLimitReached => MempoolLimitReached { error },
 
             E::InvalidCompiledClassHash => CompiledClassHashMismatch { error },
             E::NotPermittedContract => NonAccount { error },
@@ -407,13 +407,13 @@ mod tests {
     #[test]
     fn rejected_transaction_limit_maps_to_explicit_rpc_error() {
         let error = StarknetRpcApiError::from(RejectedTransactionError::new(
-            RejectedTransactionErrorKind::TransactionLimitExceeded,
+            RejectedTransactionErrorKind::MempoolLimitReached,
             "Mempool full: The mempool has reached the limit of 3 transactions",
         ));
 
         assert_eq!(
             error,
-            StarknetRpcApiError::TransactionLimitExceeded {
+            StarknetRpcApiError::MempoolLimitReached {
                 error: "Mempool full: The mempool has reached the limit of 3 transactions".into(),
             }
         );

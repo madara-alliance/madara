@@ -1,3 +1,4 @@
+use super::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -73,15 +74,6 @@ impl FlushMode {
             "Provide at least one base flush filter: all, contract_address, or transaction_hashes",
         ))
     }
-}
-
-fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
-    let nonce = transaction.transaction.nonce();
-    nonce_filter.nonce_after.is_none_or(|lower| nonce > lower)
-        && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
-}
-
-impl FlushMode {
     fn matches(&self, transaction: &ValidatedTransaction) -> bool {
         match self {
             FlushMode::All { nonce_filter } => matches_nonce_filter(transaction, *nonce_filter),

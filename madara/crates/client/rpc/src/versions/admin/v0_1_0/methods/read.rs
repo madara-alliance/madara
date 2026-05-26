@@ -1,17 +1,12 @@
+use super::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::{
-    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolNonceFilter, MempoolTxnHashInfo, MempoolTxnInfo},
+    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo},
     v0_10_2::TxnWithHashAndProofFacts,
 };
-use mp_transactions::{validated::ValidatedTransaction, TransactionWithHash};
-
-fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
-    let nonce = transaction.transaction.nonce();
-    nonce_filter.nonce_after.is_none_or(|lower| nonce > lower)
-        && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
-}
+use mp_transactions::TransactionWithHash;
 
 fn ttl_to_ms(ttl: std::time::Duration) -> u64 {
     ttl.as_millis().try_into().unwrap_or(u64::MAX)
@@ -81,6 +76,7 @@ mod tests {
     use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
+    use mp_rpc::admin::MempoolNonceFilter;
     use mp_transactions::{
         validated::{TxTimestamp, ValidatedTransaction},
         InvokeTransaction, InvokeTransactionV1, Transaction,

@@ -1,4 +1,4 @@
-use crate::{InvokeTransaction, Transaction, TransactionWithHash};
+use crate::{Transaction, TransactionWithHash};
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mp_class::ConvertedClass;
@@ -163,17 +163,6 @@ impl ValidatedTransaction {
                 Some(self.contract_address)
             }
             Transaction::L1Handler(_) | Transaction::Deploy(_) => None,
-        }
-    }
-
-    pub fn to_contract_address(&self) -> Option<Felt> {
-        match &self.transaction {
-            Transaction::Invoke(InvokeTransaction::V0(tx)) => Some(tx.contract_address),
-            Transaction::L1Handler(tx) => Some(tx.contract_address),
-            Transaction::DeployAccount(_) => Some(self.contract_address),
-            Transaction::Invoke(InvokeTransaction::V1(_) | InvokeTransaction::V3(_))
-            | Transaction::Declare(_)
-            | Transaction::Deploy(_) => None,
         }
     }
 }

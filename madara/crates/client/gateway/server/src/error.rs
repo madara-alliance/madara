@@ -47,7 +47,7 @@ fn map_rejected_tx_error(value: RejectedTransactionError) -> StarknetError {
         E::InvalidContractDefinition => InvalidContractDefinition,
         E::NotPermittedContract => NotPermittedContract,
         E::UndeclaredClass => UndeclaredClass,
-        E::TransactionLimitExceeded => TransactionLimitExceeded,
+        E::MempoolLimitReached => TransactionLimitExceeded,
         E::InvalidTransactionNonce => InvalidTransactionNonce,
         E::ReplacementTransactionUnderpriced => ReplacementTransactionUnderpriced,
         E::FeeBelowMinimum => FeeBelowMinimum,
@@ -118,7 +118,7 @@ impl From<StarknetRpcApiError> for GatewayError {
             StarknetRpcApiError::ValidationFailure { error } => {
                 GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::ValidateFailure, error.into()))
             }
-            StarknetRpcApiError::TransactionLimitExceeded { error } => GatewayError::StarknetError(StarknetError::new(
+            StarknetRpcApiError::MempoolLimitReached { error } => GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::TransactionLimitExceeded,
                 err_message(error, "Mempool full"),
             )),
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn rpc_transaction_limit_maps_to_gateway_transaction_limit_exceeded() {
-        let error = GatewayError::from(StarknetRpcApiError::TransactionLimitExceeded {
+        let error = GatewayError::from(StarknetRpcApiError::MempoolLimitReached {
             error: "Mempool full: The mempool has reached the limit of 3 transactions".into(),
         });
 

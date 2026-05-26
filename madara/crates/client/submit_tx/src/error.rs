@@ -63,8 +63,8 @@ pub enum RejectedTransactionErrorKind {
     NotPermittedContract,
     #[error("UndeclaredClass")]
     UndeclaredClass,
-    #[error("TransactionLimitExceeded")]
-    TransactionLimitExceeded,
+    #[error("MempoolLimitReached")]
+    MempoolLimitReached,
     #[error("InvalidTransactionNonce")]
     InvalidTransactionNonce,
     #[error("Replacement transaction is underpriced")]

@@ -342,7 +342,7 @@ impl InnerMempool {
         })
     }
 
-    pub fn remove_transaction_hashes(
+    pub fn remove_transactions_by_hashes(
         &mut self,
         tx_hashes: &HashSet<Felt>,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
