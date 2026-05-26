@@ -203,7 +203,7 @@ pub fn fcfs_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,
-        full_mode: MempoolFullPolicy::EvictLessDesirable,
+        full_policy: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -219,7 +219,7 @@ pub fn tip_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Tip { min_tip_bump },
-        full_mode: MempoolFullPolicy::EvictLessDesirable,
+        full_policy: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -762,10 +762,10 @@ fn test_eviction_fails_when_new_tx_has_worse_score(#[with(3)] mut fcfs_mempool: 
 }
 
 #[test]
-fn test_reject_new_full_mode_never_evicts_existing_transactions() {
+fn test_reject_new_full_policy_never_evicts_existing_transactions() {
     let mut fcfs_mempool = MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,
-        full_mode: MempoolFullPolicy::RejectNew,
+        full_policy: MempoolFullPolicy::RejectNew,
         max_transactions: 3,
         max_declare_transactions: Some(2),
         ttl: Some(Duration::from_secs(20)),

@@ -48,7 +48,7 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
-    pub full_mode: MempoolFullPolicy,
+    pub full_policy: MempoolFullPolicy,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Option<Duration>,
@@ -215,7 +215,7 @@ impl InnerMempool {
                 if !err.can_trigger_eviction_policy() {
                     return Err(err.into());
                 }
-                let made_room = match self.config.full_mode {
+                let made_room = match self.config.full_policy {
                     MempoolFullPolicy::EvictLessDesirable => {
                         let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
                         tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
