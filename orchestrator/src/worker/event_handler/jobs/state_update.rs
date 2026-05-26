@@ -1,3 +1,4 @@
+use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
@@ -218,7 +219,13 @@ impl StateUpdateJobHandler {
         let (expected_last_block_number, batch_index) = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the settled batch
-                let batches = config.database().get_aggregator_batches_by_indexes(vec![num_settled]).await?;
+                let batches = config
+                    .database()
+                    .get_aggregator_batches(AggregatorBatchDbQuery {
+                        indexes: Some(vec![num_settled]),
+                        ..Default::default()
+                    })
+                    .await?;
                 if let Some(batch) = batches.first() {
                     // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
@@ -228,7 +235,10 @@ impl StateUpdateJobHandler {
             }
             Layer::L3 => {
                 // Get the batch details for the settled batch
-                let batches = config.database().get_snos_batches_by_indices(vec![num_settled]).await?;
+                let batches = config
+                    .database()
+                    .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![num_settled]), ..Default::default() })
+                    .await?;
                 if let Some(batch) = batches.first() {
                     // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
@@ -286,7 +296,13 @@ impl StateUpdateJobHandler {
         // Get the batch details for the batch to settle
         let to_block_num = match config.layer() {
             Layer::L2 => {
-                let batches = config.database().get_aggregator_batches_by_indexes(vec![to_batch_num]).await?;
+                let batches = config
+                    .database()
+                    .get_aggregator_batches(AggregatorBatchDbQuery {
+                        indexes: Some(vec![to_batch_num]),
+                        ..Default::default()
+                    })
+                    .await?;
                 batches
                     .first()
                     .ok_or_else(|| {
@@ -298,7 +314,10 @@ impl StateUpdateJobHandler {
                     .end_block
             }
             Layer::L3 => {
-                let batches = config.database().get_snos_batches_by_indices(vec![to_batch_num]).await?;
+                let batches = config
+                    .database()
+                    .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![to_batch_num]), ..Default::default() })
+                    .await?;
                 batches
                     .first()
                     .ok_or_else(|| {

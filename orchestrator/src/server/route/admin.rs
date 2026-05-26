@@ -12,6 +12,7 @@ use uuid::Uuid;
 use super::super::error::JobRouteError;
 use super::super::service::admin::{AdminService, BulkJobResult};
 use super::super::types::{ApiResponse, JobRouteResult};
+use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::jobs::types::JobType;
@@ -206,8 +207,13 @@ async fn handle_close_open_batches(State(config): State<Arc<Config>>) -> JobRout
 
     let db = config.database();
 
-    let open_agg_batches =
-        db.get_aggregator_batches_by_status(AggregatorBatchStatus::Open, None, None).await.map_err(|e| {
+    let open_agg_batches = db
+        .get_aggregator_batches(AggregatorBatchDbQuery {
+            statuses: Some(vec![AggregatorBatchStatus::Open]),
+            ..Default::default()
+        })
+        .await
+        .map_err(|e| {
             error!(error = %e, "Failed to fetch open aggregator batches");
             JobRouteError::ProcessingError(e.to_string())
         })?;
@@ -225,10 +231,13 @@ async fn handle_close_open_batches(State(config): State<Arc<Config>>) -> JobRout
         }
     }
 
-    let open_snos_batches = db.get_snos_batches_by_status(SnosBatchStatus::Open, None, None).await.map_err(|e| {
-        error!(error = %e, "Failed to fetch open SNOS batches");
-        JobRouteError::ProcessingError(e.to_string())
-    })?;
+    let open_snos_batches = db
+        .get_snos_batches(SnosBatchDbQuery { statuses: Some(vec![SnosBatchStatus::Open]), ..Default::default() })
+        .await
+        .map_err(|e| {
+            error!(error = %e, "Failed to fetch open SNOS batches");
+            JobRouteError::ProcessingError(e.to_string())
+        })?;
 
     let mut snos_closed = 0u64;
     for batch in &open_snos_batches {

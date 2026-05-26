@@ -344,6 +344,10 @@ impl RunCmd {
         self.is_sequencer()
     }
 
+    pub fn should_run_external_db(&self) -> bool {
+        self.should_run_mempool() && self.external_db_params.is_enabled()
+    }
+
     pub fn should_save_mempool_to_db(&self) -> bool {
         self.should_run_mempool() && !self.validator_params.no_mempool_saving
     }
@@ -353,12 +357,17 @@ impl RunCmd {
 mod tests {
     use super::RunCmd;
     use clap::Parser;
+    use figment::{
+        providers::{Format, Json},
+        Figment,
+    };
 
     #[test]
     fn full_node_does_not_run_or_save_mempool() {
         let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
 
         assert!(!run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_run_external_db());
         assert!(!run_cmd.should_save_mempool_to_db());
     }
 
@@ -367,6 +376,7 @@ mod tests {
         let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
 
         assert!(run_cmd.should_run_mempool());
+        assert!(!run_cmd.should_run_external_db());
         assert!(run_cmd.should_save_mempool_to_db());
     }
 
@@ -376,6 +386,32 @@ mod tests {
 
         assert!(run_cmd.should_run_mempool());
         assert!(!run_cmd.should_save_mempool_to_db());
+    }
+
+    #[test]
+    fn sequencer_runs_external_db_only_when_enabled() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        assert!(!disabled.should_run_external_db());
+
+        let enabled = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--external-db-enabled",
+            "--external-db-mongodb-uri",
+            "mongodb://localhost:27017",
+        ]);
+        assert!(enabled.should_run_external_db());
+    }
+
+    #[test]
+    fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let run_cmd: RunCmd =
+            Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
+
+        assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
     }
 }
 

@@ -2,12 +2,14 @@ use crate::core::config::Config;
 use alloy::transports::http::reqwest::StatusCode;
 use axum::response::IntoResponse;
 use axum::Router;
+use batches::batch_router;
 use blocks::block_router;
 use jobs::job_router;
 use public::local_route;
 use std::sync::Arc;
 
 pub mod admin;
+pub(super) mod batches;
 pub(super) mod blocks;
 pub(super) mod jobs;
 
@@ -46,6 +48,7 @@ pub(crate) fn server_router(config: Arc<Config>) -> Router {
         .nest("/", local_route())
         .nest("/api", v1_routes)
         .nest("/jobs", job_router(config.clone()))
+        .nest("/batches", batch_router(config.clone()))
         .nest("/blocks", block_router(config.clone()));
 
     // Conditionally add admin routes if enabled
