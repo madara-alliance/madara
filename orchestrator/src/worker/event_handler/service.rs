@@ -624,16 +624,8 @@ impl JobHandlerService {
                     )
                     .await;
 
-                    match move_result {
-                        Ok(()) => {
-                            workload.finish_error();
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            workload.finish_error();
-                            return Err(e);
-                        }
-                    }
+                    workload.finish_error();
+                    return move_result;
                 }
             }
             JobVerificationStatus::Pending => {
