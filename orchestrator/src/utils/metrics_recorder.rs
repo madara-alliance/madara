@@ -58,6 +58,7 @@ impl WorkKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum WorkPhase {
+    // Concrete lifecycle stage shown on dashboards.
     Process,
     Verify,
     Trigger,
@@ -77,6 +78,8 @@ impl WorkPhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum WorkClass {
+    // Broader rollup bucket so related phases can still be grouped together even
+    // if we later add more specific phases under the same class.
     JobExecution,
     JobVerification,
     Trigger,

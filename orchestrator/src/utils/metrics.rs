@@ -78,7 +78,10 @@ pub struct OrchestratorMetrics {
     pub cleanup_jobs_processed: Counter<f64>,
     pub cleanup_artifacts_tagged: Counter<f64>,
     pub cleanup_failures_total: Counter<f64>,
-    // Workload metrics
+    // Workload metrics.
+    // `workload_active_slots` is an ObservableGauge because the source of truth is
+    // a shared in-memory slot map. Reading that map at scrape time avoids racy
+    // "mutate then record" snapshots that can under-report concurrent work.
     pub workload_active_slots: ObservableGauge<u64>,
     pub workload_busy_seconds_total: Counter<f64>,
     pub workload_capacity_slots: Gauge<f64>,
