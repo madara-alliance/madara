@@ -45,7 +45,7 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
         .get_transactional_state(BasicId::new(block_n), trie.get_config())
         .map_err(|err| anyhow::anyhow!("{err:#}"))
         .context("Getting transactional state")?
-        .ok_or(StarknetRpcApiError::CannotMakeProofOnOldBlock)?;
+        .ok_or(StarknetRpcApiError::StorageProofNotSupported)?;
 
     let root_hash =
         storage.root_hash(identifier).map_err(|err| anyhow::anyhow!("{err:#}")).context("Getting root hash of trie")?;
@@ -94,7 +94,7 @@ pub fn get_storage_proof(
     };
 
     if latest.saturating_sub(block_view.block_number()) > starknet.storage_proof_config.max_distance {
-        return Err(StarknetRpcApiError::CannotMakeProofOnOldBlock);
+        return Err(StarknetRpcApiError::StorageProofNotSupported);
     }
 
     let block_hash = block_view.get_block_info()?.block_hash;
