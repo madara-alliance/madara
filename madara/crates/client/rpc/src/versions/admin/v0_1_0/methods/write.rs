@@ -12,8 +12,13 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
+use starknet_api::core::ClassHash;
 use std::time::Duration;
 use tokio::time::Instant;
+
+use crate::versions::admin::v0_1_0::{
+    DeleteCairoNativeCompiledClassesRequest, DeleteCairoNativeCompiledClassesResult,
+};
 
 const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -25,6 +30,23 @@ fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
         tokio::time::sleep(REVERT_SHUTDOWN_DELAY).await;
         ctx.cancel_global();
     });
+}
+
+fn invalid_params(message: &'static str) -> jsonrpsee::types::ErrorObjectOwned {
+    jsonrpsee::types::ErrorObject::owned(jsonrpsee::types::ErrorCode::InvalidParams.code(), message, Some(()))
+}
+
+fn native_cache_deletion_error(error: mc_class_exec::cache::NativeCacheDeletionError) -> StarknetRpcApiError {
+    StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() }
+}
+
+impl From<mc_class_exec::cache::NativeCacheDeletionResult> for DeleteCairoNativeCompiledClassesResult {
+    fn from(result: mc_class_exec::cache::NativeCacheDeletionResult) -> Self {
+        Self {
+            memory_entries_removed: result.memory_entries_removed,
+            disk_artifacts_removed: result.disk_artifacts_removed,
+        }
+    }
 }
 
 // Only include services controlled by ServiceMonitor.
@@ -276,13 +298,36 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         Ok(())
     }
+
+    async fn delete_cairo_native_compiled_classes(
+        &self,
+        request: DeleteCairoNativeCompiledClassesRequest,
+    ) -> RpcResult<DeleteCairoNativeCompiledClassesResult> {
+        let result = match (request.all, request.class_hashes) {
+            (true, None) => mc_class_exec::cache::delete_all_native_cache_classes(&self.backend.cairo_native_config),
+            (false, Some(class_hashes)) => {
+                let class_hashes = class_hashes.into_iter().map(ClassHash).collect::<Vec<_>>();
+                mc_class_exec::cache::delete_native_cache_classes(&class_hashes, &self.backend.cairo_native_config)
+            }
+            (true, Some(_)) => {
+                return Err(invalid_params("Use either `all` or `class_hashes`, not both"));
+            }
+            (false, None) => {
+                return Err(invalid_params("Set `all` to true or provide `class_hashes`"));
+            }
+        };
+
+        result.map(Into::into).map_err(native_cache_deletion_error).map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::services_to_stop_for_revert;
     use crate::{
-        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
+        test_utils::TestTransactionProvider,
+        versions::admin::v0_1_0::{DeleteCairoNativeCompiledClassesRequest, MadaraWriteRpcApiV0_1_0Server},
+        Starknet,
     };
     use mc_db::{
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
@@ -389,5 +434,37 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
         assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+    }
+
+    #[tokio::test]
+    async fn delete_cairo_native_compiled_classes_rejects_missing_selector() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let rpc = make_starknet(backend, ServiceContext::default());
+
+        let err = rpc
+            .delete_cairo_native_compiled_classes(DeleteCairoNativeCompiledClassesRequest {
+                all: false,
+                class_hashes: None,
+            })
+            .await
+            .expect_err("request must choose all or selected class hashes");
+
+        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
+    }
+
+    #[tokio::test]
+    async fn delete_cairo_native_compiled_classes_rejects_ambiguous_selector() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let rpc = make_starknet(backend, ServiceContext::default());
+
+        let err = rpc
+            .delete_cairo_native_compiled_classes(DeleteCairoNativeCompiledClassesRequest {
+                all: true,
+                class_hashes: Some(vec![Felt::from(42u64)]),
+            })
+            .await
+            .expect_err("request cannot choose all and selected class hashes together");
+
+        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
     }
 }

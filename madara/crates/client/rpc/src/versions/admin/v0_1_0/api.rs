@@ -27,6 +27,20 @@ pub enum ServiceRequest {
     Restart,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DeleteCairoNativeCompiledClassesRequest {
+    #[serde(default)]
+    pub all: bool,
+    #[serde(default)]
+    pub class_hashes: Option<Vec<Felt>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DeleteCairoNativeCompiledClassesResult {
+    pub memory_entries_removed: usize,
+    pub disk_artifacts_removed: usize,
+}
+
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
@@ -87,6 +101,16 @@ pub trait MadaraWriteRpcApi {
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
+
+    /// Deletes Cairo Native compiled classes from memory and disk cache.
+    ///
+    /// Send `{ "all": true }` to delete all compiled classes or
+    /// `{ "class_hashes": [...] }` to delete selected classes.
+    #[method(name = "deleteCairoNativeCompiledClasses")]
+    async fn delete_cairo_native_compiled_classes(
+        &self,
+        request: DeleteCairoNativeCompiledClassesRequest,
+    ) -> RpcResult<DeleteCairoNativeCompiledClassesResult>;
 }
 
 /// This is an admin method, so semver is different!

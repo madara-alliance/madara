@@ -27,6 +27,7 @@ assert_matches = { workspace = true }
 # Madara
 m-proc-macros = { workspace = true }
 mc-block-production = { workspace = true }
+mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-settlement-client = { workspace = true }
