@@ -128,13 +128,20 @@ pub(crate) fn cache_len() -> usize {
     NATIVE_CACHE.len()
 }
 
+fn cache_clear_count() -> usize {
+    let mut memory_entries_removed = 0;
+    NATIVE_CACHE.retain(|_, _| {
+        memory_entries_removed += 1;
+        false
+    });
+    memory_entries_removed
+}
+
 /// Delete every in-memory and on-disk Cairo Native compiled class.
 pub fn delete_all_native_cache_classes(config: &config::NativeConfig) -> Result<NativeCacheDeletionResult, NativeCacheDeletionError> {
     let exec_config = config.execution_config().ok_or(NativeCacheDeletionError::NativeExecutionDisabled)?;
 
-    let memory_entries_removed = cache_len();
-    NATIVE_CACHE.clear();
-
+    let memory_entries_removed = cache_clear_count();
     let disk_artifacts_removed = delete_all_disk_cache_artifacts(&exec_config.cache_dir)?;
 
     Ok(NativeCacheDeletionResult { memory_entries_removed, disk_artifacts_removed })
