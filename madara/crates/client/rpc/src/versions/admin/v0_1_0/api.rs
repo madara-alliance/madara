@@ -35,12 +35,6 @@ pub struct DeleteCairoNativeCompiledClassesRequest {
     pub class_hashes: Option<Vec<Felt>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct DeleteCairoNativeCompiledClassesResult {
-    pub memory_entries_removed: usize,
-    pub disk_artifacts_removed: usize,
-}
-
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
@@ -103,14 +97,8 @@ pub trait MadaraWriteRpcApi {
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 
     /// Deletes Cairo Native compiled classes from memory and disk cache.
-    ///
-    /// Send `{ "all": true }` to delete all compiled classes or
-    /// `{ "class_hashes": [...] }` to delete selected classes.
     #[method(name = "deleteCairoNativeCompiledClasses")]
-    async fn delete_cairo_native_compiled_classes(
-        &self,
-        request: DeleteCairoNativeCompiledClassesRequest,
-    ) -> RpcResult<DeleteCairoNativeCompiledClassesResult>;
+    async fn delete_cairo_native_compiled_classes(&self, request: DeleteCairoNativeCompiledClassesRequest) -> RpcResult<()>;
 }
 
 /// This is an admin method, so semver is different!

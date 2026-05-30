@@ -16,9 +16,7 @@ use starknet_api::core::ClassHash;
 use std::time::Duration;
 use tokio::time::Instant;
 
-use crate::versions::admin::v0_1_0::{
-    DeleteCairoNativeCompiledClassesRequest, DeleteCairoNativeCompiledClassesResult,
-};
+use crate::versions::admin::v0_1_0::DeleteCairoNativeCompiledClassesRequest;
 
 const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -34,19 +32,6 @@ fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
 
 fn invalid_params(message: &'static str) -> jsonrpsee::types::ErrorObjectOwned {
     jsonrpsee::types::ErrorObject::owned(jsonrpsee::types::ErrorCode::InvalidParams.code(), message, Some(()))
-}
-
-fn native_cache_deletion_error(error: mc_class_exec::cache::NativeCacheDeletionError) -> StarknetRpcApiError {
-    StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() }
-}
-
-impl From<mc_class_exec::cache::NativeCacheDeletionResult> for DeleteCairoNativeCompiledClassesResult {
-    fn from(result: mc_class_exec::cache::NativeCacheDeletionResult) -> Self {
-        Self {
-            memory_entries_removed: result.memory_entries_removed,
-            disk_artifacts_removed: result.disk_artifacts_removed,
-        }
-    }
 }
 
 // Only include services controlled by ServiceMonitor.
@@ -299,15 +284,12 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(())
     }
 
-    async fn delete_cairo_native_compiled_classes(
-        &self,
-        request: DeleteCairoNativeCompiledClassesRequest,
-    ) -> RpcResult<DeleteCairoNativeCompiledClassesResult> {
+    async fn delete_cairo_native_compiled_classes(&self, request: DeleteCairoNativeCompiledClassesRequest) -> RpcResult<()> {
         let result = match (request.all, request.class_hashes) {
-            (true, None) => mc_class_exec::cache::delete_all_native_cache_classes(&self.backend.cairo_native_config),
+            (true, None) => mc_class_exec::cache::delete_all_native_cache_classes(self.backend.native_cache_dir()),
             (false, Some(class_hashes)) => {
                 let class_hashes = class_hashes.into_iter().map(ClassHash).collect::<Vec<_>>();
-                mc_class_exec::cache::delete_native_cache_classes(&class_hashes, &self.backend.cairo_native_config)
+                mc_class_exec::cache::delete_native_cache_classes(&class_hashes, self.backend.native_cache_dir())
             }
             (true, Some(_)) => {
                 return Err(invalid_params("Use either `all` or `class_hashes`, not both"));
@@ -317,7 +299,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
         };
 
-        result.map(Into::into).map_err(native_cache_deletion_error).map_err(Into::into)
+        result
+            .map_err(|error| StarknetRpcApiError::ErrUnexpectedError { error: error.to_string().into() })
+            .map_err(Into::into)
     }
 }
 
@@ -450,6 +434,27 @@ mod tests {
             .expect_err("request must choose all or selected class hashes");
 
         assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
+    }
+
+    #[tokio::test]
+    async fn delete_cairo_native_compiled_classes_deletes_cache_when_native_disabled() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let cache_dir = backend.native_cache_dir().to_path_buf();
+        let rpc = make_starknet(backend, ServiceContext::default());
+        let class_hash = Felt::from(42u64);
+        let path = cache_dir.join(format!("{class_hash:#x}.so"));
+
+        std::fs::create_dir_all(&cache_dir).expect("native cache dir should be created");
+        std::fs::write(&path, b"native").expect("native artifact should be written");
+
+        rpc.delete_cairo_native_compiled_classes(DeleteCairoNativeCompiledClassesRequest {
+            all: false,
+            class_hashes: Some(vec![class_hash]),
+        })
+        .await
+        .expect("delete should work even when native execution is disabled");
+
+        assert!(!path.exists());
     }
 
     #[tokio::test]

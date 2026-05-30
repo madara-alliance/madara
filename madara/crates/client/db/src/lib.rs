@@ -135,7 +135,7 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 pub mod metrics;
@@ -306,6 +306,9 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// The `enable_native_execution` flag in the config controls whether native execution is used.
     pub cairo_native_config: Arc<NativeConfig>,
 
+    /// On-disk Cairo Native compiled class cache directory.
+    native_cache_dir: PathBuf,
+
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
@@ -358,6 +361,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
         cairo_native_config: Arc<NativeConfig>,
+        native_cache_dir: PathBuf,
     ) -> Result<Self> {
         let mut backend = Self {
             db,
@@ -368,6 +372,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             sync_status: SyncStatusCell::default(),
             watch_gas_quote: L1GasQuoteCell::default(),
             cairo_native_config,
+            native_cache_dir,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
@@ -469,6 +474,10 @@ impl<D> MadaraBackend<D> {
         guard.retain(|stored_block_n, _| *stored_block_n > block_n);
         initial_len.saturating_sub(guard.len())
     }
+
+    pub fn native_cache_dir(&self) -> &Path {
+        &self.native_cache_dir
+    }
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -515,6 +524,7 @@ impl MadaraBackend<RocksDBStorage> {
             .try_init();
 
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
+        let native_cache_dir = temp_dir.path().join("native_classes");
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
         // For tests, use default (disabled) Cairo Native config (no native execution)
         // Initialize compilation semaphore for tests (required even if native execution is disabled)
@@ -523,7 +533,7 @@ impl MadaraBackend<RocksDBStorage> {
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
-        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
+        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config, native_cache_dir).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
@@ -621,7 +631,13 @@ impl MadaraBackend<RocksDBStorage> {
             }
         };
 
-        Ok(Arc::new(Self::new_and_init(db, chain_config, config, cairo_native_config)?))
+        Ok(Arc::new(Self::new_and_init(
+            db,
+            chain_config,
+            config,
+            cairo_native_config,
+            base_path.join("native_classes"),
+        )?))
     }
 }
 
