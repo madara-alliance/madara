@@ -191,6 +191,7 @@ pub(crate) fn create_execution_context(
     block_n: u64,
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
+    block_start_time: SystemTime,
 ) -> anyhow::Result<BlockExecutionContext> {
     let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header(block_n) {
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
@@ -203,7 +204,7 @@ pub(crate) fn create_execution_context(
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
 
         let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
-        (SystemTime::now(), gas_prices)
+        (block_start_time, gas_prices)
     };
 
     Ok(BlockExecutionContext {
