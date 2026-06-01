@@ -14,6 +14,7 @@ use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
+    time::SystemTime,
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -31,6 +32,10 @@ struct ExecutorStateNewBlock {
     /// Keep the cached adaptor around to keep the cache around.
     state_adaptor: LayeredStateAdapter,
     consumed_l1_to_l2_nonces: HashSet<u64>,
+    /// Wall-clock time captured when the previous block closed.
+    /// Used as the next block's timestamp so that lazy execution context
+    /// creation does not skew the timestamp forward.
+    block_start_time: SystemTime,
 }
 
 /// Note: The reason this exists is because we want to create the new block execution context (meaning, the block header) as late as possible, as to have
@@ -230,6 +235,7 @@ impl ExecutorThread {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: cached_adapter,
             consumed_l1_to_l2_nonces: HashSet::new(),
+            block_start_time: SystemTime::now(),
         }))
     }
 
@@ -240,11 +246,19 @@ impl ExecutorThread {
         previous_l2_gas_used: u128,
     ) -> anyhow::Result<ExecutorStateExecuting> {
         let previous_l2_gas_price = state.state_adaptor.latest_gas_prices().strk_l2_gas_price;
+        // When no_empty_blocks is enabled, blocks are produced on-demand and the
+        // wait for the first tx can be arbitrarily long. Use wall-clock time so
+        // the timestamp reflects when the block actually started executing.
+        // Otherwise use the time captured when the previous block closed, so that
+        // consecutive blocks have timestamps spaced by ~block_time.
+        let block_timestamp =
+            if self.backend.chain_config().no_empty_blocks { SystemTime::now() } else { state.block_start_time };
         let exec_ctx = create_execution_context(
             &self.backend,
             state.state_adaptor.block_n(),
             previous_l2_gas_price,
             previous_l2_gas_used,
+            block_timestamp,
         )?;
 
         // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.
@@ -268,6 +282,7 @@ impl ExecutorThread {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
             consumed_l1_to_l2_nonces: HashSet::new(),
+            block_start_time: SystemTime::now(),
         }))
     }
 

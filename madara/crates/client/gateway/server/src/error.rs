@@ -64,6 +64,7 @@ fn map_rejected_tx_error(value: RejectedTransactionError) -> StarknetError {
         E::InsufficientAccountBalance => InsufficientAccountBalance,
         E::InsufficientMaxFee => InsufficientMaxFee,
         E::ValidateFailure => ValidateFailure,
+        E::InvalidProof => InvalidProof,
         E::ContractBytecodeSizeTooLarge => ContractBytecodeSizeTooLarge,
         E::ContractClassObjectSizeTooLarge => ContractClassObjectSizeTooLarge,
         E::DuplicatedTransaction => DuplicatedTransaction,
@@ -121,6 +122,13 @@ impl From<StarknetRpcApiError> for GatewayError {
             StarknetRpcApiError::MempoolLimitReached { error } => GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::TransactionLimitExceeded,
                 err_message(error, "Mempool full"),
+            )),
+            StarknetRpcApiError::InvalidProof => {
+                GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::InvalidProof, String::new()))
+            }
+            StarknetRpcApiError::EntrypointNotFound => GatewayError::StarknetError(StarknetError::new(
+                StarknetErrorCode::EntryPointNotFound,
+                "Requested entrypoint does not exist in the contract".into(),
             )),
             StarknetRpcApiError::CompilationFailed { error } => GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::CompilationFailed,

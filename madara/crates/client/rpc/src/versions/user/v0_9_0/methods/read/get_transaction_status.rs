@@ -38,8 +38,7 @@ pub async fn get_transaction_status(
         } else if res.block.is_confirmed() {
             TxnStatus::AcceptedOnL2
         } else {
-            // FIXME: rpc v0.9 TxnStatus::Preconfirmed
-            TxnStatus::AcceptedOnL2
+            TxnStatus::PreConfirmed
         };
 
         Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status })
@@ -165,6 +164,38 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::AcceptedOnL2,
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_transaction_status_pre_confirmed(
+        _logs: (),
+        starknet: Starknet,
+        tx_with_receipt: mp_block::TransactionWithReceipt,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+        let preconfirmed = mc_db::preconfirmed::PreconfirmedBlock::new_with_content(
+            mp_block::header::PreconfirmedHeader { block_number: 0, ..Default::default() },
+            [mc_db::preconfirmed::PreconfirmedExecutedTransaction {
+                transaction: tx_with_receipt,
+                state_diff: Default::default(),
+                declared_class: None,
+                arrived_at: Default::default(),
+                paid_fee_on_l1: None,
+            }],
+            std::iter::empty(),
+        );
+        backend.write_access().new_preconfirmed(preconfirmed).expect("Failed to store pre-confirmed block");
+
+        let status = get_transaction_status(&starknet, TX_HASH).await.expect("Failed to retrieve transaction status");
+
+        assert_eq!(
+            status,
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::PreConfirmed,
                 execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
             }
         );

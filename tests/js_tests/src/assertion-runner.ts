@@ -15,6 +15,7 @@ logger.setLogLevel("ERROR");
 import { RpcCaller } from "./rpc-caller";
 import { resolveValue } from "./ref-resolver";
 import { loadContractSierra, loadContractCasm } from "./contract-loader";
+import { waitForPreConfirmedTransaction } from "./transaction-waiter";
 import {
   DEFAULT_ACCOUNT_ADDRESS,
   DEFAULT_PRIVATE_KEY,
@@ -275,7 +276,10 @@ async function buildDeployAccountV3Params(
       amount: cairo.uint256("0x2386f26fc10000"),
     }),
   });
-  await provider.waitForTransaction(fundResponse.transaction_hash);
+  await waitForPreConfirmedTransaction(
+    ctx.rpcUrl,
+    fundResponse.transaction_hash,
+  );
 
   // Deploy the account
   const newAccount = new Account({

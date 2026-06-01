@@ -48,6 +48,7 @@ fn map_gateway_error(err: SequencerError) -> SubmitTransactionError {
             GWErrCode::InsufficientAccountBalance => rejected(InsufficientAccountBalance, e.message),
             GWErrCode::InsufficientMaxFee => rejected(InsufficientMaxFee, e.message),
             GWErrCode::ValidateFailure => rejected(ValidateFailure, e.message),
+            GWErrCode::InvalidProof => rejected(InvalidProof, e.message),
             GWErrCode::ContractBytecodeSizeTooLarge => rejected(ContractBytecodeSizeTooLarge, e.message),
             GWErrCode::ContractClassObjectSizeTooLarge => rejected(ContractClassObjectSizeTooLarge, e.message),
             GWErrCode::DuplicatedTransaction => rejected(DuplicatedTransaction, e.message),

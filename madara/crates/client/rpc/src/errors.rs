@@ -43,13 +43,17 @@ pub enum StorageProofTrie {
 pub enum StarknetRpcApiError {
     #[error("Failed to write transaction")]
     FailedToReceiveTxn { err: Option<Cow<'static, str>> },
+    #[error("No trace available")]
+    NoTraceAvailable { error: Cow<'static, str> },
     #[error("Contract not found")]
     ContractNotFound { error: Cow<'static, str> },
+    #[error("Requested entrypoint does not exist in the contract")]
+    EntrypointNotFound,
     #[error("Block not found")]
     BlockNotFound,
     #[error("Invalid transaction hash")]
     InvalidTxnHash,
-    #[error("Invalid tblock hash")]
+    #[error("Invalid block hash")]
     InvalidBlockHash,
     #[error("Invalid transaction index in a block")]
     InvalidTxnIndex,
@@ -113,8 +117,10 @@ pub enum StarknetRpcApiError {
     UnimplementedMethod,
     #[error("Proof limit exceeded")]
     ProofLimitExceeded { kind: StorageProofLimit, limit: usize, got: usize },
-    #[error("Cannot create a storage proof for a block that old")]
-    CannotMakeProofOnOldBlock,
+    #[error("The node doesn't support storage proofs for blocks that are too far in the past")]
+    StorageProofNotSupported,
+    #[error("The proof field in the invoke v3 transaction is invalid")]
+    InvalidProof,
 }
 
 impl StarknetRpcApiError {
@@ -157,7 +163,9 @@ impl From<&StarknetRpcApiError> for i32 {
     fn from(err: &StarknetRpcApiError) -> Self {
         match err {
             StarknetRpcApiError::FailedToReceiveTxn { .. } => 1,
+            StarknetRpcApiError::NoTraceAvailable { .. } => 10,
             StarknetRpcApiError::ContractNotFound { .. } => 20,
+            StarknetRpcApiError::EntrypointNotFound => 21,
             StarknetRpcApiError::BlockNotFound => 24,
             StarknetRpcApiError::InvalidTxnHash => 25,
             StarknetRpcApiError::InvalidBlockHash => 26,
@@ -171,6 +179,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::FailedToFetchPendingTransactions => 38,
             StarknetRpcApiError::ContractError => 40,
             StarknetRpcApiError::TxnExecutionError { .. } => 41,
+            StarknetRpcApiError::StorageProofNotSupported => 42,
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
             StarknetRpcApiError::ClassAlreadyDeclared { .. } => 51,
             StarknetRpcApiError::InvalidTxnNonce { .. } => 52,
@@ -189,10 +198,10 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
             StarknetRpcApiError::ReplacementTxnUnderpriced => 64,
             StarknetRpcApiError::FeeBelowMinimum => 65,
+            StarknetRpcApiError::InvalidProof => 69,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
-            StarknetRpcApiError::CannotMakeProofOnOldBlock => 10001,
         }
     }
 }
@@ -209,6 +218,7 @@ impl StarknetRpcApiError {
                 Some(json!({ "kind": kind, "limit": limit, "got": got }))
             }
             StarknetRpcApiError::ErrUnexpectedError { error }
+            | StarknetRpcApiError::NoTraceAvailable { error }
             | StarknetRpcApiError::ValidationFailure { error }
             | StarknetRpcApiError::MempoolLimitReached { error }
             | StarknetRpcApiError::ContractNotFound { error }
@@ -236,6 +246,7 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidBlockHash
             | StarknetRpcApiError::InvalidTxnIndex
             | StarknetRpcApiError::InvalidSubscriptionId
+            | StarknetRpcApiError::EntrypointNotFound
             | StarknetRpcApiError::TxnHashNotFound
             | StarknetRpcApiError::PageSizeTooBig
             | StarknetRpcApiError::NoBlocks
@@ -243,17 +254,26 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::TooManyKeysInFilter
             | StarknetRpcApiError::FailedToFetchPendingTransactions
             | StarknetRpcApiError::ContractError
+            | StarknetRpcApiError::StorageProofNotSupported
             | StarknetRpcApiError::ReplacementTxnUnderpriced
             | StarknetRpcApiError::FeeBelowMinimum
+            | StarknetRpcApiError::InvalidProof
             | StarknetRpcApiError::InternalServerError
-            | StarknetRpcApiError::UnimplementedMethod
-            | StarknetRpcApiError::CannotMakeProofOnOldBlock => None,
+            | StarknetRpcApiError::UnimplementedMethod => None,
         }
     }
 }
 
 impl From<mc_exec::Error> for StarknetRpcApiError {
     fn from(err: mc_exec::Error) -> Self {
+        if err.is_call_contract_entrypoint_not_found() {
+            return Self::EntrypointNotFound;
+        }
+
+        if err.is_message_fee_execution_error() {
+            return Self::ContractError;
+        }
+
         Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
     }
 }
@@ -283,6 +303,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetErrorCode::TransactionFailed => {
                 StarknetRpcApiError::FailedToReceiveTxn { err: Some(err.message.into()) }
             }
+            StarknetErrorCode::EntryPointNotFound => StarknetRpcApiError::EntrypointNotFound,
             StarknetErrorCode::ValidateFailure => StarknetRpcApiError::ValidationFailure { error: err.message.into() },
             StarknetErrorCode::TransactionLimitExceeded => {
                 StarknetRpcApiError::MempoolLimitReached { error: err.message.into() }
@@ -301,6 +322,7 @@ impl From<StarknetError> for StarknetRpcApiError {
             StarknetErrorCode::OutOfRangeBlockHash => StarknetRpcApiError::InvalidBlockHash,
             StarknetErrorCode::OutOfRangeTransactionHash => StarknetRpcApiError::InvalidTxnHash,
             StarknetErrorCode::InvalidTransactionVersion => StarknetRpcApiError::unsupported_txn_version(),
+            StarknetErrorCode::InvalidProof => StarknetRpcApiError::InvalidProof,
             _ => StarknetRpcApiError::ErrUnexpectedError { error: err.message.into() },
         }
     }
@@ -345,8 +367,9 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
             | E::InvalidContractClass
             => InvalidContractClass { error },
 
-            E::EntryPointNotFound
-            | E::TransactionFailed
+            E::EntryPointNotFound => EntrypointNotFound,
+
+            E::TransactionFailed
             | E::OutOfRangeTransactionHash
             | E::UnsupportedSelectorForFee
             | E::OutOfRangeFee
@@ -362,6 +385,7 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
             E::InvalidTransactionNonce => InvalidTxnNonce { error },
             E::ReplacementTransactionUnderpriced => ReplacementTxnUnderpriced,
             E::FeeBelowMinimum => FeeBelowMinimum,
+            E::InvalidProof => InvalidProof,
             E::UninitializedContract => ContractNotFound { error },
             E::UndeclaredClass => ClassHashNotFound { error },
             E::InvalidTransactionVersion
@@ -419,6 +443,28 @@ mod tests {
         );
         assert_eq!(i32::from(&error), 67);
         assert_eq!(error.data(), Some(json!("Mempool full: The mempool has reached the limit of 3 transactions")));
+    }
+
+    #[test]
+    fn v0_10_2_specific_error_codes_match_spec() {
+        assert_eq!(i32::from(&StarknetRpcApiError::NoTraceAvailable { error: "".into() }), 10);
+        assert_eq!(i32::from(&StarknetRpcApiError::EntrypointNotFound), 21);
+        assert_eq!(i32::from(&StarknetRpcApiError::StorageProofNotSupported), 42);
+        assert_eq!(i32::from(&StarknetRpcApiError::InvalidProof), 69);
+    }
+
+    #[test]
+    fn invalid_proof_rejection_maps_to_invalid_proof_rpc_error() {
+        let err: RejectedTransactionError = RejectedTransactionErrorKind::InvalidProof.into();
+
+        assert_eq!(StarknetRpcApiError::from(err), StarknetRpcApiError::InvalidProof);
+    }
+
+    #[test]
+    fn gateway_invalid_proof_maps_to_invalid_proof_rpc_error() {
+        let err = StarknetError::new(StarknetErrorCode::InvalidProof, String::new());
+
+        assert_eq!(StarknetRpcApiError::from(err), StarknetRpcApiError::InvalidProof);
     }
 }
 
