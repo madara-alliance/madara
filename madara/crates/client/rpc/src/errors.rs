@@ -378,7 +378,7 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
             | E::ValidateFailure // this might be a ContractError? TxnExecutionError?
             | E::UnauthorizedEntryPointForInvoke
             => ValidationFailure { error },
-            E::MempoolLimitReached => MempoolLimitReached { error },
+            E::MempoolLimitReached => ErrUnexpectedError { error },
 
             E::InvalidCompiledClassHash => CompiledClassHashMismatch { error },
             E::NotPermittedContract => NonAccount { error },
@@ -429,20 +429,20 @@ mod tests {
     use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind};
 
     #[test]
-    fn rejected_transaction_limit_maps_to_explicit_rpc_error() {
+    fn rejected_mempool_limit_maps_to_unexpected_rpc_error() {
         let error = StarknetRpcApiError::from(RejectedTransactionError::new(
             RejectedTransactionErrorKind::MempoolLimitReached,
-            "Mempool full: The mempool has reached the limit of 3 transactions",
+            "Transaction rejected: mempool capacity exceeded.",
         ));
 
         assert_eq!(
             error,
-            StarknetRpcApiError::MempoolLimitReached {
-                error: "Mempool full: The mempool has reached the limit of 3 transactions".into(),
+            StarknetRpcApiError::ErrUnexpectedError {
+                error: "Transaction rejected: mempool capacity exceeded.".into(),
             }
         );
-        assert_eq!(i32::from(&error), 67);
-        assert_eq!(error.data(), Some(json!("Mempool full: The mempool has reached the limit of 3 transactions")));
+        assert_eq!(i32::from(&error), 63);
+        assert_eq!(error.data(), Some(json!("Transaction rejected: mempool capacity exceeded.")));
     }
 
     #[test]
