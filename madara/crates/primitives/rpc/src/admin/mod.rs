@@ -37,6 +37,8 @@ const DEFAULT_GET_MEMPOOL_TXN_LIMIT: usize = 100;
 #[serde(default)]
 pub struct GetMempoolTxnHashesParams {
     pub include_ttl: bool,
+    /// Number of matching transactions to skip before returning results.
+    pub offset: usize,
     pub limit: usize,
     #[serde(flatten)]
     pub nonce_filter: MempoolNonceFilter,
@@ -44,7 +46,7 @@ pub struct GetMempoolTxnHashesParams {
 
 impl Default for GetMempoolTxnHashesParams {
     fn default() -> Self {
-        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
+        Self { include_ttl: false, offset: 0, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
     }
 }
 
@@ -53,6 +55,8 @@ impl Default for GetMempoolTxnHashesParams {
 pub struct GetMempoolTxnsParams {
     /// Include the remaining TTL for each transaction when the node has a mempool TTL configured.
     pub include_ttl: bool,
+    /// Number of matching transactions to skip before returning results.
+    pub offset: usize,
     /// Maximum number of transactions to return.
     pub limit: usize,
     #[serde(flatten)]
@@ -61,7 +65,7 @@ pub struct GetMempoolTxnsParams {
 
 impl Default for GetMempoolTxnsParams {
     fn default() -> Self {
-        Self { include_ttl: false, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
+        Self { include_ttl: false, offset: 0, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
     }
 }
 

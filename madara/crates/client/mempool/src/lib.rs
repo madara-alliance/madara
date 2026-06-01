@@ -431,6 +431,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     pub async fn snapshot_transactions_matching(
         &self,
+        offset: usize,
         limit: usize,
         include_ttl: bool,
         mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
@@ -445,6 +446,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         lock.transactions_by_arrival()
             .filter(|transaction| predicate(transaction))
+            .skip(offset)
             .take(limit)
             .map(|transaction| MempoolTransactionSnapshot {
                 transaction: transaction.clone(),
@@ -461,6 +463,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     pub async fn snapshot_transaction_hashes_matching(
         &self,
+        offset: usize,
         limit: usize,
         include_ttl: bool,
         mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
@@ -475,6 +478,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         lock.transactions_by_arrival()
             .filter(|transaction| predicate(transaction))
+            .skip(offset)
             .take(limit)
             .map(|transaction| MempoolTransactionHashSnapshot {
                 transaction_hash: transaction.hash,

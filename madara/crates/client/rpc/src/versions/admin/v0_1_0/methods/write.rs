@@ -1,4 +1,4 @@
-use super::matches_nonce_filter;
+use super::mempool::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -556,7 +556,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.removed_transaction_hashes, vec![sender_match.hash]);
-        let remaining = mempool.snapshot_transactions_matching(usize::MAX, false, |_| true).await;
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
         assert_eq!(
             remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(),
             vec![to_match_only.hash, untouched.hash]
@@ -584,7 +584,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
-        let remaining = mempool.snapshot_transactions_matching(usize::MAX, false, |_| true).await;
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
         assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
     }
 
@@ -613,7 +613,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
-        let remaining = mempool.snapshot_transactions_matching(usize::MAX, false, |_| true).await;
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
         assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
     }
 

@@ -1,4 +1,4 @@
-use super::matches_nonce_filter;
+use super::mempool::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -28,7 +28,7 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool
-            .snapshot_transaction_hashes_matching(params.limit, params.include_ttl, |tx| {
+            .snapshot_transaction_hashes_matching(params.offset, params.limit, params.include_ttl, |tx| {
                 matches_nonce_filter(tx, params.nonce_filter)
             })
             .await;
@@ -46,7 +46,7 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool
-            .snapshot_transactions_matching(params.limit, params.include_ttl, |tx| {
+            .snapshot_transactions_matching(params.offset, params.limit, params.include_ttl, |tx| {
                 matches_nonce_filter(tx, params.nonce_filter)
             })
             .await;
@@ -126,6 +126,7 @@ mod tests {
     #[tokio::test]
     async fn get_mempool_txn_hashes_returns_oldest_first_and_optional_ttl() {
         assert_eq!(GetMempoolTxnHashesParams::default().limit, 100);
+        assert_eq!(GetMempoolTxnHashesParams::default().offset, 0);
 
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
@@ -180,6 +181,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_mempool_txn_hashes_honors_offset() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = mempool_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
+        let tx2 = mempool_tx(Felt::from(22_u64), Felt::from(1_u64), Felt::from(202_u64), base + 1_000);
+        let tx3 = mempool_tx(Felt::from(33_u64), Felt::from(2_u64), Felt::from(303_u64), base + 2_000);
+
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+        mempool.accept_tx(tx3.clone()).await.unwrap();
+
+        let hashes = rpc
+            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { offset: 1, limit: 1, ..Default::default() }))
+            .await
+            .unwrap();
+
+        assert_eq!(hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx2.hash]);
+    }
+
+    #[tokio::test]
     async fn get_mempool_txn_hashes_without_configured_ttl_reports_no_remaining_ttl() {
         let mut chain_config = ChainConfig::madara_test();
         chain_config.mempool_ttl = None;
@@ -200,6 +221,7 @@ mod tests {
     #[tokio::test]
     async fn get_mempool_txns_returns_full_transactions() {
         assert_eq!(GetMempoolTxnsParams::default().limit, 100);
+        assert_eq!(GetMempoolTxnsParams::default().offset, 0);
 
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
@@ -253,5 +275,26 @@ mod tests {
         assert_eq!(transactions.len(), 2);
         assert_eq!(transactions[0].transaction.transaction_hash, tx1.hash);
         assert_eq!(transactions[1].transaction.transaction_hash, tx2.hash);
+    }
+
+    #[tokio::test]
+    async fn get_mempool_txns_honors_offset() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = mempool_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
+        let tx2 = mempool_tx(Felt::from(22_u64), Felt::from(1_u64), Felt::from(202_u64), base + 1_000);
+        let tx3 = mempool_tx(Felt::from(33_u64), Felt::from(2_u64), Felt::from(303_u64), base + 2_000);
+
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+        mempool.accept_tx(tx3.clone()).await.unwrap();
+
+        let transactions = rpc
+            .get_mempool_txns(Some(GetMempoolTxnsParams { offset: 1, limit: 1, ..Default::default() }))
+            .await
+            .unwrap();
+
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].transaction.transaction_hash, tx2.hash);
     }
 }
