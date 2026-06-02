@@ -16,7 +16,54 @@ use starknet_types_core::felt::Felt;
 // Re-export BlockId from v0.10.0 (unchanged in v0.10.2)
 pub use mp_rpc::v0_10_0::BlockId;
 
+use serde::{Deserialize, Serialize};
+
 pub mod methods;
+
+/// A batch of transactions to be executed contiguously, submitted via `madara_addTransactionBatch`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BroadcastedTxnBatch {
+    pub transactions: Vec<BroadcastedTxn>,
+}
+
+/// Per-transaction execution result of a contiguous batch.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "execution_status", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TxnBatchExecutionStatus {
+    /// Executed successfully and included in a block.
+    Succeeded,
+    /// Executed but reverted (still included in a block, fees charged).
+    Reverted { revert_reason: String },
+    /// Could not be included (e.g. Declare/DeployAccount error or internal error).
+    Rejected { reason: String },
+}
+
+/// One entry of a [`TxnBatchResult`], pairing a transaction hash with its outcome.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TxnBatchEntry {
+    pub transaction_hash: Felt,
+    #[serde(flatten)]
+    pub outcome: TxnBatchExecutionStatus,
+}
+
+/// Result of `madara_addTransactionBatch`: per-transaction outcomes, in submission order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TxnBatchResult {
+    pub transactions: Vec<TxnBatchEntry>,
+}
+
+/// Madara-specific extension methods served on the public user RPC port.
+#[versioned_rpc("V0_10_2", "madara")]
+pub trait MadaraTxBatchRpcApi {
+    /// Submit a batch of transactions to be executed contiguously: all of them are fed to the
+    /// executor back-to-back, in submission order, with no foreign transaction executed between any
+    /// two of them (across block boundaries if the batch does not fit in a single block).
+    ///
+    /// This is an *ordering* guarantee, not atomicity: individual transactions may still revert or
+    /// be rejected. The result reports each transaction's outcome in submission order.
+    #[method(name = "addTransactionBatch")]
+    async fn add_transaction_batch(&self, batch: BroadcastedTxnBatch) -> RpcResult<TxnBatchResult>;
+}
 
 #[versioned_rpc("V0_10_2", "starknet")]
 pub trait StarknetReadRpcApi {

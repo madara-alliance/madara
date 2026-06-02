@@ -416,6 +416,20 @@ impl From<SubmitTransactionError> for StarknetRpcApiError {
     }
 }
 
+impl From<mc_block_production::BatchSubmitError> for StarknetRpcApiError {
+    fn from(value: mc_block_production::BatchSubmitError) -> Self {
+        use mc_block_production::BatchSubmitError as E;
+        match value {
+            E::Internal(error) => {
+                display_internal_server_error(error);
+                StarknetRpcApiError::InternalServerError
+            }
+            // EmptyBatch / BatchTooLarge / Validation are all client-side input errors.
+            other => StarknetRpcApiError::ValidationFailure { error: Cow::Owned(other.to_string()) },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

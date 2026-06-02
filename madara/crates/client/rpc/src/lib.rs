@@ -893,6 +893,9 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
 
+    // Madara-specific extension served on the public user port (madara_ namespace).
+    rpc_api.merge(versions::user::v0_10_2::MadaraTxBatchRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+
     Ok(rpc_api)
 }
 

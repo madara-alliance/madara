@@ -325,3 +325,68 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }
+
+/// The `ExecuteBatch` command executes the whole batch as one contiguous unit and reports each
+/// transaction's outcome, in submission order, on the response channel.
+#[rstest::rstest]
+#[tokio::test]
+async fn test_execute_batch_command(
+    // long block time, no pending tick: keep the block open so the whole batch lands together.
+    #[with(Duration::from_secs(30000))]
+    #[future]
+    devnet_setup: DevnetSetup,
+) {
+    use crate::tests::make_invoke_tx;
+    use mc_devnet::{Call, Multicall, Selector};
+
+    let setup = devnet_setup.await;
+    let (commands_sender, commands) = mpsc::unbounded_channel();
+    let mut handle =
+        start_executor_thread(setup.backend.clone(), commands, Arc::new(BlockProductionMetrics::register())).unwrap();
+
+    let erc20 = Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+    let sender = &setup.contracts.0[0];
+    let receiver = &setup.contracts.0[1];
+    // Two transfers from the same account with sequential nonces (a dependent ordered batch).
+    let transfer = |nonce: Felt| {
+        make_invoke_tx(
+            sender,
+            Multicall::default().with(Call {
+                to: erc20,
+                selector: Selector::from("transfer"),
+                calldata: vec![receiver.address, Felt::from(1_000u128), Felt::ZERO],
+            }),
+            &setup.backend,
+            nonce,
+        )
+    };
+
+    let batch: BatchToExecute = [
+        make_tx(&setup.backend, BroadcastedTxn::Invoke(transfer(Felt::ZERO))),
+        make_tx(&setup.backend, BroadcastedTxn::Invoke(transfer(Felt::ONE))),
+    ]
+    .into_iter()
+    .collect();
+    let hashes: Vec<Felt> = batch.txs.iter().map(|t| t.tx_hash().to_felt()).collect();
+
+    let (response, response_rx) = oneshot::channel();
+    commands_sender.send(ExecutorCommand::ExecuteBatch { batch, response }).unwrap();
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.executed_txs.len(), 2);
+    });
+
+    // The response reports both transactions, in submission order, both succeeded.
+    let outcomes = response_rx.await.expect("batch response should be sent");
+    assert_eq!(outcomes.iter().map(|(h, _)| *h).collect::<Vec<_>>(), hashes);
+    for (_, outcome) in &outcomes {
+        assert_matches!(outcome, super::TxExecutionOutcome::Succeeded);
+    }
+
+    // Close the block to tear down the executor's open block state cleanly.
+    let (sender, recv) = oneshot::channel();
+    commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    recv.await.unwrap().unwrap();
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
+}

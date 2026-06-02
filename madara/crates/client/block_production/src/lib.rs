@@ -158,7 +158,8 @@ mod handle;
 pub mod metrics;
 mod util;
 
-pub use handle::BlockProductionHandle;
+pub use executor::{BatchExecutionOutcome, TxExecutionOutcome};
+pub use handle::{BatchSubmitError, BlockProductionHandle};
 
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
