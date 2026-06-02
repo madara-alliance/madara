@@ -66,10 +66,6 @@ impl ProviderTransactionStatus {
     pub fn not_received() -> Self {
         Self::with_status(TransactionStatus::NotReceived, None, None, None)
     }
-
-    pub fn received() -> Self {
-        Self::with_status(TransactionStatus::Received, None, None, None)
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -115,9 +111,5 @@ impl ProviderTransactionResponse {
 
     pub fn not_received() -> Self {
         Self::with_status(TransactionStatus::NotReceived, None, None, None, None, None)
-    }
-
-    pub fn received() -> Self {
-        Self::with_status(TransactionStatus::Received, None, None, None, None, None)
     }
 }

@@ -129,8 +129,9 @@
 //! ### `get_transaction_status`
 //!
 //! Fetches feeder transaction status information by transaction hash from a remote feeder gateway
-//! node. This returns transaction lifecycle states such as `RECEIVED`, `PENDING`, and accepted
-//! states, plus execution metadata when available.
+//! node. The current Starknet feeder compatibility target exposes accepted transactions as
+//! `ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`; mempool and preconfirmed-only transactions are reported
+//! as not received rather than as RPC-layer `CANDIDATE` or `PRE_CONFIRMED` states.
 //!
 //! ```json5
 //! {
