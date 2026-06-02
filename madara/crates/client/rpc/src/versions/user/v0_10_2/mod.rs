@@ -167,7 +167,7 @@ pub trait StarknetReadRpcApi {
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult>;
 
-    /// Non-spec in v0.10.2; kept for backward compatibility.
+    /// Get the compiled CASM for the given Sierra class hash.
     #[method(name = "getCompiledCasm")]
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
 }

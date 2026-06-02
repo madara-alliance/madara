@@ -64,7 +64,7 @@ impl From<TransactionPreValidationError> for SubmitTransactionError {
         match err {
             E::InvalidNonce { .. } => rejected(InvalidTransactionNonce, format!("{err:#}")),
             E::StateError(err) => err.into(),
-            err @ E::InvalidProofFacts(_) => rejected(ValidateFailure, format!("{err:#}")),
+            err @ E::InvalidProofFacts(_) => rejected(InvalidProof, format!("{err:#}")),
             err @ E::TransactionFeeError(_) => rejected(ValidateFailure, format!("{err:#}")),
         }
     }

@@ -22,7 +22,7 @@ pub(crate) async fn main_router(
 ) -> Result<Response<String>, Infallible> {
     match (path, config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
-        (path, true, _) if path.starts_with("gateway/") => {
+        (path, _, true) if path.starts_with("gateway/") => {
             Ok(gateway_router(req, path, add_transaction_provider).await?)
         }
         (path, true, _) if path.starts_with("feeder_gateway/") => Ok(feeder_gateway_router(req, path, backend).await?),
@@ -33,7 +33,7 @@ pub(crate) async fn main_router(
             Ok(handle_add_validated_transaction(req, submit_validated).await.unwrap_or_else(Into::into))
         }
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
-        (path, _, false) if path.starts_with("gateway/") => Ok(service_unavailable_response("Feeder")),
+        (path, _, false) if path.starts_with("gateway/") => Ok(service_unavailable_response("Gateway")),
         _ => {
             tracing::debug!(target: "feeder_gateway", "Main router received invalid request: {path}");
             Ok(not_found_response())

@@ -171,6 +171,8 @@ pub enum StarknetErrorCode {
     InsufficientMaxFee,
     #[serde(rename = "StarknetErrorCode.VALIDATE_FAILURE")]
     ValidateFailure,
+    #[serde(rename = "StarknetErrorCode.INVALID_PROOF")]
+    InvalidProof,
     #[serde(rename = "StarknetErrorCode.CONTRACT_BYTECODE_SIZE_TOO_LARGE")]
     ContractBytecodeSizeTooLarge,
     #[serde(rename = "StarknetErrorCode.CONTRACT_CLASS_OBJECT_SIZE_TOO_LARGE")]
