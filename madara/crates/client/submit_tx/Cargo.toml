@@ -41,5 +41,4 @@ mp-utils.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-mc-class-exec.workspace = true
-tempfile.workspace = true
+mc-db = { workspace = true, features = ["testing"] }

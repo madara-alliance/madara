@@ -49,7 +49,6 @@ tracing.workspace = true
 [dev-dependencies]
 async-trait.workspace = true
 rstest.workspace = true
-mc-class-exec.workspace = true
+mc-db = { workspace = true, features = ["testing"] }
 mc-mempool.workspace = true
 mp-chain-config.workspace = true
-tempfile.workspace = true

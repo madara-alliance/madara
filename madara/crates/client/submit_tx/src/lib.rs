@@ -169,7 +169,7 @@ fn transaction_status_from_block<D: MadaraStorageRead>(
 ) -> anyhow::Result<(TransactionStatus, Option<mp_convert::Felt>, Option<u64>)> {
     let block_info = block.get_block_info()?;
     if block.as_preconfirmed().is_some() {
-        Ok((TransactionStatus::PreConfirmed, None, Some(block_info.block_number())))
+        Ok((TransactionStatus::Pending, None, Some(block_info.block_number())))
     } else {
         Ok((accepted_status(block.is_on_l1()), block_info.block_hash().copied(), Some(block_info.block_number())))
     }
@@ -182,7 +182,7 @@ fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
 ) -> anyhow::Result<ProviderTransactionStatus> {
     let fallback_status = accepted_status(is_on_l1);
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
-        return Ok(ProviderTransactionStatus::with_status(fallback_status, None, None, None));
+        return Ok(ProviderTransactionStatus::not_received());
     };
 
     let transaction = executed.get_transaction()?;
@@ -195,20 +195,12 @@ fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
 fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
     transaction_hash: mp_convert::Felt,
     mempool: &Mempool<D>,
-    block_number: u64,
-    transaction_index: u64,
-    is_on_l1: bool,
+    _block_number: u64,
+    _transaction_index: u64,
+    _is_on_l1: bool,
 ) -> anyhow::Result<ProviderTransactionResponse> {
-    let fallback_status = accepted_status(is_on_l1);
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
-        return Ok(ProviderTransactionResponse::with_status(
-            fallback_status,
-            None,
-            None,
-            Some(block_number),
-            Some(transaction_index),
-            None,
-        ));
+        return Ok(ProviderTransactionResponse::not_received());
     };
 
     feeder_transaction_from_backend_view(&executed)
@@ -217,13 +209,11 @@ fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
 fn feeder_status_from_preconfirmed_mempool(status: &PreConfirmationStatus) -> ProviderTransactionStatus {
     match status {
         PreConfirmationStatus::Received(_) => ProviderTransactionStatus::received(),
-        PreConfirmationStatus::Candidate { .. } => {
-            ProviderTransactionStatus::with_status(TransactionStatus::Candidate, None, None, None)
-        }
+        PreConfirmationStatus::Candidate { .. } => ProviderTransactionStatus::received(),
         PreConfirmationStatus::Executed { transaction, .. } => {
             let (execution_status, tx_revert_reason) = execution_status(&transaction.transaction.receipt);
             ProviderTransactionStatus::with_status(
-                TransactionStatus::PreConfirmed,
+                TransactionStatus::Pending,
                 Some(execution_status),
                 None,
                 tx_revert_reason,
@@ -261,7 +251,7 @@ fn feeder_transaction_from_preconfirmed_mempool(status: &PreConfirmationStatus) 
         ),
         PreConfirmationStatus::Candidate { view, transaction_index, transaction } => {
             ProviderTransactionResponse::with_status(
-                TransactionStatus::Candidate,
+                TransactionStatus::Received,
                 None,
                 None,
                 Some(view.header.block_number),
@@ -274,7 +264,7 @@ fn feeder_transaction_from_preconfirmed_mempool(status: &PreConfirmationStatus) 
             let transaction = Some(gateway_executed_transaction(&transaction.transaction));
 
             ProviderTransactionResponse::with_status(
-                TransactionStatus::PreConfirmed,
+                TransactionStatus::Pending,
                 Some(execution_status),
                 None,
                 Some(view.header.block_number),
@@ -487,19 +477,7 @@ mod tests {
 
     fn backend_for_tests() -> Arc<MadaraBackend> {
         let chain_config = Arc::new(mp_chain_config::ChainConfig::madara_test());
-        let builder = mc_class_exec::config::NativeConfig::builder();
-        let max_concurrent = builder.max_concurrent_compilations();
-        mc_class_exec::init_compilation_semaphore(max_concurrent);
-
-        let base_path = tempfile::TempDir::with_prefix("madara-submit-tx-test").unwrap().keep();
-        mc_db::MadaraBackend::open_rocksdb(
-            &base_path,
-            chain_config,
-            Default::default(),
-            mc_db::rocksdb::RocksDBConfig::default(),
-            Arc::new(builder.build()),
-        )
-        .expect("backend should open")
+        mc_db::MadaraBackend::open_for_testing(chain_config)
     }
 
     fn confirmed_block(hash: Felt) -> mp_block::FullBlockWithoutCommitments {
@@ -539,8 +517,8 @@ mod tests {
             transaction: Arc::clone(&tx),
         });
 
-        assert_eq!(response.status, TransactionStatus::Candidate);
-        assert_eq!(response.finality_status, TransactionStatus::Candidate);
+        assert_eq!(response.status, TransactionStatus::Received);
+        assert_eq!(response.finality_status, TransactionStatus::Received);
         assert_eq!(response.block_number, Some(0));
         assert_eq!(response.transaction_index, Some(3));
         assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(Felt::THREE));
@@ -558,8 +536,8 @@ mod tests {
             transaction: Arc::clone(&tx),
         });
 
-        assert_eq!(response.status, TransactionStatus::PreConfirmed);
-        assert_eq!(response.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.status, TransactionStatus::Pending);
+        assert_eq!(response.finality_status, TransactionStatus::Pending);
         assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
         assert_eq!(response.block_number, Some(0));
         assert_eq!(response.transaction_index, Some(0));
@@ -579,8 +557,8 @@ mod tests {
             transaction: tx,
         });
 
-        assert_eq!(status.tx_status, TransactionStatus::PreConfirmed);
-        assert_eq!(status.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(status.tx_status, TransactionStatus::Pending);
+        assert_eq!(status.finality_status, TransactionStatus::Pending);
         assert_eq!(status.execution_status, Some(TransactionExecutionStatus::Reverted));
         assert_eq!(status.tx_revert_reason.as_deref(), Some("boom"));
     }
@@ -622,5 +600,27 @@ mod tests {
         assert_eq!(response.block_number, Some(0));
         assert_eq!(response.transaction_index, Some(0));
         assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(hash));
+    }
+
+    #[tokio::test]
+    async fn mempool_confirmed_status_without_backend_record_is_not_received() {
+        let hash = Felt::from_hex_unchecked("0x8");
+        let backend = backend_for_tests();
+        let mempool = Mempool::new(backend, MempoolConfig::default());
+
+        let status = feeder_status_from_confirmed_mempool(hash, &mempool, false).unwrap();
+
+        assert_eq!(status, ProviderTransactionStatus::not_received());
+    }
+
+    #[tokio::test]
+    async fn mempool_confirmed_transaction_without_backend_record_is_not_received() {
+        let hash = Felt::from_hex_unchecked("0x9");
+        let backend = backend_for_tests();
+        let mempool = Mempool::new(backend, MempoolConfig::default());
+
+        let response = feeder_transaction_from_confirmed_mempool(hash, &mempool, 7, 2, false).unwrap();
+
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 }

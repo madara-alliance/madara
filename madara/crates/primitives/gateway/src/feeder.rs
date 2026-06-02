@@ -14,8 +14,6 @@ pub enum TransactionStatus {
     AcceptedOnL2,
     Reverted,
     Aborted,
-    Candidate,
-    PreConfirmed,
 }
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

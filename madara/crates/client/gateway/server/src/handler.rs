@@ -166,7 +166,7 @@ fn transaction_status_from_block(
         let status = if block.is_on_l1() { TransactionStatus::AcceptedOnL1 } else { TransactionStatus::AcceptedOnL2 };
         Ok((status, Some(block_info.block_hash), Some(block_info.header.block_number)))
     } else {
-        Ok((TransactionStatus::PreConfirmed, None, Some(block.block_number())))
+        Ok((TransactionStatus::Pending, None, Some(block.block_number())))
     }
 }
 
@@ -743,19 +743,7 @@ mod tests {
 
     fn backend_for_tests() -> Arc<MadaraBackend> {
         let chain_config = Arc::new(mp_chain_config::ChainConfig::madara_test());
-        let builder = mc_class_exec::config::NativeConfig::builder();
-        let max_concurrent = builder.max_concurrent_compilations();
-        mc_class_exec::init_compilation_semaphore(max_concurrent);
-
-        let base_path = tempfile::TempDir::with_prefix("madara-gateway-server-test").unwrap().keep();
-        mc_db::MadaraBackend::open_rocksdb(
-            &base_path,
-            chain_config,
-            Default::default(),
-            mc_db::rocksdb::RocksDBConfig::default(),
-            Arc::new(builder.build()),
-        )
-        .expect("backend should open")
+        mc_db::MadaraBackend::open_for_testing(chain_config)
     }
 
     #[derive(Clone)]
@@ -961,8 +949,8 @@ mod tests {
 
         let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
 
-        assert_eq!(status.tx_status, TransactionStatus::PreConfirmed);
-        assert_eq!(status.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(status.tx_status, TransactionStatus::Pending);
+        assert_eq!(status.finality_status, TransactionStatus::Pending);
         assert_eq!(status.execution_status, Some(TransactionExecutionStatus::Succeeded));
         assert_eq!(status.block_hash, None);
     }
@@ -1108,8 +1096,8 @@ mod tests {
 
         let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
 
-        assert_eq!(response.status, TransactionStatus::PreConfirmed);
-        assert_eq!(response.finality_status, TransactionStatus::PreConfirmed);
+        assert_eq!(response.status, TransactionStatus::Pending);
+        assert_eq!(response.finality_status, TransactionStatus::Pending);
         assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
         assert_eq!(response.block_hash, None);
         assert_eq!(response.block_number, Some(0));

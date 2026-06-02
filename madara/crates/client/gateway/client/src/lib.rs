@@ -129,8 +129,8 @@
 //! ### `get_transaction_status`
 //!
 //! Fetches feeder transaction status information by transaction hash from a remote feeder gateway
-//! node. This returns feeder-specific transaction lifecycle states such as `RECEIVED`,
-//! `CANDIDATE`, `PRE_CONFIRMED`, and accepted states, plus execution metadata when available.
+//! node. This returns transaction lifecycle states such as `RECEIVED`, `PENDING`, and accepted
+//! states, plus execution metadata when available.
 //!
 //! ```json5
 //! {
