@@ -44,7 +44,12 @@ impl GatewayProvider {
                 Ok(result) => return Ok(result),
                 Err(e) => {
                     if attempt < MAX_RETRIES - 1 {
-                        tracing::warn!("Failed to get with {:?}, retrying", e);
+                        tracing::debug!(
+                            attempt = attempt + 1,
+                            max_retries = MAX_RETRIES,
+                            error = ?e,
+                            "Retrying gateway client GET request after failure"
+                        );
                         // Exponential backoff: BASE_DELAY_MS * BACKOFF_BASE^attempt
                         // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms, attempt 3: 800ms, attempt 4: 1600ms
                         let delay_ms = BASE_DELAY_MS * (BACKOFF_BASE as u64).pow(attempt as u32);

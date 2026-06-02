@@ -289,6 +289,7 @@
 
 mod builder;
 mod methods;
+mod metrics;
 mod request_builder;
 mod submit_tx;
 

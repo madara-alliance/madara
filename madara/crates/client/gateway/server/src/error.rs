@@ -77,11 +77,20 @@ fn map_rejected_tx_error(value: RejectedTransactionError) -> StarknetError {
 impl From<SubmitTransactionError> for GatewayError {
     fn from(value: SubmitTransactionError) -> Self {
         match value {
+            SubmitTransactionError::Internal(error) => error.into(),
+            error => Self::from_submit_transaction_error_unlogged(error),
+        }
+    }
+}
+
+impl GatewayError {
+    pub(crate) fn from_submit_transaction_error_unlogged(value: SubmitTransactionError) -> Self {
+        match value {
             SubmitTransactionError::Unsupported => Self::Unsupported,
             SubmitTransactionError::Rejected(rejected_transaction_error) => {
                 Self::StarknetError(map_rejected_tx_error(rejected_transaction_error))
             }
-            SubmitTransactionError::Internal(error) => error.into(),
+            SubmitTransactionError::Internal(_) => Self::InternalServerError,
         }
     }
 }

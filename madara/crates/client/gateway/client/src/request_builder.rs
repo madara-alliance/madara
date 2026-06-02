@@ -11,9 +11,12 @@ use mp_rpc::v0_8_1::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
+use std::time::{Duration, Instant};
 use std::{borrow::Cow, collections::HashMap};
 use tower::Service;
 use url::Url;
+
+use crate::metrics::{error_kind, metrics, request_labels_from_url, request_result, RequestLabels};
 
 pub(crate) fn url_join_segment(url: &mut Url, segment: &str) {
     if url.path_segments().expect("Invalid base URL").next_back().is_some_and(|e| e.is_empty()) {
@@ -79,20 +82,18 @@ impl<'a> RequestBuilder<'a> {
     where
         T: DeserializeOwned,
     {
-        unpack(self.send_get_raw().await?).await
+        let telemetry = self.telemetry("GET");
+        let start = Instant::now();
+        let response = self.send_request(Method::GET, Bytes::new(), None, &telemetry, start).await?;
+        unpack(response, &telemetry, start).await
     }
 
+    #[allow(dead_code)]
     pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
-        let uri = self.build_uri()?;
-
-        let mut req_builder = Request::builder().method(Method::GET).uri(uri);
-
-        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
-
-        let req = req_builder.body(Full::new(Bytes::from(String::new())))?;
-
-        let response: Response<Incoming> =
-            self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+        let telemetry = self.telemetry("GET");
+        let start = Instant::now();
+        let response = self.send_request(Method::GET, Bytes::new(), None, &telemetry, start).await?;
+        record_successful_request(&telemetry, response.status(), start.elapsed());
         Ok(response)
     }
 
@@ -101,38 +102,67 @@ impl<'a> RequestBuilder<'a> {
         T: DeserializeOwned,
         D: Serialize,
     {
-        let uri = self.build_uri()?;
+        let telemetry = self.telemetry("POST");
+        let start = Instant::now();
 
-        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
-
-        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
-
-        let body = bincode::options()
-            .with_little_endian()
-            .serialize(&body)
-            .map_err(|err| SequencerError::HttpCallError(err))?; // Fixed endinaness is important.
+        let body = bincode::options().with_little_endian().serialize(&body).map_err(|err| {
+            let error = SequencerError::HttpCallError(err);
+            record_failed_request(&telemetry, None, error_kind::REQUEST_SERIALIZE, start.elapsed(), &error);
+            error
+        })?; // Fixed endinaness is important.
         let body = Bytes::from(body);
 
-        let req = req_builder.body(Full::new(body))?;
-
-        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+        let response = self.send_request(Method::POST, body, None, &telemetry, start).await?;
 
         let http_status = response.status();
-        let whole_body = response.collect().await?.aggregate();
+        let whole_body = response
+            .collect()
+            .await
+            .map_err(|error| {
+                let error = SequencerError::HyperError(error);
+                record_failed_request(&telemetry, Some(http_status), error_kind::TRANSPORT, start.elapsed(), &error);
+                error
+            })?
+            .aggregate();
 
         if http_status == StatusCode::TOO_MANY_REQUESTS {
-            return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
+            let error = StarknetError::rate_limited();
+            record_starknet_failure(&telemetry, http_status, start.elapsed(), &error);
+            return Err(SequencerError::StarknetError(error));
         } else if !http_status.is_success() {
-            let starknet_error = serde_json::from_reader::<_, StarknetError>(whole_body.reader())
-                .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error })?;
+            let starknet_error =
+                serde_json::from_reader::<_, StarknetError>(whole_body.reader()).map_err(|serde_error| {
+                    let error = SequencerError::InvalidStarknetError { http_status, serde_error };
+                    record_failed_request(
+                        &telemetry,
+                        Some(http_status),
+                        error_kind::INVALID_STARKNET,
+                        start.elapsed(),
+                        &error,
+                    );
+                    error
+                })?;
 
+            record_starknet_failure(&telemetry, http_status, start.elapsed(), &starknet_error);
             return Err(starknet_error.into());
         }
 
         let res = bincode::options()
             .with_little_endian() // Fixed endinaness is important.
             .deserialize_from(whole_body.reader())
-            .map_err(|err| SequencerError::HttpCallError(err))?;
+            .map_err(|err| {
+                let error = SequencerError::HttpCallError(err);
+                record_failed_request(
+                    &telemetry,
+                    Some(http_status),
+                    error_kind::RESPONSE_DESERIALIZE,
+                    start.elapsed(),
+                    &error,
+                );
+                error
+            })?;
+
+        record_successful_request(&telemetry, http_status, start.elapsed());
 
         Ok(res)
     }
@@ -142,18 +172,56 @@ impl<'a> RequestBuilder<'a> {
         T: DeserializeOwned,
         D: Serialize,
     {
-        let uri = self.build_uri()?;
+        let telemetry = self.telemetry("POST");
+        let start = Instant::now();
 
-        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
+        let body = serde_json::to_string(&body).map_err(|serde_error| {
+            let error = SequencerError::SerializeRequest(serde_error);
+            record_failed_request(&telemetry, None, error_kind::REQUEST_SERIALIZE, start.elapsed(), &error);
+            error
+        })?;
+
+        let response =
+            self.send_request(Method::POST, Bytes::from(body), Some("application/json"), &telemetry, start).await?;
+        unpack(response, &telemetry, start).await
+    }
+
+    fn telemetry(&self, http_method: &'static str) -> RequestTelemetry {
+        let labels = request_labels_from_url(&self.url);
+        RequestTelemetry { labels, http_method }
+    }
+
+    async fn send_request(
+        self,
+        http_method: Method,
+        body: Bytes,
+        content_type: Option<&'static str>,
+        telemetry: &RequestTelemetry,
+        start: Instant,
+    ) -> Result<Response<Incoming>, SequencerError> {
+        let uri = self.build_uri().inspect_err(|error| {
+            record_failed_request(telemetry, None, error_kind::REQUEST_BUILD, start.elapsed(), &error);
+        })?;
+
+        let mut req_builder = Request::builder().method(http_method).uri(uri);
 
         req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let body = serde_json::to_string(&body).map_err(SequencerError::SerializeRequest)?;
+        if let Some(content_type) = content_type {
+            req_builder = req_builder.header(CONTENT_TYPE, content_type);
+        }
 
-        let req = req_builder.header(CONTENT_TYPE, "application/json").body(Full::new(Bytes::from(body)))?;
+        let req = req_builder.body(Full::new(body)).map_err(|http_error| {
+            let error = SequencerError::HttpError(http_error);
+            record_failed_request(telemetry, None, error_kind::REQUEST_BUILD, start.elapsed(), &error);
+            error
+        })?;
 
-        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
-        unpack(response).await
+        self.client.clone().call(req).await.map_err(|error| {
+            let error = SequencerError::HttpCallError(error);
+            record_failed_request(telemetry, None, error_kind::TRANSPORT, start.elapsed(), &error);
+            error
+        })
     }
 
     fn build_uri(&self) -> Result<Uri, SequencerError> {
@@ -170,24 +238,146 @@ impl<'a> RequestBuilder<'a> {
     }
 }
 
-async fn unpack<T>(response: Response<Incoming>) -> Result<T, SequencerError>
+#[derive(Clone, Copy, Debug)]
+struct RequestTelemetry {
+    labels: RequestLabels,
+    http_method: &'static str,
+}
+
+async fn unpack<T>(
+    response: Response<Incoming>,
+    telemetry: &RequestTelemetry,
+    start: Instant,
+) -> Result<T, SequencerError>
 where
     T: ::serde::de::DeserializeOwned,
 {
     let http_status = response.status();
-    let whole_body = response.collect().await?.aggregate();
+    let whole_body = response
+        .collect()
+        .await
+        .map_err(|error| {
+            let error = SequencerError::HyperError(error);
+            record_failed_request(telemetry, Some(http_status), error_kind::TRANSPORT, start.elapsed(), &error);
+            error
+        })?
+        .aggregate();
 
     if http_status == StatusCode::TOO_MANY_REQUESTS {
-        return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
+        let error = StarknetError::rate_limited();
+        record_starknet_failure(telemetry, http_status, start.elapsed(), &error);
+        return Err(SequencerError::StarknetError(error));
     } else if !http_status.is_success() {
-        let starknet_error = serde_json::from_reader::<_, StarknetError>(whole_body.reader())
-            .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error })?;
+        let starknet_error =
+            serde_json::from_reader::<_, StarknetError>(whole_body.reader()).map_err(|serde_error| {
+                let error = SequencerError::InvalidStarknetError { http_status, serde_error };
+                record_failed_request(
+                    telemetry,
+                    Some(http_status),
+                    error_kind::INVALID_STARKNET,
+                    start.elapsed(),
+                    &error,
+                );
+                error
+            })?;
 
+        record_starknet_failure(telemetry, http_status, start.elapsed(), &starknet_error);
         return Err(starknet_error.into());
     }
 
-    let res = serde_json::from_reader(whole_body.reader())
-        .map_err(|serde_error| SequencerError::DeserializeBody { serde_error })?;
+    let res = serde_json::from_reader(whole_body.reader()).map_err(|serde_error| {
+        let error = SequencerError::DeserializeBody { serde_error };
+        record_failed_request(telemetry, Some(http_status), error_kind::RESPONSE_DESERIALIZE, start.elapsed(), &error);
+        error
+    })?;
+
+    record_successful_request(telemetry, http_status, start.elapsed());
 
     Ok(res)
+}
+
+fn record_successful_request(telemetry: &RequestTelemetry, http_status: StatusCode, duration: Duration) {
+    metrics().record_request(
+        telemetry.labels,
+        telemetry.http_method,
+        request_result::SUCCESS,
+        error_kind::NONE,
+        Some(http_status),
+        duration,
+    );
+}
+
+fn record_starknet_failure(
+    telemetry: &RequestTelemetry,
+    http_status: StatusCode,
+    duration: Duration,
+    error: &StarknetError,
+) {
+    metrics().record_request(
+        telemetry.labels,
+        telemetry.http_method,
+        request_result::FAILURE,
+        error_kind::STARKNET,
+        Some(http_status),
+        duration,
+    );
+
+    tracing::warn!(
+        target: "gateway_client_errors",
+        service = telemetry.labels.service,
+        endpoint = telemetry.labels.endpoint,
+        http_method = telemetry.http_method,
+        status_code = http_status.as_u16(),
+        error_kind = error_kind::STARKNET,
+        starknet_error_code = ?error.code,
+        duration_ms = duration.as_secs_f64() * 1000.0,
+        message = %error.message,
+        "Gateway client request failed"
+    );
+}
+
+fn record_failed_request(
+    telemetry: &RequestTelemetry,
+    http_status: Option<StatusCode>,
+    failure_kind: &'static str,
+    duration: Duration,
+    error: &impl std::fmt::Display,
+) {
+    metrics().record_request(
+        telemetry.labels,
+        telemetry.http_method,
+        request_result::FAILURE,
+        failure_kind,
+        http_status,
+        duration,
+    );
+
+    let status_code = http_status.map(|status| status.as_u16()).unwrap_or_default();
+    let duration_ms = duration.as_secs_f64() * 1000.0;
+
+    if matches!(failure_kind, error_kind::INVALID_STARKNET) {
+        tracing::warn!(
+            target: "gateway_client_errors",
+            service = telemetry.labels.service,
+            endpoint = telemetry.labels.endpoint,
+            http_method = telemetry.http_method,
+            status_code = status_code,
+            error_kind = failure_kind,
+            duration_ms = duration_ms,
+            error = %error,
+            "Gateway client request failed"
+        );
+    } else {
+        tracing::error!(
+            target: "gateway_client_errors",
+            service = telemetry.labels.service,
+            endpoint = telemetry.labels.endpoint,
+            http_method = telemetry.http_method,
+            status_code = status_code,
+            error_kind = failure_kind,
+            duration_ms = duration_ms,
+            error = %error,
+            "Gateway client request failed"
+        );
+    }
 }
