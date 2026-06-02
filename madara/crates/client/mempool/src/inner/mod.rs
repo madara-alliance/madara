@@ -5,7 +5,7 @@ use crate::inner::{
     limits::{MempoolLimitReached, MempoolLimiter},
     ready_queue::ReadyQueue,
     timestamp_queue::TimestampQueue,
-    tx::{EvictionScore, MempoolTransaction, ScoreFunction},
+    tx::{EvictionScore, MempoolTransaction, ScoreFunction, TxKey},
 };
 use mp_chain_config::MempoolFullPolicy;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
@@ -13,7 +13,6 @@ use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
 };
-use starknet_types_core::felt::Felt;
 use std::{collections::HashSet, fmt, time::Duration};
 
 pub(crate) mod accounts;
@@ -333,37 +332,74 @@ impl InnerMempool {
     }
 
     pub fn transactions_by_arrival(&self) -> impl Iterator<Item = &ValidatedTransaction> {
-        self.timestamp_queue.iter().map(|tx_key| {
-            &self
-                .accounts
-                .get_tx_by_key(tx_key)
-                .expect("Invariant violation: timestamp queue key must resolve to a transaction")
-                .inner
+        self.timestamp_queue.iter().filter_map(|tx_key| {
+            let tx = self.accounts.get_tx_by_key(tx_key);
+            if tx.is_none() {
+                tracing::warn!(
+                    target: "mempool",
+                    "Skipping stale timestamp queue key while iterating mempool: {tx_key:?}"
+                );
+            }
+            tx.map(|tx| &tx.inner)
         })
     }
 
-    pub fn remove_transactions_by_hashes(
+    pub fn remove_transactions_matching(
         &mut self,
-        tx_hashes: &HashSet<Felt>,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) {
-        if tx_hashes.is_empty() {
-            return;
-        }
-
         let tx_keys = self
             .timestamp_queue
             .iter()
             .filter_map(|tx_key| {
-                let tx = self
-                    .accounts
-                    .get_tx_by_key(tx_key)
-                    .expect("Invariant violation: timestamp queue key must resolve to a transaction");
-                tx_hashes.contains(&tx.inner.hash).then_some(*tx_key)
+                let Some(tx) = self.accounts.get_tx_by_key(tx_key) else {
+                    tracing::warn!(
+                        target: "mempool",
+                        "Skipping stale timestamp queue key while selecting mempool txs for removal: {tx_key:?}"
+                    );
+                    return None;
+                };
+                predicate(&tx.inner).then_some(*tx_key)
             })
             .collect::<Vec<_>>();
 
+        self.remove_transactions_by_keys(tx_keys, removed_txs);
+    }
+
+    pub fn remove_transactions_by_hashes(
+        &mut self,
+        tx_hashes: impl IntoIterator<Item = TransactionHash>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
+        let tx_keys = tx_hashes
+            .into_iter()
+            .filter_map(|tx_hash| {
+                let tx_key = self.by_tx_hash.get(&tx_hash).copied();
+                if tx_key.is_none() {
+                    tracing::debug!(target: "mempool", "Skipping missing tx hash during mempool flush: {tx_hash:?}");
+                }
+                tx_key
+            })
+            .collect::<HashSet<_>>();
+
+        if tx_keys.is_empty() {
+            return;
+        }
+
+        self.remove_transactions_by_keys(tx_keys, removed_txs);
+    }
+
+    fn remove_transactions_by_keys(
+        &mut self,
+        tx_keys: impl IntoIterator<Item = TxKey>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
         for tx_key in tx_keys {
+            let Some(_) = self.accounts.get_tx_by_key(&tx_key) else {
+                tracing::warn!(target: "mempool", "Skipping stale mempool tx key during removal: {tx_key:?}");
+                continue;
+            };
             let account_update = self.accounts.remove_tx(&tx_key);
             self.apply_update(account_update, removed_txs);
         }

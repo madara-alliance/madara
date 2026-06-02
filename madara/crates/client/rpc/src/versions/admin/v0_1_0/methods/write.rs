@@ -348,7 +348,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult> {
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let flush_mode = FlushMode::from_params(params)?;
-        let removed_transactions = mempool.flush_transactions_matching(|tx| flush_mode.matches(tx)).await;
+        let removed_transactions = match flush_mode {
+            FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
+                if nonce_filter == MempoolNonceFilter::default() {
+                    mempool.flush_transactions_by_hashes(transaction_hashes).await
+                } else {
+                    mempool
+                        .flush_transactions_matching(|tx| {
+                            transaction_hashes.contains(&tx.hash) && matches_nonce_filter(tx, nonce_filter)
+                        })
+                        .await
+                }
+            }
+            flush_mode => mempool.flush_transactions_matching(|tx| flush_mode.matches(tx)).await,
+        };
 
         Ok(FlushMempoolTxnsResult {
             removed_transaction_hashes: removed_transactions.into_iter().map(|tx| tx.hash).collect(),

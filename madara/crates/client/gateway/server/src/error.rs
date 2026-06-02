@@ -119,10 +119,6 @@ impl From<StarknetRpcApiError> for GatewayError {
             StarknetRpcApiError::ValidationFailure { error } => {
                 GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::ValidateFailure, error.into()))
             }
-            StarknetRpcApiError::MempoolLimitReached { error } => GatewayError::StarknetError(StarknetError::new(
-                StarknetErrorCode::TransactionLimitExceeded,
-                err_message(error, "Mempool full"),
-            )),
             StarknetRpcApiError::InvalidProof => {
                 GatewayError::StarknetError(StarknetError::new(StarknetErrorCode::InvalidProof, String::new()))
             }
@@ -169,26 +165,6 @@ impl From<StarknetRpcApiError> for GatewayError {
                 format!("An unexpected error occurred: {}", error),
             )),
             e => anyhow::Error::from(e).into(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rpc_transaction_limit_maps_to_gateway_transaction_limit_exceeded() {
-        let error = GatewayError::from(StarknetRpcApiError::MempoolLimitReached {
-            error: "Mempool full: The mempool has reached the limit of 3 transactions".into(),
-        });
-
-        match error {
-            GatewayError::StarknetError(error) => {
-                assert_eq!(error.code, StarknetErrorCode::TransactionLimitExceeded);
-                assert_eq!(error.message, "Mempool full: The mempool has reached the limit of 3 transactions");
-            }
-            other => panic!("expected gateway Starknet error, got {other:?}"),
         }
     }
 }
