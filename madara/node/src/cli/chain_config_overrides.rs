@@ -70,6 +70,9 @@ pub struct ChainConfigOverrideParams {
     ///
     ///   * mempool_ttl: max age of transactions in the mempool.
     ///     Transactions which are too old will be removed.
+    ///
+    ///   * max_transaction_batch_size: max number of transactions accepted in a
+    ///     single madara_addTransactionBatch RPC call.
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
 }

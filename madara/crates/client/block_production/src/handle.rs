@@ -170,11 +170,19 @@ impl BlockProductionHandle {
         }
 
         // Serialize batches: hold the lock across send + await so only one batch is in flight.
+        // This is required for correctness, not just fairness: the executor tracks a single in-flight
+        // batch, so two concurrent `ExecuteBatch` commands would clobber each other's tracking.
         let _guard = self.batch_lock.lock().await;
         let (response_tx, response_rx) = oneshot::channel();
         self.executor_commands
             .send(ExecutorCommand::ExecuteBatch { batch, response: response_tx })
             .map_err(|_| BatchSubmitError::Internal(anyhow::anyhow!("Block production executor is not running")))?;
+        // The await is intentionally unbounded. If the executor thread dies/panics, the response
+        // sender is dropped and this resolves to an error immediately (see map_err below). A timeout
+        // that released the lock early would be unsafe: the executor would still be draining this
+        // batch, so a subsequent batch could clobber its tracking and the caller could get a spurious
+        // error while the transactions still land on chain. A genuinely stuck executor stalls all
+        // block production regardless, so failing only this call would not help the node.
         response_rx
             .await
             .map_err(|_| BatchSubmitError::Internal(anyhow::anyhow!("Executor dropped the batch before completion")))
