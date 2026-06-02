@@ -51,6 +51,19 @@ pub(crate) struct RequestLabels {
     pub endpoint: &'static str,
 }
 
+const FEEDER_GATEWAY_ENDPOINTS: &[&str] = &[
+    "get_block",
+    "get_preconfirmed_block",
+    "get_state_update",
+    "get_transaction",
+    "get_transaction_status",
+    "get_block_hash_by_id",
+    "get_block_id_by_hash",
+    "get_block_bouncer_weights",
+    "get_signature",
+    "get_class_by_hash",
+];
+
 pub(crate) struct GatewayClientMetrics {
     requests_total: Counter<u64>,
     request_duration_seconds: Histogram<f64>,
@@ -189,40 +202,10 @@ pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
     let normalized = path.trim_matches('/');
     let route = known_gateway_route(normalized).unwrap_or(normalized);
 
-    match route {
-        "feeder_gateway/get_block" => RequestLabels { service: "feeder_gateway", endpoint: "get_block" },
-        "feeder_gateway/get_preconfirmed_block" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_preconfirmed_block" }
-        }
-        "feeder_gateway/get_state_update" => RequestLabels { service: "feeder_gateway", endpoint: "get_state_update" },
-        "feeder_gateway/get_transaction" => RequestLabels { service: "feeder_gateway", endpoint: "get_transaction" },
-        "feeder_gateway/get_transaction_status" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_transaction_status" }
-        }
-        "feeder_gateway/get_block_hash_by_id" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_hash_by_id" }
-        }
-        "feeder_gateway/get_block_id_by_hash" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_id_by_hash" }
-        }
-        "feeder_gateway/get_block_bouncer_weights" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_bouncer_weights" }
-        }
-        "feeder_gateway/get_signature" => RequestLabels { service: "feeder_gateway", endpoint: "get_signature" },
-        "feeder_gateway/get_class_by_hash" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_class_by_hash" }
-        }
-        "gateway/add_transaction" => RequestLabels { service: "gateway", endpoint: "add_transaction" },
-        "madara/trusted_add_validated_transaction" => {
-            RequestLabels { service: "madara", endpoint: "trusted_add_validated_transaction" }
-        }
-        _ if normalized.starts_with("feeder_gateway/") => {
-            RequestLabels { service: "feeder_gateway", endpoint: "unknown" }
-        }
-        _ if normalized.starts_with("gateway/") => RequestLabels { service: "gateway", endpoint: "unknown" },
-        _ if normalized.starts_with("madara/") => RequestLabels { service: "madara", endpoint: "unknown" },
-        _ => RequestLabels { service: "unknown", endpoint: "unknown" },
-    }
+    labels_for_route(route, "feeder_gateway", "feeder_gateway/", FEEDER_GATEWAY_ENDPOINTS)
+        .or_else(|| labels_for_route(route, "gateway", "gateway/", &["add_transaction"]))
+        .or_else(|| labels_for_route(route, "madara", "madara/", &["trusted_add_validated_transaction"]))
+        .unwrap_or(RequestLabels { service: "unknown", endpoint: "unknown" })
 }
 
 fn known_gateway_route(path: &str) -> Option<&str> {
@@ -231,6 +214,17 @@ fn known_gateway_route(path: &str) -> Option<&str> {
             path.strip_prefix(prefix).map(|_| path).or_else(|| path.find(marker).map(|index| &path[index + 1..]))
         },
     )
+}
+
+fn labels_for_route(
+    route: &str,
+    service: &'static str,
+    prefix: &str,
+    known_endpoints: &'static [&'static str],
+) -> Option<RequestLabels> {
+    let endpoint = route.strip_prefix(prefix)?;
+    let endpoint = known_endpoints.iter().copied().find(|known| *known == endpoint).unwrap_or("unknown");
+    Some(RequestLabels { service, endpoint })
 }
 
 fn status_code_label(status_code: Option<StatusCode>) -> String {
@@ -337,6 +331,12 @@ mod tests {
     fn classifies_prefixed_gateway_path() {
         let labels = request_labels_from_path("/proxy/v1/gateway/add_transaction");
         assert_eq!(labels, RequestLabels { service: "gateway", endpoint: "add_transaction" });
+    }
+
+    #[test]
+    fn classifies_prefixed_unknown_gateway_path() {
+        let labels = request_labels_from_path("/proxy/v1/gateway/something_else");
+        assert_eq!(labels, RequestLabels { service: "gateway", endpoint: "unknown" });
     }
 
     #[test]

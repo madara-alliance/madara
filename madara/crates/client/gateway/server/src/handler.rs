@@ -168,6 +168,35 @@ fn log_submit_transaction_error(tx_type: &'static str, error: &SubmitTransaction
     }
 }
 
+fn record_gateway_error(tx_type: &'static str, error: &GatewayError, duration: Duration) {
+    metrics().record_add_transaction(
+        tx_type,
+        add_transaction_result_from_gateway_error(error),
+        add_transaction_error_code_from_gateway_error(error),
+        duration,
+    );
+    log_gateway_add_transaction_error(tx_type, error, duration);
+}
+
+fn record_submit_transaction_error(tx_type: &'static str, error: &SubmitTransactionError, duration: Duration) {
+    metrics().record_add_transaction(
+        tx_type,
+        add_transaction_result_from_submit_error(error),
+        add_transaction_error_code_from_submit_error(error),
+        duration,
+    );
+    log_submit_transaction_error(tx_type, error, duration);
+}
+
+fn record_add_transaction_success(tx_type: &'static str, duration: Duration) {
+    metrics().record_add_transaction(
+        tx_type,
+        add_transaction_result::SUCCESS,
+        add_transaction_error_code::NONE,
+        duration,
+    );
+}
+
 fn decode_gzip_request_body(raw_body: &[u8], max_decompressed_body_bytes: u64) -> Result<Vec<u8>, std::io::Error> {
     let mut decoder = ReadSizeLimiter::new(GzDecoder::new(raw_body), max_decompressed_body_bytes);
     let mut decoded_body = Vec::new();
@@ -509,12 +538,7 @@ pub async fn handle_add_transaction(
     let transaction = match parse_add_transaction_request(&path, &headers, whole_body.as_ref()) {
         Ok(transaction) => transaction,
         Err(error) => {
-            metrics().record_add_transaction(
-                add_transaction_tx_type::UNKNOWN,
-                add_transaction_result_from_gateway_error(&error),
-                add_transaction_error_code_from_gateway_error(&error),
-                started_at.elapsed(),
-            );
+            record_gateway_error(add_transaction_tx_type::UNKNOWN, &error, started_at.elapsed());
             return Err(error);
         }
     };
@@ -541,25 +565,14 @@ async fn declare_transaction(
             let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());
             let error = GatewayError::StarknetError(error);
             let duration = started_at.elapsed();
-            metrics().record_add_transaction(
-                add_transaction_tx_type::DECLARE,
-                add_transaction_result_from_gateway_error(&error),
-                add_transaction_error_code_from_gateway_error(&error),
-                duration,
-            );
-            log_gateway_add_transaction_error(add_transaction_tx_type::DECLARE, &error, duration);
+            record_gateway_error(add_transaction_tx_type::DECLARE, &error, duration);
             return error.into();
         }
     };
 
     match add_transaction_provider.submit_declare_transaction(tx).await {
         Ok(result) => {
-            metrics().record_add_transaction(
-                add_transaction_tx_type::DECLARE,
-                add_transaction_result::SUCCESS,
-                add_transaction_error_code::NONE,
-                started_at.elapsed(),
-            );
+            record_add_transaction_success(add_transaction_tx_type::DECLARE, started_at.elapsed());
             create_json_response(
                 hyper::StatusCode::OK,
                 &AddTransactionResult::from(AddDeclareTransactionResult {
@@ -570,13 +583,7 @@ async fn declare_transaction(
         }
         Err(error) => {
             let duration = started_at.elapsed();
-            metrics().record_add_transaction(
-                add_transaction_tx_type::DECLARE,
-                add_transaction_result_from_submit_error(&error),
-                add_transaction_error_code_from_submit_error(&error),
-                duration,
-            );
-            log_submit_transaction_error(add_transaction_tx_type::DECLARE, &error, duration);
+            record_submit_transaction_error(add_transaction_tx_type::DECLARE, &error, duration);
             GatewayError::from_submit_transaction_error_unlogged(error).into()
         }
     }
@@ -589,12 +596,7 @@ async fn deploy_account_transaction(
 ) -> Response<String> {
     match add_transaction_provider.submit_deploy_account_transaction(tx.into()).await {
         Ok(result) => {
-            metrics().record_add_transaction(
-                add_transaction_tx_type::DEPLOY_ACCOUNT,
-                add_transaction_result::SUCCESS,
-                add_transaction_error_code::NONE,
-                started_at.elapsed(),
-            );
+            record_add_transaction_success(add_transaction_tx_type::DEPLOY_ACCOUNT, started_at.elapsed());
             create_json_response(
                 hyper::StatusCode::OK,
                 &AddTransactionResult::from(AddDeployAccountTransactionResult {
@@ -605,13 +607,7 @@ async fn deploy_account_transaction(
         }
         Err(error) => {
             let duration = started_at.elapsed();
-            metrics().record_add_transaction(
-                add_transaction_tx_type::DEPLOY_ACCOUNT,
-                add_transaction_result_from_submit_error(&error),
-                add_transaction_error_code_from_submit_error(&error),
-                duration,
-            );
-            log_submit_transaction_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
+            record_submit_transaction_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
             GatewayError::from_submit_transaction_error_unlogged(error).into()
         }
     }
@@ -624,12 +620,7 @@ async fn invoke_transaction(
 ) -> Response<String> {
     match add_transaction_provider.submit_invoke_transaction(tx.into()).await {
         Ok(result) => {
-            metrics().record_add_transaction(
-                add_transaction_tx_type::INVOKE,
-                add_transaction_result::SUCCESS,
-                add_transaction_error_code::NONE,
-                started_at.elapsed(),
-            );
+            record_add_transaction_success(add_transaction_tx_type::INVOKE, started_at.elapsed());
             create_json_response(
                 hyper::StatusCode::OK,
                 &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
@@ -637,13 +628,7 @@ async fn invoke_transaction(
         }
         Err(error) => {
             let duration = started_at.elapsed();
-            metrics().record_add_transaction(
-                add_transaction_tx_type::INVOKE,
-                add_transaction_result_from_submit_error(&error),
-                add_transaction_error_code_from_submit_error(&error),
-                duration,
-            );
-            log_submit_transaction_error(add_transaction_tx_type::INVOKE, &error, duration);
+            record_submit_transaction_error(add_transaction_tx_type::INVOKE, &error, duration);
             GatewayError::from_submit_transaction_error_unlogged(error).into()
         }
     }

@@ -13,6 +13,23 @@ pub(crate) struct RequestLabels {
     pub endpoint: &'static str,
 }
 
+const FEEDER_GATEWAY_ENDPOINTS: &[&str] = &[
+    "get_preconfirmed_block",
+    "get_block",
+    "get_signature",
+    "get_state_update",
+    "get_transaction",
+    "get_transaction_status",
+    "get_block_hash_by_id",
+    "get_block_id_by_hash",
+    "get_block_traces",
+    "get_class_by_hash",
+    "get_compiled_class_by_class_hash",
+    "get_contract_addresses",
+    "get_public_key",
+    "get_block_bouncer_weights",
+];
+
 pub(crate) mod add_transaction_error_code {
     pub const NONE: &str = "none";
     pub const INTERNAL_SERVER_ERROR: &str = "internal_server_error";
@@ -136,49 +153,25 @@ pub(crate) fn metrics() -> &'static GatewayServerMetrics {
 pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
     let normalized = path.trim_matches('/');
 
-    match normalized {
-        "health" => RequestLabels { service: "health", endpoint: "health" },
-        "gateway/add_transaction" => RequestLabels { service: "gateway", endpoint: "add_transaction" },
-        "madara/trusted_add_validated_transaction" => {
-            RequestLabels { service: "madara", endpoint: "trusted_add_validated_transaction" }
-        }
-        "feeder_gateway/get_preconfirmed_block" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_preconfirmed_block" }
-        }
-        "feeder_gateway/get_block" => RequestLabels { service: "feeder_gateway", endpoint: "get_block" },
-        "feeder_gateway/get_signature" => RequestLabels { service: "feeder_gateway", endpoint: "get_signature" },
-        "feeder_gateway/get_state_update" => RequestLabels { service: "feeder_gateway", endpoint: "get_state_update" },
-        "feeder_gateway/get_transaction" => RequestLabels { service: "feeder_gateway", endpoint: "get_transaction" },
-        "feeder_gateway/get_transaction_status" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_transaction_status" }
-        }
-        "feeder_gateway/get_block_hash_by_id" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_hash_by_id" }
-        }
-        "feeder_gateway/get_block_id_by_hash" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_id_by_hash" }
-        }
-        "feeder_gateway/get_block_traces" => RequestLabels { service: "feeder_gateway", endpoint: "get_block_traces" },
-        "feeder_gateway/get_class_by_hash" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_class_by_hash" }
-        }
-        "feeder_gateway/get_compiled_class_by_class_hash" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_compiled_class_by_class_hash" }
-        }
-        "feeder_gateway/get_contract_addresses" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_contract_addresses" }
-        }
-        "feeder_gateway/get_public_key" => RequestLabels { service: "feeder_gateway", endpoint: "get_public_key" },
-        "feeder_gateway/get_block_bouncer_weights" => {
-            RequestLabels { service: "feeder_gateway", endpoint: "get_block_bouncer_weights" }
-        }
-        _ if normalized.starts_with("feeder_gateway/") => {
-            RequestLabels { service: "feeder_gateway", endpoint: "unknown" }
-        }
-        _ if normalized.starts_with("gateway/") => RequestLabels { service: "gateway", endpoint: "unknown" },
-        _ if normalized.starts_with("madara/") => RequestLabels { service: "madara", endpoint: "unknown" },
-        _ => RequestLabels { service: "unknown", endpoint: "unknown" },
+    if normalized == "health" {
+        return RequestLabels { service: "health", endpoint: "health" };
     }
+
+    labels_for_route(normalized, "feeder_gateway", "feeder_gateway/", FEEDER_GATEWAY_ENDPOINTS)
+        .or_else(|| labels_for_route(normalized, "gateway", "gateway/", &["add_transaction"]))
+        .or_else(|| labels_for_route(normalized, "madara", "madara/", &["trusted_add_validated_transaction"]))
+        .unwrap_or(RequestLabels { service: "unknown", endpoint: "unknown" })
+}
+
+fn labels_for_route(
+    route: &str,
+    service: &'static str,
+    prefix: &str,
+    known_endpoints: &'static [&'static str],
+) -> Option<RequestLabels> {
+    let endpoint = route.strip_prefix(prefix)?;
+    let endpoint = known_endpoints.iter().copied().find(|known| *known == endpoint).unwrap_or("unknown");
+    Some(RequestLabels { service, endpoint })
 }
 
 pub(crate) fn http_method_label(method: &str) -> &'static str {

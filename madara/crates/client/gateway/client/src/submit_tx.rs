@@ -144,6 +144,16 @@ fn record_gateway_client_submit_success(tx_type: &'static str, duration: Duratio
     );
 }
 
+fn record_gateway_client_submit_error(tx_type: &'static str, error: &SubmitTransactionError, duration: Duration) {
+    metrics().record_add_transaction(
+        tx_type,
+        add_transaction_result_from_submit_error(error),
+        add_transaction_error_code_from_submit_error(error),
+        duration,
+    );
+    log_gateway_client_submit_error(tx_type, error, duration);
+}
+
 #[async_trait]
 impl SubmitTransaction for GatewayProvider {
     async fn submit_declare_transaction(
@@ -154,13 +164,7 @@ impl SubmitTransaction for GatewayProvider {
         let tx = match tx.try_into().map_err(map_conv_error) {
             Ok(tx) => tx,
             Err(error) => {
-                metrics().record_add_transaction(
-                    add_transaction_tx_type::DECLARE,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
-                    started_at.elapsed(),
-                );
-                log_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, started_at.elapsed());
+                record_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, started_at.elapsed());
                 return Err(error);
             }
         };
@@ -184,13 +188,7 @@ impl SubmitTransaction for GatewayProvider {
             Err(error) => {
                 let error = map_gateway_error(error);
                 let duration = started_at.elapsed();
-                metrics().record_add_transaction(
-                    add_transaction_tx_type::DECLARE,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
-                    duration,
-                );
-                log_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, duration);
+                record_gateway_client_submit_error(add_transaction_tx_type::DECLARE, &error, duration);
                 Err(error)
             }
         }
@@ -204,13 +202,11 @@ impl SubmitTransaction for GatewayProvider {
         let tx = match tx.try_into().map_err(map_conv_error) {
             Ok(tx) => tx,
             Err(error) => {
-                metrics().record_add_transaction(
+                record_gateway_client_submit_error(
                     add_transaction_tx_type::DEPLOY_ACCOUNT,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
+                    &error,
                     started_at.elapsed(),
                 );
-                log_gateway_client_submit_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, started_at.elapsed());
                 return Err(error);
             }
         };
@@ -234,13 +230,7 @@ impl SubmitTransaction for GatewayProvider {
             Err(error) => {
                 let error = map_gateway_error(error);
                 let duration = started_at.elapsed();
-                metrics().record_add_transaction(
-                    add_transaction_tx_type::DEPLOY_ACCOUNT,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
-                    duration,
-                );
-                log_gateway_client_submit_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
+                record_gateway_client_submit_error(add_transaction_tx_type::DEPLOY_ACCOUNT, &error, duration);
                 Err(error)
             }
         }
@@ -254,13 +244,7 @@ impl SubmitTransaction for GatewayProvider {
         let tx = match tx.try_into().map_err(map_conv_error) {
             Ok(tx) => tx,
             Err(error) => {
-                metrics().record_add_transaction(
-                    add_transaction_tx_type::INVOKE,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
-                    started_at.elapsed(),
-                );
-                log_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, started_at.elapsed());
+                record_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, started_at.elapsed());
                 return Err(error);
             }
         };
@@ -283,13 +267,7 @@ impl SubmitTransaction for GatewayProvider {
             Err(error) => {
                 let error = map_gateway_error(error);
                 let duration = started_at.elapsed();
-                metrics().record_add_transaction(
-                    add_transaction_tx_type::INVOKE,
-                    add_transaction_result_from_submit_error(&error),
-                    add_transaction_error_code_from_submit_error(&error),
-                    duration,
-                );
-                log_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, duration);
+                record_gateway_client_submit_error(add_transaction_tx_type::INVOKE, &error, duration);
                 Err(error)
             }
         }
