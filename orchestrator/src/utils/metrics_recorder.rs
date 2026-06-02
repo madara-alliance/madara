@@ -77,27 +77,6 @@ impl WorkPhase {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum WorkClass {
-    // Broader rollup bucket so related phases can still be grouped together even
-    // if we later add more specific phases under the same class.
-    JobExecution,
-    JobVerification,
-    Trigger,
-    Maintenance,
-}
-
-impl WorkClass {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::JobExecution => "job_execution",
-            Self::JobVerification => "job_verification",
-            Self::Trigger => "trigger",
-            Self::Maintenance => "maintenance",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum WorkloadOutcome {
     Success,
     Error,
@@ -116,34 +95,26 @@ impl WorkloadOutcome {
 struct WorkloadDescriptor {
     work_kind: WorkKind,
     work_phase: WorkPhase,
-    work_class: WorkClass,
     source_job_type: Option<WorkKind>,
 }
 
 impl WorkloadDescriptor {
-    fn new(
-        work_kind: WorkKind,
-        work_phase: WorkPhase,
-        work_class: WorkClass,
-        source_job_type: Option<WorkKind>,
-    ) -> Self {
-        Self { work_kind, work_phase, work_class, source_job_type }
+    fn new(work_kind: WorkKind, work_phase: WorkPhase, source_job_type: Option<WorkKind>) -> Self {
+        Self { work_kind, work_phase, source_job_type }
     }
 
-    fn active_attributes(self) -> [KeyValue; 4] {
+    fn active_attributes(self) -> [KeyValue; 3] {
         [
             KeyValue::new("work_kind", self.work_kind.as_str()),
             KeyValue::new("work_phase", self.work_phase.as_str()),
-            KeyValue::new("work_class", self.work_class.as_str()),
             KeyValue::new("source_job_type", self.source_job_type.map_or("none", WorkKind::as_str)),
         ]
     }
 
-    fn completed_attributes(self, outcome: WorkloadOutcome) -> [KeyValue; 5] {
+    fn completed_attributes(self, outcome: WorkloadOutcome) -> [KeyValue; 4] {
         [
             KeyValue::new("work_kind", self.work_kind.as_str()),
             KeyValue::new("work_phase", self.work_phase.as_str()),
-            KeyValue::new("work_class", self.work_class.as_str()),
             KeyValue::new("source_job_type", self.source_job_type.map_or("none", WorkKind::as_str)),
             KeyValue::new("outcome", outcome.as_str()),
         ]
@@ -231,41 +202,29 @@ pub fn register_workload_active_slots_observer(meter: &Meter) -> ObservableGauge
 fn workload_descriptor_for_job(job_type: &JobType, job_state: JobState) -> WorkloadDescriptor {
     let work_kind = WorkKind::from_job_type(job_type);
     match job_state {
-        JobState::Processing => WorkloadDescriptor::new(work_kind, WorkPhase::Process, WorkClass::JobExecution, None),
-        JobState::Verification => {
-            WorkloadDescriptor::new(work_kind, WorkPhase::Verify, WorkClass::JobVerification, None)
-        }
+        JobState::Processing => WorkloadDescriptor::new(work_kind, WorkPhase::Process, None),
+        JobState::Verification => WorkloadDescriptor::new(work_kind, WorkPhase::Verify, None),
     }
 }
 
 fn workload_descriptor_for_worker_trigger(worker_trigger_type: &WorkerTriggerType) -> WorkloadDescriptor {
     match worker_trigger_type {
-        WorkerTriggerType::Snos => {
-            WorkloadDescriptor::new(WorkKind::SnosRun, WorkPhase::Trigger, WorkClass::Trigger, None)
-        }
-        WorkerTriggerType::Proving => {
-            WorkloadDescriptor::new(WorkKind::ProofCreation, WorkPhase::Trigger, WorkClass::Trigger, None)
-        }
+        WorkerTriggerType::Snos => WorkloadDescriptor::new(WorkKind::SnosRun, WorkPhase::Trigger, None),
+        WorkerTriggerType::Proving => WorkloadDescriptor::new(WorkKind::ProofCreation, WorkPhase::Trigger, None),
         WorkerTriggerType::ProofRegistration => {
-            WorkloadDescriptor::new(WorkKind::ProofRegistration, WorkPhase::Trigger, WorkClass::Trigger, None)
+            WorkloadDescriptor::new(WorkKind::ProofRegistration, WorkPhase::Trigger, None)
         }
         WorkerTriggerType::DataSubmission => {
-            WorkloadDescriptor::new(WorkKind::DataSubmission, WorkPhase::Trigger, WorkClass::Trigger, None)
+            WorkloadDescriptor::new(WorkKind::DataSubmission, WorkPhase::Trigger, None)
         }
-        WorkerTriggerType::UpdateState => {
-            WorkloadDescriptor::new(WorkKind::StateTransition, WorkPhase::Trigger, WorkClass::Trigger, None)
-        }
-        WorkerTriggerType::Aggregator => {
-            WorkloadDescriptor::new(WorkKind::Aggregator, WorkPhase::Trigger, WorkClass::Trigger, None)
-        }
+        WorkerTriggerType::UpdateState => WorkloadDescriptor::new(WorkKind::StateTransition, WorkPhase::Trigger, None),
+        WorkerTriggerType::Aggregator => WorkloadDescriptor::new(WorkKind::Aggregator, WorkPhase::Trigger, None),
         WorkerTriggerType::AggregatorBatching => {
-            WorkloadDescriptor::new(WorkKind::AggregatorBatching, WorkPhase::Trigger, WorkClass::Trigger, None)
+            WorkloadDescriptor::new(WorkKind::AggregatorBatching, WorkPhase::Trigger, None)
         }
-        WorkerTriggerType::SnosBatching => {
-            WorkloadDescriptor::new(WorkKind::SnosBatching, WorkPhase::Trigger, WorkClass::Trigger, None)
-        }
+        WorkerTriggerType::SnosBatching => WorkloadDescriptor::new(WorkKind::SnosBatching, WorkPhase::Trigger, None),
         WorkerTriggerType::StorageCleanup => {
-            WorkloadDescriptor::new(WorkKind::StorageCleanup, WorkPhase::Maintenance, WorkClass::Maintenance, None)
+            WorkloadDescriptor::new(WorkKind::StorageCleanup, WorkPhase::Maintenance, None)
         }
     }
 }
@@ -312,12 +271,7 @@ fn workload_descriptor_for_queue(queue_type: &QueueType) -> Option<WorkloadDescr
 }
 
 fn healing_descriptor(source_job_type: &JobType) -> WorkloadDescriptor {
-    WorkloadDescriptor::new(
-        WorkKind::Healing,
-        WorkPhase::Maintenance,
-        WorkClass::Maintenance,
-        Some(WorkKind::from_job_type(source_job_type)),
-    )
+    WorkloadDescriptor::new(WorkKind::Healing, WorkPhase::Maintenance, Some(WorkKind::from_job_type(source_job_type)))
 }
 
 /// Helper functions to record metrics at various points in the job lifecycle
@@ -692,7 +646,6 @@ mod tests {
 
         assert_eq!(descriptor.work_kind, WorkKind::SnosRun);
         assert_eq!(descriptor.work_phase, WorkPhase::Process);
-        assert_eq!(descriptor.work_class, WorkClass::JobExecution);
         assert_eq!(descriptor.source_job_type, None);
     }
 
@@ -702,7 +655,6 @@ mod tests {
 
         assert_eq!(descriptor.work_kind, WorkKind::StorageCleanup);
         assert_eq!(descriptor.work_phase, WorkPhase::Maintenance);
-        assert_eq!(descriptor.work_class, WorkClass::Maintenance);
     }
 
     #[test]
@@ -731,7 +683,6 @@ mod tests {
 
         assert_eq!(descriptor.work_kind, WorkKind::Healing);
         assert_eq!(descriptor.work_phase, WorkPhase::Maintenance);
-        assert_eq!(descriptor.work_class, WorkClass::Maintenance);
         assert_eq!(descriptor.source_job_type, Some(WorkKind::StateTransition));
     }
 }
