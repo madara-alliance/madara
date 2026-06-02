@@ -429,13 +429,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.inner.read().await.is_empty()
     }
 
-    pub async fn snapshot_transactions_matching(
+    async fn snapshot_matching<R>(
         &self,
         offset: usize,
         limit: usize,
         include_ttl: bool,
         mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
-    ) -> Vec<MempoolTransactionSnapshot> {
+        mut map_transaction: impl FnMut(&ValidatedTransaction, Option<Duration>) -> R,
+    ) -> Vec<R> {
         if limit == 0 {
             return Vec::new();
         }
@@ -448,17 +449,30 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             .filter(|transaction| predicate(transaction))
             .skip(offset)
             .take(limit)
-            .map(|transaction| MempoolTransactionSnapshot {
-                transaction: transaction.clone(),
-                remaining_ttl: if include_ttl {
+            .map(|transaction| {
+                let remaining_ttl = if include_ttl {
                     ttl.map(|ttl| {
                         transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
                     })
                 } else {
                     None
-                },
+                };
+                map_transaction(transaction, remaining_ttl)
             })
             .collect()
+    }
+
+    pub async fn snapshot_transactions_matching(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionSnapshot> {
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionSnapshot { transaction: transaction.clone(), remaining_ttl }
+        })
+        .await
     }
 
     pub async fn snapshot_transaction_hashes_matching(
@@ -466,43 +480,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         offset: usize,
         limit: usize,
         include_ttl: bool,
-        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
     ) -> Vec<MempoolTransactionHashSnapshot> {
-        if limit == 0 {
-            return Vec::new();
-        }
-
-        let now = TxTimestamp::now();
-        let ttl = self.ttl;
-        let lock = self.inner.read().await;
-
-        lock.transactions_by_arrival()
-            .filter(|transaction| predicate(transaction))
-            .skip(offset)
-            .take(limit)
-            .map(|transaction| MempoolTransactionHashSnapshot {
-                transaction_hash: transaction.hash,
-                remaining_ttl: if include_ttl {
-                    ttl.map(|ttl| {
-                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
-                    })
-                } else {
-                    None
-                },
-            })
-            .collect()
-    }
-
-    pub async fn flush_all_transactions(&self) -> Vec<ValidatedTransaction> {
-        self.flush_transactions_matching(|_| true).await
-    }
-
-    pub async fn flush_transactions_by_hashes(
-        &self,
-        transaction_hashes: impl IntoIterator<Item = Felt>,
-    ) -> Vec<ValidatedTransaction> {
-        let transaction_hashes = transaction_hashes.into_iter().collect::<HashSet<_>>();
-        self.flush_transactions_matching(move |tx| transaction_hashes.contains(&tx.hash)).await
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionHashSnapshot { transaction_hash: transaction.hash, remaining_ttl }
+        })
+        .await
     }
 
     /// Remove all matching transactions while holding a single inner write lock so selection and

@@ -35,23 +35,6 @@ const DEFAULT_GET_MEMPOOL_TXN_LIMIT: usize = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct GetMempoolTxnHashesParams {
-    pub include_ttl: bool,
-    /// Number of matching transactions to skip before returning results.
-    pub offset: usize,
-    pub limit: usize,
-    #[serde(flatten)]
-    pub nonce_filter: MempoolNonceFilter,
-}
-
-impl Default for GetMempoolTxnHashesParams {
-    fn default() -> Self {
-        Self { include_ttl: false, offset: 0, limit: DEFAULT_GET_MEMPOOL_TXN_LIMIT, nonce_filter: Default::default() }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct GetMempoolTxnsParams {
     /// Include the remaining TTL for each transaction when the node has a mempool TTL configured.
     pub include_ttl: bool,

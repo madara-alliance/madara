@@ -3,7 +3,7 @@ use crate::{versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server, Starknet, Sta
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::{
-    admin::{GetMempoolTxnHashesParams, GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo},
+    admin::{GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo},
     v0_10_2::TxnWithHashAndProofFacts,
 };
 use mp_transactions::TransactionWithHash;
@@ -21,10 +21,7 @@ impl MadaraReadRpcApiV0_1_0Server for Starknet {
         Ok(bouncer_weights)
     }
 
-    async fn get_mempool_txn_hashes(
-        &self,
-        params: Option<GetMempoolTxnHashesParams>,
-    ) -> RpcResult<Vec<MempoolTxnHashInfo>> {
+    async fn get_mempool_txn_hashes(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnHashInfo>> {
         let params = params.unwrap_or_default();
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let transactions = mempool
@@ -125,8 +122,8 @@ mod tests {
 
     #[tokio::test]
     async fn get_mempool_txn_hashes_returns_oldest_first_and_optional_ttl() {
-        assert_eq!(GetMempoolTxnHashesParams::default().limit, 100);
-        assert_eq!(GetMempoolTxnHashesParams::default().offset, 0);
+        assert_eq!(GetMempoolTxnsParams::default().limit, 100);
+        assert_eq!(GetMempoolTxnsParams::default().offset, 0);
 
         let (mempool, rpc) = make_starknet_with_mempool();
         let base = TxTimestamp::now().0;
@@ -141,7 +138,7 @@ mod tests {
         assert!(hashes.iter().all(|entry| entry.remaining_ttl_ms.is_none()));
 
         let hashes_with_ttl = rpc
-            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { include_ttl: true, ..Default::default() }))
+            .get_mempool_txn_hashes(Some(GetMempoolTxnsParams { include_ttl: true, ..Default::default() }))
             .await
             .unwrap();
         assert_eq!(
@@ -151,7 +148,7 @@ mod tests {
         assert!(hashes_with_ttl.iter().all(|entry| entry.remaining_ttl_ms.is_some()));
 
         let filtered_hashes = rpc
-            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams {
+            .get_mempool_txn_hashes(Some(GetMempoolTxnsParams {
                 nonce_filter: MempoolNonceFilter { nonce_after: Some(Felt::from(1_u64)), nonce_before: None },
                 ..Default::default()
             }))
@@ -172,10 +169,8 @@ mod tests {
         mempool.accept_tx(tx1.clone()).await.unwrap();
         mempool.accept_tx(tx2.clone()).await.unwrap();
 
-        let hashes = rpc
-            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { limit: 2, ..Default::default() }))
-            .await
-            .unwrap();
+        let hashes =
+            rpc.get_mempool_txn_hashes(Some(GetMempoolTxnsParams { limit: 2, ..Default::default() })).await.unwrap();
 
         assert_eq!(hashes.iter().map(|entry| entry.transaction_hash).collect::<Vec<_>>(), vec![tx1.hash, tx2.hash]);
     }
@@ -193,7 +188,7 @@ mod tests {
         mempool.accept_tx(tx3.clone()).await.unwrap();
 
         let hashes = rpc
-            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { offset: 1, limit: 1, ..Default::default() }))
+            .get_mempool_txn_hashes(Some(GetMempoolTxnsParams { offset: 1, limit: 1, ..Default::default() }))
             .await
             .unwrap();
 
@@ -210,7 +205,7 @@ mod tests {
         mempool.accept_tx(tx).await.unwrap();
 
         let hashes = rpc
-            .get_mempool_txn_hashes(Some(GetMempoolTxnHashesParams { include_ttl: true, ..Default::default() }))
+            .get_mempool_txn_hashes(Some(GetMempoolTxnsParams { include_ttl: true, ..Default::default() }))
             .await
             .unwrap();
 

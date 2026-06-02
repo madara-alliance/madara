@@ -4,8 +4,8 @@ use m_proc_macros::versioned_rpc;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::{
-    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnHashesParams,
-    GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo,
+    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnsParams, MempoolTxnHashInfo,
+    MempoolTxnInfo,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -111,10 +111,7 @@ pub trait MadaraReadRpcApi {
     /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
     /// Pass `offset` to skip matching entries for pagination.
     #[method(name = "getMempoolTxnHashes")]
-    async fn get_mempool_txn_hashes(
-        &self,
-        params: Option<GetMempoolTxnHashesParams>,
-    ) -> RpcResult<Vec<MempoolTxnHashInfo>>;
+    async fn get_mempool_txn_hashes(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnHashInfo>>;
 
     /// List mempool transactions in oldest-first arrival order.
     /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
