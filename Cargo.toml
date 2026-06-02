@@ -314,9 +314,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-# TODO: Update this to a tag before merging this to main
-# This rev is for fixing SNOS to fetch the revert reason from Madara instead of filtering the reason got from PF trace
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "9406e686e8da30cb4f4644a5e16578bcc7ee3411" }
+# This rev fixes SNOS to fetch the revert reason from RPC itself instead of filtering the reason got from trace
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "v0.14.2-rc.3" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
