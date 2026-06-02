@@ -130,13 +130,6 @@ mod validation;
 pub use error::*;
 pub use validation::{TransactionValidator, TransactionValidatorConfig};
 
-fn gateway_transaction(transaction: &ValidatedTransaction) -> GatewayTransaction {
-    GatewayTransaction::new(
-        TransactionWithHash { transaction: transaction.transaction.clone(), hash: transaction.hash },
-        Some(transaction.contract_address),
-    )
-}
-
 fn gateway_executed_transaction(transaction: &mp_block::TransactionWithReceipt) -> GatewayTransaction {
     GatewayTransaction::new(
         TransactionWithHash {
@@ -184,6 +177,9 @@ fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
         return Ok(ProviderTransactionStatus::not_received());
     };
+    if executed.block.as_preconfirmed().is_some() {
+        return Ok(ProviderTransactionStatus::not_received());
+    }
 
     let transaction = executed.get_transaction()?;
     let (_, block_hash, _) = transaction_status_from_block(&executed.block)?;
@@ -206,25 +202,17 @@ fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
     feeder_transaction_from_backend_view(&executed)
 }
 
-fn feeder_status_from_preconfirmed_mempool(status: &PreConfirmationStatus) -> ProviderTransactionStatus {
-    match status {
-        PreConfirmationStatus::Received(_) => ProviderTransactionStatus::received(),
-        PreConfirmationStatus::Candidate { .. } => ProviderTransactionStatus::received(),
-        PreConfirmationStatus::Executed { transaction, .. } => {
-            let (execution_status, tx_revert_reason) = execution_status(&transaction.transaction.receipt);
-            ProviderTransactionStatus::with_status(
-                TransactionStatus::Pending,
-                Some(execution_status),
-                None,
-                tx_revert_reason,
-            )
-        }
-    }
+fn feeder_status_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionStatus {
+    ProviderTransactionStatus::not_received()
 }
 
 fn feeder_transaction_from_backend_view<D: MadaraStorageRead>(
     executed: &ExecutedTransactionWithBlockView<D>,
 ) -> anyhow::Result<ProviderTransactionResponse> {
+    if executed.block.as_preconfirmed().is_some() {
+        return Ok(ProviderTransactionResponse::not_received());
+    }
+
     let transaction = executed.get_transaction()?;
     let (status, block_hash, block_number) = transaction_status_from_block(&executed.block)?;
     let (execution_status, _) = execution_status(&transaction.receipt);
@@ -239,40 +227,8 @@ fn feeder_transaction_from_backend_view<D: MadaraStorageRead>(
     ))
 }
 
-fn feeder_transaction_from_preconfirmed_mempool(status: &PreConfirmationStatus) -> ProviderTransactionResponse {
-    match status {
-        PreConfirmationStatus::Received(transaction) => ProviderTransactionResponse::with_status(
-            TransactionStatus::Received,
-            None,
-            None,
-            None,
-            None,
-            Some(gateway_transaction(transaction)),
-        ),
-        PreConfirmationStatus::Candidate { view, transaction_index, transaction } => {
-            ProviderTransactionResponse::with_status(
-                TransactionStatus::Received,
-                None,
-                None,
-                Some(view.header.block_number),
-                Some(*transaction_index),
-                Some(gateway_transaction(transaction)),
-            )
-        }
-        PreConfirmationStatus::Executed { view, transaction_index, transaction } => {
-            let (execution_status, _) = execution_status(&transaction.transaction.receipt);
-            let transaction = Some(gateway_executed_transaction(&transaction.transaction));
-
-            ProviderTransactionResponse::with_status(
-                TransactionStatus::Pending,
-                Some(execution_status),
-                None,
-                Some(view.header.block_number),
-                Some(*transaction_index),
-                transaction,
-            )
-        }
-    }
+fn feeder_transaction_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionResponse {
+    ProviderTransactionResponse::not_received()
 }
 
 /// Read-side transaction monitoring and feeder-compatible lookup surface.
@@ -292,8 +248,7 @@ pub trait TransactionLookup: Send + Sync {
         hash: mp_convert::Felt,
     ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
         Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionStatus::received()),
-            Some(false) => Some(ProviderTransactionStatus::not_received()),
+            Some(_) => Some(ProviderTransactionStatus::not_received()),
             None => None,
         })
     }
@@ -308,8 +263,7 @@ pub trait TransactionLookup: Send + Sync {
         hash: mp_convert::Felt,
     ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         Ok(match self.received_transaction(hash).await {
-            Some(true) => Some(ProviderTransactionResponse::received()),
-            Some(false) => Some(ProviderTransactionResponse::not_received()),
+            Some(_) => Some(ProviderTransactionResponse::not_received()),
             None => None,
         })
     }
@@ -497,18 +451,15 @@ mod tests {
     }
 
     #[test]
-    fn feeder_transaction_from_mempool_includes_received_payload() {
+    fn feeder_transaction_from_mempool_received_is_not_received() {
         let tx = Arc::new(validated_invoke_tx(Felt::TWO));
         let response = feeder_transaction_from_preconfirmed_mempool(&PreConfirmationStatus::Received(Arc::clone(&tx)));
 
-        assert_eq!(response.status, TransactionStatus::Received);
-        assert_eq!(response.finality_status, TransactionStatus::Received);
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(Felt::TWO));
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.contract_address()), Some(Felt::ONE));
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 
     #[test]
-    fn feeder_transaction_from_mempool_includes_candidate_payload() {
+    fn feeder_transaction_from_mempool_candidate_is_not_received() {
         let tx = Arc::new(validated_invoke_tx(Felt::THREE));
         let view = Arc::new(PreconfirmedBlock::new(Default::default()));
         let response = feeder_transaction_from_preconfirmed_mempool(&PreConfirmationStatus::Candidate {
@@ -517,16 +468,11 @@ mod tests {
             transaction: Arc::clone(&tx),
         });
 
-        assert_eq!(response.status, TransactionStatus::Received);
-        assert_eq!(response.finality_status, TransactionStatus::Received);
-        assert_eq!(response.block_number, Some(0));
-        assert_eq!(response.transaction_index, Some(3));
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(Felt::THREE));
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.contract_address()), Some(Felt::ONE));
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 
     #[test]
-    fn feeder_transaction_from_mempool_includes_executed_payload() {
+    fn feeder_transaction_from_mempool_executed_is_not_received() {
         let executed_hash = Felt::from_hex_unchecked("0x4");
         let tx = Arc::new(executed_preconfirmed_tx(executed_hash, ExecutionResult::Succeeded));
         let view = Arc::new(PreconfirmedBlock::new_with_content(Default::default(), [tx.as_ref().clone()], []));
@@ -536,17 +482,11 @@ mod tests {
             transaction: Arc::clone(&tx),
         });
 
-        assert_eq!(response.status, TransactionStatus::Pending);
-        assert_eq!(response.finality_status, TransactionStatus::Pending);
-        assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
-        assert_eq!(response.block_number, Some(0));
-        assert_eq!(response.transaction_index, Some(0));
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(executed_hash));
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.contract_address()), Some(Felt::ONE));
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 
     #[test]
-    fn feeder_transaction_status_from_mempool_includes_revert_reason() {
+    fn feeder_transaction_status_from_mempool_executed_is_not_received() {
         let tx = Arc::new(executed_preconfirmed_tx(
             Felt::from_hex_unchecked("0x5"),
             ExecutionResult::Reverted { reason: "boom".into() },
@@ -557,10 +497,7 @@ mod tests {
             transaction: tx,
         });
 
-        assert_eq!(status.tx_status, TransactionStatus::Pending);
-        assert_eq!(status.finality_status, TransactionStatus::Pending);
-        assert_eq!(status.execution_status, Some(TransactionExecutionStatus::Reverted));
-        assert_eq!(status.tx_revert_reason.as_deref(), Some("boom"));
+        assert_eq!(status, ProviderTransactionStatus::not_received());
     }
 
     #[tokio::test]

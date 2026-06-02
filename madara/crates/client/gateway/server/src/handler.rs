@@ -188,6 +188,10 @@ async fn transaction_status_response(
     let view = backend.view_on_latest();
 
     if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
+        if !res.block.is_confirmed() {
+            return Ok(ProviderTransactionStatus::not_received());
+        }
+
         let transaction = res.get_transaction()?;
         let (tx_status, block_hash, _) = transaction_status_from_block(&res.block)?;
         let (execution_status, tx_revert_reason) = execution_status(&transaction.receipt);
@@ -208,6 +212,10 @@ async fn transaction_response(
     let view = backend.view_on_latest();
 
     if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
+        if !res.block.is_confirmed() {
+            return Ok(ProviderTransactionResponse::not_received());
+        }
+
         let transaction = res.get_transaction()?;
         let (status, block_hash, block_number) = transaction_status_from_block(&res.block)?;
         let (execution_status, _) = execution_status(&transaction.receipt);
@@ -909,13 +917,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_transaction_status_returns_received_when_in_mempool() {
+    async fn get_transaction_status_returns_not_received_when_in_mempool() {
         let (backend, submitter, lookup) = submit_provider();
         let tx_hash = submitter.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
 
         let status = transaction_status_response(tx_hash, &backend, &lookup).await.unwrap();
 
-        assert_eq!(status, ProviderTransactionStatus::received());
+        assert_eq!(status, ProviderTransactionStatus::not_received());
     }
 
     #[tokio::test]
@@ -935,7 +943,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_transaction_status_returns_preconfirmed_for_preconfirmed_backend_tx() {
+    async fn get_transaction_status_returns_not_received_for_preconfirmed_backend_tx() {
         let backend = backend_for_tests();
         backend
             .write_access()
@@ -949,10 +957,7 @@ mod tests {
 
         let status = transaction_status_response(TX_HASH, &backend, &provider).await.unwrap();
 
-        assert_eq!(status.tx_status, TransactionStatus::Pending);
-        assert_eq!(status.finality_status, TransactionStatus::Pending);
-        assert_eq!(status.execution_status, Some(TransactionExecutionStatus::Succeeded));
-        assert_eq!(status.block_hash, None);
+        assert_eq!(status, ProviderTransactionStatus::not_received());
     }
 
     #[tokio::test]
@@ -976,19 +981,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_transaction_returns_received_with_payload() {
+    async fn get_transaction_returns_not_received_when_in_mempool() {
         let (backend, submitter, lookup) = submit_provider();
         let tx_hash = submitter.submit_invoke_transaction(submit_invoke_tx()).await.unwrap().transaction_hash;
 
         let response = transaction_response(tx_hash, &backend, &lookup).await.unwrap();
 
-        assert_eq!(response.status, TransactionStatus::Received);
-        assert_eq!(response.finality_status, TransactionStatus::Received);
-        assert_eq!(response.execution_status, None);
-        assert_eq!(response.block_hash, None);
-        assert_eq!(response.block_number, None);
-        assert_eq!(response.transaction_index, None);
-        assert_eq!(response.transaction.as_ref().map(|tx| *tx.transaction_hash()), Some(tx_hash));
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 
     #[tokio::test]
@@ -1082,7 +1081,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_transaction_returns_preconfirmed_payload_for_preconfirmed_backend_tx() {
+    async fn get_transaction_returns_not_received_for_preconfirmed_backend_tx() {
         let backend = backend_for_tests();
         backend
             .write_access()
@@ -1096,13 +1095,7 @@ mod tests {
 
         let response = transaction_response(TX_HASH, &backend, &provider).await.unwrap();
 
-        assert_eq!(response.status, TransactionStatus::Pending);
-        assert_eq!(response.finality_status, TransactionStatus::Pending);
-        assert_eq!(response.execution_status, Some(TransactionExecutionStatus::Succeeded));
-        assert_eq!(response.block_hash, None);
-        assert_eq!(response.block_number, Some(0));
-        assert_eq!(response.transaction_index, Some(0));
-        assert!(response.transaction.is_some());
+        assert_eq!(response, ProviderTransactionResponse::not_received());
     }
 
     #[tokio::test]
