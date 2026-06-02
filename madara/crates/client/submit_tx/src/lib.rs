@@ -247,10 +247,7 @@ pub trait TransactionLookup: Send + Sync {
         &self,
         hash: mp_convert::Felt,
     ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(_) => Some(ProviderTransactionStatus::not_received()),
-            None => None,
-        })
+        Ok(self.received_transaction(hash).await.map(|_| ProviderTransactionStatus::not_received()))
     }
 
     /// Returns the exact feeder gateway transaction payload when the backend can provide it.
@@ -262,10 +259,7 @@ pub trait TransactionLookup: Send + Sync {
         &self,
         hash: mp_convert::Felt,
     ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
-        Ok(match self.received_transaction(hash).await {
-            Some(_) => Some(ProviderTransactionResponse::not_received()),
-            None => None,
-        })
+        Ok(self.received_transaction(hash).await.map(|_| ProviderTransactionResponse::not_received()))
     }
 }
 
