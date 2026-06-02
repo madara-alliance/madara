@@ -181,6 +181,14 @@ pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
     }
 }
 
+pub(crate) fn http_method_label(method: &str) -> &'static str {
+    match method {
+        "GET" => "GET",
+        "POST" => "POST",
+        _ => "other",
+    }
+}
+
 pub(crate) fn status_class_label(status_code: StatusCode) -> &'static str {
     if status_code.is_informational() {
         "1xx"
@@ -314,8 +322,8 @@ mod tests {
     use super::{
         add_transaction_error_code, add_transaction_error_code_from_gateway_error,
         add_transaction_error_code_from_submit_error, add_transaction_result,
-        add_transaction_result_from_gateway_error, add_transaction_result_from_submit_error, request_labels_from_path,
-        status_class_label, RequestLabels,
+        add_transaction_result_from_gateway_error, add_transaction_result_from_submit_error, http_method_label,
+        request_labels_from_path, status_class_label, RequestLabels,
     };
     use crate::error::GatewayError;
     use hyper::StatusCode;
@@ -351,6 +359,14 @@ mod tests {
     fn maps_status_class() {
         assert_eq!(status_class_label(StatusCode::BAD_REQUEST), "4xx");
         assert_eq!(status_class_label(StatusCode::INTERNAL_SERVER_ERROR), "5xx");
+    }
+
+    #[test]
+    fn bounds_http_method_labels() {
+        assert_eq!(http_method_label("GET"), "GET");
+        assert_eq!(http_method_label("POST"), "POST");
+        assert_eq!(http_method_label("PATCH"), "other");
+        assert_eq!(http_method_label("CUSTOM_METHOD"), "other");
     }
 
     #[test]

@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::net::TcpListener;
 
-use crate::metrics::{metrics, request_labels_from_path, status_class_label};
+use crate::metrics::{http_method_label, metrics, request_labels_from_path, status_class_label};
 
 #[derive(Debug, Clone)]
 pub struct GatewayServerConfig {
@@ -83,13 +83,14 @@ pub async fn start_server(
                             .collect::<Vec<_>>()
                             .join("/");
                         let labels = request_labels_from_path(&path);
+                        let http_method_metric_label = http_method_label(http_method.as_str());
                         let start = Instant::now();
                         let Ok(res) =
                             main_router(req, &path, db_backend, add_transaction_provider, submit_validated, config)
                                 .await;
 
                         let duration = start.elapsed();
-                        metrics().record_request(labels, http_method.as_str(), res.status(), duration);
+                        metrics().record_request(labels, http_method_metric_label, res.status(), duration);
 
                         let status = res.status().as_u16() as i64;
                         let res_len = res.body().len() as u64;

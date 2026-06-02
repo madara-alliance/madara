@@ -187,8 +187,9 @@ pub(crate) fn request_labels_from_url(url: &Url) -> RequestLabels {
 
 pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
     let normalized = path.trim_matches('/');
+    let route = known_gateway_route(normalized).unwrap_or(normalized);
 
-    match normalized {
+    match route {
         "feeder_gateway/get_block" => RequestLabels { service: "feeder_gateway", endpoint: "get_block" },
         "feeder_gateway/get_preconfirmed_block" => {
             RequestLabels { service: "feeder_gateway", endpoint: "get_preconfirmed_block" }
@@ -222,6 +223,14 @@ pub(crate) fn request_labels_from_path(path: &str) -> RequestLabels {
         _ if normalized.starts_with("madara/") => RequestLabels { service: "madara", endpoint: "unknown" },
         _ => RequestLabels { service: "unknown", endpoint: "unknown" },
     }
+}
+
+fn known_gateway_route(path: &str) -> Option<&str> {
+    [("feeder_gateway/", "/feeder_gateway/"), ("gateway/", "/gateway/"), ("madara/", "/madara/")].iter().find_map(
+        |(prefix, marker)| {
+            path.strip_prefix(prefix).map(|_| path).or_else(|| path.find(marker).map(|index| &path[index + 1..]))
+        },
+    )
 }
 
 fn status_code_label(status_code: Option<StatusCode>) -> String {
@@ -315,6 +324,19 @@ mod tests {
         let url = Url::parse("https://example.com/madara/trusted_add_validated_transaction").unwrap();
         let labels = request_labels_from_url(&url);
         assert_eq!(labels, RequestLabels { service: "madara", endpoint: "trusted_add_validated_transaction" });
+    }
+
+    #[test]
+    fn classifies_prefixed_url_path() {
+        let url = Url::parse("https://example.com/proxy/v1/feeder_gateway/get_block").unwrap();
+        let labels = request_labels_from_url(&url);
+        assert_eq!(labels, RequestLabels { service: "feeder_gateway", endpoint: "get_block" });
+    }
+
+    #[test]
+    fn classifies_prefixed_gateway_path() {
+        let labels = request_labels_from_path("/proxy/v1/gateway/add_transaction");
+        assert_eq!(labels, RequestLabels { service: "gateway", endpoint: "add_transaction" });
     }
 
     #[test]
