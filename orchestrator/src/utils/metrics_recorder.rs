@@ -189,7 +189,7 @@ fn decrement_active_slots(descriptor: WorkloadDescriptor) {
 pub fn register_workload_active_slots_observer(meter: &Meter) -> ObservableGauge<u64> {
     meter
         .u64_observable_gauge("workload_active_slots")
-        .with_description("Current active workload slots by kind, phase, and class")
+        .with_description("Current active workload slots by kind and phase")
         .with_unit("slots")
         .with_callback(|observer| {
             for active_slots in ACTIVE_WORKLOAD_SLOTS.iter() {

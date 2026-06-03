@@ -37,6 +37,10 @@ use tracing::{debug, error, info, warn, Span};
 pub struct JobHandlerService;
 
 impl JobHandlerService {
+    pub(crate) fn verification_workload_is_error(operation_job_status: Option<&JobStatus>) -> bool {
+        matches!(operation_job_status, Some(JobStatus::VerificationFailed | JobStatus::VerificationTimeout))
+    }
+
     /// Creates the job in the DB in the created state and adds it to the process queue
     ///
     /// # Arguments
@@ -704,7 +708,7 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
-        if matches!(operation_job_status, Some(JobStatus::VerificationFailed | JobStatus::VerificationTimeout)) {
+        if Self::verification_workload_is_error(operation_job_status.as_ref()) {
             workload.finish_error();
         } else {
             workload.finish_success();
