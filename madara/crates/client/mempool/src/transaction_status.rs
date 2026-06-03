@@ -1,8 +1,6 @@
 use crate::{topic_pubsub::TopicWatchReceiver, Mempool};
 use mc_db::{
-    preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
-    view::ExecutedTransactionWithBlockView,
-    MadaraBackend, MadaraStorageRead,
+    preconfirmed::PreconfirmedBlock, view::ExecutedTransactionWithBlockView, MadaraBackend, MadaraStorageRead,
 };
 use mp_convert::Felt;
 use mp_transactions::validated::ValidatedTransaction;
@@ -27,7 +25,7 @@ impl TransactionStatus {
 pub enum PreConfirmationStatus {
     Received(Arc<ValidatedTransaction>),
     Candidate { view: Arc<PreconfirmedBlock>, transaction_index: u64, transaction: Arc<ValidatedTransaction> },
-    Executed { view: Arc<PreconfirmedBlock>, transaction_index: u64, transaction: Arc<PreconfirmedExecutedTransaction> },
+    Executed { view: Arc<PreconfirmedBlock>, transaction_index: u64 },
 }
 
 /// Subscription to transaction statuses.

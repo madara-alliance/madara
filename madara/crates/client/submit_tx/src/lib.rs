@@ -191,9 +191,6 @@ fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
 fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
     transaction_hash: mp_convert::Felt,
     mempool: &Mempool<D>,
-    _block_number: u64,
-    _transaction_index: u64,
-    _is_on_l1: bool,
 ) -> anyhow::Result<ProviderTransactionResponse> {
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
         return Ok(ProviderTransactionResponse::not_received());
@@ -202,6 +199,8 @@ fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
     feeder_transaction_from_backend_view(&executed)
 }
 
+// Feeder `get_transaction` and `get_transaction_status` intentionally hide all preconfirmed
+// states. Use `get_preconfirmed_block` or RPC for candidate/preconfirmed transaction data.
 fn feeder_status_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionStatus {
     ProviderTransactionStatus::not_received()
 }
@@ -346,9 +345,9 @@ impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
             Ok(Some(MempoolTransactionStatus::Preconfirmed(status))) => {
                 Ok(Some(feeder_transaction_from_preconfirmed_mempool(&status)))
             }
-            Ok(Some(MempoolTransactionStatus::Confirmed { block_number, transaction_index, is_on_l1 })) => Ok(Some(
-                feeder_transaction_from_confirmed_mempool(hash, self, block_number, transaction_index, is_on_l1)?,
-            )),
+            Ok(Some(MempoolTransactionStatus::Confirmed { .. })) => {
+                Ok(Some(feeder_transaction_from_confirmed_mempool(hash, self)?))
+            }
             Ok(None) => Ok(Some(ProviderTransactionResponse::not_received())),
             Err(err) => Err(SubmitTransactionError::Internal(err)),
         }
@@ -473,7 +472,6 @@ mod tests {
         let response = feeder_transaction_from_preconfirmed_mempool(&PreConfirmationStatus::Executed {
             view,
             transaction_index: 0,
-            transaction: Arc::clone(&tx),
         });
 
         assert_eq!(response, ProviderTransactionResponse::not_received());
@@ -488,7 +486,6 @@ mod tests {
         let status = feeder_status_from_preconfirmed_mempool(&PreConfirmationStatus::Executed {
             view: Arc::new(PreconfirmedBlock::new_with_content(Default::default(), [tx.as_ref().clone()], [])),
             transaction_index: 0,
-            transaction: tx,
         });
 
         assert_eq!(status, ProviderTransactionStatus::not_received());
@@ -550,7 +547,7 @@ mod tests {
         let backend = backend_for_tests();
         let mempool = Mempool::new(backend, MempoolConfig::default());
 
-        let response = feeder_transaction_from_confirmed_mempool(hash, &mempool, 7, 2, false).unwrap();
+        let response = feeder_transaction_from_confirmed_mempool(hash, &mempool).unwrap();
 
         assert_eq!(response, ProviderTransactionResponse::not_received());
     }

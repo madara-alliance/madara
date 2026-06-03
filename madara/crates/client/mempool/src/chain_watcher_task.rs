@@ -57,18 +57,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         })),
                     )
                 } else {
-                    let transaction = preconfirmed
-                        .borrow_content()
-                        .executed_transactions()
-                        .nth(tx_index)
-                        .context("Executed transaction should be in block")?
-                        .clone();
                     self.set_transaction_status(
                         tx_hash,
                         Some(TransactionStatus::Preconfirmed(PreConfirmationStatus::Executed {
                             view: preconfirmed.block().clone(),
                             transaction_index: tx_index as u64,
-                            transaction: Arc::new(transaction),
                         })),
                     )
                 }
