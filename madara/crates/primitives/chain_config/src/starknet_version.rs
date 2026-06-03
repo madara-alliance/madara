@@ -65,8 +65,9 @@ impl StarknetVersion {
     pub const V0_14_0: StarknetVersion = StarknetVersion([0, 14, 0, 0]);
     pub const V0_14_1: StarknetVersion = StarknetVersion([0, 14, 1, 0]);
     pub const V0_14_2: StarknetVersion = StarknetVersion([0, 14, 2, 0]);
+    pub const V0_14_3: StarknetVersion = StarknetVersion([0, 14, 3, 0]);
     /// The latest version supported by orchestrator.
-    pub const LATEST: StarknetVersion = Self::V0_14_2;
+    pub const LATEST: StarknetVersion = Self::V0_14_3;
 
     pub fn is_pre_v0_7(&self) -> bool {
         *self < Self::V0_7_0
@@ -209,7 +210,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(StarknetVersion::V0_14_2, Some("0.14.2"))]
+    #[case(StarknetVersion::V0_14_3, Some("0.14.3"))]
     #[case(StarknetVersion::new(1, 2, 3, 4), None)]
     fn test_starknet_version_to_blockifier(#[case] version: StarknetVersion, #[case] expected: Option<&str>) {
         let blockifier_version = version.to_blockifier();
