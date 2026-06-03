@@ -802,6 +802,7 @@ impl Default for ChainVersionedConstants {
             (StarknetVersion::V0_14_0, VERSIONED_CONSTANTS_V0_14_0.deref().clone()),
             (StarknetVersion::V0_14_1, VERSIONED_CONSTANTS_V0_14_1.deref().clone()),
             (StarknetVersion::V0_14_2, VERSIONED_CONSTANTS_V0_14_2.deref().clone()),
+            (StarknetVersion::V0_14_3, VERSIONED_CONSTANTS_V0_14_3.deref().clone()),
         ]
         .into()
     }
@@ -929,7 +930,7 @@ mod tests {
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
-        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.14.2").unwrap());
+        assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.14.3").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
 
         assert_eq!(
