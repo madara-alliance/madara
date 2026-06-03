@@ -281,7 +281,7 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case(StarknetVersion::V0_14_2, Some("0.14.2"))]
+    #[case(StarknetVersion::V0_14_3, Some("0.14.3"))]
     #[case(StarknetVersion::new(1, 2, 3, 4), None)]
     fn block_execution_context_to_blockifier_keeps_protocol_version(
         #[case] protocol_version: StarknetVersion,
