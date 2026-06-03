@@ -1201,7 +1201,7 @@ pub(crate) mod tests {
                 block_time,
                 bouncer_config: BouncerConfig {
                     block_max_capacity: bouncer_weights,
-                    builtin_weights: Default::default(),
+                    builtin_instance_limits: Default::default(),
                 },
                 no_empty_blocks,
                 ..ChainConfig::madara_devnet()
