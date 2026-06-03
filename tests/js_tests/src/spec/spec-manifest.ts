@@ -28,7 +28,7 @@ export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
         sourceUrl:
           "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_api_openrpc.json",
         sha256:
-          "f51ef570b31686f36db17973b2bd0e6612a8753246a5067086626c2a0f6c3792",
+          "f54584181343b48fd8b6e941433429e95279c3c9bfc0f1e19876a645947353e0",
       },
       {
         file: "starknet_write_api.json",
