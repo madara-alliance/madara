@@ -33,6 +33,7 @@ Madara is a powerful Starknet client written in Rust.
 - ✅ [Supported Features](#-supported-features)
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
+  - [Mainnet Full-Node Bootstrap](#mainnet-full-node-bootstrap)
   - [State Commitment Computation](#state-commitment-computation)
   - [SnapSync](#snapsync)
   - [Cairo Native Execution](#cairo-native-execution)
@@ -115,6 +116,10 @@ cargo run --bin madara --release --        \
   --l1-endpoint ${ETHEREUM_API_URL}
 ```
 
+The user JSON-RPC endpoint is enabled on localhost by default. For a private
+full node, omit `--rpc`; set `--rpc-port` only if you need a non-default local
+port.
+
 #### Sequencer
 
 Produces new blocks for other nodes to synchronize.
@@ -146,8 +151,10 @@ A node in a private local network.
 
 #### 4. Presets
 
-You can use cli presets for certain common node configurations, for example
-enabling rpc endpoints:
+You can use cli presets for certain common node configurations. The `--rpc`
+preset is for public RPC provider mode: it exposes user RPC on `0.0.0.0`,
+enables admin RPC on localhost, and allows all CORS origins. Do not use it for a
+private/local-only full node:
 
 ```bash
 cargo run --bin madara --release -- \
@@ -750,6 +757,23 @@ a regular sync.
 > some discrepancies between official feeder gateway endpoints and our own
 > implementation. Please let us know about if you encounter this by
 > [raising an issue](https://github.com/madara-alliance/madara/issues/new/choose)
+
+### Mainnet Full-Node Bootstrap
+
+Madara can bootstrap a mainnet full node in a few ways:
+
+| Path | Use when | Notes |
+| ---- | -------- | ----- |
+| Full sync | You need the most complete local history. | This is the slowest path. |
+| `--snap-sync` | You want faster catchup. | Storage proofs are not guaranteed for every snap-synced block, and admin revert cannot target blocks before `snap_sync_latest_block`. |
+| Existing Madara DB | You already have a compatible Madara database. | Stop the node that owns the DB, then start Madara with `--base-path` pointing at the same base path. Keep a backup before reusing or migrating a DB. |
+
+If catchup logs `Rate limited, retrying`, the selected gateway is throttling
+requests. Use `--gateway-key` only when you have been issued a key for that
+gateway, or use `--gateway-url` to point at a gateway source that you operate or
+trust. When reporting rate-limit issues, include the Madara commit, full command
+line, current block, target block, blocks/sec, DB size, and how often the
+rate-limit message appears.
 
 ### State Commitment Computation
 
