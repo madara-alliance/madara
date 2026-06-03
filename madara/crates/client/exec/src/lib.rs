@@ -150,7 +150,10 @@
 #![allow(clippy::result_large_err)]
 
 use blockifier::{
-    execution::errors::{ConstructorEntryPointExecutionError, EntryPointExecutionError, PreExecutionError},
+    execution::errors::{
+        AnnotatedEntryPointExecutionError, ConstructorEntryPointExecutionError, EntryPointExecutionError,
+        PreExecutionError,
+    },
     state::cached_state::{CommitmentStateDiff, StateMaps},
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
@@ -215,13 +218,17 @@ fn is_entrypoint_not_found(error: &EntryPointExecutionError) -> bool {
     )
 }
 
+fn annotated_entrypoint_is_not_found(error: &AnnotatedEntryPointExecutionError) -> bool {
+    is_entrypoint_not_found(error.unannotated())
+}
+
 fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) -> bool {
     match error {
         TransactionExecutionError::ExecutionError { error, .. }
-        | TransactionExecutionError::ValidateTransactionError { error, .. } => is_entrypoint_not_found(error),
+        | TransactionExecutionError::ValidateTransactionError { error, .. } => annotated_entrypoint_is_not_found(error),
         TransactionExecutionError::ContractConstructorExecutionFailed(
             ConstructorEntryPointExecutionError::ExecutionError { error, .. },
-        ) => is_entrypoint_not_found(error),
+        ) => annotated_entrypoint_is_not_found(error),
         _ => false,
     }
 }

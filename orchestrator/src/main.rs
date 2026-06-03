@@ -30,7 +30,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 #[global_allocator]
-static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static A: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 /// Start the server
 #[tokio::main]
