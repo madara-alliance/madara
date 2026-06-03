@@ -263,6 +263,10 @@ fn workload_descriptor_for_queue(queue_type: &QueueType) -> Option<WorkloadDescr
         QueueType::AggregatorJobVerification => {
             Some(workload_descriptor_for_job(&JobType::Aggregator, JobState::Verification))
         }
+        // Capacity is intentionally limited to queue-backed processing/verification work.
+        // Trigger, failure-handling, priority helper, and maintenance-style workloads still emit
+        // active/busy signals for observability, but they do not have a meaningful slot-capacity
+        // denominator for the sizing questions this PR is targeting today.
         QueueType::WorkerTrigger
         | QueueType::JobHandleFailure
         | QueueType::PriorityProcessingQueue
