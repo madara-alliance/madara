@@ -37,10 +37,6 @@ use tracing::{debug, error, info, warn, Span};
 pub struct JobHandlerService;
 
 impl JobHandlerService {
-    pub(crate) fn verification_workload_is_error(operation_job_status: Option<&JobStatus>) -> bool {
-        matches!(operation_job_status, Some(JobStatus::VerificationFailed | JobStatus::VerificationTimeout))
-    }
-
     /// Creates the job in the DB in the created state and adds it to the process queue
     ///
     /// # Arguments
@@ -742,6 +738,10 @@ impl JobHandlerService {
             format!("Job moved to DLQ after exhausting retries (last status: {})", status),
         )
         .await
+    }
+
+    pub(crate) fn verification_workload_is_error(operation_job_status: Option<&JobStatus>) -> bool {
+        matches!(operation_job_status, Some(JobStatus::VerificationFailed | JobStatus::VerificationTimeout))
     }
 
     /// Retries a failed job by reprocessing it.
