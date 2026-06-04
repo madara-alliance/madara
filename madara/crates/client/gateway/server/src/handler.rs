@@ -15,13 +15,15 @@ use hyper::header::{HeaderMap, CONTENT_ENCODING, CONTENT_TYPE};
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
+use mc_submit_tx::{
+    feeder_status_from_backend_view, feeder_transaction_from_backend_view, SubmitTransaction,
+    SubmitValidatedTransaction, TransactionLookup,
+};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
     feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionExecutionStatus, TransactionStatus},
-    transaction::Transaction as GatewayTransaction,
     user_transaction::{
         AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
         UserTransaction,
@@ -37,7 +39,6 @@ use mp_gateway::{
 };
 use mp_rpc::v0_9_0::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedTransaction;
-use mp_transactions::TransactionWithHash;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
@@ -149,37 +150,6 @@ fn parse_block_id(params: &std::collections::HashMap<String, String>) -> Result<
     })
 }
 
-fn execution_status(receipt: &mp_receipt::TransactionReceipt) -> (TransactionExecutionStatus, Option<String>) {
-    match receipt.execution_result() {
-        mp_receipt::ExecutionResult::Succeeded => (TransactionExecutionStatus::Succeeded, None),
-        mp_receipt::ExecutionResult::Reverted { reason } => {
-            (TransactionExecutionStatus::Reverted, Some(reason.clone()))
-        }
-    }
-}
-
-fn transaction_status_from_block(
-    block: &mc_db::MadaraBlockView,
-) -> Result<(TransactionStatus, Option<Felt>, Option<u64>), GatewayError> {
-    if block.is_confirmed() {
-        let block_info = block.as_confirmed().context("Confirmed block view expected")?.get_block_info()?;
-        let status = if block.is_on_l1() { TransactionStatus::AcceptedOnL1 } else { TransactionStatus::AcceptedOnL2 };
-        Ok((status, Some(block_info.block_hash), Some(block_info.header.block_number)))
-    } else {
-        Ok((TransactionStatus::Pending, None, Some(block.block_number())))
-    }
-}
-
-fn gateway_transaction(transaction: &mp_block::TransactionWithReceipt) -> GatewayTransaction {
-    GatewayTransaction::new(
-        TransactionWithHash {
-            transaction: transaction.transaction.clone(),
-            hash: *transaction.receipt.transaction_hash(),
-        },
-        transaction.receipt.contract_address().copied(),
-    )
-}
-
 async fn transaction_status_response(
     transaction_hash: Felt,
     backend: &Arc<MadaraBackend>,
@@ -188,15 +158,7 @@ async fn transaction_status_response(
     let view = backend.view_on_latest();
 
     if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
-        if !res.block.is_confirmed() {
-            return Ok(ProviderTransactionStatus::not_received());
-        }
-
-        let transaction = res.get_transaction()?;
-        let (tx_status, block_hash, _) = transaction_status_from_block(&res.block)?;
-        let (execution_status, tx_revert_reason) = execution_status(&transaction.receipt);
-
-        Ok(ProviderTransactionStatus::with_status(tx_status, Some(execution_status), block_hash, tx_revert_reason))
+        Ok(feeder_status_from_backend_view(&res)?)
     } else if let Some(status) = transaction_lookup.feeder_transaction_status(transaction_hash).await? {
         Ok(status)
     } else {
@@ -212,22 +174,7 @@ async fn transaction_response(
     let view = backend.view_on_latest();
 
     if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
-        if !res.block.is_confirmed() {
-            return Ok(ProviderTransactionResponse::not_received());
-        }
-
-        let transaction = res.get_transaction()?;
-        let (status, block_hash, block_number) = transaction_status_from_block(&res.block)?;
-        let (execution_status, _) = execution_status(&transaction.receipt);
-
-        Ok(ProviderTransactionResponse::with_status(
-            status,
-            Some(execution_status),
-            block_hash,
-            block_number,
-            Some(res.transaction_index),
-            Some(gateway_transaction(&transaction)),
-        ))
+        Ok(feeder_transaction_from_backend_view(&res)?)
     } else if let Some(response) = transaction_lookup.feeder_transaction(transaction_hash).await? {
         Ok(response)
     } else {
@@ -253,13 +200,23 @@ fn block_hash_by_id_response(block_id: u64, backend: &Arc<MadaraBackend>) -> Res
 }
 
 fn block_id_by_hash_response(block_hash: Felt, backend: &Arc<MadaraBackend>) -> Result<u64, GatewayError> {
-    backend
-        .view_on_latest()
-        .find_block_by_hash(&block_hash)?
-        .ok_or_else(|| {
-            StarknetError::new(StarknetErrorCode::BlockNotFound, format!("Block hash {block_hash:#x} does not exist."))
-        })
-        .map_err(Into::into)
+    let Some(latest_confirmed) = backend.latest_confirmed_block_n() else {
+        return Err(StarknetError::block_not_found().into());
+    };
+
+    let block_id = backend.view_on_latest().find_block_by_hash(&block_hash)?.ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::BlockNotFound, format!("Block hash {block_hash:#x} does not exist."))
+    })?;
+
+    if block_id > latest_confirmed {
+        return Err(StarknetError::new(
+            StarknetErrorCode::BlockNotFound,
+            format!("Block hash {block_hash:#x} does not exist."),
+        )
+        .into());
+    }
+
+    Ok(block_id)
 }
 
 pub async fn handle_get_preconfirmed_block(
@@ -1132,6 +1089,22 @@ mod tests {
         assert!(matches!(
             err,
             GatewayError::StarknetError(StarknetError { code: StarknetErrorCode::MalformedRequest, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn get_block_id_by_hash_rejects_unknown_hash() {
+        let (backend, _, _) = submit_provider();
+        backend
+            .write_access()
+            .add_full_block_with_classes(&empty_block(0), &[], true)
+            .expect("Failed to persist confirmed block");
+
+        let err = block_id_by_hash_response(Felt::ONE, &backend).unwrap_err();
+
+        assert!(matches!(
+            err,
+            GatewayError::StarknetError(StarknetError { code: StarknetErrorCode::BlockNotFound, .. })
         ));
     }
 }

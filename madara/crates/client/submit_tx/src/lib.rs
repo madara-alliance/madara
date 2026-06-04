@@ -168,44 +168,31 @@ fn transaction_status_from_block<D: MadaraStorageRead>(
     }
 }
 
-fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
-    transaction_hash: mp_convert::Felt,
-    mempool: &Mempool<D>,
-    is_on_l1: bool,
+pub fn feeder_status_from_backend_view<D: MadaraStorageRead>(
+    executed: &ExecutedTransactionWithBlockView<D>,
 ) -> anyhow::Result<ProviderTransactionStatus> {
-    let fallback_status = accepted_status(is_on_l1);
-    let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
-        return Ok(ProviderTransactionStatus::not_received());
-    };
     if executed.block.as_preconfirmed().is_some() {
         return Ok(ProviderTransactionStatus::not_received());
     }
 
     let transaction = executed.get_transaction()?;
-    let (_, block_hash, _) = transaction_status_from_block(&executed.block)?;
+    let (status, block_hash, _) = transaction_status_from_block(&executed.block)?;
     let (execution_status, tx_revert_reason) = execution_status(&transaction.receipt);
 
-    Ok(ProviderTransactionStatus::with_status(fallback_status, Some(execution_status), block_hash, tx_revert_reason))
+    Ok(ProviderTransactionStatus::with_status(status, Some(execution_status), block_hash, tx_revert_reason))
 }
 
-fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
+fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
     transaction_hash: mp_convert::Felt,
     mempool: &Mempool<D>,
-) -> anyhow::Result<ProviderTransactionResponse> {
+) -> anyhow::Result<ProviderTransactionStatus> {
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
-        return Ok(ProviderTransactionResponse::not_received());
+        return Ok(ProviderTransactionStatus::not_received());
     };
-
-    feeder_transaction_from_backend_view(&executed)
+    feeder_status_from_backend_view(&executed)
 }
 
-// Feeder `get_transaction` and `get_transaction_status` intentionally hide all preconfirmed
-// states. Use `get_preconfirmed_block` or RPC for candidate/preconfirmed transaction data.
-fn feeder_status_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionStatus {
-    ProviderTransactionStatus::not_received()
-}
-
-fn feeder_transaction_from_backend_view<D: MadaraStorageRead>(
+pub fn feeder_transaction_from_backend_view<D: MadaraStorageRead>(
     executed: &ExecutedTransactionWithBlockView<D>,
 ) -> anyhow::Result<ProviderTransactionResponse> {
     if executed.block.as_preconfirmed().is_some() {
@@ -224,6 +211,23 @@ fn feeder_transaction_from_backend_view<D: MadaraStorageRead>(
         Some(executed.transaction_index),
         Some(gateway_executed_transaction(&transaction)),
     ))
+}
+
+fn feeder_transaction_from_confirmed_mempool<D: MadaraStorageRead>(
+    transaction_hash: mp_convert::Felt,
+    mempool: &Mempool<D>,
+) -> anyhow::Result<ProviderTransactionResponse> {
+    let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
+        return Ok(ProviderTransactionResponse::not_received());
+    };
+
+    feeder_transaction_from_backend_view(&executed)
+}
+
+// Feeder `get_transaction` and `get_transaction_status` intentionally hide all preconfirmed
+// states. Use `get_preconfirmed_block` or RPC for candidate/preconfirmed transaction data.
+fn feeder_status_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionStatus {
+    ProviderTransactionStatus::not_received()
 }
 
 fn feeder_transaction_from_preconfirmed_mempool(_status: &PreConfirmationStatus) -> ProviderTransactionResponse {
@@ -329,8 +333,8 @@ impl<D: MadaraStorage> TransactionLookup for Mempool<D> {
             Ok(Some(MempoolTransactionStatus::Preconfirmed(status))) => {
                 Ok(Some(feeder_status_from_preconfirmed_mempool(&status)))
             }
-            Ok(Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. })) => {
-                Ok(Some(feeder_status_from_confirmed_mempool(hash, self, is_on_l1)?))
+            Ok(Some(MempoolTransactionStatus::Confirmed { .. })) => {
+                Ok(Some(feeder_status_from_confirmed_mempool(hash, self)?))
             }
             Ok(None) => Ok(Some(ProviderTransactionStatus::not_received())),
             Err(err) => Err(SubmitTransactionError::Internal(err)),
@@ -536,7 +540,7 @@ mod tests {
         let backend = backend_for_tests();
         let mempool = Mempool::new(backend, MempoolConfig::default());
 
-        let status = feeder_status_from_confirmed_mempool(hash, &mempool, false).unwrap();
+        let status = feeder_status_from_confirmed_mempool(hash, &mempool).unwrap();
 
         assert_eq!(status, ProviderTransactionStatus::not_received());
     }

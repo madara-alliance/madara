@@ -112,20 +112,14 @@ impl TransactionLookup for TransactionLookupSwitch {
         &self,
         hash: Felt,
     ) -> Result<Option<mp_gateway::feeder::ProviderTransactionStatus>, SubmitTransactionError> {
-        match self.provider().ok() {
-            Some(provider) => provider.feeder_transaction_status(hash).await,
-            None => Ok(None),
-        }
+        self.provider()?.feeder_transaction_status(hash).await
     }
 
     async fn feeder_transaction(
         &self,
         hash: Felt,
     ) -> Result<Option<mp_gateway::feeder::ProviderTransactionResponse>, SubmitTransactionError> {
-        match self.provider().ok() {
-            Some(provider) => provider.feeder_transaction(hash).await,
-            None => Ok(None),
-        }
+        self.provider()?.feeder_transaction(hash).await
     }
 }
 
@@ -222,5 +216,55 @@ impl MakeSubmitValidatedTransactionSwitch {
             mempool: self.mempool.clone(),
             ctx,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
+    use mp_utils::service::ServiceContext;
+
+    struct StubLookup;
+
+    #[async_trait]
+    impl TransactionLookup for StubLookup {
+        async fn received_transaction(&self, _hash: Felt) -> Option<bool> {
+            None
+        }
+
+        async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
+            None
+        }
+
+        async fn feeder_transaction_status(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+            Ok(Some(ProviderTransactionStatus::not_received()))
+        }
+
+        async fn feeder_transaction(
+            &self,
+            _hash: Felt,
+        ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+            Ok(Some(ProviderTransactionResponse::not_received()))
+        }
+    }
+
+    #[tokio::test]
+    async fn transaction_lookup_switch_propagates_missing_provider_for_feeder_methods() {
+        let lookup = TransactionLookupSwitch {
+            redirect_to_gateway: Arc::new(StubLookup),
+            mempool_with_validator: Arc::new(StubLookup),
+            ctx: ServiceContext::new_for_testing(),
+        };
+
+        let status_err = lookup.feeder_transaction_status(Felt::ZERO).await.unwrap_err();
+        let transaction_err = lookup.feeder_transaction(Felt::ZERO).await.unwrap_err();
+
+        assert!(matches!(status_err, SubmitTransactionError::Internal(_)));
+        assert!(matches!(transaction_err, SubmitTransactionError::Internal(_)));
     }
 }
