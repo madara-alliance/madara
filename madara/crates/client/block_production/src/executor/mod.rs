@@ -31,10 +31,29 @@ pub enum ExecutorCommandError {
     ChannelClosed,
 }
 
+/// Per-transaction outcome of an atomic batch, reported back to the submitter.
+#[derive(Debug, Clone)]
+pub enum TxExecutionOutcome {
+    /// Executed successfully and included in a block.
+    Succeeded,
+    /// Executed but reverted (still included in a block, fees charged).
+    Reverted(String),
+    /// Could not be included (e.g. Declare/DeployAccount error or internal error).
+    Rejected(String),
+}
+
+/// Outcome of executing a whole transaction batch, in submission order.
+pub type BatchExecutionOutcome = Vec<(mp_convert::Felt, TxExecutionOutcome)>;
+
 #[derive(Debug)]
 pub enum ExecutorCommand {
     /// Force close the current block.
     CloseBlock(oneshot::Sender<Result<(), ExecutorCommandError>>),
+    /// Execute a batch of transactions as one contiguous unit: the transactions are fed to the
+    /// executor in order with no foreign transaction executed between any two of them (across block
+    /// boundaries if the batch does not fit in a single block). This is an ordering guarantee, not
+    /// an atomicity one: individual transactions may still revert or be rejected.
+    ExecuteBatch { batch: BatchToExecute, response: oneshot::Sender<BatchExecutionOutcome> },
 }
 
 #[derive(Debug)]

@@ -158,7 +158,8 @@ mod handle;
 pub mod metrics;
 mod util;
 
-pub use handle::BlockProductionHandle;
+pub use executor::{BatchExecutionOutcome, TxExecutionOutcome};
+pub use handle::{BatchSubmitError, BlockProductionHandle};
 
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1988,6 +1989,62 @@ pub(crate) mod tests {
                 data: vec![/* from_address */ Felt::THREE, /* arg1 */ Felt::ONE, /* arg2 */ Felt::TWO]
             }
         );
+    }
+
+    /// Exercises the full `submit_transaction_batch` path (validation + contiguous execution) for a
+    /// dependent sequential-nonce batch. The executor-level test sends the raw `ExecuteBatch` command
+    /// and so skips validation; here the second transaction has nonce 1 while the on-chain nonce is 0,
+    /// so the validator must accept the "future" nonce for the batch to be admitted and both
+    /// transactions to execute successfully.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(100))]
+    #[tokio::test]
+    async fn test_submit_transaction_batch_sequential_nonces(
+        #[future]
+        #[with(Duration::from_secs(3000000000), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        use mp_rpc::v0_10_2::BroadcastedTxn as BroadcastedTxnLatest;
+
+        let mut devnet_setup = devnet_setup.await;
+        let block_production_task = devnet_setup.block_prod_task();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        let erc20 = Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+        let sender = &devnet_setup.contracts.0[0];
+        let receiver = &devnet_setup.contracts.0[1];
+        // Two transfers from the same account with sequential nonces 0 and 1.
+        let transfer = |nonce: Felt| {
+            BroadcastedTxnLatest::Invoke(
+                make_invoke_tx(
+                    sender,
+                    Multicall::default().with(Call {
+                        to: erc20,
+                        selector: Selector::from("transfer"),
+                        calldata: vec![receiver.address, Felt::from(1_000u128), Felt::ZERO],
+                    }),
+                    &devnet_setup.backend,
+                    nonce,
+                )
+                .into(),
+            )
+        };
+
+        let outcomes = control
+            .submit_transaction_batch(vec![transfer(Felt::ZERO), transfer(Felt::ONE)])
+            .await
+            .expect("batch should be accepted and executed");
+
+        // Both transactions were admitted (the validator accepted the future nonce on the second
+        // one) and executed successfully, in submission order.
+        assert_eq!(outcomes.len(), 2);
+        for (_, outcome) in &outcomes {
+            assert!(matches!(outcome, crate::TxExecutionOutcome::Succeeded), "unexpected outcome: {outcome:?}");
+        }
     }
 
     /// Verifies that re-execution uses the saved `no_charge_fee` value.

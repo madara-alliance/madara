@@ -97,6 +97,20 @@ enum WaitTxBatchOutcome {
     Batch(BatchToExecute),
 }
 
+/// Tracks an in-flight atomic transaction batch so we can report each transaction's outcome back to
+/// the submitter once the whole batch has been executed. Batch submissions are serialized by the
+/// [`crate::BlockProductionHandle`], so at most one batch is ever tracked at a time.
+struct BatchTracker {
+    /// Hashes of the batch's transactions, used to recognize them among executed transactions.
+    hashes: HashSet<Felt>,
+    /// Collected outcomes, accumulated in execution (== submission) order.
+    collected: super::BatchExecutionOutcome,
+    /// Total number of transactions in the batch.
+    total: usize,
+    /// Channel to reply on once every transaction in the batch has been executed.
+    response: tokio::sync::oneshot::Sender<super::BatchExecutionOutcome>,
+}
+
 impl ExecutorThread {
     pub fn new(
         backend: Arc<MadaraBackend>,
@@ -301,6 +315,8 @@ impl ExecutorThread {
         let mut force_close = false;
         let mut block_empty = true;
         let mut l2_gas_consumed_block = 0;
+        // The atomic batch currently being executed, if any. See [`BatchTracker`].
+        let mut active_batch: Option<BatchTracker> = None;
 
         tracing::debug!("Starting executor thread.");
 
@@ -323,6 +339,28 @@ impl ExecutorThread {
                             force_close = true;
                             let _ = callback.send(Ok(()));
                             Default::default()
+                        }
+                        super::ExecutorCommand::ExecuteBatch { batch, response } => {
+                            let total = batch.len();
+                            if total == 0 {
+                                let _ = response.send(Vec::new());
+                                Default::default()
+                            } else {
+                                // Record the batch so we can report each tx's outcome once executed.
+                                // The batch's transactions are appended to `to_exec` as a single
+                                // contiguous unit; since leftovers always stay at the front of
+                                // `to_exec` and any other transactions are appended at the back, no
+                                // foreign transaction can ever be executed between two batch txs,
+                                // even when the batch spans multiple blocks.
+                                let hashes = batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
+                                active_batch = Some(BatchTracker {
+                                    hashes,
+                                    collected: Vec::with_capacity(total),
+                                    total,
+                                    response,
+                                });
+                                batch
+                            }
                         }
                     },
                     // Channel closed. Exit gracefully.
@@ -475,7 +513,7 @@ impl ExecutorThread {
                 0.0
             };
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
-                match res {
+                let outcome = match res {
                     Ok((execution_info, _state_diff)) => {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
 
@@ -489,12 +527,16 @@ impl ExecutorThread {
                         stats.n_added_to_block += 1;
                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                         block_empty = false;
-                        if execution_info.revert_error.is_some() {
+                        if let Some(revert_error) = execution_info.revert_error.as_ref() {
                             stats.n_reverted += 1;
-                        } else if let Some((class_hash, contract_class)) = btx.declared_contract_class() {
-                            tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());
-                            stats.declared_classes += 1;
-                            execution_state.declared_classes.insert(class_hash, contract_class);
+                            super::TxExecutionOutcome::Reverted(revert_error.to_string())
+                        } else {
+                            if let Some((class_hash, contract_class)) = btx.declared_contract_class() {
+                                tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());
+                                stats.declared_classes += 1;
+                                execution_state.declared_classes.insert(class_hash, contract_class);
+                            }
+                            super::TxExecutionOutcome::Succeeded
                         }
                     }
                     Err(err) => {
@@ -507,10 +549,26 @@ impl ExecutorThread {
                             btx.tx_hash().to_felt()
                         );
                         stats.n_rejected += 1;
+                        super::TxExecutionOutcome::Rejected(format!("{err:#}"))
+                    }
+                };
+
+                // If this transaction belongs to the in-flight atomic batch, record its outcome.
+                if let Some(tracker) = active_batch.as_mut() {
+                    let tx_hash = btx.tx_hash().to_felt();
+                    if tracker.hashes.contains(&tx_hash) {
+                        tracker.collected.push((tx_hash, outcome));
                     }
                 }
             }
             l2_gas_consumed_block += stats.l2_gas_consumed;
+
+            // Once every transaction in the batch has been executed, reply to the submitter.
+            if active_batch.as_ref().is_some_and(|t| t.collected.len() >= t.total) {
+                if let Some(tracker) = active_batch.take() {
+                    let _ = tracker.response.send(tracker.collected);
+                }
+            }
 
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);

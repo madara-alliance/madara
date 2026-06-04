@@ -70,6 +70,9 @@ pub struct ChainConfigOverrideParams {
     ///
     ///   * mempool_ttl: max age of transactions in the mempool.
     ///     Transactions which are too old will be removed.
+    ///
+    ///   * max_transaction_batch_size: max number of transactions accepted in a
+    ///     single madara_addTransactionBatch RPC call.
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
 }
@@ -100,6 +103,7 @@ pub struct ChainConfigOverridesInner {
     pub mempool_max_declare_transactions: Option<usize>,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
+    pub max_transaction_batch_size: usize,
     pub l2_gas_price: L2GasPrice,
     pub no_empty_blocks: bool,
     pub block_production_concurrency: BlockProductionConfig,
@@ -136,6 +140,7 @@ impl ChainConfigOverrideParams {
             mempool_max_transactions: chain_config.mempool_max_transactions,
             mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
             mempool_ttl: chain_config.mempool_ttl,
+            max_transaction_batch_size: chain_config.max_transaction_batch_size,
             l2_gas_price: chain_config.l2_gas_price,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
@@ -200,6 +205,7 @@ impl ChainConfigOverrideParams {
             mempool_max_transactions: chain_config.mempool_max_transactions,
             mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
             mempool_ttl: chain_config.mempool_ttl,
+            max_transaction_batch_size: chain_config_overrides.max_transaction_batch_size,
             l2_gas_price: chain_config_overrides.l2_gas_price,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,

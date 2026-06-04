@@ -156,6 +156,12 @@ fn default_l1_messages_finality_blocks() -> u64 {
 fn default_mempool_min_tip_bump() -> f64 {
     0.1
 }
+fn default_max_transaction_batch_size() -> usize {
+    // Maximum number of transactions accepted in a single `madara_addTransactionBatch` call.
+    // This bounds how long a batch can monopolize block production (batches execute contiguously,
+    // pausing normal transaction inclusion), which matters since the endpoint is public.
+    100
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
@@ -293,6 +299,9 @@ pub struct ChainConfigV2 {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
+    /// Maximum number of transactions accepted in a single `madara_addTransactionBatch` call.
+    #[serde(default = "default_max_transaction_batch_size")]
+    pub max_transaction_batch_size: usize,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
 
@@ -421,6 +430,9 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
+    /// Maximum number of transactions accepted in a single `madara_addTransactionBatch` call.
+    #[serde(default = "default_max_transaction_batch_size")]
+    pub max_transaction_batch_size: usize,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
 
@@ -478,6 +490,7 @@ impl Clone for ChainConfig {
             mempool_max_transactions: self.mempool_max_transactions,
             mempool_max_declare_transactions: self.mempool_max_declare_transactions,
             mempool_ttl: self.mempool_ttl,
+            max_transaction_batch_size: self.max_transaction_batch_size,
             l2_gas_price: self.l2_gas_price.clone(),
             block_production_concurrency: self.block_production_concurrency.clone(),
             l1_messages_replay_max_duration: self.l1_messages_replay_max_duration,
@@ -516,6 +529,7 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             mempool_max_transactions: v2.mempool_max_transactions,
             mempool_max_declare_transactions: v2.mempool_max_declare_transactions,
             mempool_ttl: v2.mempool_ttl,
+            max_transaction_batch_size: v2.max_transaction_batch_size,
             l2_gas_price: v2.l2_gas_price,
             block_production_concurrency: v2.block_production_concurrency,
             l1_messages_replay_max_duration: v2.l1_messages_replay_max_duration,
@@ -637,6 +651,7 @@ impl ChainConfig {
             mempool_max_declare_transactions: Some(20),
             mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?
             mempool_min_tip_bump: 0.1,
+            max_transaction_batch_size: default_max_transaction_batch_size(),
             l2_gas_price: L2GasPrice::starknet_mainnet(),
 
             block_production_concurrency: BlockProductionConfig::default(),
