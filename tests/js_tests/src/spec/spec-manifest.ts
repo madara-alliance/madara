@@ -28,21 +28,21 @@ export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
         sourceUrl:
           "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_api_openrpc.json",
         sha256:
-          "f51ef570b31686f36db17973b2bd0e6612a8753246a5067086626c2a0f6c3792",
+          "f54584181343b48fd8b6e941433429e95279c3c9bfc0f1e19876a645947353e0",
       },
       {
         file: "starknet_write_api.json",
         sourceUrl:
           "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_write_api.json",
         sha256:
-          "41f47c083c3ba211dafd20e2934d52d6e19bfc54badce43b6a5406870ec3c6eb",
+          "98e8ed3b434e07032a576894f60e91b1fed1c6778ea671159926681ff8ff83f2",
       },
       {
         file: "starknet_trace_api_openrpc.json",
         sourceUrl:
           "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_trace_api_openrpc.json",
         sha256:
-          "ba07e54565e2de6ef25d64e4ba2454c2dbfd0133555557b75c14e5d8f22db993",
+          "3d2bdeabd02d555f4b3a0a5f2de50dbf6f6b1d9382adb3561f77254996a3eda4",
       },
     ],
   },
