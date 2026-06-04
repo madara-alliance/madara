@@ -7,6 +7,7 @@ use crate::types::priority_slot::{
 use crate::types::queue::JobAction;
 use crate::types::queue::{JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
@@ -174,10 +175,12 @@ impl EventWorker {
     async fn handle_worker_trigger(&self, worker_message: &WorkerTriggerMessage) -> EventSystemResult<()> {
         let worker_handler =
             JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
+        let workload = MetricsRecorder::start_worker_trigger_workload(&worker_message.worker);
         worker_handler
             .run_worker_if_enabled(self.config.clone())
             .await
             .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+        workload.finish_success();
         Ok(())
     }
 
@@ -350,6 +353,7 @@ impl EventWorker {
     pub async fn run(&self) -> EventSystemResult<()> {
         let mut tasks = JoinSet::new();
         let max_concurrent_tasks = self.queue_control.max_message_count;
+        MetricsRecorder::record_workload_capacity_for_queue(&self.queue_type, max_concurrent_tasks);
         info!("Starting {:?} worker (pool_size={})", self.queue_type, max_concurrent_tasks);
 
         loop {
