@@ -21,6 +21,10 @@ fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut Hash
     }
 }
 
+fn should_fixup_missed_mainnet_classes(chain_id: ChainId) -> bool {
+    chain_id == ChainId::Mainnet
+}
+
 /// Fetches class definitions from the gateway and creates ClassInfo structures.
 ///
 /// # Arguments
@@ -102,7 +106,7 @@ impl PipelineSteps for ClassesSyncSteps {
         block_range: Range<u64>,
         mut input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
-        if self.backend.chain_config().chain_id == ChainId::Mainnet {
+        if should_fixup_missed_mainnet_classes(self.backend.chain_config().chain_id.clone()) {
             block_range
                 .clone()
                 .zip(input.iter_mut())
@@ -194,5 +198,11 @@ mod tests {
 
         assert_eq!(classes.get(&existing), Some(&DeclaredClassCompiledClass::Legacy));
         assert_eq!(classes.get(&repaired), Some(&DeclaredClassCompiledClass::Legacy));
+    }
+
+    #[test]
+    fn missing_class_repair_is_only_enabled_on_mainnet() {
+        assert!(should_fixup_missed_mainnet_classes(ChainId::Mainnet));
+        assert!(!should_fixup_missed_mainnet_classes(ChainId::Sepolia));
     }
 }

@@ -71,6 +71,14 @@ async fn main() -> anyhow::Result<()> {
 
     let converted = match class {
         mp_class::ContractClass::Legacy(contract_class) => {
+            let computed_class_hash = contract_class
+                .compute_class_hash()
+                .with_context(|| format!("Computing class hash for fetched legacy class {class_hash:#x}"))?;
+            if computed_class_hash != class_hash {
+                bail!(
+                    "Fetched legacy class hash mismatch: expected {class_hash:#x}, computed {computed_class_hash:#x}"
+                );
+            }
             ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: LegacyClassInfo { contract_class } })
         }
         mp_class::ContractClass::Sierra(_) => {
@@ -78,6 +86,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Keep the DB write on a dedicated single-thread pool so this repair step stays serialized
+    // even though the process has already initialized the wider global rayon pool for library code.
     rayon::ThreadPoolBuilder::new()
         .num_threads(1)
         .build()?

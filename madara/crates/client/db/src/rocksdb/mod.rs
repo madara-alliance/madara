@@ -250,13 +250,14 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
     trie: &mut trie::GlobalTrie<H>,
     latest_log_block_n: Option<u64>,
     target_block_n: u64,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     match trie_revert_action(latest_log_block_n, target_block_n) {
         TrieRevertAction::Revert { current, target } => {
             tracing::debug!("🌳 REORG: Reverting {trie_name} trie from trie_head={} to target={}", current, target);
             trie.revert_to(BasicId::new(target), BasicId::new(current))
                 .map_err(|e| anyhow::anyhow!("Failed to revert {trie_name} trie: {e:?}"))?;
             tracing::info!("✅ REORG: {trie_name} trie reverted successfully");
+            Ok(true)
         }
         TrieRevertAction::AlreadyAtTarget(current) => {
             tracing::info!(
@@ -264,6 +265,7 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
                 current,
                 target_block_n
             );
+            Ok(false)
         }
         TrieRevertAction::OlderThanTarget { current, target } => {
             tracing::info!(
@@ -271,13 +273,13 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
                 current,
                 target
             );
+            Ok(false)
         }
         TrieRevertAction::Missing => {
             tracing::info!("🌳 REORG: Skipping {trie_name} trie revert because it has no persisted trie logs");
+            Ok(false)
         }
     }
-
-    Ok(())
 }
 
 impl RocksDBStorage {
@@ -960,11 +962,12 @@ impl MadaraStorageWrite for RocksDBStorage {
 
         tracing::debug!("🌳 REORG: Reverting contract trie...");
         let mut contract_trie = self.contract_trie();
-        revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
+        let contract_trie_needs_commit =
+            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
 
         tracing::debug!("🌳 REORG: Reverting contract storage trie...");
         let mut contract_storage_trie = self.contract_storage_trie();
-        revert_single_trie(
+        let contract_storage_trie_needs_commit = revert_single_trie(
             "contract storage",
             &mut contract_storage_trie,
             trie_log_heads.contract_storage,
@@ -973,16 +976,25 @@ impl MadaraStorageWrite for RocksDBStorage {
 
         tracing::debug!("🌳 REORG: Reverting class trie...");
         let mut class_trie = self.class_trie();
-        revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
+        let class_trie_needs_commit =
+            revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
 
         tracing::info!("💾 REORG: Committing tries after revert...");
-        contract_trie
-            .commit(target_id)
-            .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
-        contract_storage_trie
-            .commit(target_id)
-            .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
-        class_trie.commit(target_id).map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
+        if contract_trie_needs_commit {
+            contract_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
+        }
+        if contract_storage_trie_needs_commit {
+            contract_storage_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
+        }
+        if class_trie_needs_commit {
+            class_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
+        }
         tracing::info!("✅ REORG: All tries committed successfully");
 
         // Revert database state using the three revert functions
@@ -1092,5 +1104,57 @@ mod tests {
         trie.commit(BasicId::new(5)).unwrap();
 
         assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn revert_single_trie_reverts_and_commits_on_the_same_handle() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+
+        let key_a = contract_trie_key(Felt::from(1u64));
+        let key_b = contract_trie_key(Felt::from(2u64));
+
+        let mut trie = storage.contract_trie();
+        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
+        let root_at_2 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+
+        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
+        let root_at_5 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        trie.commit(BasicId::new(5)).unwrap();
+
+        let mut trie = storage.contract_trie();
+        assert!(revert_single_trie("contract", &mut trie, Some(5), 2).unwrap());
+        trie.commit(BasicId::new(2)).unwrap();
+
+        let latest_head = storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap();
+        assert_eq!(latest_head, Some(2));
+
+        let current_root = storage.contract_trie().root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        assert_eq!(current_root, root_at_2);
+        assert_ne!(current_root, root_at_5);
+    }
+
+    #[test]
+    fn revert_single_trie_skipped_paths_do_not_fabricate_target_revisions() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+
+        let key = contract_trie_key(Felt::from(1u64));
+        let mut trie = storage.contract_trie();
+        trie.insert(bonsai_identifier::CONTRACT, &key, &Felt::from(11u64)).unwrap();
+        trie.commit(BasicId::new(5)).unwrap();
+
+        let mut older_than_target = storage.contract_trie();
+        assert!(!revert_single_trie("contract", &mut older_than_target, Some(5), 8).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+
+        let mut already_at_target = storage.contract_trie();
+        assert!(!revert_single_trie("contract", &mut already_at_target, Some(5), 5).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+
+        let mut missing = storage.class_trie();
+        assert!(!revert_single_trie("class", &mut missing, None, 8).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN).unwrap(), None);
     }
 }
