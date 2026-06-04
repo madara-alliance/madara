@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn native_cache_abi_version_matches_expected_cairo_native_version() {
-        assert_eq!(NativeHostFingerprint::current().native_cache_abi_version, "cairo-native-0.9.0-rc.6");
+        assert_eq!(NativeHostFingerprint::current().native_cache_abi_version, "cairo-native-0.9.0-rc.7");
     }
 
     #[test]

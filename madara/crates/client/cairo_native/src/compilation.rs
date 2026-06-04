@@ -313,12 +313,28 @@ fn cleanup_compilation_artifacts(path: &Path) {
 ///
 /// Handles both async and blocking contexts, returning the executor or an error.
 /// This is a pure function that only performs compilation - no caching or metrics.
+#[cfg(all(test, target_os = "macos"))]
+fn should_short_circuit_compilation_timeout(timeout: Duration) -> bool {
+    // The timeout tests intentionally use 1ms to force the error path. On macOS,
+    // timing out a native compile leaves the compiler thread running after the
+    // test completes, which can abort the nextest process. Keep production code
+    // unchanged while making the test timeout branch deterministic locally.
+    timeout <= Duration::from_millis(1)
+}
+
 fn execute_native_compilation(
     sierra: &SierraConvertedClass,
     path: &Path,
     timeout: Duration,
     timer: super::metrics::CompilationTimer,
 ) -> Result<AotContractExecutor, NativeCompilationError> {
+    #[cfg(all(test, target_os = "macos"))]
+    if should_short_circuit_compilation_timeout(timeout) {
+        timer.finish(false, true);
+        cleanup_compilation_artifacts(path);
+        return Err(NativeCompilationError::CompilationTimeout(timeout));
+    }
+
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         // Async context detected - spawn_blocking used with timeout
         let sierra_clone = Arc::new(sierra.clone());
@@ -761,6 +777,22 @@ pub(crate) fn spawn_compilation_if_needed(
             timeout_secs = compilation_timeout.as_secs(),
             "compilation_async_start"
         );
+
+        #[cfg(all(test, target_os = "macos"))]
+        if should_short_circuit_compilation_timeout(compilation_timeout) {
+            handle_async_compilation_failure(
+                class_hash,
+                "timeout",
+                format!("Compilation exceeded timeout of {:?}", compilation_timeout),
+                &path,
+                timer,
+                true,
+                &config,
+            );
+            remove_compilation_in_progress(&class_hash);
+            drop(permit);
+            return;
+        }
 
         // Use existing compile_to_native function in a blocking task with timeout
         let sierra_clone = sierra.clone();

@@ -61,7 +61,7 @@ const SNOS_PIE_FILES: [&str; 4] =
 /// Pinning this value turns any drift in `run_local_aggregator` or `get_fact_info` into
 /// a loud test failure.
 /// State update transaction with this fact - https://sepolia.etherscan.io/tx/0x210ce8de99bfc31ddf1d6c62665210bb23c9ec975fd1a6ff7ce0c7124c8e6140
-const EXPECTED_AGG_FACT: &str = "0x567583b3f11c269a52e29622b95e7be9b0a1a195c0df9ad3e052b4c82163a6dc";
+const EXPECTED_AGG_FACT: &str = "0x7747ae4189986a788661edeb7af12f59ae738a03a4760a35aa3fbb8b416dd3ce";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]

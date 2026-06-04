@@ -59,19 +59,18 @@ bouncer_config:
     proving_gas: 5000000000
     # Maximum L2 gas charged by receipts
     receipt_l2_gas: 5800000000
-  builtin_weights:
-    gas_costs:
-      pedersen: 3000
-      range_check: 90
-      ecdsa: 2000000
-      ecop: 857850
-      bitwise: 583
-      keccak: 600000
-      poseidon: 10000
-      add_mod: 2000
-      mul_mod: 2000
-      range_check96: 179
-      blake: 3334
+  builtin_instance_limits:
+    pedersen: 2000000
+    range_check: 66666666
+    range_check96: 33519553
+    poseidon: 600000
+    ecdsa: 3000
+    ecop: 130000
+    bitwise: 10500000
+    keccak: 10000
+    add_mod: 3000000
+    mul_mod: 3000000
+    blake: 1800000
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
