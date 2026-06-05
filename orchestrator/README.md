@@ -108,7 +108,7 @@ The system uses dedicated queues for managing different job phases:
 - Build essentials (`build-essential`)
 - OpenSSL (`libssl-dev`)
 - Package config (`pkg-config`)
-- Python 3.9 with development files
+- Python 3.9 (build-time Cairo 0 tooling for SNOS program artifacts)
 - GMP library (`libgmp-dev`)
 
 ### Core Dependencies
@@ -143,14 +143,18 @@ The system uses dedicated queues for managing different job phases:
    ```bash
    # Ubuntu/Debian
    sudo apt-get update
-   sudo apt install build-essential openssl pkg-config libssl-dev
-   sudo apt install python3.9 python3.9-venv python3.9-distutils libgmp-dev python3.9-dev
+   sudo apt install build-essential openssl pkg-config libssl-dev libgmp-dev
+   sudo apt install python3.9 python3.9-venv python3.9-distutils python3.9-dev
 
    # For macOS
    brew install openssl pkg-config gmp python@3.9
    ```
 
-   > 🚨 **Note**: python 3.9 is required for the `SNOS` to create `os_latest.json` hence the `python3.9` in the above command.
+   > 🚨 **Note**: Python 3.9 with Cairo 0 tooling is required at **build time**
+   > to compile SNOS program artifacts (`apollo_starknet_os_program`). From the
+   > repository root, run `make setup-cairo` or `make build-orchestrator` to
+   > create the `sequencer_venv` used by the build. SNOS jobs themselves run
+   > in-process via the Rust `generate-pie` crate at runtime.
 
 2. **Install Rust** (Cross-platform)
 

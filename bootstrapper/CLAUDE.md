@@ -20,7 +20,7 @@ factory-based deployments unless you are intentionally maintaining v1.
 - Manage configuration across two different blockchain networks
 - Support both standalone setup for individual components and full end-to-end bootstrapping
 
-**Note:** There is also `bootstrapper-v2/` which uses a factory pattern for atomic deployments. See the bootstrapper-v2 section below.
+For current factory-based deployments, use [`../bootstrapper-v2/`](../bootstrapper-v2/CLAUDE.md).
 
 ## Common Commands
 
@@ -191,63 +191,3 @@ operator_address: Block proposer/operator address
 1. Add declaration function in `setup_scripts/`
 2. Create constant paths in `utils/constants.rs`
 3. Register in appropriate bootstrap mode
-
----
-
-## Bootstrapper V2
-
-Located in `../bootstrapper-v2/`, this is a newer implementation using factory patterns for
-atomic deployments.
-
-## Key Differences from V1
-
-- **Factory Pattern**: Atomic deployments via Factory contracts on both L1 and L2
-- **Two-Phase Setup**: Separate `setup-base` and `setup-madara` commands
-- **Automatic Bridge Configuration**: Post-setup linking between layers
-- **Version Requirement**: Requires Madara with StarkNet protocol version 0.14.0
-
-## V2 Commands
-
-```bash
-# Setup Base Layer (L1)
-RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
-  setup-base --config-path configs/config.json \
-  --addresses-output-path output/addresses.json
-
-# Setup Madara (L2) - requires base layer addresses
-RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
-  setup-madara --config-path configs/config.json \
-  --base-addresses-path output/addresses.json \
-  --output-path output/madara_addresses.json
-```
-
-### V2 Environment Variables
-
-```text
-BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments
-MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments
-RUST_LOG=info                    # Logging level
-```
-
-## V2 Architecture
-
-**Base Layer (L1) Deployment:**
-
-1. Deploy implementation contracts
-2. Deploy Factory contract
-3. Call Factory.setup() → deploys CoreContract, Manager, Registry, MultiBridge, EthBridge
-4. Post-Madara: Update L2 bridge addresses
-
-**Madara (L2) Deployment:**
-
-1. Bootstrap account declaration
-2. Deploy user account via OpenZeppelin AccountFactory
-3. Declare all Cairo contracts
-4. Deploy UniversalDeployer (UDC)
-5. Deploy MadaraFactory
-6. Call MadaraFactory.deploy_bridges() → deploys L2 ETH Token, ETH Bridge, Token Bridge
-
-## V2 Output Files
-
-- `output/addresses.json`: Base layer addresses (CoreContract, bridges, manager, registry)
-- `output/madara_addresses.json`: Madara addresses (factory, UDC, bridges, tokens)
