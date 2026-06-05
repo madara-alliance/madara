@@ -97,6 +97,8 @@ pub enum RejectedTransactionErrorKind {
     InsufficientMaxFee,
     #[error("ValidateFailure")]
     ValidateFailure,
+    #[error("InvalidProof")]
+    InvalidProof,
     #[error("ContractBytecodeSizeTooLarge")]
     ContractBytecodeSizeTooLarge,
     #[error("ContractClassObjectSizeTooLarge")]

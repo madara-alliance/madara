@@ -87,10 +87,14 @@ mod tests {
 
     #[rstest]
     fn test_get_storage_at_value(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
-        let (SampleChainForStateUpdates { contracts, keys, values, .. }, rpc) = sample_chain_for_state_updates;
+        let (SampleChainForStateUpdates { block_hashes, contracts, keys, values, .. }, rpc) =
+            sample_chain_for_state_updates;
 
         let result = get_storage_at(&rpc, contracts[0], keys[0], BlockId::Number(2), None).unwrap();
         assert_eq!(result, GetStorageAtResult::Value(values[1]));
+
+        let result = get_storage_at(&rpc, contracts[0], keys[0], BlockId::Hash(block_hashes[0]), None).unwrap();
+        assert_eq!(result, GetStorageAtResult::Value(values[0]));
     }
 
     #[rstest]

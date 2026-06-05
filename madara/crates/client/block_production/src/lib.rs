@@ -2292,4 +2292,140 @@ pub(crate) mod tests {
         // No preconfirmed block should exist (still)
         assert!(!devnet_setup.backend.has_preconfirmed_block());
     }
+
+    // Regression test: when a non-empty block is followed by an empty block,
+    // the timestamp delta should be ~block_time, not ~2*block_time.
+    //
+    // Before the fix, create_execution_context() called SystemTime::now() lazily
+    // — only after wait_take_tx_batch() returned. For a non-empty block, txs
+    // arrive quickly so the timestamp is set near block-open time. For an empty
+    // block, the full block_time elapses before the timestamp is set.
+    // This made the delta between a non-empty and subsequent empty block ≈ 2*block_time.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_empty_block_timestamp_not_drifted(
+        #[future]
+        #[with(Duration::from_secs(3))]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        // Submit a transaction so block 1 is non-empty.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Block 1: non-empty (has our tx), closes after block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Block 2: empty, closes after another block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+
+        let ts_1 = block_1.get_block_info().unwrap().header.block_timestamp.0;
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        let delta = ts_2.saturating_sub(ts_1);
+
+        // With block_time=3s, the delta should be ~3s.
+        // Before the fix it would be ~6s (2 * block_time) because:
+        //   - block 1 timestamp set at open (near T0)
+        //   - block 2 timestamp set after 3s wait (near T0 + 3s + 3s)
+        assert!(
+            delta >= 2,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. Timestamps may have stalled or gone backward."
+        );
+        assert!(
+            delta <= 4,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. This likely means the timestamp is still being set after the block_time wait."
+        );
+    }
+
+    // When no_empty_blocks=true, blocks are produced on-demand. The timestamp
+    // should reflect wall-clock time when the first tx arrives, not the time
+    // the previous block closed (which could be arbitrarily long ago).
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_no_empty_blocks_timestamp_uses_wall_clock(
+        #[future]
+        #[with(Duration::from_secs(30), false, true)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Submit a tx to trigger block 1.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Wait 3 seconds before submitting the next tx. With no_empty_blocks=true,
+        // the executor waits indefinitely. The block timestamp should reflect
+        // when the tx arrives (~3s from now), not when block 1 closed (~3s ago).
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let wall_clock_before_tx =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.contracts.0[2],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        // The timestamp should be within 1s of wall clock when the tx was submitted,
+        // not ~3s behind (which would indicate the stale captured time was used).
+        let drift = wall_clock_before_tx.saturating_sub(ts_2);
+        assert!(
+            drift <= 1,
+            "With no_empty_blocks=true, block timestamp should reflect wall-clock time \
+             when the first tx arrived, but it was {drift}s behind. \
+             This likely means a stale captured block_start_time was used."
+        );
+    }
 }

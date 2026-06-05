@@ -11,7 +11,7 @@ use mp_rpc::v0_10_0::BlockId;
 use mp_rpc::v0_10_2::{TraceBlockTransactionsResponse, TraceBlockTransactionsResult, TraceFlag};
 use mp_transactions::TransactionWithHash;
 
-fn prepare_tx_for_reexecution(
+pub(super) fn prepare_tx_for_reexecution(
     view: &MadaraStateView,
     tx: TransactionWithReceipt,
 ) -> anyhow::Result<blockifier::transaction::transaction_execution::Transaction> {
