@@ -30,8 +30,8 @@ cargo build --release
 # Build with features
 cargo build --release --features "ethereum,with_mongodb,with_sqs,starknet"
 
-# Build SNOS (requires Python 3.9)
-make snos
+# Regenerate local contract artifacts when needed (requires Docker)
+make artifacts
 ```
 
 ### Running

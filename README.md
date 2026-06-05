@@ -72,7 +72,9 @@ cd madara
 #### 2. Build Madara
 
 > [!TIP]
-> Ensure `make snos` has been run prior to building Madara.
+> Build scripts normally fetch the published contract artifacts automatically.
+> If you need to regenerate local artifacts, run `make artifacts` before
+> building. This requires Docker.
 
 You can choose between different build modes:
 

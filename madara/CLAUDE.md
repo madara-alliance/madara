@@ -33,17 +33,17 @@ cargo build
 
 ```bash
 # Run with specific network preset
-cargo run --release -- --network mainnet
-cargo run --release -- --network sepolia
+cargo run --release -- --full --network mainnet
+cargo run --release -- --full --network sepolia
 
 # Run with custom chain config
-cargo run --release -- --chain-config-path ./path/to/config.yaml
+cargo run --release -- --full --chain-config-path ./path/to/config.yaml
 
 # Enable Cairo Native execution (AOT compilation)
-cargo run --release -- --enable-native-execution
+cargo run --release -- --full --network sepolia --enable-native-execution true
 
 # Sequencer mode
-cargo run --release -- --sequencer-mode
+cargo run --release -- --sequencer --preset devnet
 ```
 
 ### Testing
@@ -178,7 +178,7 @@ Key services run concurrently:
 
 ### Cairo Native Execution (`mc-class-exec`)
 
-**Opt-in only**: Enable with `--enable-native-execution` CLI flag
+**Opt-in only**: Enable with `--enable-native-execution true`
 **Dual execution**: Cairo Native (AOT compiled) or Cairo VM fallback
 **Multi-tier caching**: In-memory + disk-based compiled classes
 **Configuration**: Compilation semaphore, blocking vs async modes, retry logic, per-contract opt-out
