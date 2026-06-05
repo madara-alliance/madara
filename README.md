@@ -333,11 +333,13 @@ You can find examples on [configs](configs/).
 
 [⬅️ back to top](#-madara-starknet-client)
 
-Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`, and
-`v0.10.0`. Method-level availability can vary depending on current implementation
-status and runtime retention/configuration.
-The default user RPC route is `rpc/v0_10_0`.
-Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`, and `rpc/v0_9_0`.
+Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`,
+`v0.10.0`, and `v0.10.2`. Method-level availability can vary depending on
+current implementation status and runtime retention/configuration.
+The default user RPC version is `v0.10.2`; the explicit route is
+`rpc/v0_10_2`.
+Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`,
+`rpc/v0_9_0`, and `rpc/v0_10_0`.
 Admin RPC methods are exposed under `rpc/v0_1_0` (default port `9943`) when `--rpc-admin` is enabled.
 These methods can be categorized into three main types: Read-Only Access Methods,
 Trace Generation Methods, and Write Methods. They are accessible through port
@@ -425,7 +427,8 @@ Here is a list of all the supported methods with their current status:
 
 > [!NOTE]
 > Subscription methods are currently placeholders and return `UnimplementedMethod`.
-> This applies to `v0.8.1`, `v0.9.0`, and `v0.10.0` (which delegates to `v0.9.0`).
+> This applies to `v0.8.1`, `v0.9.0`, `v0.10.0`, and `v0.10.2` (the
+> v0.10 routes delegate subscription placeholders to `v0.9.0`).
 
 > [!IMPORTANT]
 > `starknet_getStorageProof` is currently treated as unavailable in the default
@@ -523,12 +526,12 @@ the bellow code, make sure you have a node running with rpc enabled on port 9944
 (this is the default configuration).
 
 > [!IMPORTANT]
-> Madara currently defaults to `v0.10.0` for RPC calls.
+> Madara currently defaults to `v0.10.2` for RPC calls.
 > To access specific versions, add `rpc/v*_*_*/` to your RPC URL.
 > This also works for websocket methods.
 
 ```bash
-curl --location 'http://localhost:9944/rpc/v0_10_0/' \
+curl --location 'http://localhost:9944/rpc/v0_10_2/' \
   --header 'Content-Type: application/json' \
   --data '{
     "jsonrpc": "2.0",
@@ -550,9 +553,9 @@ You should receive something like the following:
       "rpc/V0_7_1/starknet_addDeployAccountTransaction",
       "rpc/V0_7_1/starknet_addInvokeTransaction",
       ...
-      "rpc/V0_10_0/starknet_traceBlockTransactions",
-      "rpc/V0_10_0/starknet_traceTransaction",
-      "rpc/V0_10_0/starknet_unsubscribe",
+      "rpc/V0_10_2/starknet_traceBlockTransactions",
+      "rpc/V0_10_2/starknet_traceTransaction",
+      "rpc/V0_10_2/starknet_unsubscribe",
       "rpc/rpc_methods"
     ]
   }
@@ -570,7 +573,7 @@ port as http RPC methods.
 
 > [!NOTE]
 > Subscription methods are currently placeholders and return
-> `UnimplementedMethod` on `v0.8.1`, `v0.9.0`, and `v0.10.0`.
+> `UnimplementedMethod` on `v0.8.1`, `v0.9.0`, `v0.10.0`, and `v0.10.2`.
 > `starknet_unsubscribe` is available, but active subscription streams are not
 > yet available.
 
@@ -578,7 +581,7 @@ You can still use websocket transport to call methods and validate responses
 using `websocat`:
 
 ```bash
-websocat -v ws://localhost:9944/rpc/v0_10_0
+websocat -v ws://localhost:9944/rpc/v0_10_2
 ```
 
 > [!TIP]
@@ -603,7 +606,7 @@ in the common case.
 
 Current migration metadata is tracked in [`.db-versions.yml`](.db-versions.yml):
 
-1. Current schema version: `12`
+1. Current schema version: `14`
 2. Minimum migratable version: `8`
 3. Migrations are resumable and protected by migration lock/state files
 
@@ -735,8 +738,8 @@ cargo run --bin madara --release --            \
 
 ### Starknet compliant
 
-Madara supports Starknet JSON-RPC `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`
-(default route: `v0.10.0`).
+Madara supports Starknet JSON-RPC `v0.7.1`, `v0.8.1`, `v0.9.0`, `v0.10.0`,
+and `v0.10.2` (default version: `v0.10.2`).
 You can find out more in the [interactions](#-interactions) section and the
 official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 

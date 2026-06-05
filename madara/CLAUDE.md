@@ -33,17 +33,17 @@ cargo build
 
 ```bash
 # Run with specific network preset
-cargo run --release -- --full --network mainnet
-cargo run --release -- --full --network sepolia
+cargo run --bin madara --release -- --full --network mainnet
+cargo run --bin madara --release -- --full --network sepolia
 
 # Run with custom chain config
-cargo run --release -- --full --chain-config-path ./path/to/config.yaml
+cargo run --bin madara --release -- --full --chain-config-path ./path/to/config.yaml
 
 # Enable Cairo Native execution (AOT compilation)
-cargo run --release -- --full --network sepolia --enable-native-execution true
+cargo run --bin madara --release -- --full --network sepolia --enable-native-execution true
 
 # Sequencer mode
-cargo run --release -- --sequencer --preset devnet
+cargo run --bin madara --release -- --sequencer --preset devnet
 ```
 
 ### Testing
@@ -84,7 +84,7 @@ cargo fmt -- --check
 
 - `mc-db`: RocksDB storage with Bonsai trie for Merkle state roots
 - `mc-sync`: L2 sync service (4-stage pipeline: fetch, resolve, verify, apply)
-- `mc-rpc`: JSON-RPC server (v0.7.1, v0.8.1, v0.9.0)
+- `mc-rpc`: JSON-RPC server (v0.7.1, v0.8.1, v0.9.0, v0.10.0, v0.10.2)
 - `mc-exec`: Transaction execution (blockifier integration)
 - `mc-block-production`: Block production (batching, aggregation, pending)
 - `mc-mempool`: Transaction pool with dynamic scoring
@@ -196,7 +196,7 @@ Key services run concurrently:
 
 **Framework**: jsonrpsee (HTTP + WebSocket on same port)
 **Middleware**: CORS via tower-http
-**Versions**: v0.7.1, v0.8.1, v0.9.0 via path routing (`/rpc/v.../`)
+**Versions**: v0.7.1, v0.8.1, v0.9.0, v0.10.0, and v0.10.2 via path routing (`/rpc/v.../`)
 **Structure**: Separate trait implementations per version
 
 - Read methods, Write methods, Trace methods, WebSocket subscriptions

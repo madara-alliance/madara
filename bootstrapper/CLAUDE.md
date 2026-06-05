@@ -8,6 +8,10 @@ The Madara Bootstrapper is a Rust-based tool for deploying and initializing brid
 between a Madara/Starknet Appchain (L2) and Ethereum/EVM-compatible chains (L1). It automates
 the complex setup process for cross-chain interoperability.
 
+**Status:** This is the legacy bootstrapper. The root workspace currently
+disables the `bootstrapper` crate; use `bootstrapper-v2/` for current
+factory-based deployments unless you are intentionally maintaining v1.
+
 **Key capabilities:**
 
 - Deploy Token Bridge and ETH Bridge contracts between L2 (Madara) and L1 (Ethereum/EVM)
@@ -27,6 +31,9 @@ cargo build --release
 ```
 
 ### Running
+
+Run these commands from `bootstrapper/`; the root workspace does not include
+this legacy crate.
 
 ```bash
 # Show help
@@ -208,7 +215,7 @@ RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   --addresses-output-path output/addresses.json
 
 # Setup Madara (L2) - requires base layer addresses
-RUST_LOG=debug cargo run -- \
+RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   setup-madara --config-path configs/config.json \
   --base-addresses-path output/addresses.json \
   --output-path output/madara_addresses.json

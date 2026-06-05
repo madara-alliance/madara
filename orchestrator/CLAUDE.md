@@ -12,7 +12,7 @@ multi-stage job processing pipeline with distributed workers and queue-based exe
 
 - Queue-based job management with three-phase execution (Creation → Processing → Verification)
 - Distributed worker architecture for scaling job processing
-- Multiple prover backends (SHARP, ATLANTIC)
+- Multiple prover backends (SHARP, ATLANTIC, mock)
 - Multiple settlement layers (Ethereum, Starknet)
 - Multiple DA layers (Ethereum, Starknet)
 - Multi-layer support (L2, L3)
@@ -39,14 +39,21 @@ make artifacts
 ```bash
 # Setup mode (initializes AWS infrastructure)
 cargo run --release --bin orchestrator setup \
+    --layer l2 \
     --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge \
     --event-bridge-type rule
 
-# Run mode (starts orchestrator)
+# Run mode (starts orchestrator; prover, settlement, AWS, and contract
+# values are usually supplied through env vars)
 RUST_LOG=info cargo run --release --bin orchestrator run \
-    --prover sharp --aws --settle-on-ethereum \
+    --prover sharp --layer l2 --aws --settle-on-ethereum \
     --aws-s3 --aws-sqs --aws-sns \
-    --da-on-ethereum --mongodb
+    --da-on-ethereum \
+    --ethereum-da-rpc-url "${ETHEREUM_DA_RPC_URL}" \
+    --madara-rpc-url "${MADARA_RPC_URL}" \
+    --rpc-for-snos "${SNOS_RPC_URL}" \
+    --max-batch-time-seconds 1800 \
+    --mongodb
 ```
 
 ### Testing
@@ -64,15 +71,15 @@ RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
     --no-fail-fast
 
 # E2E test
-RUST_LOG=info cargo test --features testing test_orchestrator_workflow -- --nocapture
+RUST_LOG=info cargo test --package e2e-tests --test test_orchestrator_workflow -- --nocapture
 ```
 
 ### Mock Services
 
-```bash
-# Mock Atlantic server
-cargo run --bin orchestrator run --mock-atlantic-server
+Add `--mock-atlantic-server` to a complete `orchestrator run ...` command to
+start the in-tree Atlantic mock server on port 4001.
 
+```bash
 # Mock prover service (Docker)
 docker run -p 6000:6000 ocdbytes/mock-prover:latest
 ```
