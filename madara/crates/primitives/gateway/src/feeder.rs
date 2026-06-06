@@ -34,6 +34,8 @@ pub struct TxFailureReason {
 pub struct ProviderTransactionStatus {
     pub tx_status: TransactionStatus,
     pub finality_status: TransactionStatus,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub execution_status: Option<TransactionExecutionStatus>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,5 +113,20 @@ impl ProviderTransactionResponse {
 
     pub fn not_received() -> Self {
         Self::with_status(TransactionStatus::NotReceived, None, None, None, None, None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_transaction_status_not_received_omits_execution_status() {
+        let value = ProviderTransactionStatus::not_received();
+        let json = serde_json::to_value(&value).expect("status should serialize");
+
+        assert_eq!(json["tx_status"], "NOT_RECEIVED");
+        assert_eq!(json["finality_status"], "NOT_RECEIVED");
+        assert!(json.get("execution_status").is_none());
     }
 }

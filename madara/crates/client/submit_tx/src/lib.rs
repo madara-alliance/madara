@@ -160,12 +160,12 @@ fn accepted_status(is_on_l1: bool) -> TransactionStatus {
 fn transaction_status_from_block<D: MadaraStorageRead>(
     block: &mc_db::MadaraBlockView<D>,
 ) -> anyhow::Result<(TransactionStatus, Option<mp_convert::Felt>, Option<u64>)> {
+    debug_assert!(
+        block.as_preconfirmed().is_none(),
+        "feeder backend shaping should filter preconfirmed blocks before mapping status"
+    );
     let block_info = block.get_block_info()?;
-    if block.as_preconfirmed().is_some() {
-        Ok((TransactionStatus::Pending, None, Some(block_info.block_number())))
-    } else {
-        Ok((accepted_status(block.is_on_l1()), block_info.block_hash().copied(), Some(block_info.block_number())))
-    }
+    Ok((accepted_status(block.is_on_l1()), block_info.block_hash().copied(), Some(block_info.block_number())))
 }
 
 pub fn feeder_status_from_backend_view<D: MadaraStorageRead>(
@@ -186,6 +186,9 @@ fn feeder_status_from_confirmed_mempool<D: MadaraStorageRead>(
     transaction_hash: mp_convert::Felt,
     mempool: &Mempool<D>,
 ) -> anyhow::Result<ProviderTransactionStatus> {
+    // The gateway handler resolves confirmed transactions directly from the backend before
+    // falling back to TransactionLookup. This path exists for non-handler callers that only
+    // have the mempool lookup surface available.
     let Some(executed) = mempool.find_transaction_by_hash(&transaction_hash)? else {
         return Ok(ProviderTransactionStatus::not_received());
     };

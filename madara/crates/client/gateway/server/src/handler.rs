@@ -23,7 +23,7 @@ use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
-    feeder::{ProviderTransactionResponse, ProviderTransactionStatus, TransactionExecutionStatus, TransactionStatus},
+    feeder::{ProviderTransactionResponse, ProviderTransactionStatus},
     user_transaction::{
         AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
         UserTransaction,
@@ -43,6 +43,9 @@ use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, io::Read, sync::Arc};
+
+#[cfg(test)]
+use mp_gateway::feeder::{TransactionExecutionStatus, TransactionStatus};
 
 const GZIP_MAGIC_BYTES: [u8; 2] = [0x1f, 0x8b];
 const BODY_PREFIX_HEX_BYTES: usize = 8;
