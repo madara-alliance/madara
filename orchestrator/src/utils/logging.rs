@@ -489,7 +489,7 @@ fn extract_service_name(target: &str) -> &'static str {
         "PROVER_IFACE"
     } else if target.starts_with("orchestrator_utils") {
         "UTILS"
-    } else if target.starts_with("generate_pie") || target.starts_with("rpc_client") {
+    } else if target.starts_with("generate_pie") || target == "rpc_client" || target.starts_with("rpc_client::") {
         "SNOS"
     } else if target.starts_with("orchestrator") {
         "-"
