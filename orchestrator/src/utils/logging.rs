@@ -498,17 +498,6 @@ fn extract_service_name(target: &str) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::extract_service_name;
-
-    #[test]
-    fn classify_snos_targets() {
-        assert_eq!(extract_service_name("generate_pie::state_update"), "SNOS");
-        assert_eq!(extract_service_name("rpc_client::client"), "SNOS");
-    }
-}
-
 /// Function used by the logger to display queue with pretty formatting
 pub fn queue_type_to_parts(queue_type: &str) -> (String, String) {
     // Special cases
@@ -526,4 +515,15 @@ pub fn queue_type_to_parts(queue_type: &str) -> (String, String) {
     // Remove "_job" or "_JOB" if present
     let prefix = prefix.trim_end_matches("_job").trim_end_matches("_JOB");
     (prefix.to_uppercase(), suffix.to_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_service_name;
+
+    #[test]
+    fn classify_snos_targets() {
+        assert_eq!(extract_service_name("generate_pie::state_update"), "SNOS");
+        assert_eq!(extract_service_name("rpc_client::client"), "SNOS");
+    }
 }
