@@ -412,9 +412,7 @@ pub fn init_logging() {
         // Fallback if RUST_LOG is not set or invalid. Keep orchestrator INFO
         // logs by default, but require explicit opt-in for bridged SNOS and
         // other third-party log targets.
-        EnvFilter::builder()
-            .parse("error,orchestrator=info")
-            .expect("Invalid filter directive and Logger control")
+        EnvFilter::builder().parse("error,orchestrator=info").expect("Invalid filter directive and Logger control")
     });
 
     // Check LOG_FORMAT environment variable
