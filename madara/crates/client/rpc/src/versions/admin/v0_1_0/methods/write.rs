@@ -393,7 +393,8 @@ mod tests {
     use std::time::Duration;
 
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
-        let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
+        let provider = Arc::new(TestTransactionProvider);
+        let mut rpc = Starknet::new(backend, Arc::clone(&provider) as _, provider, Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
         rpc
     }

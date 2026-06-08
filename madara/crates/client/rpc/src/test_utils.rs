@@ -4,7 +4,7 @@ use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend,
 };
-use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
+use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, TransactionLookup};
 use mp_block::{
     header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
     FullBlockWithoutCommitments, TransactionWithReceipt,
@@ -64,6 +64,11 @@ impl SubmitTransaction for TestTransactionProvider {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         unimplemented!()
     }
+}
+
+#[cfg(test)]
+#[async_trait]
+impl TransactionLookup for TestTransactionProvider {
     async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
         unimplemented!()
     }
@@ -76,9 +81,11 @@ impl SubmitTransaction for TestTransactionProvider {
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
+    let provider = Arc::new(TestTransactionProvider);
     let mut rpc = Starknet::new(
         backend.clone(),
-        Arc::new(TestTransactionProvider),
+        Arc::clone(&provider) as _,
+        provider,
         Default::default(),
         None,
         ServiceContext::new_for_testing(),

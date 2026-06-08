@@ -126,7 +126,7 @@ use starknet_api::core::ChainId;
 use std::sync::Arc;
 
 use std::{env, path::Path};
-use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
+use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch, MakeTransactionLookupSwitch};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -380,7 +380,7 @@ async fn main() -> anyhow::Result<()> {
     };
     let external_db_configured = service_external_db.is_some();
 
-    // Add transaction provider
+    // Transaction provider
 
     let mempool_tx_validator = Arc::new(TransactionValidator::new(
         service_mempool.mempool() as _,
@@ -388,25 +388,32 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.as_validator_config(),
     ));
 
-    let gateway_submit_tx: Arc<dyn SubmitTransaction> =
-        if run_cmd.validator_params.validate_then_forward_txs_to.is_some() {
-            Arc::new(TransactionValidator::new(
-                Arc::clone(&gateway_client) as _,
-                backend.clone(),
-                run_cmd.validator_params.as_validator_config(),
-            ))
-        } else {
-            Arc::clone(&gateway_client) as _
-        };
+    let mempool_submit_tx: Arc<dyn SubmitTransaction> = Arc::clone(&mempool_tx_validator) as _;
+    let mempool_transaction_lookup: Arc<dyn mc_submit_tx::TransactionLookup> = Arc::clone(&mempool_tx_validator) as _;
 
-    let tx_submit =
-        MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx) as _, Arc::clone(&mempool_tx_validator) as _);
+    let (gateway_submit_tx, gateway_transaction_lookup): (
+        Arc<dyn SubmitTransaction>,
+        Arc<dyn mc_submit_tx::TransactionLookup>,
+    ) = if run_cmd.validator_params.validate_then_forward_txs_to.is_some() {
+        let gateway_tx_validator = Arc::new(TransactionValidator::new(
+            Arc::clone(&gateway_client) as _,
+            backend.clone(),
+            run_cmd.validator_params.as_validator_config(),
+        ));
+        (Arc::clone(&gateway_tx_validator) as _, gateway_tx_validator as _)
+    } else {
+        (Arc::clone(&gateway_client) as _, Arc::clone(&gateway_client) as _)
+    };
+
+    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), mempool_submit_tx);
+    let tx_lookup = MakeTransactionLookupSwitch::new(gateway_transaction_lookup, mempool_transaction_lookup);
     let validated_tx_submit =
         MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
 
     // User-facing RPC
 
-    let service_rpc_user = RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone());
+    let service_rpc_user =
+        RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone(), tx_lookup.clone());
 
     // Admin-facing RPC (for node operators)
 
@@ -414,6 +421,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.rpc_params.clone(),
         backend.clone(),
         tx_submit.clone(),
+        tx_lookup.clone(),
         service_block_production.handle(),
         service_mempool.mempool(),
     );
@@ -424,6 +432,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.gateway_params.clone(),
         backend.clone(),
         tx_submit.clone(),
+        tx_lookup.clone(),
         Some(validated_tx_submit.clone()),
     )
     .await

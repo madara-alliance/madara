@@ -133,8 +133,6 @@ use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::time::Duration;
 use topic_pubsub::TopicWatchPubsub;
-use transaction_status::{PreConfirmationStatus, TransactionStatus};
-
 mod chain_watcher_task;
 mod inner;
 mod notify;
@@ -143,6 +141,7 @@ mod transaction_status;
 
 pub use inner::*;
 pub use notify::MempoolWriteAccess;
+pub use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
 pub mod metrics;
 
