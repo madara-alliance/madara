@@ -220,13 +220,10 @@ impl LockClient for MongoLockClient {
         let collection = self.get_cache_collection();
 
         match collection
-            .find_one(
-                doc! {
-                    "_id": key,
-                    "expires_at": { "$gt": Utc::now() }
-                },
-                None,
-            )
+            .find_one(doc! {
+                "_id": key,
+                "expires_at": { "$gt": Utc::now() }
+            })
             .await
         {
             Ok(Some(_)) => Ok(true),

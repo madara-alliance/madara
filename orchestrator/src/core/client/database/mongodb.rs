@@ -214,7 +214,7 @@ impl MongoDbClient {
         self.database.collection(BLOCK_BATCH_LOOKUPS_COLLECTION)
     }
 
-    pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
+    pub fn get_collection<T: Send + Sync>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
 
@@ -264,14 +264,11 @@ impl MongoDbClient {
 
             let command_result = self
                 .database
-                .run_command(
-                    doc! {
-                        "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
-                        "updates": Bson::Array(updates),
-                        "ordered": false,
-                    },
-                    None,
-                )
+                .run_command(doc! {
+                    "update": BLOCK_BATCH_LOOKUPS_COLLECTION,
+                    "updates": Bson::Array(updates),
+                    "ordered": false,
+                })
                 .await?;
 
             Self::ensure_bulk_update_command_succeeded(&command_result)?;
@@ -355,7 +352,6 @@ impl MongoDbClient {
                     "$unset": unset_doc,
                     "$set": { "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()) },
                 },
-                None,
             )
             .await?;
 
@@ -487,7 +483,7 @@ impl MongoDbClient {
         options: Option<UpdateOptions>,
     ) -> Result<UpdateResult, DatabaseError>
     where
-        T: Serialize + Sized,
+        T: Serialize + Sized + Send + Sync,
     {
         let action = collection.update_one(filter, update);
         let result = match options {
@@ -509,7 +505,7 @@ impl MongoDbClient {
         filter: Document,
     ) -> Result<DeleteResult, DatabaseError>
     where
-        T: Serialize + Sized,
+        T: Serialize + Sized + Send + Sync,
     {
         let result = collection.delete_one(filter).await?;
         Ok(DeleteResult { deleted_count: result.deleted_count })

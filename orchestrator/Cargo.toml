@@ -35,6 +35,7 @@ axum = { workspace = true, features = ["macros"] }
 base64 = { workspace = true }
 bincode = { workspace = true }
 blockifier = { workspace = true }
+bson = { workspace = true, optional = true }
 bytes.workspace = true
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
@@ -131,7 +132,7 @@ tracing-test = "0.2.5"
 default = ["ethereum", "with_mongodb", "with_sqs", "starknet"]
 ethereum = ["orchestrator-ethereum-da-client"]
 starknet = ["orchestrator-starknet-da-client"]
-with_mongodb = ["mongodb"]
+with_mongodb = ["bson", "mongodb"]
 with_sqs = ["omniqueue"]
 testing = ["orchestrator-ethereum-settlement-client/testing"]
 

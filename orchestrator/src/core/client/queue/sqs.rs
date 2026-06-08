@@ -13,7 +13,7 @@ use aws_config::SdkConfig;
 use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
-use omniqueue::Delivery;
+use omniqueue::{Acker, Delivery, QueueError as OmniQueueError};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -141,6 +141,64 @@ impl InnerSQS {
             .queue_url()
             .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get SQS URL".to_string()))?
             .to_string())
+    }
+}
+
+struct SqsDeliveryAcker {
+    client: Client,
+    queue_url: String,
+    receipt_handle: Option<String>,
+    has_been_acked_or_nacked: bool,
+}
+
+impl Acker for SqsDeliveryAcker {
+    async fn ack(&mut self) -> omniqueue::Result<()> {
+        if self.has_been_acked_or_nacked {
+            return Err(OmniQueueError::CannotAckOrNackTwice);
+        }
+        self.has_been_acked_or_nacked = true;
+
+        let receipt_handle = self.receipt_handle.as_deref().ok_or_else(|| {
+            OmniQueueError::generic(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "receipt handle must be Some to be acked",
+            ))
+        })?;
+
+        self.client
+            .delete_message()
+            .queue_url(&self.queue_url)
+            .receipt_handle(receipt_handle)
+            .send()
+            .await
+            .map_err(OmniQueueError::generic)?;
+
+        Ok(())
+    }
+
+    async fn nack(&mut self) -> omniqueue::Result<()> {
+        Ok(())
+    }
+
+    async fn set_ack_deadline(&mut self, duration: Duration) -> omniqueue::Result<()> {
+        let receipt_handle = self.receipt_handle.as_deref().ok_or_else(|| {
+            OmniQueueError::generic(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "receipt handle must be Some to set ack deadline",
+            ))
+        })?;
+        let duration_secs = duration.as_secs().try_into().map_err(OmniQueueError::generic)?;
+
+        self.client
+            .change_message_visibility()
+            .queue_url(&self.queue_url)
+            .receipt_handle(receipt_handle)
+            .visibility_timeout(duration_secs)
+            .send()
+            .await
+            .map_err(OmniQueueError::generic)?;
+
+        Ok(())
     }
 }
 
@@ -501,8 +559,15 @@ impl QueueClient for SQS {
 
             return Err(omniqueue::QueueError::NoData.into());
         }
-        let consumer = self.get_consumer(queue.clone()).await?;
-        let delivery = consumer.wrap_message(messages_vec.first().unwrap());
+        let delivery = Delivery::new(
+            message.body().unwrap_or_default().as_bytes().to_owned(),
+            SqsDeliveryAcker {
+                client: self.inner.client().clone(),
+                queue_url,
+                receipt_handle: message.receipt_handle().map(ToOwned::to_owned),
+                has_been_acked_or_nacked: false,
+            },
+        );
 
         Ok(delivery)
     }

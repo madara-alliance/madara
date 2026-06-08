@@ -10581,6 +10581,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "blockifier",
+ "bson",
  "build-version",
  "bytes",
  "c-kzg",
