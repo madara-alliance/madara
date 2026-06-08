@@ -30,6 +30,7 @@ jobs:
   test-madara:
     permissions:
       pull-requests: write
+    timeout-minutes: 1440
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
