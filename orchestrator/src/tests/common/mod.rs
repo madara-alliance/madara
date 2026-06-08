@@ -93,7 +93,7 @@ pub async fn get_sns_client(aws_config: &SdkConfig) -> aws_sdk_sns::client::Clie
 
 pub async fn drop_database(mongodb_params: &DatabaseArgs) -> color_eyre::Result<()> {
     let db_client: Client = MongoDbClient::new(mongodb_params).await?.client();
-    db_client.database(&mongodb_params.database_name).drop(None).await?;
+    db_client.database(&mongodb_params.database_name).drop().await?;
     Ok(())
 }
 

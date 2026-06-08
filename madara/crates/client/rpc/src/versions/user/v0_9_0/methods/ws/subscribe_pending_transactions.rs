@@ -90,9 +90,11 @@ pub async fn subscribe_pending_transactions(
         };
 
         let item = super::SubscriptionItem::new(sink.subscription_id(), tx_info);
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
-        })?;
+        let msg = serde_json::value::to_raw_value(&item)
+            .map(jsonrpsee::SubscriptionMessage::from)
+            .or_else_internal_server_error(|| {
+                format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
+            })?;
 
         sink.send(msg).await.or_else_internal_server_error(|| {
             format!("SubscribePendingTransactions failed to respond to websocket request at tx {tx_hash:#x}")

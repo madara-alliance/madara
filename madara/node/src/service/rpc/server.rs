@@ -10,7 +10,6 @@ use mc_rpc::Starknet;
 use mp_chain_config::RpcVersion;
 use mp_rpc::v0_7_1::SyncingStatus;
 use mp_utils::service::ServiceContext;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -85,7 +84,7 @@ pub async fn start_server(
         .option_layer(host_filtering(cors.is_some(), local_addr))
         .layer(try_into_cors(cors.as_ref())?);
 
-    let builder = jsonrpsee::server::Server::builder()
+    let server_config = jsonrpsee::server::ServerConfig::builder()
         .max_request_body_size(max_payload_in_mib.saturating_mul(MiB))
         .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
@@ -93,8 +92,10 @@ pub async fn start_server(
         .enable_ws_ping(ping_config)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)
-        .set_http_middleware(http_middleware)
-        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
+        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16))
+        .build();
+
+    let builder = jsonrpsee::server::Server::builder().set_config(server_config).set_http_middleware(http_middleware);
 
     let cfg = PerConnection {
         methods,
@@ -104,95 +105,94 @@ pub async fn start_server(
     };
     let ctx1 = ctx.clone();
 
-    let make_service = hyper::service::make_service_fn(move |_| {
-        let cfg = cfg.clone();
-        let ctx1 = ctx1.clone();
-        let starknet = Arc::clone(&starknet);
-
-        async move {
-            let cfg = cfg.clone();
-            let starknet = Arc::clone(&starknet);
-
-            Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
-                let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
-                let ctx1 = ctx1.clone();
-                let starknet = Arc::clone(&starknet);
-
-                let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
-                let transport_label = if is_websocket { "ws" } else { "http" };
-                let path = req.uri().path().to_string();
-                let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
-
-                let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
-                    .layer_fn(move |service| {
-                        RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
-                    })
-                    .layer(metrics_layer.clone());
-
-                let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
-
-                async move {
-                    if ctx1.is_cancelled() {
-                        Ok(hyper::Response::builder()
-                            .status(hyper::StatusCode::GONE)
-                            .body(hyper::Body::from("GONE"))?)
-                    } else if req.uri().path() == "/health" {
-                        Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
-                    } else if req.uri().path() == "/ready" {
-                        let sync_status = syncing(&starknet);
-                        match sync_status {
-                            Ok(sync_status) => match sync_status {
-                                SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()
-                                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
-                                    .body(hyper::Body::from("SYNCING"))?),
-                                SyncingStatus::NotSyncing => Ok(hyper::Response::builder()
-                                    .status(hyper::StatusCode::OK)
-                                    .body(hyper::Body::from("OK"))?),
-                            },
-                            Err(_) => Ok(hyper::Response::builder()
-                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(hyper::Body::from("INTERNAL_SERVER_ERROR"))?),
-                        }
-                    } else {
-                        if is_websocket {
-                            // Utilize the session close future to know when the actual WebSocket
-                            // session was closed.
-                            let on_disconnect = svc.on_session_closed();
-
-                            // Spawn a task to handle when the connection is closed.
-                            tokio::spawn(async move {
-                                let now = std::time::Instant::now();
-                                metrics_layer.ws_connect();
-                                on_disconnect.await;
-                                metrics_layer.ws_disconnect(now);
-                            });
-                        }
-
-                        svc.call(req).await
-                    }
-                }
-            }))
-        }
-    });
-
-    let server = hyper::Server::from_tcp(listener.into_std()?)
-        .with_context(|| format!("Creating hyper server at: {addr}"))?
-        .serve(make_service);
-
     tracing::info!(
         "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
         local_addr.to_string(),
-        config.rpc_version_default,
+        rpc_version_default,
         format_cors(cors.as_ref()),
         format_rpc_versions(&supported_versions),
     );
 
-    server
-        .with_graceful_shutdown(async {
-            ctx.run_until_cancelled(stop_handle.shutdown()).await;
-        })
-        .await
-        .context("Running rpc server")
+    loop {
+        let (sock, _) = tokio::select! {
+            res = listener.accept() => res.context("Accepting RPC connection")?,
+            _ = ctx.cancelled() => break,
+            _ = stop_handle.clone().shutdown() => break,
+        };
+
+        let cfg = cfg.clone();
+        let ctx1 = ctx1.clone();
+        let starknet = Arc::clone(&starknet);
+        let stop_handle = stop_handle.clone();
+        let ctx_for_service = ctx1.clone();
+        let ctx_for_shutdown = ctx1.clone();
+
+        let svc = tower::service_fn(move |req| {
+            let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
+            let ctx1 = ctx_for_service.clone();
+            let starknet = Arc::clone(&starknet);
+
+            let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
+            let transport_label = if is_websocket { "ws" } else { "http" };
+            let path = req.uri().path().to_string();
+            let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
+
+            let rpc_middleware = jsonrpsee::server::middleware::rpc::RpcServiceBuilder::new()
+                .layer_fn(move |service| RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default))
+                .layer(metrics_layer.clone());
+
+            let mut svc = service_builder.clone().set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
+
+            async move {
+                if ctx1.is_cancelled() {
+                    Ok(text_response(http::StatusCode::GONE, "GONE"))
+                } else if req.uri().path() == "/health" {
+                    Ok(text_response(http::StatusCode::OK, "OK"))
+                } else if req.uri().path() == "/ready" {
+                    let sync_status = syncing(&starknet);
+                    match sync_status {
+                        Ok(SyncingStatus::Syncing(_)) => {
+                            Ok(text_response(http::StatusCode::SERVICE_UNAVAILABLE, "SYNCING"))
+                        }
+                        Ok(SyncingStatus::NotSyncing) => Ok(text_response(http::StatusCode::OK, "OK")),
+                        Err(_) => Ok(text_response(http::StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR")),
+                    }
+                } else {
+                    if is_websocket {
+                        // Utilize the session close future to know when the actual WebSocket
+                        // session was closed.
+                        let on_disconnect = svc.on_session_closed();
+
+                        // Spawn a task to handle when the connection is closed.
+                        tokio::spawn(async move {
+                            let now = std::time::Instant::now();
+                            metrics_layer.ws_connect();
+                            on_disconnect.await;
+                            metrics_layer.ws_disconnect(now);
+                        });
+                    }
+
+                    svc.call(req).await
+                }
+            }
+        });
+
+        tokio::spawn(jsonrpsee::server::serve_with_graceful_shutdown(sock, svc, {
+            let mut ctx = ctx_for_shutdown;
+            async move {
+                ctx.run_until_cancelled(stop_handle.shutdown()).await;
+            }
+        }));
+    }
+
+    Ok(())
+}
+
+fn text_response(status: http::StatusCode, body: &'static str) -> jsonrpsee::server::HttpResponse {
+    jsonrpsee::server::HttpResponse::builder()
+        .status(status)
+        .body(jsonrpsee::server::HttpBody::from(body))
+        .expect("static response is valid")
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192
@@ -252,7 +252,7 @@ pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
     available_methods.sort();
 
     rpc_api
-        .register_method("rpc_methods", move |_, _| {
+        .register_method("rpc_methods", move |_, _, _| {
             serde_json::json!({
                 "methods": available_methods,
             })
@@ -266,7 +266,7 @@ pub(crate) fn try_into_cors(maybe_cors: Option<&Vec<String>>) -> anyhow::Result<
     if let Some(cors) = maybe_cors {
         let mut list = Vec::new();
         for origin in cors {
-            list.push(hyper::header::HeaderValue::from_str(origin)?);
+            list.push(http::HeaderValue::from_str(origin)?);
         }
         Ok(tower_http::cors::CorsLayer::new().allow_origin(tower_http::cors::AllowOrigin::list(list)))
     } else {

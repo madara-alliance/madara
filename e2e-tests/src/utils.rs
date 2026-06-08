@@ -15,7 +15,8 @@ pub fn get_repository_root() -> PathBuf {
 }
 
 pub async fn get_mongo_db_client(mongo_db: &MongoDbServer) -> ::mongodb::Client {
-    let mut client_options = ClientOptions::parse(mongo_db.endpoint()).await.expect("Failed to parse MongoDB Url");
+    let mut client_options =
+        ClientOptions::parse(mongo_db.endpoint().to_string()).await.expect("Failed to parse MongoDB Url");
     // Set the server_api field of the client_options object to set the version of the Stable API on the
     // client
     let server_api = ServerApi::builder().version(ServerApiVersion::V1).build();

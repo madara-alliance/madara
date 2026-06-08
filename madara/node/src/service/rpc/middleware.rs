@@ -1,8 +1,7 @@
 //! JSON-RPC specific middleware.
 
 use anyhow::Context;
-use futures::future::{BoxFuture, FutureExt};
-use jsonrpsee::server::middleware::rpc::RpcServiceT;
+use jsonrpsee::server::middleware::rpc::{Batch, MethodResponse, Notification, Request, RpcServiceT};
 use mp_chain_config::RpcVersion;
 use std::time::Instant;
 
@@ -44,13 +43,22 @@ pub struct RpcMiddlewareServiceMetrics<S> {
     metrics: Metrics,
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceMetrics<S>
+impl<S> RpcServiceT for RpcMiddlewareServiceMetrics<S>
 where
-    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+    S: Send
+        + Sync
+        + Clone
+        + RpcServiceT<
+            MethodResponse = MethodResponse,
+            BatchResponse = MethodResponse,
+            NotificationResponse = MethodResponse,
+        > + 'static,
 {
-    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
+    type MethodResponse = MethodResponse;
+    type NotificationResponse = MethodResponse;
+    type BatchResponse = MethodResponse;
 
-    fn call(&self, req: jsonrpsee::types::Request<'a>) -> Self::Future {
+    fn call<'a>(&self, req: Request<'a>) -> impl std::future::Future<Output = Self::MethodResponse> + Send + 'a {
         let inner = self.inner.clone();
         let metrics = self.metrics.clone();
 
@@ -68,7 +76,7 @@ where
 
             let method = req.method_name();
             let status = rp.as_error_code().unwrap_or(200) as i64;
-            let res_len = rp.as_result().len() as u64;
+            let res_len = rp.as_json().get().len() as u64;
             let response_time = now.elapsed().as_micros();
 
             tracing::info!(
@@ -83,14 +91,26 @@ where
             tracing::trace!(
                 target: "rpc_raw_response",
                 "{:?}",
-                rp.as_result()
+                rp.as_json().get()
             );
 
             metrics.on_response(&req, &rp, now);
 
             rp
         }
-        .boxed()
+    }
+
+    fn batch<'a>(&self, requests: Batch<'a>) -> impl std::future::Future<Output = Self::BatchResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        async move { inner.batch(requests).await }
+    }
+
+    fn notification<'a>(
+        &self,
+        n: Notification<'a>,
+    ) -> impl std::future::Future<Output = Self::NotificationResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        async move { inner.notification(n).await }
     }
 }
 
@@ -107,13 +127,22 @@ impl<S> RpcMiddlewareServiceVersion<S> {
     }
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceVersion<S>
+impl<S> RpcServiceT for RpcMiddlewareServiceVersion<S>
 where
-    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+    S: Send
+        + Sync
+        + Clone
+        + RpcServiceT<
+            MethodResponse = MethodResponse,
+            BatchResponse = MethodResponse,
+            NotificationResponse = MethodResponse,
+        > + 'static,
 {
-    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
+    type MethodResponse = MethodResponse;
+    type NotificationResponse = MethodResponse;
+    type BatchResponse = MethodResponse;
 
-    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
+    fn call<'a>(&self, mut req: Request<'a>) -> impl std::future::Future<Output = Self::MethodResponse> + Send + 'a {
         let inner = self.inner.clone();
         let path = self.path.clone();
         let version_default = self.version_default;
@@ -157,6 +186,18 @@ where
 
             inner.call(req).await
         }
-        .boxed()
+    }
+
+    fn batch<'a>(&self, requests: Batch<'a>) -> impl std::future::Future<Output = Self::BatchResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        async move { inner.batch(requests).await }
+    }
+
+    fn notification<'a>(
+        &self,
+        n: Notification<'a>,
+    ) -> impl std::future::Future<Output = Self::NotificationResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        async move { inner.notification(n).await }
     }
 }

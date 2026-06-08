@@ -15,7 +15,6 @@ An ergonomic, batteries-included HTTP Client for Rust.
 - Cookie Store
 - WASM
 
-
 ## Example
 
 This asynchronous example uses [Tokio](https://tokio.rs) and enables some
@@ -51,7 +50,7 @@ For private advice, support, reviews, access to the maintainer, and the like, re
 
 On Linux:
 
-- OpenSSL with headers. See https://docs.rs/openssl for supported versions
+- OpenSSL with headers. See <https://docs.rs/openssl> for supported versions
   and more details. Alternatively you can enable the `native-tls-vendored`
   feature to compile a copy of OpenSSL. Or, you can use [rustls](https://github.com/rustls/rustls)
   via `rustls-tls` or other `rustls-tls-*` features.
@@ -65,13 +64,12 @@ which will use the operating system TLS framework if available, meaning Windows
 and macOS. On Linux, it will use the available OpenSSL or fail to build if
 not found.
 
-
 ## License
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 ### Contribution
 

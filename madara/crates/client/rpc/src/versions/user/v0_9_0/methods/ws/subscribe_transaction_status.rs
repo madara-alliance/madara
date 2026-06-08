@@ -255,9 +255,11 @@ impl StateTransitionCommon<'_> {
     ) -> Result<(), crate::errors::StarknetWsApiError> {
         let txn_status = mp_rpc::v0_8_1::NewTxnStatus { transaction_hash: self.tx_hash, status };
         let item = super::SubscriptionItem::new(self.sink.subscription_id(), txn_status);
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
-        })?;
+        let msg = serde_json::value::to_raw_value(&item)
+            .map(jsonrpsee::SubscriptionMessage::from)
+            .or_else_internal_server_error(|| {
+                format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
+            })?;
 
         self.sink
             .send(msg)

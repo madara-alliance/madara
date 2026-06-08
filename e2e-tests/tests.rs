@@ -574,7 +574,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
     };
 
     let mongo_db_client = get_mongo_db_client(mongo_db).await;
-    mongo_db_client.database("orchestrator").drop(None).await.unwrap();
+    mongo_db_client.database("orchestrator").drop().await.unwrap();
     mongo_db_client
         .database("orchestrator")
         .collection(JOBS_COLLECTION)

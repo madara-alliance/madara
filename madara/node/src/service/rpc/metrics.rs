@@ -119,7 +119,7 @@ impl RpcMetrics {
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
         tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
-        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
+        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_json().get());
 
         let millis = now.elapsed().as_millis();
         tracing::debug!(
