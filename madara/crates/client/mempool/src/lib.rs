@@ -128,6 +128,7 @@ use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, Vali
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
+use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -184,6 +185,18 @@ impl MempoolConfig {
 pub struct ExternalOutboxConfig {
     pub enabled: bool,
     pub strict: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MempoolTransactionSnapshot {
+    pub transaction: ValidatedTransaction,
+    pub remaining_ttl: Option<Duration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MempoolTransactionHashSnapshot {
+    pub transaction_hash: Felt,
+    pub remaining_ttl: Option<Duration>,
 }
 
 impl ExternalOutboxConfig {
@@ -416,6 +429,108 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.inner.read().await.is_empty()
     }
 
+    async fn snapshot_matching<R>(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+        mut map_transaction: impl FnMut(&ValidatedTransaction, Option<Duration>) -> R,
+    ) -> Vec<R> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let now = TxTimestamp::now();
+        let ttl = self.ttl;
+        let lock = self.inner.read().await;
+
+        lock.transactions_by_arrival()
+            .filter(|transaction| predicate(transaction))
+            .skip(offset)
+            .take(limit)
+            .map(|transaction| {
+                let remaining_ttl = if include_ttl {
+                    ttl.map(|ttl| {
+                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                    })
+                } else {
+                    None
+                };
+                map_transaction(transaction, remaining_ttl)
+            })
+            .collect()
+    }
+
+    pub async fn snapshot_transactions_matching(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionSnapshot> {
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionSnapshot { transaction: transaction.clone(), remaining_ttl }
+        })
+        .await
+    }
+
+    pub async fn snapshot_transaction_hashes_matching(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionHashSnapshot> {
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionHashSnapshot { transaction_hash: transaction.hash, remaining_ttl }
+        })
+        .await
+    }
+
+    /// Remove all matching transactions while holding a single inner write lock so selection and
+    /// removal observe the same mempool state.
+    ///
+    /// This intentionally removes only the transactions that match the predicate. If an operator
+    /// uses a nonce-based filter to remove a non-tail transaction from an account's nonce chain,
+    /// higher nonces for that account remain pending so the missing nonce can be resubmitted.
+    pub async fn flush_transactions_matching(
+        &self,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<ValidatedTransaction> {
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        let summary = {
+            let mut lock = self.inner.write().await;
+            lock.remove_transactions_matching(|tx| predicate(tx), &mut removed_txs);
+            lock.summary()
+        };
+
+        self.metrics.record_mempool_state(&summary);
+        self.on_txs_removed(&removed_txs);
+        if !removed_txs.is_empty() {
+            tracing::info!("🔖 Flushed {} transactions from the mempool [{summary}]", removed_txs.len());
+        }
+
+        removed_txs.into_vec()
+    }
+
+    pub async fn flush_transactions_by_hashes(&self, transaction_hashes: Vec<Felt>) -> Vec<ValidatedTransaction> {
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        let summary = {
+            let mut lock = self.inner.write().await;
+            lock.remove_transactions_by_hashes(transaction_hashes.into_iter().map(TransactionHash), &mut removed_txs);
+            lock.summary()
+        };
+
+        self.metrics.record_mempool_state(&summary);
+        self.on_txs_removed(&removed_txs);
+        if !removed_txs.is_empty() {
+            tracing::info!("🔖 Flushed {} transactions from the mempool [{summary}]", removed_txs.len());
+        }
+
+        removed_txs.into_vec()
+    }
+
     pub async fn get_transaction<R>(
         &self,
         contract_address: Felt,
@@ -525,6 +640,33 @@ pub(crate) mod tests {
         assert_matches::assert_matches!(result, Ok(()));
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[tokio::test]
+    async fn mempool_reject_new_policy_is_applied_from_chain_config() {
+        let mut chain_config = mp_chain_config::ChainConfig::madara_test();
+        chain_config.mempool_full_policy = mp_chain_config::MempoolFullPolicy::RejectNew;
+        chain_config.mempool_max_transactions = 1;
+        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(chain_config));
+        let mempool = Mempool::new(backend, MempoolConfig::default());
+        let base = TxTimestamp::now().0;
+
+        let mut first_tx = tx_account(CONTRACT_ADDRESS);
+        first_tx.arrived_at = TxTimestamp(base + 1_000);
+        first_tx.hash = Felt::from(1_u64);
+
+        let mut better_tx = tx_account(Felt::from(0x123_u64));
+        better_tx.arrived_at = TxTimestamp(base);
+        better_tx.hash = Felt::from(2_u64);
+
+        assert_matches::assert_matches!(mempool.accept_tx(first_tx.clone()).await, Ok(()));
+        assert_matches::assert_matches!(
+            mempool.accept_tx(better_tx).await,
+            Err(MempoolInsertionError::InnerMempool(TxInsertionError::Limit(_)))
+        );
+
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
+        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![first_tx.hash]);
     }
 
     #[rstest::rstest]

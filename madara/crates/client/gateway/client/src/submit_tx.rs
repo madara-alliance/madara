@@ -35,7 +35,7 @@ fn map_gateway_error(err: SequencerError) -> SubmitTransactionError {
             GWErrCode::InvalidContractDefinition => rejected(InvalidContractDefinition, e.message),
             GWErrCode::NotPermittedContract => rejected(NotPermittedContract, e.message),
             GWErrCode::UndeclaredClass => rejected(UndeclaredClass, e.message),
-            GWErrCode::TransactionLimitExceeded => rejected(TransactionLimitExceeded, e.message),
+            GWErrCode::TransactionLimitExceeded => rejected(MempoolLimitReached, e.message),
             GWErrCode::InvalidTransactionNonce => rejected(InvalidTransactionNonce, e.message),
             GWErrCode::ReplacementTransactionUnderpriced => rejected(ReplacementTransactionUnderpriced, e.message),
             GWErrCode::FeeBelowMinimum => rejected(FeeBelowMinimum, e.message),

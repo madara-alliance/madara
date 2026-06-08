@@ -1,9 +1,10 @@
 use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::utils::job_status_metrics::JobStatusTracker;
+use crate::utils::metrics_recorder::register_workload_active_slots_observer;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge, Histogram};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, ObservableGauge};
 use orchestrator_utils::metrics::lib::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument, Metrics,
 };
@@ -77,6 +78,14 @@ pub struct OrchestratorMetrics {
     pub cleanup_jobs_processed: Counter<f64>,
     pub cleanup_artifacts_tagged: Counter<f64>,
     pub cleanup_failures_total: Counter<f64>,
+    // Workload metrics.
+    // `workload_active_slots` is an ObservableGauge because the source of truth is
+    // a shared in-memory slot map. Reading that map at scrape time avoids racy
+    // "mutate then record" snapshots that can under-report concurrent work.
+    pub workload_active_slots: ObservableGauge<u64>,
+    pub workload_busy_seconds_total: Counter<f64>,
+    pub workload_capacity_slots: Gauge<f64>,
+    pub healed_jobs_total: Counter<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -436,6 +445,29 @@ impl Metrics for OrchestratorMetrics {
             "errors".to_string(),
         );
 
+        let workload_active_slots = register_workload_active_slots_observer(&orchestrator_meter);
+
+        let workload_busy_seconds_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "workload_busy_seconds_total".to_string(),
+            "Cumulative busy time spent on orchestrator workloads".to_string(),
+            "s".to_string(),
+        );
+
+        let workload_capacity_slots = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "workload_capacity_slots".to_string(),
+            "Configured local worker slot capacity for queue-backed workloads".to_string(),
+            "slots".to_string(),
+        );
+
+        let healed_jobs_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "healed_jobs_total".to_string(),
+            "Total number of stale jobs healed back to Created".to_string(),
+            "jobs".to_string(),
+        );
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -482,6 +514,10 @@ impl Metrics for OrchestratorMetrics {
             cleanup_jobs_processed,
             cleanup_artifacts_tagged,
             cleanup_failures_total,
+            workload_active_slots,
+            workload_busy_seconds_total,
+            workload_capacity_slots,
+            healed_jobs_total,
         }
     }
 }
