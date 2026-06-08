@@ -332,7 +332,7 @@ async fn get_job_state_by_type(
     let collection = mongo_db_client.database("orchestrator").collection::<JobItem>(JOBS_COLLECTION);
     // Cast u64 to i64 because BSON only supports signed 64-bit integers
     let filter = doc! { "internal_id": l2_block_for_testing as i64, "job_type" : mongodb::bson::to_bson(&job_type)? };
-    let job = collection.find_one(filter, None).await?;
+    let job = collection.find_one(filter).await?;
     match job {
         Some(job) => Ok(Some(ExpectedDBState {
             internal_id: job.internal_id,
@@ -353,7 +353,7 @@ async fn get_batch_by_index(
     let collection =
         mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(AGGREGATOR_BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
-    let batch = collection.find_one(filter, None).await?;
+    let batch = collection.find_one(filter).await?;
     match batch {
         Some(batch) => Ok(Some(batch)),
         None => Ok(None),
@@ -367,7 +367,7 @@ async fn update_batch_state(mongo_db_server: &MongoDbServer, index: u64) -> colo
         mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(AGGREGATOR_BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let update = doc! { "$set": { "is_batch_ready": true, "status": "Closed" } };
-    collection.update_one(filter, update, None).await?;
+    collection.update_one(filter, update).await?;
     Ok(())
 }
 
@@ -578,7 +578,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
     mongo_db_client
         .database("orchestrator")
         .collection(JOBS_COLLECTION)
-        .insert_one(job_item.clone(), None)
+        .insert_one(job_item.clone())
         .await
         .expect("Failed to insert SNOS job into database");
 
@@ -616,7 +616,7 @@ pub async fn put_job_data_in_db_da(mongo_db: &MongoDbServer, l2_block_number: St
     mongo_db_client
         .database("orchestrator")
         .collection(JOBS_COLLECTION)
-        .insert_one(job_item, None)
+        .insert_one(job_item)
         .await
         .expect("Failed to insert DA job into database");
 }
@@ -659,7 +659,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
     mongo_db_client
         .database("orchestrator")
         .collection(JOBS_COLLECTION)
-        .insert_one(job_item, None)
+        .insert_one(job_item)
         .await
         .expect("Failed to insert Update State job into database");
 }
@@ -691,7 +691,7 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
     mongo_db_client
         .database("orchestrator")
         .collection(JOBS_COLLECTION)
-        .insert_one(job_item, None)
+        .insert_one(job_item)
         .await
         .expect("Failed to insert Proving job into database");
 }

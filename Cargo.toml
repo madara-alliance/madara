@@ -167,9 +167,11 @@ tracing-test = "0.2.5"
 tracing-opentelemetry = "0.31.0"
 
 # Networking
-jsonrpsee = { version = "0.22", default-features = false, features = [
+jsonrpsee = { version = "0.26", default-features = false, features = [
   "server",
-  "client",
+  "http-client",
+  "ws-client",
+  "client-ws-transport-tls",
 ] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors"] }
@@ -189,7 +191,7 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
-bson = "2"
+bson = { version = "2", features = ["chrono-0_4", "uuid-1"] }
 
 # Async
 tokio = { version = "1.47", features = ["signal", "rt", "macros"] }
@@ -283,31 +285,55 @@ num = { version = "0.4.1" }
 alloy-primitives = { version = "0.8.5", default-features = false }
 alloy-sol-types = "0.8.5"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
-aws-sdk-eventbridge = { version = "1.41.0", features = [
+aws-sdk-s3 = { version = "1.38.0", default-features = false, features = [
   "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+  "sigv4a",
 ] }
-aws-sdk-iam = "1.52.0"
-aws-sdk-scheduler = "1.49.0"
-aws-sdk-sns = { version = "1.40.0", features = ["behavior-version-latest"] }
+aws-sdk-eventbridge = { version = "1.41.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+  "sigv4a",
+] }
+aws-sdk-iam = { version = "1.52.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sdk-scheduler = { version = "1.49.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
+aws-sdk-sns = { version = "1.40.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+] }
 aws-credential-types = { version = "1.2.1", features = [
   "hardcoded-credentials",
 ] }
-aws-sdk-sqs = "1.36.0"
+aws-sdk-sqs = { version = "1.36.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "rt-tokio",
+] }
 axum = { version = "0.7.4" }
 color-eyre = "0.6.3"
 chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "2.1.5"
 dotenvy = "0.15.7"
 log = "0.4.21"
-mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
+mongodb = "3.7.0"
+omniqueue = { git = "https://github.com/svix/omniqueue-rs", rev = "58b732ca2c02398389169f435e0b02c1d2041917", default-features = false, features = [
+  "sqs",
+] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
-testcontainers = "0.18.0"
+testcontainers = "0.27.3"
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
@@ -343,3 +369,4 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+reqwest = { path = "patches/reqwest-0.12.26" }

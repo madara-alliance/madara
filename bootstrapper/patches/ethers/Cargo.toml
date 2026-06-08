@@ -1,0 +1,71 @@
+[package]
+name = "ethers"
+version = "2.0.14"
+edition = "2021"
+rust-version = "1.65"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/ethers"
+repository = "https://github.com/gakonst/ethers-rs"
+homepage = "https://github.com/gakonst/ethers-rs"
+description = "A complete Ethereum and Celo Rust library"
+
+[features]
+default = ["abigen", "openssl", "etherscan"]
+legacy = ["ethers-core/legacy", "ethers-contract/legacy"]
+celo = [
+  "ethers-contract/celo",
+  "ethers-core/celo",
+  "ethers-middleware/celo",
+  "ethers-providers/celo",
+  "ethers-signers/celo",
+  "legacy",
+]
+optimism = [
+  "ethers-core/optimism",
+  "ethers-providers/optimism",
+  "ethers-signers/optimism",
+  "ethers-middleware/optimism",
+  "ethers-contract/optimism",
+]
+rustls = [
+  "ethers-contract/rustls",
+  "ethers-etherscan?/rustls",
+  "ethers-middleware/rustls",
+  "ethers-providers/rustls",
+  "ethers-solc?/rustls",
+]
+openssl = [
+  "ethers-contract/openssl",
+  "ethers-etherscan?/openssl",
+  "ethers-middleware/openssl",
+  "ethers-providers/openssl",
+  "ethers-solc?/openssl",
+]
+ws = ["ethers-providers/ws"]
+legacy-ws = ["ethers-providers/legacy-ws"]
+ipc = ["ethers-providers/ipc"]
+dev-rpc = ["ethers-providers/dev-rpc"]
+aws = ["ethers-signers/aws"]
+ledger = ["ethers-signers/ledger"]
+trezor = ["ethers-signers/trezor"]
+yubi = ["ethers-signers/yubi"]
+abigen = ["ethers-contract/abigen"]
+abigen-online = ["ethers-contract/abigen-online"]
+etherscan = ["dep:ethers-etherscan", "ethers-middleware/etherscan"]
+solc = ["dep:ethers-solc", "ethers-etherscan?/ethers-solc"]
+solc-full = ["ethers-solc?/full"]
+solc-tests = ["ethers-solc?/tests"]
+abigen-offline = ["abigen"]
+eip712 = []
+ethers-solc = ["solc"]
+solc-sha2-asm = []
+
+[dependencies]
+ethers-addressbook = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
+ethers-contract = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false, features = ["providers"] }
+ethers-core = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
+ethers-middleware = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false }
+ethers-providers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false }
+ethers-signers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
+ethers-etherscan = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false, optional = true }
+ethers-solc = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false, optional = true }

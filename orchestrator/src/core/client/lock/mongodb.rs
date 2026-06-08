@@ -78,7 +78,7 @@ impl MongoLockClient {
                 .build(),
         ];
 
-        if let Err(e) = collection.create_indexes(indexes, None).await {
+        if let Err(e) = collection.create_indexes(indexes).await {
             error!(
                 error = %e,
                 elapsed_ms = %start.elapsed().as_millis(),
@@ -121,11 +121,11 @@ impl LockClient for MongoLockClient {
             updated_at: Utc::now().round_subsecs(0),
         };
 
-        match collection.insert_one(&lock_info, None).await {
+        match collection.insert_one(&lock_info).await {
             Ok(_) => Ok(LockResult::Acquired),
             Err(e) => {
                 if e.kind.to_string() == "DuplicateKey" {
-                    if let Some(existing_lock) = collection.find_one(doc! { "_id": key }, None).await? {
+                    if let Some(existing_lock) = collection.find_one(doc! { "_id": key }).await? {
                         return Ok(LockResult::AlreadyHeld(existing_lock._id));
                     }
                 }
@@ -156,7 +156,7 @@ impl LockClient for MongoLockClient {
             None => doc! { "_id": key },
         };
 
-        match collection.delete_one(filter, None).await {
+        match collection.delete_one(filter).await {
             Ok(result) => {
                 if result.deleted_count > 0 {
                     Ok(LockResult::Released)
@@ -190,7 +190,7 @@ impl LockClient for MongoLockClient {
             None => doc! { "_id": key },
         };
 
-        match collection.update_one(filter, update, None).await {
+        match collection.update_one(filter, update).await {
             Ok(result) => {
                 if result.modified_count > 0 {
                     Ok(LockResult::Extended)
@@ -209,7 +209,7 @@ impl LockClient for MongoLockClient {
             None => doc! { "_id": key },
         };
 
-        match collection.find_one(filter, None).await {
+        match collection.find_one(filter).await {
             Ok(Some(lock)) => Ok(lock),
             Err(e) => Err(LockError::MongoDB(e)),
             _ => Err(LockError::InvalidKey(String::from(key))),
@@ -238,7 +238,7 @@ impl LockClient for MongoLockClient {
     async fn get_lock_ttl(&self, key: &str) -> Result<Option<i64>, LockError> {
         let collection = self.get_cache_collection();
 
-        match collection.find_one(doc! { "_id": key }, None).await {
+        match collection.find_one(doc! { "_id": key }).await {
             Ok(Some(lock)) => {
                 let now = Utc::now();
                 if lock.expires_at > now {

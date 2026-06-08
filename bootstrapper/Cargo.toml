@@ -9,7 +9,11 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.80"
 base64 = "0.22"
-ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
+ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588", default-features = false, features = [
+  "abigen",
+  "etherscan",
+  "openssl",
+] }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 reqwest = { version = "0.12.24", default-features = false }
@@ -74,3 +78,6 @@ tempfile = "3.10.1"
 
 [build-dependencies]
 build-version = { path = "../build-artifacts" }
+
+[patch."https://github.com/gakonst/ethers-rs"]
+ethers = { path = "patches/ethers" }

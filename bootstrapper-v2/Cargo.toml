@@ -16,7 +16,7 @@ name = "bootstrapper_v2"
 path = "src/lib.rs"
 
 [dependencies]
-alloy = { version = "1.0.25", features = [
+alloy = { version = "=1.4.1", features = [
   "signers",
   "signer-local",
   "sol-types",
