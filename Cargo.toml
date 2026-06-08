@@ -315,7 +315,7 @@ async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 # This rev fixes SNOS to fetch the revert reason from RPC itself instead of filtering the reason got from trace
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "v0.14.2-rc.3" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "v0.14.2-rc.4" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
