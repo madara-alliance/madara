@@ -50,6 +50,23 @@
 //! }
 //! ```
 //!
+//! ### `get_preconfirmed_block`
+//!
+//! Fetches the current pre-confirmed block by block number from a remote feeder gateway node.
+//! This endpoint exposes the block before it becomes fully confirmed and can include both executed
+//! and candidate transactions.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_preconfirmed_block",
+//!   "params": {
+//!     "blockNumber": 123,
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
 //! ### `get_state_update`
 //!
 //! Fetches the state update at a given block id from a remote feeder gateway node. State updates
@@ -88,6 +105,70 @@
 //!   "method": "get_block_traces",
 //!   "params": {
 //!     "blockNumber": 123,
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
+//! ### `get_transaction`
+//!
+//! Fetches a transaction by hash from a remote feeder gateway node and returns the feeder-shaped
+//! transaction payload, including block metadata when available.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_transaction",
+//!   "params": {
+//!     "transactionHash": "0xdeadbeef",
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
+//! ### `get_transaction_status`
+//!
+//! Fetches feeder transaction status information by transaction hash from a remote feeder gateway
+//! node. The current Starknet feeder compatibility target exposes accepted transactions as
+//! `ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`; mempool and preconfirmed-only transactions are reported
+//! as not received rather than as RPC-layer `CANDIDATE` or `PRE_CONFIRMED` states.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_transaction_status",
+//!   "params": {
+//!     "transactionHash": "0xdeadbeef",
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
+//! ### `get_block_hash_by_id`
+//!
+//! Fetches a confirmed block hash by block number from a remote feeder gateway node.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_block_hash_by_id",
+//!   "params": {
+//!     "blockId": 123,
+//!   },
+//!   "id": 1
+//! }
+//! ```
+//!
+//! ### `get_block_id_by_hash`
+//!
+//! Fetches a confirmed block number by block hash from a remote feeder gateway node.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_block_id_by_hash",
+//!   "params": {
+//!     "blockHash": "0xdeadbeef",
 //!   },
 //!   "id": 1
 //! }
@@ -176,6 +257,25 @@
 //! {
 //!   "jsonrpc": "2.0",
 //!   "method": "get_public_key",
+//!   "id": 1
+//! }
+//! ```
+//!
+//! ### `get_block_bouncer_weights`
+//!
+//! > **This endpoint is unique to Madara.**
+//!
+//! Fetches the bouncer weights recorded for a given block from a remote Madara feeder gateway.
+//! This endpoint exists for Orchestrator integration and should not be expected to exist on other
+//! feeder clients.
+//!
+//! ```json5
+//! {
+//!   "jsonrpc": "2.0",
+//!   "method": "get_block_bouncer_weights",
+//!   "params": {
+//!     "blockNumber": 123,
+//!   },
 //!   "id": 1
 //! }
 //! ```

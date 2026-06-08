@@ -3,7 +3,10 @@ use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{
+    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnsParams, MempoolTxnHashInfo,
+    MempoolTxnInfo,
+};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -87,6 +90,13 @@ pub trait MadaraWriteRpcApi {
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
+
+    /// Flush transactions from the mempool using an admin-only filter.
+    /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
+    /// Nonce-range flushing is surgical: it removes only matching transactions. If that creates an
+    /// account nonce gap, higher nonces remain pending so the missing nonce can be resubmitted.
+    #[method(name = "flushMempoolTxns")]
+    async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }
 
 /// This is an admin method, so semver is different!
@@ -95,6 +105,20 @@ pub trait MadaraReadRpcApi {
     /// Get the builtins  for the given block number
     #[method(name = "getBlockBuiltinWeights")]
     async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
+
+    /// List mempool transaction hashes in oldest-first arrival order.
+    /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
+    /// Pass `offset` to skip matching entries for pagination.
+    #[method(name = "getMempoolTxnHashes")]
+    async fn get_mempool_txn_hashes(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnHashInfo>>;
+
+    /// List mempool transactions in oldest-first arrival order.
+    /// Returns at most 100 entries by default; pass an explicit `limit` to request more.
+    /// Pass `offset` to skip matching entries for pagination.
+    /// Pass `include_ttl` to include `remaining_ttl_ms` for each entry when the node is configured
+    /// with a mempool TTL.
+    #[method(name = "getMempoolTxns")]
+    async fn get_mempool_txns(&self, params: Option<GetMempoolTxnsParams>) -> RpcResult<Vec<MempoolTxnInfo>>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
