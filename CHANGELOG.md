@@ -2,6 +2,7 @@
 
 ## Next release
 
+- chore: remove EVM compatibility Docker Compose support and docs
 - cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`
 - refactor: refactor mc-sync crate, and remove mc-block-import crate
 - feat: settlement client introduced instead of just ethereum, starknet client added for settlement

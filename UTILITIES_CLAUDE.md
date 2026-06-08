@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) for the smaller utility
 folders in this repository: `cairo/`, `madaraup/`, `scripts/`, `tools/`, `test_utils/`,
-`build-artifacts/`, and `evm/`.
+and `build-artifacts/`.
 
 ---
 
@@ -273,55 +273,6 @@ build-artifacts/
 
 ---
 
-## EVM (`evm/`)
-
-Docker Compose setup for local EVM-Starknet integrated testing.
-
-### Services
-
-| Service          | Image                     | Port  | Purpose             |
-| ---------------- | ------------------------- | ----- | ------------------- |
-| starknet         | Custom Madara             | 9944  | Starknet sequencer  |
-| mongo            | mongo:6.0.8               | 27017 | Data persistence    |
-| apibara-dna      | apibara/starknet:1.5.0    | 7171  | Data indexing       |
-| indexer          | apibara/sink-mongo        | -     | Kakarot indexer     |
-| kakarot-rpc      | kakarot-rpc:v0.7.1-alpha1 | 3030  | EVM RPC             |
-| kakarot-deployer | kakarot:v0.9.2            | -     | Contract deployment |
-
-### EVM Commands
-
-```bash
-# Start all services
-docker-compose up -d
-
-# Custom configuration
-MADARA_MODE=full MADARA_RPC_PORT=9945 docker-compose up -d
-
-# With custom chain config
-MADARA_CHAIN_CONFIG=/path/to/config.yaml docker-compose up -d
-
-# Stop all
-docker-compose down
-```
-
-### EVM Environment Variables
-
-```text
-MADARA_BASE_PATH: /var/lib/madara
-MADARA_MODE: sequencer | full
-MADARA_PRESET: mainnet | testnet | devnet
-MADARA_RPC_PORT: 9944
-```
-
-### EVM Key Info
-
-- Kakarot provides EVM compatibility on Starknet
-- Apibara streams real-time blockchain data
-- Health checks ensure service readiness
-- Volumes: madara_files, mongo_data
-
----
-
 ## Quick Reference
 
 | Folder             | Language | Build Tool      | Purpose            |
@@ -332,7 +283,6 @@ MADARA_RPC_PORT: 9944
 | `tools/`           | Nix      | Nix             | Environment setup  |
 | `test_utils/`      | Rust     | Cargo           | Mock services      |
 | `build-artifacts/` | JSON     | Docker          | Compiled contracts |
-| `evm/`             | YAML     | Docker Compose  | EVM integration    |
 
 ## Cross-Folder Relationships
 
@@ -341,4 +291,3 @@ MADARA_RPC_PORT: 9944
 3. **Scripts → Cairo**: `scripts/js-tests.sh` uses Cairo test contracts
 4. **Test-Utils → Scripts**: Mock Atlantic used by orchestrator tests
 5. **Tools → Development**: Nix configs ensure Foundry/Scarb availability
-6. **EVM → Cairo**: Kakarot wraps Starknet contracts for EVM access
