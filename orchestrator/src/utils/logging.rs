@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt as stdfmt;
 use tracing::{
     field::{Field, Visit},
-    Event, Level, Subscriber,
+    Event, Subscriber,
 };
 use tracing_error::ErrorLayer;
 use tracing_log::NormalizeEvent;
@@ -409,10 +409,11 @@ pub fn init_logging() {
 
     // Read from `RUST_LOG` environment variable, with fallback to default
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        // Fallback if RUST_LOG is not set or invalid
+        // Fallback if RUST_LOG is not set or invalid. Keep orchestrator INFO
+        // logs by default, but require explicit opt-in for bridged SNOS and
+        // other third-party log targets.
         EnvFilter::builder()
-            .with_default_directive(Level::INFO.into())
-            .parse("orchestrator=info")
+            .parse("error,orchestrator=info")
             .expect("Invalid filter directive and Logger control")
     });
 
