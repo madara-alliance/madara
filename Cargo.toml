@@ -369,4 +369,8 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+# Security note: this path patch shadows crates.io reqwest 0.12.x updates.
+# Rebase or remove it whenever reqwest 0.12.x ships, especially for CVEs.
+# It only exists to move the optional Hickory resolver to 0.26 until upstream
+# reqwest 0.12 or all current consumers stop pulling hickory-proto 0.25.
 reqwest = { path = "patches/reqwest-0.12.26" }
