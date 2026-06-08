@@ -16,6 +16,8 @@ on:
         type: string
 jobs:
   test-cli:
+    permissions:
+      contents: read
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository

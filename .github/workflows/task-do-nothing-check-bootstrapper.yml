@@ -8,6 +8,7 @@ on:
 
 jobs:
   check-binaries:
+    permissions: {}
     runs-on: blacksmith-8vcpu-ubuntu-2204
 
     steps:

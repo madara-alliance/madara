@@ -27,6 +27,8 @@ on:
 
 jobs:
   build-binary:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       binary-hash: ${{ steps.generate-binary-hash.outputs.binary-hash }}

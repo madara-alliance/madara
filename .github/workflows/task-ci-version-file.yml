@@ -21,6 +21,7 @@ on:
 
 jobs:
   check:
+    permissions: {}
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - run: echo "Checking Version File ('${{ inputs.label }}' label only)"

@@ -12,6 +12,8 @@ on:
 
 jobs:
   build-orchestrator-tests:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       orchestrator-tests-hash: ${{ steps.generate-hash.outputs.orchestrator-tests-hash }}

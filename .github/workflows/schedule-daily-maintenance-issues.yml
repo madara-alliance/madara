@@ -11,6 +11,9 @@ jobs:
   stale_issues:
     name: 🧹 Clean up stale issues and PRs
     if: ${{ github.repository_owner == 'madara-alliance' || github.event_name != 'schedule' }}
+    permissions:
+      issues: write
+      pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - name: 🚀 Run stale

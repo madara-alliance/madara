@@ -17,6 +17,8 @@ on:
 
 jobs:
   build-cairo-artifacts:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       cairo-artifacts-hash: ${{ steps.generate-artifact-hash.outputs.cairo-hash }}

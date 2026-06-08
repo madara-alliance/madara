@@ -16,6 +16,8 @@ on:
 
 jobs:
   build-madara-tests:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       madara-tests-hash: ${{ steps.generate-hash.outputs.madara-tests-hash }}

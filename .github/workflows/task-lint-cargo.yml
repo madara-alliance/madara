@@ -8,6 +8,8 @@ on:
 
 jobs:
   cargo-lint:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository

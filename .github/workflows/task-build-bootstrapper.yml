@@ -13,6 +13,8 @@ on:
 jobs:
   build-bootstrapper:
     uses: ./.github/workflows/task-build-binary.yml
+    permissions:
+      contents: read
     with:
       binary-name: bootstrapper
       is-standalone: true

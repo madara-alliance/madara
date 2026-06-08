@@ -20,6 +20,8 @@ on:
 
 jobs:
   e2e-orchestrator:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
 
     services:

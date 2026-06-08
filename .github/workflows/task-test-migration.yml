@@ -25,6 +25,8 @@ on:
 jobs:
   migration-test:
     name: Test Migration
+    permissions:
+      contents: read
     runs-on: blacksmith-4vcpu-ubuntu-2204
     timeout-minutes: 30
 

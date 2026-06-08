@@ -14,6 +14,7 @@ jobs:
   build-nightly-and-publish-madara:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+    permissions: {}
 
   # test-hive:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
@@ -21,10 +22,12 @@ jobs:
   build-nightly-and-publish-orchestrator:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+    permissions: {}
 
   build-nightly-and-publish-bootstrapper:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+    permissions: {}
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #
@@ -33,26 +36,32 @@ jobs:
   # Run coverage tests (Madara)
   test-madara:
     uses: ./.github/workflows/task-do-nothing-test-madara.yml
+    permissions: {}
 
   # Run migration tests
   test-migration:
     uses: ./.github/workflows/task-do-nothing-test-migration.yml
+    permissions: {}
 
   # Run coverage tests (Orchestrator)
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
+    permissions: {}
 
   # Run coverage tests (Bootstrapper)
   test-bootstrapper:
     uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
+    permissions: {}
 
   # Run JavaScript tests
   test-js:
     uses: ./.github/workflows/task-do-nothing-test-js.yml
+    permissions: {}
 
   # Run CLI tests
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
+    permissions: {}
 
   # ========================================================================= #
   #                                E2E Test                                   #
@@ -62,3 +71,4 @@ jobs:
   test-end-to-end:
     if: github.event.pull_request.draft == false && github.event.merge_group.base_ref == 'refs/heads/main'
     uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
+    permissions: {}

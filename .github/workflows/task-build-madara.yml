@@ -19,6 +19,8 @@ on:
 
 jobs:
   build-binaries:
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}

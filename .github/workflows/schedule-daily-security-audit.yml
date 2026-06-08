@@ -11,6 +11,8 @@ jobs:
   security_audit:
     name: Security - Audit check
     if: ${{ github.repository_owner == 'madara-alliance' || github.event_name != 'schedule' }}
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v5
