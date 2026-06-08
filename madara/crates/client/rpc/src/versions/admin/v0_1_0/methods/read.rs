@@ -103,9 +103,11 @@ mod tests {
     fn make_starknet_with_chain_config(chain_config: ChainConfig) -> (Arc<Mempool>, Starknet) {
         let backend = MadaraBackend::open_for_testing(Arc::new(chain_config));
         let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let provider = Arc::new(TestTransactionProvider);
         let mut rpc = Starknet::new(
             backend,
-            Arc::new(TestTransactionProvider),
+            Arc::clone(&provider) as _,
+            provider,
             Default::default(),
             None,
             ServiceContext::new_for_testing(),
