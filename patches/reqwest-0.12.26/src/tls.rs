@@ -261,7 +261,8 @@ impl Identity {
     /// let mut buf = Vec::new();
     /// File::open("my-ident.pfx")?
     ///     .read_to_end(&mut buf)?;
-    /// let pkcs12 = reqwest::Identity::from_pkcs12_der(&buf, "my-privkey-password")?;
+    /// let password = std::env::var("PKCS12_PASSWORD")?;
+    /// let pkcs12 = reqwest::Identity::from_pkcs12_der(&buf, &password)?;
     /// # drop(pkcs12);
     /// # Ok(())
     /// # }
@@ -761,7 +762,8 @@ mod tests {
     #[cfg(feature = "native-tls")]
     #[test]
     fn identity_from_pkcs12_der_invalid() {
-        Identity::from_pkcs12_der(b"not der", "nope").unwrap_err();
+        let password = String::default();
+        Identity::from_pkcs12_der(b"not der", &password).unwrap_err();
     }
 
     #[cfg(feature = "native-tls")]
