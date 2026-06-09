@@ -42,8 +42,6 @@ jobs:
   build-artifacts:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     if: inputs.should_run == 'true'
-    env:
-      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-artifacts
     outputs:
       artifacts: ${{ steps.tag.outputs.artifacts }}
       artifacts-pr: ${{ steps.tag.outputs.artifacts-pr }}
@@ -88,24 +86,19 @@ jobs:
           echo "artifacts=$ARTIFACTS" >> $GITHUB_OUTPUT
           echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
 
-      - name: Set up Docker Buildx
-        uses: useblacksmith/setup-docker-builder@v1
+      - name: Build Docker Image Archive
         env:
-          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
-
-      - name: Build Docker image
-        id: push
-        uses: useblacksmith/build-push-action@v1.2
-        env:
-          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
-        with:
-          context: .
-          push: false
-          file: build-artifacts/archive.docker
-          tags: |
-            ${{ steps.tag.outputs.artifacts }}
-            ${{ steps.tag.outputs.artifacts-pr }}
-          outputs: type=docker,dest=${{ runner.temp }}/artifacts.tar
+          DOCKER_BUILDKIT: 0
+        run: |
+          docker build \
+            --file build-artifacts/archive.docker \
+            --tag "${{ steps.tag.outputs.artifacts }}" \
+            --tag "${{ steps.tag.outputs.artifacts-pr }}" \
+            .
+          docker save \
+            --output "${{ runner.temp }}/artifacts.tar" \
+            "${{ steps.tag.outputs.artifacts }}" \
+            "${{ steps.tag.outputs.artifacts-pr }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
