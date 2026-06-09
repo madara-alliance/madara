@@ -16,7 +16,7 @@ use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetad
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::snos::SNOSParams;
-use crate::worker::event_handler::jobs::snos::{rpc_for_snos_attempt, SnosJobHandler};
+use crate::worker::event_handler::jobs::snos::{rpc_for_snos_attempt, should_use_snos_backup_rpc, SnosJobHandler};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 
 #[rstest]
@@ -97,6 +97,7 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
     metadata.common.process_retry_attempt_no = 1;
     let job = JobItem::create(1, JobType::SnosRun, JobStatus::PendingRetry, metadata);
 
+    assert!(should_use_snos_backup_rpc(&snos_config, &job));
     assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &backup_rpc_url);
 }
 
@@ -116,6 +117,7 @@ async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_retry_attempt_without_ba
     metadata.common.process_retry_attempt_no = 1;
     let job = JobItem::create(1, JobType::SnosRun, JobStatus::PendingRetry, metadata);
 
+    assert!(!should_use_snos_backup_rpc(&snos_config, &job));
     assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &primary_rpc_url);
 }
 

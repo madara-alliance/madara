@@ -43,11 +43,15 @@ pub async fn check_snos_health(snos_url: &Url) -> bool {
 }
 
 pub(crate) fn rpc_for_snos_attempt<'a>(snos_config: &'a SNOSParams, job: &JobItem) -> &'a Url {
-    if job.metadata.common.process_retry_attempt_no > 0 {
+    if should_use_snos_backup_rpc(snos_config, job) {
         snos_config.rpc_for_snos_backup.as_ref().unwrap_or(&snos_config.rpc_for_snos)
     } else {
         &snos_config.rpc_for_snos
     }
+}
+
+pub(crate) fn should_use_snos_backup_rpc(snos_config: &SNOSParams, job: &JobItem) -> bool {
+    job.metadata.common.process_retry_attempt_no > 0 && snos_config.rpc_for_snos_backup.is_some()
 }
 
 pub struct SnosJobHandler;
@@ -102,6 +106,16 @@ impl JobHandlerTrait for SnosJobHandler {
         let start_block_number = snos_metadata.start_block;
         let end_block_number = snos_metadata.end_block;
         debug!(start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
+
+        if should_use_snos_backup_rpc(config.snos_config(), job) {
+            info!(
+                job_id = %job.id,
+                internal_id,
+                retry_attempt = job.metadata.common.process_retry_attempt_no,
+                "Using backup SNOS RPC for retried job"
+            );
+            MetricsRecorder::record_snos_rpc_fallback(job);
+        }
 
         let snos_url = rpc_for_snos_attempt(config.snos_config(), job).to_string();
         let snos_url = snos_url.trim_end_matches('/');
