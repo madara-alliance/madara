@@ -1,6 +1,6 @@
-current_version: 10
+current_version: 11
 versions:
-  - version: 10
+  - version: 11
     pr: 1095
   - version: 9
     pr: 1013

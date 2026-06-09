@@ -59,7 +59,7 @@ jobs:
         uses: ./.github/actions/setup-cairo-native
 
       - name: Compile artifacts
-        run: make artifacts
+        run: yes | make artifacts
 
       - name: Compress artifacts
         run: |
