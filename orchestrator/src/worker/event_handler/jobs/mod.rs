@@ -78,6 +78,8 @@ pub trait JobHandlerTrait: Send + Sync {
     ///
     /// # Arguments
     /// * `config` - Shared configuration for the job
+    /// * `job` - Job being considered for processing. Handlers can inspect metadata
+    ///   such as retry attempt count to select the dependency they should check.
     ///
     /// # Returns
     /// * `Ok(())` - Dependencies are ready, proceed with processing

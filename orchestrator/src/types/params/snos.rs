@@ -5,7 +5,7 @@ use url::Url;
 #[derive(Debug, Clone)]
 pub struct SNOSParams {
     pub rpc_for_snos: Url,
-    pub rpc_for_snos_backup: Url,
+    pub rpc_for_snos_backup: Option<Url>,
     pub snos_full_output: bool,
     pub versioned_constants: Option<VersionedConstants>,
 }

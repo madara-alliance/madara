@@ -65,7 +65,7 @@ async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_first_attempt() {
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
         rpc_for_snos: primary_rpc_url.clone(),
-        rpc_for_snos_backup: backup_rpc_url,
+        rpc_for_snos_backup: Some(backup_rpc_url),
         snos_full_output: false,
         versioned_constants: None,
     };
@@ -87,7 +87,7 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
         rpc_for_snos: primary_rpc_url,
-        rpc_for_snos_backup: backup_rpc_url.clone(),
+        rpc_for_snos_backup: Some(backup_rpc_url.clone()),
         snos_full_output: false,
         versioned_constants: None,
     };
@@ -98,6 +98,25 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
     let job = JobItem::create(1, JobType::SnosRun, JobStatus::PendingRetry, metadata);
 
     assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &backup_rpc_url);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_retry_attempt_without_backup() {
+    let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
+    let snos_config = SNOSParams {
+        rpc_for_snos: primary_rpc_url.clone(),
+        rpc_for_snos_backup: None,
+        snos_full_output: false,
+        versioned_constants: None,
+    };
+
+    let mut metadata =
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
+    metadata.common.process_retry_attempt_no = 1;
+    let job = JobItem::create(1, JobType::SnosRun, JobStatus::PendingRetry, metadata);
+
+    assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &primary_rpc_url);
 }
 
 /// We have a private pathfinder node used to run the Snos [prove_block] function.

@@ -44,7 +44,7 @@ pub async fn check_snos_health(snos_url: &Url) -> bool {
 
 pub(crate) fn rpc_for_snos_attempt<'a>(snos_config: &'a SNOSParams, job: &JobItem) -> &'a Url {
     if job.metadata.common.process_retry_attempt_no > 0 {
-        &snos_config.rpc_for_snos_backup
+        snos_config.rpc_for_snos_backup.as_ref().unwrap_or(&snos_config.rpc_for_snos)
     } else {
         &snos_config.rpc_for_snos
     }

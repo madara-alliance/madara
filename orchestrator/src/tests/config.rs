@@ -741,8 +741,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS");
     let rpc_for_snos_backup = get_env_var_optional("MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP")
         .expect("Couldn't get backup SNOS RPC URL")
-        .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP"))
-        .unwrap_or_else(|| rpc_for_snos.clone());
+        .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP"));
 
     let snos_config = SNOSParams {
         rpc_for_snos,
