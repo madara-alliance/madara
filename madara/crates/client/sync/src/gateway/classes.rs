@@ -12,19 +12,17 @@ use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
-/// for blocks before 2597 on mainnet new classes are not declared in the state update
-/// https://github.com/madara-alliance/madara/issues/233
+/// Some historical mainnet gateway state updates omitted legacy class declarations.
+/// Keep an explicit repair table keyed by block number.
 fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut HashMap<Felt, DeclaredClassCompiledClass>) {
-    if block_n < 2597 {
-        classes_from_state_diff.extend(
-            MISSED_CLASS_HASHES
-                .get(&block_n)
-                .cloned()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|hash| (hash, DeclaredClassCompiledClass::Legacy)),
-        )
+    if let Some(class_hashes) = MISSED_CLASS_HASHES.get(&block_n) {
+        classes_from_state_diff
+            .extend(class_hashes.iter().copied().map(|hash| (hash, DeclaredClassCompiledClass::Legacy)))
     }
+}
+
+fn should_fixup_missed_mainnet_classes(chain_id: ChainId) -> bool {
+    chain_id == ChainId::Mainnet
 }
 
 /// Fetches class definitions from the gateway and creates ClassInfo structures.
@@ -108,7 +106,7 @@ impl PipelineSteps for ClassesSyncSteps {
         block_range: Range<u64>,
         mut input: Vec<Self::InputItem>,
     ) -> anyhow::Result<Self::SequentialStepInput> {
-        if self.backend.chain_config().chain_id == ChainId::Mainnet {
+        if should_fixup_missed_mainnet_classes(self.backend.chain_config().chain_id.clone()) {
             block_range
                 .clone()
                 .zip(input.iter_mut())
@@ -172,5 +170,39 @@ impl PipelineSteps for ClassesSyncSteps {
             .await
             .with_context(|| format!("Saving classes for block_range={block_range:?}"))?;
         Ok(ApplyOutcome::Success(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn fixup_missed_mainnet_classes_leaves_unknown_blocks_unchanged() {
+        let existing = Felt::from_hex_unchecked("0x123");
+        let mut classes = HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]);
+
+        fixup_missed_mainnet_classes(2597, &mut classes);
+
+        assert_eq!(classes, HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]));
+    }
+
+    #[test]
+    fn fixup_missed_mainnet_classes_adds_known_post_2597_repairs() {
+        let existing = Felt::from_hex_unchecked("0x123");
+        let repaired = Felt::from_hex_unchecked("0x26fe8ea36ec7703569cfe4693b05102940bf122647c4dbf0abc0bb919ce27bd");
+        let mut classes = HashMap::from([(existing, DeclaredClassCompiledClass::Legacy)]);
+
+        fixup_missed_mainnet_classes(5982, &mut classes);
+
+        assert_eq!(classes.get(&existing), Some(&DeclaredClassCompiledClass::Legacy));
+        assert_eq!(classes.get(&repaired), Some(&DeclaredClassCompiledClass::Legacy));
+    }
+
+    #[test]
+    fn missing_class_repair_is_only_enabled_on_mainnet() {
+        assert!(should_fixup_missed_mainnet_classes(ChainId::Mainnet));
+        assert!(!should_fixup_missed_mainnet_classes(ChainId::Sepolia));
     }
 }

@@ -922,6 +922,14 @@ async fn verify_job_with_pending_status_works() {
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
+#[test]
+fn verification_workload_is_error_only_for_failure_statuses() {
+    assert!(!JobHandlerService::verification_workload_is_error(None));
+    assert!(!JobHandlerService::verification_workload_is_error(Some(&JobStatus::Completed)));
+    assert!(JobHandlerService::verification_workload_is_error(Some(&JobStatus::VerificationFailed)));
+    assert!(JobHandlerService::verification_workload_is_error(Some(&JobStatus::VerificationTimeout)));
+}
+
 #[rstest]
 #[case(JobType::DataSubmission, JobStatus::Completed)] // code should panic here, how can completed move to dl queue ?
 #[case(JobType::SnosRun, JobStatus::PendingVerification)]

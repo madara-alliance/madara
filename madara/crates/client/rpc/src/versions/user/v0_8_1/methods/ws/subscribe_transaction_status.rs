@@ -78,7 +78,7 @@ impl<'a> SubscriptionState<'a> {
         //
         // We subscribe to each channel before running status checks against the transaction to
         // avoid missing any updates.
-        let channel_mempool = common.starknet.add_transaction_provider.subscribe_new_transactions().await;
+        let channel_mempool = common.starknet.transaction_lookup.subscribe_new_transactions().await;
         let channel_pending_tx = common.starknet.backend.subscribe_pending_txs();
         let channel_confirmed = common.starknet.backend.subscribe_last_block_on_l1();
 
@@ -126,13 +126,13 @@ impl<'a> SubscriptionState<'a> {
                 }
             }
             None => {
-                // Local mempool is the only AddTransactionProvider which allows us to inspect the state
-                // of received transactions. For other providers (such as when forwarding to a remote
+                // Local mempool-backed lookup is the only backend which allows us to inspect the state
+                // of received transactions. For other backends (such as when forwarding to a remote
                 // gateway), we default to assuming that the transaction has been received and wait for
                 // it to be accepted on L2.
                 let received = common
                     .starknet
-                    .add_transaction_provider
+                    .transaction_lookup
                     .received_transaction(common.tx_hash)
                     .await
                     .unwrap_or_default();
@@ -492,7 +492,14 @@ mod test {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), None, context)
+        Starknet::new(
+            backend,
+            std::sync::Arc::clone(&mempool_validator) as _,
+            mempool_validator,
+            Default::default(),
+            None,
+            context,
+        )
     }
 
     #[tokio::test]
@@ -502,7 +509,7 @@ mod test {
         starknet: Starknet,
         tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
     ) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
@@ -536,7 +543,7 @@ mod test {
         starknet: Starknet,
         tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
     ) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
@@ -606,7 +613,7 @@ mod test {
         tx_with_receipt: mp_block::TransactionWithReceipt,
         pending: mp_block::PreconfirmedFullBlock,
     ) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
         let backend = std::sync::Arc::clone(&starknet.backend);
 
         let builder = jsonrpsee::server::Server::builder();
@@ -743,7 +750,7 @@ mod test {
         pending: mp_block::PreconfirmedFullBlock,
         block: mp_block::MadaraMaybePendingBlock,
     ) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
         let backend = std::sync::Arc::clone(&starknet.backend);
 
         let builder = jsonrpsee::server::Server::builder();
@@ -810,7 +817,7 @@ mod test {
         starknet: Starknet,
         tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
     ) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");

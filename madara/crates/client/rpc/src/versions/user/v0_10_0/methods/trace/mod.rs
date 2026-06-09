@@ -43,3 +43,21 @@ impl StarknetTraceRpcApiV0_10_0Server for Starknet {
         Ok(v0_9_result.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trace_block_transactions_rejects_pre_confirmed_tag() {
+        let err = validate_trace_block_transactions_block_id(&BlockId::Tag(BlockTag::PreConfirmed))
+            .expect_err("pre_confirmed should be rejected for traceBlockTransactions");
+        assert_eq!(err.code(), INVALID_PARAMS_CODE);
+        assert_eq!(err.message(), "Invalid params");
+    }
+
+    #[test]
+    fn trace_block_transactions_accepts_latest_tag() {
+        assert!(validate_trace_block_transactions_block_id(&BlockId::Tag(BlockTag::Latest)).is_ok());
+    }
+}
