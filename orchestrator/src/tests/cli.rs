@@ -43,6 +43,8 @@ fn baseline() -> Vec<&'static str> {
         "http://localhost:8545",
         "--rpc-for-snos",
         "http://localhost:9545",
+        "--rpc-for-snos-backup",
+        "http://localhost:9546",
         "--max-batch-time-seconds",
         "60",
         "--max-batch-size",

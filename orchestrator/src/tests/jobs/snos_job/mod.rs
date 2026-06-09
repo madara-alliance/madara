@@ -15,7 +15,8 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::snos::SnosJobHandler;
+use crate::types::params::snos::SNOSParams;
+use crate::worker::event_handler::jobs::snos::{rpc_for_snos_attempt, SnosJobHandler};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 
 #[rstest]
@@ -55,6 +56,48 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     //
     // // Should always be [Verified] for the moment.
     // assert_eq!(job_status, Ok(JobVerificationStatus::Verified));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_first_attempt() {
+    let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
+    let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
+    let snos_config = SNOSParams {
+        rpc_for_snos: primary_rpc_url.clone(),
+        rpc_for_snos_backup: backup_rpc_url,
+        snos_full_output: false,
+        versioned_constants: None,
+    };
+
+    let job = JobItem::create(
+        1,
+        JobType::SnosRun,
+        JobStatus::Created,
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) },
+    );
+
+    assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &primary_rpc_url);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
+    let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
+    let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
+    let snos_config = SNOSParams {
+        rpc_for_snos: primary_rpc_url,
+        rpc_for_snos_backup: backup_rpc_url.clone(),
+        snos_full_output: false,
+        versioned_constants: None,
+    };
+
+    let mut metadata =
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
+    metadata.common.process_retry_attempt_no = 1;
+    let job = JobItem::create(1, JobType::SnosRun, JobStatus::PendingRetry, metadata);
+
+    assert_eq!(rpc_for_snos_attempt(&snos_config, &job), &backup_rpc_url);
 }
 
 /// We have a private pathfinder node used to run the Snos [prove_block] function.
@@ -185,7 +228,14 @@ async fn test_check_ready_to_process_snos_available() -> color_eyre::Result<()> 
         .await;
 
     // Call check_ready_to_process - should return Ok since SNOS is available
-    let result = SnosJobHandler.check_ready_to_process(services.config.clone()).await;
+    let job_item = JobItem::create(
+        1,
+        JobType::SnosRun,
+        JobStatus::Created,
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) },
+    );
+
+    let result = SnosJobHandler.check_ready_to_process(services.config.clone(), &job_item).await;
 
     assert!(result.is_ok(), "Expected Ok when SNOS RPC is available");
     Ok(())

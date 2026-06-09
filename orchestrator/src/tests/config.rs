@@ -737,9 +737,16 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .expect("Couldn't get versioned constants path")
         .map(|path| parse_constants(&path).expect("Failed to parse versioned constants path"));
 
+    let rpc_for_snos = Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
+        .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS");
+    let rpc_for_snos_backup = get_env_var_optional("MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP")
+        .expect("Couldn't get backup SNOS RPC URL")
+        .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP"))
+        .unwrap_or_else(|| rpc_for_snos.clone());
+
     let snos_config = SNOSParams {
-        rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
-            .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
+        rpc_for_snos,
+        rpc_for_snos_backup,
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
         versioned_constants,
     };

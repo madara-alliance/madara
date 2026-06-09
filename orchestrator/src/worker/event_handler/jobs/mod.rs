@@ -85,7 +85,7 @@ pub trait JobHandlerTrait: Send + Sync {
     ///
     /// # Default Implementation
     /// Returns `Ok(())` - always ready to process
-    async fn check_ready_to_process(&self, _config: Arc<Config>) -> Result<(), Duration> {
+    async fn check_ready_to_process(&self, _config: Arc<Config>, _job: &JobItem) -> Result<(), Duration> {
         Ok(())
     }
 }

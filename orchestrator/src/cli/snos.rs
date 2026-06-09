@@ -11,7 +11,7 @@ pub(crate) fn parse_constants(path: &str) -> Result<VersionedConstants, String> 
 }
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["rpc_for_snos"])]
+#[group(requires_all = ["rpc_for_snos", "rpc_for_snos_backup"])]
 pub struct SNOSCliArgs {
     /// Weather to use full output or not
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT", long, default_value = "false")]
@@ -20,6 +20,10 @@ pub struct SNOSCliArgs {
     /// The RPC URL for SNOS.
     #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS", long)]
     pub rpc_for_snos: Url,
+
+    /// The backup RPC URL for retried SNOS jobs.
+    #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP", long)]
+    pub rpc_for_snos_backup: Url,
 
     /// Path to a JSON file containing versioned constants to override the default Starknet constants.
     /// By default, versioned constants are picked from the official Starknet constants loaded in blockifier.

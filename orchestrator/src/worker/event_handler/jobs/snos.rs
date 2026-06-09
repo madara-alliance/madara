@@ -8,6 +8,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::params::snos::SNOSParams;
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
@@ -39,6 +40,14 @@ const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
 pub async fn check_snos_health(snos_url: &Url) -> bool {
     let provider = JsonRpcClient::new(HttpTransport::new(snos_url.clone()));
     provider.chain_id().await.is_ok()
+}
+
+pub(crate) fn rpc_for_snos_attempt<'a>(snos_config: &'a SNOSParams, job: &JobItem) -> &'a Url {
+    if job.metadata.common.process_retry_attempt_no > 0 {
+        &snos_config.rpc_for_snos_backup
+    } else {
+        &snos_config.rpc_for_snos
+    }
 }
 
 pub struct SnosJobHandler;
@@ -94,7 +103,7 @@ impl JobHandlerTrait for SnosJobHandler {
         let end_block_number = snos_metadata.end_block;
         debug!(start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
 
-        let snos_url = config.snos_config().rpc_for_snos.to_string();
+        let snos_url = rpc_for_snos_attempt(config.snos_config(), job).to_string();
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
@@ -192,8 +201,8 @@ impl JobHandlerTrait for SnosJobHandler {
         1
     }
 
-    async fn check_ready_to_process(&self, config: Arc<Config>) -> Result<(), Duration> {
-        let snos_url = &config.snos_config().rpc_for_snos;
+    async fn check_ready_to_process(&self, config: Arc<Config>, job: &JobItem) -> Result<(), Duration> {
+        let snos_url = rpc_for_snos_attempt(config.snos_config(), job);
 
         if !check_snos_health(snos_url).await {
             // SNOS is down - signal to requeue with delay
