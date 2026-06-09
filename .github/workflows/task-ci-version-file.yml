@@ -14,10 +14,21 @@ on:
         description: "Path to the version file to update"
         required: true
         type: string
+      container-image:
+        description: "Container image that should have a tag matching the version file"
+        required: false
+        default: ""
+        type: string
     outputs:
       update:
         description: "Whether or not the version file was updated"
         value: ${{ jobs.update-version-file.outputs.update }}
+      version:
+        description: "Current version from the version file after any update"
+        value: ${{ jobs.update-version-file.outputs.version }}
+      tag-exists:
+        description: "Whether the matching container image tag already exists"
+        value: ${{ jobs.update-version-file.outputs.tag-exists }}
 
 jobs:
   check:
@@ -30,6 +41,8 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, inputs.label)
     outputs:
       update: ${{ steps.check_bump.outputs.update }}
+      version: ${{ steps.version.outputs.version }}
+      tag-exists: ${{ steps.check_tag.outputs.tag-exists }}
     permissions:
       contents: write
 
@@ -60,6 +73,23 @@ jobs:
         if: steps.check_bump.outputs.update == 'true'
         run: |
           ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}
+
+      - name: Read Current Version
+        id: version
+        run: |
+          VERSION=$(yq -e ".current_version" ${{ inputs.version-file }})
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check Container Tag
+        if: inputs.container-image != ''
+        id: check_tag
+        run: |
+          IMAGE="${{ inputs.container-image }}:${{ steps.version.outputs.version }}"
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "tag-exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "tag-exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Commit and Push
         if: steps.check_bump.outputs.update == 'true'

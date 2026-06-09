@@ -46,13 +46,15 @@ jobs:
     with:
       label: artifacts-update
       version-file: .artifact-versions.yml
+      container-image: ghcr.io/${{ github.repository_owner }}/artifacts
     secrets: inherit
 
   build-artifacts:
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     with:
-      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+      should_run: ${{ needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false' }}
+      artifact-version: ${{ needs.update-version-artifacts.outputs.version }}
     permissions:
       contents: read
       attestations: write
@@ -66,7 +68,7 @@ jobs:
       image-name: artifacts
       tag: ${{ needs.build-artifacts.outputs.artifacts }}
       tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
-      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+      should_run: ${{ needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false' }}
     permissions:
       contents: read
       packages: write
@@ -98,6 +100,7 @@ jobs:
   # still recompiles a large overlapping graph instead of cleanly reusing the
   # release build one-for-one.
   build-madara:
+    needs: publish-artifacts
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
@@ -113,6 +116,7 @@ jobs:
     secrets: inherit
 
   build-migration-tests:
+    needs: publish-artifacts
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-migration-tests.yml
     secrets: inherit
