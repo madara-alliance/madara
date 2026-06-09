@@ -42,7 +42,14 @@ mod test {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        crate::Starknet::new(backend, mempool_validator, Default::default(), None, context)
+        crate::Starknet::new(
+            backend,
+            std::sync::Arc::clone(&mempool_validator) as _,
+            mempool_validator,
+            Default::default(),
+            None,
+            context,
+        )
     }
 
     #[tokio::test]

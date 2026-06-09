@@ -3,7 +3,7 @@ use anyhow::Context;
 use hyper::{server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use mc_db::MadaraBackend;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::{
     convert::Infallible,
@@ -35,7 +35,8 @@ impl Default for GatewayServerConfig {
 
 pub async fn start_server(
     db_backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    transaction_submitter: Arc<dyn SubmitTransaction>,
+    transaction_lookup: Arc<dyn TransactionLookup>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     mut ctx: ServiceContext,
     config: GatewayServerConfig,
@@ -61,14 +62,16 @@ pub async fn start_server(
             let io = TokioIo::new(stream);
 
             let db_backend = Arc::clone(&db_backend);
-            let add_transaction_provider = add_transaction_provider.clone();
+            let transaction_submitter = transaction_submitter.clone();
+            let transaction_lookup = transaction_lookup.clone();
             let submit_validated = submit_validated.clone();
             let config = config.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
                     let db_backend = Arc::clone(&db_backend);
-                    let add_transaction_provider = add_transaction_provider.clone();
+                    let transaction_submitter = transaction_submitter.clone();
+                    let transaction_lookup = transaction_lookup.clone();
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
                     async move {
@@ -80,9 +83,16 @@ pub async fn start_server(
                             .collect::<Vec<_>>()
                             .join("/");
                         let start = Instant::now();
-                        let Ok(res) =
-                            main_router(req, &path, db_backend, add_transaction_provider, submit_validated, config)
-                                .await;
+                        let Ok(res) = main_router(
+                            req,
+                            &path,
+                            db_backend,
+                            transaction_submitter,
+                            transaction_lookup,
+                            submit_validated,
+                            config,
+                        )
+                        .await;
 
                         let status = res.status().as_u16() as i64;
                         let res_len = res.body().len() as u64;

@@ -47,7 +47,7 @@ fn map_rejected_tx_error(value: RejectedTransactionError) -> StarknetError {
         E::InvalidContractDefinition => InvalidContractDefinition,
         E::NotPermittedContract => NotPermittedContract,
         E::UndeclaredClass => UndeclaredClass,
-        E::TransactionLimitExceeded => TransactionLimitExceeded,
+        E::MempoolLimitReached => TransactionLimitExceeded,
         E::InvalidTransactionNonce => InvalidTransactionNonce,
         E::ReplacementTransactionUnderpriced => ReplacementTransactionUnderpriced,
         E::FeeBelowMinimum => FeeBelowMinimum,

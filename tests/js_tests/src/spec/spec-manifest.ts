@@ -2,9 +2,10 @@
  * Pinned spec file URLs and SHA-256 checksums per RPC version.
  * When adding a new version, add entries here with verified checksums.
  *
- * URLs point to versioned starknet-specs release tags. The SHA-256 checksums
- * act as the real pin — if an upstream spec file changes unexpectedly, the
- * checksum mismatch will fail explicitly, prompting a manual review and re-pin.
+ * URLs point to immutable upstream tags where available.
+ * The SHA-256 checksums act as a second pin — if upstream content ever changes
+ * or a URL is repointed, the checksum mismatch fails explicitly and forces a
+ * manual review.
  */
 export interface SpecFileLock {
   file: string;

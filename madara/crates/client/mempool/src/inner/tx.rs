@@ -138,7 +138,7 @@ impl ScoreFunction {
 }
 
 /// Key to index a transaction in the mempool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TxKey(pub ContractAddress, pub Nonce);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
