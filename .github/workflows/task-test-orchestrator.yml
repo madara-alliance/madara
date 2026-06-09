@@ -159,7 +159,7 @@ jobs:
           docker run -d \
             --name mongodb \
             -p 27017:27017 \
-            mongo:latest
+            mongo:7.0@sha256:4b5bf3c2bb7516164f6dcb44acce4fdcb428abfe5771a1128304a0f34ab9ff7c
 
           timeout 120s bash -c 'until curl -fsS http://localhost:4566/_localstack/health >/dev/null; do sleep 2; done'
           timeout 120s bash -c 'until docker exec mongodb mongosh --quiet --eval "db.runCommand({ ping: 1 }).ok" >/dev/null 2>&1; do sleep 2; done'
