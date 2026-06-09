@@ -43,11 +43,13 @@ pub async fn check_snos_health(snos_url: &Url) -> bool {
 }
 
 pub(crate) fn rpc_for_snos_attempt<'a>(snos_config: &'a SNOSParams, job: &JobItem) -> &'a Url {
-    if should_use_snos_backup_rpc(snos_config, job) {
-        snos_config.rpc_for_snos_backup.as_ref().unwrap_or(&snos_config.rpc_for_snos)
-    } else {
-        &snos_config.rpc_for_snos
+    if job.metadata.common.process_retry_attempt_no > 0 {
+        if let Some(backup_rpc) = snos_config.rpc_for_snos_backup.as_ref() {
+            return backup_rpc;
+        }
     }
+
+    &snos_config.rpc_for_snos
 }
 
 pub(crate) fn should_use_snos_backup_rpc(snos_config: &SNOSParams, job: &JobItem) -> bool {

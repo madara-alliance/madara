@@ -372,17 +372,6 @@
           "legendFormat": "{{operation_job_type}} - {{retry_reason}}",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "editorMode": "code",
-          "expr": "sum(increase(snos_rpc_fallback_total_jobs_total{service_name=\"$service_name\"}[1h])) or vector(0)",
-          "legendFormat": "SNOS backup RPC fallback",
-          "range": true,
-          "refId": "B"
         }
       ],
       "title": "Job Retry Count by Reason (1h)",

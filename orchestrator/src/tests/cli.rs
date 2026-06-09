@@ -11,7 +11,7 @@
 
 use clap::Parser;
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Commands};
 
 /// Strip all `MADARA_ORCHESTRATOR_*` env vars so `try_parse_from` only sees
 /// what we pass on the CLI. Without this, a developer's shell or CI env
@@ -43,8 +43,6 @@ fn baseline() -> Vec<&'static str> {
         "http://localhost:8545",
         "--rpc-for-snos",
         "http://localhost:9545",
-        "--rpc-for-snos-backup",
-        "http://localhost:9546",
         "--max-batch-time-seconds",
         "60",
         "--max-batch-size",
@@ -144,9 +142,25 @@ fn prover_selection_parser() {
     // 7. --prover mock has no required sub-args.
     let mut args = baseline();
     args.extend(["--prover", "mock"]);
-    Cli::try_parse_from(args).expect("mock should parse without sub-args");
+    let cli = Cli::try_parse_from(args).expect("mock should parse without sub-args");
+    let Commands::Run { run_command } = cli.command else {
+        panic!("expected run command");
+    };
+    assert!(run_command.snos_args.rpc_for_snos_backup.is_none(), "--rpc-for-snos-backup should be optional");
 
-    // 8. `ignore_case = true`: uppercase values must be accepted so operators
+    // 8. --rpc-for-snos-backup is accepted when explicitly provided.
+    let mut args = baseline();
+    args.extend(["--rpc-for-snos-backup", "http://localhost:9546", "--prover", "mock"]);
+    let cli = Cli::try_parse_from(args).expect("mock should parse with optional SNOS backup RPC");
+    let Commands::Run { run_command } = cli.command else {
+        panic!("expected run command");
+    };
+    assert_eq!(
+        run_command.snos_args.rpc_for_snos_backup.as_ref().map(|url| url.as_str()),
+        Some("http://localhost:9546/")
+    );
+
+    // 9. `ignore_case = true`: uppercase values must be accepted so operators
     // can set `MADARA_ORCHESTRATOR_PROVER=SHARP` by convention without a
     // silent fallback.
     let mut args = baseline();

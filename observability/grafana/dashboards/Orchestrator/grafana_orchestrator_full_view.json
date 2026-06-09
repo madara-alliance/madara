@@ -25,66 +25,41 @@
     "panels": [
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 0
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
         "id": 100,
         "panels": [],
         "title": "📊 System Overview & Health",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Overall system health based on job success rates",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "max": 100,
             "min": 0,
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "red"
-                },
-                {
-                  "color": "yellow",
-                  "value": 70
-                },
-                {
-                  "color": "green",
-                  "value": 90
-                }
+                {"color": "red"},
+                {"color": "yellow", "value": 70},
+                {"color": "green", "value": 90}
               ]
             },
             "unit": "percent"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 6,
-          "w": 4,
-          "x": 0,
-          "y": 1
-        },
+        "gridPos": {"h": 6, "w": 4, "x": 0, "y": 1},
         "id": 1,
         "options": {
           "minVizHeight": 75,
           "minVizWidth": 75,
           "orientation": "auto",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -104,35 +79,21 @@
         "type": "gauge"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Current block processing status by job type",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green"
-                }
-              ]
+              "steps": [{"color": "green"}]
             },
             "unit": "none"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 6,
-          "w": 8,
-          "x": 4,
-          "y": 1
-        },
+        "gridPos": {"h": 6, "w": 8, "x": 4, "y": 1},
         "id": 2,
         "options": {
           "colorMode": "background",
@@ -141,9 +102,7 @@
           "orientation": "auto",
           "percentChangeColorMode": "standard",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -163,43 +122,25 @@
         "type": "stat"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Number of blocks behind by job type",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "green"
-                },
-                {
-                  "color": "yellow",
-                  "value": 5
-                },
-                {
-                  "color": "red",
-                  "value": 10
-                }
+                {"color": "green"},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
               ]
             },
             "unit": "short"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 6,
-          "w": 8,
-          "x": 12,
-          "y": 1
-        },
+        "gridPos": {"h": 6, "w": 8, "x": 12, "y": 1},
         "id": 3,
         "options": {
           "colorMode": "background",
@@ -208,9 +149,7 @@
           "orientation": "auto",
           "percentChangeColorMode": "standard",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -230,42 +169,24 @@
         "type": "stat"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Job processing rate",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "red"
-                },
-                {
-                  "color": "yellow",
-                  "value": 10
-                },
-                {
-                  "color": "green",
-                  "value": 50
-                }
+                {"color": "red"},
+                {"color": "yellow", "value": 10},
+                {"color": "green", "value": 50}
               ]
             }
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 6,
-          "w": 4,
-          "x": 20,
-          "y": 1
-        },
+        "gridPos": {"h": 6, "w": 4, "x": 20, "y": 1},
         "id": 4,
         "options": {
           "colorMode": "value",
@@ -274,9 +195,7 @@
           "orientation": "auto",
           "percentChangeColorMode": "standard",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -299,27 +218,17 @@
       },
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 7
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7},
         "id": 101,
         "panels": [],
         "title": "📈 Job Success/Failure Metrics",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "axisBorderShow": false,
               "axisCenteredZero": false,
@@ -340,38 +249,25 @@
               "lineInterpolation": "linear",
               "lineWidth": 2,
               "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
+              "scaleDistribution": {"type": "linear"},
               "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
                 "mode": "none"
               },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "thresholdsStyle": {"mode": "off"}
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green"
-                }
-              ]
+              "steps": [{"color": "green"}]
             },
             "unit": "ops"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 9,
-          "x": 0,
-          "y": 8
-        },
+        "gridPos": {"h": 8, "w": 9, "x": 0, "y": 8},
         "id": 5,
         "options": {
           "legend": {
@@ -398,42 +294,24 @@
         "type": "timeseries"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "green"
-                },
-                {
-                  "color": "yellow",
-                  "value": 5
-                },
-                {
-                  "color": "red",
-                  "value": 10
-                }
+                {"color": "green"},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
               ]
             },
             "unit": "short"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 4,
-          "x": 9,
-          "y": 8
-        },
+        "gridPos": {"h": 8, "w": 4, "x": 9, "y": 8},
         "id": 27,
         "options": {
           "colorMode": "value",
@@ -442,9 +320,7 @@
           "orientation": "auto",
           "percentChangeColorMode": "standard",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -464,42 +340,24 @@
         "type": "stat"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "green"
-                },
-                {
-                  "color": "yellow",
-                  "value": 1
-                },
-                {
-                  "color": "red",
-                  "value": 5
-                }
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
               ]
             },
             "unit": "short"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 7,
-          "x": 13,
-          "y": 8
-        },
+        "gridPos": {"h": 8, "w": 7, "x": 13, "y": 8},
         "id": 26,
         "options": {
           "displayMode": "lcd",
@@ -515,9 +373,7 @@
           "namePlacement": "auto",
           "orientation": "horizontal",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -539,27 +395,17 @@
       },
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 19
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
         "id": 102,
         "panels": [],
         "title": "🔄 Job Lifecycle & Queue Metrics",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "hideFrom": {
                 "legend": false,
@@ -572,31 +418,19 @@
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 8,
-          "x": 0,
-          "y": 20
-        },
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 20},
         "id": 20,
         "options": {
-          "displayLabels": [
-            "name",
-            "percent"
-          ],
+          "displayLabels": ["name", "percent"],
           "legend": {
             "displayMode": "list",
             "placement": "right",
             "showLegend": true,
-            "values": [
-              "value"
-            ]
+            "values": ["value"]
           },
           "pieType": "pie",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -618,15 +452,10 @@
         "type": "piechart"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "continuous-RdYlGr"
-            },
+            "color": {"mode": "continuous-RdYlGr"},
             "custom": {
               "axisBorderShow": false,
               "axisCenteredZero": false,
@@ -647,38 +476,25 @@
               "lineInterpolation": "linear",
               "lineWidth": 1,
               "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
+              "scaleDistribution": {"type": "linear"},
               "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
                 "mode": "normal"
               },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "thresholdsStyle": {"mode": "off"}
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green"
-                }
-              ]
+              "steps": [{"color": "green"}]
             },
             "unit": "short"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 8,
-          "x": 8,
-          "y": 20
-        },
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 20},
         "id": 21,
         "options": {
           "legend": {
@@ -699,53 +515,30 @@
             "expr": "sum by (operation_job_type, retry_reason) (increase(job_retry_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
             "legendFormat": "{{operation_job_type}} - {{retry_reason}}",
             "refId": "A"
-          },
-          {
-            "expr": "sum(increase(snos_rpc_fallback_total_jobs_total{service_name=\"${namespace}\"}[1h])) or vector(0)",
-            "legendFormat": "SNOS backup RPC fallback",
-            "refId": "B"
           }
         ],
         "title": "Job Retry Count by Type (1h)",
         "type": "timeseries"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "green"
-                },
-                {
-                  "color": "yellow",
-                  "value": 30
-                },
-                {
-                  "color": "red",
-                  "value": 60
-                }
+                {"color": "green"},
+                {"color": "yellow", "value": 30},
+                {"color": "red", "value": 60}
               ]
             },
             "unit": "s"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 8,
-          "x": 16,
-          "y": 20
-        },
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 20},
         "id": 22,
         "options": {
           "displayMode": "lcd",
@@ -761,9 +554,7 @@
           "namePlacement": "auto",
           "orientation": "horizontal",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -785,27 +576,17 @@
       },
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 28
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
         "id": 103,
         "panels": [],
         "title": "⚡ Performance & Latency Metrics",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "axisBorderShow": false,
               "axisCenteredZero": false,
@@ -826,46 +607,29 @@
               "lineInterpolation": "linear",
               "lineWidth": 2,
               "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
+              "scaleDistribution": {"type": "linear"},
               "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
                 "mode": "none"
               },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "thresholdsStyle": {"mode": "off"}
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green"
-                }
-              ]
+              "steps": [{"color": "green"}]
             },
             "unit": "s"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 29
-        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
         "id": 23,
         "options": {
           "legend": {
-            "calcs": [
-              "mean",
-              "lastNotNull",
-              "max"
-            ],
+            "calcs": ["mean", "lastNotNull", "max"],
             "displayMode": "table",
             "placement": "bottom",
             "showLegend": true
@@ -888,15 +652,10 @@
         "type": "timeseries"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "axisBorderShow": false,
               "axisCenteredZero": false,
@@ -917,45 +676,29 @@
               "lineInterpolation": "linear",
               "lineWidth": 1,
               "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
+              "scaleDistribution": {"type": "linear"},
               "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
                 "mode": "none"
               },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "thresholdsStyle": {"mode": "off"}
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green"
-                }
-              ]
+              "steps": [{"color": "green"}]
             },
             "unit": "s"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 29
-        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
         "id": 24,
         "options": {
           "legend": {
-            "calcs": [
-              "mean",
-              "max"
-            ],
+            "calcs": ["mean", "max"],
             "displayMode": "table",
             "placement": "bottom",
             "showLegend": true
@@ -979,71 +722,44 @@
       },
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 37
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37},
         "id": 104,
         "panels": [],
         "title": "🚨 SLA & Health Metrics",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "custom": {
               "align": "auto",
-              "cellOptions": {
-                "type": "auto"
-              },
+              "cellOptions": {"type": "auto"},
               "inspect": false
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "green"
-                },
-                {
-                  "color": "red",
-                  "value": 1
-                }
+                {"color": "green"},
+                {"color": "red", "value": 1}
               ]
             }
           },
           "overrides": [
             {
-              "matcher": {
-                "id": "byName",
-                "options": "SLA Breaches"
-              },
+              "matcher": {"id": "byName", "options": "SLA Breaches"},
               "properties": [
                 {
                   "id": "custom.cellOptions",
-                  "value": {
-                    "type": "color-background"
-                  }
+                  "value": {"type": "color-background"}
                 }
               ]
             }
           ]
         },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 38
-        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 38},
         "id": 25,
         "options": {
           "cellHeight": "sm",
@@ -1051,18 +767,11 @@
             "countRows": false,
             "enablePagination": false,
             "fields": "",
-            "reducer": [
-              "sum"
-            ],
+            "reducer": ["sum"],
             "show": false
           },
           "showHeader": true,
-          "sortBy": [
-            {
-              "desc": true,
-              "displayName": "SLA Breaches"
-            }
-          ]
+          "sortBy": [{"desc": true, "displayName": "SLA Breaches"}]
         },
         "pluginVersion": "11.6.0",
         "targets": [
@@ -1078,9 +787,7 @@
           {
             "id": "organize",
             "options": {
-              "excludeByName": {
-                "Time": true
-              },
+              "excludeByName": {"Time": true},
               "indexByName": {},
               "renameByName": {
                 "Value": "SLA Breaches",
@@ -1094,25 +801,15 @@
       },
       {
         "collapsed": true,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 46
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 46},
         "id": 105,
         "panels": [
           {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "${datasource}"
-            },
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
             "description": "Time taken to create batches for different job types",
             "fieldConfig": {
               "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
+                "color": {"mode": "palette-classic"},
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -1133,46 +830,29 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 2,
                   "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
+                  "scaleDistribution": {"type": "linear"},
                   "showPoints": "never",
                   "spanNulls": false,
                   "stacking": {
                     "group": "A",
                     "mode": "none"
                   },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
+                  "thresholdsStyle": {"mode": "off"}
                 },
                 "mappings": [],
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green"
-                    }
-                  ]
+                  "steps": [{"color": "green"}]
                 },
                 "unit": "s"
               },
               "overrides": []
             },
-            "gridPos": {
-              "h": 8,
-              "w": 12,
-              "x": 0,
-              "y": 47
-            },
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 47},
             "id": 106,
             "options": {
               "legend": {
-                "calcs": [
-                  "mean",
-                  "lastNotNull",
-                  "max"
-                ],
+                "calcs": ["mean", "lastNotNull", "max"],
                 "displayMode": "table",
                 "placement": "bottom",
                 "showLegend": true
@@ -1205,16 +885,11 @@
             "type": "timeseries"
           },
           {
-            "datasource": {
-              "type": "prometheus",
-              "uid": "${datasource}"
-            },
+            "datasource": {"type": "prometheus", "uid": "${datasource}"},
             "description": "Rate of batch creation per minute by job type",
             "fieldConfig": {
               "defaults": {
-                "color": {
-                  "mode": "palette-classic"
-                },
+                "color": {"mode": "palette-classic"},
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -1235,45 +910,29 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 2,
                   "pointSize": 5,
-                  "scaleDistribution": {
-                    "type": "linear"
-                  },
+                  "scaleDistribution": {"type": "linear"},
                   "showPoints": "never",
                   "spanNulls": false,
                   "stacking": {
                     "group": "A",
                     "mode": "none"
                   },
-                  "thresholdsStyle": {
-                    "mode": "off"
-                  }
+                  "thresholdsStyle": {"mode": "off"}
                 },
                 "mappings": [],
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green"
-                    }
-                  ]
+                  "steps": [{"color": "green"}]
                 },
                 "unit": "short"
               },
               "overrides": []
             },
-            "gridPos": {
-              "h": 8,
-              "w": 12,
-              "x": 12,
-              "y": 47
-            },
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 47},
             "id": 107,
             "options": {
               "legend": {
-                "calcs": [
-                  "mean",
-                  "lastNotNull"
-                ],
+                "calcs": ["mean", "lastNotNull"],
                 "displayMode": "list",
                 "placement": "bottom",
                 "showLegend": true
@@ -1301,78 +960,34 @@
       },
       {
         "collapsed": false,
-        "gridPos": {
-          "h": 1,
-          "w": 24,
-          "x": 0,
-          "y": 59
-        },
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 59},
         "id": 112,
         "panels": [],
         "title": "🔍 Block Status Details & Log Correlation",
         "type": "row"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Shows all blocks with their current status by job type using detailed status tracking. Click on the Status column to view filtered Loki logs for that specific job.",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "thresholds"
-            },
+            "color": {"mode": "thresholds"},
             "custom": {
               "align": "auto",
-              "cellOptions": {
-                "type": "auto"
-              },
+              "cellOptions": {"type": "auto"},
               "inspect": false
             },
             "mappings": [
               {
                 "options": {
-                  "Created": {
-                    "color": "blue",
-                    "index": 0,
-                    "text": "🆕 Created"
-                  },
-                  "LockedForProcessing": {
-                    "color": "purple",
-                    "index": 1,
-                    "text": "🔒 Processing"
-                  },
-                  "PendingVerification": {
-                    "color": "yellow",
-                    "index": 2,
-                    "text": "🔍 Verifying"
-                  },
-                  "Completed": {
-                    "color": "green",
-                    "index": 3,
-                    "text": "✅ Completed"
-                  },
-                  "VerificationFailed": {
-                    "color": "orange",
-                    "index": 4,
-                    "text": "⚠️ Verification Failed"
-                  },
-                  "Failed": {
-                    "color": "red",
-                    "index": 5,
-                    "text": "❌ Failed"
-                  },
-                  "VerificationTimeout": {
-                    "color": "dark_red",
-                    "index": 6,
-                    "text": "⏱️ Timeout"
-                  },
-                  "PendingRetry": {
-                    "color": "orange",
-                    "index": 7,
-                    "text": "🔄 Pending Retry"
-                  }
+                  "Created": {"color": "blue", "index": 0, "text": "🆕 Created"},
+                  "LockedForProcessing": {"color": "purple", "index": 1, "text": "🔒 Processing"},
+                  "PendingVerification": {"color": "yellow", "index": 2, "text": "🔍 Verifying"},
+                  "Completed": {"color": "green", "index": 3, "text": "✅ Completed"},
+                  "VerificationFailed": {"color": "orange", "index": 4, "text": "⚠️ Verification Failed"},
+                  "Failed": {"color": "red", "index": 5, "text": "❌ Failed"},
+                  "VerificationTimeout": {"color": "dark_red", "index": 6, "text": "⏱️ Timeout"},
+                  "PendingRetry": {"color": "orange", "index": 7, "text": "🔄 Pending Retry"}
                 },
                 "type": "value"
               }
@@ -1380,63 +995,28 @@
             "thresholds": {
               "mode": "absolute",
               "steps": [
-                {
-                  "color": "text"
-                },
-                {
-                  "color": "red",
-                  "value": 80
-                }
+                {"color": "text"},
+                {"color": "red", "value": 80}
               ]
             }
           },
           "overrides": [
             {
-              "matcher": {
-                "id": "byName",
-                "options": "Block Number"
-              },
+              "matcher": {"id": "byName", "options": "Block Number"},
               "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 150
-                },
-                {
-                  "id": "custom.cellOptions",
-                  "value": {
-                    "type": "color-text"
-                  }
-                }
+                {"id": "custom.width", "value": 150},
+                {"id": "custom.cellOptions", "value": {"type": "color-text"}}
               ]
             },
             {
-              "matcher": {
-                "id": "byName",
-                "options": "Job Type"
-              },
-              "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 200
-                }
-              ]
+              "matcher": {"id": "byName", "options": "Job Type"},
+              "properties": [{"id": "custom.width", "value": 200}]
             },
             {
-              "matcher": {
-                "id": "byName",
-                "options": "Status"
-              },
+              "matcher": {"id": "byName", "options": "Status"},
               "properties": [
-                {
-                  "id": "custom.cellOptions",
-                  "value": {
-                    "type": "color-background"
-                  }
-                },
-                {
-                  "id": "custom.width",
-                  "value": 180
-                },
+                {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+                {"id": "custom.width", "value": 180},
                 {
                   "id": "links",
                   "value": [
@@ -1450,21 +1030,10 @@
               ]
             },
             {
-              "matcher": {
-                "id": "byName",
-                "options": "Job ID"
-              },
+              "matcher": {"id": "byName", "options": "Job ID"},
               "properties": [
-                {
-                  "id": "custom.width",
-                  "value": 250
-                },
-                {
-                  "id": "custom.cellOptions",
-                  "value": {
-                    "type": "color-text"
-                  }
-                },
+                {"id": "custom.width", "value": 250},
+                {"id": "custom.cellOptions", "value": {"type": "color-text"}},
                 {
                   "id": "links",
                   "value": [
@@ -1479,12 +1048,7 @@
             }
           ]
         },
-        "gridPos": {
-          "h": 10,
-          "w": 24,
-          "x": 0,
-          "y": 60
-        },
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 60},
         "id": 113,
         "options": {
           "cellHeight": "sm",
@@ -1492,18 +1056,11 @@
             "countRows": false,
             "enablePagination": true,
             "fields": "",
-            "reducer": [
-              "sum"
-            ],
+            "reducer": ["sum"],
             "show": false
           },
           "showHeader": true,
-          "sortBy": [
-            {
-              "desc": true,
-              "displayName": "Block Number"
-            }
-          ]
+          "sortBy": [{"desc": true, "displayName": "Block Number"}]
         },
         "pluginVersion": "11.6.0",
         "targets": [
@@ -1545,12 +1102,7 @@
           {
             "id": "convertFieldType",
             "options": {
-              "conversions": [
-                {
-                  "destinationType": "number",
-                  "targetField": "Block Number"
-                }
-              ],
+              "conversions": [{"destinationType": "number", "targetField": "Block Number"}],
               "fields": {}
             }
           },
@@ -1559,37 +1111,24 @@
             "options": {
               "fields": {},
               "sort": [
-                {
-                  "desc": true,
-                  "field": "Block Number"
-                },
-                {
-                  "desc": false,
-                  "field": "Job Type"
-                }
+                {"desc": true, "field": "Block Number"},
+                {"desc": false, "field": "Job Type"}
               ]
             }
           },
           {
             "id": "limit",
-            "options": {
-              "limitField": 200
-            }
+            "options": {"limitField": 200}
           }
         ],
         "type": "table"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Real-time view of job status transitions showing how jobs move through different states",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "hideFrom": {
                 "legend": false,
@@ -1602,32 +1141,19 @@
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 0,
-          "y": 70
-        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 70},
         "id": 114,
         "options": {
-          "displayLabels": [
-            "name",
-            "percent"
-          ],
+          "displayLabels": ["name", "percent"],
           "legend": {
             "displayMode": "table",
             "placement": "right",
             "showLegend": true,
-            "values": [
-              "value",
-              "percent"
-            ]
+            "values": ["value", "percent"]
           },
           "pieType": "donut",
           "reduceOptions": {
-            "calcs": [
-              "lastNotNull"
-            ],
+            "calcs": ["lastNotNull"],
             "fields": "",
             "values": false
           },
@@ -1649,16 +1175,11 @@
         "type": "piechart"
       },
       {
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "description": "Shows the flow of jobs between different statuses over time",
         "fieldConfig": {
           "defaults": {
-            "color": {
-              "mode": "palette-classic"
-            },
+            "color": {"mode": "palette-classic"},
             "custom": {
               "axisBorderShow": false,
               "axisCenteredZero": false,
@@ -1679,39 +1200,25 @@
               "lineInterpolation": "linear",
               "lineWidth": 1,
               "pointSize": 5,
-              "scaleDistribution": {
-                "type": "linear"
-              },
+              "scaleDistribution": {"type": "linear"},
               "showPoints": "never",
               "spanNulls": false,
               "stacking": {
                 "group": "A",
                 "mode": "none"
               },
-              "thresholdsStyle": {
-                "mode": "off"
-              }
+              "thresholdsStyle": {"mode": "off"}
             },
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
-              "steps": [
-                {
-                  "color": "green",
-                  "value": null
-                }
-              ]
+              "steps": [{"color": "green", "value": null}]
             },
             "unit": "short"
           },
           "overrides": []
         },
-        "gridPos": {
-          "h": 8,
-          "w": 12,
-          "x": 12,
-          "y": 70
-        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 70},
         "id": 115,
         "options": {
           "legend": {
@@ -1741,12 +1248,7 @@
     "preload": false,
     "refresh": "10s",
     "schemaVersion": 41,
-    "tags": [
-      "madara",
-      "orchestrator",
-      "monitoring",
-      "full-view"
-    ],
+    "tags": ["madara", "orchestrator", "monitoring", "full-view"],
     "templating": {
       "list": [
         {

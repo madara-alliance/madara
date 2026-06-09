@@ -32,7 +32,7 @@
       },
       "id": 100,
       "panels": [],
-      "title": "📊 System Overview & Health",
+      "title": "\ud83d\udcca System Overview & Health",
       "type": "row"
     },
     {
@@ -312,7 +312,7 @@
       },
       "id": 101,
       "panels": [],
-      "title": "📈 Job Success/Failure Metrics",
+      "title": "\ud83d\udcc8 Job Success/Failure Metrics",
       "type": "row"
     },
     {
@@ -894,7 +894,7 @@
                 "match": "null",
                 "result": {
                   "index": 0,
-                  "text": "No Failures ✓"
+                  "text": "No Failures \u2713"
                 }
               },
               "type": "special"
@@ -1065,7 +1065,7 @@
       },
       "id": 102,
       "panels": [],
-      "title": "🔄 Job Lifecycle & Queue Metrics",
+      "title": "\ud83d\udd04 Job Lifecycle & Queue Metrics",
       "type": "row"
     },
     {
@@ -1129,7 +1129,7 @@
       "targets": [
         {
           "expr": "sum by (from_state, to_state) (increase(job_state_transitions_jobs_total{service_name=\"${namespace}\"}[5m]))",
-          "legendFormat": "{{from_state}} → {{to_state}}",
+          "legendFormat": "{{from_state}} \u2192 {{to_state}}",
           "refId": "A"
         }
       ],
@@ -1315,7 +1315,7 @@
       },
       "id": 103,
       "panels": [],
-      "title": "⚡ Performance & Latency Metrics",
+      "title": "\u26a1 Performance & Latency Metrics",
       "type": "row"
     },
     {
@@ -1513,7 +1513,7 @@
       },
       "id": 104,
       "panels": [],
-      "title": "🚨 SLA & Health Metrics",
+      "title": "\ud83d\udea8 SLA & Health Metrics",
       "type": "row"
     },
     {
@@ -1624,7 +1624,7 @@
       },
       "id": 105,
       "panels": [],
-      "title": "📦 Batching Metrics",
+      "title": "\ud83d\udce6 Batching Metrics",
       "type": "row"
     },
     {
@@ -2191,7 +2191,7 @@
         "y": 62
       },
       "id": 113,
-      "title": "🔧 SHARP / Mock Prover Metrics",
+      "title": "\ud83d\udd27 SHARP / Mock Prover Metrics",
       "type": "row"
     },
     {
