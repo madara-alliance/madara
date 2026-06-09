@@ -5,99 +5,128 @@ name: Task - Integration Tests (Orchestrator)
 # This workflow runs orchestrator integration tests from a prebuilt nextest archive
 on:
   workflow_dispatch:
-  workflow_call:
     inputs:
+      should_run:
+        description: "Whether to run orchestrator tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
       madara-binary-hash:
         description: "Hash used to retrieve the artifact"
-        required: true
+        required: false
         type: string
+        default: ""
       cairo-artifacts-hash:
         description: "Hash used to retrieve the build artifacts"
-        required: true
+        required: false
         type: string
+        default: ""
       orchestrator-tests-hash:
         description: "Hash used to retrieve the archived orchestrator test binaries"
-        required: true
+        required: false
         type: string
+        default: ""
+  workflow_call:
+    inputs:
+      should_run:
+        description: "Whether to run orchestrator tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: false
+        type: string
+        default: ""
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the build artifacts"
+        required: false
+        type: string
+        default: ""
+      orchestrator-tests-hash:
+        description: "Hash used to retrieve the archived orchestrator test binaries"
+        required: false
+        type: string
+        default: ""
     secrets:
       ETHEREUM_SEPOLIA_RPC:
-        required: true
+        required: false
       RPC_FOR_SNOS:
-        required: true
+        required: false
+      MADARA_ORCHESTRATOR_ATLANTIC_API_KEY:
+        required: false
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 jobs:
   test-orchestrator:
     runs-on: blacksmith-8vcpu-ubuntu-2204
 
-    services:
-      localstack:
-        image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        env:
-          SERVICES: s3, sqs, sns
-          DEFAULT_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
-          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
-        ports:
-          - 4566:4566
-      mongodb:
-        image: mongo:latest
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        ports:
-          - 27017:27017
-
     steps:
+      - name: Skip orchestrator tests
+        if: inputs.should_run != 'true'
+        run: echo "No Madara or orchestrator changes detected; required check stubbed."
+
       - name: Checkout Repository
+        if: inputs.should_run == 'true'
         uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Load env
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/load-env
 
       - name: Foundry setup
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-foundry
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Rust setup
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
       - name: Cairo Native setup
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-cairo-native
 
       - name: Install nextest
+        if: inputs.should_run == 'true'
         uses: taiki-e/install-action@nextest
 
       - name: Download Madara binary
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
       - name: Make Madara binary executable
+        if: inputs.should_run == 'true'
         run: chmod +x target/release/madara
 
       - name: Download Cairo artifacts
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
 
       - name: Download orchestrator test archive
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: orchestrator-tests-${{ inputs.orchestrator-tests-hash }}
           path: target/nextest/
 
       - name: Prepare Madara Environment (Orchestrator)
+        if: inputs.should_run == 'true'
         run: |
           mv target/release/madara ./madara-binary
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
@@ -106,11 +135,37 @@ jobs:
           cp ./configs/presets/devnet.yaml ./orchestrator/crates/settlement-clients/starknet/src/tests/devnet.yaml
 
       - name: Python Cairo setup (before orchestrator tests)
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-python-cairo
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
+      - name: Start orchestrator services
+        if: inputs.should_run == 'true'
+        run: |
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          fi
+
+          docker run -d \
+            --name localstack \
+            -e SERVICES=s3,sqs,sns \
+            -e DEFAULT_REGION=us-east-1 \
+            -e AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY \
+            -p 4566:4566 \
+            localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+
+          docker run -d \
+            --name mongodb \
+            -p 27017:27017 \
+            mongo:latest
+
+          timeout 120s bash -c 'until curl -fsS http://localhost:4566/_localstack/health >/dev/null; do sleep 2; done'
+          timeout 120s bash -c 'until docker exec mongodb mongosh --quiet --eval "db.runCommand({ ping: 1 }).ok" >/dev/null 2>&1; do sleep 2; done'
+
       - name: Run tests
+        if: inputs.should_run == 'true'
         continue-on-error: false
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC }}
@@ -130,3 +185,8 @@ jobs:
             --no-fail-fast \
             -- \
             --skip atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash
+
+      - name: Stop orchestrator services
+        if: always() && inputs.should_run == 'true'
+        run: |
+          docker rm -f localstack mongodb || true

@@ -18,21 +18,180 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
 
 jobs:
+  # ========================================================================= #
+  #                             CHANGE DETECTION                              #
+  # ========================================================================= #
+
+  detect-pr-changes:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    outputs:
+      rust_lint: ${{ steps.set-output.outputs.rust_lint }}
+      madara_binary: ${{ steps.set-output.outputs.madara_binary }}
+      madara_tests: ${{ steps.set-output.outputs.madara_tests }}
+      migration_tests: ${{ steps.set-output.outputs.migration_tests }}
+      cairo_artifacts: ${{ steps.set-output.outputs.cairo_artifacts }}
+      js_tests: ${{ steps.set-output.outputs.js_tests }}
+      cli_tests: ${{ steps.set-output.outputs.cli_tests }}
+      check_orchestrator: ${{ steps.set-output.outputs.check_orchestrator }}
+      orchestrator_tests: ${{ steps.set-output.outputs.orchestrator_tests }}
+    steps:
+      - name: Detect PR changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'clippy.toml'
+              - 'cairo_requirements.txt'
+              - 'Makefile'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-lint-cargo.yml'
+
+            madara_runtime:
+              - 'madara/**'
+              - 'e2e-tests/**'
+              - 'test_utils/**'
+              - 'configs/**'
+              - 'cairo/**'
+              - 'build-artifacts/**'
+              - 'scripts/artifacts.sh'
+              - 'scripts/setup-anvil.sh'
+              - '.env.test'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'clippy.toml'
+              - 'cairo_requirements.txt'
+              - 'Makefile'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-build-madara.yml'
+              - '.github/workflows/task-build-madara-tests.yml'
+              - '.github/workflows/task-test-madara.yml'
+              - '.github/workflows/task-test-cli.yml'
+              - '.github/workflows/task-test-js.yml'
+
+            migration:
+              - '.db-versions.yml'
+              - 'scripts/create-base-db.sh'
+              - 'madara/crates/client/db/**'
+              - 'madara/crates/tests/src/rpc/migration.rs'
+              - 'madara/crates/tests/Cargo.toml'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-build-madara.yml'
+              - '.github/workflows/task-build-migration-tests.yml'
+              - '.github/workflows/task-test-migration.yml'
+
+            cairo_artifacts:
+              - 'cairo/**'
+              - 'build-artifacts/**'
+              - 'scripts/artifacts.sh'
+              - 'Makefile'
+              - '.artifact-versions.yml'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-build-cairo-artifacts.yml'
+
+            js:
+              - 'tests/js_tests/**'
+              - 'cairo/js_tests/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'scripts/js-tests.sh'
+              - 'scripts/setup-anvil.sh'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-test-js.yml'
+
+            cli:
+              - 'configs/args/**'
+              - 'madara/node/src/cli/**'
+              - 'madara/node/src/main.rs'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-test-cli.yml'
+
+            orchestrator:
+              - 'orchestrator/**'
+              - 'test_utils/crates/mock-atlantic-server/**'
+              - 'e2e-tests/src/mongodb.rs'
+              - '**/Cargo.toml'
+              - 'Cargo.lock'
+              - 'cairo/**'
+              - 'build-artifacts/**'
+              - 'scripts/artifacts.sh'
+              - '.github/actions/**'
+              - '.github/config/env.yml'
+              - '.github/workflows/pull-request-main-ci.yml'
+              - '.github/workflows/task-build-binary.yml'
+              - '.github/workflows/task-build-madara.yml'
+              - '.github/workflows/task-build-cairo-artifacts.yml'
+              - '.github/workflows/task-build-orchestrator-tests.yml'
+              - '.github/workflows/task-check-orchestrator.yml'
+              - '.github/workflows/task-test-orchestrator.yml'
+
+      - name: Set PR check gates
+        id: set-output
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            {
+              echo "rust_lint=true"
+              echo "madara_binary=true"
+              echo "madara_tests=true"
+              echo "migration_tests=true"
+              echo "cairo_artifacts=true"
+              echo "js_tests=true"
+              echo "cli_tests=true"
+              echo "check_orchestrator=true"
+              echo "orchestrator_tests=true"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "rust_lint=${{ steps.filter.outputs.rust == 'true' }}"
+              echo "madara_binary=${{ steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.migration == 'true' || steps.filter.outputs.js == 'true' || steps.filter.outputs.cli == 'true' || steps.filter.outputs.orchestrator == 'true' }}"
+              echo "madara_tests=${{ steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.migration == 'true' }}"
+              echo "migration_tests=${{ steps.filter.outputs.migration == 'true' }}"
+              echo "cairo_artifacts=${{ steps.filter.outputs.cairo_artifacts == 'true' || steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.js == 'true' || steps.filter.outputs.orchestrator == 'true' }}"
+              echo "js_tests=${{ steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.cairo_artifacts == 'true' || steps.filter.outputs.js == 'true' }}"
+              echo "cli_tests=${{ steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.cli == 'true' }}"
+              echo "check_orchestrator=${{ steps.filter.outputs.orchestrator == 'true' }}"
+              echo "orchestrator_tests=${{ steps.filter.outputs.madara_runtime == 'true' || steps.filter.outputs.orchestrator == 'true' }}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   # ========================================================================= #
   #                                 DATABASE                                  #
   # ========================================================================= #
 
   # Update database version for schema changes
   update-version-db:
-    if: github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     uses: ./.github/workflows/task-ci-version-file.yml
     with:
       label: db-migration
       version-file: .db-versions.yml
+    permissions:
+      contents: write
     secrets: inherit
 
   # ========================================================================= #
@@ -41,11 +200,13 @@ jobs:
 
   # Update artifact version for source changes
   update-version-artifacts:
-    if: github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     uses: ./.github/workflows/task-ci-version-file.yml
     with:
       label: artifacts-update
       version-file: .artifact-versions.yml
+    permissions:
+      contents: write
     secrets: inherit
 
   build-artifacts:
@@ -80,7 +241,8 @@ jobs:
 
   # Run Rust-specific linters
   lint-rust:
-    needs: update-version-db
+    if: needs.detect-pr-changes.outputs.rust_lint == 'true'
+    needs: [update-version-db, detect-pr-changes]
     uses: ./.github/workflows/task-lint-cargo.yml
     secrets: inherit
 
@@ -98,37 +260,44 @@ jobs:
   # still recompiles a large overlapping graph instead of cleanly reusing the
   # release build one-for-one.
   build-madara:
-    if: github.event.pull_request.draft == false
+    if: needs.detect-pr-changes.outputs.madara_binary == 'true'
+    needs: detect-pr-changes
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
   build-cairo-artifacts:
-    if: github.event.pull_request.draft == false
+    if: needs.detect-pr-changes.outputs.cairo_artifacts == 'true'
+    needs: detect-pr-changes
     uses: ./.github/workflows/task-build-cairo-artifacts.yml
     secrets: inherit
 
   build-madara-tests:
-    if: github.event.pull_request.draft == false
+    if: needs.detect-pr-changes.outputs.madara_tests == 'true'
+    needs: detect-pr-changes
     uses: ./.github/workflows/task-build-madara-tests.yml
     secrets: inherit
 
   build-migration-tests:
-    if: github.event.pull_request.draft == false
+    if: needs.detect-pr-changes.outputs.migration_tests == 'true'
+    needs: detect-pr-changes
     uses: ./.github/workflows/task-build-migration-tests.yml
     secrets: inherit
 
   # Run integration tests
   test-madara:
-    needs: [build-madara, build-madara-tests]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: [detect-pr-changes, build-madara, build-madara-tests]
     uses: ./.github/workflows/task-test-madara.yml
     with:
+      should_run: ${{ (needs.detect-pr-changes.result != 'success' || needs.detect-pr-changes.outputs.madara_tests == 'true') && 'true' || 'false' }}
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       madara-tests-hash: ${{ needs.build-madara-tests.outputs.madara-tests-hash }}
     secrets: inherit
 
   # Run migration tests
   test-migration:
-    needs: [build-madara, build-migration-tests]
+    if: needs.detect-pr-changes.outputs.migration_tests == 'true'
+    needs: [detect-pr-changes, build-madara, build-migration-tests]
     uses: ./.github/workflows/task-test-migration.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
@@ -137,17 +306,21 @@ jobs:
 
   # Run JavaScript tests against the built binary
   test-js:
-    needs: [build-madara, build-cairo-artifacts]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: [detect-pr-changes, build-madara, build-cairo-artifacts]
     uses: ./.github/workflows/task-test-js.yml
     with:
+      should_run: ${{ (needs.detect-pr-changes.result != 'success' || needs.detect-pr-changes.outputs.js_tests == 'true') && 'true' || 'false' }}
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       cairo-artifacts-hash: ${{ needs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
 
   # Run CLI tests against the built binary
   test-cli:
-    needs: build-madara
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs: [detect-pr-changes, build-madara]
     uses: ./.github/workflows/task-test-cli.yml
     with:
+      should_run: ${{ (needs.detect-pr-changes.result != 'success' || needs.detect-pr-changes.outputs.cli_tests == 'true') && 'true' || 'false' }}
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
@@ -155,59 +328,34 @@ jobs:
   #                                ORCHESTRATOR                               #
   # ========================================================================= #
 
-  detect-orchestrator-runtime-changes:
-    if: github.event.pull_request.draft == false
-    runs-on: blacksmith-4vcpu-ubuntu-2204
-    outputs:
-      should-run: ${{ steps.set-output.outputs.should-run }}
-    steps:
-      - name: Detect orchestrator runtime changes
-        if: github.event_name == 'pull_request'
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            orchestrator:
-              - 'orchestrator/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - '.github/actions/setup-rust/**'
-              - '.github/actions/setup-cairo-native/**'
-              - '.github/actions/setup-python-cairo/**'
-              - '.github/workflows/pull-request-main-ci.yml'
-              - '.github/workflows/task-build-binary.yml'
-              - '.github/workflows/task-build-orchestrator-tests.yml'
-              - '.github/workflows/task-check-orchestrator.yml'
-              - '.github/workflows/task-test-orchestrator.yml'
-
-      - name: Set check-orchestrator gate
-        id: set-output
-        run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "should-run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should-run=${{ steps.filter.outputs.orchestrator }}" >> "$GITHUB_OUTPUT"
-          fi
-
   # Check Orchestrator binary
   # (We don't re-use the Orchestrator binary in other tests)
   check-orchestrator:
-    if: needs.detect-orchestrator-runtime-changes.outputs.should-run == 'true'
-    needs: [lint-code-style, detect-orchestrator-runtime-changes]
+    if: needs.detect-pr-changes.outputs.check_orchestrator == 'true'
+    needs: [lint-code-style, detect-pr-changes]
     uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
 
   # Build the archived orchestrator test binaries in parallel with Madara.
   build-orchestrator-tests:
-    if: github.event.pull_request.draft == false
+    if: needs.detect-pr-changes.outputs.orchestrator_tests == 'true'
+    needs: detect-pr-changes
     uses: ./.github/workflows/task-build-orchestrator-tests.yml
     secrets: inherit
 
   # Run integration tests
   test-orchestrator:
-    needs: [build-madara, build-cairo-artifacts, build-orchestrator-tests]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs:
+      [
+        detect-pr-changes,
+        build-madara,
+        build-cairo-artifacts,
+        build-orchestrator-tests,
+      ]
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
+      should_run: ${{ (needs.detect-pr-changes.result != 'success' || needs.detect-pr-changes.outputs.orchestrator_tests == 'true') && 'true' || 'false' }}
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       cairo-artifacts-hash: ${{ needs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
       orchestrator-tests-hash: ${{ needs.build-orchestrator-tests.outputs.orchestrator-tests-hash }}
