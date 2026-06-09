@@ -54,6 +54,10 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Load env
+        if: inputs.should_run == 'true'
+        uses: ./.github/actions/load-env
+
       - name: Download Madara binary
         if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
@@ -74,7 +78,9 @@ jobs:
 
       - name: Install Foundry (Anvil)
         if: inputs.should_run == 'true'
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install dependencies
         if: inputs.should_run == 'true'

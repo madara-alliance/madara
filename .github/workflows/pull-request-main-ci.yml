@@ -205,6 +205,7 @@ jobs:
     with:
       label: artifacts-update
       version-file: .artifact-versions.yml
+      container-image: ghcr.io/${{ github.repository_owner }}/artifacts
     permissions:
       contents: write
     secrets: inherit
@@ -213,7 +214,8 @@ jobs:
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     with:
-      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+      should_run: ${{ (needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false') && 'true' || 'false' }}
+      artifact-version: ${{ needs.update-version-artifacts.outputs.version }}
     permissions:
       contents: read
       attestations: write
@@ -227,7 +229,7 @@ jobs:
       image-name: artifacts
       tag: ${{ needs.build-artifacts.outputs.artifacts }}
       tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
-      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+      should_run: ${{ (needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false') && 'true' || 'false' }}
     permissions:
       contents: read
       packages: write
@@ -261,7 +263,7 @@ jobs:
   # release build one-for-one.
   build-madara:
     if: needs.detect-pr-changes.outputs.madara_binary == 'true'
-    needs: detect-pr-changes
+    needs: [detect-pr-changes, publish-artifacts]
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
@@ -279,7 +281,7 @@ jobs:
 
   build-migration-tests:
     if: needs.detect-pr-changes.outputs.migration_tests == 'true'
-    needs: detect-pr-changes
+    needs: [detect-pr-changes, publish-artifacts]
     uses: ./.github/workflows/task-build-migration-tests.yml
     secrets: inherit
 
