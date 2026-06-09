@@ -134,17 +134,22 @@ pub fn delete_native_cache_classes(
     class_hashes: &[ClassHash],
     cache_dir: &Path,
 ) -> Result<(), NativeCacheDeletionError> {
+    let mut first_error = None;
+
     for class_hash in class_hashes {
         NATIVE_CACHE.remove(class_hash);
         let path = native_cache_path(class_hash, cache_dir);
         match remove_disk_cache_entry(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => remove_native_cache_artifacts(&path),
-            Err(e) => return Err(NativeCacheDeletionError::DeleteArtifact { path, source: e }),
+            Err(e) if first_error.is_none() => {
+                first_error = Some(NativeCacheDeletionError::DeleteArtifact { path, source: e });
+            }
+            Err(_) => {}
         }
     }
 
-    Ok(())
+    first_error.map_or(Ok(()), Err)
 }
 
 /// Get the cache file path for a class hash.
@@ -862,6 +867,26 @@ mod tests {
         assert!(!metadata_path.exists());
         assert!(other_path.exists());
         assert!(other_metadata_path.exists());
+    }
+
+    #[test]
+    fn delete_native_cache_classes_continues_after_disk_error() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let config = config::NativeConfig::builder().with_cache_dir(temp_dir.path().to_path_buf()).build();
+        let failing_class_hash = ClassHash(Felt::from(42u64));
+        let later_class_hash = ClassHash(Felt::from(43u64));
+        let failing_path = get_native_cache_path(&failing_class_hash, &config);
+        let later_path = get_native_cache_path(&later_class_hash, &config);
+
+        std::fs::create_dir(&failing_path).expect("directory at native artifact path should be created");
+        std::fs::write(&later_path, b"native").expect("later native artifact should be written");
+
+        let err = delete_native_cache_classes(&[failing_class_hash, later_class_hash], temp_dir.path())
+            .expect_err("selected deletion should report the disk error");
+
+        assert!(matches!(err, NativeCacheDeletionError::DeleteArtifact { path, .. } if path == failing_path));
+        assert!(failing_path.exists());
+        assert!(!later_path.exists());
     }
 
     #[test]
