@@ -32,7 +32,7 @@
       },
       "id": 100,
       "panels": [],
-      "title": "\ud83d\udcca System Overview & Health",
+      "title": "📊 System Overview & Health",
       "type": "row"
     },
     {
@@ -312,7 +312,7 @@
       },
       "id": 101,
       "panels": [],
-      "title": "\ud83d\udcc8 Job Success/Failure Metrics",
+      "title": "📈 Job Success/Failure Metrics",
       "type": "row"
     },
     {
@@ -894,7 +894,7 @@
                 "match": "null",
                 "result": {
                   "index": 0,
-                  "text": "No Failures \u2713"
+                  "text": "No Failures ✓"
                 }
               },
               "type": "special"
@@ -1065,7 +1065,7 @@
       },
       "id": 102,
       "panels": [],
-      "title": "\ud83d\udd04 Job Lifecycle & Queue Metrics",
+      "title": "🔄 Job Lifecycle & Queue Metrics",
       "type": "row"
     },
     {
@@ -1129,7 +1129,7 @@
       "targets": [
         {
           "expr": "sum by (from_state, to_state) (increase(job_state_transitions_jobs_total{service_name=\"${namespace}\"}[5m]))",
-          "legendFormat": "{{from_state}} \u2192 {{to_state}}",
+          "legendFormat": "{{from_state}} → {{to_state}}",
           "refId": "A"
         }
       ],
@@ -1220,6 +1220,11 @@
           "expr": "sum by (operation_job_type, retry_reason) (increase(job_retry_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
           "legendFormat": "{{operation_job_type}} - {{retry_reason}}",
           "refId": "A"
+        },
+        {
+          "expr": "sum(increase(snos_rpc_fallback_total_jobs_total{service_name=\"${namespace}\"}[1h])) or vector(0)",
+          "legendFormat": "SNOS backup RPC fallback",
+          "refId": "B"
         }
       ],
       "title": "Job Retry Count by Type (1h)",
@@ -1310,7 +1315,7 @@
       },
       "id": 103,
       "panels": [],
-      "title": "\u26a1 Performance & Latency Metrics",
+      "title": "⚡ Performance & Latency Metrics",
       "type": "row"
     },
     {
@@ -1508,7 +1513,7 @@
       },
       "id": 104,
       "panels": [],
-      "title": "\ud83d\udea8 SLA & Health Metrics",
+      "title": "🚨 SLA & Health Metrics",
       "type": "row"
     },
     {
@@ -1619,7 +1624,7 @@
       },
       "id": 105,
       "panels": [],
-      "title": "\ud83d\udce6 Batching Metrics",
+      "title": "📦 Batching Metrics",
       "type": "row"
     },
     {
@@ -2186,7 +2191,7 @@
         "y": 62
       },
       "id": 113,
-      "title": "\ud83d\udd27 SHARP / Mock Prover Metrics",
+      "title": "🔧 SHARP / Mock Prover Metrics",
       "type": "row"
     },
     {
