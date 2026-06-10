@@ -159,12 +159,14 @@ pub fn get_or_compile_artifacts_for(parent_levels: usize, required: &[&str]) -> 
     // Preflight: fail fast with instructions if no Docker daemon is reachable, instead of
     // panicking on a missing `docker` binary or running a long `make artifacts` fallback.
     if !docker_available() {
-        return Err(artifact_help_error(
-            &root,
-            &version_file_artifacts,
-            &missing,
-            "artifact files are missing and Docker is not available to fetch them",
-        ));
+        // Callers that pass an empty `required` slice always reach here with no missing paths
+        // to report, so avoid claiming files are missing when none are listed.
+        let reason = if required.is_empty() {
+            "Docker is not available and artifact files may be missing"
+        } else {
+            "artifact files are missing and Docker is not available to fetch them"
+        };
+        return Err(artifact_help_error(&root, &version_file_artifacts, &missing, reason));
     }
 
     get_artifacts(&root, &version_file_artifacts).or_else(|err| build_artifacts(&root).map_err(|_| err)).map_err(
