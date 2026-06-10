@@ -165,25 +165,30 @@ async function waitForTransactionInPreconfirmedBlock(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastTransactions: string[] = [];
+  let lastError: unknown;
 
   while (Date.now() < deadline) {
-    const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
-      blockNumber,
-    });
-    const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
-      (tx: any) => tx.transaction_hash
-    );
-    if (preconfirmedTxHashes.includes(txHash)) {
-      return;
+    try {
+      const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
+        blockNumber,
+      });
+      const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
+        (tx: any) => tx.transaction_hash
+      );
+      if (preconfirmedTxHashes.includes(txHash)) {
+        return;
+      }
+      lastTransactions = preconfirmedTxHashes;
+    } catch (error) {
+      lastError = error;
     }
-    lastTransactions = preconfirmedTxHashes;
     await sleep(500);
   }
 
   throw new Error(
     `Timed out waiting for ${txHash} in preconfirmed block ${blockNumber}. Last seen transactions: ${lastTransactions.join(
       ", "
-    )}`
+    )}. Last error: ${String(lastError)}`
   );
 }
 
