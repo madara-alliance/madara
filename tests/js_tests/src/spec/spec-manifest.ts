@@ -71,6 +71,32 @@ export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
       },
     ],
   },
+  {
+    tag: "v0.10.3",
+    files: [
+      {
+        file: "starknet_api_openrpc.json",
+        sourceUrl:
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.3-rc.1/api/starknet_api_openrpc.json",
+        sha256:
+          "624ebab995ea2481be8059201ceb89cd4c85d909b3d2f96bd66e3772ea1afbc5",
+      },
+      {
+        file: "starknet_write_api.json",
+        sourceUrl:
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.3-rc.1/api/starknet_write_api.json",
+        sha256:
+          "5982d5ae9c60acc99acb567b0df20044a4d54c4a8d5bf36d21a44b87eab6c8d3",
+      },
+      {
+        file: "starknet_trace_api_openrpc.json",
+        sourceUrl:
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.3-rc.1/api/starknet_trace_api_openrpc.json",
+        sha256:
+          "42c7a5589d38b04ac5bbbaad2a6655980607653ab091733bf04415d9c79acf36",
+      },
+    ],
+  },
 ];
 
 export function getSpecLock(tag: string): SpecLockEntry | undefined {
