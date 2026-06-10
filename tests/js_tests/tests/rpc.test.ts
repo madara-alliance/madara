@@ -128,6 +128,32 @@ async function gatewayPostJson(body: any, gzipBody = false): Promise<any> {
   return readJsonResponse(response);
 }
 
+async function waitForFeederTransactionStatus(
+  txHash: string,
+  timeoutMs = 30_000,
+): Promise<any> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      const status = await feederGet("get_transaction_status", {
+        transactionHash: txHash,
+      });
+      if (status.tx_status === "ACCEPTED_ON_L2") {
+        return status;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(500);
+  }
+
+  throw new Error(
+    `Timed out waiting for feeder transaction status for ${txHash}: ${String(lastError)}`,
+  );
+}
+
 function mapGatewayResourceBounds(resourceBounds: any) {
   return {
     L1_GAS: resourceBounds.l1_gas,
@@ -141,7 +167,7 @@ async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
     Account,
     RpcProvider,
     Deployer,
-    TransactionType,
+    transaction,
     stark,
   } = await import("starknet");
   const {
@@ -158,44 +184,49 @@ async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
     deployer: new Deployer(UDC_ADDRESS, "deployContract"),
   });
 
-  const [invocation] = await (account as any).accountInvocationsFactory(
-    [{ type: TransactionType.INVOKE, payload: calls }],
-    {
-      versions: ["0x3"],
-      nonce: await provider.getNonceForAddress(DEFAULT_ACCOUNT_ADDRESS, "latest"),
-      tip: 0n,
-      paymasterData: [],
-      accountDeploymentData: [],
-      nonceDataAvailabilityMode: "L1",
-      feeDataAvailabilityMode: "L1",
-      resourceBounds: {
-        l1_gas: { max_amount: 0xf4240n, max_price_per_unit: 0x2540be400n },
-        l2_gas: { max_amount: 0x3b9aca00n, max_price_per_unit: 0x2540be400n },
-        l1_data_gas: { max_amount: 0x989680n, max_price_per_unit: 0x2540be400n },
-      },
-      skipValidate: false,
-    },
-  );
+  const cairoVersion = await account.getCairoVersion();
+  const chainId = await provider.getChainId();
+  const nonce = await provider.getNonceForAddress(DEFAULT_ACCOUNT_ADDRESS, "latest");
+  const resourceBounds = {
+    l1_gas: { max_amount: 0xf4240n, max_price_per_unit: 0x2540be400n },
+    l2_gas: { max_amount: 0x3b9aca00n, max_price_per_unit: 0x2540be400n },
+    l1_data_gas: { max_amount: 0x989680n, max_price_per_unit: 0x2540be400n },
+  };
+  const details = {
+    walletAddress: DEFAULT_ACCOUNT_ADDRESS,
+    cairoVersion,
+    chainId,
+    version: "0x3" as const,
+    nonce: BigInt(nonce),
+    tip: 0n,
+    paymasterData: [],
+    accountDeploymentData: [],
+    nonceDataAvailabilityMode: "L1" as any,
+    feeDataAvailabilityMode: "L1" as any,
+    resourceBounds,
+  };
+  const calldata = transaction.getExecuteCalldata(calls, cairoVersion);
+  const signature = await account.signer.signTransaction(calls, details as any);
 
   return {
     type: "INVOKE_FUNCTION",
-    sender_address: invocation.contractAddress,
-    calldata: invocation.calldata,
-    signature: invocation.signature,
-    nonce: invocation.nonce,
+    sender_address: DEFAULT_ACCOUNT_ADDRESS,
+    calldata,
+    signature,
+    nonce,
     resource_bounds: mapGatewayResourceBounds(
-      stark.resourceBoundsToHexString(invocation.resourceBounds),
+      stark.resourceBoundsToHexString(resourceBounds),
     ),
-    tip: invocation.tip,
-    paymaster_data: invocation.paymasterData,
-    account_deployment_data: invocation.accountDeploymentData,
+    tip: "0x0",
+    paymaster_data: [],
+    account_deployment_data: [],
     nonce_data_availability_mode: stark.intDAM(
-      invocation.nonceDataAvailabilityMode,
+      details.nonceDataAvailabilityMode,
     ),
     fee_data_availability_mode: stark.intDAM(
-      invocation.feeDataAvailabilityMode,
+      details.feeDataAvailabilityMode,
     ),
-    version: invocation.version,
+    version: details.version,
   };
 }
 
@@ -742,8 +773,13 @@ describe("Starknet RPC multi-version", () => {
       expect(gatewayResponse.transaction_hash).toMatch(/^0x[0-9a-f]+$/i);
       gatewayResults.smallTxHash = gatewayResponse.transaction_hash;
 
+      const rpcCaller = new RpcCaller(latestRpcContext.rpcUrl);
+      const latestConfirmedBlockNumber = await rpcCaller.call(
+        "starknet_blockNumber",
+        [],
+      );
       const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
-        blockNumber: "latest",
+        blockNumber: Number(latestConfirmedBlockNumber) + 1,
       });
       const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
         (tx: any) => tx.transaction_hash,
@@ -752,11 +788,10 @@ describe("Starknet RPC multi-version", () => {
 
       const admin = new AdminClient(adminUrl);
       await admin.closeBlock();
-      await sleep(1000);
 
-      const status = await feederGet("get_transaction_status", {
-        transactionHash: gatewayResults.smallTxHash,
-      });
+      const status = await waitForFeederTransactionStatus(
+        gatewayResults.smallTxHash,
+      );
       expect(status.tx_status).toBe("ACCEPTED_ON_L2");
       expect(status.finality_status).toBe("ACCEPTED_ON_L2");
       expect(status.execution_status).toBe("SUCCEEDED");
@@ -798,11 +833,10 @@ describe("Starknet RPC multi-version", () => {
 
       const admin = new AdminClient(adminUrl);
       await admin.closeBlock();
-      await sleep(1000);
 
-      const status = await feederGet("get_transaction_status", {
-        transactionHash: gatewayResults.largeTxHash,
-      });
+      const status = await waitForFeederTransactionStatus(
+        gatewayResults.largeTxHash,
+      );
       expect(status.tx_status).toBe("ACCEPTED_ON_L2");
       expect(status.execution_status).toBe("SUCCEEDED");
 
