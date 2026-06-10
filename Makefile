@@ -80,7 +80,8 @@ Targets:
   Runs various code quality checks including formatting and linting.
 
   - check              Run code quality checks (fmt, clippy)
-                       Use NO_CAIRO_SETUP=1 to skip Cairo setup (e.g., make check NO_CAIRO_SETUP=1)
+                       Use NO_CAIRO_SETUP=1 to skip Python Cairo venv setup
+                       (e.g., make check NO_CAIRO_SETUP=1)
   - fmt                Format code using taplo and cargo fmt
   - pre-push         Run formatting and checks before committing / Pushing
 
@@ -227,7 +228,7 @@ setup-cairo:
 	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
 
 .PHONY: build-madara
-build-madara:
+build-madara: setup-cairo
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
 	@$(VENV_ACTIVATE) && cargo build --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
@@ -252,8 +253,8 @@ check:
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
-	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --no-deps -- -D warnings
-	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
+	@$(if $(NO_CAIRO_SETUP),,$(VENV_ACTIVATE) && )cargo clippy --workspace --all-features --no-deps -- -D warnings
+	@$(if $(NO_CAIRO_SETUP),,$(VENV_ACTIVATE) && )cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
@@ -443,7 +444,7 @@ test: test-e2e test-orchestrator
 pre-push: setup-cairo
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
-	@$(VENV_ACTIVATE) && $(MAKE) --silent check
+	@$(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook
