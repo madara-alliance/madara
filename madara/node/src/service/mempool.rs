@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 pub struct MempoolService {
     mempool: Arc<Mempool>,
+    run_pool: bool,
 }
 
 impl MempoolService {
@@ -20,6 +21,7 @@ impl MempoolService {
                 Arc::clone(&backend),
                 MempoolConfig { save_to_db: run_cmd.should_save_mempool_to_db(), external_outbox },
             )),
+            run_pool: run_cmd.should_run_mempool(),
         }
     }
 
@@ -32,7 +34,17 @@ impl MempoolService {
 impl Service for MempoolService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let mempool = self.mempool.clone();
-        runner.service_loop(move |ctx| async move { mempool.run_mempool_task(ctx).await });
+        let run_pool = self.run_pool;
+        runner.service_loop(move |ctx| {
+            let mempool = mempool.clone();
+            async move {
+                if run_pool {
+                    mempool.run_mempool_task(ctx).await
+                } else {
+                    mempool.run_status_task(ctx).await
+                }
+            }
+        });
 
         Ok(())
     }

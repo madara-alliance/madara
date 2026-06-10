@@ -31,7 +31,7 @@ pub enum PreConfirmationStatus {
 /// Subscription to transaction statuses.
 /// This struct only notifies of the most recent known status when it changes. The current value
 /// can be returned using [`WatchTransactionStatus::current`]. This current value will not change
-/// until you either call [`WatchTransactionStatus::refresh`], or you listen to the subscription using
+/// until you either call [`WatchTransactionStatus::take_current`], or you listen to the subscription using
 /// [`WatchTransactionStatus::recv`] and an update is processed.
 ///
 /// Note that it is possible to listen to a transaction status for a transaction that has not arrived yet. In that
@@ -59,8 +59,9 @@ impl<D: MadaraStorageRead> WatchTransactionStatus<D> {
     pub fn current(&self) -> &Option<TransactionStatus> {
         &self.current_value
     }
-    pub fn refresh(&mut self) {
+    pub fn take_current(&mut self) -> &Option<TransactionStatus> {
         self.current_value = self.subscription.borrow_and_update().clone();
+        &self.current_value
     }
     pub async fn recv(&mut self) -> &Option<TransactionStatus> {
         self.subscription.changed().await;

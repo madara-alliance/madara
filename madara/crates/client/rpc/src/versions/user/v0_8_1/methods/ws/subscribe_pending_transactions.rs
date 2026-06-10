@@ -71,10 +71,10 @@ pub async fn subscribe_pending_transactions(
             mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_hash)
         };
 
-        let item = super::SubscriptionItem::new(sink.subscription_id(), tx_info);
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
-        })?;
+        let msg = super::notification_message(super::PENDING_TRANSACTIONS_NOTIFICATION_METHOD, &sink, &tx_info)
+            .or_else_internal_server_error(|| {
+                format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
+            })?;
 
         sink.send(msg).await.or_else_internal_server_error(|| {
             format!("SubscribePendingTransactions failed to respond to websocket request at tx {tx_hash:#x}")
@@ -113,9 +113,7 @@ async fn next_matching_transaction(
 mod test {
     use crate::{
         test_utils::{TestNewTransactionsWatcher, TestTransactionProvider},
-        versions::user::v0_8_1::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server,
-        },
+        versions::user::v0_8_1::{StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server},
         Starknet,
     };
     use assert_matches::assert_matches;
@@ -238,13 +236,13 @@ mod test {
 
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-            Some(Ok(SubscriptionItem { result: tx, .. })) => {
+            Some(Ok(tx)) => {
                 assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_1.hash));
             }
         );
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-            Some(Ok(SubscriptionItem { result: tx, .. })) => {
+            Some(Ok(tx)) => {
                 assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_2.hash));
             }
         );
@@ -265,7 +263,7 @@ mod test {
         for expected_hash in [tx_1.hash, tx_2.hash] {
             assert_matches!(
                 tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-                Some(Ok(SubscriptionItem { result: tx, .. })) => {
+                Some(Ok(tx)) => {
                     assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(expected_hash));
                 }
             );
@@ -289,13 +287,13 @@ mod test {
 
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-            Some(Ok(SubscriptionItem { result: tx, .. })) => {
+            Some(Ok(tx)) => {
                 assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx_1.transaction.clone().to_rpc_v0_7()));
             }
         );
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-            Some(Ok(SubscriptionItem { result: tx, .. })) => {
+            Some(Ok(tx)) => {
                 assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx_2.transaction.clone().to_rpc_v0_7()));
             }
         );
@@ -323,7 +321,7 @@ mod test {
         for expected_hash in [deploy_account.hash, deploy.hash, declare.hash, l1_handler.hash, invoke.hash] {
             assert_matches!(
                 tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for tx"),
-                Some(Ok(SubscriptionItem { result: tx, .. })) => {
+                Some(Ok(tx)) => {
                     assert_eq!(tx, mp_rpc::v0_8_1::PendingTxnInfo::Hash(expected_hash));
                 }
             );

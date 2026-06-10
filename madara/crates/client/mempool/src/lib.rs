@@ -415,7 +415,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     pub async fn run_mempool_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
 
-        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx))?;
+        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx, true))?;
+        Ok(())
+    }
+
+    pub async fn run_status_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
+        self.run_chain_watcher_task(ctx, false).await?;
         Ok(())
     }
 

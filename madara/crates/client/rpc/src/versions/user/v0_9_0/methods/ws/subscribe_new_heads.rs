@@ -149,8 +149,7 @@ async fn send_block_header(
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
     let header: BlockHeader = block_info.to_rpc_v0_8();
-    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let msg = super::notification_message(super::NEW_HEADS_NOTIFICATION_METHOD, sink, &header)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
@@ -259,7 +258,7 @@ mod test {
             client.subscribe_new_heads(BlockId::Tag(BlockTag::Latest)).await.expect("starknet_subscribeNewHeads");
 
         let next = sub.next().await;
-        let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
+        let header = next.expect("Waiting for block header").expect("Waiting for block header");
 
         assert_eq!(header, expected);
     }
@@ -281,7 +280,7 @@ mod test {
         let block_1 = generator.next().expect("Retrieving block from backend");
 
         let next = sub.next().await;
-        let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
+        let header = next.expect("Waiting for block header").expect("Waiting for block header");
 
         assert_eq!(header, block_1);
     }
@@ -302,8 +301,14 @@ mod test {
 
         let _block_1 = generator.next().expect("Retrieving block from backend");
 
-        let next = sub.next().await;
-        let subscription_id = next.unwrap().unwrap().subscription_id;
+        let _next = sub.next().await.unwrap().unwrap();
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
         client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
 
         assert!(sub.next().await.is_none());
@@ -366,10 +371,9 @@ mod test {
             .expect("Timed out waiting for new-fork head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve new-fork head");
-        let item: super::super::SubscriptionItem<BlockHeader> =
-            serde_json::from_value(next).expect("Failed to deserialize block header item");
+        let item: BlockHeader = serde_json::from_value(next).expect("Failed to deserialize block header item");
 
-        assert_eq!(item.result, new_block_1);
+        assert_eq!(item, new_block_1);
     }
 
     #[tokio::test]
@@ -431,9 +435,8 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: super::super::SubscriptionItem<BlockHeader> =
-            serde_json::from_value(next).expect("Failed to deserialize replacement head");
+        let item: BlockHeader = serde_json::from_value(next).expect("Failed to deserialize replacement head");
 
-        assert_eq!(item.result, replacement_head);
+        assert_eq!(item, replacement_head);
     }
 }

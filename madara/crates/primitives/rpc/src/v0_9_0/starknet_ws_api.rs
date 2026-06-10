@@ -19,6 +19,13 @@ pub enum FinalityStatus {
     AcceptedOnL2,
 }
 
+/// Result payload for `starknet_subscriptionTransactionStatus` notifications (spec `NEW_TXN_STATUS`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NewTxnStatus {
+    pub transaction_hash: starknet_types_core::felt::Felt,
+    pub status: super::TxnFinalityAndExecutionStatus,
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EmittedEventWithFinality {
     #[serde(flatten)]

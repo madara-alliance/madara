@@ -84,7 +84,10 @@ pub async fn subscribe_events(
     }
 
     'backfill: loop {
-        let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+        // Bound the backfill to the confirmed tip: a preconfirmed block must be handled by the live
+        // phase, otherwise the backfill walks past it without emitting its ACCEPTED_ON_L2 events
+        // once it confirms.
+        let backfill_to_block_n = starknet.backend.latest_confirmed_block_n();
 
         while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
             if sink.is_closed() {
@@ -329,6 +332,84 @@ mod test {
         )
         .await
         .expect("starknet_V0_10_2_subscribeEvents")
+    }
+
+    #[tokio::test]
+    async fn subscribe_events_backfill_does_not_skip_block_preconfirmed_at_subscribe_time_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let event_from_address = Felt::from_hex_unchecked("0x1234");
+        let confirmed_tx_hash = Felt::from_hex_unchecked("0x4242");
+        let preconfirmed_tx_hash = Felt::from_hex_unchecked("0x4343");
+
+        // Confirmed block 0 anchors the backfill; block 1 is preconfirmed at subscription time.
+        add_confirmed_event_block(&backend, 0, event_from_address, event_from_address, confirmed_tx_hash);
+        let tx = transaction_with_event(event_from_address, preconfirmed_tx_hash, event_from_address);
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: tx.clone(),
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: None,
+                }],
+                vec![],
+            ))
+            .expect("Failed to store preconfirmed block");
+
+        let mut sub = client
+            .subscribe_events(None, None, Some(BlockId::Tag(BlockTag::Latest)), None)
+            .await
+            .expect("Failed subscription");
+
+        // Receiving block 0's event proves the backfill bound was computed while block 1 was
+        // still preconfirmed. Block 1 is then handled by the live phase: its ACCEPTED_ON_L2
+        // event below must be delivered once the block confirms.
+        let first = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for confirmed block 0 event")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve event");
+        assert_eq!(first.emitted_event.transaction_hash, confirmed_tx_hash);
+
+        // Let the subscription settle into its live phase before confirming block 1.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        let events = tx
+            .receipt
+            .events()
+            .iter()
+            .cloned()
+            .map(|event| mp_receipt::EventWithTransactionHash { transaction_hash: preconfirmed_tx_hash, event })
+            .collect::<Vec<_>>();
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 1, ..Default::default() },
+                    state_diff: mp_state_update::StateDiff::default(),
+                    transactions: vec![tx],
+                    events,
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to confirm block");
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for confirmed event of the previously preconfirmed block")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve event");
+
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emitted_event.event.from_address, event_from_address);
+        assert_eq!(item.emitted_event.transaction_hash, preconfirmed_tx_hash);
     }
 
     #[tokio::test]

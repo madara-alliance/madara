@@ -52,7 +52,10 @@ pub async fn subscribe_events(
     }
 
     'backfill: loop {
-        let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+        // Bound the backfill to the confirmed tip: a preconfirmed block must be handled by the live
+        // phase, otherwise the backfill walks past it without emitting its ACCEPTED_ON_L2 events
+        // once it confirms.
+        let backfill_to_block_n = starknet.backend.latest_confirmed_block_n();
 
         while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
             if sink.is_closed() {
@@ -184,11 +187,8 @@ async fn send_event(
     sink: &jsonrpsee::core::server::SubscriptionSink,
 ) -> Result<(), StarknetWsApiError> {
     let emitted_event = EmittedEvent::from(event);
-    let item = super::SubscriptionItem::new(
-        sink.subscription_id(),
-        mp_rpc::v0_9_0::EmittedEventWithFinality { emmitted_event: emitted_event, finality_status },
-    );
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let payload = mp_rpc::v0_9_0::EmittedEventWithFinality { emmitted_event: emitted_event, finality_status };
+    let msg = super::notification_message(super::EVENTS_NOTIFICATION_METHOD, sink, &payload)
         .or_internal_server_error("Failed to create response message")?;
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
 }
@@ -310,8 +310,8 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.result.emmitted_event.event.from_address, event_from_address);
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emmitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -352,9 +352,9 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::PreConfirmed);
-        assert!(item.result.emmitted_event.block_number.is_none());
-        assert_eq!(item.result.emmitted_event.event.from_address, event_from_address);
+        assert_eq!(item.finality_status, TxnFinalityStatus::PreConfirmed);
+        assert!(item.emmitted_event.block_number.is_none());
+        assert_eq!(item.emmitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -430,9 +430,9 @@ mod test {
             .expect("Timed out waiting for replacement event")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement event");
-        let item: super::super::SubscriptionItem<mp_rpc::v0_9_0::EmittedEventWithFinality> =
+        let item: mp_rpc::v0_9_0::EmittedEventWithFinality =
             serde_json::from_value(next).expect("Failed to deserialize event item");
-        let event = item.result;
+        let event = item;
 
         assert_eq!(event.finality_status, TxnFinalityStatus::L2);
         assert_eq!(event.emmitted_event.event.from_address, event_from_address);
@@ -504,10 +504,10 @@ mod test {
             .expect("Timed out waiting for replacement event")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement event");
-        let item: super::super::SubscriptionItem<mp_rpc::v0_9_0::EmittedEventWithFinality> =
+        let item: mp_rpc::v0_9_0::EmittedEventWithFinality =
             serde_json::from_value(next).expect("Failed to deserialize replacement event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.result.emmitted_event.transaction_hash, replacement_tx_hash);
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emmitted_event.transaction_hash, replacement_tx_hash);
     }
 }
