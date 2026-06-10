@@ -154,6 +154,26 @@ impl BlockImporter {
     }
 }
 
+/// Counts declared classes whose CASM was taken from the feeder gateway because local
+/// Sierra-to-CASM compilation failed (see issue #1097), so operators can alert on the fallback
+/// engaging. `outcome` is one of `verified_blake`, `verified_poseidon` or `historical_tolerance`.
+///
+/// Class verification runs in a rayon-pool context with no access to the sync service's
+/// [`crate::metrics::SyncMetrics`] registry, so this records through the OTel global meter
+/// directly. The instrument is re-created per event, which is fine at this frequency: the
+/// fallback engages at most a handful of times over a full mainnet sync.
+fn record_gateway_casm_fallback_metric(outcome: &'static str) {
+    use opentelemetry::{global, KeyValue};
+    global::meter("crates.sync.opentelemetry")
+        .u64_counter("class_gateway_casm_fallback")
+        .with_description(
+            "Number of declared classes whose CASM was fetched from the feeder gateway because \
+             local Sierra-to-CASM compilation failed",
+        )
+        .build()
+        .add(1, &[KeyValue::new("outcome", outcome)]);
+}
+
 pub struct BlockImporterCtx {
     backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
@@ -349,6 +369,9 @@ impl BlockImporterCtx {
     /// feeder gateway. When a Sierra class hash is present in this map, the provided CASM is used
     /// instead of compiling the Sierra class locally. This is used to recover from historical
     /// classes that modern compiler toolchains can no longer compile (see issue #1097).
+    ///
+    /// Each accepted gateway CASM is counted in the `class_gateway_casm_fallback` metric, with an
+    /// `outcome` attribute of `verified_blake`, `verified_poseidon` or `historical_tolerance`.
     pub fn verify_compile_classes(
         &self,
         block_n: Option<u64>,
@@ -370,6 +393,18 @@ impl BlockImporterCtx {
     }
 
     /// Called in a rayon-pool context.
+    ///
+    /// # Compiled class hash variants
+    ///
+    /// The recomputed compiled class hash is compared against the hash declared by the gateway
+    /// using the variant canonical for the block's protocol version (see
+    /// [`StarknetVersion::uses_blake_compiled_class_hash`]):
+    /// - v0.14.1+ blocks declare the BLAKE2s compiled class hash, which must match the local
+    ///   recomputation exactly (even when the CASM comes from the gateway fallback);
+    /// - older blocks — this includes every historical class that may need the gateway CASM
+    ///   fallback — declare the Poseidon compiled class hash, where a mismatch is tolerated with
+    ///   a WARN, because historical gateway hashes may not match a local recomputation after
+    ///   compiler/toolchain upgrades.
     fn verify_compile_class(
         &self,
         block_n: Option<u64>,
@@ -461,6 +496,7 @@ impl BlockImporterCtx {
                             compiled_class_hash = %format!("{gateway_hash:#x}"),
                             "Accepted gateway-provided CASM: BLAKE compiled class hash verified",
                         );
+                        record_gateway_casm_fallback_metric("verified_blake");
                     }
                     (None, Some(gateway_hash))
                 } else {
@@ -474,6 +510,7 @@ impl BlockImporterCtx {
                                 casm_size = compiled.0.len(),
                                 "Accepted gateway-provided CASM under historical compiled_class_hash tolerance",
                             );
+                            record_gateway_casm_fallback_metric("historical_tolerance");
                         } else {
                             tracing::warn!(
                                 class_hash = %format!("{class_hash:#x}"),
@@ -489,6 +526,7 @@ impl BlockImporterCtx {
                             compiled_class_hash = %format!("{gateway_hash:#x}"),
                             "Accepted gateway-provided CASM: Poseidon compiled class hash verified",
                         );
+                        record_gateway_casm_fallback_metric("verified_poseidon");
                     }
                     (Some(gateway_hash), None)
                 };

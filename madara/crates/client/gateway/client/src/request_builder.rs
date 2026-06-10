@@ -165,7 +165,12 @@ impl<'a> RequestBuilder<'a> {
             url.set_query(Some(&query));
         }
 
-        let uri: Uri = url.as_str().try_into().map_err(|_| SequencerError::InvalidUrl(url))?;
+        // Redact the URL before it enters the error chain: user-supplied gateway URLs may embed
+        // API keys, and `SequencerError`s end up in logs.
+        let uri: Uri = url
+            .as_str()
+            .try_into()
+            .map_err(|_| SequencerError::InvalidUrl(mp_gateway::error::redact_url_for_logging(&url)))?;
         Ok(uri)
     }
 }
