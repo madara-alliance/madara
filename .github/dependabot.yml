@@ -2,6 +2,10 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
+    # Active development happens on starknet-full-node; raise version-update
+    # PRs there instead of main. Note: security updates always target the
+    # default branch and are not affected by this setting.
+    target-branch: "starknet-full-node"
     schedule:
       interval: "weekly" # can be `daily` or `monthly` also
     open-pull-requests-limit: 10
