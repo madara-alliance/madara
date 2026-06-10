@@ -57,7 +57,7 @@ impl StarknetWsRpcApiV0_10_0Server for crate::Starknet {
             .await?)
     }
 
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {
+    async fn starknet_unsubscribe(&self, subscription_id: String) -> jsonrpsee::core::RpcResult<bool> {
         Ok(starknet_unsubscribe(self, subscription_id).await?)
     }
 }

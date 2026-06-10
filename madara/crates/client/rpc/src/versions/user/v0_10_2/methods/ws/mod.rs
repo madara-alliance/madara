@@ -11,22 +11,24 @@ const BLOCK_PAST_LIMIT: u64 = 1024;
 #[allow(unused)]
 const ADDRESS_FILTER_LIMIT: u64 = 128;
 const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
+const NEW_HEADS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewHeads";
+const EVENTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionEvents";
+const TRANSACTION_STATUS_NOTIFICATION_METHOD: &str = "starknet_subscriptionTransactionStatus";
+const NEW_TRANSACTION_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransaction";
+const NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransactionReceipts";
 
-#[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
-pub struct SubscriptionItem<T> {
-    subscription_id: String,
-    result: T,
-}
-
-impl<T> SubscriptionItem<T> {
-    pub fn new(subscription_id: jsonrpsee::types::SubscriptionId, result: T) -> Self {
-        let subscription_id = match subscription_id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
-            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
-        };
-
-        Self { subscription_id, result }
-    }
+/// Builds a spec-shaped subscription notification frame.
+///
+/// The spec requires notifications to use the dedicated `starknet_subscriptionX` method names,
+/// not the subscribe method name jsonrpsee would default to. [`jsonrpsee::SubscriptionMessage::new`]
+/// produces a complete frame with the given method, the subscription id, and the payload as
+/// `params.result`.
+pub(crate) fn notification_message<T: serde::Serialize>(
+    method: &str,
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+    payload: &T,
+) -> Result<jsonrpsee::SubscriptionMessage, serde_json::Error> {
+    jsonrpsee::SubscriptionMessage::new(method, sink.subscription_id(), payload)
 }
 
 pub fn reorg_data(reorg: &mc_db::ReorgNotification) -> mp_rpc::v0_10_2::ReorgData {

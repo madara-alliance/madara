@@ -3,6 +3,13 @@ pub use crate::v0_10_0::{EmittedEventWithFinality, FinalityStatus, ReorgData, Tx
 
 use serde::{Deserialize, Serialize};
 
+/// Result payload for `starknet_subscriptionTransactionStatus` notifications (spec `NEW_TXN_STATUS`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NewTxnStatus {
+    pub transaction_hash: starknet_types_core::felt::Felt,
+    pub status: crate::v0_9_0::TxnFinalityAndExecutionStatus,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TxnWithHashAndStatus {
     #[serde(flatten)]
