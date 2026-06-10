@@ -60,8 +60,7 @@ async fn subscribe_new_transactions_inner(
         None
     };
 
-    let sink =
-        subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
     let include_proof_facts = tags.as_ref().is_some_and(|tags| tags.contains(&SubscriptionTag::IncludeProofFacts));

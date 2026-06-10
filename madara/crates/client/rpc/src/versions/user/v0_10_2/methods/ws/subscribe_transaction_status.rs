@@ -32,7 +32,7 @@ pub async fn subscribe_transaction_status(
             return Ok(());
         };
         match update {
-            SubscriptionUpdate::Snapshot(snapshot) => {
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::Status(snapshot)) => {
                 allow_current = false;
 
                 send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
@@ -40,6 +40,9 @@ pub async fn subscribe_transaction_status(
                     crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                     return Ok(());
                 }
+            }
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::NotFound) => {
+                allow_current = false;
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
@@ -51,7 +54,7 @@ pub async fn subscribe_transaction_status(
 }
 
 enum SubscriptionUpdate {
-    Snapshot(crate::TxStatusSnapshot),
+    Status(crate::TxStatusUpdate),
     Reorg(mc_db::ReorgNotification),
     WatcherClosed,
 }
@@ -64,9 +67,7 @@ async fn next_update(
     allow_current: bool,
 ) -> Result<Option<SubscriptionUpdate>, crate::errors::StarknetWsApiError> {
     if allow_current {
-        if let Some(snapshot) = watch.take_current() {
-            return Ok(Some(SubscriptionUpdate::Snapshot(snapshot)));
-        }
+        return Ok(Some(SubscriptionUpdate::Status(watch.take_current())));
     }
 
     tokio::select! {
@@ -82,7 +83,7 @@ async fn next_update(
             }
         },
         next = watch.recv() => {
-            Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
+            Ok(Some(next.map(SubscriptionUpdate::Status).unwrap_or(SubscriptionUpdate::WatcherClosed)))
         },
     }
 }

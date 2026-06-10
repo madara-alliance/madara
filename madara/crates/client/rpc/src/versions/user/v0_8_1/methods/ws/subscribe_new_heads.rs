@@ -502,8 +502,7 @@ mod test {
             .expect("Timed out waiting for new-fork head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve new-fork head");
-        let item: BlockHeader =
-            serde_json::from_value(next).expect("Failed to deserialize block header item");
+        let item: BlockHeader = serde_json::from_value(next).expect("Failed to deserialize block header item");
 
         assert_eq!(item, new_block_1);
     }
@@ -567,8 +566,7 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: BlockHeader =
-            serde_json::from_value(next).expect("Failed to deserialize replacement head");
+        let item: BlockHeader = serde_json::from_value(next).expect("Failed to deserialize replacement head");
 
         assert_eq!(item, replacement_head);
     }

@@ -113,9 +113,7 @@ async fn next_matching_transaction(
 mod test {
     use crate::{
         test_utils::{TestNewTransactionsWatcher, TestTransactionProvider},
-        versions::user::v0_8_1::{
-StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server,
-        },
+        versions::user::v0_8_1::{StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server},
         Starknet,
     };
     use assert_matches::assert_matches;

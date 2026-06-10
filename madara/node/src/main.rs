@@ -475,7 +475,8 @@ async fn main() -> anyhow::Result<()> {
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
 
-    if run_cmd.should_run_mempool() {
+    let rpc_configured = !run_cmd.rpc_params.rpc_disable || run_cmd.rpc_params.rpc_admin;
+    if run_cmd.should_run_mempool() || rpc_configured {
         app.activate(MadaraServiceId::Mempool);
     }
     app.activate(MadaraServiceId::Telemetry);

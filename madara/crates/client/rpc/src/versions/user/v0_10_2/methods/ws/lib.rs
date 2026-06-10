@@ -489,6 +489,41 @@ mod test {
     }
 
     #[tokio::test]
+    async fn subscribe_transaction_status_not_found_keeps_subscription_open_v0_10_2() {
+        let (_backend, mut starknet) = rpc_test_setup();
+        let watcher = TestTxStatusWatcher::new();
+        starknet.set_tx_status_watcher(Some(watcher.clone()));
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_transaction_status(&client, TX_HASH)
+            .await
+            .expect("Failed subscription");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::Received));
+        let first = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for received status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve received status");
+        assert_eq!(first.status.finality_status, mp_rpc::v0_10_2::TxnStatus::Received);
+
+        watcher.set_status(None);
+        tokio::time::timeout(Duration::from_millis(200), sub.next())
+            .await
+            .expect_err("NotFound should not emit or close the subscription");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        let second = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for re-added status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve re-added status");
+        assert_eq!(second.status.finality_status, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
+    }
+
+    #[tokio::test]
     async fn subscribe_transaction_status_unsubscribe_v0_10_2() {
         let (_backend, mut starknet) = rpc_test_setup();
         let watcher = TestTxStatusWatcher::new();

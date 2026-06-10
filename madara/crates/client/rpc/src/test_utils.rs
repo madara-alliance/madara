@@ -1,7 +1,7 @@
 use crate::Starknet;
 use crate::{
-    NewTransactionsWatch, NewTransactionsWatchError, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch,
-    TxStatusWatcher,
+    NewTransactionsWatch, NewTransactionsWatchError, NewTransactionsWatcher, TxStatusSnapshot, TxStatusUpdate,
+    TxStatusWatch, TxStatusWatcher,
 };
 use jsonrpsee::core::async_trait;
 use mc_db::{
@@ -141,14 +141,20 @@ impl TxStatusWatcher for TestTxStatusWatcher {
 
 #[cfg(test)]
 impl TxStatusWatch for TestTxStatusWatch {
-    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
-        *self.receiver.borrow_and_update()
+    fn take_current(&mut self) -> TxStatusUpdate {
+        match *self.receiver.borrow_and_update() {
+            Some(status) => TxStatusUpdate::Status(status),
+            None => TxStatusUpdate::NotFound,
+        }
     }
 
-    fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
+    fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<TxStatusUpdate>> + Send + '_>> {
         Box::pin(async move {
             self.receiver.changed().await.ok()?;
-            *self.receiver.borrow_and_update()
+            Some(match *self.receiver.borrow_and_update() {
+                Some(status) => TxStatusUpdate::Status(status),
+                None => TxStatusUpdate::NotFound,
+            })
         })
     }
 }

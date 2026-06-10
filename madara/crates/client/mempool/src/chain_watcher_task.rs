@@ -81,8 +81,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     }
 
     /// This task updates all the l1, confirmed, pre-confirmed, candidates statuses by watching the backend chain tip and pre-confirmed block.
-    /// It is also responsible for adding transactions back into the mempool.
-    pub(super) async fn run_chain_watcher_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
+    /// When `update_mempool` is enabled, it is also responsible for adding transactions back into the mempool.
+    pub(super) async fn run_chain_watcher_task(
+        &self,
+        mut ctx: ServiceContext,
+        update_mempool: bool,
+    ) -> anyhow::Result<()> {
         let mut l1_new_heads_subscription = self.backend.subscribe_new_l1_confirmed_heads();
 
         let mut new_heads_subscription =
@@ -253,34 +257,40 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 removed.len()
             );
 
-            self.remove_saved_txs_by_hashes(confirmed_tx_hashes);
+            if update_mempool {
+                self.remove_saved_txs_by_hashes(confirmed_tx_hashes);
 
-            // Update nonces
-            let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-            if !nonce_updates.is_empty() {
-                let mut guard = self.inner.write().await;
-                for (contract_address, account_nonce) in nonce_updates {
-                    guard.update_account_nonce(
-                        &contract_address.try_into().context("Invalid contract address")?,
-                        &Nonce(account_nonce),
-                        &mut removed_txs,
-                    );
-                }
-                self.metrics.record_mempool_state(&guard.summary());
-            }
-            self.on_txs_removed(&removed_txs);
-
-            // Update the mempool with the modifications.
-            for (tx_hash, tx) in removed {
-                if put_back_into_mempool {
-                    // Try to add back to mempool.
-                    if let Err(err) = self.accept_tx((*tx).clone()).await {
-                        // Re-insertion may fail for various valid reasons: the tx has reached its TTL, the tx is a L1HandlerTransaction..
-                        // TODO: it may fail because of tip-bump / eviction score. Maybe we shouldn't drop the tx in these cases?
-                        tracing::debug!("Could not add transaction {:#x} back into mempool: {err:#}", tx.hash);
+                // Update nonces
+                let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+                if !nonce_updates.is_empty() {
+                    let mut guard = self.inner.write().await;
+                    for (contract_address, account_nonce) in nonce_updates {
+                        guard.update_account_nonce(
+                            &contract_address.try_into().context("Invalid contract address")?,
+                            &Nonce(account_nonce),
+                            &mut removed_txs,
+                        );
                     }
-                } else {
-                    // Drop the transaction entirely.
+                    self.metrics.record_mempool_state(&guard.summary());
+                }
+                self.on_txs_removed(&removed_txs);
+
+                // Update the mempool with the modifications.
+                for (tx_hash, tx) in removed {
+                    if put_back_into_mempool {
+                        // Try to add back to mempool.
+                        if let Err(err) = self.accept_tx((*tx).clone()).await {
+                            // Re-insertion may fail for various valid reasons: the tx has reached its TTL, the tx is a L1HandlerTransaction..
+                            // TODO: it may fail because of tip-bump / eviction score. Maybe we shouldn't drop the tx in these cases?
+                            tracing::debug!("Could not add transaction {:#x} back into mempool: {err:#}", tx.hash);
+                        }
+                    } else {
+                        // Drop the transaction entirely.
+                        self.set_transaction_status(tx_hash, None);
+                    }
+                }
+            } else {
+                for tx_hash in removed.into_keys() {
                     self.set_transaction_status(tx_hash, None);
                 }
             }
@@ -295,6 +305,7 @@ mod tests {
     use mc_db::test_utils::{add_test_block, l1_handler_tx_with_receipt};
     use mp_chain_config::ChainConfig;
     use mp_transactions::{validated::TxTimestamp, L1HandlerTransaction, Transaction};
+    use mp_utils::service::ServiceContext;
     use std::sync::Arc;
 
     fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
@@ -342,5 +353,36 @@ mod tests {
         mempool.remove_saved_txs_by_hashes(confirmed_tx_hashes);
 
         assert!(saved_mempool_txs(&backend).is_empty());
+    }
+
+    #[tokio::test]
+    async fn status_task_publishes_future_confirmed_transactions_without_full_mempool() {
+        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let tx_hash = Felt::from(456_u64);
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default().with_save_to_db(false)));
+        let mut watch = mempool.watch_transaction_status(tx_hash).unwrap();
+        let ctx = ServiceContext::new();
+
+        let task = {
+            let mempool = mempool.clone();
+            let ctx = ctx.clone();
+            tokio::spawn(async move { mempool.run_status_task(ctx).await })
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        add_test_block(&backend, 0, vec![l1_handler_tx_with_receipt(0, tx_hash)]);
+
+        let status = tokio::time::timeout(std::time::Duration::from_secs(5), watch.recv())
+            .await
+            .expect("Timed out waiting for status update")
+            .clone();
+
+        assert_eq!(
+            status,
+            Some(TransactionStatus::Confirmed { block_number: 0, transaction_index: 0, is_on_l1: false })
+        );
+
+        ctx.cancel_global();
+        task.await.expect("Status task panicked").expect("Status task failed");
     }
 }
