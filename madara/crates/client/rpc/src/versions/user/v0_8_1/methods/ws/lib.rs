@@ -48,7 +48,7 @@ impl StarknetWsRpcApiV0_8_1Server for crate::Starknet {
         Ok(subscribe_pending_transactions(self, subscription_sink, transaction_details, sender_address).await?)
     }
 
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {
+    async fn starknet_unsubscribe(&self, subscription_id: String) -> jsonrpsee::core::RpcResult<bool> {
         Ok(starknet_unsubscribe(self, subscription_id).await?)
     }
 }

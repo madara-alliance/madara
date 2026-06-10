@@ -124,7 +124,7 @@ pub async fn subscribe_new_heads(
                 &starknet.backend,
                 &mut reorgs,
                 next_block_n,
-                super::missed_reorg_notifications_error(),
+                super::missed_reorg_notifications_error,
             )? {
                 crate::LiveConfirmedHeadResolution::Block(block_info) => {
                     send_block_header(&sink, *block_info, next_block_n).await?;
@@ -149,8 +149,7 @@ async fn send_block_header(
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
     let header: BlockHeader = block_info.to_rpc_v0_10();
-    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let msg = super::notification_message(super::NEW_HEADS_NOTIFICATION_METHOD, sink, &header)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;

@@ -163,16 +163,14 @@ pub trait StarknetReadRpcApi {
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
 }
 
-type SubscriptionItemEvents =
-    crate::versions::user::v0_10_2::methods::ws::SubscriptionItem<mp_rpc::v0_10_3::EmittedEventWithFinality>;
-type SubscriptionItemNewHeads =
-    crate::versions::user::v0_10_2::methods::ws::SubscriptionItem<mp_rpc::v0_10_3::BlockHeader>;
-type SubscriptionItemNewTransactions =
-    crate::versions::user::v0_10_2::methods::ws::SubscriptionItem<mp_rpc::v0_10_3::TxnWithHashAndStatus>;
-type SubscriptionItemNewTransactionReceipts =
-    crate::versions::user::v0_10_2::methods::ws::SubscriptionItem<mp_rpc::v0_10_3::TxnReceiptWithBlockInfo>;
-type SubscriptionItemTransactionStatus =
-    crate::versions::user::v0_10_2::methods::ws::SubscriptionItem<mp_rpc::v0_10_3::TxnStatus>;
+// Notification payloads are sent as spec-shaped frames (`starknet_subscriptionX` methods with the
+// result object directly in `params.result`), so the subscription item types are the spec result
+// schemas themselves.
+type SubscriptionItemEvents = mp_rpc::v0_10_3::EmittedEventWithFinality;
+type SubscriptionItemNewHeads = mp_rpc::v0_10_3::BlockHeader;
+type SubscriptionItemNewTransactions = mp_rpc::v0_10_3::TxnWithHashAndStatus;
+type SubscriptionItemNewTransactionReceipts = mp_rpc::v0_10_3::TxnReceiptWithBlockInfo;
+type SubscriptionItemTransactionStatus = mp_rpc::v0_10_3::NewTxnStatus;
 
 #[versioned_rpc("V0_10_3", "starknet")]
 pub trait StarknetWsRpcApi {
