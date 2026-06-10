@@ -1,6 +1,6 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use blockifier::bouncer::BouncerWeights;
-use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
+use mp_class::{CompiledSierra, ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
@@ -227,6 +227,32 @@ impl GatewayProvider {
                 let err = serde::de::Error::custom("Unknown contract type".to_string());
                 Err(SequencerError::DeserializeBody { serde_error: err })
             }
+        })
+        .await
+    }
+
+    /// Fetches the canonical compiled (CASM) class for a Sierra class hash from the feeder
+    /// gateway `get_compiled_class_by_class_hash` endpoint.
+    ///
+    /// This endpoint only supports Sierra classes - the given `class_hash` must point to a
+    /// Sierra class. The response is returned as the raw JSON-serialized CASM class
+    /// ([`CompiledSierra`]) so that callers can parse and hash it themselves.
+    pub async fn get_compiled_class_by_class_hash(
+        &self,
+        class_hash: Felt,
+        block_id: BlockId,
+    ) -> Result<CompiledSierra, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_compiled_class_by_class_hash")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&block_id)
+                .with_class_hash(class_hash);
+
+            let value = request.send_get::<Value>().await?;
+            let json =
+                serde_json::to_string(&value).map_err(|serde_error| SequencerError::DeserializeBody { serde_error })?;
+            Ok(CompiledSierra(json))
         })
         .await
     }

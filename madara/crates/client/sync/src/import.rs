@@ -7,8 +7,10 @@ use mp_block::{
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
-    class_hash::ComputeClassHashError, compile::ClassCompilationError, ClassInfo, ClassInfoWithHash, ClassType,
-    ConvertedClass, LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
+    class_hash::ComputeClassHashError,
+    compile::{ClassCompilationError, CompiledClassHashes},
+    ClassInfo, ClassInfoWithHash, ClassType, CompiledSierra, ConvertedClass, LegacyClassInfo, LegacyConvertedClass,
+    SierraClassInfo, SierraConvertedClass,
 };
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
@@ -342,11 +344,17 @@ impl BlockImporterCtx {
     // CLASSES
 
     /// Called in a rayon-pool context.
+    ///
+    /// `gateway_casm_fallback` maps class hashes to a canonical CASM fetched from the (trusted)
+    /// feeder gateway. When a Sierra class hash is present in this map, the provided CASM is used
+    /// instead of compiling the Sierra class locally. This is used to recover from historical
+    /// classes that modern compiler toolchains can no longer compile (see issue #1097).
     pub fn verify_compile_classes(
         &self,
         block_n: Option<u64>,
         declared_classes: Vec<ClassInfoWithHash>,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
+        gateway_casm_fallback: &HashMap<Felt, CompiledSierra>,
     ) -> Result<Vec<ConvertedClass>, BlockImportError> {
         if check_against.len() != declared_classes.len() {
             return Err(BlockImportError::ClassCount {
@@ -356,7 +364,7 @@ impl BlockImporterCtx {
         }
         let classes = declared_classes
             .into_par_iter()
-            .map(|class| self.verify_compile_class(block_n, class, check_against))
+            .map(|class| self.verify_compile_class(block_n, class, check_against, gateway_casm_fallback))
             .collect::<Result<_, _>>()?;
         Ok(classes)
     }
@@ -367,6 +375,7 @@ impl BlockImporterCtx {
         block_n: Option<u64>,
         class: ClassInfoWithHash,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
+        gateway_casm_fallback: &HashMap<Felt, CompiledSierra>,
     ) -> Result<ConvertedClass, BlockImportError> {
         let class_hash = class.class_hash;
 
@@ -416,11 +425,19 @@ impl BlockImporterCtx {
                     .map(|info| info.header.protocol_version.uses_blake_compiled_class_hash())
                     .unwrap_or(false);
 
-                // Compile and get both Poseidon and BLAKE hashes
-                let hashes = sierra
-                    .contract_class
-                    .compile_to_casm_with_hashes()
-                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?;
+                // Compile and get both Poseidon and BLAKE hashes. If a canonical CASM fetched
+                // from the (trusted) feeder gateway is available for this class, use it instead
+                // of compiling locally: some early-2023 historical Sierra classes can no longer
+                // be compiled by modern toolchains (see issue #1097).
+                let gateway_provided_casm = gateway_casm_fallback.get(&class_hash);
+                let hashes = match gateway_provided_casm {
+                    Some(compiled) => CompiledClassHashes::from_compiled_sierra(compiled)
+                        .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?,
+                    None => sierra
+                        .contract_class
+                        .compile_to_casm_with_hashes()
+                        .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?,
+                };
 
                 // Verify compiled class hash based on protocol version.
                 // For v0.14.1+ the gateway-provided hash is the canonical BLAKE hash and must match
@@ -428,6 +445,8 @@ impl BlockImporterCtx {
                 // Poseidon hash, since historical gateway hashes may not match a local recomputation
                 // after compiler/toolchain upgrades.
                 let (stored_poseidon, stored_blake) = if uses_blake {
+                    // Modern (v0.14.1+) classes get no historical tolerance: a recomputed hash
+                    // mismatch is always an error, even for a gateway-provided CASM.
                     if !self.config.no_check && hashes.blake_hash != gateway_hash {
                         return Err(BlockImportError::CompiledClassHash {
                             class_hash,
@@ -435,14 +454,40 @@ impl BlockImporterCtx {
                             expected: hashes.blake_hash,
                         });
                     }
+                    if gateway_provided_casm.is_some() {
+                        tracing::warn!(
+                            class_hash = %format!("{class_hash:#x}"),
+                            block_n = ?block_n,
+                            compiled_class_hash = %format!("{gateway_hash:#x}"),
+                            "Accepted gateway-provided CASM: BLAKE compiled class hash verified",
+                        );
+                    }
                     (None, Some(gateway_hash))
                 } else {
                     if !self.config.no_check && hashes.poseidon_hash != gateway_hash {
+                        if let Some(compiled) = gateway_provided_casm {
+                            tracing::warn!(
+                                class_hash = %format!("{class_hash:#x}"),
+                                block_n = ?block_n,
+                                declared_compiled_class_hash = %format!("{gateway_hash:#x}"),
+                                computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
+                                casm_size = compiled.0.len(),
+                                "Accepted gateway-provided CASM under historical compiled_class_hash tolerance",
+                            );
+                        } else {
+                            tracing::warn!(
+                                class_hash = %format!("{class_hash:#x}"),
+                                gateway_hash = %format!("{gateway_hash:#x}"),
+                                computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
+                                "Retaining gateway-provided historical compiled_class_hash for Sierra class",
+                            );
+                        }
+                    } else if gateway_provided_casm.is_some() {
                         tracing::warn!(
                             class_hash = %format!("{class_hash:#x}"),
-                            gateway_hash = %format!("{gateway_hash:#x}"),
-                            computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
-                            "Retaining gateway-provided historical compiled_class_hash for Sierra class",
+                            block_n = ?block_n,
+                            compiled_class_hash = %format!("{gateway_hash:#x}"),
+                            "Accepted gateway-provided CASM: Poseidon compiled class hash verified",
                         );
                     }
                     (Some(gateway_hash), None)

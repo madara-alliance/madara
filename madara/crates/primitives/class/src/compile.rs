@@ -61,6 +61,25 @@ pub struct CompiledClassHashes {
     pub casm_class: CasmContractClass,
 }
 
+impl CompiledClassHashes {
+    /// Computes both Poseidon and BLAKE2s compiled class hashes for an already-compiled CASM
+    /// class (e.g. a canonical CASM fetched from a trusted feeder gateway instead of being
+    /// compiled locally).
+    pub fn from_casm(casm_class: CasmContractClass) -> Result<Self, ClassCompilationError> {
+        let poseidon_hash = casm_class.compiled_class_hash();
+        let blake_hash = v2::compute_blake_compiled_class_hash(&casm_class)?;
+        Ok(Self { poseidon_hash, blake_hash, casm_class })
+    }
+
+    /// Parses a JSON-serialized CASM class (as returned by the feeder gateway
+    /// `get_compiled_class_by_class_hash` endpoint) and computes both compiled class hash
+    /// variants for it.
+    pub fn from_compiled_sierra(compiled: &CompiledSierra) -> Result<Self, ClassCompilationError> {
+        let casm_class: CasmContractClass = compiled.try_into()?;
+        Self::from_casm(casm_class)
+    }
+}
+
 impl CompressedLegacyContractClass {
     // Returns `impl serde::Serialize` because the fact that it returns a serde_json::Value is an impl detail
     pub fn abi(&self) -> Result<impl serde::Serialize, ClassCompilationError> {
