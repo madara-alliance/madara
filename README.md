@@ -85,9 +85,14 @@ cd madara
 #### 2. Build Madara
 
 > [!TIP]
-> Build scripts normally fetch the published contract artifacts automatically.
-> If you need to regenerate local artifacts, run `make artifacts` before
-> building. This requires Docker.
+> Building the `madara` binary needs a handful of pre-compiled contract
+> artifacts under `build-artifacts/`. The ones the node requires are tracked in
+> git, so a fresh checkout builds without Docker. If artifacts are missing
+> (e.g. for other workspace crates), the build scripts fetch the published
+> artifacts image automatically when Docker is available. Without a Docker
+> daemon, run `make fetch-artifacts-no-docker` from the repository root to
+> download them over plain HTTPS (curl + tar only). To regenerate artifacts
+> from source, run `make artifacts` (requires Docker).
 
 You can choose between different build modes:
 
