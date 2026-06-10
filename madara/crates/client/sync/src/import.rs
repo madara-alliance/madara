@@ -16,7 +16,8 @@ use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use opentelemetry::{global, metrics::Counter, InstrumentationScope, KeyValue};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
@@ -122,11 +123,17 @@ pub struct BlockImporter {
     db: Arc<MadaraBackend>,
     config: BlockValidationConfig,
     rayon_pool: Arc<RayonPool>,
+    gateway_casm_fallback_counter: Counter<u64>,
 }
 
 impl BlockImporter {
     pub fn new(db: Arc<MadaraBackend>, config: BlockValidationConfig) -> BlockImporter {
-        Self { db, config, rayon_pool: Arc::new(RayonPool::new()) }
+        Self {
+            db,
+            config,
+            rayon_pool: Arc::new(RayonPool::new()),
+            gateway_casm_fallback_counter: gateway_casm_fallback_counter(),
+        }
     }
 
     pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
@@ -150,15 +157,50 @@ impl BlockImporter {
     }
 
     fn ctx(&self) -> BlockImporterCtx {
-        BlockImporterCtx { backend: self.db.clone(), config: self.config.clone() }
+        BlockImporterCtx {
+            backend: self.db.clone(),
+            config: self.config.clone(),
+            gateway_casm_fallback_counter: self.gateway_casm_fallback_counter.clone(),
+        }
     }
+}
+
+/// Counts declared classes whose CASM was taken from the feeder gateway because local
+/// Sierra-to-CASM compilation failed (see issue #1097), so operators can alert on the fallback
+/// engaging. Recorded with an `outcome` attribute of `verified_blake`, `verified_poseidon` or
+/// `historical_tolerance`.
+///
+/// Class verification runs in a rayon-pool context with no access to the sync service's
+/// [`crate::metrics::SyncMetrics`] registry, so the counter is created through the OTel global
+/// meter once at [`BlockImporter`] construction and carried into the rayon context by
+/// [`BlockImporterCtx`].
+fn gateway_casm_fallback_counter() -> Counter<u64> {
+    // Same instrumentation scope as `crate::metrics::SyncMetrics`, so the counter is grouped with
+    // the other sync metrics in OTel backends.
+    global::meter_with_scope(
+        InstrumentationScope::builder("crates.sync.opentelemetry")
+            .with_attributes([KeyValue::new("crate", "sync")])
+            .build(),
+    )
+    .u64_counter("class_gateway_casm_fallback")
+    .with_description(
+        "Number of declared classes whose CASM was fetched from the feeder gateway because \
+         local Sierra-to-CASM compilation failed",
+    )
+    .build()
 }
 
 pub struct BlockImporterCtx {
     backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
+    gateway_casm_fallback_counter: Counter<u64>,
 }
 impl BlockImporterCtx {
+    /// See [`gateway_casm_fallback_counter`].
+    fn record_gateway_casm_fallback(&self, outcome: &'static str) {
+        self.gateway_casm_fallback_counter.add(1, &[KeyValue::new("outcome", outcome)]);
+    }
+
     // HEADERS
 
     pub fn verify_header(
@@ -349,28 +391,22 @@ impl BlockImporterCtx {
     /// feeder gateway. When a Sierra class hash is present in this map, the provided CASM is used
     /// instead of compiling the Sierra class locally. This is used to recover from historical
     /// classes that modern compiler toolchains can no longer compile (see issue #1097).
-    pub fn verify_compile_classes(
-        &self,
-        block_n: Option<u64>,
-        declared_classes: Vec<ClassInfoWithHash>,
-        check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
-        gateway_casm_fallback: &HashMap<Felt, CompiledSierra>,
-    ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-        if check_against.len() != declared_classes.len() {
-            return Err(BlockImportError::ClassCount {
-                got: declared_classes.len() as _,
-                expected: check_against.len() as _,
-            });
-        }
-        let classes = declared_classes
-            .into_par_iter()
-            .map(|class| self.verify_compile_class(block_n, class, check_against, gateway_casm_fallback))
-            .collect::<Result<_, _>>()?;
-        Ok(classes)
-    }
-
-    /// Called in a rayon-pool context.
-    fn verify_compile_class(
+    ///
+    /// Each accepted gateway CASM is counted in the `class_gateway_casm_fallback` metric, with an
+    /// `outcome` attribute of `verified_blake`, `verified_poseidon` or `historical_tolerance`.
+    ///
+    /// # Compiled class hash variants
+    ///
+    /// The recomputed compiled class hash is compared against the hash declared by the gateway
+    /// using the variant canonical for the block's protocol version (see
+    /// [`StarknetVersion::uses_blake_compiled_class_hash`]):
+    /// - v0.14.1+ blocks declare the BLAKE2s compiled class hash, which must match the local
+    ///   recomputation exactly (even when the CASM comes from the gateway fallback);
+    /// - older blocks — this includes every historical class that may need the gateway CASM
+    ///   fallback — declare the Poseidon compiled class hash, where a mismatch is tolerated with
+    ///   a WARN, because historical gateway hashes may not match a local recomputation after
+    ///   compiler/toolchain upgrades.
+    pub(crate) fn verify_compile_class(
         &self,
         block_n: Option<u64>,
         class: ClassInfoWithHash,
@@ -461,6 +497,7 @@ impl BlockImporterCtx {
                             compiled_class_hash = %format!("{gateway_hash:#x}"),
                             "Accepted gateway-provided CASM: BLAKE compiled class hash verified",
                         );
+                        self.record_gateway_casm_fallback("verified_blake");
                     }
                     (None, Some(gateway_hash))
                 } else {
@@ -474,6 +511,7 @@ impl BlockImporterCtx {
                                 casm_size = compiled.0.len(),
                                 "Accepted gateway-provided CASM under historical compiled_class_hash tolerance",
                             );
+                            self.record_gateway_casm_fallback("historical_tolerance");
                         } else {
                             tracing::warn!(
                                 class_hash = %format!("{class_hash:#x}"),
@@ -489,6 +527,7 @@ impl BlockImporterCtx {
                             compiled_class_hash = %format!("{gateway_hash:#x}"),
                             "Accepted gateway-provided CASM: Poseidon compiled class hash verified",
                         );
+                        self.record_gateway_casm_fallback("verified_poseidon");
                     }
                     (Some(gateway_hash), None)
                 };
