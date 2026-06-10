@@ -1201,7 +1201,7 @@ pub(crate) mod tests {
                 block_time,
                 bouncer_config: BouncerConfig {
                     block_max_capacity: bouncer_weights,
-                    builtin_weights: Default::default(),
+                    builtin_instance_limits: Default::default(),
                 },
                 no_empty_blocks,
                 ..ChainConfig::madara_devnet()
@@ -1625,10 +1625,9 @@ pub(crate) mod tests {
         let mut block_production_task = original_devnet_setup.block_prod_task();
         let mut notifications = block_production_task.subscribe_state_notifications();
         let control = block_production_task.handle();
-        let _task =
-            AbortOnDrop::spawn(
-                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
-            );
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+        let task = AbortOnDrop::spawn(async move { block_production_task.run(ctx).await.unwrap() });
 
         // Wait for batch to be executed
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
@@ -1636,6 +1635,8 @@ pub(crate) mod tests {
         // Manually close the block
         control.close_block().await.unwrap();
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        ctx_clone.cancel_global();
+        task.await;
 
         // Step 2: Capture global_state_root, state_diff, and header info from closed block
         let block_number = original_devnet_setup.backend.latest_confirmed_block_n().unwrap();
