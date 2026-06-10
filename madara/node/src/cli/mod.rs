@@ -97,10 +97,10 @@ pub struct ArgsPresetParams {
     #[clap(env = "MADARA_GATEWAY", long, value_name = "GATEWAY", group = "args-preset")]
     pub gateway: bool,
 
-    /// Sets up the node as an externally facing rpc provider exposed on
-    /// 0.0.0.0. Generally speaking, this means the node will be accessible
-    /// from the outside world. Admin rpc methods are also enabled, but are only
-    /// exposed on localhost.
+    /// External RPC provider preset. Exposes user RPC on 0.0.0.0, enables
+    /// admin RPC on localhost, and sets CORS to allow all origins. Local-only
+    /// RPC is already enabled by default; omit this flag and use --rpc-port
+    /// for a private node.
     #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
     pub rpc: bool,
 }
@@ -114,7 +114,10 @@ impl ArgsPresetParams {
         } else if self.gateway {
             tracing::info!("💫 Running Gateway preset")
         } else if self.rpc {
-            tracing::info!("💫 Running Rpc preset")
+            tracing::info!("💫 Running Rpc preset");
+            tracing::warn!(
+                "--rpc exposes user RPC on 0.0.0.0 with admin RPC enabled on localhost and CORS allowing all origins"
+            )
         }
     }
 }

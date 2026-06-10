@@ -73,7 +73,9 @@ Targets:
   [ BUILDING ]
 
   - build-madara                  Build Madara with Cairo 0 environment setup
+                                  (runs an LLVM 19 preflight check; skip with SKIP_LLVM_CHECK=1)
   - build-orchestrator            Build Orchestrator with Cairo 0 environment setup
+  - check-llvm19                  Verify llvm-config 19.x is available (required by Cairo Native)
 
   [ CODE QUALITY ]
 
@@ -227,8 +229,30 @@ setup-cairo:
 	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r cairo_requirements.txt > /dev/null 2>&1
 	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
 
+# Preflight: verify LLVM 19 is available before starting a long build.
+# Cairo Native (tblgen) requires llvm-config 19.x; without it the build fails
+# late with "failed to find correct version (19.x.x) of llvm-config".
+# Skip with SKIP_LLVM_CHECK=1.
+.PHONY: check-llvm19
+check-llvm19:
+	@if [ -n "$(SKIP_LLVM_CHECK)" ]; then \
+		echo -e "$(WARN)Skipping LLVM 19 preflight check (SKIP_LLVM_CHECK is set)$(RESET)"; \
+	elif [ -n "$$MLIR_SYS_190_PREFIX" ]; then \
+		echo -e "$(PASS)✅ LLVM 19 located via MLIR_SYS_190_PREFIX=$$MLIR_SYS_190_PREFIX$(RESET)"; \
+	elif command -v llvm-config-19 > /dev/null 2>&1; then \
+		echo -e "$(PASS)✅ Found llvm-config-19 (version $$(llvm-config-19 --version))$(RESET)"; \
+	elif command -v llvm-config > /dev/null 2>&1 && llvm-config --version 2>/dev/null | grep -q "^19\."; then \
+		echo -e "$(PASS)✅ Found llvm-config (version $$(llvm-config --version))$(RESET)"; \
+	else \
+		echo -e "$(WARN)❌ LLVM 19 not found. Cairo Native requires llvm-config 19.x and the build will fail late at the tblgen build script.$(RESET)"; \
+		echo -e "$(INFO)   Ubuntu/Debian: make install-llvm19 [SUDO=sudo]$(RESET)"; \
+		echo -e "$(INFO)   macOS: brew install llvm@19 && export MLIR_SYS_190_PREFIX=\$$(brew --prefix llvm@19)$(RESET)"; \
+		echo -e "$(INFO)   To skip this check: make build-madara SKIP_LLVM_CHECK=1$(RESET)"; \
+		exit 1; \
+	fi
+
 .PHONY: build-madara
-build-madara: setup-cairo
+build-madara: check-llvm19 setup-cairo
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
 	@$(VENV_ACTIVATE) && cargo build --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
