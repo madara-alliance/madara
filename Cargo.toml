@@ -142,7 +142,7 @@ alloy = { version = "1.1.0", features = [
 ] }
 
 # Instrumentation
-opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
+opentelemetry = { version = "0.32.0", features = ["metrics", "logs"] }
 opentelemetry_sdk = { version = "0.30.0", features = [
   "rt-tokio",
   "logs",
