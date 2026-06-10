@@ -39,7 +39,7 @@ use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSi
 use mp_convert::hex_serde::U64AsHex;
 use mp_rpc::v0_10_2::{
     BroadcastedInvokeTxn as BroadcastedInvokeTxnV0_10_2, BroadcastedInvokeTxnV3 as BroadcastedInvokeTxnV3V0_10_2,
-    BroadcastedTxn,
+    BroadcastedTxn, Proof,
 };
 use mp_rpc::v0_9_0::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
@@ -448,7 +448,7 @@ pub struct UserInvokeFunctionV3Transaction {
     pub paymaster_data: Vec<Felt>,
     pub account_deployment_data: Vec<Felt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proof: Option<Vec<u64>>,
+    pub proof: Option<Proof>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proof_facts: Option<Vec<Felt>>,
 }
@@ -629,7 +629,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    fn sample_user_invoke_v3(proof: Option<Vec<u64>>, proof_facts: Option<Vec<Felt>>) -> UserInvokeFunctionTransaction {
+    fn sample_user_invoke_v3(proof: Option<Proof>, proof_facts: Option<Vec<Felt>>) -> UserInvokeFunctionTransaction {
         let resource_bounds = ResourceBoundsMapping { l1_data_gas: Some(Default::default()), ..Default::default() };
 
         UserInvokeFunctionTransaction::V3(UserInvokeFunctionV3Transaction {
@@ -650,14 +650,14 @@ mod tests {
 
     #[rstest]
     #[case(None, None)]
-    #[case(Some(vec![1, 2, 3]), None)]
+    #[case(Some(Proof(vec![1, 2, 3])), None)]
     #[case(None, Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")]))]
     #[case(
-        Some(vec![1, 2, 3]),
+        Some(Proof(vec![1, 2, 3])),
         Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")])
     )]
     fn invoke_v3_roundtrip_preserves_optional_proof_fields(
-        #[case] proof: Option<Vec<u64>>,
+        #[case] proof: Option<Proof>,
         #[case] proof_facts: Option<Vec<Felt>>,
     ) {
         let transaction = sample_user_invoke_v3(proof.clone(), proof_facts.clone());

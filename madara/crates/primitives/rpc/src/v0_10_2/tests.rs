@@ -600,7 +600,7 @@ fn test_txn_with_hash_and_proof_facts() {
 // ============================================================================
 
 #[rstest]
-#[case(r#", "proof": [1, 2, 3, 4, 5]"#, Some(vec![1, 2, 3, 4, 5]), None)]
+#[case(r#", "proof": "AQIDBAU=""#, Some(Proof(vec![1, 2, 3, 4, 5])), None)]
 #[case("", None, None)]
 #[case(
     r#", "proof_facts": ["0x100", "0x200"]"#,
@@ -609,7 +609,7 @@ fn test_txn_with_hash_and_proof_facts() {
 )]
 fn test_broadcasted_invoke_txn_v3_optional_proof_fields(
     #[case] extra_fields: &str,
-    #[case] expected_proof: Option<Vec<u64>>,
+    #[case] expected_proof: Option<Proof>,
     #[case] expected_proof_facts: Option<Vec<Felt>>,
 ) {
     let mut txn_json = broadcasted_invoke_txn_v3_json();
@@ -643,7 +643,7 @@ fn test_broadcasted_invoke_txn_enum_with_proof() {
         "account_deployment_data": [],
         "nonce_data_availability_mode": "L1",
         "fee_data_availability_mode": "L1",
-        "proof": [1, 2, 3]
+        "proof": "AQID"
     }"#;
 
     let txn: BroadcastedInvokeTxn = serde_json::from_str(txn_json).unwrap();
@@ -651,7 +651,7 @@ fn test_broadcasted_invoke_txn_enum_with_proof() {
     assert_eq!(txn.version(), Felt::THREE);
 
     match txn {
-        BroadcastedInvokeTxn::V3(tx) => assert_eq!(tx.proof, Some(vec![1, 2, 3])),
+        BroadcastedInvokeTxn::V3(tx) => assert_eq!(tx.proof, Some(Proof(vec![1, 2, 3]))),
         _ => panic!("Expected INVOKE_TXN_V3"),
     }
 }
@@ -675,7 +675,7 @@ fn test_broadcasted_txn_enum_with_proof() {
         "account_deployment_data": [],
         "nonce_data_availability_mode": "L1",
         "fee_data_availability_mode": "L1",
-        "proof": [7, 8]
+        "proof": "Bwg="
     }"#;
 
     let txn: BroadcastedTxn = serde_json::from_str(txn_json).unwrap();
@@ -683,9 +683,21 @@ fn test_broadcasted_txn_enum_with_proof() {
     assert_eq!(txn.version(), Felt::THREE);
 
     match txn {
-        BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx)) => assert_eq!(tx.proof, Some(vec![7, 8])),
+        BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx)) => assert_eq!(tx.proof, Some(Proof(vec![7, 8]))),
         _ => panic!("Expected INVOKE/BroadcastedInvokeTxn::V3"),
     }
+}
+
+#[test]
+fn test_proof_base64_round_trip() {
+    let proof = Proof(vec![0xde, 0xad, 0xbe, 0xef]);
+    let json = serde_json::to_string(&proof).unwrap();
+    assert_eq!(json, r#""3q2+7w==""#);
+    let back: Proof = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, proof);
+
+    let err = serde_json::from_str::<Proof>(r#""not base64!""#);
+    assert!(err.is_err());
 }
 
 // ============================================================================
