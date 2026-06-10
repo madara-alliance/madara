@@ -131,6 +131,15 @@ use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitc
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
+/// Maximum time to wait, after all services have shut down, for work that was offloaded onto
+/// the detached global rayon pool (e.g. a snap-sync batched global-trie update) to finish
+/// before exiting the process. Exiting while those threads are still inside RocksDB can
+/// SIGSEGV during process teardown (issue #1091). A large snap-sync trie batch can legitimately
+/// take minutes on slow hardware, so this is intentionally generous; node operators using
+/// systemd should make sure `TimeoutStopSec` accounts for it (a timeout there results in
+/// SIGKILL, which RocksDB recovers from, rather than a segfault).
+const SHUTDOWN_POOL_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
@@ -513,6 +522,29 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let result = app.start().await;
+
+    // All services have stopped, but service shutdown is cooperative-cancellation based:
+    // dropping a cancelled service future does not stop CPU work it already offloaded onto the
+    // detached global rayon pool (e.g. snap-sync applying a batched global-trie update, which
+    // can run for a long time). Those rayon workers hold references into the RocksDB backend.
+    // Returning from `main` while they are still running tears the process down (libc `exit`
+    // runs static destructors) under live threads, which can SIGSEGV — see issue #1091.
+    // Wait for the pool to drain *before* the final flush, so the flush also captures those
+    // tasks' writes and so the backend drop (final flush + RocksDB background-work cancel)
+    // happens after all of its users are gone.
+    let in_flight = mp_utils::rayon::global_rayon_tasks_in_flight();
+    if in_flight > 0 {
+        tracing::info!("⏳ Waiting for {in_flight} in-flight background task(s) to finish before shutdown...");
+    }
+    if tokio::time::timeout(SHUTDOWN_POOL_DRAIN_TIMEOUT, mp_utils::rayon::wait_global_rayon_tasks_finished())
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            "Background tasks did not finish within {SHUTDOWN_POOL_DRAIN_TIMEOUT:?}; shutting down anyway. \
+             The database may need to replay un-flushed work on next startup."
+        );
+    }
 
     // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
     if let Err(e) = backend.flush() {
