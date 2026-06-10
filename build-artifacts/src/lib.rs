@@ -174,7 +174,23 @@ pub fn get_or_compile_artifacts_for(parent_levels: usize, required: &[&str]) -> 
             let msg = format!("failed to fetch or build artifacts with Docker: {err}");
             artifact_help_error(&root, &version_file_artifacts, &missing, &msg)
         },
-    )
+    )?;
+
+    // The published artifacts image does not contain every required file (e.g. git-tracked
+    // cairo_artifacts/), so a successful fetch can still leave gaps. Fail here with the help
+    // message instead of letting compilation die later on a cryptic `include_bytes!` error.
+    let still_missing = missing_paths(&root, required);
+    if !still_missing.is_empty() {
+        return Err(artifact_help_error(
+            &root,
+            &version_file_artifacts,
+            &still_missing,
+            "artifacts were fetched, but some required files are still missing; if they are tracked in git, \
+             restore them with `git checkout -- build-artifacts`",
+        ));
+    }
+
+    Ok(())
 }
 
 fn missing_paths(root: &RootDir, required: &[&str]) -> Vec<String> {
