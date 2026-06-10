@@ -334,12 +334,13 @@ You can find examples on [configs](configs/).
 [⬅️ back to top](#-madara-starknet-client)
 
 Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`,
-`v0.10.0`, and `v0.10.2`. Method-level availability can vary depending on
-current implementation status and runtime retention/configuration.
-The default user RPC version is `v0.10.2`; the explicit route is
-`rpc/v0_10_2`.
+`v0.10.0`, `v0.10.2`, and `v0.10.3`. Method-level availability can vary
+depending on current implementation status and runtime
+retention/configuration.
+The default user RPC version is `v0.10.3`; the explicit route is
+`rpc/v0_10_3`.
 Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`,
-`rpc/v0_9_0`, and `rpc/v0_10_0`.
+`rpc/v0_9_0`, `rpc/v0_10_0`, and `rpc/v0_10_2`.
 Admin RPC methods are exposed under `rpc/v0_1_0` (default port `9943`) when `--rpc-admin` is enabled.
 These methods can be categorized into three main types: Read-Only Access Methods,
 Trace Generation Methods, and Write Methods. They are accessible through port
@@ -385,7 +386,7 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_getNonce`                                                            |
 | ✅     | `starknet_getCompiledCasm` (v0.8.1+)                                           |
 | ✅     | `starknet_getMessagesStatus` (v0.9.0+)                                         |
-| ❌     | `starknet_getStorageProof` (v0.8.1+, currently unavailable in default profile) |
+| ✅     | `starknet_getStorageProof` (v0.8.1+, latest 128 blocks by default) |
 
 </details>
 
@@ -414,29 +415,35 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Websocket Methods</summary>
 
-| Status | Method                                                |
-| ------ | ----------------------------------------------------- |
-| ✅     | `starknet_unsubscribe` (v0.8.1+)                      |
-| ❌     | `starknet_subscribeNewHeads` (placeholder)            |
-| ❌     | `starknet_subscribeEvents` (placeholder)              |
-| ❌     | `starknet_subscribeTransactionStatus` (placeholder)   |
-| ❌     | `starknet_subscribePendingTransactions` (placeholder) |
-| ❌     | `starknet_subscriptionReorg`                          |
+| Status | Method                                                  |
+| ------ | ------------------------------------------------------- |
+| ✅     | `starknet_unsubscribe` (v0.8.1+)                        |
+| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)                  |
+| ✅     | `starknet_subscribeEvents` (v0.8.1+)                    |
+| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)         |
+| ✅     | `starknet_subscribePendingTransactions` (v0.8.1 only)   |
+| ✅     | `starknet_subscribeNewTransactions` (v0.9.0+)           |
+| ✅     | `starknet_subscribeNewTransactionReceipts` (v0.9.0+)    |
+| ✅     | `starknet_subscriptionReorg` (notification, v0.8.1+)    |
 
 </details>
 
 > [!NOTE]
-> Subscription methods are currently placeholders and return `UnimplementedMethod`.
-> This applies to `v0.8.1`, `v0.9.0`, `v0.10.0`, and `v0.10.2` (the
-> v0.10 routes delegate subscription placeholders to `v0.9.0`).
+> Websocket subscriptions are live on `v0.8.1`, `v0.9.0`, `v0.10.0`,
+> `v0.10.2`, and `v0.10.3`, including reorg notifications. Each route follows
+> its spec version: `starknet_subscribePendingTransactions` is `v0.8.1` only
+> and is replaced by `starknet_subscribeNewTransactions` and
+> `starknet_subscribeNewTransactionReceipts` from `v0.9.0` onwards.
 
 > [!IMPORTANT]
-> `starknet_getStorageProof` is currently treated as unavailable in the default
-> node profile because the required retention is disabled in
-> [`configs/args/config.json`](configs/args/config.json):
-> `db_max_saved_trie_logs = 0`, `db_max_kept_snapshots = 0`, and
-> `rpc_storage_proof_max_distance = 0`. Madara loads this file by default when
-> run without explicit CLI/config overrides.
+> `starknet_getStorageProof` is served for the latest 128 blocks by default
+> (`rpc_storage_proof_max_distance = 128`, backed by
+> `db_max_saved_trie_logs = 10000` and `db_max_kept_snapshots = 32` with a
+> snapshot every 5 blocks). Operators can tune these flags to trade disk usage
+> for a deeper proof window, or set `rpc_storage_proof_max_distance = 0` to
+> only serve proofs at the chain tip. Note that blocks synced through
+> `--snap-sync` batches do not retain per-block trie logs and cannot serve
+> historical proofs.
 
 > [!IMPORTANT]
 > Write methods are forwarded to the Sequencer and are not executed by Madara.
@@ -526,12 +533,12 @@ the bellow code, make sure you have a node running with rpc enabled on port 9944
 (this is the default configuration).
 
 > [!IMPORTANT]
-> Madara currently defaults to `v0.10.2` for RPC calls.
+> Madara currently defaults to `v0.10.3` for RPC calls.
 > To access specific versions, add `rpc/v*_*_*/` to your RPC URL.
 > This also works for websocket methods.
 
 ```bash
-curl --location 'http://localhost:9944/rpc/v0_10_2/' \
+curl --location 'http://localhost:9944/rpc/v0_10_3/' \
   --header 'Content-Type: application/json' \
   --data '{
     "jsonrpc": "2.0",
@@ -553,9 +560,9 @@ You should receive something like the following:
       "rpc/V0_7_1/starknet_addDeployAccountTransaction",
       "rpc/V0_7_1/starknet_addInvokeTransaction",
       ...
-      "rpc/V0_10_2/starknet_traceBlockTransactions",
-      "rpc/V0_10_2/starknet_traceTransaction",
-      "rpc/V0_10_2/starknet_unsubscribe",
+      "rpc/V0_10_3/starknet_traceBlockTransactions",
+      "rpc/V0_10_3/starknet_traceTransaction",
+      "rpc/V0_10_3/starknet_unsubscribe",
       "rpc/rpc_methods"
     ]
   }
@@ -571,17 +578,11 @@ You should receive something like the following:
 Websockets methods are enabled by default and are accessible through the same
 port as http RPC methods.
 
-> [!NOTE]
-> Subscription methods are currently placeholders and return
-> `UnimplementedMethod` on `v0.8.1`, `v0.9.0`, `v0.10.0`, and `v0.10.2`.
-> `starknet_unsubscribe` is available, but active subscription streams are not
-> yet available.
-
-You can still use websocket transport to call methods and validate responses
-using `websocat`:
+You can use websocket transport to call methods, open subscription streams,
+and validate responses using `websocat`:
 
 ```bash
-websocat -v ws://localhost:9944/rpc/v0_10_2
+websocat -v ws://localhost:9944/rpc/v0_10_3
 ```
 
 > [!TIP]
@@ -591,8 +592,9 @@ websocat -v ws://localhost:9944/rpc/v0_10_2
 { "jsonrpc": "2.0", "method": "starknet_subscribeNewHeads", "params": {"block_id":"latest"}, "id": 1 }
 ```
 
-This currently returns `UnimplementedMethod` until subscription support is
-re-enabled.
+This opens a subscription stream: you receive a subscription id in the
+response, followed by `starknet_subscriptionNewHeads` notifications as new
+blocks are produced.
 
 ## 📚 Database Migration
 
@@ -739,7 +741,7 @@ cargo run --bin madara --release --            \
 ### Starknet compliant
 
 Madara supports Starknet JSON-RPC `v0.7.1`, `v0.8.1`, `v0.9.0`, `v0.10.0`,
-and `v0.10.2` (default version: `v0.10.2`).
+`v0.10.2`, and `v0.10.3` (default version: `v0.10.3`).
 You can find out more in the [interactions](#-interactions) section and the
 official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
