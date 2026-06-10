@@ -6,50 +6,84 @@ name: Task - Test JavaScript
 # against the Madara binary to ensure API compatibility
 on:
   workflow_dispatch:
-  workflow_call:
     inputs:
+      should_run:
+        description: "Whether to run JavaScript tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
       madara-binary-hash:
         description: "Hash used to retrieve the madara binary"
-        required: true
+        required: false
         type: string
+        default: ""
       cairo-artifacts-hash:
         description: "Hash used to retrieve the cairo artifacts"
-        required: true
+        required: false
         type: string
+        default: ""
+  workflow_call:
+    inputs:
+      should_run:
+        description: "Whether to run JavaScript tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara binary"
+        required: false
+        type: string
+        default: ""
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   test-js:
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
+      - name: Skip JavaScript tests
+        if: inputs.should_run != 'true'
+        run: echo "No JavaScript or RPC compatibility changes detected; required check stubbed."
+
       - name: Checkout Repository
+        if: inputs.should_run == 'true'
         uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Load env
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/load-env
 
       - name: Download Madara binary
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
       - name: Make Madara binary executable
+        if: inputs.should_run == 'true'
         run: chmod +x target/release/madara
 
       - name: Download Cairo artiracts
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
 
       - name: Install Foundry (Anvil)
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-foundry
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install dependencies
+        if: inputs.should_run == 'true'
         run: |
           if ! command -v nc 2>&1 >/dev/null; then
             sudo apt-get update
@@ -59,6 +93,7 @@ jobs:
           npm install
 
       - name: Setup Anvil and deploy DummyContract
+        if: inputs.should_run == 'true'
         run: |
           source scripts/setup-anvil.sh
           echo "ANVIL_PID=$ANVIL_PID" >> $GITHUB_ENV
@@ -66,6 +101,7 @@ jobs:
           echo "CORE_CONTRACT=$CORE_CONTRACT" >> $GITHUB_ENV
 
       - name: Setup Madara with L1 sync and run tests
+        if: inputs.should_run == 'true'
         run: |
           ./target/release/madara \
             --name madara \

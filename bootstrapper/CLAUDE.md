@@ -5,12 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 The Madara Bootstrapper is a Rust-based tool for deploying and initializing bridge contracts
-between a Madara/Starknet Appchain (L2) and Ethereum/EVM-compatible chains (L1). It automates
+between a Madara/Starknet Appchain (L2) and Ethereum L1 networks. It automates
 the complex setup process for cross-chain interoperability.
 
 **Key capabilities:**
 
-- Deploy Token Bridge and ETH Bridge contracts between L2 (Madara) and L1 (Ethereum/EVM)
+- Deploy Token Bridge and ETH Bridge contracts between L2 (Madara) and Ethereum L1
 - Declare wallet contracts from OpenZeppelin, Argent, and Braavos
 - Set up essential infrastructure contracts (UDC, Core Contract)
 - Manage configuration across two different blockchain networks

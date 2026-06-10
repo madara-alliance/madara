@@ -21,7 +21,7 @@ in the [Information](#information) section.
 
 **Currently Supported:**
 
-- Madara App Chain <----> Ethereum / EVM based chains
+- Madara App Chain <----> Ethereum L1
 - More coming soon...
 
 ## Testing

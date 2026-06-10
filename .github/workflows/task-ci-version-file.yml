@@ -93,9 +93,11 @@ jobs:
 
       - name: Commit and Push
         if: steps.check_bump.outputs.update == 'true'
+        env:
+          TARGET_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git add ${{ inputs.version-file }}
             git commit -m "chore: bump ${{ inputs.version-file }}"
-            git push origin ${{ github.head_ref || github.ref_name }}
+            git push origin "$TARGET_REF"
           fi

@@ -37,7 +37,7 @@ jobs:
   check:
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
-      - run: echo "Building ${{ inputs.artifacts-pr }}"
+      - run: echo "Building artifact version '${{ inputs.artifact-version }}'"
 
   build-artifacts:
     runs-on: blacksmith-8vcpu-ubuntu-2204

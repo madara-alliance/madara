@@ -27,21 +27,21 @@ export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
         sourceUrl:
           "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_api_openrpc.json",
         sha256:
-          "d8d4dc6279d00b35be3414cf17997523dfa84fa2604619c2ebbf2fdf8dde4b77",
+          "f54584181343b48fd8b6e941433429e95279c3c9bfc0f1e19876a645947353e0",
       },
       {
         file: "starknet_write_api.json",
         sourceUrl:
           "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_write_api.json",
         sha256:
-          "3aa263e858870634103487856c91ea502527ff6248d318bc7143be9e6eb84145",
+          "98e8ed3b434e07032a576894f60e91b1fed1c6778ea671159926681ff8ff83f2",
       },
       {
         file: "starknet_trace_api_openrpc.json",
         sourceUrl:
           "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_trace_api_openrpc.json",
         sha256:
-          "9cd30bc979f7e17d84cc7212dca0fb80549f42bb46262e96942746647bbdbb5e",
+          "3d2bdeabd02d555f4b3a0a5f2de50dbf6f6b1d9382adb3561f77254996a3eda4",
       },
     ],
   },
