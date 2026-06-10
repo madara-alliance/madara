@@ -83,6 +83,8 @@ impl InFlightGuard {
 
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
+        // Only the last task in flight wakes drain waiters; earlier completions leave the
+        // counter nonzero, so `wait_global_rayon_tasks_finished` must keep waiting anyway.
         if GLOBAL_RAYON_TASKS.in_flight.fetch_sub(1, Ordering::SeqCst) == 1 {
             GLOBAL_RAYON_TASKS.notify.notify_waiters();
         }
