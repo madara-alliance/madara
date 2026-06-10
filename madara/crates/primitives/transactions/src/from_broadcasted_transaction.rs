@@ -113,8 +113,9 @@ impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxn> for InvokeTransaction {
 impl From<mp_rpc::v0_10_2::BroadcastedInvokeTxnV3> for crate::InvokeTransactionV3 {
     fn from(tx: mp_rpc::v0_10_2::BroadcastedInvokeTxnV3) -> Self {
         let mut invoke: crate::InvokeTransactionV3 = tx.inner.into();
-        invoke.proof_facts =
-            tx.proof_facts.or_else(|| tx.proof.map(|proof| proof.into_iter().map(Felt::from).collect()));
+        // The proof itself is only forwarded to the gateway; it is never part of the
+        // transaction. Only the client-provided proof facts participate in hashing.
+        invoke.proof_facts = tx.proof_facts;
         invoke
     }
 }
@@ -280,28 +281,28 @@ mod tests {
                 nonce_data_availability_mode: DaMode::L1,
                 fee_data_availability_mode: DaMode::L1,
             },
-            proof: Some(vec![11, 12]),
+            proof: Some(mp_rpc::v0_10_2::Proof(vec![11, 12])),
             proof_facts: None,
         }
     }
 
     #[rstest::rstest]
-    #[case(None, Some(vec![11, 12]), vec![Felt::from(11_u64), Felt::from(12_u64)])]
+    #[case(None, Some(mp_rpc::v0_10_2::Proof(vec![11, 12])), None)]
     #[case(
         Some(vec![
             Felt::from_hex_unchecked("0x50524f4f4630"),
             Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
         ]),
-        Some(vec![11, 12]),
-        vec![
+        Some(mp_rpc::v0_10_2::Proof(vec![11, 12])),
+        Some(vec![
             Felt::from_hex_unchecked("0x50524f4f4630"),
             Felt::from_hex_unchecked("0x5649525455414c5f534e4f53"),
-        ],
+        ]),
     )]
     fn v0_10_2_broadcasted_invoke_v3_preserves_query_hashing_and_proof_fields(
         #[case] proof_facts: Option<Vec<Felt>>,
-        #[case] proof: Option<Vec<u64>>,
-        #[case] expected_proof_facts: Vec<Felt>,
+        #[case] proof: Option<mp_rpc::v0_10_2::Proof>,
+        #[case] expected_proof_facts: Option<Vec<Felt>>,
     ) {
         let mut base = sample_broadcasted_invoke_v3();
         base.proof_facts = proof_facts;
@@ -326,7 +327,7 @@ mod tests {
         else {
             panic!("expected invoke v3");
         };
-        assert_eq!(invoke.proof_facts, Some(expected_proof_facts));
+        assert_eq!(invoke.proof_facts, expected_proof_facts);
     }
 
     #[test]
