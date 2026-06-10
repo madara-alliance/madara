@@ -60,6 +60,8 @@ Targets:
   continuousy downloading images those are exported to a `tar.gz` as artefacts.
 
   - images             Downloads the Madara Docker image
+  - fetch-artifacts-no-docker  Download published contract artifacts from
+                       ghcr.io without a Docker daemon (curl + tar only)
 
   [ CLEANING DEPENDECIES ]
 
@@ -213,6 +215,10 @@ frestart: fclean
 artifacts:
 	@git submodule update --init --recursive
 	./scripts/artifacts.sh
+
+.PHONY: fetch-artifacts-no-docker
+fetch-artifacts-no-docker:
+	./scripts/fetch-artifacts.sh
 
 .PHONY: setup-cairo
 setup-cairo:
