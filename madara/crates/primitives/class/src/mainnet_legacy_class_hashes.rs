@@ -11,7 +11,7 @@ const fn felt(s: &str) -> Felt {
 
 /// (block_n, real_class_hash, computed)
 #[rustfmt::skip]
-const CLASS_HASHES: [(u64, Felt, Felt); 42] = [
+const CLASS_HASHES: [(u64, Felt, Felt); 43] = [
     (1469, felt("0x4c53698c9a42341e4123632e87b752d6ae470ddedeb8b0063eaa2deea387eeb"), felt("0x33824657c011faae7ad92b05888182f345e270c457f61bf1553c7a21b435ad0")),
     (1737, felt("0x157d87bdad1328cbf429826a83545f6ffb6505138983885a75997ee2c49e66b"), felt("0x1b859de6eb61535c0051e151f1177f0905d64f77e2d09adc90ea462bbd9be75")),
     (2244, felt("0x5829a410055a7da53295c05b7ce39f1b99c202d49f6194ca000d93d35adf491"), felt("0xb9531cb5fb9e79710a4514c3af84e2f2e352d3b93068f6a3fdc4548ac6ed2d")),
@@ -20,6 +20,7 @@ const CLASS_HASHES: [(u64, Felt, Felt); 42] = [
     (2710, felt("0x6033d77f82f83d7be51e33669e9ba90d4007e2f8652e0a4c94ea42a2d528823"), felt("0x82bb7876b277a7f639020664f941be52e17bcff61383768c07f50f2667033a")),
     (2713, felt("0x590267e2a8bdb5a5c5c6b8f51751fc661866d96e6dec956f8562f54ecdffabc"), felt("0x4a6727a05420d67222ffb4baf70e9ffca8acaef4d87c73ed253e124547045b8")),
     (2809, felt("0x2759db6e3df9433b04c05e1dd1e634dd960fab8ea9b821bea4204e96ae68c9e"), felt("0x3f44071a1a7b7b93c328782f740a1c010385c801515d6e4fb3842b202309136")),
+    (2837, felt("0x167470236540c4537a005a1d1cabc08e7ebb10a6f75c9a1d1171a131e41a95b"), felt("0x706e46fb974ad5a2cbc827a8687f8507bdb5e3e08f875a87c92cf2505eeacae")),
     (2889, felt("0x78389bb177405c8f4f45e7397e15f2a86f94a1fe911a5efff9d481de596b364"), felt("0x5c819d0010500bd2a190a1ac80b5d850014b966d9a2d272ec2dbe7fcd634ccc")),
     (2889, felt("0x2760f25d5a4fb2bdde5f561fd0b44a3dee78c28903577d37d669939d97036a0"), felt("0x43a47bc546d2fbfc8da80d7b2042b6cfaf789426d24fc8ee27c5d6e1d63b84e")),
     (2889, felt("0x52c7ba99c77fc38dd3346beea6c0753c3471f2e3135af5bb837d6c9523fff62"), felt("0x2fe57da108216a0baaa4cc96968e790a52b2114d67cbbd4e81fd404fdd7a560")),
@@ -143,6 +144,19 @@ mod tests {
             get_real_class_hash(2809, felt("0x3f44071a1a7b7b93c328782f740a1c010385c801515d6e4fb3842b202309136")),
             felt("0x2759db6e3df9433b04c05e1dd1e634dd960fab8ea9b821bea4204e96ae68c9e"),
             "should find"
+        );
+        // Block 2837: legacy class deployed at 0x89114db...0448a; the modern hasher computes
+        // 0x706e46fb... but the on-chain class hash is 0x167470236.... Regression for the
+        // mainnet sync stall at block 2837.
+        assert_eq!(
+            get_real_class_hash(2837, felt("0x706e46fb974ad5a2cbc827a8687f8507bdb5e3e08f875a87c92cf2505eeacae")),
+            felt("0x167470236540c4537a005a1d1cabc08e7ebb10a6f75c9a1d1171a131e41a95b"),
+            "should find"
+        );
+        assert_eq!(
+            get_real_class_hash(2838, felt("0x706e46fb974ad5a2cbc827a8687f8507bdb5e3e08f875a87c92cf2505eeacae")),
+            felt("0x706e46fb974ad5a2cbc827a8687f8507bdb5e3e08f875a87c92cf2505eeacae"),
+            "wrong block_n"
         );
         assert_eq!(
             get_real_class_hash(2889, felt("0x5c819d0010500bd2a190a1ac80b5d850014b966d9a2d272ec2dbe7fcd634ccc")),
