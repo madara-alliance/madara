@@ -22,6 +22,7 @@ Madara is a powerful Starknet client written in Rust.
 - ⚙️ [Configuration](#%EF%B8%8F-configuration)
   - [Basic Command-Line Options](#basic-command-line-options)
   - [Environment variables](#environment-variables)
+  - [Gateway Rate Limits During Sync](#gateway-rate-limits-during-sync)
     🌐 [Interactions](#-interactions)
   - [Supported JSON-RPC Methods](#supported-json-rpc-methods)
   - [Madara-specific JSON-RPC Methods](#madara-specific-json-rpc-methods)
@@ -35,6 +36,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
   - [SnapSync](#snapsync)
+  - [Mainnet Full-Node Bootstrap](#mainnet-full-node-bootstrap)
   - [Cairo Native Execution](#cairo-native-execution)
   - [L3 Support](#l3-support)
   - [Automatic Database Migrations](#automatic-database-migrations)
@@ -55,11 +57,22 @@ Madara is a powerful Starknet client written in Rust.
 
 Ensure you have all the necessary dependencies available on your host system.
 
-| Dependency | Version    | Installation                                                      |
-| ---------- | ---------- | ----------------------------------------------------------------- |
-| Rust       | rustc 1.89 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| Clang      | Latest     | `sudo apt-get install clang`                                      |
-| Openssl    | 0.10       | `sudo apt install openssl`                                        |
+| Dependency | Version    | Installation                                                                        |
+| ---------- | ---------- | ----------------------------------------------------------------------------------- |
+| Rust       | rustc 1.89 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                   |
+| Clang      | Latest     | `sudo apt-get install clang`                                                        |
+| Openssl    | 0.10       | `sudo apt install openssl`                                                          |
+| LLVM       | 19         | `make install-llvm19 [SUDO=sudo]` (Ubuntu/Debian) or `brew install llvm@19` (macOS) |
+
+> [!IMPORTANT]
+> Source builds require LLVM 19 (`llvm-config-19`) for Cairo Native and the
+> `tblgen` build script. Without it, the build fails late with an error like
+> `failed to find correct version (19.x.x) of llvm-config (found 18.1.3)`.
+> On Ubuntu/Debian, run `make install-llvm19 [SUDO=sudo]` before building. If
+> the build scripts still cannot locate LLVM 19, export
+> `MLIR_SYS_190_PREFIX`, `LLVM_SYS_191_PREFIX`, and `TABLEGEN_190_PREFIX` to
+> your LLVM 19 prefix (`/usr/lib/llvm-19` on Ubuntu/Debian,
+> `$(brew --prefix llvm@19)` on macOS).
 
 Once all dependencies are satisfied, you can clone the Madara repository:
 
@@ -329,6 +342,35 @@ You can find examples on [configs](configs/).
 > If the command-line argument is specified then it takes precedent over the
 > environment variable.
 
+### Gateway Rate Limits During Sync
+
+During catchup (especially on mainnet), you may see repeated INFO logs like:
+
+```text
+⏳ Rate limited, retrying
+```
+
+This means the public feeder gateway returned HTTP 429. Madara automatically
+pauses gateway requests for the duration indicated by the `Retry-After` header
+(10 seconds if absent) and then retries. Sync continues, just slower — no
+action is required for correctness, only for speed.
+
+Options to reduce rate limiting:
+
+- **`--gateway-key <API KEY>`** (`MADARA_GATEWAY_KEY`): bypasses gateway
+  throttling for operators who have been issued an API key. Keys are issued by
+  the gateway operator; Madara does not provide them.
+- **`--gateway-url <URL>`** (`MADARA_GATEWAY_URL`): syncs from a custom or
+  alternative feeder gateway instead of the default public one. This can also
+  point at a local Madara node serving its own feeder gateway — see
+  [warp update](#warp-update) (`--warp-update-sender`) for the local-source
+  setup.
+
+When reporting rate-limit-related sync performance, please capture: the block
+sync rate (blocks/sec), database size growth, a count or sample of the
+`Rate limited, retrying` logs over time, and your gateway configuration
+(default public gateway vs `--gateway-url`, with or without `--gateway-key`).
+
 ## 🌐 Interactions
 
 [⬅️ back to top](#-madara-starknet-client)
@@ -344,6 +386,17 @@ Admin RPC methods are exposed under `rpc/v0_1_0` (default port `9943`) when `--r
 These methods can be categorized into three main types: Read-Only Access Methods,
 Trace Generation Methods, and Write Methods. They are accessible through port
 **9944** unless specified otherwise with `--rpc-port`.
+
+> [!NOTE]
+> User RPC is enabled by default on **localhost** (disable it with
+> `--rpc-disable`). The `--rpc` flag is _not_ needed to enable RPC: it is an
+> external RPC _provider_ preset that exposes user RPC on `0.0.0.0`, enables
+> admin RPC on localhost, and allows all CORS origins. For a private full node,
+> omit `--rpc` and just pick a port:
+>
+> ```bash
+> cargo run --bin madara --release -- --full --network mainnet --rpc-port 9944
+> ```
 
 > [!TIP]
 > You can use the special `rpc_methods` call to view a list of all the methods
@@ -786,6 +839,28 @@ state diffs and returns to block-by-block trie updates.
 > - Reverting into the snap-synced range is blocked by design. The admin revert
 >   API rejects targets lower than the recorded `snap_sync_latest_block` because
 >   trie data is only available from that boundary onward.
+
+### Mainnet Full-Node Bootstrap
+
+There are several ways to bring up a mainnet full node, with different
+speed/data tradeoffs:
+
+| Path                   | How                                               | Pros                                                                                     | Cons                                                                                                                                    |
+| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Full-trie from genesis | `--full --network mainnet`                        | Maximum historical trie data; storage proofs and admin revert work for all synced blocks | Slow with high DB growth (one observed run: ~0.4–0.6 blocks/sec and ~180 GiB at block ~64k on a 12 vCPU host)                           |
+| SnapSync               | add `--snap-sync`                                 | Much faster catchup (same benchmark: ~3–11 blocks/sec, ~14 GiB at 31k blocks)            | Storage proofs not available for snap-synced ranges; reverting into snap-synced ranges is blocked by design (see [SnapSync](#snapsync)) |
+| Warp update            | `--warp-update-sender` / `--warp-update-receiver` | Fast trusted migration from a local source node                                          | Requires an existing synced node (see [Warp Update](#warp-update))                                                                      |
+| Custom gateway / key   | `--gateway-url` and/or `--gateway-key`            | Better catchup reliability, fewer rate limits                                            | Requires issued gateway access (see [Gateway Rate Limits During Sync](#gateway-rate-limits-during-sync))                                |
+
+> [!NOTE]
+> The benchmark figures above are a single observed datapoint from one
+> operator's hardware, not a guarantee. Your numbers will vary with hardware,
+> network, and gateway rate limiting.
+
+If you need storage proofs or the ability to revert to arbitrary historical
+blocks via the admin API, use full-trie sync from genesis (or warp update from
+a full-trie source). Native database snapshots are tracked as future work in
+[#194](https://github.com/madara-alliance/madara/issues/194).
 
 ### Cairo Native Execution
 
