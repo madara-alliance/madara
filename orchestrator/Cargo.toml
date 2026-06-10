@@ -40,6 +40,7 @@ cairo-vm = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 color-eyre = { workspace = true }
+dashmap = { workspace = true }
 dotenvy = { workspace = true }
 futures = { workspace = true }
 generate-pie = { workspace = true }

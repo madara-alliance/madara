@@ -5,8 +5,12 @@ name: Task - Integration Tests (Madara)
 # This workflow runs Madara integration tests from a prebuilt nextest archive
 on:
   workflow_dispatch:
-  workflow_call:
     inputs:
+      should_run:
+        description: "Whether to run Madara tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
       proptest-cases:
         description: "Number of test cases for property testing"
         required: false
@@ -14,15 +18,39 @@ on:
         default: "10"
       madara-binary-hash:
         description: "Hash used to retrieve the artifact"
-        required: true
+        required: false
         type: string
+        default: ""
       madara-tests-hash:
         description: "Hash used to retrieve the archived test binaries"
-        required: true
+        required: false
         type: string
+        default: ""
+  workflow_call:
+    inputs:
+      should_run:
+        description: "Whether to run Madara tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
+      proptest-cases:
+        description: "Number of test cases for property testing"
+        required: false
+        type: string
+        default: "10"
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: false
+        type: string
+        default: ""
+      madara-tests-hash:
+        description: "Hash used to retrieve the archived test binaries"
+        required: false
+        type: string
+        default: ""
     secrets:
       ETH_FORK_URL:
-        required: true
+        required: false
       GITHUB_GATEWAY_KEY:
         required: false
 
@@ -32,42 +60,57 @@ jobs:
       pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2204
     steps:
+      - name: Skip Madara tests
+        if: inputs.should_run != 'true'
+        run: echo "No Madara runtime or migration changes detected; required check stubbed."
+
       - name: Checkout Repository
+        if: inputs.should_run == 'true'
         uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Load env
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/load-env
 
       - name: Foundry setup
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-foundry
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Rust setup
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
       - name: Install nextest
+        if: inputs.should_run == 'true'
         uses: taiki-e/install-action@nextest
 
       - name: Download Madara binary
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
-      - run: chmod +x target/release/madara
+
+      - name: Make Madara binary executable
+        if: inputs.should_run == 'true'
+        run: chmod +x target/release/madara
 
       - name: Download Madara test archive
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: madara-tests-${{ inputs.madara-tests-hash }}
           path: target/nextest/
 
       - name: Start Anvil with fork
+        if: inputs.should_run == 'true'
         run: |
           nohup anvil \
             --fork-url ${{ secrets.ETH_FORK_URL }} \
@@ -91,6 +134,7 @@ jobs:
           fi
 
       - name: Run tests
+        if: inputs.should_run == 'true'
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
@@ -104,7 +148,7 @@ jobs:
             --no-fail-fast
 
       - name: Kill Anvil
-        if: always()
+        if: always() && inputs.should_run == 'true'
         run: |
           if [ -n "$ANVIL_PID" ]; then
             echo "Stopping Anvil with PID: $ANVIL_PID"

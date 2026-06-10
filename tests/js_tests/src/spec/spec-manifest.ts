@@ -2,11 +2,10 @@
  * Pinned spec file URLs and SHA-256 checksums per RPC version.
  * When adding a new version, add entries here with verified checksums.
  *
- * URLs point to the `main` branch of the pathfinder repo because the
- * Starknet RPC spec doesn't publish tagged releases for individual versions.
- * The SHA-256 checksums act as the real pin — if upstream updates a spec file,
- * the checksum mismatch will fail explicitly, prompting a manual review and
- * re-pin of the new checksums.
+ * URLs point to immutable upstream tags where available.
+ * The SHA-256 checksums act as a second pin — if upstream content ever changes
+ * or a URL is repointed, the checksum mismatch fails explicitly and forces a
+ * manual review.
  */
 export interface SpecFileLock {
   file: string;
@@ -26,21 +25,21 @@ export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
       {
         file: "starknet_api_openrpc.json",
         sourceUrl:
-          "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_api_openrpc.json",
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_api_openrpc.json",
         sha256:
           "f54584181343b48fd8b6e941433429e95279c3c9bfc0f1e19876a645947353e0",
       },
       {
         file: "starknet_write_api.json",
         sourceUrl:
-          "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_write_api.json",
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_write_api.json",
         sha256:
           "98e8ed3b434e07032a576894f60e91b1fed1c6778ea671159926681ff8ff83f2",
       },
       {
         file: "starknet_trace_api_openrpc.json",
         sourceUrl:
-          "https://raw.githubusercontent.com/eqlabs/pathfinder/main/specs/rpc/v10/starknet_trace_api_openrpc.json",
+          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_trace_api_openrpc.json",
         sha256:
           "3d2bdeabd02d555f4b3a0a5f2de50dbf6f6b1d9382adb3561f77254996a3eda4",
       },

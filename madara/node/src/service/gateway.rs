@@ -1,6 +1,6 @@
 use crate::{
     cli::GatewayParams,
-    submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch},
+    submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch, MakeTransactionLookupSwitch},
 };
 use mc_db::MadaraBackend;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -11,6 +11,7 @@ pub struct GatewayService {
     config: GatewayParams,
     db_backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
+    transaction_lookup_provider: MakeTransactionLookupSwitch,
     submit_validated_tx_provider: Option<MakeSubmitValidatedTransactionSwitch>,
 }
 
@@ -19,24 +20,33 @@ impl GatewayService {
         config: GatewayParams,
         db_backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
         submit_validated_tx_provider: Option<MakeSubmitValidatedTransactionSwitch>,
     ) -> anyhow::Result<Self> {
-        Ok(Self { config, db_backend, submit_tx_provider, submit_validated_tx_provider })
+        Ok(Self { config, db_backend, submit_tx_provider, transaction_lookup_provider, submit_validated_tx_provider })
     }
 }
 
 #[async_trait::async_trait]
 impl Service for GatewayService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let GatewayService { config, db_backend, submit_tx_provider, submit_validated_tx_provider } = self.clone();
+        let GatewayService {
+            config,
+            db_backend,
+            submit_tx_provider,
+            transaction_lookup_provider,
+            submit_validated_tx_provider,
+        } = self.clone();
 
         runner.service_loop(move |ctx| {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
+            let transaction_lookup = Arc::new(transaction_lookup_provider.make(ctx.clone()));
             let submit_validated_tx = submit_validated_tx_provider.map(|s| Arc::new(s.make(ctx.clone())) as _);
 
             mc_gateway_server::service::start_server(
                 db_backend,
                 submit_tx,
+                transaction_lookup,
                 submit_validated_tx,
                 ctx,
                 config.as_gateway_server_config(),

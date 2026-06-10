@@ -42,7 +42,7 @@ pub async fn get_transaction_status(
         };
 
         Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status })
-    } else if starknet.add_transaction_provider.received_transaction(transaction_hash).await.is_some_and(|b| b) {
+    } else if starknet.transaction_lookup.received_transaction(transaction_hash).await.is_some_and(|b| b) {
         Ok(TxnFinalityAndExecutionStatus { finality_status: TxnStatus::Received, execution_status: None })
     } else {
         Err(StarknetRpcApiError::TxnHashNotFound)
@@ -130,13 +130,20 @@ mod tests {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), None, context)
+        Starknet::new(
+            backend,
+            std::sync::Arc::clone(&mempool_validator) as _,
+            mempool_validator,
+            Default::default(),
+            None,
+            context,
+        )
     }
 
     #[tokio::test]
     #[rstest::rstest]
     async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::v0_9_0::BroadcastedInvokeTxn) {
-        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+        let provider = std::sync::Arc::clone(&starknet.transaction_submitter);
         let result = provider.submit_invoke_transaction(tx.into()).await.expect("Failed to submit invoke transaction");
         let tx_hash = result.transaction_hash;
 
