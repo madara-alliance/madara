@@ -6,10 +6,12 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mc_gateway_client::{BlockId, GatewayProvider};
 use mp_class::{
-    ClassInfo, ClassInfoWithHash, CompiledSierra, ConvertedClass, LegacyClassInfo, SierraClassInfo, MISSED_CLASS_HASHES,
+    compile::ClassCompilationError, ClassInfo, ClassInfoWithHash, CompiledSierra, ConvertedClass, LegacyClassInfo,
+    SierraClassInfo, MISSED_CLASS_HASHES,
 };
 use mp_state_update::DeclaredClassCompiledClass;
 use mp_utils::AbortOnDrop;
+use rayon::prelude::*;
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
@@ -96,7 +98,7 @@ pub(crate) async fn get_classes(
 /// - The fallback only engages when local compilation *errors* (never on a plain hash mismatch),
 ///   so it cannot mask compiler regressions on classes that still compile.
 /// - The fetched CASM is re-hashed; the hash check in
-///   [`crate::import::BlockImporterCtx::verify_compile_classes`] then applies as usual: a match
+///   [`crate::import::BlockImporterCtx::verify_compile_class`] then applies as usual: a match
 ///   is accepted, a mismatch is only tolerated under the pre-existing historical
 ///   compiled_class_hash tolerance (pre-v0.14.1 Poseidon classes) and is rejected for modern
 ///   (v0.14.1+, BLAKE) classes.
@@ -107,51 +109,83 @@ pub(crate) async fn verify_compile_classes_with_gateway_casm_fallback(
     declared_classes: Vec<ClassInfoWithHash>,
     check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
 ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-    let mut gateway_casm_fallback: HashMap<Felt, CompiledSierra> = HashMap::new();
-    // Each iteration either succeeds, fails for good, or adds a fallback CASM for a class hash
-    // that did not have one yet, so this loop runs at most `len + 1` times.
-    for _ in 0..=check_against.len() {
-        let declared_classes_ = declared_classes.clone();
-        let check_against_ = check_against.clone();
-        let gateway_casm_fallback_ = gateway_casm_fallback.clone();
-        let res = importer
-            .run_in_rayon_pool(move |importer| {
-                importer.verify_compile_classes(
-                    Some(block_n),
-                    declared_classes_,
-                    &check_against_,
-                    &gateway_casm_fallback_,
-                )
-            })
-            .await;
-        match res {
-            Err(BlockImportError::CompilationClassError { class_hash, error })
-                if !gateway_casm_fallback.contains_key(&class_hash) =>
-            {
-                tracing::warn!(
-                    class_hash = %format!("{class_hash:#x}"),
-                    block_n,
-                    error = %error,
-                    "Local CASM compilation failed for class; falling back to the compiled class \
-                     (CASM) served by the feeder gateway",
-                );
-                let compiled = client
-                    .get_compiled_class_by_class_hash(class_hash, BlockId::Number(block_n))
-                    .await
-                    .map_err(|fetch_error| {
-                        BlockImportError::Internal(anyhow::Error::new(fetch_error).context(format!(
-                            "Fetching compiled class (CASM) from the gateway for class_hash={class_hash:#x} \
-                             block_n={block_n} after local compilation failed: {error}"
-                        )))
-                    })?;
-                gateway_casm_fallback.insert(class_hash, compiled);
+    if check_against.len() != declared_classes.len() {
+        return Err(BlockImportError::ClassCount {
+            got: declared_classes.len() as _,
+            expected: check_against.len() as _,
+        });
+    }
+
+    // First pass: verify and compile every class exactly once, keeping per-class results so that
+    // a single pass discovers all locally-broken classes instead of stopping at the first one.
+    let declared_classes_ = declared_classes.clone();
+    let check_against_ = check_against.clone();
+    let first_pass = importer
+        .run_in_rayon_pool(move |importer| {
+            declared_classes_
+                .into_par_iter()
+                .map(|class| importer.verify_compile_class(Some(block_n), class, &check_against_, &HashMap::new()))
+                .collect::<Vec<_>>()
+        })
+        .await;
+
+    let mut converted: Vec<Option<ConvertedClass>> = Vec::with_capacity(first_pass.len());
+    let mut failed: Vec<(usize, Felt, Box<ClassCompilationError>)> = vec![];
+    for (index, result) in first_pass.into_iter().enumerate() {
+        match result {
+            Ok(class) => converted.push(Some(class)),
+            Err(BlockImportError::CompilationClassError { class_hash, error }) => {
+                converted.push(None);
+                failed.push((index, class_hash, error));
             }
-            res => return res,
+            Err(other) => return Err(other),
         }
     }
-    Err(BlockImportError::Internal(anyhow::anyhow!(
-        "Gateway CASM fallback did not converge for block_n={block_n} (this is a bug)"
-    )))
+    if failed.is_empty() {
+        return Ok(converted.into_iter().flatten().collect());
+    }
+
+    // Fetch the canonical CASM for every locally-broken class.
+    let mut gateway_casm_fallback: HashMap<Felt, CompiledSierra> = HashMap::new();
+    for (_, class_hash, error) in &failed {
+        let class_hash = *class_hash;
+        tracing::warn!(
+            class_hash = %format!("{class_hash:#x}"),
+            block_n,
+            error = %error,
+            "Local CASM compilation failed for class; falling back to the compiled class \
+             (CASM) served by the feeder gateway",
+        );
+        let compiled = client.get_compiled_class_by_class_hash(class_hash, BlockId::Number(block_n)).await.map_err(
+            |fetch_error| {
+                BlockImportError::Internal(anyhow::Error::new(fetch_error).context(format!(
+                    "Fetching compiled class (CASM) from the gateway for class_hash={class_hash:#x} \
+                     block_n={block_n} after local compilation failed: {error}"
+                )))
+            },
+        )?;
+        gateway_casm_fallback.insert(class_hash, compiled);
+    }
+
+    // Second pass: re-verify only the locally-broken classes, with the gateway CASM standing in
+    // for local compilation. Any error here is final.
+    let retry_classes: Vec<ClassInfoWithHash> =
+        failed.iter().map(|&(index, _, _)| declared_classes[index].clone()).collect();
+    let check_against_ = check_against.clone();
+    let retried = importer
+        .run_in_rayon_pool(move |importer| {
+            retry_classes
+                .into_par_iter()
+                .map(|class| {
+                    importer.verify_compile_class(Some(block_n), class, &check_against_, &gateway_casm_fallback)
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .await?;
+    for (&(index, _, _), class) in failed.iter().zip(retried) {
+        converted[index] = Some(class);
+    }
+    Ok(converted.into_iter().flatten().collect())
 }
 
 pub type ClassesSync = PipelineController<ClassesSyncSteps>;
@@ -475,6 +509,48 @@ mod tests {
 
         assert_eq!(casm_mock.hits(), 0);
         assert_eq!(converted.len(), 1);
+    }
+
+    /// A block mixing classes that compile locally and classes that do not: only the broken class
+    /// triggers a gateway CASM fetch (exactly once), the good class is compiled a single time, and
+    /// the declared order is preserved in the output.
+    #[tokio::test]
+    async fn casm_fallback_mixed_block_fetches_broken_class_once() {
+        let fixture = fallback_fixture();
+        let declared_hash = fixture.casm_hashes.poseidon_hash;
+        let good_class_hash = felt!("0x1");
+        let casm_mock =
+            fixture.gateway_mock.mock_compiled_class_from_json(format!("{CLASS_HASH:#x}"), fixture.casm_json.clone());
+
+        let check_against = HashMap::from([
+            (CLASS_HASH, DeclaredClassCompiledClass::Sierra(declared_hash)),
+            (good_class_hash, DeclaredClassCompiledClass::Sierra(declared_hash)),
+        ]);
+        let declared = vec![
+            declared_sierra_class(fixture.broken_sierra.clone(), declared_hash),
+            ClassInfoWithHash {
+                class_hash: good_class_hash,
+                class_info: ClassInfo::Sierra(SierraClassInfo {
+                    contract_class: fixture.good_sierra.clone(),
+                    compiled_class_hash: Some(declared_hash),
+                    compiled_class_hash_v2: None,
+                }),
+            },
+        ];
+        let converted = verify_compile_classes_with_gateway_casm_fallback(
+            &fixture.importer,
+            &fixture.gateway_mock.client(),
+            0,
+            declared,
+            &check_against,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(casm_mock.hits(), 1);
+        assert_eq!(converted.len(), 2);
+        assert_eq!(converted[0].as_sierra().unwrap().class_hash, CLASS_HASH);
+        assert_eq!(converted[1].as_sierra().unwrap().class_hash, good_class_hash);
     }
 
     #[test]
