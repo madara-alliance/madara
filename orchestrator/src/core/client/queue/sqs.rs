@@ -177,6 +177,10 @@ impl Acker for SqsDeliveryAcker {
     }
 
     async fn nack(&mut self) -> omniqueue::Result<()> {
+        if self.has_been_acked_or_nacked {
+            return Err(OmniQueueError::CannotAckOrNackTwice);
+        }
+        self.has_been_acked_or_nacked = true;
         Ok(())
     }
 
