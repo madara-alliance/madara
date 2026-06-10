@@ -297,7 +297,7 @@ aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 color-eyre = "0.6.3"
 chrono = { version = "0.4", features = ["serde"] }
-c-kzg = "2.1.5"
+c-kzg = "2.1.7"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
