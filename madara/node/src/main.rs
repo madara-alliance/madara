@@ -360,10 +360,11 @@ async fn main() -> anyhow::Result<()> {
         provider = provider.with_madara_gateway_url(url)
     }
     if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
-        provider.add_header(
-            HeaderName::from_static("x-throttling-bypass"),
-            HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
-        )
+        let mut value = HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?;
+        // Mark the API key as sensitive so it is masked in any `Debug` output (e.g. if the
+        // provider, its headers, or a request ever end up in a log or error message).
+        value.set_sensitive(true);
+        provider.add_header(HeaderName::from_static("x-throttling-bypass"), value)
     }
 
     let gateway_client = Arc::new(provider);
