@@ -45,7 +45,7 @@ async fn subscribe_new_transactions_inner(
         finality_status.unwrap_or_else(|| vec![TxnStatusWithoutL1::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
     let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
     let include_proof_facts = tags.as_ref().is_some_and(|tags| tags.contains(&SubscriptionTag::IncludeProofFacts));
-    let mut emitted = HashSet::<(Felt, TxnStatusWithoutL1)>::new();
+    let mut emitted = EmittedTracker::default();
 
     let mut received_watch = if allowed_statuses.contains(&TxnStatusWithoutL1::Received) {
         Some(
@@ -153,6 +153,9 @@ async fn subscribe_new_transactions_inner(
                         include_proof_facts,
                         &mut emitted,
                     ).await?;
+                    // Transactions older than the previous confirmed block can no longer be
+                    // re-observed, so their dedup entries can be evicted.
+                    emitted.rotate();
                     current_preconfirmed = starknet
                         .backend
                         .block_view_on_preconfirmed_or_fake()
@@ -184,7 +187,7 @@ async fn send_preconfirmed_view_transactions(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if allowed_statuses.contains(&TxnStatusWithoutL1::PreConfirmed) {
         for tx in preconfirmed.get_executed_transactions(..) {
@@ -225,7 +228,7 @@ async fn send_confirmed_block_transactions(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&TxnStatusWithoutL1::AcceptedOnL2) {
         return Ok(());
@@ -257,11 +260,11 @@ async fn send_validated_transaction(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&status)
         || !sender_address.is_none_or(|addresses| addresses.contains(&tx.contract_address))
-        || !mark_emitted(emitted, tx.hash, &status)
+        || !emitted.mark_emitted(tx.hash, &status)
     {
         return Ok(());
     }
@@ -286,12 +289,12 @@ async fn send_executed_transaction(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let tx_hash = *tx.receipt.transaction_hash();
     if !allowed_statuses.contains(&status)
         || !transaction_matches_sender(&tx.transaction, sender_address)
-        || !mark_emitted(emitted, tx_hash, &status)
+        || !emitted.mark_emitted(tx_hash, &status)
     {
         return Ok(());
     }
@@ -322,8 +325,34 @@ async fn send_transaction_item(
     sink.send(msg).await.or_internal_server_error("SubscribeNewTransactions failed to respond to websocket request")
 }
 
-fn mark_emitted(emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {
-    emitted.insert((tx_hash, status.clone()))
+/// Dedup set for emitted (transaction, status) pairs, bounded by keeping only the two most
+/// recent confirmed-block generations. Entries are only needed while a transaction can still be
+/// re-observed (preconfirmed view refreshes and the preconfirmed-to-confirmed transition), which
+/// the previous generation covers; older entries are evicted on rotation so the set does not grow
+/// for the lifetime of the subscription.
+#[derive(Default)]
+struct EmittedTracker {
+    current: HashSet<(Felt, TxnStatusWithoutL1)>,
+    previous: HashSet<(Felt, TxnStatusWithoutL1)>,
+}
+
+impl EmittedTracker {
+    fn mark_emitted(&mut self, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {
+        let key = (tx_hash, status.clone());
+        if self.previous.contains(&key) {
+            return false;
+        }
+        self.current.insert(key)
+    }
+
+    fn rotate(&mut self) {
+        self.previous = std::mem::take(&mut self.current);
+    }
+
+    fn clear(&mut self) {
+        self.current.clear();
+        self.previous.clear();
+    }
 }
 
 fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<&HashSet<Felt>>) -> bool {
