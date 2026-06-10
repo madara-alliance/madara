@@ -152,6 +152,18 @@ impl Service for SyncService {
             }
 
             let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
+            let verify_block_signatures =
+                !this.params.trust_block_signatures && this.db_backend.chain_config().sequencer_public_key.is_some();
+            if !verify_block_signatures {
+                tracing::info!(
+                    "🔓 Block signature verification is disabled ({})",
+                    if this.params.trust_block_signatures {
+                        "--trust-block-signatures is set"
+                    } else {
+                        "no sequencer_public_key in chain config"
+                    }
+                );
+            }
             mc_sync::gateway::forward_sync(
                 this.db_backend,
                 importer,
@@ -162,7 +174,8 @@ impl Service for SyncService {
                     .snap_sync(this.params.snap_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                     .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
-                    .disable_reorg(this.params.disable_reorg),
+                    .disable_reorg(this.params.disable_reorg)
+                    .verify_block_signatures(verify_block_signatures),
             )
             .run(ctx)
             .await

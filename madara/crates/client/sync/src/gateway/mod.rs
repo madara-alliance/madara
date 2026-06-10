@@ -28,6 +28,9 @@ pub struct ForwardSyncConfig {
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
     pub disable_reorg: bool,
+    /// Fetch the sequencer's block signature for every post-v0.13.2 block and attach it to the
+    /// header, so that it is verified against the chain config's `sequencer_public_key` on import.
+    pub verify_block_signatures: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -44,6 +47,7 @@ impl Default for ForwardSyncConfig {
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
             disable_reorg: false,
+            verify_block_signatures: false,
         }
     }
 }
@@ -64,6 +68,9 @@ impl ForwardSyncConfig {
     }
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
+    }
+    pub fn verify_block_signatures(self, val: bool) -> Self {
+        Self { verify_block_signatures: val, ..self }
     }
 }
 
@@ -116,6 +123,7 @@ impl GatewayForwardSync {
             config.keep_pre_v0_13_2_hashes,
             config.enable_bouncer_config_sync,
             config.disable_reorg,
+            config.verify_block_signatures,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),

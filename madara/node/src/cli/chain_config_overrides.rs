@@ -95,6 +95,8 @@ pub struct ChainConfigOverridesInner {
     pub eth_core_contract_address: String,
     pub eth_gps_statement_verifier: String,
     #[serde(default)]
+    pub sequencer_public_key: Option<starknet_types_core::felt::Felt>,
+    #[serde(default)]
     pub mempool_mode: MempoolMode,
     #[serde(default, alias = "mempool_full_mode")]
     pub mempool_full_policy: MempoolFullPolicy,
@@ -135,6 +137,7 @@ impl ChainConfigOverrideParams {
             sequencer_address: chain_config.sequencer_address,
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
+            sequencer_public_key: chain_config.sequencer_public_key,
             mempool_mode: chain_config.mempool_mode,
             mempool_full_policy: chain_config.mempool_full_policy,
             mempool_min_tip_bump: chain_config.mempool_min_tip_bump,
@@ -199,6 +202,7 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
+            sequencer_public_key: chain_config_overrides.sequencer_public_key,
             private_key: chain_config.private_key,
             mempool_mode: chain_config_overrides.mempool_mode,
             mempool_full_policy: chain_config_overrides.mempool_full_policy,
