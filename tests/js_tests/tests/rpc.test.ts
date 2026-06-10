@@ -158,6 +158,35 @@ async function waitForFeederTransactionStatus(
   );
 }
 
+async function waitForTransactionInPreconfirmedBlock(
+  txHash: string,
+  blockNumber: number,
+  timeoutMs = 15_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastTransactions: string[] = [];
+
+  while (Date.now() < deadline) {
+    const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
+      blockNumber,
+    });
+    const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
+      (tx: any) => tx.transaction_hash
+    );
+    if (preconfirmedTxHashes.includes(txHash)) {
+      return;
+    }
+    lastTransactions = preconfirmedTxHashes;
+    await sleep(500);
+  }
+
+  throw new Error(
+    `Timed out waiting for ${txHash} in preconfirmed block ${blockNumber}. Last seen transactions: ${lastTransactions.join(
+      ", "
+    )}`
+  );
+}
+
 function mapGatewayResourceBounds(resourceBounds: any) {
   return {
     L1_GAS: resourceBounds.l1_gas,
@@ -780,13 +809,10 @@ describe("Starknet RPC multi-version", () => {
         "starknet_blockNumber",
         []
       );
-      const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
-        blockNumber: Number(latestConfirmedBlockNumber) + 1,
-      });
-      const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
-        (tx: any) => tx.transaction_hash
+      await waitForTransactionInPreconfirmedBlock(
+        gatewayResults.smallTxHash,
+        Number(latestConfirmedBlockNumber) + 1
       );
-      expect(preconfirmedTxHashes).toContain(gatewayResults.smallTxHash);
 
       const admin = new AdminClient(adminUrl);
       await admin.closeBlock();
