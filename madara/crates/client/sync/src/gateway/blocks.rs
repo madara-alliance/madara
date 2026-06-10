@@ -319,10 +319,33 @@ impl PipelineSteps for GatewaySyncSteps {
                 if block_n > 0 {
                     // Try to get the parent block's info (only confirmed blocks during gateway sync)
                     match self._backend.block_view_on_confirmed(block_n - 1) {
-                        Some(parent_view) => {
-                            let parent_info = parent_view.get_block_info()?;
+                        Some(_parent_view) => {
+                            // With --unsafe-starting-block, the chain tip is forced to the starting block
+                            // without its block data being stored: the parent of the first synced block has
+                            // a confirmed view but no block info. There is nothing to compare the parent
+                            // hash against in that case, so skip the check for that boundary block only.
+                            let parent_info = self
+                                ._backend
+                                .db
+                                .get_block_info(block_n - 1)
+                                .with_context(|| format!("Getting block info for block {}", block_n - 1))?;
                             let incoming_parent_hash = gateway_block.header.parent_block_hash;
-                            let local_parent_hash = parent_info.block_hash;
+                            let local_parent_hash = match parent_info {
+                                Some(parent_info) => parent_info.block_hash,
+                                None if confirmed_tip_at_start == Some(block_n - 1) => {
+                                    tracing::info!(
+                                        "Parent block #{} is confirmed but its data is not stored (unsafe starting block), \
+                                         skipping parent hash check for block #{}",
+                                        block_n - 1, block_n
+                                    );
+                                    // Nothing to compare against: accept the incoming parent hash.
+                                    incoming_parent_hash
+                                }
+                                None => anyhow::bail!(
+                                    "Database inconsistency: Chain tip indicates block {} is confirmed, but its block info cannot be found",
+                                    block_n - 1
+                                ),
+                            };
 
                             if incoming_parent_hash != local_parent_hash {
                                 tracing::warn!(
