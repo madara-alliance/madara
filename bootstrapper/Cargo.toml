@@ -64,7 +64,7 @@ thiserror = "1.0.50"
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 
 # Subxt Dependencies
-bytes = "1.6.0"
+bytes = "1.11.1"
 flate2 = "1.0.30"
 indexmap = "2.2.6"
 inline_colorization = "0.1.6"
