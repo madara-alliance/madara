@@ -84,7 +84,9 @@ pub struct BackendParams {
     /// when getting a storage proof.
     /// Higher values cause more database space usage, while lower values prevent the efficient reverting and historical access for
     /// the global state trie at older blocks.
-    #[clap(env = "MADARA_DB_MAX_SNAPSHOTS", long)]
+    /// By default, 32 snapshots are kept: combined with the default `--db-snapshot-interval` of 5, this covers
+    /// the default `--rpc-storage-proof-max-distance` window of 128 blocks. Set to 0 to disable snapshots.
+    #[clap(env = "MADARA_DB_MAX_SNAPSHOTS", long, default_value = Some("32"))]
     pub db_max_kept_snapshots: Option<usize>,
 
     /// This affects the performance of the storage proof endpoint.
