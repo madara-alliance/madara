@@ -5,26 +5,25 @@ pub async fn subscribe_transaction_status(
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     transaction_hash: mp_convert::Felt,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
+    // Resolve the watcher before accepting the subscription, so configurations without a
+    // tx-status watcher reject the subscribe call instead of accepting the connection and then
+    // closing it with an opaque Internal error.
+    let watch =
+        starknet.tx_status_watcher.as_ref().and_then(|watcher| watcher.watch_transaction_status(transaction_hash));
+    let Some(mut watch) = watch else {
+        subscription_sink
+            .reject(crate::errors::StarknetWsApiError::internal_server_error(
+                "SubscribeTransactionStatus is not available: tx-status watcher is not configured",
+            ))
+            .await;
+        return Ok(());
+    };
+
     let sink = subscription_sink
         .accept()
         .await
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-
-    let mut watch = starknet
-        .tx_status_watcher
-        .as_ref()
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed: tx-status watcher is not configured",
-            )
-        })?
-        .watch_transaction_status(transaction_hash)
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed to create transaction status watcher",
-            )
-        })?;
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
     let mut allow_current = true;

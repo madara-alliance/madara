@@ -30,39 +30,38 @@ async fn subscribe_new_transactions_inner(
     sender_address: Option<Vec<Felt>>,
     emit_reorg_notifications: bool,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let sink = if sender_address.as_ref().map_or(0, Vec::len) as u64 <= super::ADDRESS_FILTER_LIMIT {
-        subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?
-    } else {
+    if sender_address.as_ref().map_or(0, Vec::len) as u64 > super::ADDRESS_FILTER_LIMIT {
         subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await;
         return Ok(());
-    };
+    }
 
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let allowed_statuses =
         finality_status.unwrap_or_else(|| vec![TxnStatusWithoutL1::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
-    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
-    let mut emitted = EmittedTracker::default();
 
+    // Resolve the received-transactions watcher before accepting the subscription, so
+    // configurations without one reject the subscribe call instead of accepting the connection
+    // and then closing it with an opaque Internal error.
     let mut received_watch = if allowed_statuses.contains(&TxnStatusWithoutL1::Received) {
-        Some(
-            starknet
-                .new_transactions_watcher
-                .as_ref()
-                .ok_or_else(|| {
-                    crate::errors::StarknetWsApiError::internal_server_error(
-                        "SubscribeNewTransactions failed: new-transactions watcher is not configured",
-                    )
-                })?
-                .watch_new_transactions()
-                .ok_or_else(|| {
-                    crate::errors::StarknetWsApiError::internal_server_error(
-                        "SubscribeNewTransactions failed to create new-transactions watcher",
-                    )
-                })?,
-        )
+        match starknet.new_transactions_watcher.as_ref().and_then(|watcher| watcher.watch_new_transactions()) {
+            Some(watch) => Some(watch),
+            None => {
+                subscription_sink
+                    .reject(crate::errors::StarknetWsApiError::internal_server_error(
+                        "SubscribeNewTransactions with RECEIVED status is not available: new-transactions watcher is not configured",
+                    ))
+                    .await;
+                return Ok(());
+            }
+        }
     } else {
         None
     };
+
+    let sink =
+        subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
+    let mut emitted = EmittedTracker::default();
 
     let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
     let mut current_preconfirmed = starknet
