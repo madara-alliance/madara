@@ -44,6 +44,23 @@ impl GatewayMock {
         });
     }
 
+    pub fn mock_compiled_class_from_json(&self, class_hash: impl Into<String>, json: impl Into<String>) -> Mock<'_> {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_compiled_class_by_class_hash").query_param("classHash", class_hash);
+            then.status(200).header("content-type", "application/json").body(json.into());
+        })
+    }
+
+    pub fn mock_compiled_class_not_found(&self, class_hash: impl Into<String>) -> Mock<'_> {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_compiled_class_by_class_hash").query_param("classHash", class_hash);
+            then.status(400).header("content-type", "application/json").json_body(json!({
+                "code": "StarknetErrorCode.UNDECLARED_CLASS",
+                "message": "Class with hash is not declared"
+            }));
+        })
+    }
+
     pub fn mock_header_latest(&self, block_number: u64, hash: Felt) -> Mock<'_> {
         self.mock_server.mock(|when, then| {
             when.method("GET")
