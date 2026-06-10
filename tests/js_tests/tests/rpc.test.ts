@@ -34,13 +34,13 @@ function loadFixture(fixtureDirName: string): RpcFixture {
   return {
     fixtureDirName,
     stateSetup: JSON.parse(
-      fs.readFileSync(path.join(fixtureDir, "state_setup.json"), "utf-8"),
+      fs.readFileSync(path.join(fixtureDir, "state_setup.json"), "utf-8")
     ),
     readAssertions: JSON.parse(
-      fs.readFileSync(path.join(fixtureDir, "read_assertions.json"), "utf-8"),
+      fs.readFileSync(path.join(fixtureDir, "read_assertions.json"), "utf-8")
     ),
     errorAssertions: JSON.parse(
-      fs.readFileSync(path.join(fixtureDir, "error_assertions.json"), "utf-8"),
+      fs.readFileSync(path.join(fixtureDir, "error_assertions.json"), "utf-8")
     ),
   };
 }
@@ -63,7 +63,7 @@ const contexts = new Map(
   fixtures.map((fixture) => [
     fixture.stateSetup.version,
     createContext(fixture.stateSetup.version),
-  ]),
+  ])
 );
 const setupFixture = fixtures[0];
 const setupContext = contexts.get(setupFixture.stateSetup.version)!;
@@ -84,7 +84,7 @@ function normHex(s: string): string {
 function buildUrl(
   baseUrl: string,
   relativePath: string,
-  query: Record<string, string | number | boolean> = {},
+  query: Record<string, string | number | boolean> = {}
 ): string {
   const url = new URL(relativePath, baseUrl);
   for (const [key, value] of Object.entries(query)) {
@@ -97,7 +97,7 @@ async function readJsonResponse(response: Response): Promise<any> {
   const bodyText = await response.text();
   if (!response.ok) {
     throw new Error(
-      `HTTP ${response.status} ${response.statusText}: ${bodyText}`,
+      `HTTP ${response.status} ${response.statusText}: ${bodyText}`
     );
   }
   return JSON.parse(bodyText);
@@ -105,14 +105,16 @@ async function readJsonResponse(response: Response): Promise<any> {
 
 async function feederGet(
   relativePath: string,
-  query: Record<string, string | number | boolean> = {},
+  query: Record<string, string | number | boolean> = {}
 ): Promise<any> {
   const response = await fetch(buildUrl(feederGatewayUrl, relativePath, query));
   return readJsonResponse(response);
 }
 
 async function gatewayPostJson(body: any, gzipBody = false): Promise<any> {
-  const payload = JSON.stringify(body);
+  const payload = JSON.stringify(body, (_, value) =>
+    typeof value === "bigint" ? `0x${value.toString(16)}` : value
+  );
   const response = await fetch(buildUrl(gatewayUrl, "add_transaction"), {
     method: "POST",
     headers: gzipBody
@@ -130,7 +132,7 @@ async function gatewayPostJson(body: any, gzipBody = false): Promise<any> {
 
 async function waitForFeederTransactionStatus(
   txHash: string,
-  timeoutMs = 30_000,
+  timeoutMs = 30_000
 ): Promise<any> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
@@ -150,7 +152,9 @@ async function waitForFeederTransactionStatus(
   }
 
   throw new Error(
-    `Timed out waiting for feeder transaction status for ${txHash}: ${String(lastError)}`,
+    `Timed out waiting for feeder transaction status for ${txHash}: ${String(
+      lastError
+    )}`
   );
 }
 
@@ -163,18 +167,11 @@ function mapGatewayResourceBounds(resourceBounds: any) {
 }
 
 async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
-  const {
-    Account,
-    RpcProvider,
-    Deployer,
-    transaction,
-    stark,
-  } = await import("starknet");
-  const {
-    DEFAULT_ACCOUNT_ADDRESS,
-    DEFAULT_PRIVATE_KEY,
-    UDC_ADDRESS,
-  } = await import("../src/config");
+  const { Account, RpcProvider, Deployer, transaction, stark } = await import(
+    "starknet"
+  );
+  const { DEFAULT_ACCOUNT_ADDRESS, DEFAULT_PRIVATE_KEY, UDC_ADDRESS } =
+    await import("../src/config");
 
   const provider = new RpcProvider({ nodeUrl: latestRpcContext.rpcUrl });
   const account = new Account({
@@ -186,7 +183,10 @@ async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
 
   const cairoVersion = await account.getCairoVersion();
   const chainId = await provider.getChainId();
-  const nonce = await provider.getNonceForAddress(DEFAULT_ACCOUNT_ADDRESS, "latest");
+  const nonce = await provider.getNonceForAddress(
+    DEFAULT_ACCOUNT_ADDRESS,
+    "latest"
+  );
   const resourceBounds = {
     l1_gas: { max_amount: 0xf4240n, max_price_per_unit: 0x2540be400n },
     l2_gas: { max_amount: 0x3b9aca00n, max_price_per_unit: 0x2540be400n },
@@ -215,17 +215,15 @@ async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
     signature,
     nonce,
     resource_bounds: mapGatewayResourceBounds(
-      stark.resourceBoundsToHexString(resourceBounds),
+      stark.resourceBoundsToHexString(resourceBounds)
     ),
     tip: "0x0",
     paymaster_data: [],
     account_deployment_data: [],
     nonce_data_availability_mode: stark.intDAM(
-      details.nonceDataAvailabilityMode,
+      details.nonceDataAvailabilityMode
     ),
-    fee_data_availability_mode: stark.intDAM(
-      details.feeDataAvailabilityMode,
-    ),
+    fee_data_availability_mode: stark.intDAM(details.feeDataAvailabilityMode),
     version: details.version,
   };
 }
@@ -262,7 +260,7 @@ describe("Starknet RPC multi-version", () => {
       const anvilPort = process.env.ANVIL_PORT;
       if (!anvilPort) {
         console.log(
-          "[l1-messaging] ANVIL_PORT not set, skipping L1 messaging setup",
+          "[l1-messaging] ANVIL_PORT not set, skipping L1 messaging setup"
         );
         return;
       }
@@ -320,7 +318,7 @@ describe("Starknet RPC multi-version", () => {
         hash: fireHash,
       });
       console.log(
-        `[l1-messaging] LogMessageToL2 fired in L1 tx ${fireReceipt.transactionHash} at block ${fireReceipt.blockNumber}`,
+        `[l1-messaging] LogMessageToL2 fired in L1 tx ${fireReceipt.transactionHash} at block ${fireReceipt.blockNumber}`
       );
 
       expect(fireReceipt.status).toBe("success");
@@ -342,7 +340,7 @@ describe("Starknet RPC multi-version", () => {
         try {
           const envelope = await rpcCaller.rawCall(
             "starknet_getMessagesStatus",
-            { transaction_hash: l1TxHash },
+            { transaction_hash: l1TxHash }
           );
           if (!envelope.error) {
             synced = true;
@@ -371,10 +369,10 @@ describe("Starknet RPC multi-version", () => {
       "add_deploy_account_transaction",
     ]);
     const readOnly = fixture.readAssertions.assertions.filter(
-      (a) => !writeMethodIds.has(a.id),
+      (a) => !writeMethodIds.has(a.id)
     );
     const writeOnly = fixture.readAssertions.assertions.filter((a) =>
-      writeMethodIds.has(a.id),
+      writeMethodIds.has(a.id)
     );
 
     describe(`Starknet RPC v${fixture.stateSetup.version}`, () => {
@@ -393,7 +391,7 @@ describe("Starknet RPC multi-version", () => {
           it(`${assertion.id} (${assertion.method})`, async () => {
             if (ctx.results.size === 0) {
               throw new Error(
-                "State setup did not complete - cannot run read assertions",
+                "State setup did not complete - cannot run read assertions"
               );
             }
 
@@ -440,14 +438,14 @@ describe("Starknet RPC multi-version", () => {
               {
                 transaction_hash: invoke!.transaction_hash,
                 response_flags: ["INCLUDE_PROOF_FACTS"],
-              },
+              }
             );
 
             expect(result.type).toBe("INVOKE");
             expect(result.version).toBe("0x3");
             expect(
               result.proof_facts === undefined ||
-                Array.isArray(result.proof_facts),
+                Array.isArray(result.proof_facts)
             ).toBe(true);
           });
 
@@ -467,7 +465,7 @@ describe("Starknet RPC multi-version", () => {
               expect(tx.type).toBe("INVOKE");
               expect(tx.version).toBe("0x3");
               expect(
-                tx.proof_facts === undefined || Array.isArray(tx.proof_facts),
+                tx.proof_facts === undefined || Array.isArray(tx.proof_facts)
               ).toBe(true);
             }
           });
@@ -482,7 +480,7 @@ describe("Starknet RPC multi-version", () => {
               {
                 block_id: { block_number: invokeBlock!.block_number },
                 response_flags: ["INCLUDE_PROOF_FACTS"],
-              },
+              }
             );
 
             expect(Array.isArray(result.transactions)).toBe(true);
@@ -492,7 +490,7 @@ describe("Starknet RPC multi-version", () => {
               expect(item.transaction.version).toBe("0x3");
               expect(
                 item.transaction.proof_facts === undefined ||
-                  Array.isArray(item.transaction.proof_facts),
+                  Array.isArray(item.transaction.proof_facts)
               ).toBe(true);
             }
           });
@@ -507,7 +505,7 @@ describe("Starknet RPC multi-version", () => {
               {
                 transaction_hash: invoke!.transaction_hash,
                 response_flags: ["UNKNOWN_FLAG"],
-              },
+              }
             );
 
             expect(envelope.error).toBeDefined();
@@ -523,7 +521,7 @@ describe("Starknet RPC multi-version", () => {
             const rpcCaller = new RpcCaller(ctx.rpcUrl);
             const envelope = await rpcCaller.rawCall(
               assertion.method,
-              assertion.params,
+              assertion.params
             );
 
             expect(envelope.error).toBeDefined();
@@ -559,12 +557,12 @@ describe("Starknet RPC multi-version", () => {
           try {
             await account.declare({ contract: sierra, casm });
             throw new Error(
-              "Expected error when re-declaring already-declared class",
+              "Expected error when re-declaring already-declared class"
             );
           } catch (err: any) {
             const code = err.baseError?.code ?? err.code;
             const data = JSON.stringify(
-              err.baseError?.data ?? err.data ?? err.message ?? "",
+              err.baseError?.data ?? err.data ?? err.message ?? ""
             );
             expect([41, 51]).toContain(code);
             expect(data).toContain("already declared");
@@ -597,7 +595,9 @@ describe("Starknet RPC multi-version", () => {
 
           if (missing.length > 0) {
             console.warn(
-              `[method-surface] v${fixture.stateSetup.version} methods in spec but not exposed: ${missing.join(", ")}`,
+              `[method-surface] v${
+                fixture.stateSetup.version
+              } methods in spec but not exposed: ${missing.join(", ")}`
             );
           }
           expect(missing).toEqual([]);
@@ -621,7 +621,9 @@ describe("Starknet RPC multi-version", () => {
 
           if (untested.length > 0) {
             console.warn(
-              `[coverage] v${fixture.stateSetup.version} spec methods without test assertions: ${untested.join(", ")}`,
+              `[coverage] v${
+                fixture.stateSetup.version
+              } spec methods without test assertions: ${untested.join(", ")}`
             );
           }
           expect(untested.length).toBe(0);
@@ -644,7 +646,7 @@ describe("Starknet RPC multi-version", () => {
         it("tx count consistency: getBlockTransactionCount matches getBlockWithTxHashes.transactions.length", async () => {
           const txCount = ctx.assertionResults.get("get_block_tx_count_multi");
           const blockTxHashes = ctx.assertionResults.get(
-            "get_block_tx_hashes_multi",
+            "get_block_tx_hashes_multi"
           );
           expect(txCount).toBeDefined();
           expect(blockTxHashes).toBeDefined();
@@ -659,10 +661,10 @@ describe("Starknet RPC multi-version", () => {
           expect(byAddr).toBeDefined();
 
           expect(byHash.entry_points_by_type.EXTERNAL.length).toBe(
-            byAddr.entry_points_by_type.EXTERNAL.length,
+            byAddr.entry_points_by_type.EXTERNAL.length
           );
           expect(byHash.contract_class_version).toBe(
-            byAddr.contract_class_version,
+            byAddr.contract_class_version
           );
         });
 
@@ -673,13 +675,13 @@ describe("Starknet RPC multi-version", () => {
           expect(declareResult).toBeDefined();
 
           expect(normHex(String(classHashAt))).toBe(
-            normHex(declareResult!.class_hash!),
+            normHex(declareResult!.class_hash!)
           );
         });
 
         it("storage vs call consistency: getStorageAt matches call(get_balance)", async () => {
           const storageResult = ctx.assertionResults.get(
-            "get_storage_at_balance",
+            "get_storage_at_balance"
           );
           const callResult = ctx.assertionResults.get("call_get_balance");
           expect(storageResult).toBeDefined();
@@ -687,21 +689,21 @@ describe("Starknet RPC multi-version", () => {
 
           const storageHex = normHex(String(storageResult));
           const callHex = normHex(
-            String(Array.isArray(callResult) ? callResult[0] : callResult),
+            String(Array.isArray(callResult) ? callResult[0] : callResult)
           );
           expect(storageHex).toBe(callHex);
         });
 
         it("receipt block info consistency: receipt block_hash matches block from write phase", async () => {
           const receiptInvoke = ctx.assertionResults.get(
-            "get_tx_receipt_invoke",
+            "get_tx_receipt_invoke"
           );
           const invokeStep = ctx.results.get("invoke_increase_100");
           expect(receiptInvoke).toBeDefined();
           expect(invokeStep).toBeDefined();
 
           expect(normHex(receiptInvoke.block_hash)).toBe(
-            normHex(invokeStep!.block_hash!),
+            normHex(invokeStep!.block_hash!)
           );
         });
 
@@ -716,10 +718,10 @@ describe("Starknet RPC multi-version", () => {
 
         it("tx by index matches tx by hash in multi-tx block", async () => {
           const byIndex0 = ctx.assertionResults.get(
-            "get_tx_by_block_and_index_0",
+            "get_tx_by_block_and_index_0"
           );
           const byIndex1 = ctx.assertionResults.get(
-            "get_tx_by_block_and_index_1",
+            "get_tx_by_block_and_index_1"
           );
           expect(byIndex0).toBeDefined();
           expect(byIndex1).toBeDefined();
@@ -729,7 +731,7 @@ describe("Starknet RPC multi-version", () => {
 
         it("empty block has zero transactions", async () => {
           const emptyCount = ctx.assertionResults.get(
-            "get_block_tx_count_empty",
+            "get_block_tx_count_empty"
           );
           expect(emptyCount).toBeDefined();
 
@@ -776,13 +778,13 @@ describe("Starknet RPC multi-version", () => {
       const rpcCaller = new RpcCaller(latestRpcContext.rpcUrl);
       const latestConfirmedBlockNumber = await rpcCaller.call(
         "starknet_blockNumber",
-        [],
+        []
       );
       const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
         blockNumber: Number(latestConfirmedBlockNumber) + 1,
       });
       const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
-        (tx: any) => tx.transaction_hash,
+        (tx: any) => tx.transaction_hash
       );
       expect(preconfirmedTxHashes).toContain(gatewayResults.smallTxHash);
 
@@ -790,7 +792,7 @@ describe("Starknet RPC multi-version", () => {
       await admin.closeBlock();
 
       const status = await waitForFeederTransactionStatus(
-        gatewayResults.smallTxHash,
+        gatewayResults.smallTxHash
       );
       expect(status.tx_status).toBe("ACCEPTED_ON_L2");
       expect(status.finality_status).toBe("ACCEPTED_ON_L2");
@@ -820,7 +822,7 @@ describe("Starknet RPC multi-version", () => {
       };
 
       const payload = await buildGatewayInvokePayload(
-        Array.from({ length: 10 }, () => repeatedCall),
+        Array.from({ length: 10 }, () => repeatedCall)
       );
 
       const rawPayloadSize = Buffer.byteLength(JSON.stringify(payload), "utf8");
@@ -835,7 +837,7 @@ describe("Starknet RPC multi-version", () => {
       await admin.closeBlock();
 
       const status = await waitForFeederTransactionStatus(
-        gatewayResults.largeTxHash,
+        gatewayResults.largeTxHash
       );
       expect(status.tx_status).toBe("ACCEPTED_ON_L2");
       expect(status.execution_status).toBe("SUCCEEDED");
@@ -849,10 +851,12 @@ describe("Starknet RPC multi-version", () => {
     });
 
     it("serves the historical feeder block, state update, traces, and signature endpoints", async () => {
-      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
-        ?.block_number;
-      const historicalBlockHash = sharedResults.get("invoke_increase_100")
-        ?.block_hash;
+      const historicalBlockNumber = sharedResults.get(
+        "invoke_increase_100"
+      )?.block_number;
+      const historicalBlockHash = sharedResults.get(
+        "invoke_increase_100"
+      )?.block_hash;
       expect(historicalBlockNumber).toBeDefined();
       expect(historicalBlockHash).toBeDefined();
 
@@ -867,9 +871,9 @@ describe("Starknet RPC multi-version", () => {
         includeBlock: true,
       });
       expect(normHex(stateUpdate.block.block_hash)).toBe(
-        normHex(historicalBlockHash!),
+        normHex(historicalBlockHash!)
       );
-      expect(stateUpdate.state_diff).toBeDefined();
+      expect(stateUpdate.state_update.state_diff).toBeDefined();
 
       const traces = await feederGet("get_block_traces", {
         blockNumber: historicalBlockNumber!,
@@ -885,24 +889,26 @@ describe("Starknet RPC multi-version", () => {
     });
 
     it("round-trips the block hash/id feeder endpoints on the local chain", async () => {
-      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
-        ?.block_number;
-      const historicalBlockHash = sharedResults.get("invoke_increase_100")
-        ?.block_hash;
+      const historicalBlockNumber = sharedResults.get(
+        "invoke_increase_100"
+      )?.block_number;
+      const historicalBlockHash = sharedResults.get(
+        "invoke_increase_100"
+      )?.block_hash;
       expect(historicalBlockNumber).toBeDefined();
       expect(historicalBlockHash).toBeDefined();
 
       const blockHashById = await feederGet("get_block_hash_by_id", {
         blockId: historicalBlockNumber!,
       });
-      expect(normHex(blockHashById.block_hash)).toBe(
-        normHex(historicalBlockHash!),
+      expect(normHex(String(blockHashById))).toBe(
+        normHex(historicalBlockHash!)
       );
 
       const blockIdByHash = await feederGet("get_block_id_by_hash", {
         blockHash: historicalBlockHash!,
       });
-      expect(blockIdByHash.block_id).toBe(historicalBlockNumber);
+      expect(blockIdByHash).toBe(historicalBlockNumber);
     });
 
     it("serves class and chain metadata feeder endpoints", async () => {
@@ -918,7 +924,7 @@ describe("Starknet RPC multi-version", () => {
         "get_compiled_class_by_class_hash",
         {
           classHash: helloClassHash!,
-        },
+        }
       );
       expect(compiledClass.bytecode).toBeDefined();
 
@@ -931,8 +937,9 @@ describe("Starknet RPC multi-version", () => {
     });
 
     it("returns bouncer weights for a historical block", async () => {
-      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
-        ?.block_number;
+      const historicalBlockNumber = sharedResults.get(
+        "invoke_increase_100"
+      )?.block_number;
       expect(historicalBlockNumber).toBeDefined();
 
       const bouncerWeights = await feederGet("get_block_bouncer_weights", {
