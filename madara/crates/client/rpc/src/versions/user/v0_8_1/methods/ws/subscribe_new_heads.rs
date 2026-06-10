@@ -122,7 +122,7 @@ pub async fn subscribe_new_heads(
                 &starknet.backend,
                 &mut reorgs,
                 next_block_n,
-                super::missed_reorg_notifications_error(),
+                super::missed_reorg_notifications_error,
             )? {
                 crate::LiveConfirmedHeadResolution::Block(block_info) => {
                     send_block_header(&sink, *block_info, next_block_n).await?;

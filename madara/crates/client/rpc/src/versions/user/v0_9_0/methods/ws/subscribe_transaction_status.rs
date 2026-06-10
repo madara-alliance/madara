@@ -38,23 +38,13 @@ pub async fn subscribe_transaction_status(
 
                 send_txn_status(&sink, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
-                    crate::close_ws_subscription(
-                        starknet,
-                        sink.subscription_id(),
-                        "SubscribeTransactionStatus failed to parse string subscription id",
-                    )
-                    .await?;
+                    crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                     return Ok(());
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
-                crate::close_ws_subscription(
-                    starknet,
-                    sink.subscription_id(),
-                    "SubscribeTransactionStatus failed to parse string subscription id",
-                )
-                .await?;
+                crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                 return Err(crate::errors::StarknetWsApiError::Internal);
             }
         }

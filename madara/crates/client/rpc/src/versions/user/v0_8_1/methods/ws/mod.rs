@@ -19,17 +19,15 @@ const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
 
 #[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SubscriptionItem<T> {
-    subscription_id: u64,
+    subscription_id: String,
     result: T,
 }
 
 impl<T> SubscriptionItem<T> {
     pub fn new(subscription_id: jsonrpsee::types::SubscriptionId, result: T) -> Self {
         let subscription_id = match subscription_id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
-            }
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
         };
 
         Self { subscription_id, result }

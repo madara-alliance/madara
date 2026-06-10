@@ -937,7 +937,6 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
     pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
-    pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     pub(crate) tx_status_watcher: Option<Arc<dyn TxStatusWatcher>>,
     pub(crate) new_transactions_watcher: Option<Arc<dyn NewTransactionsWatcher>>,
     storage_proof_config: StorageProofConfig,
@@ -960,7 +959,6 @@ impl Starknet {
             backend,
             mempool: None,
             ws_handles,
-            add_transaction_provider: Arc::clone(&transaction_submitter),
             transaction_submitter,
             transaction_lookup,
             tx_status_watcher: None,
@@ -1101,7 +1099,7 @@ pub(crate) struct WsSubscribeHandles {
     /// [DashMap]: dashmap::DashMap
     /// [DashMap::entry]: dashmap::DashMap::entry
     /// [Arc]: std::sync::Arc
-    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    handles: std::sync::Arc<dashmap::DashMap<String, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscribeHandles {
@@ -1109,26 +1107,19 @@ impl WsSubscribeHandles {
         Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
     }
 
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
     pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
-        let id = match id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
-            }
-        };
+        let id = subscription_id_to_string(id);
 
         let handle = std::sync::Arc::new(WsSubscriptionHandle::new());
         let map = std::sync::Arc::clone(&self.handles);
 
-        self.handles.insert(id, std::sync::Arc::clone(&handle));
+        self.handles.insert(id.clone(), std::sync::Arc::clone(&handle));
 
         WsSubscriptionGuard { id, handle, map }
     }
 
-    pub async fn subscription_close(&self, id: u64) -> bool {
-        if let Some((_, handle)) = self.handles.remove(&id) {
+    pub async fn subscription_close(&self, id: &str) -> bool {
+        if let Some((_, handle)) = self.handles.remove(id) {
             handle.cancel();
             true
         } else {
@@ -1137,12 +1128,22 @@ impl WsSubscribeHandles {
     }
 }
 
+/// The jsonrpsee server is configured with [`jsonrpsee::server::RandomStringIdProvider`], so live
+/// subscription ids are strings (as the spec requires since v0.9.0). Test servers fall back to
+/// jsonrpsee's default integer provider, so numeric ids are stringified to the same key space.
+pub(crate) fn subscription_id_to_string(id: jsonrpsee::types::SubscriptionId<'_>) -> String {
+    match id {
+        jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+        jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+    }
+}
+
 pub(crate) struct WsSubscriptionGuard {
-    id: u64,
+    id: String,
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
     handle: std::sync::Arc<WsSubscriptionHandle>,
-    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    map: std::sync::Arc<dashmap::DashMap<String, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscriptionGuard {
@@ -1160,16 +1161,9 @@ impl WsSubscriptionGuard {
 pub(crate) async fn close_ws_subscription(
     starknet: &Starknet,
     subscription_id: jsonrpsee::types::SubscriptionId<'_>,
-    parse_error_context: &'static str,
 ) -> Result<(), errors::StarknetWsApiError> {
-    use crate::errors::ErrorExtWs;
-
-    let subscription_id = match subscription_id {
-        jsonrpsee::types::SubscriptionId::Num(id) => id,
-        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(parse_error_context)?,
-    };
-
-    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
+    let subscription_id = subscription_id_to_string(subscription_id);
+    let _ = starknet.ws_handles.subscription_close(&subscription_id).await;
     Ok(())
 }
 
@@ -1183,13 +1177,13 @@ pub(crate) fn resolve_live_confirmed_head(
     backend: &std::sync::Arc<mc_db::MadaraBackend>,
     reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
     next_block_n: u64,
-    missed_reorg_error: errors::StarknetWsApiError,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
 ) -> Result<LiveConfirmedHeadResolution, errors::StarknetWsApiError> {
     use crate::errors::ErrorExtWs;
 
     match reorgs.try_recv() {
         Ok(reorg) => return Ok(LiveConfirmedHeadResolution::Reorg(reorg)),
-        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => return Err(missed_reorg_error),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => return Err(missed_reorg_error()),
         Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
             return Err(errors::StarknetWsApiError::Internal);
         }
@@ -1251,7 +1245,7 @@ mod test {
 
         backend.revert_to(&block_0_hash).expect("Revert should succeed");
 
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, StarknetWsApiError::Internal)
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, || StarknetWsApiError::Internal)
             .expect("Reorg resolution should succeed")
         {
             LiveConfirmedHeadResolution::Reorg(reorg) => {
@@ -1268,7 +1262,7 @@ mod test {
         let (backend, _rpc) = rpc_test_setup();
         let mut reorgs = backend.subscribe_reorgs();
 
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, StarknetWsApiError::Internal)
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, || StarknetWsApiError::Internal)
             .expect("Missing block should not error")
         {
             LiveConfirmedHeadResolution::RetryBackfill => {}

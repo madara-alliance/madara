@@ -36,25 +36,15 @@ pub async fn subscribe_transaction_status(
             SubscriptionUpdate::Snapshot(snapshot) => {
                 allow_current = false;
 
-                send_txn_status(&sink, snapshot).await?;
+                send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
-                    crate::close_ws_subscription(
-                        starknet,
-                        sink.subscription_id(),
-                        "SubscribeTransactionStatus failed to parse string subscription id",
-                    )
-                    .await?;
+                    crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                     return Ok(());
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
-                crate::close_ws_subscription(
-                    starknet,
-                    sink.subscription_id(),
-                    "SubscribeTransactionStatus failed to parse string subscription id",
-                )
-                .await?;
+                crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                 return Err(crate::errors::StarknetWsApiError::Internal);
             }
         }
@@ -99,10 +89,12 @@ async fn next_update(
 }
 
 async fn send_txn_status(
+    starknet: &crate::Starknet,
     sink: &jsonrpsee::core::server::SubscriptionSink,
+    transaction_hash: mp_convert::Felt,
     snapshot: crate::TxStatusSnapshot,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let status = match snapshot {
+    let finality_status = match snapshot {
         crate::TxStatusSnapshot::Received => mp_rpc::v0_10_2::TxnStatus::Received,
         crate::TxStatusSnapshot::Candidate => mp_rpc::v0_10_2::TxnStatus::Candidate,
         crate::TxStatusSnapshot::PreConfirmed => mp_rpc::v0_10_2::TxnStatus::PreConfirmed,
@@ -110,8 +102,24 @@ async fn send_txn_status(
         crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1,
     };
 
-    let item = super::SubscriptionItem::new(sink.subscription_id(), status);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    // The watcher only tracks finality; enrich with the execution status when the transaction is
+    // already executed, falling back to finality-only if it cannot be retrieved.
+    let execution_status = match finality_status {
+        mp_rpc::v0_10_2::TxnStatus::Received | mp_rpc::v0_10_2::TxnStatus::Candidate => None,
+        _ => crate::versions::user::v0_9_0::methods::read::get_transaction_status::get_transaction_status(
+            starknet,
+            transaction_hash,
+        )
+        .await
+        .ok()
+        .and_then(|status| status.execution_status),
+    };
+
+    let payload = mp_rpc::v0_10_2::NewTxnStatus {
+        transaction_hash,
+        status: mp_rpc::v0_10_2::TxnFinalityAndExecutionStatus { finality_status, execution_status },
+    };
+    let msg = super::notification_message(super::TRANSACTION_STATUS_NOTIFICATION_METHOD, sink, &payload)
         .or_else_internal_server_error(|| "SubscribeTransactionStatus failed to create response".to_owned())?;
 
     sink.send(msg).await.or_internal_server_error("SubscribeTransactionStatus failed to respond to websocket request")

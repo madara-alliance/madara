@@ -56,7 +56,7 @@ pub trait StarknetWsRpcApi {
         sender_address: Vec<starknet_types_core::felt::Felt>,
     ) -> jsonrpsee::core::SubscriptionResult;
     #[method(name = "unsubscribe")]
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> RpcResult<bool>;
+    async fn starknet_unsubscribe(&self, subscription_id: String) -> RpcResult<bool>;
 }
 
 #[versioned_rpc("V0_8_1", "starknet")]

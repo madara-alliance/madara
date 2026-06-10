@@ -314,10 +314,10 @@ async fn send_transaction_item(
     item: TxnWithHashAndStatus,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let tx_hash = item.transaction.transaction_hash;
-    let item = super::SubscriptionItem::new(sink.subscription_id(), item);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-        format!("SubscribeNewTransactions failed to create response for tx hash {tx_hash:#x}")
-    })?;
+    let msg = super::notification_message(super::NEW_TRANSACTION_NOTIFICATION_METHOD, sink, &item)
+        .or_else_internal_server_error(|| {
+            format!("SubscribeNewTransactions failed to create response for tx hash {tx_hash:#x}")
+        })?;
 
     sink.send(msg).await.or_internal_server_error("SubscribeNewTransactions failed to respond to websocket request")
 }
@@ -495,7 +495,7 @@ mod test {
             .expect("Failed to retrieve transaction");
 
         assert_eq!(
-            item.result,
+            item,
             TxnWithHashAndStatus {
                 transaction: TxnWithHashAndProofFacts {
                     transaction: tx.transaction.to_rpc_v0_10_2(false),
@@ -537,7 +537,7 @@ mod test {
             .expect("Failed to retrieve transaction");
 
         assert_eq!(
-            item.result,
+            item,
             TxnWithHashAndStatus {
                 transaction: TxnWithHashAndProofFacts {
                     transaction: tx_1.transaction.to_rpc_v0_10_2(false),
@@ -596,7 +596,7 @@ mod test {
             .expect("Failed to retrieve second transaction");
 
         assert_eq!(
-            first.result,
+            first,
             TxnWithHashAndStatus {
                 transaction: TxnWithHashAndProofFacts {
                     transaction: transaction_with_receipt(SENDER_ADDRESS, preconfirmed_hash)
@@ -608,7 +608,7 @@ mod test {
             }
         );
         assert_eq!(
-            second.result,
+            second,
             TxnWithHashAndStatus {
                 transaction: TxnWithHashAndProofFacts {
                     transaction: candidate.transaction.clone().to_rpc_v0_10_2(false),
@@ -662,7 +662,7 @@ mod test {
             .expect("Failed to retrieve transaction");
 
         let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(txn)) =
-            item.result.transaction.transaction
+            item.transaction.transaction
         else {
             panic!("Expected invoke v3 transaction");
         };
@@ -711,7 +711,7 @@ mod test {
             .expect("Failed to retrieve transaction");
 
         let mp_rpc::v0_10_2::TxnWithProofFacts::Invoke(mp_rpc::v0_10_2::InvokeTxnWithProofFacts::V3(txn)) =
-            item.result.transaction.transaction
+            item.transaction.transaction
         else {
             panic!("Expected invoke v3 transaction");
         };
@@ -831,11 +831,11 @@ mod test {
             .expect("Timed out waiting for replacement transaction")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement transaction");
-        let item: super::super::SubscriptionItem<TxnWithHashAndStatus> =
+        let item: TxnWithHashAndStatus =
             serde_json::from_value(next).expect("Failed to deserialize replacement transaction item");
 
         assert_eq!(
-            item.result,
+            item,
             TxnWithHashAndStatus {
                 transaction: TxnWithHashAndProofFacts {
                     transaction: tx.transaction.to_rpc_v0_10_2(false),

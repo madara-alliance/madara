@@ -74,7 +74,7 @@ impl SubmitTransaction for TestTransactionProvider {
 #[async_trait]
 impl TransactionLookup for TestTransactionProvider {
     async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
-        unimplemented!()
+        None
     }
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
         unimplemented!()

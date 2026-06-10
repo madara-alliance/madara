@@ -77,9 +77,7 @@ mod test {
     use super::*;
     use crate::{
         test_utils::{rpc_test_setup, TestTxStatusWatcher},
-        versions::user::v0_10_2::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server,
-        },
+        versions::user::v0_10_2::{StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server},
         Starknet,
     };
     use assert_matches::assert_matches;
@@ -221,7 +219,7 @@ mod test {
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert_eq!(next.result, expected);
+        assert_eq!(next, expected);
     }
 
     #[tokio::test]
@@ -243,7 +241,7 @@ mod test {
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert_eq!(next.result, expected);
+        assert_eq!(next, expected);
     }
 
     #[tokio::test]
@@ -271,14 +269,20 @@ mod test {
             .await
             .expect("starknet_subscribeNewHeads");
 
-        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+        let _next = tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
             .expect("Timed out waiting for block header")
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert!(next.subscription_id.parse::<u64>().is_ok(), "subscription_id should be a numeric string");
-        StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, next.subscription_id)
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
+        StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, subscription_id)
             .await
             .expect("Failed to close subscription");
 
@@ -323,10 +327,10 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::BlockHeader> =
+        let item: mp_rpc::v0_10_2::BlockHeader =
             serde_json::from_value(next).expect("Failed to deserialize block header item");
 
-        assert_eq!(item.result, new_block_1);
+        assert_eq!(item, new_block_1);
     }
 
     #[tokio::test]
@@ -383,10 +387,10 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::BlockHeader> =
+        let item: mp_rpc::v0_10_2::BlockHeader =
             serde_json::from_value(next).expect("Failed to deserialize replacement head");
 
-        assert_eq!(item.result, replacement_head);
+        assert_eq!(item, replacement_head);
     }
 
     #[tokio::test]
@@ -427,7 +431,7 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve status");
 
-        assert_eq!(item.result, mp_rpc::v0_10_2::TxnStatus::Received);
+        assert_eq!(item.status.finality_status, mp_rpc::v0_10_2::TxnStatus::Received);
     }
 
     #[tokio::test]
@@ -449,7 +453,7 @@ mod test {
             .expect("Timed out waiting for received status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve received status");
-        assert_eq!(first.result, mp_rpc::v0_10_2::TxnStatus::Received);
+        assert_eq!(first.status.finality_status, mp_rpc::v0_10_2::TxnStatus::Received);
 
         watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
         let second = tokio::time::timeout(Duration::from_secs(5), sub.next())
@@ -457,7 +461,7 @@ mod test {
             .expect("Timed out waiting for candidate status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve candidate status");
-        assert_eq!(second.result, mp_rpc::v0_10_2::TxnStatus::Candidate);
+        assert_eq!(second.status.finality_status, mp_rpc::v0_10_2::TxnStatus::Candidate);
 
         watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
         let third = tokio::time::timeout(Duration::from_secs(5), sub.next())
@@ -465,7 +469,7 @@ mod test {
             .expect("Timed out waiting for pre-confirmed status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve pre-confirmed status");
-        assert_eq!(third.result, mp_rpc::v0_10_2::TxnStatus::PreConfirmed);
+        assert_eq!(third.status.finality_status, mp_rpc::v0_10_2::TxnStatus::PreConfirmed);
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
         let fourth = tokio::time::timeout(Duration::from_secs(5), sub.next())
@@ -473,7 +477,7 @@ mod test {
             .expect("Timed out waiting for L2 status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve L2 status");
-        assert_eq!(fourth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
+        assert_eq!(fourth.status.finality_status, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
         let fifth = tokio::time::timeout(Duration::from_secs(5), sub.next())
@@ -481,7 +485,7 @@ mod test {
             .expect("Timed out waiting for L1 status")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve L1 status");
-        assert_eq!(fifth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1);
+        assert_eq!(fifth.status.finality_status, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1);
     }
 
     #[tokio::test]
@@ -498,16 +502,20 @@ mod test {
             .expect("Failed subscription");
         watcher.set_status(Some(crate::TxStatusSnapshot::Received));
 
-        let subscription_id =
-            match tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status")
-            {
-                Some(Ok(SubscriptionItem { subscription_id, result: status })) => {
-                    assert_eq!(status, mp_rpc::v0_10_2::TxnStatus::Received);
-                    subscription_id
-                }
-                other => panic!("Unexpected subscription result: {other:?}"),
-            };
+        match tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status") {
+            Some(Ok(item)) => {
+                assert_eq!(item.status.finality_status, mp_rpc::v0_10_2::TxnStatus::Received);
+            }
+            other => panic!("Unexpected subscription result: {other:?}"),
+        }
 
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
         StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, subscription_id)
             .await
             .expect("Failed to close subscription");
@@ -605,7 +613,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: transaction_with_receipt(SENDER_ADDRESS, transaction_hash)
                     .receipt
@@ -657,7 +665,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: transaction_with_receipt(SENDER_ADDRESS, transaction_hash)
                     .receipt
@@ -724,11 +732,11 @@ mod test {
             .expect("Timed out waiting for replacement receipt")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement receipt");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::TxnReceiptWithBlockInfo> =
+        let item: mp_rpc::v0_10_2::TxnReceiptWithBlockInfo =
             serde_json::from_value(next).expect("Failed to deserialize replacement receipt item");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::L2),
                 block_hash: Some(new_block_hash),
