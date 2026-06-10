@@ -428,7 +428,7 @@ mod tests {
     use mp_rpc::v0_10_0::{DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
 
     fn sample_broadcasted_invoke_v3(
-        proof: Option<Vec<u64>>,
+        proof: Option<mp_rpc::v0_10_2::Proof>,
         proof_facts: Option<Vec<Felt>>,
         query: bool,
     ) -> mp_rpc::v0_10_2::BroadcastedTxn {
@@ -467,8 +467,8 @@ mod tests {
         let explicit_facts =
             vec![Felt::from_hex_unchecked("0x50524f4f4630"), Felt::from_hex_unchecked("0x5649525455414c5f534e4f53")];
         let cases = [
-            (Some(vec![11, 12]), None, vec![Felt::from(11_u64), Felt::from(12_u64)]),
-            (Some(vec![11, 12]), Some(explicit_facts.clone()), explicit_facts.clone()),
+            (Some(mp_rpc::v0_10_2::Proof(vec![11, 12])), None, vec![]),
+            (Some(mp_rpc::v0_10_2::Proof(vec![11, 12])), Some(explicit_facts.clone()), explicit_facts.clone()),
         ];
 
         for (proof, proof_facts, expected_proof_facts) in cases {

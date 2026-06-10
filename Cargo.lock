@@ -10706,6 +10706,7 @@ dependencies = [
 name = "mp-rpc"
 version = "0.10.0"
 dependencies = [
+ "base64 0.22.1",
  "rstest 0.18.2",
  "serde",
  "serde_json",
