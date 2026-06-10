@@ -98,8 +98,8 @@ pub struct ArgsPresetParams {
     pub gateway: bool,
 
     /// Public RPC provider preset. Exposes user RPC on 0.0.0.0, enables admin
-    /// RPC on localhost, and allows all CORS origins. For localhost-only user
-    /// RPC, omit this flag and configure --rpc-port if needed.
+    /// RPC on localhost, and allows all CORS origins. Local-only RPC is already
+    /// enabled by default; omit this flag and use --rpc-port for a private node.
     #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
     pub rpc: bool,
 }
@@ -113,7 +113,10 @@ impl ArgsPresetParams {
         } else if self.gateway {
             tracing::info!("💫 Running Gateway preset")
         } else if self.rpc {
-            tracing::info!("💫 Running Rpc preset")
+            tracing::info!("💫 Running Rpc preset");
+            tracing::warn!(
+                "--rpc exposes user RPC on 0.0.0.0 with admin RPC enabled on localhost and CORS allowing all origins"
+            )
         }
     }
 }
