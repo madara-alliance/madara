@@ -1286,6 +1286,12 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             })
             .transpose()?;
         let (new_tip_block_n, new_tip_block_hash) = self.db.revert_to(new_tip_block_hash)?;
+        // The first-reverted block info had to be read before the revert deleted it; make sure
+        // the revert actually landed on the block that lookup was based on.
+        ensure!(
+            new_tip_block_n == requested_new_tip_block_n,
+            "Reverted tip block_n={new_tip_block_n} does not match requested target block_n={requested_new_tip_block_n}",
+        );
 
         if new_tip_block_n == previous_latest_confirmed_block_n {
             return Ok((new_tip_block_n, new_tip_block_hash));

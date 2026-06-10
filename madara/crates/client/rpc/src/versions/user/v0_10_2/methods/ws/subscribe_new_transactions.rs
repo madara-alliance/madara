@@ -33,40 +33,38 @@ async fn subscribe_new_transactions_inner(
     tags: Option<Vec<SubscriptionTag>>,
     emit_reorg_notifications: bool,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let sink = if sender_address.as_ref().map_or(0, Vec::len) as u64 <= super::ADDRESS_FILTER_LIMIT {
-        subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?
-    } else {
+    if sender_address.as_ref().map_or(0, Vec::len) as u64 > super::ADDRESS_FILTER_LIMIT {
         subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await;
         return Ok(());
-    };
+    }
 
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let allowed_statuses =
         finality_status.unwrap_or_else(|| vec![TxnStatusWithoutL1::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
-    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
-    let include_proof_facts = tags.as_ref().is_some_and(|tags| tags.contains(&SubscriptionTag::IncludeProofFacts));
-    let mut emitted = HashSet::<(Felt, TxnStatusWithoutL1)>::new();
 
+    // Resolve the received-transactions watcher before accepting the subscription, so
+    // configurations without one reject the subscribe call instead of accepting the connection
+    // and then closing it with an opaque Internal error.
     let mut received_watch = if allowed_statuses.contains(&TxnStatusWithoutL1::Received) {
-        Some(
-            starknet
-                .new_transactions_watcher
-                .as_ref()
-                .ok_or_else(|| {
-                    crate::errors::StarknetWsApiError::internal_server_error(
-                        "SubscribeNewTransactions failed: new-transactions watcher is not configured",
-                    )
-                })?
-                .watch_new_transactions()
-                .ok_or_else(|| {
-                    crate::errors::StarknetWsApiError::internal_server_error(
-                        "SubscribeNewTransactions failed to create new-transactions watcher",
-                    )
-                })?,
-        )
+        match starknet.new_transactions_watcher.as_ref().and_then(|watcher| watcher.watch_new_transactions()) {
+            Some(watch) => Some(watch),
+            None => {
+                subscription_sink
+                    .reject(crate::errors::StarknetWsApiError::internal_server_error(
+                        "SubscribeNewTransactions with RECEIVED status is not available: new-transactions watcher is not configured",
+                    ))
+                    .await;
+                return Ok(());
+            }
+        }
     } else {
         None
     };
+
+    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
+    let include_proof_facts = tags.as_ref().is_some_and(|tags| tags.contains(&SubscriptionTag::IncludeProofFacts));
+    let mut emitted = EmittedTracker::default();
 
     let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
     let mut current_preconfirmed = starknet
@@ -153,6 +151,9 @@ async fn subscribe_new_transactions_inner(
                         include_proof_facts,
                         &mut emitted,
                     ).await?;
+                    // PreConfirmed / AcceptedOnL2 entries can be evicted after a confirmed block;
+                    // Received / Candidate entries stay in the persistent set until reorg.
+                    emitted.rotate_ephemeral();
                     current_preconfirmed = starknet
                         .backend
                         .block_view_on_preconfirmed_or_fake()
@@ -184,7 +185,7 @@ async fn send_preconfirmed_view_transactions(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if allowed_statuses.contains(&TxnStatusWithoutL1::PreConfirmed) {
         for tx in preconfirmed.get_executed_transactions(..) {
@@ -225,7 +226,7 @@ async fn send_confirmed_block_transactions(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&TxnStatusWithoutL1::AcceptedOnL2) {
         return Ok(());
@@ -257,11 +258,11 @@ async fn send_validated_transaction(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&status)
         || !sender_address.is_none_or(|addresses| addresses.contains(&tx.contract_address))
-        || !mark_emitted(emitted, tx.hash, &status)
+        || !emitted.mark_emitted(tx.hash, &status)
     {
         return Ok(());
     }
@@ -286,12 +287,12 @@ async fn send_executed_transaction(
     sender_address: Option<&HashSet<Felt>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
-    emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
+    emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let tx_hash = *tx.receipt.transaction_hash();
     if !allowed_statuses.contains(&status)
         || !transaction_matches_sender(&tx.transaction, sender_address)
-        || !mark_emitted(emitted, tx_hash, &status)
+        || !emitted.mark_emitted(tx_hash, &status)
     {
         return Ok(());
     }
@@ -322,8 +323,86 @@ async fn send_transaction_item(
     sink.send(msg).await.or_internal_server_error("SubscribeNewTransactions failed to respond to websocket request")
 }
 
-fn mark_emitted(emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {
-    emitted.insert((tx_hash, status.clone()))
+/// Dedup state for emitted (transaction, status) pairs.
+///
+/// Short-lived statuses (`PreConfirmed`, `AcceptedOnL2`) use a two-generation tracker rotated on
+/// each confirmed block. Long-lived statuses (`Received`, `Candidate`) use a persistent set that
+/// survives confirmed-block rotation, since those transactions can remain observable across many
+/// blocks until they are executed or dropped from the mempool.
+#[derive(Default)]
+struct EmittedTracker {
+    ephemeral: EphemeralEmittedTracker,
+    persistent: HashSet<(Felt, TxnStatusWithoutL1)>,
+}
+
+#[derive(Default)]
+struct EphemeralEmittedTracker {
+    current: HashSet<(Felt, TxnStatusWithoutL1)>,
+    previous: HashSet<(Felt, TxnStatusWithoutL1)>,
+}
+
+impl EmittedTracker {
+    fn mark_emitted(&mut self, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {
+        let key = (tx_hash, status.clone());
+        match status {
+            TxnStatusWithoutL1::Received | TxnStatusWithoutL1::Candidate => self.persistent.insert(key),
+            TxnStatusWithoutL1::PreConfirmed | TxnStatusWithoutL1::AcceptedOnL2 => self.ephemeral.mark_emitted(key),
+        }
+    }
+
+    fn rotate_ephemeral(&mut self) {
+        self.ephemeral.rotate();
+    }
+
+    fn clear(&mut self) {
+        self.ephemeral.clear();
+        self.persistent.clear();
+    }
+}
+
+impl EphemeralEmittedTracker {
+    fn mark_emitted(&mut self, key: (Felt, TxnStatusWithoutL1)) -> bool {
+        if self.previous.contains(&key) {
+            return false;
+        }
+        self.current.insert(key)
+    }
+
+    fn rotate(&mut self) {
+        self.previous = std::mem::take(&mut self.current);
+    }
+
+    fn clear(&mut self) {
+        self.current.clear();
+        self.previous.clear();
+    }
+}
+
+#[cfg(test)]
+mod emitted_tracker_tests {
+    use super::*;
+
+    #[test]
+    fn candidate_dedup_survives_ephemeral_rotation() {
+        let mut tracker = EmittedTracker::default();
+        let hash = Felt::from_hex_unchecked("0xabc");
+
+        assert!(tracker.mark_emitted(hash, &TxnStatusWithoutL1::Candidate));
+        tracker.rotate_ephemeral();
+        tracker.rotate_ephemeral();
+        assert!(!tracker.mark_emitted(hash, &TxnStatusWithoutL1::Candidate));
+    }
+
+    #[test]
+    fn accepted_on_l2_dedup_evicted_after_two_rotations() {
+        let mut tracker = EmittedTracker::default();
+        let hash = Felt::from_hex_unchecked("0xdef");
+
+        assert!(tracker.mark_emitted(hash, &TxnStatusWithoutL1::AcceptedOnL2));
+        tracker.rotate_ephemeral();
+        tracker.rotate_ephemeral();
+        assert!(tracker.mark_emitted(hash, &TxnStatusWithoutL1::AcceptedOnL2));
+    }
 }
 
 fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<&HashSet<Felt>>) -> bool {
@@ -616,6 +695,86 @@ mod test {
                 },
                 finality_status: TxnStatusWithoutL1::Candidate,
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transactions_candidate_not_reemitted_across_confirmed_blocks_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_new_transactions(
+            &client,
+            Some(vec![TxnStatusWithoutL1::Candidate]),
+            Some(vec![SENDER_ADDRESS]),
+            None,
+        )
+        .await
+        .expect("Failed subscription");
+
+        let candidate = Arc::new(validated_tx(SENDER_ADDRESS));
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader {
+                    block_number: 0,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
+                },
+                vec![],
+                vec![candidate.clone()],
+            ))
+            .expect("Failed to store preconfirmed block");
+
+        let first = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for candidate notification")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve candidate notification");
+
+        assert_eq!(first.finality_status, TxnStatusWithoutL1::Candidate);
+        assert_eq!(first.transaction.transaction_hash, candidate.hash);
+
+        for block_number in 0..2 {
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader {
+                            block_number,
+                            protocol_version: StarknetVersion::V0_13_2,
+                            ..Default::default()
+                        },
+                        state_diff: Default::default(),
+                        transactions: vec![],
+                        events: vec![],
+                    },
+                    &[],
+                    true,
+                )
+                .expect("Failed to store confirmed block");
+
+            backend
+                .write_access()
+                .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                    PreconfirmedHeader {
+                        block_number: block_number + 1,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    vec![],
+                    vec![candidate.clone()],
+                ))
+                .expect("Failed to restore preconfirmed block with lingering candidate");
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let duplicate = tokio::time::timeout(Duration::from_millis(500), sub.next()).await;
+        assert!(
+            duplicate.is_err(),
+            "Candidate transaction should not be re-emitted after confirmed blocks: got {duplicate:?}",
         );
     }
 

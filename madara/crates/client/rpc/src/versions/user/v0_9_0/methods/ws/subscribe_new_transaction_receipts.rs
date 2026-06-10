@@ -118,13 +118,11 @@ async fn send_block_receipts(
             FinalityStatus::PreConfirmed => TxnFinalityStatus::PreConfirmed,
             FinalityStatus::AcceptedOnL2 => TxnFinalityStatus::L2,
         });
-        let item = super::SubscriptionItem::new(
-            sink.subscription_id(),
-            TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number },
-        );
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribeNewTransactionReceipts failed to create response for tx hash {tx_hash:#x}")
-        })?;
+        let payload = TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number };
+        let msg = super::notification_message(super::NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD, sink, &payload)
+            .or_else_internal_server_error(|| {
+                format!("SubscribeNewTransactionReceipts failed to create response for tx hash {tx_hash:#x}")
+            })?;
 
         sink.send(msg)
             .await
@@ -282,7 +280,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            serde_json::to_value(&item).expect("Failed to serialize receipt item")["result"],
+            serde_json::to_value(&item).expect("Failed to serialize receipt item"),
             serde_json::to_value(TxnReceiptWithBlockInfo {
                 transaction_receipt: transaction_with_receipt(SENDER_ADDRESS, transaction_hash)
                     .receipt
@@ -337,7 +335,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            serde_json::to_value(&item).expect("Failed to serialize receipt item")["result"],
+            serde_json::to_value(&item).expect("Failed to serialize receipt item"),
             serde_json::to_value(TxnReceiptWithBlockInfoV10 {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(TxnFinalityStatusV10::L2),
                 block_hash: Some(expected_block_hash),
@@ -437,11 +435,11 @@ mod test {
             .expect("Timed out waiting for replacement receipt")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement receipt");
-        let item: super::super::SubscriptionItem<TxnReceiptWithBlockInfoV10> =
+        let item: TxnReceiptWithBlockInfoV10 =
             serde_json::from_value(next).expect("Failed to deserialize replacement receipt item");
 
         assert_eq!(
-            item.result,
+            item,
             TxnReceiptWithBlockInfoV10 {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(TxnFinalityStatusV10::L2),
                 block_hash: Some(new_block_hash),
@@ -563,11 +561,11 @@ mod test {
             .expect("Timed out waiting for replacement receipt")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement receipt");
-        let item: super::super::SubscriptionItem<TxnReceiptWithBlockInfo> =
+        let item: TxnReceiptWithBlockInfo =
             serde_json::from_value(next).expect("Failed to deserialize replacement receipt item");
 
         assert_eq!(
-            item.result,
+            item,
             TxnReceiptWithBlockInfo {
                 transaction_receipt: tx.receipt.to_rpc_v0_9(TxnFinalityStatus::L2),
                 block_hash: Some(new_block_hash),

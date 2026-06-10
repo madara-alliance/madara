@@ -832,9 +832,15 @@ pub enum TxStatusSnapshot {
     AcceptedOnL1,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxStatusUpdate {
+    Status(TxStatusSnapshot),
+    NotFound,
+}
+
 pub trait TxStatusWatch: Send {
-    fn take_current(&mut self) -> Option<TxStatusSnapshot>;
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>>;
+    fn take_current(&mut self) -> TxStatusUpdate;
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusUpdate>> + Send + '_>>;
 }
 
 pub trait TxStatusWatcher: Send + Sync {
@@ -858,44 +864,33 @@ pub trait NewTransactionsWatcher: Send + Sync {
 }
 
 impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
-    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
-        let snapshot = match WatchTransactionStatus::current(self).clone() {
-            Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
-                PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
-                PreConfirmationStatus::Candidate { .. } => Some(TxStatusSnapshot::Candidate),
-                PreConfirmationStatus::Executed { .. } => Some(TxStatusSnapshot::PreConfirmed),
-            },
-            Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
-                if is_on_l1 {
-                    Some(TxStatusSnapshot::AcceptedOnL1)
-                } else {
-                    Some(TxStatusSnapshot::AcceptedOnL2)
-                }
-            }
-            None => None,
-        };
-        WatchTransactionStatus::refresh(self);
-        snapshot
+    fn take_current(&mut self) -> TxStatusUpdate {
+        tx_status_update_from_mempool(WatchTransactionStatus::take_current(self).clone())
     }
 
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusUpdate>> + Send + '_>> {
         Box::pin(async move {
-            match WatchTransactionStatus::recv(self).await.clone() {
-                Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
-                    PreConfirmationStatus::Received(_) => Some(TxStatusSnapshot::Received),
-                    PreConfirmationStatus::Candidate { .. } => Some(TxStatusSnapshot::Candidate),
-                    PreConfirmationStatus::Executed { .. } => Some(TxStatusSnapshot::PreConfirmed),
-                },
-                Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
-                    if is_on_l1 {
-                        Some(TxStatusSnapshot::AcceptedOnL1)
-                    } else {
-                        Some(TxStatusSnapshot::AcceptedOnL2)
-                    }
-                }
-                None => None,
-            }
+            let status = WatchTransactionStatus::recv(self).await.clone();
+            Some(tx_status_update_from_mempool(status))
         })
+    }
+}
+
+fn tx_status_update_from_mempool(status: Option<MempoolTransactionStatus>) -> TxStatusUpdate {
+    match status {
+        Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
+            PreConfirmationStatus::Received(_) => TxStatusUpdate::Status(TxStatusSnapshot::Received),
+            PreConfirmationStatus::Candidate { .. } => TxStatusUpdate::Status(TxStatusSnapshot::Candidate),
+            PreConfirmationStatus::Executed { .. } => TxStatusUpdate::Status(TxStatusSnapshot::PreConfirmed),
+        },
+        Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
+            if is_on_l1 {
+                TxStatusUpdate::Status(TxStatusSnapshot::AcceptedOnL1)
+            } else {
+                TxStatusUpdate::Status(TxStatusSnapshot::AcceptedOnL2)
+            }
+        }
+        None => TxStatusUpdate::NotFound,
     }
 }
 

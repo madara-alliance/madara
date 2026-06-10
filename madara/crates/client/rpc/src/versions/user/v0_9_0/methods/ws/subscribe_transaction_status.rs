@@ -5,26 +5,25 @@ pub async fn subscribe_transaction_status(
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     transaction_hash: mp_convert::Felt,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
+    // Resolve the watcher before accepting the subscription, so configurations without a
+    // tx-status watcher reject the subscribe call instead of accepting the connection and then
+    // closing it with an opaque Internal error.
+    let watch =
+        starknet.tx_status_watcher.as_ref().and_then(|watcher| watcher.watch_transaction_status(transaction_hash));
+    let Some(mut watch) = watch else {
+        subscription_sink
+            .reject(crate::errors::StarknetWsApiError::internal_server_error(
+                "SubscribeTransactionStatus is not available: tx-status watcher is not configured",
+            ))
+            .await;
+        return Ok(());
+    };
+
     let sink = subscription_sink
         .accept()
         .await
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-
-    let mut watch = starknet
-        .tx_status_watcher
-        .as_ref()
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed: tx-status watcher is not configured",
-            )
-        })?
-        .watch_transaction_status(transaction_hash)
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed to create transaction status watcher",
-            )
-        })?;
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
     let mut allow_current = true;
@@ -33,14 +32,17 @@ pub async fn subscribe_transaction_status(
             return Ok(());
         };
         match update {
-            SubscriptionUpdate::Snapshot(snapshot) => {
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::Status(snapshot)) => {
                 allow_current = false;
 
-                send_txn_status(&sink, snapshot).await?;
+                send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                     return Ok(());
                 }
+            }
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::NotFound) => {
+                allow_current = false;
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
@@ -52,7 +54,7 @@ pub async fn subscribe_transaction_status(
 }
 
 enum SubscriptionUpdate {
-    Snapshot(crate::TxStatusSnapshot),
+    Status(crate::TxStatusUpdate),
     Reorg(mc_db::ReorgNotification),
     WatcherClosed,
 }
@@ -65,9 +67,7 @@ async fn next_update(
     allow_current: bool,
 ) -> Result<Option<SubscriptionUpdate>, crate::errors::StarknetWsApiError> {
     if allow_current {
-        if let Some(snapshot) = watch.take_current() {
-            return Ok(Some(SubscriptionUpdate::Snapshot(snapshot)));
-        }
+        return Ok(Some(SubscriptionUpdate::Status(watch.take_current())));
     }
 
     tokio::select! {
@@ -83,16 +83,18 @@ async fn next_update(
             }
         },
         next = watch.recv() => {
-            Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
+            Ok(Some(next.map(SubscriptionUpdate::Status).unwrap_or(SubscriptionUpdate::WatcherClosed)))
         },
     }
 }
 
 async fn send_txn_status(
+    starknet: &crate::Starknet,
     sink: &jsonrpsee::core::server::SubscriptionSink,
+    transaction_hash: mp_convert::Felt,
     snapshot: crate::TxStatusSnapshot,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let status = match snapshot {
+    let finality_status = match snapshot {
         crate::TxStatusSnapshot::Received => mp_rpc::v0_9_0::TxnStatus::Received,
         crate::TxStatusSnapshot::Candidate => mp_rpc::v0_9_0::TxnStatus::Candidate,
         crate::TxStatusSnapshot::PreConfirmed => mp_rpc::v0_9_0::TxnStatus::PreConfirmed,
@@ -100,8 +102,21 @@ async fn send_txn_status(
         crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_9_0::TxnStatus::AcceptedOnL1,
     };
 
-    let item = super::SubscriptionItem::new(sink.subscription_id(), status);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    // The watcher only tracks finality; enrich with the execution status when the transaction is
+    // already executed, falling back to finality-only if it cannot be retrieved.
+    let execution_status = match finality_status {
+        mp_rpc::v0_9_0::TxnStatus::Received | mp_rpc::v0_9_0::TxnStatus::Candidate => None,
+        _ => super::super::read::get_transaction_status::get_transaction_status(starknet, transaction_hash)
+            .await
+            .ok()
+            .and_then(|status| status.execution_status),
+    };
+
+    let payload = mp_rpc::v0_9_0::NewTxnStatus {
+        transaction_hash,
+        status: mp_rpc::v0_9_0::TxnFinalityAndExecutionStatus { finality_status, execution_status },
+    };
+    let msg = super::notification_message(super::TRANSACTION_STATUS_NOTIFICATION_METHOD, sink, &payload)
         .or_else_internal_server_error(|| "SubscribeTransactionStatus failed to create response".to_owned())?;
 
     sink.send(msg).await.or_internal_server_error("SubscribeTransactionStatus failed to respond to websocket request")
@@ -111,9 +126,7 @@ async fn send_txn_status(
 mod test {
     use crate::{
         test_utils::{TestTransactionProvider, TestTxStatusWatcher},
-        versions::user::v0_9_0::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_9_0Client, StarknetWsRpcApiV0_9_0Server,
-        },
+        versions::user::v0_9_0::{StarknetWsRpcApiV0_9_0Client, StarknetWsRpcApiV0_9_0Server},
         Starknet,
     };
     use assert_matches::assert_matches;
@@ -197,8 +210,9 @@ mod test {
 
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Received);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::Received);
+                    assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
     }
@@ -218,40 +232,81 @@ mod test {
         watcher.set_status(Some(crate::TxStatusSnapshot::Received));
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Received);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::Received);
+                    assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
 
         watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Candidate);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::Candidate);
+                    assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
 
         watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::PreConfirmed);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::PreConfirmed);
+                    assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::AcceptedOnL2);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::AcceptedOnL2);
+                    assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
 
         watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
         assert_matches!(
             tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
-            Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::AcceptedOnL1);
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::AcceptedOnL1);
+                    assert_eq!(status.transaction_hash, TX_HASH);
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_transaction_status_not_found_keeps_subscription_open() {
+        let (_backend, starknet, watcher) = starknet_with_status_watcher();
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonrpsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_9_0Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::Received));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status"),
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::Received);
+                assert_eq!(status.transaction_hash, TX_HASH);
+            }
+        );
+
+        watcher.set_status(None);
+        tokio::time::timeout(Duration::from_millis(200), sub.next())
+            .await
+            .expect_err("NotFound should not emit or close the subscription");
+
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        assert_matches!(
+            tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for re-added status"),
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::AcceptedOnL2);
+                assert_eq!(status.transaction_hash, TX_HASH);
             }
         );
     }
@@ -269,16 +324,21 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
         watcher.set_status(Some(crate::TxStatusSnapshot::Received));
 
-        let subscription_id =
-            match tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status")
-            {
-                Some(Ok(SubscriptionItem { subscription_id, result: status })) => {
-                    assert_eq!(status, mp_rpc::v0_9_0::TxnStatus::Received);
-                    subscription_id
-                }
-                other => panic!("Unexpected subscription result: {other:?}"),
-            };
+        match tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status") {
+            Some(Ok(status)) => {
+                assert_eq!(status.status.finality_status, mp_rpc::v0_9_0::TxnStatus::Received);
+                assert_eq!(status.transaction_hash, TX_HASH);
+            }
+            other => panic!("Unexpected subscription result: {other:?}"),
+        };
 
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
         client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
         assert!(sub.next().await.is_none());
     }

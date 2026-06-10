@@ -11,10 +11,10 @@ use mp_rpc::v0_8_1::{
 };
 use starknet_types_core::felt::Felt;
 
-type SubscriptionItemPendingTxs = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
-type SubscriptionItemEvents = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::EmittedEvent>;
-type SubscriptionItemNewHeads = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::BlockHeader>;
-type SubscriptionItemTransactionStatus = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::NewTxnStatus>;
+type SubscriptionItemPendingTxs = mp_rpc::v0_8_1::PendingTxnInfo;
+type SubscriptionItemEvents = mp_rpc::v0_8_1::EmittedEvent;
+type SubscriptionItemNewHeads = mp_rpc::v0_8_1::BlockHeader;
+type SubscriptionItemTransactionStatus = mp_rpc::v0_8_1::NewTxnStatus;
 
 pub mod methods;
 

@@ -48,7 +48,10 @@ pub async fn subscribe_events(
     }
 
     'backfill: loop {
-        let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+        // Bound the backfill to the confirmed tip: a preconfirmed block must be handled by the live
+        // phase, otherwise the backfill walks past it without emitting its ACCEPTED_ON_L2 events
+        // once it confirms.
+        let backfill_to_block_n = starknet.backend.latest_confirmed_block_n();
 
         while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
             if sink.is_closed() {
@@ -153,8 +156,7 @@ async fn send_event(
     sink: &jsonrpsee::server::SubscriptionSink,
 ) -> Result<(), StarknetWsApiError> {
     let event = EmittedEvent::from(event);
-    let item = super::SubscriptionItem::new(sink.subscription_id(), event);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let msg = super::notification_message(super::EVENTS_NOTIFICATION_METHOD, sink, &event)
         .or_internal_server_error("Failed to create response message")?;
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
 }
@@ -304,7 +306,7 @@ mod test {
             let events = generator.next().expect("Retrieving block");
             for event in events {
                 let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                assert_eq!(received.result, event);
+                assert_eq!(received, event);
                 nb_events += 1;
             }
         }
@@ -336,7 +338,7 @@ mod test {
             for event in events {
                 if event.event.from_address == from_address {
                     let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                    assert_eq!(received.result, event);
+                    assert_eq!(received, event);
                     nb_events += 1;
                 }
             }
@@ -380,7 +382,7 @@ mod test {
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
         }
     }
 
@@ -442,7 +444,7 @@ mod test {
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
         }
     }
 
@@ -460,13 +462,20 @@ mod test {
         let mut sub = client.subscribe_events(None, None, None).await.expect("Subscribing to events");
 
         let events = generator.next().expect("Retrieving block");
-        let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
+        let _first = sub.next().await.unwrap().unwrap();
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
         client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
 
         let mut nb_events = 0;
         for event in events.into_iter().skip(1) {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
             nb_events += 1;
         }
         assert_eq!(nb_events, 2);
