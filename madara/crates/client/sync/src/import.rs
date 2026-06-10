@@ -16,7 +16,7 @@ use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
@@ -163,15 +163,21 @@ impl BlockImporter {
 /// directly. The instrument is re-created per event, which is fine at this frequency: the
 /// fallback engages at most a handful of times over a full mainnet sync.
 fn record_gateway_casm_fallback_metric(outcome: &'static str) {
-    use opentelemetry::{global, KeyValue};
-    global::meter("crates.sync.opentelemetry")
-        .u64_counter("class_gateway_casm_fallback")
-        .with_description(
-            "Number of declared classes whose CASM was fetched from the feeder gateway because \
+    use opentelemetry::{global, InstrumentationScope, KeyValue};
+    // Same instrumentation scope as `crate::metrics::SyncMetrics`, so the counter is grouped with
+    // the other sync metrics in OTel backends.
+    global::meter_with_scope(
+        InstrumentationScope::builder("crates.sync.opentelemetry")
+            .with_attributes([KeyValue::new("crate", "sync")])
+            .build(),
+    )
+    .u64_counter("class_gateway_casm_fallback")
+    .with_description(
+        "Number of declared classes whose CASM was fetched from the feeder gateway because \
              local Sierra-to-CASM compilation failed",
-        )
-        .build()
-        .add(1, &[KeyValue::new("outcome", outcome)]);
+    )
+    .build()
+    .add(1, &[KeyValue::new("outcome", outcome)]);
 }
 
 pub struct BlockImporterCtx {
@@ -372,27 +378,6 @@ impl BlockImporterCtx {
     ///
     /// Each accepted gateway CASM is counted in the `class_gateway_casm_fallback` metric, with an
     /// `outcome` attribute of `verified_blake`, `verified_poseidon` or `historical_tolerance`.
-    pub fn verify_compile_classes(
-        &self,
-        block_n: Option<u64>,
-        declared_classes: Vec<ClassInfoWithHash>,
-        check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
-        gateway_casm_fallback: &HashMap<Felt, CompiledSierra>,
-    ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-        if check_against.len() != declared_classes.len() {
-            return Err(BlockImportError::ClassCount {
-                got: declared_classes.len() as _,
-                expected: check_against.len() as _,
-            });
-        }
-        let classes = declared_classes
-            .into_par_iter()
-            .map(|class| self.verify_compile_class(block_n, class, check_against, gateway_casm_fallback))
-            .collect::<Result<_, _>>()?;
-        Ok(classes)
-    }
-
-    /// Called in a rayon-pool context.
     ///
     /// # Compiled class hash variants
     ///
@@ -405,7 +390,7 @@ impl BlockImporterCtx {
     ///   fallback — declare the Poseidon compiled class hash, where a mismatch is tolerated with
     ///   a WARN, because historical gateway hashes may not match a local recomputation after
     ///   compiler/toolchain upgrades.
-    fn verify_compile_class(
+    pub(crate) fn verify_compile_class(
         &self,
         block_n: Option<u64>,
         class: ClassInfoWithHash,
