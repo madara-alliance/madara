@@ -277,6 +277,12 @@ pub struct ChainConfigV2 {
     /// for more information
     pub eth_gps_statement_verifier: String,
 
+    /// Public key of the sequencer, used to verify the block signatures served
+    /// by the feeder gateway during full-node sync. When unset, block signature
+    /// verification is disabled.
+    #[serde(default)]
+    pub sequencer_public_key: Option<Felt>,
+
     /// Private key used by the node to sign blocks provided through the
     /// feeder gateway. This serves as a proof of origin and in the future
     /// will also be used by the p2p protocol and tendermint consensus.
@@ -407,6 +413,12 @@ pub struct ChainConfig {
     /// for more information
     pub eth_gps_statement_verifier: String,
 
+    /// Public key of the sequencer, used to verify the block signatures served
+    /// by the feeder gateway during full-node sync. When unset, block signature
+    /// verification is disabled.
+    #[serde(default)]
+    pub sequencer_public_key: Option<Felt>,
+
     /// Private key used by the node to sign blocks provided through the
     /// feeder gateway. This serves as a proof of origin and in the future
     /// will also be used by the p2p protocol and tendermint consensus.
@@ -484,6 +496,7 @@ impl Clone for ChainConfig {
             sequencer_address: self.sequencer_address,
             eth_core_contract_address: self.eth_core_contract_address.clone(),
             eth_gps_statement_verifier: self.eth_gps_statement_verifier.clone(),
+            sequencer_public_key: self.sequencer_public_key,
             private_key: None, // Intentionally not cloned for security
             mempool_mode: self.mempool_mode,
             mempool_full_policy: self.mempool_full_policy,
@@ -523,6 +536,7 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             sequencer_address: v2.sequencer_address,
             eth_core_contract_address: v2.eth_core_contract_address,
             eth_gps_statement_verifier: v2.eth_gps_statement_verifier,
+            sequencer_public_key: v2.sequencer_public_key,
             private_key: v2.private_key,
             mempool_mode: v2.mempool_mode,
             mempool_full_policy: v2.mempool_full_policy,
@@ -629,6 +643,8 @@ impl ChainConfig {
 
             eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
 
+            sequencer_public_key: Some(Felt::from_hex_unchecked(public_key::MAINNET)),
+
             latest_protocol_version: StarknetVersion::LATEST,
             block_time: Duration::from_secs(30),
 
@@ -671,6 +687,7 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
                 .expect("parsing a constant"),
+            sequencer_public_key: Some(Felt::from_hex_unchecked(public_key::SEPOLIA_TESTNET)),
             ..Self::starknet_mainnet()
         }
     }
@@ -687,6 +704,7 @@ impl ChainConfig {
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
+            sequencer_public_key: Some(Felt::from_hex_unchecked(public_key::SEPOLIA_INTEGRATION)),
             ..Self::starknet_mainnet()
         }
     }
@@ -698,6 +716,7 @@ impl ChainConfig {
             feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
             sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
+            sequencer_public_key: None,
             ..ChainConfig::starknet_sepolia()
         }
     }
@@ -716,6 +735,7 @@ impl ChainConfig {
             .unwrap(),
             // Disable finality for fast test execution
             l1_messages_finality_blocks: 0,
+            sequencer_public_key: None,
             ..ChainConfig::starknet_sepolia()
         }
     }

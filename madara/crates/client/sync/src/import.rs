@@ -91,6 +91,8 @@ pub enum BlockImportError {
     BlockNumber { got: u64, expected: u64 },
     #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
     BlockHash { got: Felt, expected: Felt },
+    #[error("Invalid block signature for block hash {block_hash:#x} against sequencer public key {public_key:#x}")]
+    BlockSignature { block_hash: Felt, public_key: Felt },
 
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
@@ -162,8 +164,6 @@ impl BlockImporterCtx {
         block_n: u64,
         signed_header: &BlockHeaderWithSignatures,
     ) -> Result<(), BlockImportError> {
-        // TODO: verify signatures
-
         // verify block_number
         if !self.config.no_check && block_n != signed_header.header.block_number {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
@@ -226,6 +226,26 @@ impl BlockImporterCtx {
             .compute_hash(self.backend.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
         if !self.config.no_check && signed_header.block_hash != block_hash {
             return Err(BlockImportError::BlockHash { got: signed_header.block_hash, expected: block_hash });
+        }
+
+        // Verify the sequencer's ECDSA signature over the block hash, when a signature is
+        // attached and the chain config provides the sequencer public key. Gateway sync only
+        // attaches signatures for post-v0.13.2 blocks: pre-v0.13.2 signatures cover a legacy
+        // message format and are skipped along with the rest of the integrity checks above.
+        if !self.config.no_check && !signed_header.consensus_signatures.is_empty() {
+            if let Some(public_key) = self.backend.chain_config().sequencer_public_key {
+                for signature in &signed_header.consensus_signatures {
+                    let valid = starknet_core::crypto::ecdsa_verify(
+                        &public_key,
+                        &block_hash,
+                        &starknet_core::crypto::Signature { r: signature.r, s: signature.s },
+                    )
+                    .unwrap_or(false);
+                    if !valid {
+                        return Err(BlockImportError::BlockSignature { block_hash, public_key });
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -651,7 +671,7 @@ mod tests {
     use super::{BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig};
     use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
-    use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+    use mp_block::{BlockHeaderWithSignatures, ConsensusSignature, FullBlock, Header};
     use mp_chain_config::ChainConfig;
     use mp_gateway::state_update::ProviderStateUpdateWithBlock;
     use mp_receipt::{ExecutionResult, TransactionReceipt};
@@ -769,6 +789,34 @@ mod tests {
                 &BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash),
             )
             .unwrap();
+    }
+
+    #[rstest]
+    fn verify_header_accepts_valid_block_signature(ctx: Ctx) {
+        // Real signature for sepolia block 100000, from
+        // https://feeder.alpha-sepolia.starknet.io/feeder_gateway/get_signature?blockNumber=100000
+        let signed_header = BlockHeaderWithSignatures {
+            header: ctx.block.header,
+            block_hash: ctx.block.block_hash,
+            consensus_signatures: vec![ConsensusSignature {
+                r: felt!("0x3e82db606fe17470125fb100b9ea61ce490473e07b58473f8f7e28a2605e8fd"),
+                s: felt!("0x7386d01a9a221a4a7ba05bb0f37b5f648d8cb12b4419519f3d4c69b8a66906d"),
+            }],
+        };
+        ctx.importer.verify_header(ctx.block_n, &signed_header).unwrap();
+    }
+
+    #[rstest]
+    fn test_error_block_signature(ctx: Ctx) {
+        let signed_header = BlockHeaderWithSignatures {
+            header: ctx.block.header,
+            block_hash: ctx.block.block_hash,
+            consensus_signatures: vec![ConsensusSignature { r: Felt::ONE, s: Felt::TWO }],
+        };
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n, &signed_header),
+            Err(BlockImportError::BlockSignature { .. })
+        );
     }
 
     // Negative tests: we insert some errors and see if we correctly catch them.
