@@ -131,7 +131,7 @@ casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0"
 casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0" }
 cairo-vm = "=3.2.0"
 cairo-native = "0.9.0-rc.2"
-alloy = { version = "1.1.0", features = [
+alloy = { version = "2.0.4", features = [
   "node-bindings",
   "eips",
   "rpc-types",
