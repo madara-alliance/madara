@@ -99,17 +99,17 @@ Utility scripts for development, testing, deployment, and database management.
 
 ### Key Scripts
 
-| Script                   | Purpose                      | Usage                                                   |
-| ------------------------ | ---------------------------- | ------------------------------------------------------- |
-| `madara`                 | Node management              | `./madara start KEY`, `./madara reset`, `./madara lint` |
-| `launcher`               | Interactive Docker launcher  | Interactive setup for full/sequencer/devnet modes       |
-| `js-tests.sh`            | JavaScript integration tests | Builds madara, starts devnet, runs npm tests            |
-| `e2e-tests.sh`           | E2E test runner              | Runs cargo nextest with ETH fork                        |
-| `e2e-coverage.sh`        | Coverage e2e tests           | Runs with llvm-cov, generates LCOV                      |
-| `artifacts.sh`           | Build contract artifacts     | Docker-based compilation                                |
-| `rpc_cmp`                | RPC comparison tool          | Compare Madara vs Pathfinder responses                  |
-| `create-base-db.sh`      | DB fixture creation          | Creates versioned DB snapshots                          |
-| `update-version-file.sh` | Version tracking             | Updates .db-versions.yml                                |
+| Script                   | Purpose                      | Usage                                                  |
+| ------------------------ | ---------------------------- | ------------------------------------------------------ |
+| `madara`                 | Legacy node helper           | `./scripts/madara start KEY`, `./scripts/madara reset` |
+| `launcher`               | Interactive Docker launcher  | Interactive setup for full/sequencer/devnet modes      |
+| `js-tests.sh`            | JavaScript integration tests | Builds madara, starts devnet, runs npm tests           |
+| `e2e-tests.sh`           | E2E test runner              | Runs cargo nextest with ETH fork                       |
+| `e2e-coverage.sh`        | Coverage e2e tests           | Runs with llvm-cov, generates LCOV                     |
+| `artifacts.sh`           | Build contract artifacts     | Docker-based compilation                               |
+| `rpc_cmp`                | RPC comparison tool          | Compare Madara vs Pathfinder responses                 |
+| `create-base-db.sh`      | DB fixture creation          | Creates versioned DB snapshots                         |
+| `update-version-file.sh` | Version tracking             | Updates .db-versions.yml                               |
 
 ### Common Usage
 
@@ -136,7 +136,7 @@ Utility scripts for development, testing, deployment, and database management.
 - All scripts use `set -e` for fail-fast
 - Default database path: `/tmp/madara`
 - Default RPC port: 9944
-- `launcher` is 870 lines with full interactive setup
+- `launcher` is an interactive setup script for full, sequencer, and devnet modes
 
 ---
 
@@ -202,12 +202,12 @@ test_utils/
 
 ```bash
 # Build mock Atlantic server
-cargo build --manifest-path test_utils/Cargo.toml
+cargo build -p utils-mock-atlantic-server
 
 # Run mock Atlantic server
-cargo run --bin utils-mock-atlantic-server              # Default: port 4001
-cargo run --bin utils-mock-atlantic-server 8080        # Custom port
-cargo run --bin utils-mock-atlantic-server 8080 0.1    # With 10% failure rate
+cargo run -p utils-mock-atlantic-server -- --port 4001
+cargo run -p utils-mock-atlantic-server -- --port 8080
+cargo run -p utils-mock-atlantic-server -- --port 8080 --failure-rate 0.1
 
 # Deploy dummy verifier
 ./test_utils/scripts/deploy_dummy_verifier.sh \
@@ -220,13 +220,12 @@ cargo run --bin utils-mock-atlantic-server 8080 0.1    # With 10% failure rate
 ```text
 POST /atlantic-query?apiKey={key}  # Submit proving job
 GET  /atlantic-query/{job_id}      # Get job status
-GET  /queries/{task_id}/proof.json # Download proof
-GET  /health                       # Health check
+GET  /is-alive                     # Health check
 ```
 
 ### Test Utils Key Info
 
-- Default port: 3001
+- Standalone and orchestrator-embedded default port: 4001
 - Default API key: "mock-key"
 - Job states: Received → InProgress → Done/Failed
 - Configurable failure rate, delays, auto-complete
@@ -292,16 +291,16 @@ Docker Compose setup for local EVM-Starknet integrated testing.
 
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Custom configuration
-MADARA_MODE=full MADARA_RPC_PORT=9945 docker-compose up -d
+MADARA_MODE=full MADARA_RPC_PORT=9945 docker compose up -d
 
 # With custom chain config
-MADARA_CHAIN_CONFIG=/path/to/config.yaml docker-compose up -d
+MADARA_CHAIN_CONFIG=/path/to/config.yaml docker compose up -d
 
 # Stop all
-docker-compose down
+docker compose down
 ```
 
 ### EVM Environment Variables

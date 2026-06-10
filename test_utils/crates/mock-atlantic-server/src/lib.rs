@@ -11,8 +11,7 @@ pub use types::{AtlanticAddJobResponse, AtlanticGetStatusResponse, MockServerCon
 
 /// Mock Atlantic Server
 ///
-/// This server mimics the Atlantic API endpoints for testing purposes.
-/// It provides the same HTTP interface as the real Atlantic service.
+/// This server mimics the Atlantic API endpoints the orchestrator uses for testing purposes.
 pub struct MockAtlanticServer {
     router: Router,
     addr: SocketAddr,
@@ -113,7 +112,7 @@ mod tests {
         let base_url = format!("http://127.0.0.1:{}", port);
 
         // Test health check
-        let response = client.get(format!("{}/health", base_url)).send().await.expect("Health check failed");
+        let response = client.get(format!("{}/is-alive", base_url)).send().await.expect("Health check failed");
 
         assert!(response.status().is_success());
 

@@ -5,7 +5,13 @@ provides a command-line interface (CLI) for working with TOML files.
 
 ## Installation
 
-You can install Taplo using either cargo or Yarn or NPM.
+Taplo is available in the repository Nix shell:
+
+```bash
+nix develop
+```
+
+You can also install Taplo using Cargo, Yarn, or NPM.
 
 ### Cargo
 
@@ -30,17 +36,17 @@ npm install -g @taplo/cli
 To check your TOML files for formatting issues, use the following command:
 
 ```bash
-npx @taplo/cli fmt --config taplo.toml --check
+taplo fmt --config ./taplo/taplo.toml --check
 ```
 
 To format all TOML files in your project, use the following command:
 
 ```bash
-npx @taplo/cli fmt --config taplo.toml
+taplo fmt --config ./taplo/taplo.toml
 ```
 
-This command will automatically format the TOML files, ensuring consistent and
-readable formatting.
+The repository `make check` target runs Taplo in check mode, and `make fmt`
+runs Taplo formatting.
 
 ### Configuration
 

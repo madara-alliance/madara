@@ -2,23 +2,20 @@
 
 ## 1. Tag it
 
-Once ready, tag the "main" branch at the given commit with the right tag:
+Once ready, tag the `main` branch at the given commit with the release tag:
 
 ```bash
-git tag v0.8.7
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-## 2. Trigger the action
+## 2. Publish the GitHub Release
 
-Trigger the manual workflow "Manual Release with Binaries" (manual_release.yml)
+Create and publish a GitHub Release for the pushed tag. Publishing the release
+triggers `.github/workflows/release-publish.yml`, which builds and publishes
+the release container images.
 
-- `tag`: v0.8.7
-- base: main
+## 3. Verify the Release Workflow
 
-## 3. Publish the release
-
-Review the release draft (created by the action) and publish
-
-## 4. Merge the change logs
-
-Review the CHANGELOG.md Pull Request (created by the action) and merge
+Check the "Workflow - Release (publish)" run and confirm the release image jobs
+completed successfully.

@@ -30,9 +30,9 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
-          - "http://orchestrator-1:8080/health"
-          - "http://orchestrator-2:8080/health"
-          - "http://orchestrator-3:8080/health"
+          - "http://orchestrator-1:3000/health"
+          - "http://orchestrator-2:3000/health"
+          - "http://orchestrator-3:3000/health"
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
