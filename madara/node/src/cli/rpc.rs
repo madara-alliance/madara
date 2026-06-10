@@ -160,10 +160,10 @@ pub struct RpcParams {
     /// When getting a storage proof, the database will revert the global merkle trie in-memory up until the
     /// block_n specified in the request. If that block_n is too far back in the past, this could make
     /// the node vulnerable to DoS attacks.
-    /// By default, this is set to 0: we do not serve storage proofs except for the current latest block.
-    /// For best performance, you should also set `--db-max-saved-trie-logs`, `--db-max-kept-snapshots` and
-    /// `--db-snapshot-interval` to make reverting much faster.
-    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", long, default_value_t = 0)]
+    /// By default, this is set to 128 blocks, which is fully covered by the default database snapshot
+    /// retention (`--db-max-kept-snapshots` 32 x `--db-snapshot-interval` 5), keeping reverts cheap.
+    /// Set to 0 to only serve storage proofs for the current latest block.
+    #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_DISTANCE", long, default_value_t = 128)]
     pub rpc_storage_proof_max_distance: u64,
 
     /// Limit how many keys can be queried in a storage proof rpc request. Default: 1024.
