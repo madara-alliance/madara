@@ -176,6 +176,8 @@ pub enum AtlanticAggregatorVersion {
     SnosAggregator0_13_3,
     #[serde(rename = "snos_aggregator_0.14.1")]
     SnosAggregator0_14_1,
+    #[serde(rename = "snos_aggregator_0.14.3")]
+    SnosAggregator0_14_3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

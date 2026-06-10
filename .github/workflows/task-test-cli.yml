@@ -4,34 +4,59 @@ name: Task - Run CLI tests
 on:
   workflow_dispatch:
     inputs:
+      should_run:
+        description: "Whether to run CLI tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
       madara-binary-hash:
         description: "Hash used to retrieve the madara binary artifact"
-        required: true
+        required: false
         type: string
+        default: ""
   workflow_call:
     inputs:
+      should_run:
+        description: "Whether to run CLI tests or emit a required-check stub"
+        required: false
+        type: string
+        default: "true"
       madara-binary-hash:
         description: "Hash used to retrieve the madara binary artifact"
-        required: true
+        required: false
         type: string
+        default: ""
 jobs:
   test-cli:
     runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
+      - name: Skip CLI tests
+        if: inputs.should_run != 'true'
+        run: echo "No CLI-impacting changes detected; required check stubbed."
+
       - name: Checkout Repository
+        if: inputs.should_run == 'true'
         uses: actions/checkout@v5
         with:
           submodules: recursive
+
       - name: Load env
+        if: inputs.should_run == 'true'
         uses: ./.github/actions/load-env
+
       - name: Download Madara binary
+        if: inputs.should_run == 'true'
         uses: actions/download-artifact@v7
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
+
       - name: Make Madara binary executable
+        if: inputs.should_run == 'true'
         run: chmod +x target/release/madara
+
       - name: Run cli without arguments
+        if: inputs.should_run == 'true'
         timeout-minutes: 20
         run: |
           ./target/release/madara --no-l1-sync --devnet &
@@ -39,7 +64,9 @@ jobs:
           while ! curl -s -X POST http://localhost:9944 -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' | grep -q result; do sleep 1; done
           kill $MADARA_PID
           wait $MADARA_PID || true
+
       - name: Run cli pointing to a file
+        if: inputs.should_run == 'true'
         timeout-minutes: 20
         run: |
           ./target/release/madara --no-l1-sync --devnet --config-file ./configs/args/config.json &

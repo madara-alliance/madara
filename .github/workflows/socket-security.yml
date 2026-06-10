@@ -5,6 +5,19 @@ name: Workflow - Socket Security
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "package.json"
+      - "package-lock.json"
+      - "**/package.json"
+      - "**/package-lock.json"
+      - "**/Scarb.toml"
+      - "**/Scarb.lock"
+      - "cairo_requirements.txt"
+      - ".github/workflows/socket-security.yml"
 
 permissions:
   contents: read
