@@ -1,6 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
-import { getRpcUrl, getAdminUrl } from "../src/config";
+import { gzipSync } from "zlib";
+import {
+  getRpcUrl,
+  getAdminUrl,
+  getGatewayUrl,
+  getFeederGatewayUrl,
+} from "../src/config";
 import { executeStateSetup } from "../src/state-executor";
 import { runAssertion } from "../src/assertion-runner";
 import { RpcCaller } from "../src/rpc-caller";
@@ -61,6 +67,9 @@ const contexts = new Map(
 );
 const setupFixture = fixtures[0];
 const setupContext = contexts.get(setupFixture.stateSetup.version)!;
+const latestRpcContext = contexts.get("0.10.2")!;
+const gatewayUrl = getGatewayUrl();
+const feederGatewayUrl = getFeederGatewayUrl();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,6 +79,124 @@ function normHex(s: string): string {
   if (!s.startsWith("0x")) return s.toLowerCase();
   const stripped = s.slice(2).replace(/^0+/, "") || "0";
   return "0x" + stripped.toLowerCase();
+}
+
+function buildUrl(
+  baseUrl: string,
+  relativePath: string,
+  query: Record<string, string | number | boolean> = {},
+): string {
+  const url = new URL(relativePath, baseUrl);
+  for (const [key, value] of Object.entries(query)) {
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+async function readJsonResponse(response: Response): Promise<any> {
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `HTTP ${response.status} ${response.statusText}: ${bodyText}`,
+    );
+  }
+  return JSON.parse(bodyText);
+}
+
+async function feederGet(
+  relativePath: string,
+  query: Record<string, string | number | boolean> = {},
+): Promise<any> {
+  const response = await fetch(buildUrl(feederGatewayUrl, relativePath, query));
+  return readJsonResponse(response);
+}
+
+async function gatewayPostJson(body: any, gzipBody = false): Promise<any> {
+  const payload = JSON.stringify(body);
+  const response = await fetch(buildUrl(gatewayUrl, "add_transaction"), {
+    method: "POST",
+    headers: gzipBody
+      ? {
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+        }
+      : {
+          "content-type": "application/json",
+        },
+    body: gzipBody ? gzipSync(Buffer.from(payload, "utf8")) : payload,
+  });
+  return readJsonResponse(response);
+}
+
+function mapGatewayResourceBounds(resourceBounds: any) {
+  return {
+    L1_GAS: resourceBounds.l1_gas,
+    L2_GAS: resourceBounds.l2_gas,
+    L1_DATA_GAS: resourceBounds.l1_data_gas,
+  };
+}
+
+async function buildGatewayInvokePayload(calls: any[]): Promise<any> {
+  const {
+    Account,
+    RpcProvider,
+    Deployer,
+    TransactionType,
+    stark,
+  } = await import("starknet");
+  const {
+    DEFAULT_ACCOUNT_ADDRESS,
+    DEFAULT_PRIVATE_KEY,
+    UDC_ADDRESS,
+  } = await import("../src/config");
+
+  const provider = new RpcProvider({ nodeUrl: latestRpcContext.rpcUrl });
+  const account = new Account({
+    provider,
+    address: DEFAULT_ACCOUNT_ADDRESS,
+    signer: DEFAULT_PRIVATE_KEY,
+    deployer: new Deployer(UDC_ADDRESS, "deployContract"),
+  });
+
+  const [invocation] = await (account as any).accountInvocationsFactory(
+    [{ type: TransactionType.INVOKE, payload: calls }],
+    {
+      versions: ["0x3"],
+      nonce: await provider.getNonceForAddress(DEFAULT_ACCOUNT_ADDRESS, "latest"),
+      tip: 0n,
+      paymasterData: [],
+      accountDeploymentData: [],
+      nonceDataAvailabilityMode: "L1",
+      feeDataAvailabilityMode: "L1",
+      resourceBounds: {
+        l1_gas: { max_amount: 0xf4240n, max_price_per_unit: 0x2540be400n },
+        l2_gas: { max_amount: 0x3b9aca00n, max_price_per_unit: 0x2540be400n },
+        l1_data_gas: { max_amount: 0x989680n, max_price_per_unit: 0x2540be400n },
+      },
+      skipValidate: false,
+    },
+  );
+
+  return {
+    type: "INVOKE_FUNCTION",
+    sender_address: invocation.contractAddress,
+    calldata: invocation.calldata,
+    signature: invocation.signature,
+    nonce: invocation.nonce,
+    resource_bounds: mapGatewayResourceBounds(
+      stark.resourceBoundsToHexString(invocation.resourceBounds),
+    ),
+    tip: invocation.tip,
+    paymaster_data: invocation.paymasterData,
+    account_deployment_data: invocation.accountDeploymentData,
+    nonce_data_availability_mode: stark.intDAM(
+      invocation.nonceDataAvailabilityMode,
+    ),
+    fee_data_availability_mode: stark.intDAM(
+      invocation.feeDataAvailabilityMode,
+    ),
+    version: invocation.version,
+  };
 }
 
 describe("Starknet RPC multi-version", () => {
@@ -591,4 +718,194 @@ describe("Starknet RPC multi-version", () => {
       });
     });
   }
+
+  describe("Gateway Endpoints", () => {
+    const gatewayResults: Record<string, any> = {};
+
+    it("submits a plain gateway invoke transaction and exposes it through the feeder gateway", async () => {
+      const { ERC20_ETH_ADDRESS } = await import("../src/config");
+
+      const payload = await buildGatewayInvokePayload([
+        {
+          contractAddress: ERC20_ETH_ADDRESS,
+          entrypoint: "transfer",
+          calldata: [
+            "0x008a1719e7ca19f3d91e8ef50a48fc456575f645497a1d55f30e3781f786afe4",
+            "0x1",
+            "0x0",
+          ],
+        },
+      ]);
+
+      const gatewayResponse = await gatewayPostJson(payload);
+      expect(gatewayResponse.code).toBe("TRANSACTION_RECEIVED");
+      expect(gatewayResponse.transaction_hash).toMatch(/^0x[0-9a-f]+$/i);
+      gatewayResults.smallTxHash = gatewayResponse.transaction_hash;
+
+      const preconfirmedBlock = await feederGet("get_preconfirmed_block", {
+        blockNumber: "latest",
+      });
+      const preconfirmedTxHashes = (preconfirmedBlock.transactions || []).map(
+        (tx: any) => tx.transaction_hash,
+      );
+      expect(preconfirmedTxHashes).toContain(gatewayResults.smallTxHash);
+
+      const admin = new AdminClient(adminUrl);
+      await admin.closeBlock();
+      await sleep(1000);
+
+      const status = await feederGet("get_transaction_status", {
+        transactionHash: gatewayResults.smallTxHash,
+      });
+      expect(status.tx_status).toBe("ACCEPTED_ON_L2");
+      expect(status.finality_status).toBe("ACCEPTED_ON_L2");
+      expect(status.execution_status).toBe("SUCCEEDED");
+      gatewayResults.smallStatus = status;
+
+      const transaction = await feederGet("get_transaction", {
+        transactionHash: gatewayResults.smallTxHash,
+      });
+      expect(transaction.status).toBe("ACCEPTED_ON_L2");
+      expect(transaction.finality_status).toBe("ACCEPTED_ON_L2");
+      expect(transaction.execution_status).toBe("SUCCEEDED");
+      expect(transaction.transaction.type).toBe("INVOKE_FUNCTION");
+      gatewayResults.smallTransaction = transaction;
+    });
+
+    it("accepts a gzipped oversized gateway invoke transaction", async () => {
+      const { ERC20_ETH_ADDRESS } = await import("../src/config");
+      const repeatedCall = {
+        contractAddress: ERC20_ETH_ADDRESS,
+        entrypoint: "transfer",
+        calldata: [
+          "0x008a1719e7ca19f3d91e8ef50a48fc456575f645497a1d55f30e3781f786afe4",
+          "0x1",
+          "0x0",
+        ],
+      };
+
+      const payload = await buildGatewayInvokePayload(
+        Array.from({ length: 10 }, () => repeatedCall),
+      );
+
+      const rawPayloadSize = Buffer.byteLength(JSON.stringify(payload), "utf8");
+      expect(rawPayloadSize).toBeGreaterThan(1024);
+
+      const gatewayResponse = await gatewayPostJson(payload, true);
+      expect(gatewayResponse.code).toBe("TRANSACTION_RECEIVED");
+      expect(gatewayResponse.transaction_hash).toMatch(/^0x[0-9a-f]+$/i);
+      gatewayResults.largeTxHash = gatewayResponse.transaction_hash;
+
+      const admin = new AdminClient(adminUrl);
+      await admin.closeBlock();
+      await sleep(1000);
+
+      const status = await feederGet("get_transaction_status", {
+        transactionHash: gatewayResults.largeTxHash,
+      });
+      expect(status.tx_status).toBe("ACCEPTED_ON_L2");
+      expect(status.execution_status).toBe("SUCCEEDED");
+
+      const rpcCaller = new RpcCaller(latestRpcContext.rpcUrl);
+      const receipt = await rpcCaller.call("starknet_getTransactionReceipt", [
+        gatewayResults.largeTxHash,
+      ]);
+      expect(receipt.execution_status).toBe("SUCCEEDED");
+      gatewayResults.largeReceipt = receipt;
+    });
+
+    it("serves the historical feeder block, state update, traces, and signature endpoints", async () => {
+      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
+        ?.block_number;
+      const historicalBlockHash = sharedResults.get("invoke_increase_100")
+        ?.block_hash;
+      expect(historicalBlockNumber).toBeDefined();
+      expect(historicalBlockHash).toBeDefined();
+
+      const block = await feederGet("get_block", {
+        blockNumber: historicalBlockNumber!,
+      });
+      expect(block.block_number).toBe(historicalBlockNumber);
+      expect(normHex(block.block_hash)).toBe(normHex(historicalBlockHash!));
+
+      const stateUpdate = await feederGet("get_state_update", {
+        blockNumber: historicalBlockNumber!,
+        includeBlock: true,
+      });
+      expect(normHex(stateUpdate.block.block_hash)).toBe(
+        normHex(historicalBlockHash!),
+      );
+      expect(stateUpdate.state_diff).toBeDefined();
+
+      const traces = await feederGet("get_block_traces", {
+        blockNumber: historicalBlockNumber!,
+      });
+      expect(Array.isArray(traces.traces)).toBe(true);
+      expect(traces.traces.length).toBeGreaterThan(0);
+
+      const signature = await feederGet("get_signature", {
+        blockNumber: historicalBlockNumber!,
+      });
+      expect(Array.isArray(signature.signature)).toBe(true);
+      expect(signature.signature).toHaveLength(2);
+    });
+
+    it("round-trips the block hash/id feeder endpoints on the local chain", async () => {
+      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
+        ?.block_number;
+      const historicalBlockHash = sharedResults.get("invoke_increase_100")
+        ?.block_hash;
+      expect(historicalBlockNumber).toBeDefined();
+      expect(historicalBlockHash).toBeDefined();
+
+      const blockHashById = await feederGet("get_block_hash_by_id", {
+        blockId: historicalBlockNumber!,
+      });
+      expect(normHex(blockHashById.block_hash)).toBe(
+        normHex(historicalBlockHash!),
+      );
+
+      const blockIdByHash = await feederGet("get_block_id_by_hash", {
+        blockHash: historicalBlockHash!,
+      });
+      expect(blockIdByHash.block_id).toBe(historicalBlockNumber);
+    });
+
+    it("serves class and chain metadata feeder endpoints", async () => {
+      const helloClassHash = sharedResults.get("declare_hello")?.class_hash;
+      expect(helloClassHash).toBeDefined();
+
+      const classByHash = await feederGet("get_class_by_hash", {
+        classHash: helloClassHash!,
+      });
+      expect(classByHash.entry_points_by_type).toBeDefined();
+
+      const compiledClass = await feederGet(
+        "get_compiled_class_by_class_hash",
+        {
+          classHash: helloClassHash!,
+        },
+      );
+      expect(compiledClass.bytecode).toBeDefined();
+
+      const contractAddresses = await feederGet("get_contract_addresses");
+      expect(contractAddresses.Starknet).toBeDefined();
+      expect(contractAddresses.GpsStatementVerifier).toBeDefined();
+
+      const publicKey = await feederGet("get_public_key");
+      expect(publicKey).toMatch(/^0x[0-9a-f]+$/i);
+    });
+
+    it("returns bouncer weights for a historical block", async () => {
+      const historicalBlockNumber = sharedResults.get("invoke_increase_100")
+        ?.block_number;
+      expect(historicalBlockNumber).toBeDefined();
+
+      const bouncerWeights = await feederGet("get_block_bouncer_weights", {
+        blockNumber: historicalBlockNumber!,
+      });
+      expect(bouncerWeights).toBeDefined();
+      expect(Object.keys(bouncerWeights).length).toBeGreaterThan(0);
+    });
+  });
 });

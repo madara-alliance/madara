@@ -74,6 +74,9 @@ jobs:
             --rpc-cors "*" \
             --rpc-external \
             --rpc-admin \
+            --gateway-enable \
+            --gateway-external \
+            --feeder-gateway-enable \
             --devnet \
             --preset devnet \
             --l1-gas-price 0 \
