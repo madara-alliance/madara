@@ -136,6 +136,7 @@ impl Service for RpcService {
                             RpcVersion::RPC_VERSION_0_9_0,
                             RpcVersion::RPC_VERSION_0_10_0,
                             RpcVersion::RPC_VERSION_0_10_2,
+                            RpcVersion::RPC_VERSION_0_10_3,
                         ],
                     ),
                     RpcType::Admin => (
