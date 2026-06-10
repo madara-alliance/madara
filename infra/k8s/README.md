@@ -11,6 +11,7 @@ infra/k8s/
 │   ├── configmap.yaml             # ConfigMap with environment variables
 │   ├── secrets.yaml               # Secret for sensitive data
 │   ├── svc.yaml                   # Service manifest
+│   ├── networkpolicy.yaml         # RPC ingress policy
 │   └── kustomization.yaml         # Base kustomization
 ├── overlays/                      # Environment-specific overlays
 │   ├── dev/                       # Development environment
@@ -180,6 +181,9 @@ spec:
 3. **Base Manifests**: Always modify the base manifests (`base/`) for changes that should apply to all environments.
 
 4. **Overlay Patches**: Use overlay-specific patches for environment-specific configurations.
+
+5. **RPC Ingress**: The base NetworkPolicy limits orchestrator RPC ingress on TCP/3000 to
+   orchestrator pods in the same environment.
 
 ## Required Configuration Updates
 
