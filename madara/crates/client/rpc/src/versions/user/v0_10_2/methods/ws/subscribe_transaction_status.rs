@@ -5,26 +5,25 @@ pub async fn subscribe_transaction_status(
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     transaction_hash: mp_convert::Felt,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
+    // Resolve the watcher before accepting the subscription, so configurations without a
+    // tx-status watcher reject the subscribe call instead of accepting the connection and then
+    // closing it with an opaque Internal error.
+    let watch =
+        starknet.tx_status_watcher.as_ref().and_then(|watcher| watcher.watch_transaction_status(transaction_hash));
+    let Some(mut watch) = watch else {
+        subscription_sink
+            .reject(crate::errors::StarknetWsApiError::internal_server_error(
+                "SubscribeTransactionStatus is not available: tx-status watcher is not configured",
+            ))
+            .await;
+        return Ok(());
+    };
+
     let sink = subscription_sink
         .accept()
         .await
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-
-    let mut watch = starknet
-        .tx_status_watcher
-        .as_ref()
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed: tx-status watcher is not configured",
-            )
-        })?
-        .watch_transaction_status(transaction_hash)
-        .ok_or_else(|| {
-            crate::errors::StarknetWsApiError::internal_server_error(
-                "SubscribeTransactionStatus failed to create transaction status watcher",
-            )
-        })?;
     let mut reorgs = starknet.backend.subscribe_reorgs();
 
     let mut allow_current = true;
@@ -33,7 +32,7 @@ pub async fn subscribe_transaction_status(
             return Ok(());
         };
         match update {
-            SubscriptionUpdate::Snapshot(snapshot) => {
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::Status(snapshot)) => {
                 allow_current = false;
 
                 send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
@@ -41,6 +40,9 @@ pub async fn subscribe_transaction_status(
                     crate::close_ws_subscription(starknet, sink.subscription_id()).await?;
                     return Ok(());
                 }
+            }
+            SubscriptionUpdate::Status(crate::TxStatusUpdate::NotFound) => {
+                allow_current = false;
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
             SubscriptionUpdate::WatcherClosed => {
@@ -52,7 +54,7 @@ pub async fn subscribe_transaction_status(
 }
 
 enum SubscriptionUpdate {
-    Snapshot(crate::TxStatusSnapshot),
+    Status(crate::TxStatusUpdate),
     Reorg(mc_db::ReorgNotification),
     WatcherClosed,
 }
@@ -65,9 +67,7 @@ async fn next_update(
     allow_current: bool,
 ) -> Result<Option<SubscriptionUpdate>, crate::errors::StarknetWsApiError> {
     if allow_current {
-        if let Some(snapshot) = watch.take_current() {
-            return Ok(Some(SubscriptionUpdate::Snapshot(snapshot)));
-        }
+        return Ok(Some(SubscriptionUpdate::Status(watch.take_current())));
     }
 
     tokio::select! {
@@ -83,7 +83,7 @@ async fn next_update(
             }
         },
         next = watch.recv() => {
-            Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
+            Ok(Some(next.map(SubscriptionUpdate::Status).unwrap_or(SubscriptionUpdate::WatcherClosed)))
         },
     }
 }

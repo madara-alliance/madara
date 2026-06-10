@@ -94,13 +94,11 @@ async fn send_block_receipts(
             FinalityStatus::PreConfirmed => TxnFinalityStatus::PreConfirmed,
             FinalityStatus::AcceptedOnL2 => TxnFinalityStatus::L2,
         });
-        let item = super::SubscriptionItem::new(
-            sink.subscription_id(),
-            TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number },
-        );
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribeNewTransactionReceipts failed to create response for tx hash {tx_hash:#x}")
-        })?;
+        let payload = TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number };
+        let msg = super::notification_message(super::NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD, sink, &payload)
+            .or_else_internal_server_error(|| {
+                format!("SubscribeNewTransactionReceipts failed to create response for tx hash {tx_hash:#x}")
+            })?;
 
         sink.send(msg)
             .await
