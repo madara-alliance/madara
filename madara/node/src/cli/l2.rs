@@ -118,10 +118,11 @@ impl L2SyncParams {
         let mut client = GatewayProvider::new(gateway, feeder_gateway);
 
         if let Some(api_key) = &self.gateway_key {
-            client.add_header(
-                HeaderName::from_static("x-throttling-bypass"),
-                HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?,
-            )
+            let mut value = HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?;
+            // Mark the API key as sensitive so it is masked in any `Debug` output (e.g. if the
+            // provider, its headers, or a request ever end up in a log or error message).
+            value.set_sensitive(true);
+            client.add_header(HeaderName::from_static("x-throttling-bypass"), value)
         }
 
         Ok(Arc::new(client))
