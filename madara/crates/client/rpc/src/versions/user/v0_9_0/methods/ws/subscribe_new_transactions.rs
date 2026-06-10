@@ -751,9 +751,11 @@ mod test {
     async fn subscribe_new_transactions_rejects_too_many_sender_addresses_v0_9() {
         let chain_config = Arc::new(ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
+        let provider = Arc::new(crate::test_utils::TestTransactionProvider);
         let mut starknet = Starknet::new(
             backend,
-            Arc::new(crate::test_utils::TestTransactionProvider),
+            Arc::clone(&provider) as _,
+            provider,
             Default::default(),
             None,
             ServiceContext::new_for_testing(),
