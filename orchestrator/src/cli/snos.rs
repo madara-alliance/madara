@@ -11,6 +11,7 @@ pub(crate) fn parse_constants(path: &str) -> Result<VersionedConstants, String> 
 }
 
 #[derive(Debug, Clone, Args)]
+#[group(requires_all = ["rpc_for_snos"])]
 pub struct SNOSCliArgs {
     /// Weather to use full output or not
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT", long, default_value = "false")]
