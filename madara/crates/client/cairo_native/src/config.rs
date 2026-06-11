@@ -131,19 +131,14 @@ pub struct NativeExecutionConfig {
 ///
 /// This design prevents accidental access to execution config when native is disabled,
 /// providing better type safety than a boolean flag.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum NativeConfig {
     /// Native execution is disabled - all contracts use Cairo VM.
+    #[default]
     Disabled,
 
     /// Native execution is enabled with the provided configuration.
     Enabled(NativeExecutionConfig),
-}
-
-impl Default for NativeConfig {
-    fn default() -> Self {
-        Self::Disabled
-    }
 }
 
 impl Default for NativeExecutionConfig {
