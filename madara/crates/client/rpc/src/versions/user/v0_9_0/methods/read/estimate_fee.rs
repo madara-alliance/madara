@@ -42,7 +42,7 @@ pub async fn estimate_fee(
             let only_query = tx.is_query();
             let (api_tx, _) =
                 tx.into_starknet_api(view.backend().chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: validate };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
@@ -51,7 +51,7 @@ pub async fn estimate_fee(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], transactions)?, exec_context))
     })
     .await?;
 
@@ -166,5 +166,36 @@ mod tests {
 
         assert_eq!(estimates.len(), 1);
         assert!(estimates[0].common.overall_fee > 0);
+    }
+
+    /// SKIP_VALIDATE must relax the strict nonce check, like pathfinder
+    /// (`strict_nonce_check: !skip_validate`) and juno: wallets estimate queued transactions with
+    /// future nonces.
+    #[tokio::test]
+    async fn estimate_fee_skip_validate_allows_future_nonce() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![transfer_tx(&backend, &keys.0[0], Felt::from(5), false)];
+        let estimates = estimate_fee(
+            &rpc,
+            txs,
+            vec![SimulationFlagForEstimateFee::SkipValidate],
+            BlockId::Tag(BlockTag::Latest),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(estimates.len(), 1);
+    }
+
+    /// Without SKIP_VALIDATE the strict nonce check still applies.
+    #[tokio::test]
+    async fn estimate_fee_future_nonce_fails_without_skip_validate() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![transfer_tx(&backend, &keys.0[0], Felt::from(5), true)];
+        let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::TxnExecutionError { tx_index: 0, .. });
     }
 }

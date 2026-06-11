@@ -42,7 +42,7 @@ pub async fn estimate_fee(
             let only_query = tx.is_query();
             let (api_tx, _) =
                 tx.into_starknet_api(view.backend().chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: validate };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
@@ -51,7 +51,7 @@ pub async fn estimate_fee(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], transactions)?, exec_context))
     })
     .await
     .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;

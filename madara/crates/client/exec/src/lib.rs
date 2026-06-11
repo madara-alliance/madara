@@ -169,6 +169,7 @@ mod blockifier_state_adapter;
 mod call;
 mod execution_read_cache;
 mod fee;
+mod l2_gas_search;
 mod layered_state_adapter;
 pub mod metrics;
 pub mod trace;
@@ -291,6 +292,11 @@ pub struct ExecutionResult {
     pub execution_info: TransactionExecutionInfo,
     pub state_diff: CommitmentStateDiff,
     pub gas_vector_computation_mode: GasVectorComputationMode,
+    /// When the minimal viable L2 gas limit was discovered through
+    /// [`ExecutionContext::execute_transactions_for_estimation`], the gas vector to price fee
+    /// estimates with: the consumed gas with `l2_gas` replaced by the discovered limit. The
+    /// receipt in `execution_info` keeps the actually consumed amounts.
+    pub gas_for_fee_estimate: Option<GasVector>,
     /// Addresses that were newly deployed by this transaction (vs class replacements).
     pub deployed_contracts: HashSet<Felt>,
     /// Class hash declared as deprecated (Cairo 0) by this transaction, if any.
