@@ -106,15 +106,15 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.0-rc.2" }
-starknet-contract = { package = "starknet-rust-contract", version = "0.19.0-rc.2" }
-starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.0-rc.2" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.19.0-rc.2" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
-starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.1" }
+starknet-contract = { package = "starknet-rust-contract", version = "0.19.1" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.1" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.1" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.1" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.19.1" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.19.1" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.19.1" }
+starknet = { package = "starknet-rust", version = "0.19.1" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
