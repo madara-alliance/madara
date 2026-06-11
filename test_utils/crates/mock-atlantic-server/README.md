@@ -1,51 +1,40 @@
 # Mock Atlantic Server
 
-A mock HTTP server that implements the Atlantic API endpoints for testing and development purposes.
+A mock HTTP server that implements the Atlantic API endpoints the orchestrator uses for testing and development purposes.
 
 ## Overview
 
-The Mock Atlantic Server provides the same HTTP interface as the real Atlantic service, allowing you to test your
-applications without depending on the external Atlantic service. It supports all the major endpoints and can simulate
+The Mock Atlantic Server provides the subset of the Atlantic HTTP interface used by the orchestrator, allowing you to test your
+applications without depending on the external Atlantic service. It can simulate
 various scenarios including failures and processing delays.
 
 ## Features
 
-- 🚀 **Full API Compatibility**: Implements all Atlantic API endpoints
+- 🚀 **Orchestrator API Compatibility**: Implements the Atlantic endpoints used by the orchestrator
 - 🎭 **Configurable Behavior**: Simulate failures, processing delays, and different response patterns
 - 🔄 **Realistic Job Lifecycle**: Jobs progress through realistic status transitions
 - 📊 **Configurable Failure Rates**: Test error handling with controlled failure simulation
 - 🏥 **Health Checks**: Built-in health check endpoint for monitoring
 - 🧪 **Testing Support**: Easy integration for unit and integration tests
 
-// Usage examples in comments:
-//
-// Run with default settings (port 4001, no failures):
-// cargo run --bin mock-atlantic-server
-//
-// Run on port 8080:
-// cargo run --bin mock-atlantic-server 8080
-//
-// Run on port 8080 with 10% failure rate:
-// cargo run --bin mock-atlantic-server 8080 0.1
-
 ## How to Spin the Server
 
 - Run with default settings (port 4001, no failures):
 
   ```bash
-  cargo run --bin utils-mock-atlantic-server
+  cargo run -p utils-mock-atlantic-server -- --port 4001
   ```
 
 - Run on port 8080:
 
   ```bash
-  cargo run --bin utils-mock-atlantic-server 8080
+  cargo run -p utils-mock-atlantic-server -- --port 8080
   ```
 
 - Run on port 8080 with 10% failure rate:
 
   ```bash
-  cargo run --bin utils-mock-atlantic-server 8080 0.1
+  cargo run -p utils-mock-atlantic-server -- --port 8080 --failure-rate 0.1
   ```
 
 ## API Endpoints
@@ -55,84 +44,80 @@ various scenarios including failures and processing delays.
 - `POST /atlantic-query?apiKey={key}` - Submit a new proving job
 - `GET /atlantic-query/{job_id}` - Get job status and details
 
-### Proof Retrieval
-
-- `GET /queries/{task_id}/proof.json` - Download proof data for completed jobs
-
 ### Health & Monitoring
 
-- `GET /health` - Health check endpoint
+- `GET /is-alive` - Health check endpoint
 
 ### Documentation
 
-For complete API documentation, see the [swagger.json](./swagger.json) file which contains the full OpenAPI 3.0.3
-specification from the Herodotus Atlantic API.
+For the upstream Atlantic API surface, see the [swagger.json](./swagger.json) file which contains the OpenAPI 3.0.3
+specification from the Herodotus Atlantic API. The mock server implements only the endpoints listed above.
 
 ## Usage
 
 ### Running as a Standalone Server
 
 ```bash
-# Run with default settings (port 3001, no failures)
-cargo run --bin mock-atlantic-server
+# Run with default settings (port 4001, no failures)
+cargo run -p utils-mock-atlantic-server -- --port 4001
 
 # Run on custom port
-cargo run --bin mock-atlantic-server 8080
+cargo run -p utils-mock-atlantic-server -- --port 8080
 
 # Run with failure simulation (10% failure rate)
-cargo run --bin mock-atlantic-server 8080 0.1
+cargo run -p utils-mock-atlantic-server -- --port 8080 --failure-rate 0.1
 ```
 
 ### Using with Atlantic Client
 
-To use the mock server with the real Atlantic client, simply point the `atlantic_service_url` to your mock server when
-the mock factor is enabled.
+To use the mock server with the real Atlantic client, point the `atlantic_service_url` to your mock server when
+the mock fact hash mode is enabled.
 
 ### Using with Orchestrator
 
-The mock Atlantic server is automatically integrated with the orchestrator. When you set `atlantic_mock_fact_hash=true`,
-the orchestrator will:
+The orchestrator can start this mock server for local testing. When you pass
+`--mock-atlantic-server` with `--prover atlantic` and `--atlantic-network TESTNET`,
+the orchestrator starts the mock server on port 4001. Set
+`--atlantic-service-url http://127.0.0.1:4001` so the Atlantic client sends
+requests to it. `--atlantic-mock-fact-hash true` tells Atlantic to use mock fact
+hash mode.
 
-1. Automatically start the mock Atlantic server on port 3001
-2. Configure the Atlantic client to use the local mock server instead of the real Atlantic service
+This setup lets you:
+
+1. Start the mock Atlantic server from the orchestrator process
+2. Route Atlantic client requests to the local mock server
 3. Disable fact checking for faster testing
 
-Example usage:
+Besides the normal `orchestrator run` arguments, provide the required Atlantic
+arguments. This snippet shows the Atlantic-specific part:
 
 ```bash
-# Run orchestrator with mock Atlantic server (SIMPLIFIED!)
-# Only 2 Atlantic parameters needed - everything else gets sensible defaults!
-cargo run --bin orchestrator -- run \
+cargo run --release --bin orchestrator run \
   --prover atlantic \
+  --mock-atlantic-server \
+  --atlantic-api-key "mock-key" \
+  --atlantic-service-url "http://127.0.0.1:4001" \
+  --atlantic-rpc-node-url "http://127.0.0.1:9944/rpc/v0_10_2" \
   --atlantic-mock-fact-hash "true" \
-  # ... other orchestrator arguments (non-Atlantic)
-
-# Optional: Override defaults if needed
-cargo run --bin orchestrator -- run \
-  --prover atlantic \
-  --atlantic-mock-fact-hash "true" \
-  --atlantic-api-key "custom-mock-key" \
-  --atlantic-network "MAINNET" \
-  # ... other orchestrator arguments
+  --atlantic-prover-type "ethereum" \
+  --atlantic-settlement-layer "ethereum" \
+  --atlantic-verifier-contract-address "0x0000000000000000000000000000000000000000" \
+  --atlantic-network "TESTNET"
 ```
 
-When `atlantic_mock_fact_hash=true`, the orchestrator will log:
+When `--mock-atlantic-server` starts the embedded server, the orchestrator will log:
 
 ```text
-Starting Mock Atlantic Server for testing...
-Mock Atlantic Server started on port 3001
-Configured Atlantic client to use mock server at http://127.0.0.1:3001
-Using hardcoded verifier contract address for mock mode: 0x0000000000000000000000000000000000000000
+Mock Atlantic server flag is enabled, starting mock server...
+Starting mock Atlantic server on port 4001
+Mock Atlantic server started successfully
 ```
 
 **Important Notes for Orchestrator Integration:**
 
-- The `--atlantic-service-url` you provide on the command line is automatically overridden to
-  `http://127.0.0.1:3001`
-- The `--atlantic-verifier-contract-address` is automatically overridden to
-  `0x0000000000000000000000000000000000000000`
+- The `--atlantic-service-url` value is not rewritten automatically; set it to
+  `http://127.0.0.1:4001` when using the embedded mock server.
 - Your actual API key, network, and other parameters are preserved and used by the mock server
-- This ensures seamless testing without requiring manual URL changes
 
 ## Configuration Options
 

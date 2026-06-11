@@ -1,6 +1,10 @@
 use crate::GatewayProvider;
 use async_trait::async_trait;
-use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
+use mc_submit_tx::{
+    RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
+    SubmitValidatedTransaction, TransactionLookup,
+};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -31,7 +35,7 @@ fn map_gateway_error(err: SequencerError) -> SubmitTransactionError {
             GWErrCode::InvalidContractDefinition => rejected(InvalidContractDefinition, e.message),
             GWErrCode::NotPermittedContract => rejected(NotPermittedContract, e.message),
             GWErrCode::UndeclaredClass => rejected(UndeclaredClass, e.message),
-            GWErrCode::TransactionLimitExceeded => rejected(TransactionLimitExceeded, e.message),
+            GWErrCode::TransactionLimitExceeded => rejected(MempoolLimitReached, e.message),
             GWErrCode::InvalidTransactionNonce => rejected(InvalidTransactionNonce, e.message),
             GWErrCode::ReplacementTransactionUnderpriced => rejected(ReplacementTransactionUnderpriced, e.message),
             GWErrCode::FeeBelowMinimum => rejected(FeeBelowMinimum, e.message),
@@ -121,44 +125,44 @@ impl SubmitTransaction for GatewayProvider {
             .map_err(map_gateway_error)
             .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
     }
+}
 
+#[async_trait]
+impl TransactionLookup for GatewayProvider {
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        // The gateway cannot inform us about the status of transactions it has received since this
-        // is forwarded to a remote node which does not expose any endpoint to query this state. By
-        // default, all transactions which pass through the gateway will be automatically considered
-        // as received.
+        // Keep this as a cheap capability probe. Rich feeder lookups are available through the
+        // explicit `feeder_transaction*` hooks below.
         None
     }
 
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
-        // We cannot subscribe to new transactions from the gateway for the same reasons as above
+        // The feeder gateway does not expose a push-based transaction stream.
         None
+    }
+
+    async fn feeder_transaction_status(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Result<Option<ProviderTransactionStatus>, SubmitTransactionError> {
+        self.get_transaction_status(hash).await.map(Some).map_err(map_gateway_error)
+    }
+
+    async fn feeder_transaction(
+        &self,
+        hash: starknet_types_core::felt::Felt,
+    ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
+        self.get_transaction(hash).await.map(Some).map_err(map_gateway_error)
     }
 }
 
 #[async_trait]
-impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
+impl SubmitValidatedTransaction for GatewayProvider {
     async fn submit_validated_transaction(
         &self,
         tx: mp_transactions::validated::ValidatedTransaction,
     ) -> Result<(), SubmitTransactionError> {
         self.add_validated_transaction(tx).await.map_err(map_gateway_error)
-    }
-
-    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        // The gateway cannot inform us about the status of transactions it has received since this
-        // is forwarded to a remote node which does not expose any endpoint to query this state. By
-        // default, all transactions which pass through the gateway will be automatically considered
-        // as received.
-        None
-    }
-
-    async fn subscribe_new_transactions(
-        &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
-        // We cannot subscribe to new transactions from the gateway for the same reasons as above
-        None
     }
 }

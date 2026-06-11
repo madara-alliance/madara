@@ -6,6 +6,7 @@ resources:
   - configmap.yaml
   - secrets.yaml
   - svc.yaml
+  - networkpolicy.yaml
 
 commonLabels:
   app: orchestrator

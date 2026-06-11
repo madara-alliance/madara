@@ -26,6 +26,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Load env
+        uses: ./.github/actions/load-env
+
       - name: Download Madara binary
         uses: actions/download-artifact@v7
         with:
@@ -42,7 +45,9 @@ jobs:
           path: build-artifacts/
 
       - name: Install Foundry (Anvil)
-        uses: foundry-rs/foundry-toolchain@v1
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install dependencies
         run: |

@@ -1,8 +1,12 @@
 use self::server::rpc_api_build;
-use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
+use crate::{
+    cli::RpcParams,
+    submit_tx::{MakeSubmitTransactionSwitch, MakeTransactionLookupSwitch},
+};
 use jsonrpsee::server::ServerHandle;
 use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
+use mc_mempool::Mempool;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
 use mp_chain_config::RpcVersion;
@@ -24,9 +28,11 @@ pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
+    transaction_lookup_provider: MakeTransactionLookupSwitch,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
+    mempool: Option<Arc<Mempool>>,
 }
 
 impl RpcService {
@@ -34,14 +40,17 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
+            mempool: None,
         }
     }
 
@@ -49,15 +58,19 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
         block_prod_handle: BlockProductionHandle,
+        mempool: Arc<Mempool>,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
+            mempool: Some(mempool),
         }
     }
 }
@@ -68,28 +81,35 @@ impl Service for RpcService {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
+        let transaction_lookup_provider = self.transaction_lookup_provider.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
 
         self.server_handle = Some(server_handle);
         let block_prod_handle = self.block_prod_handle.clone();
+        let mempool = self.mempool.clone();
 
         let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
         let rpc_unsafe_enabled = self.config.rpc_unsafe;
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
+            let transaction_lookup = Arc::new(transaction_lookup_provider.make(ctx.clone()));
 
             let mut starknet = Starknet::new(
                 backend.clone(),
                 submit_tx,
+                transaction_lookup,
                 config.storage_proof_config(),
                 block_prod_handle,
                 ctx.clone(),
             );
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
+            if let Some(mempool) = mempool.clone() {
+                starknet.set_mempool(mempool);
+            }
 
             let metrics = RpcMetrics::register()?;
 

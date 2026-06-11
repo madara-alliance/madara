@@ -1,15 +1,313 @@
 use chrono::Utc;
+use dashmap::{mapref::entry::Entry, DashMap};
+use once_cell::sync::Lazy;
+use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::KeyValue;
+use std::time::Instant;
 
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::jobs::WorkerTriggerType;
+use crate::types::queue::{JobState, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+
+// Keep descriptors at zero so the async gauge can publish drained workloads as 0 on later scrapes.
+static ACTIVE_WORKLOAD_SLOTS: Lazy<DashMap<WorkloadDescriptor, u64>> = Lazy::new(DashMap::new);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WorkKind {
+    SnosRun,
+    ProofCreation,
+    ProofRegistration,
+    DataSubmission,
+    StateTransition,
+    Aggregator,
+    SnosBatching,
+    AggregatorBatching,
+    StorageCleanup,
+    Healing,
+}
+
+impl WorkKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SnosRun => "SnosRun",
+            Self::ProofCreation => "ProofCreation",
+            Self::ProofRegistration => "ProofRegistration",
+            Self::DataSubmission => "DataSubmission",
+            Self::StateTransition => "StateTransition",
+            Self::Aggregator => "Aggregator",
+            Self::SnosBatching => "SnosBatching",
+            Self::AggregatorBatching => "AggregatorBatching",
+            Self::StorageCleanup => "StorageCleanup",
+            Self::Healing => "Healing",
+        }
+    }
+
+    fn from_job_type(job_type: &JobType) -> Self {
+        match job_type {
+            JobType::SnosRun => Self::SnosRun,
+            JobType::ProofCreation => Self::ProofCreation,
+            JobType::ProofRegistration => Self::ProofRegistration,
+            JobType::DataSubmission => Self::DataSubmission,
+            JobType::StateTransition => Self::StateTransition,
+            JobType::Aggregator => Self::Aggregator,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WorkPhase {
+    // Concrete lifecycle stage shown on dashboards.
+    Process,
+    Verify,
+    Trigger,
+    Maintenance,
+}
+
+impl WorkPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Process => "process",
+            Self::Verify => "verify",
+            Self::Trigger => "trigger",
+            Self::Maintenance => "maintenance",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WorkloadOutcome {
+    Success,
+    Error,
+}
+
+impl WorkloadOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct WorkloadDescriptor {
+    work_kind: WorkKind,
+    work_phase: WorkPhase,
+    source_job_type: Option<WorkKind>,
+}
+
+impl WorkloadDescriptor {
+    fn new(work_kind: WorkKind, work_phase: WorkPhase, source_job_type: Option<WorkKind>) -> Self {
+        Self { work_kind, work_phase, source_job_type }
+    }
+
+    fn active_attributes(self) -> [KeyValue; 3] {
+        [
+            KeyValue::new("work_kind", self.work_kind.as_str()),
+            KeyValue::new("work_phase", self.work_phase.as_str()),
+            KeyValue::new("source_job_type", self.source_job_type.map_or("none", WorkKind::as_str)),
+        ]
+    }
+
+    fn completed_attributes(self, outcome: WorkloadOutcome) -> [KeyValue; 4] {
+        [
+            KeyValue::new("work_kind", self.work_kind.as_str()),
+            KeyValue::new("work_phase", self.work_phase.as_str()),
+            KeyValue::new("source_job_type", self.source_job_type.map_or("none", WorkKind::as_str)),
+            KeyValue::new("outcome", outcome.as_str()),
+        ]
+    }
+}
+
+pub struct WorkloadTracker {
+    descriptor: WorkloadDescriptor,
+    started_at: Instant,
+    finished: bool,
+}
+
+impl WorkloadTracker {
+    fn start(descriptor: WorkloadDescriptor) -> Self {
+        increment_active_slots(descriptor);
+        Self { descriptor, started_at: Instant::now(), finished: false }
+    }
+
+    pub fn finish_success(mut self) {
+        self.finish(WorkloadOutcome::Success);
+    }
+
+    pub fn finish_error(mut self) {
+        self.finish(WorkloadOutcome::Error);
+    }
+
+    fn finish(&mut self, outcome: WorkloadOutcome) {
+        if self.finished {
+            return;
+        }
+
+        self.finished = true;
+        let duration_seconds = self.started_at.elapsed().as_secs_f64();
+        let completed_attributes = self.descriptor.completed_attributes(outcome);
+
+        ORCHESTRATOR_METRICS.workload_busy_seconds_total.add(duration_seconds, &completed_attributes);
+
+        decrement_active_slots(self.descriptor);
+    }
+}
+
+impl Drop for WorkloadTracker {
+    fn drop(&mut self) {
+        self.finish(WorkloadOutcome::Error);
+    }
+}
+
+fn increment_active_slots(descriptor: WorkloadDescriptor) {
+    match ACTIVE_WORKLOAD_SLOTS.entry(descriptor) {
+        Entry::Occupied(mut entry) => {
+            let value = entry.get_mut();
+            *value += 1;
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(1);
+        }
+    }
+}
+
+fn decrement_active_slots(descriptor: WorkloadDescriptor) {
+    match ACTIVE_WORKLOAD_SLOTS.entry(descriptor) {
+        Entry::Occupied(mut entry) => {
+            let value = entry.get_mut();
+            *value = value.saturating_sub(1);
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(0);
+        }
+    }
+}
+
+pub fn register_workload_active_slots_observer(meter: &Meter) -> ObservableGauge<u64> {
+    meter
+        .u64_observable_gauge("workload_active_slots")
+        .with_description("Current active workload slots by kind and phase")
+        .with_unit("slots")
+        .with_callback(|observer| {
+            for active_slots in ACTIVE_WORKLOAD_SLOTS.iter() {
+                observer.observe(*active_slots.value(), &active_slots.key().active_attributes());
+            }
+        })
+        .build()
+}
+
+fn workload_descriptor_for_job(job_type: &JobType, job_state: JobState) -> WorkloadDescriptor {
+    let work_kind = WorkKind::from_job_type(job_type);
+    match job_state {
+        JobState::Processing => WorkloadDescriptor::new(work_kind, WorkPhase::Process, None),
+        JobState::Verification => WorkloadDescriptor::new(work_kind, WorkPhase::Verify, None),
+    }
+}
+
+fn workload_descriptor_for_worker_trigger(worker_trigger_type: &WorkerTriggerType) -> WorkloadDescriptor {
+    match worker_trigger_type {
+        WorkerTriggerType::Snos => WorkloadDescriptor::new(WorkKind::SnosRun, WorkPhase::Trigger, None),
+        WorkerTriggerType::Proving => WorkloadDescriptor::new(WorkKind::ProofCreation, WorkPhase::Trigger, None),
+        WorkerTriggerType::ProofRegistration => {
+            WorkloadDescriptor::new(WorkKind::ProofRegistration, WorkPhase::Trigger, None)
+        }
+        WorkerTriggerType::DataSubmission => {
+            WorkloadDescriptor::new(WorkKind::DataSubmission, WorkPhase::Trigger, None)
+        }
+        WorkerTriggerType::UpdateState => WorkloadDescriptor::new(WorkKind::StateTransition, WorkPhase::Trigger, None),
+        WorkerTriggerType::Aggregator => WorkloadDescriptor::new(WorkKind::Aggregator, WorkPhase::Trigger, None),
+        WorkerTriggerType::AggregatorBatching => {
+            WorkloadDescriptor::new(WorkKind::AggregatorBatching, WorkPhase::Trigger, None)
+        }
+        WorkerTriggerType::SnosBatching => WorkloadDescriptor::new(WorkKind::SnosBatching, WorkPhase::Trigger, None),
+        WorkerTriggerType::StorageCleanup => {
+            WorkloadDescriptor::new(WorkKind::StorageCleanup, WorkPhase::Maintenance, None)
+        }
+    }
+}
+
+fn workload_descriptor_for_queue(queue_type: &QueueType) -> Option<WorkloadDescriptor> {
+    match queue_type {
+        QueueType::SnosJobProcessing => Some(workload_descriptor_for_job(&JobType::SnosRun, JobState::Processing)),
+        QueueType::SnosJobVerification => Some(workload_descriptor_for_job(&JobType::SnosRun, JobState::Verification)),
+        QueueType::ProvingJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::ProofCreation, JobState::Processing))
+        }
+        QueueType::ProvingJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::ProofCreation, JobState::Verification))
+        }
+        QueueType::ProofRegistrationJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::ProofRegistration, JobState::Processing))
+        }
+        QueueType::ProofRegistrationJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::ProofRegistration, JobState::Verification))
+        }
+        QueueType::DataSubmissionJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::DataSubmission, JobState::Processing))
+        }
+        QueueType::DataSubmissionJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::DataSubmission, JobState::Verification))
+        }
+        QueueType::UpdateStateJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::StateTransition, JobState::Processing))
+        }
+        QueueType::UpdateStateJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::StateTransition, JobState::Verification))
+        }
+        QueueType::AggregatorJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::Aggregator, JobState::Processing))
+        }
+        QueueType::AggregatorJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::Aggregator, JobState::Verification))
+        }
+        // Capacity is intentionally limited to queue-backed processing/verification work.
+        // Trigger, failure-handling, priority helper, and maintenance-style workloads still emit
+        // active/busy signals for observability, but they do not have a meaningful slot-capacity
+        // denominator for the sizing questions this PR is targeting today.
+        QueueType::WorkerTrigger
+        | QueueType::JobHandleFailure
+        | QueueType::PriorityProcessingQueue
+        | QueueType::PriorityVerificationQueue => None,
+    }
+}
+
+fn healing_descriptor(source_job_type: &JobType) -> WorkloadDescriptor {
+    WorkloadDescriptor::new(WorkKind::Healing, WorkPhase::Maintenance, Some(WorkKind::from_job_type(source_job_type)))
+}
 
 /// Helper functions to record metrics at various points in the job lifecycle
 /// These should be called from the existing service handlers without modifying the DB model
 pub struct MetricsRecorder;
 
 impl MetricsRecorder {
+    pub fn start_job_workload(job_type: &JobType, job_state: JobState) -> WorkloadTracker {
+        WorkloadTracker::start(workload_descriptor_for_job(job_type, job_state))
+    }
+
+    pub fn start_worker_trigger_workload(worker_trigger_type: &WorkerTriggerType) -> WorkloadTracker {
+        WorkloadTracker::start(workload_descriptor_for_worker_trigger(worker_trigger_type))
+    }
+
+    pub fn start_healing_workload(job_type: &JobType) -> WorkloadTracker {
+        WorkloadTracker::start(healing_descriptor(job_type))
+    }
+
+    pub fn record_workload_capacity_for_queue(queue_type: &QueueType, max_slots: usize) {
+        if let Some(descriptor) = workload_descriptor_for_queue(queue_type) {
+            ACTIVE_WORKLOAD_SLOTS.entry(descriptor).or_insert(0);
+            ORCHESTRATOR_METRICS.workload_capacity_slots.record(max_slots as f64, &descriptor.active_attributes());
+        }
+    }
+
+    pub fn record_healed_job(job_type: &JobType) {
+        ORCHESTRATOR_METRICS
+            .healed_jobs_total
+            .add(1.0, &[KeyValue::new("source_job_type", WorkKind::from_job_type(job_type).as_str())]);
+    }
+
     /// Record metrics when a job is created and enters the queue
     pub fn record_job_created(job: &JobItem) {
         let attributes = [
@@ -331,5 +629,64 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.aggregator_program_output_bytes.record(program_output_bytes as f64, &attrs);
         ORCHESTRATOR_METRICS.aggregator_da_segment_bytes.record(da_segment_bytes as f64, &attrs);
         ORCHESTRATOR_METRICS.aggregator_pie_zip_bytes.record(pie_zip_bytes as f64, &attrs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reset_active_workload_state() {
+        ACTIVE_WORKLOAD_SLOTS.clear();
+    }
+
+    fn active_slots_for(descriptor: WorkloadDescriptor) -> u64 {
+        ACTIVE_WORKLOAD_SLOTS.get(&descriptor).map(|entry| *entry).unwrap_or(0)
+    }
+
+    #[test]
+    fn job_processing_descriptor_is_mapped_consistently() {
+        let descriptor = workload_descriptor_for_job(&JobType::SnosRun, JobState::Processing);
+
+        assert_eq!(descriptor.work_kind, WorkKind::SnosRun);
+        assert_eq!(descriptor.work_phase, WorkPhase::Process);
+        assert_eq!(descriptor.source_job_type, None);
+    }
+
+    #[test]
+    fn worker_trigger_descriptor_maps_storage_cleanup_to_maintenance() {
+        let descriptor = workload_descriptor_for_worker_trigger(&WorkerTriggerType::StorageCleanup);
+
+        assert_eq!(descriptor.work_kind, WorkKind::StorageCleanup);
+        assert_eq!(descriptor.work_phase, WorkPhase::Maintenance);
+    }
+
+    #[test]
+    fn capacity_descriptor_exists_only_for_queue_backed_workloads() {
+        assert!(workload_descriptor_for_queue(&QueueType::SnosJobProcessing).is_some());
+        assert!(workload_descriptor_for_queue(&QueueType::AggregatorJobVerification).is_some());
+        assert!(workload_descriptor_for_queue(&QueueType::WorkerTrigger).is_none());
+        assert!(workload_descriptor_for_queue(&QueueType::JobHandleFailure).is_none());
+    }
+
+    #[test]
+    fn workload_tracker_increments_and_clears_active_slots() {
+        reset_active_workload_state();
+        let descriptor = workload_descriptor_for_job(&JobType::ProofCreation, JobState::Verification);
+
+        let tracker = WorkloadTracker::start(descriptor);
+        assert_eq!(active_slots_for(descriptor), 1);
+
+        tracker.finish_success();
+        assert_eq!(active_slots_for(descriptor), 0);
+    }
+
+    #[test]
+    fn healing_descriptor_carries_source_job_type() {
+        let descriptor = healing_descriptor(&JobType::StateTransition);
+
+        assert_eq!(descriptor.work_kind, WorkKind::Healing);
+        assert_eq!(descriptor.work_phase, WorkPhase::Maintenance);
+        assert_eq!(descriptor.source_job_type, Some(WorkKind::StateTransition));
     }
 }

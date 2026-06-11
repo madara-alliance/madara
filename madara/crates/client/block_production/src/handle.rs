@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
     SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
-    TransactionValidator, TransactionValidatorConfig,
+    TransactionLookup, TransactionValidator, TransactionValidatorConfig,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
@@ -22,6 +22,10 @@ impl SubmitValidatedTransaction for BypassInput {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
+}
+
+#[async_trait]
+impl TransactionLookup for BypassInput {
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
     }
@@ -104,6 +108,10 @@ impl SubmitTransaction for BlockProductionHandle {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.tx_converter.submit_invoke_transaction(tx).await
     }
+}
+
+#[async_trait]
+impl TransactionLookup for BlockProductionHandle {
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
     }
@@ -128,13 +136,5 @@ impl SubmitL1HandlerTransaction for BlockProductionHandle {
 impl SubmitValidatedTransaction for BlockProductionHandle {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.send_tx_raw(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
-    }
-    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
-        None
-    }
-    async fn subscribe_new_transactions(
-        &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
-        None
     }
 }

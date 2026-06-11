@@ -11,6 +11,7 @@ infra/k8s/
 │   ├── configmap.yaml             # ConfigMap with environment variables
 │   ├── secrets.yaml               # Secret for sensitive data
 │   ├── svc.yaml                   # Service manifest
+│   ├── networkpolicy.yaml         # RPC ingress policy
 │   └── kustomization.yaml         # Base kustomization
 ├── overlays/                      # Environment-specific overlays
 │   ├── dev/                       # Development environment
@@ -22,8 +23,6 @@ infra/k8s/
 │   └── production/                # Production environment
 │       ├── kustomization.yaml
 │       └── deployment-patch.yaml
-├── deployment.yaml                # Reference deployment (do not modify)
-├── cm.yaml                        # Reference configmap (do not modify)
 └── README.md                      # This file
 ```
 
@@ -79,7 +78,7 @@ Each overlay configures the following:
 
 - **Namespace**: `production`
 - **Replicas**: 3
-- **Image Tag**: `v1.0.0`
+- **Image Tag**: `nightly`
 - **Resources**: 6 CPU, 12Gi memory
 - **Name Prefix**: `prod-`
 - **Environment**: Info logging with audit artifacts enabled
@@ -183,6 +182,9 @@ spec:
 
 4. **Overlay Patches**: Use overlay-specific patches for environment-specific configurations.
 
+5. **RPC Ingress**: The base NetworkPolicy limits orchestrator RPC ingress on TCP/3000 to
+   orchestrator pods in the same environment.
+
 ## Required Configuration Updates
 
 Before deploying, update these values in your overlay:
@@ -192,6 +194,7 @@ Before deploying, update these values in your overlay:
 - `AWS_ACCESS_KEY_ID` - AWS access key for S3/SQS/SNS
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key
 - `MADARA_ORCHESTRATOR_ATLANTIC_API_KEY` - Atlantic service API key
+- `MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY` - Ethereum settlement private key
 - `MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL` - MongoDB connection string
 
 ### Required ConfigMap Values (via `configMapGenerator`)
@@ -199,13 +202,14 @@ Before deploying, update these values in your overlay:
 - `MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL` - RPC node URL
 - `MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS` - Verifier contract address
 - `MADARA_ORCHESTRATOR_AWS_PREFIX` - AWS resource prefix
-- `MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER` - S3 bucket name
+- `MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER` - S3 bucket name or ARN
 - `MADARA_ORCHESTRATOR_DATABASE_NAME` - Database name
 - `MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL` - Ethereum DA RPC URL
-- `MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY` - Ethereum private key
 - `MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL` - Ethereum settlement RPC
 - `MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS` - L1 core contract address
 - `MADARA_ORCHESTRATOR_MADARA_RPC_URL` - Madara RPC URL
+- `MADARA_ORCHESTRATOR_RPC_FOR_SNOS` - RPC URL used by SNOS
+- `MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS` - Starknet operator address
 - And other environment-specific values
 
 ## Verification

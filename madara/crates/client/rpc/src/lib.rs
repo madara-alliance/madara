@@ -2,8 +2,9 @@
 //! interface for interacting with the Starknet node. This module implements the official Starknet
 //! JSON-RPC specification along with some Madara-specific extensions.
 //!
-//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`, with
-//! methods accessible through port **9944** by default (configurable via `--rpc-port`). The RPC
+//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`,
+//! `v0.10.0`, and `v0.10.2`, with methods accessible through port **9944** by default
+//! (configurable via `--rpc-port`). The RPC
 //! server supports both HTTP and WebSocket connections on the same port.
 //!
 //! ## Version Management
@@ -11,10 +12,11 @@
 //! RPC methods are versioned to ensure backward compatibility. To access methods from a specific
 //! version, append `/rpc/v.../` to your RPC url, where `v...` is your version code. For example:
 //!
-//! - Default (v0.7.1): `http://localhost:9944/`
+//! - Default (latest, currently v0.10.2): `http://localhost:9944/`
 //! - Version 0.8.1: `http://localhost:9944/rpc/v0_8_1/`
 //! - Version 0.9.0: `http://localhost:9944/rpc/v0_9_0/`
 //! - Version 0.10.0: `http://localhost:9944/rpc/v0_10_0/`
+//! - Version 0.10.2: `http://localhost:9944/rpc/v0_10_2/`
 //!
 //! ## Available Endpoints
 //!
@@ -799,7 +801,8 @@ mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
-use mc_submit_tx::SubmitTransaction;
+use mc_mempool::Mempool;
+use mc_submit_tx::{SubmitTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 
@@ -826,9 +829,11 @@ impl Default for StorageProofConfig {
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
+    pub(crate) mempool: Option<Arc<Mempool>>,
     ws_handles: Arc<WsSubscribeHandles>,
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
-    pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
+    pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
+    pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -838,7 +843,8 @@ pub struct Starknet {
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
-        add_transaction_provider: Arc<dyn SubmitTransaction>,
+        transaction_submitter: Arc<dyn SubmitTransaction>,
+        transaction_lookup: Arc<dyn TransactionLookup>,
         storage_proof_config: StorageProofConfig,
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
         ctx: ServiceContext,
@@ -846,8 +852,10 @@ impl Starknet {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
         Self {
             backend,
+            mempool: None,
             ws_handles,
-            add_transaction_provider,
+            transaction_submitter,
+            transaction_lookup,
             storage_proof_config,
             block_prod_handle,
             ctx,
@@ -862,6 +870,10 @@ impl Starknet {
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
         self.rpc_unsafe_enabled = value;
+    }
+
+    pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
+        self.mempool = Some(mempool);
     }
 }
 
