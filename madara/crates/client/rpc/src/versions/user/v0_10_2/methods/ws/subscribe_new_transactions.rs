@@ -151,8 +151,8 @@ async fn subscribe_new_transactions_inner(
                         include_proof_facts,
                         &mut emitted,
                     ).await?;
-                    // PreConfirmed / AcceptedOnL2 entries can be evicted after a confirmed block;
-                    // Received / Candidate entries stay in the persistent set until reorg.
+                    // PreConfirmed / AcceptedOnL2 entries can be evicted after a confirmed block.
+                    // Received / Candidate entries for included transactions were pruned above.
                     emitted.rotate_ephemeral();
                     current_preconfirmed = starknet
                         .backend
@@ -228,7 +228,8 @@ async fn send_confirmed_block_transactions(
     include_proof_facts: bool,
     emitted: &mut EmittedTracker,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    if !allowed_statuses.contains(&TxnStatusWithoutL1::AcceptedOnL2) {
+    let emit_accepted_on_l2 = allowed_statuses.contains(&TxnStatusWithoutL1::AcceptedOnL2);
+    if !emit_accepted_on_l2 && !emitted.has_persistent_entries() {
         return Ok(());
     }
 
@@ -236,16 +237,20 @@ async fn send_confirmed_block_transactions(
         .get_executed_transactions(..)
         .or_internal_server_error("SubscribeNewTransactions failed to retrieve confirmed block transactions")?
     {
-        send_executed_transaction(
-            sink,
-            &tx,
-            TxnStatusWithoutL1::AcceptedOnL2,
-            sender_address,
-            allowed_statuses,
-            include_proof_facts,
-            emitted,
-        )
-        .await?;
+        emitted.prune_persistent_for_confirmed(*tx.receipt.transaction_hash());
+
+        if emit_accepted_on_l2 {
+            send_executed_transaction(
+                sink,
+                &tx,
+                TxnStatusWithoutL1::AcceptedOnL2,
+                sender_address,
+                allowed_statuses,
+                include_proof_facts,
+                emitted,
+            )
+            .await?;
+        }
     }
 
     Ok(())
@@ -327,8 +332,7 @@ async fn send_transaction_item(
 ///
 /// Short-lived statuses (`PreConfirmed`, `AcceptedOnL2`) use a two-generation tracker rotated on
 /// each confirmed block. Long-lived statuses (`Received`, `Candidate`) use a persistent set that
-/// survives confirmed-block rotation, since those transactions can remain observable across many
-/// blocks until they are executed or dropped from the mempool.
+/// survives confirmed-block rotation, but entries are pruned once their transaction is confirmed.
 #[derive(Default)]
 struct EmittedTracker {
     ephemeral: EphemeralEmittedTracker,
@@ -352,6 +356,14 @@ impl EmittedTracker {
 
     fn rotate_ephemeral(&mut self) {
         self.ephemeral.rotate();
+    }
+
+    fn has_persistent_entries(&self) -> bool {
+        !self.persistent.is_empty()
+    }
+
+    fn prune_persistent_for_confirmed(&mut self, tx_hash: Felt) {
+        self.persistent.retain(|(hash, _)| *hash != tx_hash);
     }
 
     fn clear(&mut self) {
@@ -391,6 +403,23 @@ mod emitted_tracker_tests {
         tracker.rotate_ephemeral();
         tracker.rotate_ephemeral();
         assert!(!tracker.mark_emitted(hash, &TxnStatusWithoutL1::Candidate));
+    }
+
+    #[test]
+    fn persistent_dedup_is_pruned_when_transaction_is_confirmed() {
+        let mut tracker = EmittedTracker::default();
+        let confirmed_hash = Felt::from_hex_unchecked("0xabc");
+        let pending_hash = Felt::from_hex_unchecked("0xdef");
+
+        assert!(tracker.mark_emitted(confirmed_hash, &TxnStatusWithoutL1::Received));
+        assert!(tracker.mark_emitted(confirmed_hash, &TxnStatusWithoutL1::Candidate));
+        assert!(tracker.mark_emitted(pending_hash, &TxnStatusWithoutL1::Candidate));
+
+        tracker.prune_persistent_for_confirmed(confirmed_hash);
+
+        assert!(tracker.mark_emitted(confirmed_hash, &TxnStatusWithoutL1::Received));
+        assert!(tracker.mark_emitted(confirmed_hash, &TxnStatusWithoutL1::Candidate));
+        assert!(!tracker.mark_emitted(pending_hash, &TxnStatusWithoutL1::Candidate));
     }
 
     #[test]
