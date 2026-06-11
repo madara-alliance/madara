@@ -430,7 +430,7 @@ async fn more_transfers(#[case] setup: TestSetup) {
             for _ in 0..n_batch {
                 let mut cases = nonces.iter_mut().zip(balances.iter_mut()).enumerate().collect::<Vec<_>>();
                 cases.shuffle(&mut rng);
-                let offset = rng.gen_range(0..n_accounts);
+                let offset = rng.random_range(0..n_accounts);
                 futures::future::join_all(cases.into_iter().map(|(i, (nonce, bal))| async move {
                     let account = ACCOUNTS[i];
                     let recipient = ACCOUNTS[(i + offset) % n_accounts];

@@ -1,5 +1,5 @@
 use crate::*;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use rayon::prelude::*;
 use std::collections::{hash_map::DefaultHasher, HashSet};
 use tests::utils::{create_filter, FALSE_POSITIF_RATE, HASH_COUNT};
@@ -93,12 +93,12 @@ fn test_actual_false_positive_rate() {
     const TEST_SAMPLES: u64 = 100_000;
 
     let filter = create_filter::<DefaultHasher>(NB_ELEM);
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
 
     // Create a set of known elements
     let mut known_elements = HashSet::new();
     for _ in 0..NB_ELEM {
-        let value: u64 = rng.gen();
+        let value: u64 = rng.random();
         known_elements.insert(value);
         filter.add(&value.to_be_bytes());
     }
@@ -108,7 +108,7 @@ fn test_actual_false_positive_rate() {
     // Test random elements and count false positives
     let mut false_positives = 0;
     for _ in 0..TEST_SAMPLES {
-        let test_value: u64 = rng.gen();
+        let test_value: u64 = rng.random();
         if !known_elements.contains(&test_value) && ro_filter.might_contain(&test_value.to_be_bytes()) {
             false_positives += 1;
         }

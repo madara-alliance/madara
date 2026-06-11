@@ -251,7 +251,7 @@ impl InnerAWSEventBridge {
         let queue_arn = self.get_queue_arn(target_queue_identifier).await?;
 
         // creating a 4 length unique ID, used same in both role and policy.
-        let short_id = format!("{:04x}", rand::thread_rng().gen::<u16>());
+        let short_id = format!("{:04x}", rand::rng().random::<u16>());
 
         let role_name = format!("{}-{}", trigger_role_name, short_id);
 
