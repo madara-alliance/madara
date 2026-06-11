@@ -63,7 +63,12 @@ pub async fn estimate_fee(
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
-                    error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
+                    error: result
+                        .execution_info
+                        .revert_error
+                        .as_ref()
+                        .map(crate::utils::contract_execution_error_from_revert)
+                        .unwrap_or_default(),
                 });
             }
             Ok(exec_context.execution_result_to_fee_estimate_v0_8(result, tip)?)

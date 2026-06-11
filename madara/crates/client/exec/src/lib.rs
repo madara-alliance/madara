@@ -246,9 +246,21 @@ impl CallContractError {
         transaction_error_is_contract_not_found(&self.err)
     }
 
-    /// The execution failure reason, without the context about which view it was executed on.
-    pub fn revert_reason(&self) -> String {
-        format!("{:#}", self.err)
+    /// The underlying execution error, without the context about which view it was executed on.
+    pub fn error(&self) -> &TransactionExecutionError {
+        &self.err
+    }
+}
+
+impl TxExecError {
+    /// Index of the failing transaction within the executed batch.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The underlying execution error, without the context about which view it was executed on.
+    pub fn error(&self) -> &TransactionExecutionError {
+        &self.err
     }
 }
 

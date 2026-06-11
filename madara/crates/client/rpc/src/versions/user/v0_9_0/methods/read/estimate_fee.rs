@@ -63,7 +63,12 @@ pub async fn estimate_fee(
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
-                    error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
+                    error: result
+                        .execution_info
+                        .revert_error
+                        .as_ref()
+                        .map(crate::utils::contract_execution_error_from_revert)
+                        .unwrap_or_default(),
                 });
             }
             Ok(FeeEstimate {
@@ -74,4 +79,92 @@ pub async fn estimate_fee(
         .collect::<Result<_, _>>()?;
 
     Ok(fee_estimates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::rpc_test_setup_with_execution;
+    use assert_matches::assert_matches;
+    use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
+    use mp_rpc::v0_9_0::{
+        BlockTag, BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
+    };
+    use mp_transactions::validated::TxTimestamp;
+    use starknet_types_core::felt::Felt;
+
+    /// A fee-token transfer of 1 wei from `account`, signed iff `valid_signature`.
+    fn transfer_tx(
+        backend: &mc_db::MadaraBackend,
+        account: &DevnetPredeployedContract,
+        nonce: Felt,
+        valid_signature: bool,
+    ) -> BroadcastedTxn {
+        let mut tx = InvokeTxnV3 {
+            sender_address: account.address,
+            calldata: Multicall::default()
+                .with(Call {
+                    to: backend.chain_config().native_fee_token_address.to_felt(),
+                    selector: Selector::from("transfer"),
+                    calldata: vec![account.address, Felt::ONE, Felt::ZERO],
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+                .into(),
+            signature: vec![Felt::ONE, Felt::TWO].into(),
+            nonce,
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: DaMode::L1,
+            fee_data_availability_mode: DaMode::L1,
+        };
+        if valid_signature {
+            let api_tx = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx.clone()))
+                .into_validated_tx(
+                    backend.chain_config().chain_id.to_felt(),
+                    backend.chain_config().latest_protocol_version,
+                    TxTimestamp::now(),
+                )
+                .unwrap();
+            let signature = account.secret.sign(&api_tx.hash).unwrap();
+            tx.signature = vec![signature.r, signature.s].into();
+        }
+        BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx))
+    }
+
+    /// The error 41 data must blame the actual failing transaction, not transaction 0: the first
+    /// transaction is valid, the second fails validation (bad signature).
+    #[tokio::test]
+    async fn estimate_fee_reports_failing_transaction_index() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![
+            transfer_tx(&backend, &keys.0[0], Felt::ZERO, true),
+            transfer_tx(&backend, &keys.0[1], Felt::ZERO, false),
+        ];
+        let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::TxnExecutionError { tx_index: 1, error } => {
+            // The validation failure is reported as a structured CONTRACT_EXECUTION_ERROR rooted
+            // at the failing account contract.
+            assert_eq!(error["contract_address"], serde_json::json!(keys.0[1].address));
+        });
+    }
+
+    #[tokio::test]
+    async fn estimate_fee_success() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![transfer_tx(&backend, &keys.0[0], Felt::ZERO, true)];
+        let estimates = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await.unwrap();
+
+        assert_eq!(estimates.len(), 1);
+        assert!(estimates[0].common.overall_fee > 0);
+    }
 }

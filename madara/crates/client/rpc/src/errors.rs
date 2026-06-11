@@ -64,9 +64,9 @@ pub enum StarknetRpcApiError {
     #[error("Failed to fetch pending transactions")]
     FailedToFetchPendingTransactions,
     #[error("Contract error")]
-    ContractError { revert_error: Cow<'static, str> },
+    ContractError { revert_error: serde_json::Value },
     #[error("Transaction execution error")]
-    TxnExecutionError { tx_index: usize, error: String },
+    TxnExecutionError { tx_index: usize, error: serde_json::Value },
     #[error("Invalid contract class")]
     InvalidContractClass { error: Cow<'static, str> },
     #[error("Class already declared")]
@@ -261,8 +261,14 @@ impl From<mc_exec::Error> for StarknetRpcApiError {
             // with the failure reason as data.
             mc_exec::Error::CallContract(error) if error.is_entrypoint_not_found() => Self::EntrypointNotFound,
             mc_exec::Error::CallContract(error) if error.is_contract_not_found() => Self::contract_not_found(),
-            mc_exec::Error::CallContract(error) => Self::ContractError { revert_error: error.revert_reason().into() },
-            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) },
+            mc_exec::Error::CallContract(error) => {
+                Self::ContractError { revert_error: crate::utils::contract_execution_error(error.error()) }
+            }
+            mc_exec::Error::Reexecution(error) => Self::TxnExecutionError {
+                tx_index: error.index(),
+                error: crate::utils::contract_execution_error(error.error()),
+            },
+            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
         }
     }
 }
