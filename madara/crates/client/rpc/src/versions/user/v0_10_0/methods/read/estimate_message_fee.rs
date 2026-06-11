@@ -70,3 +70,53 @@ pub async fn estimate_message_fee(
 
     Ok(MessageFeeEstimate { common: fee_estimate, unit: mp_rpc::v0_10_0::PriceUnitWei::Wei })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{rpc_test_setup_with_execution, TEST_CONTRACT_ADDRESS};
+    use assert_matches::assert_matches;
+    use mp_convert::ToFelt as _;
+    use mp_rpc::v0_10_0::BlockTag;
+    use starknet_core::utils::get_selector_from_name;
+    use starknet_types_core::felt::Felt;
+
+    const FROM_L1_ADDRESS: &str = "0x000000000000000000000000000000000000beef";
+
+    /// A message whose handler executes successfully must return a fee estimate. Regression test:
+    /// the L1 handler used to be built with `paid_fee_on_l1: 0`, which blockifier rejects on the
+    /// *success* path, so every valid message errored.
+    #[tokio::test]
+    async fn estimate_message_fee_success() {
+        let (_backend, rpc, _keys) = rpc_test_setup_with_execution().await;
+
+        let message = MsgFromL1 {
+            from_address: FROM_L1_ADDRESS.to_string(),
+            to_address: TEST_CONTRACT_ADDRESS,
+            entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+            payload: vec![Felt::ONE, Felt::TWO],
+        };
+        let estimate = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await.unwrap();
+
+        assert!(estimate.common.overall_fee > 0);
+    }
+
+    /// A message whose handler fails must surface as CONTRACT_ERROR. Regression test: blockifier
+    /// reports a failed L1 handler as a successful execution with `revert_error` set, which used
+    /// to be converted into a fee estimate.
+    #[tokio::test]
+    async fn estimate_message_fee_reverted_returns_contract_error() {
+        let (backend, rpc, _keys) = rpc_test_setup_with_execution().await;
+
+        // The fee token ERC20 has no l1 handler: executing the message fails.
+        let message = MsgFromL1 {
+            from_address: FROM_L1_ADDRESS.to_string(),
+            to_address: backend.chain_config().native_fee_token_address.to_felt(),
+            entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+            payload: vec![Felt::ONE, Felt::TWO],
+        };
+        let result = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::ContractError { .. });
+    }
+}
