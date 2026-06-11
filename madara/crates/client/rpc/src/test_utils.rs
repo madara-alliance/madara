@@ -77,6 +77,39 @@ impl TransactionLookup for TestTransactionProvider {
     }
 }
 
+/// Address at which [`m_cairo_test_contracts::TEST_CONTRACT_SIERRA`] is predeployed by
+/// [`rpc_test_setup_with_execution`]. This contract exposes an `l1_handler_entrypoint` l1 handler.
+#[cfg(test)]
+pub const TEST_CONTRACT_ADDRESS: Felt = Felt::from_hex_unchecked("0x123456789");
+
+/// A chain whose genesis holds the devnet contracts (fee-token ERC20s, UDC, funded accounts) plus
+/// the test contract, for RPC tests that need to execute against real classes.
+#[cfg(test)]
+pub async fn rpc_test_setup_with_execution() -> (Arc<MadaraBackend>, Starknet, mc_devnet::DevnetKeys) {
+    let chain_config = Arc::new(ChainConfig::madara_devnet());
+    let backend = MadaraBackend::open_for_testing(chain_config.clone());
+    backend.set_l1_gas_quote_for_testing();
+
+    let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
+    let keys = genesis.add_devnet_contracts(2).unwrap();
+    let test_class =
+        mc_devnet::InitiallyDeclaredClass::new_sierra(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
+    genesis.deployed_contracts.insert(TEST_CONTRACT_ADDRESS, test_class.class_hash());
+    genesis.declared_classes.insert(test_class);
+    genesis.build_and_store(&backend).await.unwrap();
+
+    let provider = Arc::new(TestTransactionProvider);
+    let rpc = Starknet::new(
+        backend.clone(),
+        Arc::clone(&provider) as _,
+        provider,
+        Default::default(),
+        None,
+        ServiceContext::new_for_testing(),
+    );
+    (backend, rpc, keys)
+}
+
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());

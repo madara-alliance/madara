@@ -166,9 +166,7 @@ impl From<mc_exec::Error> for SubmitTransactionError {
 
         match &value {
             // these should not really happen here
-            E::Reexecution(_) | E::FeeEstimation(_) | E::MessageFeeEstimation(_) | E::CallContract(_) => {
-                rejected(ValidateFailure, format!("{value:#}"))
-            }
+            E::Reexecution(_) | E::CallContract(_) => rejected(ValidateFailure, format!("{value:#}")),
             E::UnsupportedProtocolVersion(_)
             | E::UnsupportedStarknetVersion { .. }
             | E::Internal(_)

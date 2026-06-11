@@ -50,7 +50,10 @@ pub async fn estimate_message_fee(
         starknet_api::executable_transaction::L1HandlerTransaction {
             tx,
             tx_hash: TransactionHash(tx_hash),
-            paid_fee_on_l1: Fee::default(),
+            // Blockifier rejects successfully-executed L1 handlers whose paid fee is zero. The
+            // amount paid on L1 has no effect on the estimate itself, so use 1 like the other
+            // implementations do.
+            paid_fee_on_l1: Fee(1),
         },
     );
 
@@ -62,6 +65,13 @@ pub async fn estimate_message_fee(
     .await?;
 
     let execution_result = execution_results.pop().context("There should be one result")?;
+
+    // A failed L1 handler execution is not an error for blockifier: it returns a successful
+    // execution with `revert_error` set. Surface it as CONTRACT_ERROR instead of returning a fee
+    // estimate for a message that cannot be executed.
+    if let Some(revert_error) = &execution_result.execution_info.revert_error {
+        return Err(StarknetRpcApiError::ContractError { revert_error: revert_error.to_string().into() });
+    }
 
     let fee_estimate = exec_context.execution_result_to_fee_estimate_v0_8(&execution_result, tip)?;
 
