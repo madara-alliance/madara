@@ -11,7 +11,7 @@ const fn felt(s: &str) -> Felt {
 
 /// (block_n, real_class_hash, computed)
 #[rustfmt::skip]
-const CLASS_HASHES: [(u64, Felt, Felt); 66] = [
+const CLASS_HASHES: [(u64, Felt, Felt); 67] = [
     (1469, felt("0x4c53698c9a42341e4123632e87b752d6ae470ddedeb8b0063eaa2deea387eeb"), felt("0x33824657c011faae7ad92b05888182f345e270c457f61bf1553c7a21b435ad0")),
     (1737, felt("0x157d87bdad1328cbf429826a83545f6ffb6505138983885a75997ee2c49e66b"), felt("0x1b859de6eb61535c0051e151f1177f0905d64f77e2d09adc90ea462bbd9be75")),
     (2244, felt("0x5829a410055a7da53295c05b7ce39f1b99c202d49f6194ca000d93d35adf491"), felt("0xb9531cb5fb9e79710a4514c3af84e2f2e352d3b93068f6a3fdc4548ac6ed2d")),
@@ -78,6 +78,7 @@ const CLASS_HASHES: [(u64, Felt, Felt); 66] = [
     (4762, felt("0x733734fa0dab1158bccdfe0df7b0becf3827f908971fac8d39cc73d99ad8645"), felt("0x203ce95f1b20f970300931b58d96d88afdf4ae80cfdf3c2bc9e750d89103503")),
     (19097, felt("0x6dc10e7703c1b63e0b5a4e8e7842293d3255fd4e53d4e730adf435c3dffabb"), felt("0x117ab3f7b9e740cb01fb928514b2195888e094846cc3a1d534b8e8081332fbf")),
     (20732, felt("0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b"), felt("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67")),
+    (96325, felt("0x428c9925f9adbf4821de37052167bb894feee63cfb1a9e9d63aceca795938b2"), felt("0x7fe31243d322fd69e0482e87ff51e50a69cff6456b71c6db30e0b8a09b07cbc")),
 ];
 
 const BLOCK_N_RANGE: RangeInclusive<u64> = CLASS_HASHES[0].0..=CLASS_HASHES[CLASS_HASHES.len() - 1].0;
@@ -149,6 +150,12 @@ mod tests {
             get_real_class_hash(4762, felt("0x203ce95f1b20f970300931b58d96d88afdf4ae80cfdf3c2bc9e750d89103503")),
             felt("0x733734fa0dab1158bccdfe0df7b0becf3827f908971fac8d39cc73d99ad8645"),
             "should find 4762"
+        );
+        // Sparse later-era legacy declare (block 96325) — explicit old_declared_contracts entry.
+        assert_eq!(
+            get_real_class_hash(96325, felt("0x7fe31243d322fd69e0482e87ff51e50a69cff6456b71c6db30e0b8a09b07cbc")),
+            felt("0x428c9925f9adbf4821de37052167bb894feee63cfb1a9e9d63aceca795938b2"),
+            "should find 96325"
         );
         assert_eq!(
             get_real_class_hash(2700, felt("0x530490b3bdad7dc5c219c8073edfe9f0cfb3fc19aec629ac8edfef03f1b3c4")),
