@@ -54,7 +54,10 @@ impl Snapshots {
 
         let mut inner = self.inner.write().expect("Poisoned lock");
 
-        if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && block_n % self.snapshot_interval == 0 {
+        if self.max_kept_snapshots != Some(0)
+            && self.snapshot_interval != 0
+            && block_n.is_multiple_of(self.snapshot_interval)
+        {
             tracing::debug!("Saving snapshot at {block_n:?}");
             inner.historical.insert(block_n, Arc::clone(&snapshot));
 

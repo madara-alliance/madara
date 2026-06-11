@@ -1,3 +1,6 @@
+// This is a CLI example; printing the outcome to stdout is its user interface.
+#![allow(clippy::print_stdout)]
+
 use anyhow::{bail, Context};
 use clap::Parser;
 use mc_class_exec::config::NativeConfig;
