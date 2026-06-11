@@ -229,7 +229,8 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 - Storage group: `--aws-s3` (requires provider)
 - Queue group: `--aws-sqs` (requires provider)
 - Alert group: `--aws-sns` (requires provider)
-- Prover group: `--prover <sharp|atlantic|mock>` / `MADARA_ORCHESTRATOR_PROVER` (single enum; replaces the old mutually-exclusive bool flags)
+- Prover group: `--prover <sharp|atlantic|mock>` / `MADARA_ORCHESTRATOR_PROVER` (single enum; replaces the old
+  mutually-exclusive bool flags)
 - Settlement group: `--settle-on-ethereum` or `--settle-on-starknet`
 - DA group: `--da-on-ethereum` or `--da-on-starknet`
 

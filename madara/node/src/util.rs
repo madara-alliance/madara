@@ -34,13 +34,13 @@ pub fn raise_fdlimit() {
 
 /// Returns a random Pokémon name.
 pub async fn get_random_pokemon_name() -> anyhow::Result<String> {
-    use rand::{seq::SliceRandom, thread_rng};
+    use rand::seq::IndexedRandom;
     let res = reqwest::get("https://pokeapi.co/api/v2/pokemon/?limit=1000").await?;
     let body = res.text().await?;
     let json: serde_json::Value = serde_json::from_str(&body)?;
 
     let pokemon_array = json["results"].as_array().context("Getting result from returned json")?;
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let random_pokemon = pokemon_array.choose(&mut rng).context("Choosing a name")?;
 
     Ok(random_pokemon["name"].as_str().context("Getting name from pokemon object")?.to_string())

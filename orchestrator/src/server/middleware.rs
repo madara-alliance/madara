@@ -24,7 +24,7 @@ pub async fn trace_context(mut req: Request<Body>, next: Next) -> Response {
     // Build a parent OpenTelemetry context from the chosen trace id using W3C traceparent format
     // traceparent: 00-<trace-id 32hex>-<span-id 16hex>-01
     let mut span_id_bytes = [0u8; 8];
-    rand::thread_rng().fill_bytes(&mut span_id_bytes);
+    rand::rng().fill_bytes(&mut span_id_bytes);
     let span_id_hex = hex::encode(span_id_bytes);
     let traceparent_val = format!("00-{}-{}-01", chosen_trace_id, span_id_hex);
 
