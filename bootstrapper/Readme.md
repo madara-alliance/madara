@@ -1,11 +1,13 @@
 # Madara Bootstrapper
 
-[![Coverage Status](https://coveralls.io/repos/github/madara-alliance/madara-bootstrapper/badge.svg?branch=main)](https://coveralls.io/github/madara-alliance/madara-bootstrapper?branch=main)
-
 Madara Bootstrapper is a tool that helps to deploy the **Token Bridge** & **Eth Bridge** contract
 between a madara/katana Appchain and another L2 or L1 network. It will also declare wallet
-contracts from **OpenZappelin**, **Argent** and **Braavos**. You can find the full list of contracts
+contracts from **OpenZeppelin**, **Argent** and **Braavos**. You can find the full list of contracts
 in the [Information](#information) section.
+
+> **Status**: This is the legacy bootstrapper. The root workspace currently
+> disables the `bootstrapper` crate; use `bootstrapper-v2/` for the current
+> factory-based bootstrapper unless you are intentionally maintaining v1.
 
 ## Index
 
@@ -34,22 +36,14 @@ There are three test in the repository:
 
 ### Important Notes
 
-- You need to comment/remove the #[ignore] tags in [src/tests/mod.rs](src/tests/mod.rs) file
-- Only one test can be run at one time as all the tests are e2e tests.
-- You also would need to restart both the chains after running each test.
-- You would need to clone [Madara](https://github.com/madara-alliance/madara.git) repo by running :
-
-  ```shell
-  git clone --branch d188aa91efa78bcc54f92aa1035295fd50e068d2 https://github.com/madara-alliance/madara.git
-  ```
+- The root workspace disables this legacy crate; run legacy tests from `bootstrapper/`.
+- You need to comment/remove the `#[ignore]` tags in [src/tests/mod.rs](src/tests/mod.rs).
+- Only one test can be run at a time because these are E2E tests.
+- Restart the external Madara and Anvil chains after each test.
+- For the current monorepo validation paths, prefer [e2e](../e2e/CLAUDE.md) and
+  [e2e-tests](../e2e-tests/CLAUDE.md).
 
 ```shell
-# 1. Run madara instance with eth as settlement layer :
-./target/release/madara --dev --da-layer=ethereum --da-conf=examples/da-confs/ethereum.json --settlement=Ethereum --settlement-conf=examples/da-confs/ethereum.json
-# 2. Run anvil instance
-~/.foundry/bin/anvil
-
-# 3. Run tests
 RUST_LOG=debug cargo test -- --nocapture
 ```
 
@@ -60,6 +54,8 @@ RUST_LOG=debug cargo test -- --nocapture
 You can provide the env variables as arguments also, or you can also provide them in .env file.
 
 Refer [.env.example](.env.example) file for setup
+
+Run these commands from `bootstrapper/`; the root workspace no longer includes this legacy crate.
 
 ```shell
 cp .env.example .env
@@ -104,11 +100,11 @@ RUST_LOG=info cargo run -- --dev
 
 To run the Madara Bootstrapper on an Ubuntu machine with AMD architecture, please follow these steps:
 
-1. **Clone the Repository**: Start by cloning the Madara Bootstrapper repository.
+1. **Clone the Repository**: Start by cloning the Madara repository.
 
    ```shell
-   git clone https://github.com/madara-alliance/madara-bootstrapper.git
-   cd madara-bootstrapper
+   git clone https://github.com/madara-alliance/madara.git
+   cd madara
    ```
 
 2. **Install Build Essentials**: Ensure you have the necessary build tools.
@@ -158,18 +154,18 @@ To run the Madara Bootstrapper on an Ubuntu machine with AMD architecture, pleas
    source venv/bin/activate
    ```
 
-9. **Build Artifacts**: Use the `make` command to build the necessary artifacts within the Madara Bootstrapper repository.
+9. **Build Artifacts**: Use the repository root `make` command to build the necessary artifacts.
 
    ```shell
-   make artifacts-linux # For Linux
-   make artifacts # For macOS
+   make artifacts
    ```
 
    > **Note**: In case you get an error related to permission, try running the command with `sudo`
 
-10. **Build the Rust Binary**: Compile the Rust project.
+10. **Build the Rust Binary**: Compile the legacy bootstrapper crate.
 
     ```shell
+    cd bootstrapper
     cargo build --release
     ```
 

@@ -46,19 +46,22 @@ This directory contains configuration files for monitoring a Madara node using O
 1. **Madara Node** running with OTEL export enabled:
 
    ```bash
-   cargo run --release -- --network <network> --otel-collector-endpoint http://localhost:4317
+   cargo run --bin madara --release -- \
+     --full \
+     --network <network> \
+     --otel-collector-endpoint http://localhost:4317
    ```
 
    The node exports telemetry to the local OpenTelemetry Collector over OTLP.
 
-2. **Docker & Docker Compose**
+2. **Docker and Docker Compose**
 
 ## Quick Start
 
 ```bash
 # Start the monitoring stack
 cd observability
-docker-compose up -d
+docker compose up -d
 
 # Access the services
 # Grafana: http://localhost:3000 (admin/admin)
@@ -85,7 +88,7 @@ The OpenTelemetry Collector acts as a central hub for collecting and exporting t
 
 ## Dashboards
 
-The monitoring stack includes 6 dashboards organized in two folders.
+The monitoring stack includes 7 dashboards organized in two folders.
 
 ### Madara Dashboards
 
@@ -106,11 +109,12 @@ Fullnode-specific metrics and performance data.
 
 ### Orchestrator Dashboards
 
-The stack also includes 4 Orchestrator-specific dashboards:
+The stack also includes 5 Orchestrator-specific dashboards:
 
 - `grafana_orchestrator_full_view.json` - Full orchestrator view
 - `grafana_orchestrator_v1.json` - Orchestrator v1 dashboard
 - `grafana_orchestrator_v2_fixed.json` - Orchestrator v2 dashboard
+- `madara-orchestrator.json` - Current orchestrator dashboard
 - `orchestrator_dashboard_v1.json` - Orchestrator dashboard v1
 
 ## Stack Components
@@ -144,7 +148,7 @@ The stack also includes 4 Orchestrator-specific dashboards:
 ### Madara CLI Options
 
 ```bash
-# OTEL service name (default: madara)
+# OTEL service name (default: madara_analytics)
 --otel-service-name <NAME>
 
 # OTEL collector endpoint
@@ -204,6 +208,7 @@ observability/
     │       ├── grafana_orchestrator_full_view.json
     │       ├── grafana_orchestrator_v1.json
     │       ├── grafana_orchestrator_v2_fixed.json
+    │       ├── madara-orchestrator.json
     │       └── orchestrator_dashboard_v1.json
     └── alerts/
         └── Orchestrator/
@@ -282,12 +287,12 @@ observability/
 
 ### OTel Collector Issues
 
-1. **Check logs**: `docker-compose logs otel-collector`
+1. **Check logs**: `docker compose logs otel-collector`
 2. **Verify Prometheus exporter**: `curl http://localhost:8889/metrics`
 
 ### Prometheus can't reach OTel Collector
 
-1. Verify collector is running: `docker-compose ps otel-collector`
+1. Verify collector is running: `docker compose ps otel-collector`
 2. Verify Prometheus targets: `http://localhost:9090/targets`
 3. Check network connectivity between containers
 4. Note: Prometheus scrapes from `host.docker.internal:8889` - ensure the collector's Prometheus exporter is accessible at this address
