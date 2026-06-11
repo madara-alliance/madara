@@ -36,7 +36,7 @@ impl Default for ZeroingPrivateKey {
         const PRIME: NonZero<U256> =
             NonZero::from_uint(U256::from_be_hex("0800000000000011000000000000000000000000000000000000000000000001"));
 
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let mut buffer = [0u8; 32];
         rng.fill(&mut buffer);
 

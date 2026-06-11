@@ -19,6 +19,6 @@
     "mongodb": "^6.9.0",
     "prettier-plugin-solidity": "^1.4.2",
     "starknet": "^6.11.0",
-    "uuid": "^10.0.0"
+    "uuid": "^14.0.0"
   }
 }
