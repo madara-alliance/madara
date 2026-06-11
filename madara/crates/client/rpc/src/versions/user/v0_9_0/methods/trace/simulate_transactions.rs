@@ -87,6 +87,19 @@ mod tests {
     use mp_rpc::v0_9_0::BlockTag;
     use starknet_types_core::felt::Felt;
 
+    /// Simulation executes each transaction (several times with L2 gas discovery): the
+    /// per-request transaction count must be bounded, mirroring estimateFee.
+    #[tokio::test]
+    async fn simulate_rejects_oversized_batch() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let tx = devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, false);
+        let txs = vec![tx; crate::constants::MAX_ESTIMATE_TRANSACTIONS + 1];
+        let result = simulate_transactions(&rpc, BlockId::Tag(BlockTag::Latest), txs, vec![]).await;
+
+        assert_matches::assert_matches!(result.unwrap_err(), StarknetRpcApiError::InvalidParams { .. });
+    }
+
     /// SKIP_VALIDATE must relax the strict nonce check here too, mirroring estimateFee: wallets
     /// simulate queued transactions with future nonces. The signature is valid so the future
     /// nonce is the only relaxed check.
