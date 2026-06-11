@@ -208,7 +208,15 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                             }
                             upper_bound = current;
                         }
-                        ProbeOutcome::OutOfGas => lower_bound = current,
+                        ProbeOutcome::OutOfGas => {
+                            // Termination guard: `upper_bound` is known-good (the max-limit probe
+                            // succeeded), so converging onto it ends the search even if execution
+                            // were not perfectly deterministic across probes.
+                            if search_done(lower_bound, upper_bound) {
+                                break upper_bound;
+                            }
+                            lower_bound = current;
+                        }
                     }
                     current = midpoint(lower_bound, upper_bound);
                 }
@@ -216,6 +224,9 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         };
 
         set_l2_gas_limit(tx, gas_limit)?;
+        // The l1_gas/l1_data_gas components deliberately come from the max-limit probe, not the
+        // final execution: this mirrors pathfinder, where only l2_gas is replaced by the
+        // discovered limit. L1 components do not depend on the L2 gas limit.
         Ok(Some(GasVector { l2_gas: gas_limit, ..info.receipt.gas }))
     }
 }

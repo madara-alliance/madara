@@ -43,7 +43,10 @@ pub async fn simulate_transactions(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], user_transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((
+            exec_context.execute_transactions_for_estimation([], user_transactions)?,
+            exec_context,
+        ))
     })
     .await?;
 

@@ -41,7 +41,10 @@ pub async fn simulate_transactions(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], user_transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((
+            exec_context.execute_transactions_for_estimation([], user_transactions)?,
+            exec_context,
+        ))
     })
     .await?;
 
@@ -66,4 +69,32 @@ pub async fn simulate_transactions(
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
     Ok(simulated_transactions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{devnet_transfer_tx, rpc_test_setup_with_execution};
+    use mp_rpc::v0_9_0::BlockTag;
+    use starknet_types_core::felt::Felt;
+
+    /// SKIP_VALIDATE must relax the strict nonce check here too, mirroring estimateFee: wallets
+    /// simulate queued transactions with future nonces. The signature is valid so the future
+    /// nonce is the only relaxed check.
+    #[tokio::test]
+    async fn simulate_skip_validate_allows_future_nonce() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![devnet_transfer_tx(&backend, &keys.0[0], Felt::from(5), true)];
+        let result = simulate_transactions(
+            &rpc,
+            BlockId::Tag(BlockTag::Latest),
+            txs,
+            vec![SimulationFlag::SkipValidate, SimulationFlag::SkipFeeCharge],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+    }
 }
