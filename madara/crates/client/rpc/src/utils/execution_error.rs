@@ -59,19 +59,21 @@ fn frames_to_json(frames: Vec<Frame>) -> serde_json::Value {
     frames
         .into_iter()
         .filter_map(|frame| match frame {
-            Frame::Call { contract_address, class_hash, selector } => {
-                Some((contract_address, class_hash, selector))
-            }
+            Frame::Call { contract_address, class_hash, selector } => Some((contract_address, class_hash, selector)),
             _ => None,
         })
         .rev()
         .fold(json!(leaf), |child, (contract_address, class_hash, selector)| {
-            json!({
+            let mut frame = json!({
                 "contract_address": contract_address,
                 "class_hash": class_hash,
-                "selector": selector,
                 "error": child,
-            })
+            });
+            // Constructor frames have no selector: omit the key instead of serializing null.
+            if let Some(selector) = selector {
+                frame["selector"] = json!(selector);
+            }
+            frame
         })
 }
 
@@ -91,10 +93,8 @@ pub fn contract_execution_error_from_revert(error: &RevertError) -> serde_json::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blockifier::execution::stack_trace::{
-        Cairo1RevertFrame, EntryPointErrorFrame, ErrorStackHeader, PreambleType,
-    };
     use blockifier::execution::call_info::Retdata;
+    use blockifier::execution::stack_trace::{Cairo1RevertFrame, EntryPointErrorFrame, ErrorStackHeader, PreambleType};
     use starknet_api::core::EntryPointSelector;
     use starknet_api::{class_hash, contract_address, felt};
 
@@ -171,5 +171,34 @@ mod tests {
     fn no_string_frame_yields_fallback_leaf() {
         let stack = ErrorStack { header: ErrorStackHeader::Execution, stack: Vec::new() };
         assert_eq!(frames_to_json(flatten_error_stack(&stack)), json!("Unknown error, no string frame available."));
+    }
+
+    /// Constructor frames have no selector: the key is omitted, not serialized as null.
+    #[test]
+    fn constructor_frame_omits_selector() {
+        let stack = ErrorStack {
+            header: ErrorStackHeader::Constructor,
+            stack: vec![
+                ErrorStackSegment::EntryPoint(EntryPointErrorFrame {
+                    depth: 0,
+                    preamble_type: PreambleType::Constructor,
+                    storage_address: contract_address!("0xa1"),
+                    class_hash: class_hash!("0xb1"),
+                    selector: None,
+                }),
+                ErrorStackSegment::StringFrame("constructor failed".to_string()),
+            ],
+        };
+
+        let json = frames_to_json(flatten_error_stack(&stack));
+
+        assert_eq!(
+            json,
+            json!({
+                "contract_address": "0xa1",
+                "class_hash": "0xb1",
+                "error": "constructor failed",
+            })
+        );
     }
 }

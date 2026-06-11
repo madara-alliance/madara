@@ -68,7 +68,9 @@ pub async fn estimate_fee(
                         .revert_error
                         .as_ref()
                         .map(crate::utils::contract_execution_error_from_revert)
-                        .unwrap_or_default(),
+                        // Reverted executions always carry a revert_error; make the fallback
+                        // visible instead of silently emitting null.
+                        .unwrap_or_else(|| serde_json::json!("unknown revert reason")),
                 });
             }
             Ok(exec_context.execution_result_to_fee_estimate_v0_8(result, tip)?)

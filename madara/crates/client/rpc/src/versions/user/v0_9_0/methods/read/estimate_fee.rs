@@ -68,7 +68,9 @@ pub async fn estimate_fee(
                         .revert_error
                         .as_ref()
                         .map(crate::utils::contract_execution_error_from_revert)
-                        .unwrap_or_default(),
+                        // Reverted executions always carry a revert_error; make the fallback
+                        // visible instead of silently emitting null.
+                        .unwrap_or_else(|| serde_json::json!("unknown revert reason")),
                 });
             }
             Ok(FeeEstimate {
@@ -87,9 +89,7 @@ mod tests {
     use crate::test_utils::rpc_test_setup_with_execution;
     use assert_matches::assert_matches;
     use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
-    use mp_rpc::v0_9_0::{
-        BlockTag, BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
-    };
+    use mp_rpc::v0_9_0::{BlockTag, BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
     use mp_transactions::validated::TxTimestamp;
     use starknet_types_core::felt::Felt;
 
