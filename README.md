@@ -438,6 +438,7 @@ Here is a list of all the supported methods with their current status:
 > v0.10 routes delegate subscription placeholders to `v0.9.0`).
 
 > [!IMPORTANT]
+>
 > `starknet_getStorageProof` is currently treated as unavailable in the default
 > node profile because the required retention is disabled in
 > [`configs/args/config.json`](configs/args/config.json):
@@ -767,10 +768,10 @@ a regular sync.
 
 Madara can bootstrap a mainnet full node in a few ways:
 
-| Path | Use when | Notes |
-| ---- | -------- | ----- |
-| Full sync | You need the most complete local history. | This is the slowest path. |
-| `--snap-sync` | You want faster catchup. | Storage proofs are not guaranteed for every snap-synced block, and admin revert cannot target blocks before `snap_sync_latest_block`. |
+| Path               | Use when                                       | Notes                                                                                                                                                |
+| ------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full sync          | You need the most complete local history.      | This is the slowest path.                                                                                                                            |
+| `--snap-sync`      | You want faster catchup.                       | Storage proofs are not guaranteed for every snap-synced block, and admin revert cannot target blocks before `snap_sync_latest_block`.                |
 | Existing Madara DB | You already have a compatible Madara database. | Stop the node that owns the DB, then start Madara with `--base-path` pointing at the same base path. Keep a backup before reusing or migrating a DB. |
 
 If catchup logs `Rate limited, retrying`, the selected gateway is throttling
