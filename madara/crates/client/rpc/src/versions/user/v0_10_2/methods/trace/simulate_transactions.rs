@@ -17,6 +17,15 @@ pub async fn simulate_transactions(
     transactions: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlag>,
 ) -> StarknetRpcResult<SimulateTransactionsResponse> {
+    if transactions.len() > crate::constants::MAX_ESTIMATE_TRANSACTIONS {
+        return Err(StarknetRpcApiError::InvalidParams {
+            error: format!(
+                "Too many transactions: at most {} transactions can be simulated per request",
+                crate::constants::MAX_ESTIMATE_TRANSACTIONS
+            )
+            .into(),
+        });
+    }
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 

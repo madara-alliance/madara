@@ -27,6 +27,15 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
+    if request.len() > crate::constants::MAX_ESTIMATE_TRANSACTIONS {
+        return Err(StarknetRpcApiError::InvalidParams {
+            error: format!(
+                "Too many transactions: at most {} transactions can be estimated per request",
+                crate::constants::MAX_ESTIMATE_TRANSACTIONS
+            )
+            .into(),
+        });
+    }
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
@@ -136,6 +145,19 @@ mod tests {
                 .unwrap();
 
         assert_eq!(estimates.len(), 1);
+    }
+
+    /// Estimation executes each transaction (several times with L2 gas discovery): the
+    /// per-request transaction count must be bounded.
+    #[tokio::test]
+    async fn estimate_fee_rejects_oversized_batch() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let tx = devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, false);
+        let txs = vec![tx; crate::constants::MAX_ESTIMATE_TRANSACTIONS + 1];
+        let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::InvalidParams { .. });
     }
 
     /// Without SKIP_VALIDATE the strict nonce check still applies.
