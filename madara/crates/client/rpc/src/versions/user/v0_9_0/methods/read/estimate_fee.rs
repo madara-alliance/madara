@@ -27,15 +27,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
-    if request.len() > crate::constants::MAX_ESTIMATE_TRANSACTIONS {
-        return Err(StarknetRpcApiError::InvalidParams {
-            error: format!(
-                "Too many transactions: at most {} transactions can be estimated per request",
-                crate::constants::MAX_ESTIMATE_TRANSACTIONS
-            )
-            .into(),
-        });
-    }
+    crate::utils::check_estimate_batch_size(request.len(), "estimated")?;
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 

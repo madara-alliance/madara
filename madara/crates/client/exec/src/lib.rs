@@ -303,6 +303,14 @@ pub struct ExecutionResult {
     pub deprecated_declared_class: Option<Felt>,
 }
 
+impl ExecutionResult {
+    /// The gas amounts fee estimates are priced with: the L2-gas-search adjusted vector when the
+    /// search ran, the receipt amounts otherwise.
+    pub fn gas_for_fee_pricing(&self) -> GasVector {
+        self.gas_for_fee_estimate.unwrap_or(self.execution_info.receipt.gas)
+    }
+}
+
 pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {
     InitialReads {
         storage: state_maps
