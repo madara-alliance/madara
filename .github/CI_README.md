@@ -52,6 +52,16 @@ Located in `.github/actions/setup-scarb/`, this action sets up the Cairo environ
 
 Located in `.github/actions/setup-foundry/`, this action sets up the Foundry environment with various eth testing tools like anvil.
 
+## Focused Test Tasks
+
+### Bootstrap snapshots
+
+`task-test-bootstrap-snapshots.yml` runs the focused production bootstrap snapshot regression suite:
+
+- RocksDB checkpoint creation in `mc-db`.
+- Madara bootstrap unit coverage for local and remote snapshot import/export.
+- Madara CLI smoke tests for snapshot creation, local import validation, remote manifest validation, and non-empty target rejection.
+
 ## Environment Configuration
 
 The environment configuration is centralized in `.github/config/env.yml`. This configuration is loaded

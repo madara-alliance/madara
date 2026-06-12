@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub mod backend;
 pub mod block_production;
+pub mod bootstrap;
 pub mod cairo_native;
 pub mod chain_config_overrides;
 pub mod external_db;
@@ -21,6 +22,7 @@ pub mod validator;
 
 pub use backend::*;
 pub use block_production::*;
+pub use bootstrap::*;
 pub use cairo_native::*;
 pub use chain_config_overrides::*;
 pub use external_db::*;
@@ -158,6 +160,11 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub backend_params: BackendParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    #[serde(default)]
+    pub bootstrap_params: BootstrapParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]
