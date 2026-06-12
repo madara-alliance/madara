@@ -832,6 +832,62 @@ mod tests {
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }
 
+    /// After a reorg (or a pipeline restart), `apply_to_global_trie` can be called again with
+    /// block ranges that were already applied. Already-applied blocks must be skipped, never
+    /// re-applied: re-applying would corrupt the global trie.
+    #[rstest]
+    #[tokio::test]
+    async fn test_apply_to_global_trie_skips_already_applied_blocks() {
+        // State root after applying `applied_diff` at block 0 (see test_update_tries::success).
+        let root_after_applied_diff = felt!("0x34d3e676a44c29cff0939ab2285ec02ffc3efd9eb548d85f59a6c7dd544e64d");
+        let applied_diff = StateDiff {
+            deployed_contracts: vec![DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") }],
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: felt!("0x1"),
+                storage_entries: vec![StorageEntry { key: felt!("0x1"), value: felt!("0x1") }],
+            }],
+            ..Default::default()
+        };
+        // A diff that, if it were (incorrectly) re-applied over an already-applied block, would
+        // change the contract trie and make the state root check fail.
+        let garbage_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: felt!("0x2"),
+                storage_entries: vec![StorageEntry { key: felt!("0x2"), value: felt!("0x99") }],
+            }],
+            ..Default::default()
+        };
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        // Block 1 has an empty state diff, so both headers expect the same state root.
+        for block_number in 0..2u64 {
+            backend
+                .write_access()
+                .write_header(BlockHeaderWithSignatures {
+                    block_hash: felt!("0x123123") + Felt::from(block_number),
+                    consensus_signatures: vec![],
+                    header: Header { global_state_root: root_after_applied_diff, block_number, ..Default::default() },
+                })
+                .unwrap();
+        }
+        let importer = BlockImporter::new(backend.clone(), BlockValidationConfig::default());
+
+        // First application goes through and records the trie head.
+        importer.ctx().apply_to_global_trie(0..1, vec![applied_diff]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(0));
+
+        // Re-applying a fully applied range must be a no-op: the garbage diff would fail the
+        // state root check if it were actually applied.
+        importer.ctx().apply_to_global_trie(0..1, vec![garbage_diff.clone()]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(0));
+
+        // A range overlapping already-applied blocks must skip the applied prefix: only the empty
+        // diff for block 1 is applied (state root unchanged), the garbage diff for block 0 is
+        // ignored.
+        importer.ctx().apply_to_global_trie(0..2, vec![garbage_diff, StateDiff::default()]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(1));
+    }
+
     struct Ctx {
         importer: BlockImporterCtx,
         block_n: u64,
@@ -888,6 +944,29 @@ mod tests {
             }],
         };
         ctx.importer.verify_header(ctx.block_n, &signed_header).unwrap();
+    }
+
+    #[rstest]
+    fn test_error_block_number(ctx: Ctx) {
+        let signed_header = BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash);
+        // Importing a block at the wrong height must be rejected, even if the block itself is valid.
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n + 1, &signed_header),
+            Err(BlockImportError::BlockNumber { got: 100000, expected: 100001 })
+        );
+    }
+
+    #[rstest]
+    fn test_error_block_hash(ctx: Ctx) {
+        let expected_hash = ctx.block.block_hash;
+        // A header whose claimed block hash does not match the recomputed hash must be rejected.
+        let signed_header = BlockHeaderWithSignatures::new_unsigned(ctx.block.header, Felt::ONE);
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n, &signed_header),
+            Err(BlockImportError::BlockHash { got, expected }) => {
+                assert_eq!((got, expected), (Felt::ONE, expected_hash));
+            }
+        );
     }
 
     #[rstest]

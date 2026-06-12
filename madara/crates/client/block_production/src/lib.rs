@@ -1113,6 +1113,7 @@ impl BlockProductionTask {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::executor::ExecutorCommandError;
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
@@ -1465,17 +1466,16 @@ pub(crate) mod tests {
         )
     }
 
-    pub async fn sign_and_add_invoke_tx(
+    pub fn make_transfer_invoke_tx(
         contract_sender: &DevnetPredeployedContract,
         contract_receiver: &DevnetPredeployedContract,
         backend: &Arc<MadaraBackend>,
-        validator: &Arc<TransactionValidator>,
         nonce: Felt,
-    ) {
+    ) -> BroadcastedInvokeTxn {
         let erc20_contract_address =
             Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 
-        let tx = make_invoke_tx(
+        make_invoke_tx(
             contract_sender,
             Multicall::default().with(Call {
                 to: erc20_contract_address,
@@ -1484,8 +1484,30 @@ pub(crate) mod tests {
             }),
             backend,
             nonce,
-        );
+        )
+    }
 
+    /// Replaces the signature with garbage so that the transaction fails the account's
+    /// `__validate__` at execution time. This is a non-revertible error: the executor rejects the
+    /// transaction instead of including it as reverted.
+    pub fn corrupt_invoke_signature(tx: &mut BroadcastedInvokeTxn) {
+        let signature = match tx {
+            BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
+            BroadcastedInvokeTxn::V1(tx) => &mut tx.signature,
+            BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
+            _ => unreachable!("the invoke tx is not query only"),
+        };
+        *signature = vec![Felt::ONE, Felt::TWO].into();
+    }
+
+    pub async fn sign_and_add_invoke_tx(
+        contract_sender: &DevnetPredeployedContract,
+        contract_receiver: &DevnetPredeployedContract,
+        backend: &Arc<MadaraBackend>,
+        validator: &Arc<TransactionValidator>,
+        nonce: Felt,
+    ) {
+        let tx = make_transfer_invoke_tx(contract_sender, contract_receiver, backend, nonce);
         validator.submit_invoke_transaction(tx.into()).await.expect("Should accept the transaction");
     }
 
@@ -2427,6 +2449,219 @@ pub(crate) mod tests {
             "With no_empty_blocks=true, block timestamp should reflect wall-clock time \
              when the first tx arrived, but it was {drift}s behind. \
              This likely means a stale captured block_start_time was used."
+        );
+    }
+
+    // The bypass channel (used by admin endpoints and chain bootstrapping) lets transactions skip
+    // the mempool and validation entirely. This test verifies that a transaction submitted through
+    // the BlockProductionHandle flows through the batcher's bypass stream, gets executed, and ends
+    // up in the closed block - all without ever touching the mempool.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(60))]
+    #[tokio::test]
+    async fn test_bypass_tx_skips_mempool_and_lands_in_block(
+        #[future]
+        #[with(Duration::from_secs(10000), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Submit through the handle: this goes through the bypass channel, not the mempool.
+        let tx = make_transfer_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            Felt::ZERO,
+        );
+        let res = control.submit_invoke_transaction(tx.into()).await.unwrap();
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        // The transaction was executed but never went through the mempool.
+        assert!(devnet_setup.mempool.is_empty().await);
+
+        let preconfirmed = devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        assert_eq!(preconfirmed.num_executed_transactions(), 1);
+        let executed = preconfirmed.get_executed_transaction(0).unwrap();
+        assert_eq!(executed.receipt.transaction_hash(), &res.transaction_hash);
+        assert_eq!(executed.receipt.execution_result(), ExecutionResult::Succeeded);
+
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let closed = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        let txs = closed.get_executed_transactions(..).unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].receipt.transaction_hash(), &res.transaction_hash);
+    }
+
+    // Force-closing through the handle when no transaction has been executed yet must produce an
+    // empty block (no_empty_blocks is disabled here), and block production must keep working
+    // afterwards: a transaction submitted later lands in the next block.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(60))]
+    #[tokio::test]
+    async fn test_force_close_produces_empty_block_and_production_continues(
+        #[future]
+        #[with(Duration::from_secs(10000), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Force close with an empty mempool: an empty block #1 must be produced.
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        assert_eq!(block_1.get_executed_transactions(..).unwrap(), []);
+
+        // Production continues: a transaction submitted afterwards lands in block #2.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+        let txs = block_2.get_executed_transactions(..).unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].receipt.execution_result(), ExecutionResult::Succeeded);
+        assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(2));
+    }
+
+    // A transaction that fails non-revertibly (here: an invalid signature, caught by the account's
+    // __validate__ at execution time since the bypass channel skips pre-validation) is rejected by
+    // the executor. This test verifies, at the BlockProductionTask level, that the rejected
+    // transaction does not abort block production and is excluded from the closed block, while a
+    // valid transaction submitted alongside it still goes through.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(60))]
+    #[tokio::test]
+    async fn test_rejected_tx_excluded_from_closed_block(
+        #[future]
+        #[with(Duration::from_secs(10000), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Invalid-signature tx through the bypass channel: it skips mempool validation, so it only
+        // fails later, inside the executor (rejection, not revert).
+        let mut bad_tx = make_transfer_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            Felt::ZERO,
+        );
+        corrupt_invoke_signature(&mut bad_tx);
+        let bad_res = control.submit_invoke_transaction(bad_tx.into()).await.unwrap();
+
+        // A valid transaction from another account, through the normal mempool path.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.contracts.0[2],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        // Rejected transactions count as executed for batch notifications but are never appended
+        // to the preconfirmed block. Both txs may land in one or two batches, so wait until the
+        // valid one shows up in the preconfirmed block.
+        loop {
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+            if devnet_setup
+                .backend
+                .block_view_on_preconfirmed()
+                .is_some_and(|view| view.num_executed_transactions() == 1)
+            {
+                break;
+            }
+        }
+
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let closed = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        let txs = closed.get_executed_transactions(..).unwrap();
+        assert_eq!(txs.len(), 1, "Only the valid transaction should be in the closed block");
+        assert_ne!(
+            txs[0].receipt.transaction_hash(),
+            &bad_res.transaction_hash,
+            "The rejected transaction must not be included in the closed block"
+        );
+        assert_eq!(txs[0].receipt.execution_result(), ExecutionResult::Succeeded);
+        assert!(devnet_setup.mempool.is_empty().await);
+    }
+
+    // After graceful shutdown, the handle is disconnected: executor commands and bypass
+    // transaction submissions must fail with an error instead of hanging forever.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(60))]
+    #[tokio::test]
+    async fn test_handle_commands_fail_after_shutdown(
+        #[future]
+        #[with(Duration::from_secs(100), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let block_production_task = devnet_setup.block_prod_task();
+        let control = block_production_task.handle();
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+        let task = AbortOnDrop::spawn(async move { block_production_task.run(ctx).await });
+
+        // Sanity check: the handle works while the task is running.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        control.close_block().await.unwrap();
+
+        ctx_clone.cancel_global();
+        task.await.unwrap();
+
+        assert!(
+            matches!(control.close_block().await, Err(ExecutorCommandError::ChannelClosed)),
+            "close_block should fail with ChannelClosed after shutdown"
+        );
+        let tx = make_transfer_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            Felt::ZERO,
+        );
+        assert!(
+            control.submit_invoke_transaction(tx.into()).await.is_err(),
+            "bypass tx submission should fail after shutdown"
         );
     }
 }
