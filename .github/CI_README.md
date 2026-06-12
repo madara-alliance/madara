@@ -62,6 +62,12 @@ Located in `.github/actions/setup-foundry/`, this action sets up the Foundry env
 - Madara bootstrap unit coverage for local and remote snapshot import/export.
 - Madara CLI smoke tests for snapshot creation, local import validation, remote manifest validation, and non-empty target rejection.
 
+`publish-bootstrap-snapshot.yml` is an operational workflow for producing
+canonical snapshot artifacts from an already-synced database on a self-hosted
+runner. It is not part of PR CI, and scheduled runs are disabled until
+`MADARA_BOOTSTRAP_SNAPSHOT_SCHEDULED=true` is configured in repository
+variables.
+
 ## Environment Configuration
 
 The environment configuration is centralized in `.github/config/env.yml`. This configuration is loaded
