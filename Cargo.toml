@@ -31,8 +31,8 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 print_stdout = "warn"
 print_stderr = "warn"
-# todo: uncomment these & fix them
-# unwrap_used = "warn"
+unwrap_used = "warn"
+# todo: uncomment and fix
 # missing_docs = "warn"
 
 [workspace.metadata.build]

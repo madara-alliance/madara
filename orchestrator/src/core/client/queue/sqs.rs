@@ -502,7 +502,8 @@ impl QueueClient for SQS {
             return Err(omniqueue::QueueError::NoData.into());
         }
         let consumer = self.get_consumer(queue.clone()).await?;
-        let delivery = consumer.wrap_message(messages_vec.first().unwrap());
+        let message = messages_vec.first().ok_or(omniqueue::QueueError::NoData)?;
+        let delivery = consumer.wrap_message(message);
 
         Ok(delivery)
     }

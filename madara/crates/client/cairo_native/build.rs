@@ -1,5 +1,6 @@
 fn main() {
-    let cargo_lock_path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo");
+    let cargo_lock_path = std::path::Path::new(&manifest_dir)
         .ancestors()
         .map(|path| path.join("Cargo.lock"))
         .find(|path| path.exists())

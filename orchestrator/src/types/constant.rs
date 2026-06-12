@@ -30,14 +30,14 @@ lazy_static! {
     pub static ref GENERATOR: BigUint = BigUint::from_str(
         "39033254847818212395286706435128746857159659164139250548781411570340225835782",
     )
-    .unwrap();
+    .expect("hardcoded generator is a valid decimal BigUint");
 
     pub static ref BLS_MODULUS: BigUint = BigUint::from_str(
         "52435875175126190479447740508185965837690552500527637822603658699938581184513",
     )
-    .unwrap();
-    pub static ref TWO: BigUint = 2u32.to_biguint().unwrap();
-    pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
+    .expect("hardcoded BLS modulus is a valid decimal BigUint");
+    pub static ref TWO: BigUint = 2u32.to_biguint().expect("2 converts to BigUint");
+    pub static ref ONE: BigUint = 1u32.to_biguint().expect("1 converts to BigUint");
 }
 
 /// Version of the Orchestrator - loaded from Cargo.toml at compile time

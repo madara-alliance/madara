@@ -626,8 +626,13 @@ mod test_config {
         // Note : changing between "0" and "1" is handled automatically by each test function, `no` manual
         // change in `env.test` is needed.
         if let Some(impersonate_account) = impersonate_account {
-            let nonce =
-                provider.get_transaction_count(impersonate_account).await.unwrap().to_string().parse::<u64>().unwrap();
+            let nonce = provider
+                .get_transaction_count(impersonate_account)
+                .await
+                .expect("failed to fetch transaction count for impersonated account")
+                .to_string()
+                .parse::<u64>()
+                .expect("transaction count fits in u64");
             txn_request.set_nonce(nonce);
             txn_request = txn_request.with_from(impersonate_account);
         }

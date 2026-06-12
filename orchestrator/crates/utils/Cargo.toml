@@ -39,3 +39,6 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
 zip = { workspace = true }
+
+[lints]
+workspace = true

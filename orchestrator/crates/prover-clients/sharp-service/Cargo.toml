@@ -33,3 +33,6 @@ rstest.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 url.workspace = true
+
+[lints]
+workspace = true

@@ -56,11 +56,12 @@ impl L1SyncService {
             .context("Building gas price provider config")?;
 
         if gas_provider_config.all_is_fixed() {
-            // safe to unwrap because we checked that all values are set
             let l1_gas_quote = L1GasQuote {
-                l1_gas_price: gas_provider_config.fix_gas_price.unwrap(),
-                l1_data_gas_price: gas_provider_config.fix_data_gas_price.unwrap(),
-                strk_per_eth: gas_provider_config.fix_strk_per_eth.unwrap(),
+                l1_gas_price: gas_provider_config.fix_gas_price.context("Fixed L1 gas price should be set")?,
+                l1_data_gas_price: gas_provider_config
+                    .fix_data_gas_price
+                    .context("Fixed L1 data gas price should be set")?,
+                strk_per_eth: gas_provider_config.fix_strk_per_eth.context("Fixed STRK per ETH should be set")?,
             };
             backend.set_last_l1_gas_quote(l1_gas_quote);
         }

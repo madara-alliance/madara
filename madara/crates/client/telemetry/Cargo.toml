@@ -38,3 +38,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 mp-utils = { workspace = true }
+
+[lints]
+workspace = true

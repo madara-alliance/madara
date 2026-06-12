@@ -20,7 +20,7 @@
 
 use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
 use casm_classes_v2::casm_contract_class::CasmContractClass;
-use num_bigint::{BigInt, BigUint, Sign};
+use num_bigint::BigUint;
 use starknet_types_core::felt::Felt;
 
 use cairo_native::executor::AotContractExecutor;
@@ -100,7 +100,9 @@ impl CompressedLegacyContractClass {
                     .map(|entry| match entry {
                         LegacyContractAbiEntry::Function(entry) => serde_json::to_value(entry).map(|mut v| {
                             if entry.state_mutability.is_none() {
-                                v.as_object_mut().unwrap().remove("stateMutability");
+                                if let Some(object) = v.as_object_mut() {
+                                    object.remove("stateMutability");
+                                }
                             }
                             v
                         }),
@@ -224,11 +226,12 @@ impl FlattenedSierraClass {
     ///
     /// ```rust,no_run
     /// use std::path::PathBuf;
-    /// # use mp_class::CompiledSierra;
+    /// # use mp_class::FlattenedSierraClass;
     ///
-    /// # let sierra_class: CompiledSierra = todo!();
+    /// # let sierra_class: FlattenedSierraClass = todo!();
     /// let path = PathBuf::from("/tmp/contract.so");
     /// let executor = sierra_class.compile_to_native(&path)?;
+    /// # Ok::<(), mp_class::compile::ClassCompilationError>(())
     /// ```
     pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
@@ -237,7 +240,7 @@ impl FlattenedSierraClass {
             minor: sierra_version.1 as _,
             patch: sierra_version.2 as _,
         };
-        let sierra = v2::to_cairo_lang(self);
+        let sierra = v2::to_cairo_lang(self)?;
         let extracted_program = sierra.extract_sierra_program(false).map_err(|e| {
             ClassCompilationError::ExtractSierraProgramFailed(format!("Failed to extract Sierra program: {}", e))
         })?;
@@ -317,7 +320,7 @@ mod v1_0_0_alpha6 {
     use casm_utils_v1_0_0_alpha6::bigint::BigUintAsHex;
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
-        let sierra_class = to_cairo_lang(sierra);
+        let sierra_class = to_cairo_lang(sierra)?;
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
@@ -325,37 +328,50 @@ mod v1_0_0_alpha6 {
         Ok(casm_class)
     }
 
-    fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
-        ContractClass {
+    fn to_cairo_lang(class: &FlattenedSierraClass) -> Result<ContractClass, ClassCompilationError> {
+        Ok(ContractClass {
             sierra_program: class.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
             sierra_program_debug_info: None,
             contract_class_version: class.contract_class_version.clone(),
-            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type)?,
             abi: None,
-        }
+        })
     }
 
     /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
-    fn entry_points_by_type_to_contract_entry_points(value: &EntryPointsByType) -> ContractEntryPoints {
-        fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
-            ContractEntryPoint {
-                function_idx: value.function_idx.try_into().unwrap(),
+    fn entry_points_by_type_to_contract_entry_points(
+        value: &EntryPointsByType,
+    ) -> Result<ContractEntryPoints, ClassCompilationError> {
+        fn sierra_entry_point_to_contract_entry_point(
+            value: SierraEntryPoint,
+        ) -> Result<ContractEntryPoint, ClassCompilationError> {
+            Ok(ContractEntryPoint {
+                function_idx: value.function_idx.try_into().map_err(|_| {
+                    ClassCompilationError::CompilationFailed(format!(
+                        "entry point function_idx {} overflows usize",
+                        value.function_idx
+                    ))
+                })?,
                 selector: felt_to_big_uint(&value.selector),
-            }
+            })
         }
-        ContractEntryPoints {
+        Ok(ContractEntryPoints {
             constructor: value
                 .constructor
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-            external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+                .collect::<Result<_, _>>()?,
+            external: value
+                .external
+                .iter()
+                .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
+                .collect::<Result<_, _>>()?,
             l1_handler: value
                 .l1_handler
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-        }
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Converts a [Felt] to a [BigUintAsHex]
@@ -373,7 +389,7 @@ mod v1_0_0_rc0 {
     use casm_utils_v1_0_0_rc0::bigint::BigUintAsHex;
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
-        let sierra_class = to_cairo_lang(sierra);
+        let sierra_class = to_cairo_lang(sierra)?;
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
@@ -381,37 +397,50 @@ mod v1_0_0_rc0 {
         Ok(casm_class)
     }
 
-    fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
-        ContractClass {
+    fn to_cairo_lang(class: &FlattenedSierraClass) -> Result<ContractClass, ClassCompilationError> {
+        Ok(ContractClass {
             sierra_program: class.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
             sierra_program_debug_info: None,
             contract_class_version: class.contract_class_version.clone(),
-            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type)?,
             abi: None,
-        }
+        })
     }
 
     /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
-    fn entry_points_by_type_to_contract_entry_points(value: &EntryPointsByType) -> ContractEntryPoints {
-        fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
-            ContractEntryPoint {
-                function_idx: value.function_idx.try_into().unwrap(),
+    fn entry_points_by_type_to_contract_entry_points(
+        value: &EntryPointsByType,
+    ) -> Result<ContractEntryPoints, ClassCompilationError> {
+        fn sierra_entry_point_to_contract_entry_point(
+            value: SierraEntryPoint,
+        ) -> Result<ContractEntryPoint, ClassCompilationError> {
+            Ok(ContractEntryPoint {
+                function_idx: value.function_idx.try_into().map_err(|_| {
+                    ClassCompilationError::CompilationFailed(format!(
+                        "entry point function_idx {} overflows usize",
+                        value.function_idx
+                    ))
+                })?,
                 selector: felt_to_big_uint(&value.selector),
-            }
+            })
         }
-        ContractEntryPoints {
+        Ok(ContractEntryPoints {
             constructor: value
                 .constructor
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-            external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+                .collect::<Result<_, _>>()?,
+            external: value
+                .external
+                .iter()
+                .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
+                .collect::<Result<_, _>>()?,
             l1_handler: value
                 .l1_handler
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-        }
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Converts a [Felt] to a [BigUintAsHex]
@@ -429,7 +458,7 @@ mod v1_1_1 {
     use casm_utils_v1_1_1::bigint::BigUintAsHex;
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
-        let sierra_class = to_cairo_lang(sierra);
+        let sierra_class = to_cairo_lang(sierra)?;
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
@@ -437,37 +466,50 @@ mod v1_1_1 {
         Ok(casm_class)
     }
 
-    fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
-        ContractClass {
+    fn to_cairo_lang(class: &FlattenedSierraClass) -> Result<ContractClass, ClassCompilationError> {
+        Ok(ContractClass {
             sierra_program: class.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
             sierra_program_debug_info: None,
             contract_class_version: class.contract_class_version.clone(),
-            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type)?,
             abi: None,
-        }
+        })
     }
 
     /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
-    fn entry_points_by_type_to_contract_entry_points(value: &EntryPointsByType) -> ContractEntryPoints {
-        fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
-            ContractEntryPoint {
-                function_idx: value.function_idx.try_into().unwrap(),
+    fn entry_points_by_type_to_contract_entry_points(
+        value: &EntryPointsByType,
+    ) -> Result<ContractEntryPoints, ClassCompilationError> {
+        fn sierra_entry_point_to_contract_entry_point(
+            value: SierraEntryPoint,
+        ) -> Result<ContractEntryPoint, ClassCompilationError> {
+            Ok(ContractEntryPoint {
+                function_idx: value.function_idx.try_into().map_err(|_| {
+                    ClassCompilationError::CompilationFailed(format!(
+                        "entry point function_idx {} overflows usize",
+                        value.function_idx
+                    ))
+                })?,
                 selector: felt_to_big_uint(&value.selector),
-            }
+            })
         }
-        ContractEntryPoints {
+        Ok(ContractEntryPoints {
             constructor: value
                 .constructor
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-            external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+                .collect::<Result<_, _>>()?,
+            external: value
+                .external
+                .iter()
+                .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
+                .collect::<Result<_, _>>()?,
             l1_handler: value
                 .l1_handler
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-        }
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Converts a [Felt] to a [BigUintAsHex]
@@ -485,7 +527,7 @@ mod v2 {
     use casm_utils_v2::bigint::BigUintAsHex;
 
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
-        let sierra_class = to_cairo_lang(sierra);
+        let sierra_class = to_cairo_lang(sierra)?;
         let extracted_program = sierra_class
             .extract_sierra_program(false)
             .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
@@ -515,37 +557,50 @@ mod v2 {
         Ok(casm_hash_v2.0)
     }
 
-    pub(super) fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
-        ContractClass {
+    pub(super) fn to_cairo_lang(class: &FlattenedSierraClass) -> Result<ContractClass, ClassCompilationError> {
+        Ok(ContractClass {
             sierra_program: class.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
             sierra_program_debug_info: None,
             contract_class_version: class.contract_class_version.clone(),
-            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type),
+            entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type)?,
             abi: None,
-        }
+        })
     }
 
     /// Converts a [EntryPointsByType] to a [ContractEntryPoints]
-    fn entry_points_by_type_to_contract_entry_points(value: &EntryPointsByType) -> ContractEntryPoints {
-        fn sierra_entry_point_to_contract_entry_point(value: SierraEntryPoint) -> ContractEntryPoint {
-            ContractEntryPoint {
-                function_idx: value.function_idx.try_into().unwrap(),
+    fn entry_points_by_type_to_contract_entry_points(
+        value: &EntryPointsByType,
+    ) -> Result<ContractEntryPoints, ClassCompilationError> {
+        fn sierra_entry_point_to_contract_entry_point(
+            value: SierraEntryPoint,
+        ) -> Result<ContractEntryPoint, ClassCompilationError> {
+            Ok(ContractEntryPoint {
+                function_idx: value.function_idx.try_into().map_err(|_| {
+                    ClassCompilationError::CompilationFailed(format!(
+                        "entry point function_idx {} overflows usize",
+                        value.function_idx
+                    ))
+                })?,
                 selector: felt_to_big_uint(&value.selector),
-            }
+            })
         }
-        ContractEntryPoints {
+        Ok(ContractEntryPoints {
             constructor: value
                 .constructor
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-            external: value.external.iter().map(|x| sierra_entry_point_to_contract_entry_point(x.clone())).collect(),
+                .collect::<Result<_, _>>()?,
+            external: value
+                .external
+                .iter()
+                .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
+                .collect::<Result<_, _>>()?,
             l1_handler: value
                 .l1_handler
                 .iter()
                 .map(|x| sierra_entry_point_to_contract_entry_point(x.clone()))
-                .collect(),
-        }
+                .collect::<Result<_, _>>()?,
+        })
     }
 
     /// Converts a [Felt] to a [BigUintAsHex]
@@ -556,7 +611,7 @@ mod v2 {
 
 /// Converts a [Felt] to a [BigUint]
 fn felt_to_big_uint(value: &Felt) -> BigUint {
-    BigInt::from_bytes_be(Sign::Plus, &value.to_bytes_be()).to_biguint().unwrap()
+    BigUint::from_bytes_be(&value.to_bytes_be())
 }
 
 #[cfg(test)]

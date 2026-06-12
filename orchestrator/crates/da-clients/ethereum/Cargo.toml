@@ -36,3 +36,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 tokio-test = "*"
+
+[lints]
+workspace = true

@@ -203,7 +203,7 @@ pub enum AtlanticSharpProver {
 
 impl AtlanticSharpProver {
     pub fn as_str(&self) -> String {
-        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+        serde_json::to_string(self).expect("enum variant serializes to a JSON string").trim_matches('"').to_string()
     }
 }
 
@@ -241,7 +241,7 @@ pub enum AtlanticCairoVm {
 
 impl AtlanticCairoVm {
     pub fn as_str(&self) -> String {
-        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+        serde_json::to_string(self).expect("enum variant serializes to a JSON string").trim_matches('"').to_string()
     }
 }
 
@@ -254,7 +254,7 @@ pub enum AtlanticCairoVersion {
 
 impl AtlanticCairoVersion {
     pub fn as_str(&self) -> String {
-        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+        serde_json::to_string(self).expect("enum variant serializes to a JSON string").trim_matches('"').to_string()
     }
 }
 
@@ -273,6 +273,7 @@ pub enum AtlanticQueryStep {
 
 impl std::fmt::Display for AtlanticQueryStep {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", serde_json::to_string(self).unwrap().trim_matches('"'))
+        let serialized = serde_json::to_string(self).map_err(|_| std::fmt::Error)?;
+        write!(f, "{}", serialized.trim_matches('"'))
     }
 }

@@ -551,8 +551,8 @@ impl MadaraBackend<RocksDBStorage> {
             .with_test_writer()
             .try_init();
 
-        let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
+        let temp_dir = tempfile::TempDir::with_prefix("madara-test").expect("Creating temp dir for test db");
+        let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).expect("Opening test db");
         // For tests, use default (disabled) Cairo Native config (no native execution)
         // Initialize compilation semaphore for tests (required even if native execution is disabled)
         let builder = mc_class_exec::config::NativeConfig::builder();
@@ -560,7 +560,8 @@ impl MadaraBackend<RocksDBStorage> {
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
-        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
+        let mut backend =
+            Self::new_and_init(db, chain_config, config, cairo_native_config).expect("Initializing test backend");
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }

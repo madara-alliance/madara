@@ -20,10 +20,10 @@ pub mod test {
         <T1 as TryFrom<T2>>::Error: std::fmt::Debug,
         <T2 as TryFrom<T1>>::Error: std::fmt::Debug,
     {
-        let b: T2 = a.clone().try_into().unwrap();
-        let c: T1 = b.clone().try_into().unwrap();
+        let b: T2 = a.clone().try_into().expect("for testing: T1 to T2 conversion should succeed");
+        let c: T1 = b.clone().try_into().expect("for testing: T2 to T1 conversion should succeed");
         assert_eq!(a, c);
-        let d: T2 = c.clone().try_into().unwrap();
+        let d: T2 = c.clone().try_into().expect("for testing: T1 to T2 conversion should succeed");
         assert_eq!(b, d);
     }
 }

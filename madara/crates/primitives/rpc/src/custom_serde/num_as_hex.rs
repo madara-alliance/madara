@@ -55,19 +55,20 @@ impl NumAsHex for u64 {
         let mut cursor = buffer.iter_mut().rev();
         let mut n = *self;
         while n != 0 {
-            *cursor.next().unwrap() = HEX_DIGITS[(n % 16) as usize];
+            *cursor.next().expect("buffer is large enough for any u64 hex representation") =
+                HEX_DIGITS[(n % 16) as usize];
             n /= 16;
         }
-        *cursor.next().unwrap() = b'x';
-        *cursor.next().unwrap() = b'0';
+        *cursor.next().expect("buffer is large enough for any u64 hex representation") = b'x';
+        *cursor.next().expect("buffer is large enough for any u64 hex representation") = b'0';
 
         let remaining = cursor.len();
 
         // SAFETY:
         //  We only wrote ASCII characters to the buffer, ensuring that it is only composed
-        //  of valid UTF-8 code points. This unwrap can never fail. Just like the code above,
+        //  of valid UTF-8 code points. This conversion can never fail. Just like the code above,
         //  using `from_utf8_unchecked` is safe.
-        let s = core::str::from_utf8(&buffer[remaining..]).unwrap();
+        let s = core::str::from_utf8(&buffer[remaining..]).expect("buffer contains only ASCII characters");
 
         serializer.serialize_str(s)
     }
@@ -166,19 +167,20 @@ impl NumAsHex for u128 {
         let mut cursor = buffer.iter_mut().rev();
         let mut n = *self;
         while n != 0 {
-            *cursor.next().unwrap() = HEX_DIGITS[(n % 16) as usize];
+            *cursor.next().expect("buffer is large enough for any u128 hex representation") =
+                HEX_DIGITS[(n % 16) as usize];
             n /= 16;
         }
-        *cursor.next().unwrap() = b'x';
-        *cursor.next().unwrap() = b'0';
+        *cursor.next().expect("buffer is large enough for any u128 hex representation") = b'x';
+        *cursor.next().expect("buffer is large enough for any u128 hex representation") = b'0';
 
         let remaining = cursor.len();
 
         // SAFETY:
         //  We only wrote ASCII characters to the buffer, ensuring that it is only composed
-        //  of valid UTF-8 code points. This unwrap can never fail. Just like the code above,
+        //  of valid UTF-8 code points. This conversion can never fail. Just like the code above,
         //  using `from_utf8_unchecked` is safe.
-        let s = core::str::from_utf8(&buffer[remaining..]).unwrap();
+        let s = core::str::from_utf8(&buffer[remaining..]).expect("buffer contains only ASCII characters");
 
         serializer.serialize_str(s)
     }

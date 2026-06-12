@@ -140,8 +140,7 @@ impl Default for PriceBounds {
 }
 
 fn default_oracle_api_url() -> Url {
-    // safe unwrap because its parsed from a const
-    Url::parse(DEFAULT_API_URL).unwrap()
+    Url::parse(DEFAULT_API_URL).expect("DEFAULT_API_URL is a valid constant url")
 }
 
 #[derive(Deserialize, Debug)]

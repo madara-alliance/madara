@@ -53,3 +53,6 @@ tokio-test = "*"
 
 [features]
 testing = []
+
+[lints]
+workspace = true

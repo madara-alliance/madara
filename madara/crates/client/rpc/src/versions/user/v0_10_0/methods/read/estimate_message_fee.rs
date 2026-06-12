@@ -39,7 +39,9 @@ pub async fn estimate_message_fee(
         /* offset_version */ false,
         /* legacy */ false,
     );
-    let tx: starknet_api::transaction::L1HandlerTransaction = l1_handler.try_into().unwrap();
+    let tx: starknet_api::transaction::L1HandlerTransaction = l1_handler.try_into().map_err(|e| {
+        StarknetRpcApiError::ContractNotFound { error: format!("Invalid message to_address: {e}").into() }
+    })?;
     let transaction = blockifier::transaction::transaction_execution::Transaction::L1Handler(
         starknet_api::executable_transaction::L1HandlerTransaction {
             tx,
