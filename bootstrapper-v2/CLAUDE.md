@@ -36,7 +36,7 @@ RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   --addresses-output-path output/addresses.json
 
 # Setup Madara (L2) - requires base layer addresses from previous step
-RUST_LOG=debug cargo run -- \
+RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   setup-madara --config-path configs/config.json \
   --base-addresses-path output/addresses.json \
   --output-path output/madara_addresses.json

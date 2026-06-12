@@ -1,3 +1,4 @@
+use crate::core::client::database::{AggregatorBatchDbQuery, BatchIndexSort};
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
@@ -52,11 +53,13 @@ impl JobTrigger for AggregatorJobTrigger {
         // more than we can legitimately turn into jobs this tick.
         let closed_batches = config
             .database()
-            .get_aggregator_batches_by_status(
-                AggregatorBatchStatus::Closed,
-                Some(batch_fetch_limit),
-                Some(ORCHESTRATOR_VERSION.to_string()),
-            )
+            .get_aggregator_batches(AggregatorBatchDbQuery {
+                statuses: Some(vec![AggregatorBatchStatus::Closed]),
+                limit: Some(batch_fetch_limit),
+                orchestrator_version: Some(ORCHESTRATOR_VERSION.to_string()),
+                sort: BatchIndexSort::Asc,
+                ..Default::default()
+            })
             .await?;
 
         debug!("Found {} closed batches", closed_batches.len());

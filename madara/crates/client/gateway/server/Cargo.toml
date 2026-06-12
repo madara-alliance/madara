@@ -23,6 +23,7 @@ mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
+mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
@@ -35,6 +36,7 @@ starknet-types-core.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 bytes.workspace = true
+flate2.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["full"] }
 hyper-util.workspace = true
@@ -45,5 +47,8 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 rstest.workspace = true
-flate2.workspace = true
+mc-db = { workspace = true, features = ["testing"] }
+mc-mempool.workspace = true
+mp-chain-config.workspace = true

@@ -108,7 +108,7 @@ The system uses dedicated queues for managing different job phases:
 - Build essentials (`build-essential`)
 - OpenSSL (`libssl-dev`)
 - Package config (`pkg-config`)
-- Python 3.9 with development files
+- Python 3.9 (build-time Cairo 0 tooling for SNOS program artifacts)
 - GMP library (`libgmp-dev`)
 
 ### Core Dependencies
@@ -118,7 +118,7 @@ The system uses dedicated queues for managing different job phases:
 - [Madara Node](https://github.com/madara-alliance/madara)
   - Required for block processing
   - Follow setup instructions at [Madara Documentation](https://github.com/madara-alliance/madara)
-- Prover Service (ATLANTIC)
+- Prover service (`sharp`, `atlantic`, or `mock`)
 - MongoDB for job management
 - AWS services (or Localstack for local development):
   - SQS for queues
@@ -126,19 +126,13 @@ The system uses dedicated queues for managing different job phases:
   - SNS for alerts
   - EventBridge for scheduling
 
-> 🚨 **Important Note**: SNOS requires the `get_storage_proof` RPC endpoint to function.
-> Currently, this endpoint is not implemented in Madara.
->
-> 🚧 Until madara implements the `get_storage_proof` endpoint, you need to run Pathfinder alongside Madara:
->
-> - Madara will run in sequencer mode
-> - Pathfinder will sync with Madara
-> - The orchestrator will use Pathfinder's RPC URL for SNOS and state update fetching
->
-> This setup is temporary until either:
->
-> 1. SNOS is adapted to work without the `get_storage_proof` endpoint, or
-> 2. The `get_storage_proof` endpoint is implemented in Madara
+> 🚨 **Important Note**: SNOS requires the `starknet_getStorageProof` RPC
+> endpoint. Madara implements this endpoint, but the default local profile
+> disables the retention needed for historical storage proofs
+> (`db_max_saved_trie_logs = 0`, `db_max_kept_snapshots = 0`, and
+> `rpc_storage_proof_max_distance = 0` in `configs/args/config.json`). For SNOS,
+> point `MADARA_ORCHESTRATOR_RPC_FOR_SNOS` at a node with storage-proof
+> retention enabled, or at a compatible external full node such as Pathfinder.
 
 ## 🚀 Installation & Setup
 
@@ -149,14 +143,18 @@ The system uses dedicated queues for managing different job phases:
    ```bash
    # Ubuntu/Debian
    sudo apt-get update
-   sudo apt install build-essential openssl pkg-config libssl-dev
-   sudo apt install python3.9 python3.9-venv python3.9-distutils libgmp-dev python3.9-dev
+   sudo apt install build-essential openssl pkg-config libssl-dev libgmp-dev
+   sudo apt install python3.9 python3.9-venv python3.9-distutils python3.9-dev
 
    # For macOS
    brew install openssl pkg-config gmp python@3.9
    ```
 
-   > 🚨 **Note**: python 3.9 is required for the `SNOS` to create `os_latest.json` hence the `python3.9` in the above command.
+   > 🚨 **Note**: Python 3.9 with Cairo 0 tooling is required at **build time**
+   > to compile SNOS program artifacts (`apollo_starknet_os_program`). From the
+   > repository root, run `make setup-cairo` or `make build-orchestrator` to
+   > create the `sequencer_venv` used by the build. SNOS jobs themselves run
+   > in-process via the Rust `generate-pie` crate at runtime.
 
 2. **Install Rust** (Cross-platform)
 
@@ -168,23 +166,25 @@ The system uses dedicated queues for managing different job phases:
 3. **Clone Repository**
 
    ```bash
-   git clone https://github.com/madara-alliance/madara-orchestrator.git
-   cd madara-orchestrator
-   git submodule update --init
+   git clone https://github.com/madara-alliance/madara.git
+   cd madara
    ```
 
-4. **Build SNOS**
+4. **Prepare Artifacts**
 
    ```bash
-   make snos
+   # Normally fetched automatically by build scripts.
+   # Regenerate local contract artifacts only when needed:
+   make artifacts
    ```
 
-   > 🚨 **Note**: python 3.9 is required for the `SNOS` to create `os_latest.json`
+   > 🚨 **Note**: `make artifacts` is Docker-heavy and may prompt before
+   > replacing generated artifact directories.
 
 5. **Build Project**
 
    ```bash
-   cargo build --release
+   cargo build --release --bin orchestrator
    ```
 
 ### Local Development Setup
@@ -226,10 +226,13 @@ The system uses dedicated queues for managing different job phases:
    MADARA_ORCHESTRATOR_SHARP_URL=http://localhost:6000
    ```
 
-5. **Run Pathfinder** (Choose one method)
+5. **Optional: Run Pathfinder** (Choose one method)
 
    > 🚨 **Important Note**:
    >
+   > - This is optional when your Madara RPC has storage-proof retention
+   >   enabled. It is useful when you want a separate reference/full node for
+   >   SNOS and state update fetching.
    > - Pathfinder requires a WebSocket Ethereum endpoint (`ethereum.url`). Since Anvil doesn't support WebSocket yet,
    >   you'll need to provide a different Ethereum endpoint (e.g., Alchemy, Infura). This is okay for local development
    >   as Pathfinder only uses this to get the state update from core contract.
@@ -247,13 +250,15 @@ The system uses dedicated queues for managing different job phases:
    cargo run --bin pathfinder -- \
        --network custom \
        --chain-id MADARA_DEVNET \
-       --ethereum.url wss://eth-sepolia.g.alchemy.com/v2/xxx \  # Replace with your Ethereum endpoint
+       --ethereum.url wss://eth-sepolia.g.alchemy.com/v2/xxx \
        --gateway-url http://localhost:8080/gateway \
        --feeder-gateway-url http://localhost:8080/feeder_gateway \
        --storage.state-tries archive \
        --data-directory ~/Desktop/pathfinder_db/ \
        --http-rpc 127.0.0.1:9545
    ```
+
+   Replace the `--ethereum.url` value with your Ethereum WebSocket endpoint.
 
    b. **Using Docker**
 
@@ -272,29 +277,30 @@ The system uses dedicated queues for managing different job phases:
        eqlabs/pathfinder \
        --network custom \
        --chain-id MADARA_DEVNET \
-       --ethereum.url wss://eth-sepolia.g.alchemy.com/v2/xxx \  # Replace with your Ethereum endpoint
+       --ethereum.url wss://eth-sepolia.g.alchemy.com/v2/xxx \
        --gateway-url http://localhost:8080/gateway \
        --feeder-gateway-url http://localhost:8080/feeder_gateway \
        --storage.state-tries archive
    ```
+
+   Replace the `--ethereum.url` value with your Ethereum WebSocket endpoint.
 
 6. **Deploy Mock Verifier Contract**
 
    🚧 For development purposes, you can deploy the mock verifier contract using:
 
    ```bash
-   ./scripts/dummy_contract_deployment.sh http://localhost:9944 0
+   ./test_utils/scripts/deploy_dummy_verifier.sh \
+     --private-key "0xac0974..." \
+     --anvil-url "http://localhost:8545"
    ```
 
    This script:
-   - Takes the Madara endpoint and block number as parameters
-   - Automatically deploys both the verifier contract and core contract
-   - Sets up the necessary contract relationships
+   - Deploys the mock verifier contract for local Ethereum/Anvil testing
    - The deployed contract addresses will be output to the console
 
    ```bash
-   MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS=<deployed-core-contract-address>
-   MADARA_ORCHESTRATOR_VERIFIER_ADDRESS=<deployed-verifier-address>
+   MADARA_ORCHESTRATOR_MOCK_VERIFIER_ADDRESS=<deployed-verifier-address>
    ```
 
 🚧 Note: The mock services are intended for development and testing purposes only.
@@ -306,7 +312,14 @@ Setup mode configures the required AWS services and dependencies.
 Use the following command:
 
 ```bash
-cargo run --release --bin orchestrator setup --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+cargo run --release --bin orchestrator setup \
+    --layer l2 \
+    --aws \
+    --aws-s3 \
+    --aws-sqs \
+    --aws-sns \
+    --aws-event-bridge \
+    --event-bridge-type rule
 ```
 
 > 🚨 **Note**:
@@ -318,17 +331,24 @@ cargo run --release --bin orchestrator setup --aws --aws-s3 --aws-sqs --aws-sns 
 
 ### Run Mode
 
-Run mode executes the orchestrator's job processing workflow. Example command:
+Run mode executes the orchestrator's job processing workflow. Example command
+for Ethereum DA/settlement with SHARP, assuming the prover, settlement, AWS,
+MongoDB, and contract-address values are supplied via environment variables:
 
 ```bash
 RUST_LOG=info cargo run --release --bin orchestrator run \
     --prover sharp \
+    --layer l2 \
     --aws \
     --settle-on-ethereum \
     --aws-s3 \
     --aws-sqs \
     --aws-sns \
     --da-on-ethereum \
+    --ethereum-da-rpc-url "${ETHEREUM_DA_RPC_URL}" \
+    --madara-rpc-url "${MADARA_RPC_URL}" \
+    --rpc-for-snos "${SNOS_RPC_URL}" \
+    --max-batch-time-seconds 1800 \
     --mongodb
 ```
 
@@ -345,6 +365,7 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
 
 3. **Data Availability**:
    - `--da-on-ethereum`: Use Ethereum
+   - `--da-on-starknet`: Use Starknet
 
 4. **Infrastructure**:
    - `--aws`: Use AWS services (or Localstack)
@@ -402,10 +423,20 @@ or environment variables if not specified in the .env file.
 # SHARP Configuration
 MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID=<customer-id>
 MADARA_ORCHESTRATOR_SHARP_URL=<sharp-url>
+MADARA_ORCHESTRATOR_SHARP_RPC_NODE_URL=<rpc-node-url>
+MADARA_ORCHESTRATOR_SHARP_USER_CRT_FILE=<client-cert-path>
+MADARA_ORCHESTRATOR_SHARP_USER_KEY_FILE=<client-key-path>
+MADARA_ORCHESTRATOR_SHARP_SERVER_CRT_FILE=<server-cert-path>
+MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS=<gps-verifier-address>
 # or
 # ATLANTIC Configuration
 MADARA_ORCHESTRATOR_ATLANTIC_API_KEY=<api-key>
 MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL=<service-url>
+MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL=<rpc-node-url>
+MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH=false
+MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE=<prover-type>
+MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER=<settlement-layer>
+MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS=<verifier-address>
 ```
 
 ### Database Configuration
@@ -413,6 +444,35 @@ MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL=<service-url>
 ```env
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL=mongodb://localhost:27017
 MADARA_ORCHESTRATOR_DATABASE_NAME=orchestrator
+```
+
+### Data Availability Configuration
+
+```env
+MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL=<ethereum-da-rpc-url>
+# or
+MADARA_ORCHESTRATOR_STARKNET_DA_RPC_URL=<starknet-da-rpc-url>
+```
+
+### Settlement Configuration
+
+```env
+MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL=<ethereum-rpc-url>
+MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY=<ethereum-private-key>
+MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS=<l1-core-contract-address>
+MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS=<starknet-operator-address>
+# or
+MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL=<starknet-rpc-url>
+MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY=<starknet-private-key>
+MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS=<starknet-account-address>
+MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS=<starknet-core-contract-address>
+```
+
+### Service Configuration
+
+```env
+MADARA_ORCHESTRATOR_MADARA_RPC_URL=<madara-rpc-url>
+MADARA_ORCHESTRATOR_RPC_FOR_SNOS=<snos-rpc-url>
 ```
 
 ### Batching Configuration
@@ -423,10 +483,10 @@ MADARA_ORCHESTRATOR_MAX_BATCH_SIZE=100
 MADARA_ORCHESTRATOR_MAX_NUM_BLOBS=6
 MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS=3600
 MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH=50
-# Default proving gas for empty blocks (15 million)
+# Default proving gas for empty blocks (1.5 million)
 # Empty blocks return zero proving_gas from the bouncer weights API,
 # but every block has some proving cost. This value is used when proving_gas is zero.
-MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS=15000000
+MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS=1500000
 ```
 
 For a complete list of configuration options, refer to the `.env.example` file
@@ -468,6 +528,7 @@ Before running tests, ensure you have:
    ```bash
    export MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL=<ethereum-rpc-url>
    export MADARA_ORCHESTRATOR_RPC_FOR_SNOS=<snos-rpc-url>
+   export MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP=<backup-snos-rpc-url> # Optional; used for retried SNOS jobs
    export AWS_REGION=us-east-1
    ```
 
@@ -477,7 +538,7 @@ Before running tests, ensure you have:
 
    🚧 Development test environment:
    - End-to-end workflow testing
-   - Tests orchestrator functionality on block 66645 of Starknet
+   - Tests orchestrator functionality on block 525593 of Starknet
    - Uses mocked proving endpoints
 
 2. **Integration & Unit Tests** 🔌
@@ -489,7 +550,7 @@ Before running tests, ensure you have:
 #### Running E2E Tests
 
 ```bash
-RUST_LOG=info cargo test --features testing test_orchestrator_workflow -- --nocapture
+RUST_LOG=info cargo test --package e2e-tests --test test_orchestrator_workflow -- --nocapture
 ```
 
 #### Running Integration and Unit Tests

@@ -143,6 +143,43 @@ async fn test_migration_from_v12_clears_native_cache_directory() {
     drop(backend);
 }
 
+#[tokio::test]
+async fn test_migration_from_v13_seeds_external_db_retention_cursor() {
+    let (temp_dir, chain_config, native_config) = setup_test_env();
+
+    let backend = MadaraBackend::open_rocksdb(
+        temp_dir.path(),
+        chain_config.clone(),
+        Default::default(),
+        RocksDBConfig::default(),
+        native_config.clone(),
+    )
+    .expect("fresh database should open");
+    backend.set_latest_l1_confirmed(Some(20_000)).unwrap();
+    assert_eq!(backend.get_external_db_retention_cursor().unwrap(), None);
+    drop(backend);
+
+    fs::write(temp_dir.path().join(DB_VERSION_FILE), "13").unwrap();
+
+    let migrated = MadaraBackend::open_rocksdb(
+        temp_dir.path(),
+        chain_config,
+        Default::default(),
+        RocksDBConfig::default(),
+        native_config,
+    )
+    .expect("v13 database should migrate");
+
+    assert_eq!(migrated.get_external_db_retention_cursor().unwrap(), Some(2_720));
+
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
+    let version = runner.read_version_file().unwrap();
+    assert_eq!(version, expected_db_version);
+
+    drop(migrated);
+}
+
 // =============================================================================
 // Version Mismatch Tests (parameterized)
 // =============================================================================

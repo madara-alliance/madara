@@ -449,6 +449,8 @@ pub struct UserInvokeFunctionV3Transaction {
     pub account_deployment_data: Vec<Felt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proof: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_facts: Option<Vec<Felt>>,
 }
 
 impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3 {
@@ -482,6 +484,7 @@ impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
             paymaster_data: transaction.paymaster_data,
             account_deployment_data: transaction.account_deployment_data,
             proof: None,
+            proof_facts: None,
         }
     }
 }
@@ -489,7 +492,8 @@ impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
 impl From<UserInvokeFunctionV3Transaction> for BroadcastedInvokeTxnV3V0_10_2 {
     fn from(transaction: UserInvokeFunctionV3Transaction) -> Self {
         let proof = transaction.proof.clone();
-        Self { inner: transaction.into(), proof, proof_facts: None }
+        let proof_facts = transaction.proof_facts.clone();
+        Self { inner: transaction.into(), proof, proof_facts }
     }
 }
 
@@ -497,6 +501,7 @@ impl From<BroadcastedInvokeTxnV3V0_10_2> for UserInvokeFunctionV3Transaction {
     fn from(transaction: BroadcastedInvokeTxnV3V0_10_2) -> Self {
         let mut user_transaction: UserInvokeFunctionV3Transaction = transaction.inner.into();
         user_transaction.proof = transaction.proof;
+        user_transaction.proof_facts = transaction.proof_facts;
         user_transaction
     }
 }
@@ -624,7 +629,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    fn sample_user_invoke_v3(proof: Option<Vec<u64>>) -> UserInvokeFunctionTransaction {
+    fn sample_user_invoke_v3(proof: Option<Vec<u64>>, proof_facts: Option<Vec<Felt>>) -> UserInvokeFunctionTransaction {
         let resource_bounds = ResourceBoundsMapping { l1_data_gas: Some(Default::default()), ..Default::default() };
 
         UserInvokeFunctionTransaction::V3(UserInvokeFunctionV3Transaction {
@@ -639,21 +644,49 @@ mod tests {
             paymaster_data: vec![Felt::from_hex_unchecked("0xdef")],
             account_deployment_data: vec![Felt::from_hex_unchecked("0x987")],
             proof,
+            proof_facts,
         })
     }
 
     #[rstest]
-    #[case(None)]
-    #[case(Some(vec![1, 2, 3]))]
-    fn invoke_v3_roundtrip_preserves_optional_proof(#[case] proof: Option<Vec<u64>>) {
-        let transaction = sample_user_invoke_v3(proof.clone());
+    #[case(None, None)]
+    #[case(Some(vec![1, 2, 3]), None)]
+    #[case(None, Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")]))]
+    #[case(
+        Some(vec![1, 2, 3]),
+        Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")])
+    )]
+    fn invoke_v3_roundtrip_preserves_optional_proof_fields(
+        #[case] proof: Option<Vec<u64>>,
+        #[case] proof_facts: Option<Vec<Felt>>,
+    ) {
+        let transaction = sample_user_invoke_v3(proof.clone(), proof_facts.clone());
         let broadcasted: BroadcastedInvokeTxnV0_10_2 = transaction.clone().into();
         let roundtrip = UserInvokeFunctionTransaction::try_from(broadcasted).unwrap();
 
         assert_eq!(roundtrip, transaction);
         match roundtrip {
-            UserInvokeFunctionTransaction::V3(tx) => assert_eq!(tx.proof, proof),
+            UserInvokeFunctionTransaction::V3(tx) => {
+                assert_eq!(tx.proof, proof);
+                assert_eq!(tx.proof_facts, proof_facts);
+            }
             _ => unreachable!("expected v3 invoke transaction"),
         }
+    }
+
+    #[test]
+    fn invoke_v3_deserializes_gateway_proof_facts() {
+        let transaction = sample_user_invoke_v3(
+            None,
+            Some(vec![Felt::from_hex_unchecked("0x100"), Felt::from_hex_unchecked("0x200")]),
+        );
+        let json = serde_json::to_string(&transaction).expect("transaction should serialize");
+
+        assert!(json.contains("proof_facts"));
+
+        let deserialized: UserInvokeFunctionTransaction =
+            serde_json::from_str(&json).expect("transaction should deserialize");
+
+        assert_eq!(deserialized, transaction);
     }
 }

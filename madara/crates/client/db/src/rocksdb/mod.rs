@@ -26,7 +26,12 @@ use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
-use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
+use rocksdb::Options as RocksDBOptions;
+use rocksdb::{
+    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, IteratorMode, MultiThreaded,
+    WriteOptions,
+};
+use starknet_types_core::hash::StarkHash;
 use std::{fmt, path::Path, sync::Arc};
 
 mod backup;
@@ -82,6 +87,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
+    global_opts: RocksDBOptions,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }
@@ -171,6 +177,33 @@ impl RocksDBStorageInner {
 
         Ok(())
     }
+
+    /// Bonsai trie log keys are ordered by the committed revision id first.
+    ///
+    /// Madara uses `bonsai_trie::id::BasicId`, and bonsai serializes that id as a big-endian
+    /// `u64` (`BasicId::to_bytes`). That means the lexicographically-last key in a trie-log
+    /// column belongs to the latest committed revision for that trie.
+    fn latest_bonsai_log_id(&self, column: Column) -> anyhow::Result<Option<u64>> {
+        let handle = self.get_column(column);
+        let mut iter = self.db.iterator_cf(&handle, IteratorMode::End);
+
+        match iter.next() {
+            None => Ok(None),
+            Some(Ok((key, _))) => {
+                let key = key.as_ref();
+                anyhow::ensure!(
+                    key.len() >= 8,
+                    "Malformed bonsai trie log key: expected at least 8 bytes, got {}",
+                    key.len()
+                );
+
+                let mut id_bytes = [0u8; 8];
+                id_bytes.copy_from_slice(&key[..8]);
+                Ok(Some(u64::from_be_bytes(id_bytes)))
+            }
+            Some(Err(err)) => Err(err).context("Reading latest bonsai trie log key"),
+        }
+    }
 }
 
 /// Implementation of [`MadaraStorageRead`] and [`MadaraStorageWrite`] interface using rocksdb.
@@ -180,6 +213,73 @@ pub struct RocksDBStorage {
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
     metrics: DbMetrics,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TrieLogHeads {
+    contract: Option<u64>,
+    contract_storage: Option<u64>,
+    class: Option<u64>,
+}
+
+impl TrieLogHeads {
+    fn highest(self) -> Option<u64> {
+        [self.contract, self.contract_storage, self.class].into_iter().flatten().max()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrieRevertAction {
+    Revert { current: u64, target: u64 },
+    AlreadyAtTarget(u64),
+    OlderThanTarget { current: u64, target: u64 },
+    Missing,
+}
+
+fn trie_revert_action(latest_log_block_n: Option<u64>, target_block_n: u64) -> TrieRevertAction {
+    match latest_log_block_n {
+        Some(current) if current > target_block_n => TrieRevertAction::Revert { current, target: target_block_n },
+        Some(current) if current == target_block_n => TrieRevertAction::AlreadyAtTarget(current),
+        Some(current) => TrieRevertAction::OlderThanTarget { current, target: target_block_n },
+        None => TrieRevertAction::Missing,
+    }
+}
+
+fn revert_single_trie<H: StarkHash + Send + Sync>(
+    trie_name: &str,
+    trie: &mut trie::GlobalTrie<H>,
+    latest_log_block_n: Option<u64>,
+    target_block_n: u64,
+) -> anyhow::Result<bool> {
+    match trie_revert_action(latest_log_block_n, target_block_n) {
+        TrieRevertAction::Revert { current, target } => {
+            tracing::debug!("🌳 REORG: Reverting {trie_name} trie from trie_head={} to target={}", current, target);
+            trie.revert_to(BasicId::new(target), BasicId::new(current))
+                .map_err(|e| anyhow::anyhow!("Failed to revert {trie_name} trie: {e:?}"))?;
+            tracing::info!("✅ REORG: {trie_name} trie reverted successfully");
+            Ok(true)
+        }
+        TrieRevertAction::AlreadyAtTarget(current) => {
+            tracing::info!(
+                "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} already matches target={}",
+                current,
+                target_block_n
+            );
+            Ok(false)
+        }
+        TrieRevertAction::OlderThanTarget { current, target } => {
+            tracing::info!(
+                "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} is older than target={}",
+                current,
+                target
+            );
+            Ok(false)
+        }
+        TrieRevertAction::Missing => {
+            tracing::info!("🌳 REORG: Skipping {trie_name} trie revert because it has no persisted trie logs");
+            Ok(false)
+        }
+    }
 }
 
 impl RocksDBStorage {
@@ -194,7 +294,7 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -228,6 +328,14 @@ impl RocksDBStorage {
     /// carefully. This should only be used by the migration system.
     pub fn inner_db(&self) -> &DB {
         &self.inner.db
+    }
+
+    fn trie_log_heads(&self) -> anyhow::Result<TrieLogHeads> {
+        Ok(TrieLogHeads {
+            contract: self.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN)?,
+            contract_storage: self.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_STORAGE_LOG_COLUMN)?,
+            class: self.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN)?,
+        })
     }
 }
 
@@ -326,6 +434,9 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
+    }
+    fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
+        self.inner.get_external_db_retention_cursor().context("Getting external db retention cursor")
     }
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
         self.inner.get_stored_chain_info().context("Getting stored chain info from db")
@@ -495,6 +606,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
     }
+    fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Write external db retention cursor block_n={block_n:?}");
+        self.inner.write_external_db_retention_cursor(block_n).context("Writing external db retention cursor")
+    }
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         tracing::debug!(
             "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
@@ -591,6 +706,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
         tracing::debug!("Writing runtime execution config");
         self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
+    }
+    fn clear_runtime_exec_config(&self) -> Result<()> {
+        tracing::debug!("Clearing runtime execution config");
+        self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
     }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");
@@ -830,38 +949,62 @@ impl MadaraStorageWrite for RocksDBStorage {
         );
 
         let target_id = BasicId::new(target_block_n);
-        let current_id = BasicId::new(current_tip);
+        let trie_log_heads = self.trie_log_heads().context("Reading bonsai trie log heads before reorg")?;
+        let latest_applied_trie_update = self.get_latest_applied_trie_update().ok().flatten();
 
         tracing::info!("🌳 REORG: Reverting bonsai tries from current={} to target={}", current_tip, target_block_n);
+        tracing::info!(
+            "🌳 REORG: Trie log heads before revert: contract={:?}, contract_storage={:?}, class={:?}, latest_applied_trie_update={:?}",
+            trie_log_heads.contract,
+            trie_log_heads.contract_storage,
+            trie_log_heads.class,
+            latest_applied_trie_update
+        );
+        if let Some(highest_trie_log_head) = trie_log_heads.highest() {
+            if highest_trie_log_head != current_tip {
+                tracing::warn!(
+                    "🌳 REORG: Confirmed chain tip ({}) diverges from latest persisted trie log head ({}). Reverting each trie from its actual head.",
+                    current_tip,
+                    highest_trie_log_head
+                );
+            }
+        }
 
         tracing::debug!("🌳 REORG: Reverting contract trie...");
-        self.contract_trie()
-            .revert_to(target_id, current_id)
-            .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {e:?}"))?;
-        tracing::info!("✅ REORG: Contract trie reverted successfully");
+        let mut contract_trie = self.contract_trie();
+        let contract_trie_needs_commit =
+            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
 
         tracing::debug!("🌳 REORG: Reverting contract storage trie...");
-        self.contract_storage_trie()
-            .revert_to(target_id, current_id)
-            .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {e:?}"))?;
-        tracing::info!("✅ REORG: Contract storage trie reverted successfully");
+        let mut contract_storage_trie = self.contract_storage_trie();
+        let contract_storage_trie_needs_commit = revert_single_trie(
+            "contract storage",
+            &mut contract_storage_trie,
+            trie_log_heads.contract_storage,
+            target_block_n,
+        )?;
 
         tracing::debug!("🌳 REORG: Reverting class trie...");
-        self.class_trie()
-            .revert_to(target_id, current_id)
-            .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {e:?}"))?;
-        tracing::info!("✅ REORG: Class trie reverted successfully");
+        let mut class_trie = self.class_trie();
+        let class_trie_needs_commit =
+            revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
 
         tracing::info!("💾 REORG: Committing tries after revert...");
-        self.contract_trie()
-            .commit(target_id)
-            .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
-        self.contract_storage_trie()
-            .commit(target_id)
-            .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
-        self.class_trie()
-            .commit(target_id)
-            .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
+        if contract_trie_needs_commit {
+            contract_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
+        }
+        if contract_storage_trie_needs_commit {
+            contract_storage_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
+        }
+        if class_trie_needs_commit {
+            class_trie
+                .commit(target_id)
+                .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
+        }
         tracing::info!("✅ REORG: All tries committed successfully");
 
         // Revert database state using the three revert functions
@@ -938,11 +1081,93 @@ impl MadaraStorageWrite for RocksDBStorage {
 
 #[cfg(test)]
 mod tests {
-    use super::{RocksDBConfig, RocksDBStorage};
-    use crate::rocksdb::trie::BasicId;
+    use super::*;
+    use crate::rocksdb::global_trie::bonsai_identifier;
     use crate::storage::MadaraStorageWrite;
-    use bitvec::view::AsBits;
-    use starknet_types_core::felt::Felt;
+    use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
+    use mp_convert::Felt;
+
+    fn contract_trie_key(key: Felt) -> BitVec<u8, Msb0> {
+        let bytes = key.to_bytes_be();
+        bytes.as_bits()[5..].to_owned()
+    }
+
+    #[test]
+    fn trie_revert_action_handles_equal_older_and_missing_heads() {
+        assert_eq!(trie_revert_action(Some(12), 8), TrieRevertAction::Revert { current: 12, target: 8 });
+        assert_eq!(trie_revert_action(Some(8), 8), TrieRevertAction::AlreadyAtTarget(8));
+        assert_eq!(trie_revert_action(Some(5), 8), TrieRevertAction::OlderThanTarget { current: 5, target: 8 });
+        assert_eq!(trie_revert_action(None, 8), TrieRevertAction::Missing);
+    }
+
+    #[test]
+    fn latest_bonsai_log_id_reads_latest_committed_revision() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+
+        let mut trie = storage.contract_trie();
+        let key_a = contract_trie_key(Felt::from(1u64));
+        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+
+        let key_b = contract_trie_key(Felt::from(2u64));
+        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
+        trie.commit(BasicId::new(5)).unwrap();
+
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn revert_single_trie_reverts_and_commits_on_the_same_handle() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+
+        let key_a = contract_trie_key(Felt::from(1u64));
+        let key_b = contract_trie_key(Felt::from(2u64));
+
+        let mut trie = storage.contract_trie();
+        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
+        let root_at_2 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+
+        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
+        let root_at_5 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        trie.commit(BasicId::new(5)).unwrap();
+
+        let mut trie = storage.contract_trie();
+        assert!(revert_single_trie("contract", &mut trie, Some(5), 2).unwrap());
+        trie.commit(BasicId::new(2)).unwrap();
+
+        let latest_head = storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap();
+        assert_eq!(latest_head, Some(2));
+
+        let current_root = storage.contract_trie().root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
+        assert_eq!(current_root, root_at_2);
+        assert_ne!(current_root, root_at_5);
+    }
+
+    #[test]
+    fn revert_single_trie_skipped_paths_do_not_fabricate_target_revisions() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+
+        let key = contract_trie_key(Felt::from(1u64));
+        let mut trie = storage.contract_trie();
+        trie.insert(bonsai_identifier::CONTRACT, &key, &Felt::from(11u64)).unwrap();
+        trie.commit(BasicId::new(5)).unwrap();
+
+        let mut older_than_target = storage.contract_trie();
+        assert!(!revert_single_trie("contract", &mut older_than_target, Some(5), 8).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+
+        let mut already_at_target = storage.contract_trie();
+        assert!(!revert_single_trie("contract", &mut already_at_target, Some(5), 5).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+
+        let mut missing = storage.class_trie();
+        assert!(!revert_single_trie("class", &mut missing, None, 8).unwrap());
+        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN).unwrap(), None);
+    }
 
     fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
         let temp_dir = tempfile::TempDir::with_prefix("rocksdb-storage-proof-test").unwrap();

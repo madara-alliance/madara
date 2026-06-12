@@ -1,3 +1,4 @@
+use super::mempool::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -5,12 +6,12 @@ use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolNonceFilter};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -19,6 +20,73 @@ const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
 const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
+
+enum FlushMode {
+    All { nonce_filter: MempoolNonceFilter },
+    ContractAddress { contract_address: Felt, nonce_filter: MempoolNonceFilter },
+    TransactionHashes { transaction_hashes: Vec<Felt>, nonce_filter: MempoolNonceFilter },
+}
+
+fn invalid_flush_params(message: &'static str) -> jsonrpsee::types::ErrorObjectOwned {
+    jsonrpsee::types::ErrorObject::owned(jsonrpsee::types::ErrorCode::InvalidParams.code(), message, Some(()))
+}
+
+impl FlushMode {
+    fn from_params(params: FlushMempoolTxnsParams) -> RpcResult<Self> {
+        let nonce_filter = params.nonce_filter;
+        let using_all = params.all;
+        let using_contract_address = params.contract_address.is_some();
+        let using_transaction_hashes = params.transaction_hashes.as_ref().is_some_and(|hashes| !hashes.is_empty());
+        let using_nonce_filter = nonce_filter.nonce_after.is_some() || nonce_filter.nonce_before.is_some();
+
+        let selected_filters = [using_all, using_contract_address, using_transaction_hashes]
+            .into_iter()
+            .filter(|selected| *selected)
+            .count();
+        if selected_filters > 1 {
+            return Err(invalid_flush_params(
+                "Provide at most one base flush filter: all, contract_address, or transaction_hashes",
+            ));
+        }
+
+        if using_all {
+            return Ok(Self::All { nonce_filter });
+        }
+
+        if let Some(contract_address) = params.contract_address {
+            return Ok(Self::ContractAddress { contract_address, nonce_filter });
+        }
+
+        if using_transaction_hashes {
+            return Ok(Self::TransactionHashes {
+                transaction_hashes: params.transaction_hashes.unwrap_or_default(),
+                nonce_filter,
+            });
+        }
+
+        if using_nonce_filter {
+            return Err(invalid_flush_params(
+                "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes",
+            ));
+        }
+
+        Err(invalid_flush_params(
+            "Provide at least one base flush filter: all, contract_address, or transaction_hashes",
+        ))
+    }
+    fn matches(&self, transaction: &ValidatedTransaction) -> bool {
+        match self {
+            FlushMode::All { nonce_filter } => matches_nonce_filter(transaction, *nonce_filter),
+            FlushMode::ContractAddress { contract_address, nonce_filter } => {
+                transaction.sender_contract_address() == Some(*contract_address)
+                    && matches_nonce_filter(transaction, *nonce_filter)
+            }
+            FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
+                transaction_hashes.contains(&transaction.hash) && matches_nonce_filter(transaction, *nonce_filter)
+            }
+        }
+    }
+}
 
 fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
     tokio::spawn(async move {
@@ -276,6 +344,29 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         Ok(())
     }
+
+    async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult> {
+        let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        let flush_mode = FlushMode::from_params(params)?;
+        let removed_transactions = match flush_mode {
+            FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
+                if nonce_filter == MempoolNonceFilter::default() {
+                    mempool.flush_transactions_by_hashes(transaction_hashes).await
+                } else {
+                    mempool
+                        .flush_transactions_matching(|tx| {
+                            transaction_hashes.contains(&tx.hash) && matches_nonce_filter(tx, nonce_filter)
+                        })
+                        .await
+                }
+            }
+            flush_mode => mempool.flush_transactions_matching(|tx| flush_mode.matches(tx)).await,
+        };
+
+        Ok(FlushMempoolTxnsResult {
+            removed_transaction_hashes: removed_transactions.into_iter().map(|tx| tx.hash).collect(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -288,17 +379,68 @@ mod tests {
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
+    use mc_mempool::{Mempool, MempoolConfig};
     use mp_block::header::{CustomHeader, GasPrices};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
+    use mp_rpc::admin::{FlushMempoolTxnsParams, MempoolNonceFilter};
+    use mp_transactions::{
+        validated::{TxTimestamp, ValidatedTransaction},
+        InvokeTransaction, InvokeTransactionV1, L1HandlerTransaction, Transaction,
+    };
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
 
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
-        let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
+        let provider = Arc::new(TestTransactionProvider);
+        let mut rpc = Starknet::new(backend, Arc::clone(&provider) as _, provider, Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
         rpc
+    }
+
+    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let mut rpc = make_starknet(backend, ServiceContext::new_for_testing());
+        rpc.set_mempool(mempool.clone());
+        (mempool, rpc)
+    }
+
+    fn invoke_v1_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
+        ValidatedTransaction {
+            transaction: Transaction::Invoke(InvokeTransaction::V1(InvokeTransactionV1 {
+                sender_address: sender,
+                calldata: vec![Felt::from(10_u64)].into(),
+                max_fee: Felt::from(1_u64),
+                signature: vec![].into(),
+                nonce,
+            })),
+            paid_fee_on_l1: None,
+            contract_address: sender,
+            arrived_at: TxTimestamp(arrived_at),
+            declared_class: None,
+            hash,
+            charge_fee: true,
+        }
+    }
+
+    fn l1_handler_tx(contract_address: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
+        ValidatedTransaction {
+            transaction: Transaction::L1Handler(L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: 0,
+                contract_address,
+                entry_point_selector: Felt::from(123_u64),
+                calldata: vec![Felt::from(10_u64)].into(),
+            }),
+            paid_fee_on_l1: Some(1),
+            contract_address,
+            arrived_at: TxTimestamp(arrived_at),
+            declared_class: None,
+            hash,
+            charge_fee: true,
+        }
     }
 
     #[tokio::test]
@@ -389,5 +531,125 @@ mod tests {
         assert_eq!(preconfirmed.block_number(), custom_header.block_n);
         assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
         assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_all_removes_everything() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
+        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::ZERO, Felt::from(202_u64), base + 1_000);
+
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+
+        let result = rpc.flush_mempool_txns(FlushMempoolTxnsParams { all: true, ..Default::default() }).await.unwrap();
+
+        assert_eq!(result.removed_transaction_hashes, vec![tx1.hash, tx2.hash]);
+        assert!(mempool.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_by_sender_contract_address_filters_sender_side_only() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let sender_match = invoke_v1_tx(Felt::from(77_u64), Felt::ZERO, Felt::from(701_u64), base);
+        let to_match_only = l1_handler_tx(Felt::from(99_u64), Felt::from(702_u64), base + 1_000);
+        let untouched = invoke_v1_tx(Felt::from(88_u64), Felt::ZERO, Felt::from(703_u64), base + 2_000);
+
+        mempool.accept_tx(sender_match.clone()).await.unwrap();
+        mempool.accept_tx(to_match_only.clone()).await.unwrap();
+        mempool.accept_tx(untouched.clone()).await.unwrap();
+
+        let result = rpc
+            .flush_mempool_txns(FlushMempoolTxnsParams {
+                contract_address: Some(Felt::from(77_u64)),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.removed_transaction_hashes, vec![sender_match.hash]);
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
+        assert_eq!(
+            remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(),
+            vec![to_match_only.hash, untouched.hash]
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_by_explicit_hashes_removes_only_requested_transactions() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(901_u64), base);
+        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::ZERO, Felt::from(902_u64), base + 1_000);
+        let tx3 = invoke_v1_tx(Felt::from(33_u64), Felt::ZERO, Felt::from(903_u64), base + 2_000);
+
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+        mempool.accept_tx(tx3.clone()).await.unwrap();
+
+        let result = rpc
+            .flush_mempool_txns(FlushMempoolTxnsParams {
+                transaction_hashes: Some(vec![tx2.hash, Felt::from(999_u64)]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
+        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_can_filter_by_nonce_range_when_all_is_explicit() {
+        let (mempool, rpc) = make_starknet_with_mempool();
+        let base = TxTimestamp::now().0;
+        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(1001_u64), base);
+        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::from(2_u64), Felt::from(1002_u64), base + 1_000);
+        let tx3 = invoke_v1_tx(Felt::from(33_u64), Felt::from(4_u64), Felt::from(1003_u64), base + 2_000);
+
+        mempool.accept_tx(tx1.clone()).await.unwrap();
+        mempool.accept_tx(tx2.clone()).await.unwrap();
+        mempool.accept_tx(tx3.clone()).await.unwrap();
+
+        let result = rpc
+            .flush_mempool_txns(FlushMempoolTxnsParams {
+                all: true,
+                nonce_filter: MempoolNonceFilter {
+                    nonce_after: Some(Felt::from(1_u64)),
+                    nonce_before: Some(Felt::from(4_u64)),
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
+        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
+        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_rejects_nonce_only_requests_without_base_filter() {
+        let (_, rpc) = make_starknet_with_mempool();
+
+        let err = rpc
+            .flush_mempool_txns(FlushMempoolTxnsParams {
+                nonce_filter: MempoolNonceFilter {
+                    nonce_after: Some(Felt::from(1_u64)),
+                    nonce_before: Some(Felt::from(4_u64)),
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
+        assert_eq!(
+            err.message(),
+            "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes"
+        );
     }
 }

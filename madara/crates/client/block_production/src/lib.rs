@@ -322,6 +322,7 @@ pub struct BlockProductionTask {
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     no_charge_fee: bool,
+    discard_preconfirmed_on_startup: bool,
 }
 
 impl BlockProductionTask {
@@ -330,6 +331,8 @@ impl BlockProductionTask {
     /// # Parameters
     ///
     /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
+    /// * `discard_preconfirmed_on_startup`: Drops any recovered preconfirmed block instead of
+    ///   re-executing and closing it during sequencer startup.
     ///
     /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
     pub fn new(
@@ -338,6 +341,7 @@ impl BlockProductionTask {
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
+        discard_preconfirmed_on_startup: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -352,6 +356,7 @@ impl BlockProductionTask {
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
+            discard_preconfirmed_on_startup,
         }
     }
 
@@ -657,6 +662,38 @@ impl BlockProductionTask {
             // Even if there's no preconfirmed block, save the current runtime exec config
             // This ensures the config is persisted for future restarts
             self.save_current_runtime_exec_config()?;
+            return Ok(());
+        }
+
+        if self.discard_preconfirmed_on_startup {
+            let preconfirmed_view =
+                self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
+            let block_number = preconfirmed_view.block_number();
+            let n_txs = preconfirmed_view.num_executed_transactions();
+            let tx_hashes: Vec<_> = preconfirmed_view
+                .get_block_info()
+                .tx_hashes
+                .into_iter()
+                .map(|tx_hash| format!("{tx_hash:#x}"))
+                .collect();
+
+            tracing::warn!(
+                discarded_transaction_hashes = ?tx_hashes,
+                "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled; these transactions are permanently lost and will not be re-queued",
+                block_number,
+                n_txs
+            );
+
+            let backend = self.backend.clone();
+            global_spawn_rayon_task(move || {
+                backend.write_access().clear_preconfirmed().context("Discarding preconfirmed block on startup")
+            })
+            .await?;
+
+            self.save_current_runtime_exec_config()
+                .context("Saving runtime execution config after discarding preconfirmed block")?;
+
+            tracing::info!("🧹 Discarded preconfirmed block #{} on startup", block_number);
             return Ok(());
         }
 
@@ -1079,14 +1116,19 @@ pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
-    use mc_db::MadaraBackend;
+    use mc_db::{
+        preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
+        test_utils::l1_handler_tx_with_receipt,
+        MadaraBackend,
+    };
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
     };
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_chain_config::ChainConfig;
+    use mp_block::header::PreconfirmedHeader;
+    use mp_chain_config::{ChainConfig, RuntimeExecutionConfig};
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
     use mp_rpc::v0_9_0::{
@@ -1134,6 +1176,7 @@ pub(crate) mod tests {
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
                 false, /* no_charge_fee = false */
+                false, /* discard_preconfirmed_on_startup = false */
             )
         }
     }
@@ -1997,6 +2040,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             initial_no_charge_fee,
+            false,
         );
 
         let mut notifications = block_production_task.subscribe_state_notifications();
@@ -2027,6 +2071,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             restart_no_charge_fee, // Current config: no_charge_fee = false
+            false,
         );
 
         // Start the block production task.
@@ -2056,6 +2101,73 @@ pub(crate) mod tests {
         assert_eq!(
             updated_config.no_charge_fee, restart_no_charge_fee,
             "Config should be updated with current value after re-execution completes"
+        );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_discard_preconfirmed_on_startup_replaces_runtime_exec_config(
+        #[future]
+        #[from(devnet_setup)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let devnet_setup = devnet_setup.await;
+
+        let initial_no_charge_fee = true;
+        let chain_config = devnet_setup.backend.chain_config();
+        let exec_constants =
+            chain_config.exec_constants_by_protocol_version(chain_config.latest_protocol_version).unwrap();
+        let saved_runtime_config =
+            RuntimeExecutionConfig::from_current_config(chain_config, exec_constants, initial_no_charge_fee).unwrap();
+
+        devnet_setup.backend.write_access().write_runtime_exec_config(&saved_runtime_config).unwrap();
+        devnet_setup
+            .backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: l1_handler_tx_with_receipt(55, Felt::from(0x1234_u64)),
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: Some(0),
+                }],
+                [],
+            ))
+            .unwrap();
+
+        assert!(devnet_setup.backend.has_preconfirmed_block());
+
+        let current_no_charge_fee = false;
+        let mut restart_block_production_task = BlockProductionTask::new(
+            devnet_setup.backend.clone(),
+            devnet_setup.mempool.clone(),
+            devnet_setup.metrics.clone(),
+            Arc::new(devnet_setup.l1_client.clone()),
+            current_no_charge_fee,
+            true,
+        );
+
+        restart_block_production_task.setup_initial_state().await.unwrap();
+
+        assert!(!devnet_setup.backend.has_preconfirmed_block(), "Preconfirmed block should be discarded on startup");
+        assert_eq!(
+            devnet_setup.backend.latest_confirmed_block_n(),
+            Some(0),
+            "Discarding startup recovery should keep the latest confirmed block unchanged"
+        );
+
+        let updated_config = devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should be able to read runtime exec config")
+            .expect("Runtime exec config should exist after discarding");
+
+        assert_eq!(
+            updated_config.no_charge_fee, current_no_charge_fee,
+            "Discarding startup recovery should replace the saved runtime config with the current one"
         );
     }
 
@@ -2179,5 +2291,141 @@ pub(crate) mod tests {
         // Step 6: Verify shutdown completed successfully
         // No preconfirmed block should exist (still)
         assert!(!devnet_setup.backend.has_preconfirmed_block());
+    }
+
+    // Regression test: when a non-empty block is followed by an empty block,
+    // the timestamp delta should be ~block_time, not ~2*block_time.
+    //
+    // Before the fix, create_execution_context() called SystemTime::now() lazily
+    // — only after wait_take_tx_batch() returned. For a non-empty block, txs
+    // arrive quickly so the timestamp is set near block-open time. For an empty
+    // block, the full block_time elapses before the timestamp is set.
+    // This made the delta between a non-empty and subsequent empty block ≈ 2*block_time.
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_empty_block_timestamp_not_drifted(
+        #[future]
+        #[with(Duration::from_secs(3))]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        // Submit a transaction so block 1 is non-empty.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Block 1: non-empty (has our tx), closes after block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Block 2: empty, closes after another block_time.
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+
+        let ts_1 = block_1.get_block_info().unwrap().header.block_timestamp.0;
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        let delta = ts_2.saturating_sub(ts_1);
+
+        // With block_time=3s, the delta should be ~3s.
+        // Before the fix it would be ~6s (2 * block_time) because:
+        //   - block 1 timestamp set at open (near T0)
+        //   - block 2 timestamp set after 3s wait (near T0 + 3s + 3s)
+        assert!(
+            delta >= 2,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. Timestamps may have stalled or gone backward."
+        );
+        assert!(
+            delta <= 4,
+            "Timestamp delta between non-empty and subsequent empty block should be ~3s (block_time), \
+             but got {delta}s. This likely means the timestamp is still being set after the block_time wait."
+        );
+    }
+
+    // When no_empty_blocks=true, blocks are produced on-demand. The timestamp
+    // should reflect wall-clock time when the first tx arrives, not the time
+    // the previous block closed (which could be arbitrarily long ago).
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(30))]
+    #[tokio::test]
+    async fn test_no_empty_blocks_timestamp_uses_wall_clock(
+        #[future]
+        #[with(Duration::from_secs(30), false, true)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let mut devnet_setup = devnet_setup.await;
+
+        let mut block_production_task = devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Submit a tx to trigger block 1.
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Wait 3 seconds before submitting the next tx. With no_empty_blocks=true,
+        // the executor waits indefinitely. The block timestamp should reflect
+        // when the tx arrives (~3s from now), not when block 1 closed (~3s ago).
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let wall_clock_before_tx =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.contracts.0[2],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
+        let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;
+
+        // The timestamp should be within 1s of wall clock when the tx was submitted,
+        // not ~3s behind (which would indicate the stale captured time was used).
+        let drift = wall_clock_before_tx.saturating_sub(ts_2);
+        assert!(
+            drift <= 1,
+            "With no_empty_blocks=true, block timestamp should reflect wall-clock time \
+             when the first tx arrived, but it was {drift}s behind. \
+             This likely means a stale captured block_start_time was used."
+        );
     }
 }

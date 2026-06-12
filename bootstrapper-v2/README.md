@@ -67,7 +67,7 @@ export MADARA_PRIVATE_KEY="your_madara_private_key"
 #### Step 1: Setup Base Layer
 
 ```bash
-RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
+RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   setup-base --config-path configs/config.json \
   --addresses-output-path output/addresses.json
 ```
@@ -75,7 +75,7 @@ RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
 #### Step 2: Setup Madara
 
 ```bash
-RUST_LOG=debug cargo run -- \
+RUST_LOG=debug cargo run --bin bootstrapper-v2 -- \
   setup-madara --config-path configs/config.json \
   --base-addresses-path output/addresses.json \
   --output-path output/madara_addresses.json

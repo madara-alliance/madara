@@ -28,11 +28,17 @@ starknet_api.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mc-mempool.workspace = true
+mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
+mp-gateway.workspace = true
+mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
 
 tokio.workspace = true
+
+[dev-dependencies]
+mc-db = { workspace = true, features = ["testing"] }

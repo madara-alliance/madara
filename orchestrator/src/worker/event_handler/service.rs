@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::jobs::external_id::ExternalId;
@@ -15,7 +16,7 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
-use crate::types::queue::QueueNameForJobType;
+use crate::types::queue::{JobState, QueueNameForJobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -218,6 +219,7 @@ impl JobHandlerService {
 
                     // Record orphaned job metric
                     MetricsRecorder::record_orphaned_job(&job);
+                    let healing_workload = MetricsRecorder::start_healing_workload(&job.job_type);
 
                     // Reset process_started_at to allow fresh processing
                     job.metadata.common.process_started_at = None;
@@ -236,6 +238,9 @@ impl JobHandlerService {
                         .inspect_err(|e| {
                             error!(job_id = ?id, error = ?e, "Failed to heal stale job");
                         })?;
+
+                    MetricsRecorder::record_healed_job(&job.job_type);
+                    healing_workload.finish_success();
 
                     info!(
                         job_id = ?id,
@@ -273,7 +278,7 @@ impl JobHandlerService {
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Check if dependencies are ready before processing
-        if let Err(retry_delay) = job_handler.check_ready_to_process(config.clone()).await {
+        if let Err(retry_delay) = job_handler.check_ready_to_process(config.clone(), &job).await {
             debug!(job_id = ?id, job_type = ?job.job_type, delay_secs = ?retry_delay.as_secs(), "Dependencies not ready, requeueing job");
             JobService::add_job_to_queue(config.clone(), job.id, job.job_type.process_queue_name(), Some(retry_delay))
                 .await?;
@@ -314,6 +319,7 @@ impl JobHandlerService {
         // Record queue wait time only after readiness succeeds and the job is locked for processing.
         let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
         MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
+        let workload = MetricsRecorder::start_job_workload(&job.job_type, JobState::Processing);
 
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
@@ -424,6 +430,7 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
+        workload.finish_success();
 
         Ok(())
     }
@@ -495,6 +502,7 @@ impl JobHandlerService {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
                 e
             })?;
+        let workload = MetricsRecorder::start_job_workload(&job.job_type, JobState::Verification);
 
         let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
         Span::current().record("verification_status", format!("{:?}", &verification_status));
@@ -606,7 +614,7 @@ impl JobHandlerService {
                         JobStatus::Failed,
                         &job.job_type,
                     );
-                    return JobService::move_job_to_failed(
+                    let move_result = JobService::move_job_to_failed(
                         &job,
                         config.clone(),
                         format!(
@@ -615,6 +623,9 @@ impl JobHandlerService {
                         ),
                     )
                     .await;
+
+                    workload.finish_error();
+                    return move_result;
                 }
             }
             JobVerificationStatus::Pending => {
@@ -632,8 +643,6 @@ impl JobHandlerService {
                             error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationTimeout");
                             JobError::from(e)
                         })?;
-                    operation_job_status = Some(JobStatus::VerificationTimeout);
-
                     MetricsRecorder::record_job_state_transition(
                         JobStatus::PendingVerification,
                         JobStatus::VerificationTimeout,
@@ -658,6 +667,8 @@ impl JobHandlerService {
                             "SNS alert sent successfully for verification timeout"
                         );
                     }
+
+                    operation_job_status = Some(JobStatus::VerificationTimeout);
                 } else {
                     config
                         .database()
@@ -684,8 +695,8 @@ impl JobHandlerService {
             }
         };
 
-        if let Some(job_status) = operation_job_status {
-            attributes.push(KeyValue::new("operation_job_status", format!("{}", job_status)));
+        if let Some(job_status) = operation_job_status.as_ref() {
+            attributes.push(KeyValue::new("operation_job_status", job_status.to_string()));
         }
 
         debug!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
@@ -693,6 +704,11 @@ impl JobHandlerService {
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
+        if Self::verification_workload_is_error(operation_job_status.as_ref()) {
+            workload.finish_error();
+        } else {
+            workload.finish_success();
+        }
         Ok(())
     }
 
@@ -722,6 +738,10 @@ impl JobHandlerService {
             format!("Job moved to DLQ after exhausting retries (last status: {})", status),
         )
         .await
+    }
+
+    pub(crate) fn verification_workload_is_error(operation_job_status: Option<&JobStatus>) -> bool {
+        matches!(operation_job_status, Some(JobStatus::VerificationFailed | JobStatus::VerificationTimeout))
     }
 
     /// Retries a failed job by reprocessing it.
@@ -844,7 +864,11 @@ impl JobHandlerService {
     }
 
     async fn resolve_aggregator_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
-        match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
+        match config
+            .database()
+            .get_aggregator_batches(AggregatorBatchDbQuery { indexes: Some(vec![internal_id]), ..Default::default() })
+            .await
+        {
             Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
             Ok(_) => {
                 warn!(
@@ -867,7 +891,11 @@ impl JobHandlerService {
     }
 
     async fn resolve_snos_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
-        match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
+        match config
+            .database()
+            .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![internal_id]), ..Default::default() })
+            .await
+        {
             Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
             Ok(_) => {
                 warn!(

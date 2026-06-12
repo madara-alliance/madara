@@ -3,6 +3,7 @@ use blockifier::bouncer::BouncerWeights;
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
+use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_gateway::user_transaction::{
     AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
 };
@@ -106,6 +107,10 @@ impl GatewayProvider {
         .await
     }
 
+    /// Fetches block bouncer weights from a remote Madara feeder gateway.
+    ///
+    /// This is a Madara-specific endpoint used by Orchestrator. It is not part of the standard
+    /// Starknet feeder gateway surface and should not be expected to exist on other feeder clients.
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block_bouncer_weights")
@@ -113,6 +118,57 @@ impl GatewayProvider {
             .with_block_id(&BlockId::Number(block_number));
 
         request.send_get::<BouncerWeights>().await
+    }
+
+    pub async fn get_transaction(&self, transaction_hash: Felt) -> Result<ProviderTransactionResponse, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_transaction")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .add_param(Cow::from("transactionHash"), format!("0x{transaction_hash:x}"));
+
+            request.send_get::<ProviderTransactionResponse>().await
+        })
+        .await
+    }
+
+    pub async fn get_transaction_status(
+        &self,
+        transaction_hash: Felt,
+    ) -> Result<ProviderTransactionStatus, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_transaction_status")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .add_param(Cow::from("transactionHash"), format!("0x{transaction_hash:x}"));
+
+            request.send_get::<ProviderTransactionStatus>().await
+        })
+        .await
+    }
+
+    pub async fn get_block_hash_by_id(&self, block_number: u64) -> Result<Felt, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_block_hash_by_id")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .add_param(Cow::from("blockId"), block_number.to_string());
+
+            request.send_get::<Felt>().await
+        })
+        .await
+    }
+
+    pub async fn get_block_id_by_hash(&self, block_hash: Felt) -> Result<u64, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_block_id_by_hash")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .add_param(Cow::from("blockHash"), format!("0x{block_hash:x}"));
+
+            request.send_get::<u64>().await
+        })
+        .await
     }
 
     pub async fn get_state_update_with_block(
@@ -454,6 +510,28 @@ mod tests {
             .await
             .unwrap();
         let _block = client_mainnet_fixture.get_state_update(BlockId::Tag(BlockTag::Latest)).await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_transaction_and_block_id_endpoints(client_mainnet_fixture: GatewayProvider) {
+        let block = client_mainnet_fixture.get_block(BlockId::Number(0)).await.unwrap();
+        let tx_hash = *block.transactions[0].transaction_hash();
+
+        let status = client_mainnet_fixture.get_transaction_status(tx_hash).await.unwrap();
+        assert_ne!(serde_json::to_value(status.tx_status).unwrap(), serde_json::Value::String("NOT_RECEIVED".into()));
+        assert_eq!(status.block_hash, Some(block.block_hash));
+
+        let transaction = client_mainnet_fixture.get_transaction(tx_hash).await.unwrap();
+        assert_eq!(transaction.block_hash, Some(block.block_hash));
+        assert_eq!(transaction.block_number, Some(0));
+        assert_eq!(transaction.transaction.as_ref().unwrap().transaction_hash(), &tx_hash);
+
+        // The live Starknet feeder does not currently align `blockId` with `blockNumber` for these
+        // legacy endpoints, so validate them as a self-consistent pair instead of cross-checking
+        // against `get_block(blockNumber=0)`.
+        let block_hash = client_mainnet_fixture.get_block_hash_by_id(0).await.unwrap();
+        assert_eq!(client_mainnet_fixture.get_block_id_by_hash(block_hash).await.unwrap(), 0);
     }
 
     // INFO:

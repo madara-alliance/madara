@@ -271,7 +271,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
@@ -340,7 +340,7 @@ async fn process_job_handles_panic() {
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
     // Setting up mock to panic when process_job is called
     job_handler
         .expect_process_job()
@@ -438,7 +438,7 @@ async fn process_job_requeues_when_check_ready_to_process_fails() {
     let mut job_handler = MockJobHandlerTrait::new();
 
     // Mock check_ready_to_process to return Err with 0 second delay (for immediate queue visibility in test)
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Err(Duration::from_secs(0)));
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Err(Duration::from_secs(0)));
 
     // process_job should NOT be called since dependencies are not ready
     job_handler.expect_process_job().times(0);
@@ -513,7 +513,7 @@ async fn process_job_two_workers_process_same_job_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
     // Only the worker that gets to process will call this, but due to timing both might call it
-    job_handler.expect_check_ready_to_process().times(1..=2).returning(|_| Ok(()));
+    job_handler.expect_check_ready_to_process().times(1..=2).returning(|_, _| Ok(()));
     // Expecting process job function in job processor to return the external ID.
     // Only one worker should actually process the job
     job_handler.expect_process_job().times(1..=2).returning(move |_, _| Ok("0xbeef".to_string()));
@@ -579,7 +579,7 @@ async fn process_job_job_handler_returns_error_works() {
 
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
     // Expecting process job function in job processor to return an error.
     let failure_reason = "Failed to process job";
     job_handler
@@ -920,6 +920,14 @@ async fn verify_job_with_pending_status_works() {
     .await
     .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
+}
+
+#[test]
+fn verification_workload_is_error_only_for_failure_statuses() {
+    assert!(!JobHandlerService::verification_workload_is_error(None));
+    assert!(!JobHandlerService::verification_workload_is_error(Some(&JobStatus::Completed)));
+    assert!(JobHandlerService::verification_workload_is_error(Some(&JobStatus::VerificationFailed)));
+    assert!(JobHandlerService::verification_workload_is_error(Some(&JobStatus::VerificationTimeout)));
 }
 
 #[rstest]
@@ -1263,7 +1271,7 @@ async fn process_job_failure_marks_job_as_failed() {
 
     // Set up mock job handler that fails on process
     let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
     job_handler
         .expect_process_job()
         .times(1)

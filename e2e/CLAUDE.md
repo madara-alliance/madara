@@ -11,7 +11,7 @@ Layer 2 (L2) blockchain operations including deposits, withdrawals, and bridge t
 **Key capabilities:**
 
 - Full-stack integration testing for L1-L2 bridge operations
-- Multi-service orchestration (13+ services)
+- Multi-service orchestration across local chains, infrastructure services, bootstrapper v2, and the orchestrator
 - Layered architecture with clear separation of concerns
 - Fixture-based test setup with rstest
 
@@ -53,7 +53,7 @@ e2e/
 │   │   ├── service_management.rs    # Service startup/shutdown
 │   │   ├── dependency_validation.rs # Docker, Anvil, Forge checks
 │   │   └── lifecycle_management.rs  # Graceful shutdown
-│   ├── services/           # Service implementations (13+)
+│   ├── services/           # Service wrappers
 │   │   ├── anvil/          # L1 Ethereum chain
 │   │   ├── madara/         # L2 Starknet sequencer
 │   │   ├── pathfinder/     # Starknet full node
@@ -86,21 +86,21 @@ Orchestration (Orchestrator Setup → Runtime)
 
 ### Services Started
 
-| Service      | Purpose                       | Port                                     |
-| ------------ | ----------------------------- | ---------------------------------------- |
-| Anvil        | L1 Ethereum chain             | 8545                                     |
-| MongoDB      | Orchestrator database         | 27017                                    |
-| LocalStack   | AWS S3, SQS, SNS, EventBridge | 4566                                     |
-| Madara       | L2 Starknet sequencer         | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
-| Pathfinder   | Starknet full node            | 9545                                     |
-| Bootstrapper | L1/L2 contract initialization | N/A                                      |
-| Orchestrator | Proof pipeline coordinator    | N/A                                      |
-| Mock Prover  | STARK proof simulator         | 3001                                     |
+| Service         | Purpose                        | Port                                       |
+| --------------- | ------------------------------ | ------------------------------------------ |
+| Anvil           | L1 Ethereum chain              | 8545                                       |
+| MongoDB         | Orchestrator database          | 27017                                      |
+| LocalStack      | AWS S3, SQS, SNS, EventBridge  | 4566                                       |
+| Madara          | L2 Starknet sequencer          | 9944 (RPC), 9943 (Admin), 8080 (Gateway)   |
+| Pathfinder      | Starknet full node             | 9545                                       |
+| Bootstrapper V2 | L1/L2 contract initialization  | Process                                    |
+| Orchestrator    | Proof pipeline coordinator     | Dynamic                                    |
+| Mock Prover     | Optional Atlantic mock wrapper | Dynamic by default, 3001 constant fallback |
 
 ### Configuration Timeouts
 
 ```rust
-validate_dependencies: 60s
+validate_dependencies: 120s
 start_infrastructure_services: 180s
 setup_localstack_infrastructure: 180s
 setup_mongodb_infrastructure: 180s
@@ -130,10 +130,11 @@ async fn test_bridge_deposit_and_withdraw(#[future] setup_chain: ChainSetup) {
 2. Create `ChainSetup` via `SetupConfigBuilder`
 3. Validate dependencies (Docker, Anvil, Forge)
 4. Start infrastructure (MongoDB, LocalStack in parallel)
-5. Set up L1 (Anvil) and L2 (Madara)
-6. Sync full node (Pathfinder)
-7. Run test
-8. Clean up via `drop()` handler
+5. Set up L1 (Anvil, mock verifier deployer, Bootstrapper V2 base setup)
+6. Set up L2 (Madara, Bootstrapper V2 Madara setup)
+7. Sync full node (Pathfinder)
+8. Run test
+9. Clean up via `drop()` handler
 
 ### Test Utilities
 

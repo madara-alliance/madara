@@ -5,14 +5,15 @@ use crate::inner::{
     limits::{MempoolLimitReached, MempoolLimiter},
     ready_queue::ReadyQueue,
     timestamp_queue::TimestampQueue,
-    tx::{EvictionScore, MempoolTransaction, ScoreFunction},
+    tx::{EvictionScore, MempoolTransaction, ScoreFunction, TxKey},
 };
+use mp_chain_config::MempoolFullPolicy;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
 };
-use std::{fmt, time::Duration};
+use std::{collections::HashSet, fmt, time::Duration};
 
 pub(crate) mod accounts;
 pub(crate) mod by_tx_hash_index;
@@ -46,6 +47,7 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
+    pub full_policy: MempoolFullPolicy,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Option<Duration>,
@@ -212,15 +214,20 @@ impl InnerMempool {
                 if !err.can_trigger_eviction_policy() {
                     return Err(err.into());
                 }
-                // Try to make space by evicting less desirable transactions.
-                let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
-                tracing::debug!("Try make room: {new_tx_eviction_score:?}");
-                if !self.try_make_room_for(&new_tx_eviction_score, removed_txs) {
-                    return Err(err.into()); // Failed to make room
+                let made_room = match self.config.full_policy {
+                    MempoolFullPolicy::EvictLessDesirable => {
+                        let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
+                        tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
+                        self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
+                    }
+                    MempoolFullPolicy::RejectNew => false,
+                };
+                if !made_room {
+                    return Err(err.into());
                 }
                 // We made room!
 
-                // Reborrow the insertion `entry`, as `try_make_room_for` had to borrow it mutably to make its modifications.
+                // Reborrow the insertion `entry`, as the eviction path had to borrow the account set mutably.
                 entry = self
                     .accounts
                     .tx_entry_for_insertion(&mempool_tx, account_nonce)
@@ -238,7 +245,7 @@ impl InnerMempool {
 
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
-    fn try_make_room_for(
+    fn try_make_room_for_less_desirable_tx(
         &mut self,
         new_tx: &EvictionScore,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
@@ -322,6 +329,80 @@ impl InnerMempool {
 
     pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&ValidatedTransaction> {
         self.accounts.get_transaction(contract_address, nonce).map(|tx| &tx.inner)
+    }
+
+    pub fn transactions_by_arrival(&self) -> impl Iterator<Item = &ValidatedTransaction> {
+        self.timestamp_queue.iter().filter_map(|tx_key| {
+            let tx = self.accounts.get_tx_by_key(tx_key);
+            if tx.is_none() {
+                tracing::warn!(
+                    target: "mempool",
+                    "Skipping stale timestamp queue key while iterating mempool: {tx_key:?}"
+                );
+            }
+            tx.map(|tx| &tx.inner)
+        })
+    }
+
+    pub fn remove_transactions_matching(
+        &mut self,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
+        let tx_keys = self
+            .timestamp_queue
+            .iter()
+            .filter_map(|tx_key| {
+                let Some(tx) = self.accounts.get_tx_by_key(tx_key) else {
+                    tracing::warn!(
+                        target: "mempool",
+                        "Skipping stale timestamp queue key while selecting mempool txs for removal: {tx_key:?}"
+                    );
+                    return None;
+                };
+                predicate(&tx.inner).then_some(*tx_key)
+            })
+            .collect::<Vec<_>>();
+
+        self.remove_transactions_by_keys(tx_keys, removed_txs);
+    }
+
+    pub fn remove_transactions_by_hashes(
+        &mut self,
+        tx_hashes: impl IntoIterator<Item = TransactionHash>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
+        let tx_keys = tx_hashes
+            .into_iter()
+            .filter_map(|tx_hash| {
+                let tx_key = self.by_tx_hash.get(&tx_hash).copied();
+                if tx_key.is_none() {
+                    tracing::debug!(target: "mempool", "Skipping missing tx hash during mempool flush: {tx_hash:?}");
+                }
+                tx_key
+            })
+            .collect::<HashSet<_>>();
+
+        if tx_keys.is_empty() {
+            return;
+        }
+
+        self.remove_transactions_by_keys(tx_keys, removed_txs);
+    }
+
+    fn remove_transactions_by_keys(
+        &mut self,
+        tx_keys: impl IntoIterator<Item = TxKey>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
+        for tx_key in tx_keys {
+            let Some(_) = self.accounts.get_tx_by_key(&tx_key) else {
+                tracing::warn!(target: "mempool", "Skipping stale mempool tx key during removal: {tx_key:?}");
+                continue;
+            };
+            let account_update = self.accounts.remove_tx(&tx_key);
+            self.apply_update(account_update, removed_txs);
+        }
     }
 
     pub fn contains_tx_by_hash(&self, tx_hash: &TransactionHash) -> bool {
