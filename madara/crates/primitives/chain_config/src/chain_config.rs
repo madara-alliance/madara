@@ -623,19 +623,20 @@ impl ChainConfig {
             // Since L1 here is Ethereum, that supports Blob.
             l1_da_mode: L1DataAvailabilityMode::Blob,
             settlement_chain_kind: SettlementChainKind::Ethereum,
-            feeder_gateway_url: Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
-            gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/")
+                .expect("parsing a constant url"),
+            gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").expect("parsing a constant url"),
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
                 ))
-                .unwrap(),
+                .expect("parsing a constant address"),
             ),
             parent_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
                 ))
-                .unwrap(),
+                .expect("parsing a constant address"),
             ),
             versioned_constants: ChainVersionedConstants::default(),
 
@@ -657,7 +658,7 @@ impl ChainConfig {
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
                     "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
                 ))
-                .unwrap(),
+                .expect("parsing a constant address"),
             ),
 
             private_key: Some(ZeroingPrivateKey::default()),
@@ -681,8 +682,9 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
-            feeder_gateway_url: Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
-            gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway/")
+                .expect("parsing a constant url"),
+            gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").expect("parsing a constant url"),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
                 .parse()
@@ -696,8 +698,10 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
-            feeder_gateway_url: Url::parse("https://feeder.integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
-            gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.integration-sepolia.starknet.io/feeder_gateway/")
+                .expect("parsing a constant url"),
+            gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/")
+                .expect("parsing a constant url"),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
                 .parse()
                 .expect("parsing a constant"),
@@ -713,9 +717,9 @@ impl ChainConfig {
         Self {
             chain_name: "Madara".into(),
             chain_id: ChainId::Other("MADARA_DEVNET".into()),
-            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
-            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
-            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().unwrap(),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").expect("parsing a constant url"),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").expect("parsing a constant url"),
+            sequencer_address: Felt::from_hex_unchecked("0x123").try_into().expect("parsing a constant address"),
             sequencer_public_key: None,
             ..ChainConfig::starknet_sepolia()
         }
@@ -725,14 +729,14 @@ impl ChainConfig {
         Self {
             chain_name: "Test".into(),
             chain_id: ChainId::Other("MADARA_TEST".into()),
-            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").unwrap(),
-            gateway_url: Url::parse("http://localhost:8080/gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("http://localhost:8080/feeder_gateway/").expect("parsing a constant url"),
+            gateway_url: Url::parse("http://localhost:8080/gateway/").expect("parsing a constant url"),
             // A random sequencer address for fee transfers to work in block production.
             sequencer_address: Felt::from_hex_unchecked(
                 "0x211b748338b39fe8fa353819d457681aa50ac598a3db84cacdd6ece0a17e1f3",
             )
             .try_into()
-            .unwrap(),
+            .expect("parsing a constant address"),
             // Disable finality for fast test execution
             l1_messages_finality_blocks: 0,
             sequencer_public_key: None,

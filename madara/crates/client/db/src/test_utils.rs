@@ -1,4 +1,6 @@
 #![cfg(any(test, feature = "testing"))]
+// test utilities: panicking on setup failure is intended
+#![allow(clippy::unwrap_used)]
 
 use crate::MadaraBackend;
 use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};

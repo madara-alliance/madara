@@ -181,10 +181,11 @@ impl ChainGenesisDescription {
                     };
 
                     self.deployed_contracts.insert(calculated_address, account_class_hash);
-                    self.initial_balances
-                        .insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
+                    let contract_address = ContractAddress::try_from(calculated_address)
+                        .expect("calculate_contract_address returns a valid contract address");
+                    self.initial_balances.insert(contract_address, balance.clone());
                     self.initial_storage
-                        .contract_mut(calculated_address.try_into().unwrap())
+                        .contract_mut(contract_address)
                         .insert(get_contract_pubkey_storage_address(), pubkey.scalar());
 
                     DevnetPredeployedContract {
@@ -245,7 +246,7 @@ impl ChainGenesisDescription {
     }
 
     pub async fn build_and_store(self, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
-        let (block, classes) = self.into_block(backend.chain_config()).unwrap();
+        let (block, classes) = self.into_block(backend.chain_config())?;
 
         let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
 

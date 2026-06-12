@@ -152,11 +152,9 @@ impl SettlementLayerProvider for StarknetClient {
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let state = self.get_state_call().await?; // Returns (StateRoot, BlockNumber, BlockHash).
         let global_root = state[0];
-        let block_number = if state[1] == Felt::from_hex(INITIAL_STATE_BLOCK_NUMBER).unwrap() {
-            None
-        } else {
-            u64::try_from(state[1]).ok()
-        };
+        let initial_state_block_number =
+            Felt::from_hex(INITIAL_STATE_BLOCK_NUMBER).expect("INITIAL_STATE_BLOCK_NUMBER is a valid hex felt");
+        let block_number = if state[1] == initial_state_block_number { None } else { u64::try_from(state[1]).ok() };
         let block_hash = state[2];
 
         Ok(StateUpdate { global_root, block_number, block_hash })

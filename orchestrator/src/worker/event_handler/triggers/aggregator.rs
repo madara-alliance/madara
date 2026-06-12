@@ -140,32 +140,28 @@ impl AggregatorJobTrigger {
 
         // Fetch sorted SNOS batches from DB
         let snos_batches = database.get_snos_batches_by_aggregator_index(aggregator_batch.index).await?;
-        let (first, last) = if snos_batches.is_empty() {
+        let (Some(first_snos_batch), Some(last_snos_batch)) = (snos_batches.first(), snos_batches.last()) else {
             return Ok(false);
-        } else {
-            // unwraps are safe here
-            let first_snos_batch = snos_batches.first().unwrap();
-            let last_snos_batch = snos_batches.last().unwrap();
-
-            // checking if the boundaries of aggregator batch snos batches are same
-            if first_snos_batch.start_block != aggregator_batch.start_block
-                || last_snos_batch.end_block != aggregator_batch.end_block
-            {
-                return Ok(false);
-            }
-
-            // confirming that there are no gaps in the batches and all snos batches are closed
-            let mut expected_start_block = first_snos_batch.start_block;
-            for batch in snos_batches.iter() {
-                if !batch.status.is_closed() || batch.start_block != expected_start_block {
-                    return Ok(false);
-                } else {
-                    expected_start_block = batch.end_block + 1;
-                }
-            }
-
-            (first_snos_batch.index, last_snos_batch.index)
         };
+
+        // checking if the boundaries of aggregator batch snos batches are same
+        if first_snos_batch.start_block != aggregator_batch.start_block
+            || last_snos_batch.end_block != aggregator_batch.end_block
+        {
+            return Ok(false);
+        }
+
+        // confirming that there are no gaps in the batches and all snos batches are closed
+        let mut expected_start_block = first_snos_batch.start_block;
+        for batch in snos_batches.iter() {
+            if !batch.status.is_closed() || batch.start_block != expected_start_block {
+                return Ok(false);
+            } else {
+                expected_start_block = batch.end_block + 1;
+            }
+        }
+
+        let (first, last) = (first_snos_batch.index, last_snos_batch.index);
 
         let jobs =
             database.get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, first, last).await?;

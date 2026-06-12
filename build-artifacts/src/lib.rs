@@ -247,7 +247,10 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     println!("cargo::warning=fetching artifacts from image: {}", image);
 
     // Use a unique container name to avoid conflicts in CI environments
-    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("System time is after the unix epoch")
+        .as_secs();
     let container_name = format!("madara-artifacts-extractor-v{}-{}", version, timestamp);
 
     let root = &root.0;

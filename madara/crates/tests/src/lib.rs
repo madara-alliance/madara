@@ -189,6 +189,8 @@
 //! [`TempDir`]: tempfile::TempDir
 //! [`Drop`]: std::ops::Drop
 #![allow(clippy::print_stdout)]
+// test harness: panicking on setup failure is intended
+#![allow(clippy::unwrap_used)]
 
 #[cfg(test)]
 mod devnet_accounts;

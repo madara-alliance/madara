@@ -53,9 +53,15 @@ pub fn get_bal_contract(
             .try_into()
             .with_context(|| format!("Converting felt {:#x} to contract address", contract_address))?,
     );
-    let high_key = low_key.next_storage_key().unwrap();
-    let low = view.get_contract_storage(&fee_token_address, &low_key).unwrap().unwrap_or(Felt::ZERO);
-    let high = view.get_contract_storage(&fee_token_address, &high_key).unwrap().unwrap_or(Felt::ZERO);
+    let high_key = low_key.next_storage_key().context("Getting high key for fee token balance")?;
+    let low = view
+        .get_contract_storage(&fee_token_address, &low_key)
+        .context("Getting low contract storage")?
+        .unwrap_or(Felt::ZERO);
+    let high = view
+        .get_contract_storage(&fee_token_address, &high_key)
+        .context("Getting high contract storage")?
+        .unwrap_or(Felt::ZERO);
     tracing::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
 
     assert_eq!(high, Felt::ZERO); // for now we never use high let's keep it out of the api

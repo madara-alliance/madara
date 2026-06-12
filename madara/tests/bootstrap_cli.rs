@@ -1,3 +1,7 @@
+// Test harness: panicking on setup failure is intended. Helper fns in integration-test
+// binaries are not covered by `allow-unwrap-in-tests`.
+#![allow(clippy::unwrap_used)]
+
 use mc_class_exec::config::NativeConfig;
 use mc_db::{rocksdb::RocksDBConfig, MadaraBackend, MadaraBackendConfig};
 use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
