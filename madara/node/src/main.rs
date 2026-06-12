@@ -105,9 +105,9 @@ mod submit_tx;
 mod util;
 
 use crate::service::{L1SyncConfig, MempoolService};
-use anyhow::{bail, Context};
+use anyhow::{bail, ensure, Context};
 use clap::Parser;
-use cli::RunCmd;
+use cli::{BootstrapSnapshotManifest, BootstrapSnapshotMetadata, RunCmd};
 use dotenv::dotenv;
 use figment::{
     providers::{Format, Json, Serialized, Toml, Yaml},
@@ -275,6 +275,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     run_cmd.backend_params.validate().context("Validating backend configuration")?;
+    let bootstrap_manifest = run_cmd
+        .bootstrap_params
+        .import_snapshot_if_requested(&run_cmd.backend_params.base_path, &chain_config)
+        .context("Importing bootstrap snapshot")?;
 
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
@@ -292,6 +296,29 @@ async fn main() -> anyhow::Result<()> {
 
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
     tracing::info!("💼 Starting chain with block: {}", chain_tip);
+    if let Some(manifest) = bootstrap_manifest.as_ref() {
+        validate_bootstrap_snapshot(&backend, manifest).context("Validating imported bootstrap snapshot")?;
+    }
+
+    if run_cmd.bootstrap_params.should_create_snapshot() {
+        let snapshot_metadata =
+            bootstrap_snapshot_metadata(&backend).context("Reading bootstrap snapshot metadata from database")?;
+        run_cmd
+            .bootstrap_params
+            .create_snapshot_from_checkpoint_if_requested(
+                &run_cmd.backend_params.base_path,
+                &chain_config,
+                snapshot_metadata,
+                |checkpoint_path| {
+                    backend
+                        .db
+                        .create_checkpoint(checkpoint_path)
+                        .context("Creating RocksDB checkpoint for bootstrap snapshot")
+                },
+            )
+            .context("Creating bootstrap snapshot")?;
+        return Ok(());
+    }
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
@@ -555,4 +582,152 @@ async fn main() -> anyhow::Result<()> {
     }
 
     result
+}
+
+fn validate_bootstrap_snapshot(
+    backend: &Arc<MadaraBackend>,
+    manifest: &BootstrapSnapshotManifest,
+) -> anyhow::Result<()> {
+    let chain_tip = backend.db.get_chain_tip().context("Reading chain tip after bootstrap snapshot import")?;
+    match chain_tip {
+        mc_db::storage::StorageChainTip::Confirmed(block_n) => ensure!(
+            block_n == manifest.block_number,
+            "Imported bootstrap snapshot chain tip mismatch: expected confirmed block #{}, got confirmed block #{}",
+            manifest.block_number,
+            block_n
+        ),
+        other => {
+            bail!("Imported bootstrap snapshot must end at confirmed block #{}, got {}", manifest.block_number, other)
+        }
+    }
+
+    let block_info = backend
+        .db
+        .get_block_info(manifest.block_number)
+        .with_context(|| format!("Reading bootstrap snapshot block info for #{}", manifest.block_number))?
+        .with_context(|| format!("Bootstrap snapshot block #{} is missing from database", manifest.block_number))?;
+
+    if let Some(expected) = manifest.block_hash_felt()? {
+        ensure!(
+            block_info.block_hash == expected,
+            "Imported bootstrap snapshot block hash mismatch at #{}: expected {:#x}, got {:#x}",
+            manifest.block_number,
+            expected,
+            block_info.block_hash
+        );
+    }
+
+    if let Some(expected) = manifest.state_root_felt()? {
+        ensure!(
+            block_info.header.global_state_root == expected,
+            "Imported bootstrap snapshot state root mismatch at #{}: expected {:#x}, got {:#x}",
+            manifest.block_number,
+            expected,
+            block_info.header.global_state_root
+        );
+    }
+
+    tracing::info!(
+        block_number = manifest.block_number,
+        block_hash = %format!("{:#x}", block_info.block_hash),
+        state_root = %format!("{:#x}", block_info.header.global_state_root),
+        "Validated imported bootstrap snapshot"
+    );
+
+    Ok(())
+}
+
+fn bootstrap_snapshot_metadata(backend: &Arc<MadaraBackend>) -> anyhow::Result<BootstrapSnapshotMetadata> {
+    let chain_tip = backend.db.get_chain_tip().context("Reading chain tip for bootstrap snapshot")?;
+    let block_number = match chain_tip {
+        mc_db::storage::StorageChainTip::Confirmed(block_n) => block_n,
+        other => bail!("Bootstrap snapshots can only be created from a confirmed chain tip, got {}", other),
+    };
+
+    let block_info = backend
+        .db
+        .get_block_info(block_number)
+        .with_context(|| format!("Reading bootstrap snapshot block info for #{}", block_number))?
+        .with_context(|| format!("Bootstrap snapshot block #{} is missing from database", block_number))?;
+
+    Ok(BootstrapSnapshotMetadata {
+        block_number,
+        block_hash: block_info.block_hash,
+        state_root: block_info.header.global_state_root,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::BootstrapParams;
+    use mc_class_exec::config::NativeConfig;
+    use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
+    use mp_chain_config::ChainConfig;
+
+    fn open_test_backend(base_path: &Path, chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
+        MadaraBackend::open_rocksdb(
+            base_path,
+            chain_config,
+            MadaraBackendConfig::default(),
+            RocksDBConfig::default(),
+            Arc::new(NativeConfig::default()),
+        )
+        .expect("opening test backend should succeed")
+    }
+
+    fn test_block(block_number: u64) -> FullBlockWithoutCommitments {
+        FullBlockWithoutCommitments {
+            header: PreconfirmedHeader { block_number, ..Default::default() },
+            state_diff: Default::default(),
+            transactions: vec![],
+            events: vec![],
+        }
+    }
+
+    #[test]
+    fn bootstrap_snapshot_round_trips_real_backend_checkpoint() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let source_base_path = temp.path().join("source");
+        let imported_base_path = temp.path().join("imported");
+        let archive_path = temp.path().join("snapshot.tar.gz");
+        let chain_config = Arc::new(ChainConfig::madara_test());
+
+        let source_backend = open_test_backend(&source_base_path, chain_config.clone());
+        let added_block = source_backend
+            .write_access()
+            .add_full_block_with_classes(&test_block(0), &[], false)
+            .expect("adding source block should succeed");
+        let snapshot_metadata =
+            bootstrap_snapshot_metadata(&source_backend).expect("snapshot metadata should be readable");
+
+        assert_eq!(snapshot_metadata.block_number, 0);
+        assert_eq!(snapshot_metadata.block_hash, added_block.block_hash);
+        assert_eq!(snapshot_metadata.state_root, added_block.new_state_root);
+
+        let create_params =
+            BootstrapParams { create_bootstrap_snapshot: Some(archive_path.clone()), ..Default::default() };
+        let manifest = create_params
+            .create_snapshot_from_checkpoint_if_requested(
+                &source_base_path,
+                &chain_config,
+                snapshot_metadata,
+                |checkpoint_path| source_backend.db.create_checkpoint(checkpoint_path),
+            )
+            .expect("snapshot creation should succeed")
+            .expect("snapshot creation should return a manifest");
+        drop(source_backend);
+
+        let import_params = BootstrapParams { bootstrap_snapshot: Some(archive_path), ..Default::default() };
+        let imported_manifest = import_params
+            .import_snapshot_if_requested(&imported_base_path, &chain_config)
+            .expect("snapshot import should succeed")
+            .expect("snapshot import should return a manifest");
+        assert_eq!(imported_manifest, manifest);
+
+        let imported_backend = open_test_backend(&imported_base_path, chain_config);
+        validate_bootstrap_snapshot(&imported_backend, &manifest).expect("imported snapshot should validate");
+        assert_eq!(imported_backend.latest_confirmed_block_n(), Some(0));
+    }
 }

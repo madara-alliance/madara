@@ -274,6 +274,7 @@ figment = "0.10.19"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
+sha2 = "0.10"
 tar = "0.4.46"
 inline_colorization = "0.1.6"
 subxt-lightclient = { version = "0.35.3", default-features = false }

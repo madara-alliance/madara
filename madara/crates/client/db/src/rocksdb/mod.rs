@@ -317,6 +317,18 @@ impl RocksDBStorage {
         self.inner.flush()
     }
 
+    /// Create a RocksDB checkpoint at `path`.
+    ///
+    /// The checkpoint is a filesystem-level consistent view of the database and can be used
+    /// while the source database remains open. The destination must not already exist.
+    pub fn create_checkpoint(&self, path: &Path) -> Result<()> {
+        self.flush().context("Flushing RocksDB database before checkpoint")?;
+        self.inner.db.flush_wal(true).context("Flushing RocksDB WAL before checkpoint")?;
+
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.inner.db).context("Creating RocksDB checkpoint")?;
+        checkpoint.create_checkpoint(path).with_context(|| format!("Writing RocksDB checkpoint to {}", path.display()))
+    }
+
     /// Get a reference to the underlying RocksDB instance.
     ///
     /// This is primarily used for database migrations that need direct access
@@ -1104,6 +1116,19 @@ mod tests {
         trie.commit(BasicId::new(5)).unwrap();
 
         assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn create_checkpoint_writes_openable_rocksdb_checkpoint() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let source_path = temp_dir.path().join("source");
+        let checkpoint_path = temp_dir.path().join("checkpoint");
+        let storage = RocksDBStorage::open(&source_path, RocksDBConfig::default()).unwrap();
+
+        storage.create_checkpoint(&checkpoint_path).unwrap();
+        assert!(checkpoint_path.join("CURRENT").is_file());
+
+        let _checkpoint = RocksDBStorage::open(&checkpoint_path, RocksDBConfig::default()).unwrap();
     }
 
     #[test]

@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - blacksmith-4vcpu-ubuntu-2204
+    - blacksmith-8vcpu-ubuntu-2204
+    - blacksmith-8vcpu-ubuntu-2404
+
+config-variables: null

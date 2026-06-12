@@ -37,6 +37,7 @@ Madara is a powerful Starknet client written in Rust.
   - [State Commitment Computation](#state-commitment-computation)
   - [SnapSync](#snapsync)
   - [Mainnet Full-Node Bootstrap](#mainnet-full-node-bootstrap)
+  - [Bootstrap Snapshots](#bootstrap-snapshots)
   - [Cairo Native Execution](#cairo-native-execution)
   - [L3 Support](#l3-support)
   - [Automatic Database Migrations](#automatic-database-migrations)
@@ -856,6 +857,7 @@ speed/data tradeoffs:
 | ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Full-trie from genesis | `--full --network mainnet`                        | Maximum historical trie data; storage proofs and admin revert work for all synced blocks | Slow with high DB growth (one observed run: ~0.4–0.6 blocks/sec and ~180 GiB at block ~64k on a 12 vCPU host)                           |
 | SnapSync               | add `--snap-sync`                                 | Much faster catchup (same benchmark: ~3–11 blocks/sec, ~14 GiB at 31k blocks)            | Storage proofs not available for snap-synced ranges; reverting into snap-synced ranges is blocked by design (see [SnapSync](#snapsync)) |
+| Bootstrap snapshot     | `--bootstrap-snapshot <TAR.GZ>` or `--bootstrap-snapshot-url <URL>` | Fast startup from a trusted pre-synced Madara database archive                            | Requires a trusted snapshot artifact; target base path must be empty                                                                    |
 | Warp update            | `--warp-update-sender` / `--warp-update-receiver` | Fast trusted migration from a local source node                                          | Requires an existing synced node (see [Warp Update](#warp-update))                                                                      |
 | Custom gateway / key   | `--gateway-url` and/or `--gateway-key`            | Better catchup reliability, fewer rate limits                                            | Requires issued gateway access (see [Gateway Rate Limits During Sync](#gateway-rate-limits-during-sync))                                |
 
@@ -866,8 +868,55 @@ speed/data tradeoffs:
 
 If you need storage proofs or the ability to revert to arbitrary historical
 blocks via the admin API, use full-trie sync from genesis (or warp update from
-a full-trie source). Native database snapshots are tracked as future work in
-[#194](https://github.com/madara-alliance/madara/issues/194).
+a full-trie source).
+
+### Bootstrap Snapshots
+
+Madara can create and import trusted database bootstrap snapshots. A snapshot is
+a `.tar.gz` archive of the Madara base path contents, paired with a manifest
+that records the chain id, latest confirmed block, block hash, state root,
+archive size, and archive SHA-256 checksum.
+
+To create a snapshot from a synced base path:
+
+```bash
+cargo run --bin madara --release -- \
+  --full \
+  --network mainnet \
+  --base-path /var/lib/madara \
+  --l1-endpoint "${ETHEREUM_API_URL}" \
+  --create-bootstrap-snapshot /srv/madara-snapshots/mainnet.tar.gz
+```
+
+To import it into a fresh base path:
+
+```bash
+cargo run --bin madara --release -- \
+  --full \
+  --network mainnet \
+  --base-path /var/lib/madara \
+  --l1-endpoint "${ETHEREUM_API_URL}" \
+  --bootstrap-snapshot /srv/madara-snapshots/mainnet.tar.gz
+```
+
+Remote `http://` and `https://` snapshot archives are also supported:
+
+```bash
+cargo run --bin madara --release -- \
+  --full \
+  --network mainnet \
+  --base-path /var/lib/madara \
+  --l1-endpoint "${ETHEREUM_API_URL}" \
+  --bootstrap-snapshot-url https://snapshots.example/madara/mainnet.tar.gz
+```
+
+During creation, Madara opens the database, creates a RocksDB checkpoint,
+archives the checkpoint, writes the manifest, and exits before starting node
+services. During import, Madara verifies the manifest and archive before
+extracting, then validates the imported database tip after opening it.
+
+See the [bootstrap snapshot runbook](docs/bootstrap-snapshots.md) for publishing
+layout, manifest handling, environment variables, and failure modes.
 
 ### Cairo Native Execution
 
