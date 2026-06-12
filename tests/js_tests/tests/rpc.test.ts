@@ -814,10 +814,66 @@ describe("Starknet RPC multi-version", () => {
         "starknet_blockNumber",
         []
       );
+      const preconfirmedBlockNumber = Number(latestConfirmedBlockNumber) + 1;
       await waitForTransactionInPreconfirmedBlock(
         gatewayResults.smallTxHash,
-        Number(latestConfirmedBlockNumber) + 1
+        preconfirmedBlockNumber
       );
+
+      const legacyPreconfirmedBlock = await feederGet("get_preconfirmed_block", {
+        blockNumber: preconfirmedBlockNumber,
+      });
+      expect(legacyPreconfirmedBlock.status).toBe("PRE_CONFIRMED");
+      expect(legacyPreconfirmedBlock.block_number).toBeUndefined();
+      expect(legacyPreconfirmedBlock.block_identifier).toBeUndefined();
+      expect(legacyPreconfirmedBlock.changed).toBeUndefined();
+      expect(
+        legacyPreconfirmedBlock.transactions.some(
+          (tx: any) => normHex(tx.transaction_hash) === normHex(gatewayResults.smallTxHash)
+        )
+      ).toBe(true);
+      expect(Array.isArray(legacyPreconfirmedBlock.transaction_receipts)).toBe(true);
+      expect(Array.isArray(legacyPreconfirmedBlock.transaction_state_diffs)).toBe(true);
+
+      const optimizedPreconfirmedBlock = await feederGet("get_preconfirmed_block", {
+        blockNumber: "latest",
+        blockIdentifier: "unknown",
+        knownTransactionCount: 0,
+        includeReceipts: true,
+        includeStateDiffs: true,
+      });
+      expect(optimizedPreconfirmedBlock.status).toBe("PRE_CONFIRMED");
+      expect(optimizedPreconfirmedBlock.changed).toBe(true);
+      expect(optimizedPreconfirmedBlock.block_number).toBe(preconfirmedBlockNumber);
+      expect(typeof optimizedPreconfirmedBlock.block_identifier).toBe("string");
+      expect(optimizedPreconfirmedBlock.block_identifier.length).toBeGreaterThan(0);
+      expect(
+        optimizedPreconfirmedBlock.transactions.some(
+          (tx: any) => normHex(tx.transaction_hash) === normHex(gatewayResults.smallTxHash)
+        )
+      ).toBe(true);
+      expect(Array.isArray(optimizedPreconfirmedBlock.transaction_receipts)).toBe(true);
+      expect(Array.isArray(optimizedPreconfirmedBlock.transaction_state_diffs)).toBe(true);
+
+      const optimizedWithoutOptionalPayloads = await feederGet("get_preconfirmed_block", {
+        blockNumber: "latest",
+        blockIdentifier: optimizedPreconfirmedBlock.block_identifier,
+        knownTransactionCount: 0,
+        includeReceipts: false,
+        includeStateDiffs: false,
+      });
+      expect(optimizedWithoutOptionalPayloads.changed).toBe(true);
+      expect(optimizedWithoutOptionalPayloads.transaction_receipts).toBeUndefined();
+      expect(optimizedWithoutOptionalPayloads.transaction_state_diffs).toBeUndefined();
+
+      const optimizedUnchanged = await feederGet("get_preconfirmed_block", {
+        blockNumber: "latest",
+        blockIdentifier: optimizedPreconfirmedBlock.block_identifier,
+        knownTransactionCount: optimizedPreconfirmedBlock.transactions.length,
+        includeReceipts: true,
+        includeStateDiffs: true,
+      });
+      expect(optimizedUnchanged).toEqual({ changed: false });
 
       const admin = new AdminClient(adminUrl);
       await admin.closeBlock();
@@ -905,6 +961,18 @@ describe("Starknet RPC multi-version", () => {
         normHex(historicalBlockHash!)
       );
       expect(stateUpdate.state_update.state_diff).toBeDefined();
+
+      const optimizedStateUpdate = await feederGet("get_state_update", {
+        blockNumber: historicalBlockNumber!,
+        includeBlock: true,
+        includeSignature: true,
+      });
+      expect(normHex(optimizedStateUpdate.block.block_hash)).toBe(
+        normHex(historicalBlockHash!)
+      );
+      expect(optimizedStateUpdate.state_update.state_diff).toBeDefined();
+      expect(Array.isArray(optimizedStateUpdate.signature)).toBe(true);
+      expect(optimizedStateUpdate.signature).toHaveLength(2);
 
       const traces = await feederGet("get_block_traces", {
         blockNumber: historicalBlockNumber!,
