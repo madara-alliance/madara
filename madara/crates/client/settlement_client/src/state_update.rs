@@ -116,3 +116,75 @@ async fn try_sync_once(
 
     settlement_client.listen_for_update_state_events(ctx, state).await
 }
+
+#[cfg(test)]
+mod state_update_worker_tests {
+    use super::*;
+    use crate::client::MockSettlementLayerProvider;
+    use mp_chain_config::ChainConfig;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// End-to-end recovery test: when a state update subscription dies with the
+    /// recoverable error produced by the liveness watchdog terminating a stuck
+    /// stream (see `eth::event::LivenessStream`), `state_update_worker` must
+    /// re-deploy a fresh subscription. This is the regression behind the
+    /// 2026-06-05 incident, where the unguarded stream never terminated and L1
+    /// state verification hung until a manual node restart.
+    #[tokio::test(start_paused = true)]
+    async fn worker_redeploys_subscription_after_liveness_termination() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_metrics = Arc::new(L1BlockMetrics::register().expect("metrics should register"));
+        let ctx = ServiceContext::new_for_testing();
+        let (l1_head_tx, l1_head_rx) = tokio::sync::watch::channel(None);
+
+        let sessions = Arc::new(AtomicUsize::new(0));
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_current_core_contract_state().times(2).returning({
+            let sessions = Arc::clone(&sessions);
+            // Initial state per subscription: #100 for the first, #101 after reconnection.
+            move || {
+                let session = sessions.load(Ordering::SeqCst) as u64;
+                Ok(StateUpdate { block_number: Some(100 + session), global_root: Felt::ZERO, block_hash: Felt::ZERO })
+            }
+        });
+        mock.expect_listen_for_update_state_events().times(2).returning({
+            let sessions = Arc::clone(&sessions);
+            move |_ctx, worker| match sessions.fetch_add(1, Ordering::SeqCst) {
+                // First subscription: delivers one event, then its poller gets stuck
+                // and the liveness watchdog terminates the stream, surfacing the same
+                // recoverable error as the real `listen_for_update_state_events`.
+                0 => {
+                    worker
+                        .update_state(StateUpdate {
+                            block_number: Some(200),
+                            global_root: Felt::ZERO,
+                            block_hash: Felt::ZERO,
+                        })
+                        .expect("update_state should succeed");
+                    Err(SettlementClientError::StateEventListener(
+                        "L1 state update event stream ended unexpectedly".to_string(),
+                    ))
+                }
+                // Re-deployed subscription: healthy, ends cleanly.
+                _ => Ok(()),
+            }
+        });
+
+        // The worker must survive the first session's error, reconnect (the 1s
+        // backoff is auto-advanced by the paused clock), and exit cleanly once the
+        // second session completes. The `times(2)` expectations verify the
+        // re-subscription; a worker that gives up after the error fails them.
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            state_update_worker(backend, Arc::new(mock), ctx, l1_head_tx, block_metrics),
+        )
+        .await
+        .expect("worker should not hang after stream termination")
+        .expect("worker should exit cleanly after the second session");
+
+        // #100 (initial, session 1) → #200 (event) → reconnect → #101 (initial,
+        // session 2): the last head proves the fresh subscription was used.
+        assert_eq!(l1_head_rx.borrow().as_ref().and_then(|s| s.block_number), Some(101));
+    }
+}

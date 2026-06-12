@@ -1,6 +1,6 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
-use crate::eth::event::EthereumEventStream;
+use crate::eth::event::{watch_events_with_liveness, EthereumEventStream};
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
 use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
@@ -226,14 +226,18 @@ impl SettlementLayerProvider for EthereumClient {
     ) -> Result<(), SettlementClientError> {
         let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-        let mut event_stream = match ctx.run_until_cancelled(event_filter.watch()).await {
-            Some(res) => res
-                .map_err(|e| -> SettlementClientError {
-                    EthereumClientError::EventStream { message: format!("Failed to watch events: {}", e) }.into()
-                })?
-                .into_stream(),
+        let event_poller = match ctx.run_until_cancelled(event_filter.watch()).await {
+            Some(res) => res.map_err(|e| -> SettlementClientError {
+                EthereumClientError::EventStream { message: format!("Failed to watch events: {}", e) }.into()
+            })?,
             None => return Ok(()), // Context cancelled during setup
         };
+
+        // Guard the poller with the liveness watchdog: when the provider drops the
+        // filter, the stream terminates, this function returns an error, and
+        // `state_update_worker` reconnects with a fresh filter. An unguarded
+        // `into_stream()` would hang silently forever (see `LivenessStream`).
+        let mut event_stream = Box::pin(watch_events_with_liveness(event_poller));
 
         // Process events in a loop until the context is cancelled or stream ends
         while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
