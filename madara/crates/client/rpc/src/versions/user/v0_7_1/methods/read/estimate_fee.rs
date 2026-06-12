@@ -53,7 +53,8 @@ pub async fn estimate_fee(
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
     })
-    .await?;
+    .await
+    .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
 
     let fee_estimates = execution_results
         .iter()
@@ -77,4 +78,53 @@ pub async fn estimate_fee(
         .collect::<Result<_, _>>()?;
 
     Ok(fee_estimates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::rpc_test_setup_with_execution;
+    use assert_matches::assert_matches;
+    use mc_devnet::{Call, Multicall, Selector};
+    use mp_rpc::v0_7_1::{BlockTag, BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
+    use starknet_types_core::felt::Felt;
+
+    /// v0.7.1 predates structured execution errors: a hard execution failure must surface its
+    /// TRANSACTION_EXECUTION_ERROR `execution_error` data as a flat string, not as the structured
+    /// object used by v0.8+.
+    #[tokio::test]
+    async fn estimate_fee_execution_error_is_flat_string() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+        let account = &keys.0[0];
+
+        // Invalid signature with validation enabled: a hard (non-revert) execution error.
+        let tx = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(InvokeTxnV3 {
+            sender_address: account.address,
+            calldata: Multicall::default()
+                .with(Call {
+                    to: backend.chain_config().native_fee_token_address.to_felt(),
+                    selector: Selector::from("transfer"),
+                    calldata: vec![account.address, Felt::ONE, Felt::ZERO],
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+                .into(),
+            signature: vec![Felt::ONE, Felt::TWO].into(),
+            nonce: Felt::ZERO,
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: DaMode::L1,
+            fee_data_availability_mode: DaMode::L1,
+        }));
+        let result = estimate_fee(&rpc, vec![tx], vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::TxnExecutionError { tx_index: 0, error } => {
+            assert!(error.is_string(), "v0.7.1 execution_error must be a flat string, got: {error}");
+        });
+    }
 }

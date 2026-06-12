@@ -273,6 +273,24 @@ impl From<mc_exec::Error> for StarknetRpcApiError {
     }
 }
 
+impl StarknetRpcApiError {
+    /// The v0.7.1 spec predates structured execution errors: both CONTRACT_ERROR `revert_error`
+    /// and TRANSACTION_EXECUTION_ERROR `execution_error` are flat strings there, whereas the
+    /// shared `From<mc_exec::Error>` impl builds the structured CONTRACT_EXECUTION_ERROR object
+    /// introduced in v0.8. v0.7.1 handlers must convert through this instead of `?`/`From`.
+    pub fn from_exec_error_v0_7(err: mc_exec::Error) -> Self {
+        match &err {
+            mc_exec::Error::CallContract(error) if error.is_entrypoint_not_found() => Self::EntrypointNotFound,
+            mc_exec::Error::CallContract(error) if error.is_contract_not_found() => Self::contract_not_found(),
+            mc_exec::Error::CallContract(_) => Self::ContractError { revert_error: format!("{:#}", err).into() },
+            mc_exec::Error::Reexecution(error) => {
+                Self::TxnExecutionError { tx_index: error.index(), error: format!("{:#}", err).into() }
+            }
+            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
+        }
+    }
+}
+
 impl From<StarknetRpcApiError> for jsonrpsee::types::ErrorObjectOwned {
     fn from(err: StarknetRpcApiError) -> Self {
         jsonrpsee::types::ErrorObjectOwned::owned((&err).into(), err.to_string(), err.data())

@@ -43,7 +43,8 @@ pub async fn simulate_transactions(
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], user_transactions)?, exec_context))
     })
-    .await?;
+    .await
+    .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
 
     let simulated_transactions = execution_results
         .iter()
