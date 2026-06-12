@@ -109,6 +109,7 @@ opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tracing = { workspace = true }
 tracing-error = "0.2.1"
+tracing-log = "0.2"
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = [
   "env-filter",

@@ -528,6 +528,7 @@ Before running tests, ensure you have:
    ```bash
    export MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL=<ethereum-rpc-url>
    export MADARA_ORCHESTRATOR_RPC_FOR_SNOS=<snos-rpc-url>
+   export MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP=<backup-snos-rpc-url> # Optional; used for retried SNOS jobs
    export AWS_REGION=us-east-1
    ```
 
