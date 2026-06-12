@@ -60,7 +60,7 @@ Ensure you have all the necessary dependencies available on your host system.
 
 | Dependency | Version    | Installation                                                                        |
 | ---------- | ---------- | ----------------------------------------------------------------------------------- |
-| Rust       | rustc 1.89 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                   |
+| Rust       | rustc 1.91 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`                   |
 | Clang      | Latest     | `sudo apt-get install clang`                                                        |
 | Openssl    | 0.10       | `sudo apt install openssl`                                                          |
 | LLVM       | 19         | `make install-llvm19 [SUDO=sudo]` (Ubuntu/Debian) or `brew install llvm@19` (macOS) |
@@ -418,33 +418,33 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Read Methods</summary>
 
-| Status | Method                                                                         |
-| ------ | ------------------------------------------------------------------------------ |
-| ✅     | `starknet_specVersion`                                                         |
-| ✅     | `starknet_getBlockWithTxHashes`                                                |
-| ✅     | `starknet_getBlockWithTxs`                                                     |
-| ✅     | `starknet_getBlockWithReceipts`                                                |
-| ✅     | `starknet_getStateUpdate`                                                      |
-| ✅     | `starknet_getStorageAt`                                                        |
-| ✅     | `starknet_getTransactionStatus`                                                |
-| ✅     | `starknet_getTransactionByHash`                                                |
-| ✅     | `starknet_getTransactionByBlockIdAndIndex`                                     |
-| ✅     | `starknet_getTransactionReceipt`                                               |
-| ✅     | `starknet_getClass`                                                            |
-| ✅     | `starknet_getClassHashAt`                                                      |
-| ✅     | `starknet_getClassAt`                                                          |
-| ✅     | `starknet_getBlockTransactionCount`                                            |
-| ✅     | `starknet_call`                                                                |
-| ✅     | `starknet_estimateFee`                                                         |
-| ✅     | `starknet_estimateMessageFee`                                                  |
-| ✅     | `starknet_blockNumber`                                                         |
-| ✅     | `starknet_blockHashAndNumber`                                                  |
-| ✅     | `starknet_chainId`                                                             |
-| ✅     | `starknet_syncing`                                                             |
-| ✅     | `starknet_getEvents`                                                           |
-| ✅     | `starknet_getNonce`                                                            |
-| ✅     | `starknet_getCompiledCasm` (v0.8.1+)                                           |
-| ✅     | `starknet_getMessagesStatus` (v0.9.0+)                                         |
+| Status | Method                                                             |
+| ------ | ------------------------------------------------------------------ |
+| ✅     | `starknet_specVersion`                                             |
+| ✅     | `starknet_getBlockWithTxHashes`                                    |
+| ✅     | `starknet_getBlockWithTxs`                                         |
+| ✅     | `starknet_getBlockWithReceipts`                                    |
+| ✅     | `starknet_getStateUpdate`                                          |
+| ✅     | `starknet_getStorageAt`                                            |
+| ✅     | `starknet_getTransactionStatus`                                    |
+| ✅     | `starknet_getTransactionByHash`                                    |
+| ✅     | `starknet_getTransactionByBlockIdAndIndex`                         |
+| ✅     | `starknet_getTransactionReceipt`                                   |
+| ✅     | `starknet_getClass`                                                |
+| ✅     | `starknet_getClassHashAt`                                          |
+| ✅     | `starknet_getClassAt`                                              |
+| ✅     | `starknet_getBlockTransactionCount`                                |
+| ✅     | `starknet_call`                                                    |
+| ✅     | `starknet_estimateFee`                                             |
+| ✅     | `starknet_estimateMessageFee`                                      |
+| ✅     | `starknet_blockNumber`                                             |
+| ✅     | `starknet_blockHashAndNumber`                                      |
+| ✅     | `starknet_chainId`                                                 |
+| ✅     | `starknet_syncing`                                                 |
+| ✅     | `starknet_getEvents`                                               |
+| ✅     | `starknet_getNonce`                                                |
+| ✅     | `starknet_getCompiledCasm` (v0.8.1+)                               |
+| ✅     | `starknet_getMessagesStatus` (v0.9.0+)                             |
 | ✅     | `starknet_getStorageProof` (v0.8.1+, latest 128 blocks by default) |
 
 </details>
@@ -474,16 +474,16 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Websocket Methods</summary>
 
-| Status | Method                                                  |
-| ------ | ------------------------------------------------------- |
-| ✅     | `starknet_unsubscribe` (v0.8.1+)                        |
-| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)                  |
-| ✅     | `starknet_subscribeEvents` (v0.8.1+)                    |
-| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)         |
-| ✅     | `starknet_subscribePendingTransactions` (v0.8.1 only)   |
-| ✅     | `starknet_subscribeNewTransactions` (v0.9.0+)           |
-| ✅     | `starknet_subscribeNewTransactionReceipts` (v0.9.0+)    |
-| ✅     | `starknet_subscriptionReorg` (notification, v0.8.1+)    |
+| Status | Method                                                |
+| ------ | ----------------------------------------------------- |
+| ✅     | `starknet_unsubscribe` (v0.8.1+)                      |
+| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)                |
+| ✅     | `starknet_subscribeEvents` (v0.8.1+)                  |
+| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)       |
+| ✅     | `starknet_subscribePendingTransactions` (v0.8.1 only) |
+| ✅     | `starknet_subscribeNewTransactions` (v0.9.0+)         |
+| ✅     | `starknet_subscribeNewTransactionReceipts` (v0.9.0+)  |
+| ✅     | `starknet_subscriptionReorg` (notification, v0.8.1+)  |
 
 </details>
 
@@ -853,13 +853,13 @@ state diffs and returns to block-by-block trie updates.
 There are several ways to bring up a mainnet full node, with different
 speed/data tradeoffs:
 
-| Path                   | How                                               | Pros                                                                                     | Cons                                                                                                                                    |
-| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Full-trie from genesis | `--full --network mainnet`                        | Maximum historical trie data; storage proofs and admin revert work for all synced blocks | Slow with high DB growth (one observed run: ~0.4–0.6 blocks/sec and ~180 GiB at block ~64k on a 12 vCPU host)                           |
-| SnapSync               | add `--snap-sync`                                 | Much faster catchup (same benchmark: ~3–11 blocks/sec, ~14 GiB at 31k blocks)            | Storage proofs not available for snap-synced ranges; reverting into snap-synced ranges is blocked by design (see [SnapSync](#snapsync)) |
-| Bootstrap snapshot     | `--bootstrap-snapshot <TAR.GZ>` or `--bootstrap-snapshot-url <URL>` | Fast startup from a trusted pre-synced Madara database archive                            | Requires a trusted snapshot artifact; target base path must be empty                                                                    |
-| Warp update            | `--warp-update-sender` / `--warp-update-receiver` | Fast trusted migration from a local source node                                          | Requires an existing synced node (see [Warp Update](#warp-update))                                                                      |
-| Custom gateway / key   | `--gateway-url` and/or `--gateway-key`            | Better catchup reliability, fewer rate limits                                            | Requires issued gateway access (see [Gateway Rate Limits During Sync](#gateway-rate-limits-during-sync))                                |
+| Path                   | How                                                                 | Pros                                                                                     | Cons                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Full-trie from genesis | `--full --network mainnet`                                          | Maximum historical trie data; storage proofs and admin revert work for all synced blocks | Slow with high DB growth (one observed run: ~0.4–0.6 blocks/sec and ~180 GiB at block ~64k on a 12 vCPU host)                           |
+| SnapSync               | add `--snap-sync`                                                   | Much faster catchup (same benchmark: ~3–11 blocks/sec, ~14 GiB at 31k blocks)            | Storage proofs not available for snap-synced ranges; reverting into snap-synced ranges is blocked by design (see [SnapSync](#snapsync)) |
+| Bootstrap snapshot     | `--bootstrap-snapshot <TAR.GZ>` or `--bootstrap-snapshot-url <URL>` | Fast startup from a trusted pre-synced Madara database archive                           | Requires a trusted snapshot artifact; target base path must be empty                                                                    |
+| Warp update            | `--warp-update-sender` / `--warp-update-receiver`                   | Fast trusted migration from a local source node                                          | Requires an existing synced node (see [Warp Update](#warp-update))                                                                      |
+| Custom gateway / key   | `--gateway-url` and/or `--gateway-key`                              | Better catchup reliability, fewer rate limits                                            | Requires issued gateway access (see [Gateway Rate Limits During Sync](#gateway-rate-limits-during-sync))                                |
 
 > [!NOTE]
 > The benchmark figures above are a single observed datapoint from one
