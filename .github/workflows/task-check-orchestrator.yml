@@ -32,7 +32,7 @@ jobs:
         uses: ./.github/actions/setup-cairo-native
 
       - name: Compile artifacts
-        run: make artifacts
+        run: yes | make artifacts
 
       - name: Python Cairo setup (before orchestrator check)
         uses: ./.github/actions/setup-python-cairo
