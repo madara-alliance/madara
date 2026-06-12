@@ -8,10 +8,14 @@ use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
 };
-use mc_gateway_client::{BlockId, GatewayProvider};
-use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
+use mp_block::{BlockHeaderWithSignatures, ConsensusSignature, FullBlock, Header};
 use mp_convert::Felt;
-use mp_gateway::error::{SequencerError, StarknetErrorCode};
+use mp_gateway::state_update::ProviderStateUpdateWithBlock;
+use mp_gateway::{
+    block::ProviderBlockPreConfirmedUpdate,
+    error::{SequencerError, StarknetErrorCode},
+};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use mp_utils::AbortOnDrop;
@@ -53,6 +57,31 @@ pub struct GatewaySyncSteps {
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
     disable_reorg: bool,
+}
+
+struct PreconfirmedSyncCursor {
+    optimized_supported: bool,
+    block_identifier: Option<String>,
+    transaction_count: usize,
+}
+
+impl Default for PreconfirmedSyncCursor {
+    fn default() -> Self {
+        Self { optimized_supported: true, block_identifier: None, transaction_count: 0 }
+    }
+}
+
+struct OptimizedPreconfirmedMeta {
+    block_identifier: String,
+    is_delta: bool,
+    known_transaction_count: usize,
+}
+
+fn consensus_signatures(signature: Vec<Felt>) -> Vec<ConsensusSignature> {
+    match signature.as_slice() {
+        [r, s] => vec![ConsensusSignature { r: *r, s: *s }],
+        _ => vec![],
+    }
 }
 
 impl GatewaySyncSteps {
@@ -242,11 +271,36 @@ impl PipelineSteps for GatewaySyncSteps {
 
             for block_n in block_range {
                 tracing::debug!("📥 Fetching block #{} from gateway", block_n);
-                let block = self
+                let (block, block_signatures) = match self
                     .client
-                    .get_state_update_with_block(BlockId::Number(block_n))
+                    .get_state_update_with_block_and_signature(BlockId::Number(block_n))
                     .await
-                    .with_context(|| format!("Getting state update with block_n={block_n}"))?;
+                {
+                    Ok(response) => (
+                        ProviderStateUpdateWithBlock { state_update: response.state_update, block: response.block },
+                        consensus_signatures(response.signature),
+                    ),
+                    Err(combined_error) => {
+                        tracing::debug!(
+                            "Gateway get_state_update includeSignature failed for block #{block_n}, falling back: {combined_error:#}"
+                        );
+                        let block = self
+                            .client
+                            .get_state_update_with_block(BlockId::Number(block_n))
+                            .await
+                            .with_context(|| format!("Getting state update with block_n={block_n}"))?;
+                        let block_signatures = match self.client.get_signature(BlockId::Number(block_n)).await {
+                            Ok(signature) => consensus_signatures(signature.signature),
+                            Err(signature_error) => {
+                                tracing::debug!(
+                                    "Gateway get_signature failed for block #{block_n}, importing without consensus signatures: {signature_error:#}"
+                                );
+                                vec![]
+                            }
+                        };
+                        (block, block_signatures)
+                    }
+                };
 
                 let bouncer_weights = if self.sync_bouncer_config {
                     Some(
@@ -398,7 +452,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         let mut signed_header = BlockHeaderWithSignatures {
                             header: gateway_block.header,
                             block_hash: gateway_block.block_hash,
-                            consensus_signatures: vec![],
+                            consensus_signatures: block_signatures,
                         };
 
                         // Allow the gateway format, which has legacy commitments.
@@ -470,14 +524,16 @@ pub fn gateway_preconfirmed_block_sync(
     _importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
 ) -> ThrottledRepeatedFuture<()> {
+    let optimized_cursor = Arc::new(tokio::sync::Mutex::new(PreconfirmedSyncCursor::default()));
     ThrottledRepeatedFuture::new(
         move |_| {
             let client = client.clone();
             let backend = backend.clone();
+            let optimized_cursor = optimized_cursor.clone();
             async move {
                 // We do some shenanigans to abort the request if a new block has been imported.
                 let mut subscription = backend.watch_chain_tip();
-                let (block, block_number) = loop {
+                let (block, block_number, optimized_meta) = loop {
                     let block_number = subscription
                         .current()
                         .latest_confirmed_block_n()
@@ -487,8 +543,70 @@ pub fn gateway_preconfirmed_block_sync(
                     tokio::select! {
                         biased;
                         _ = subscription.recv() => continue, // Abort request and restart
-                        preconfirmed = client.get_preconfirmed_block(block_number) => {
-                            break (preconfirmed, block_number)
+                        preconfirmed = async {
+                            let (optimized_supported, known_block_identifier, known_transaction_count) = {
+                                let cursor = optimized_cursor.lock().await;
+                                (cursor.optimized_supported, cursor.block_identifier.clone(), cursor.transaction_count)
+                            };
+
+                            if optimized_supported {
+                                let block_identifier_param = known_block_identifier.as_deref().unwrap_or("junk");
+                                match client
+                                    .get_preconfirmed_block_optimized(
+                                        BlockId::Tag(BlockTag::Latest),
+                                        Some(block_identifier_param),
+                                        Some(known_transaction_count),
+                                        true,
+                                        true,
+                                    )
+                                    .await
+                                {
+                                    Ok(ProviderBlockPreConfirmedUpdate::Unchanged(_)) => return Ok(None),
+                                    Ok(ProviderBlockPreConfirmedUpdate::Changed(response)) => {
+                                        let response_block_number = response.block_number;
+                                        let response_block_identifier = response.block_identifier.clone();
+                                        let is_delta = known_block_identifier.as_deref() == Some(response_block_identifier.as_str());
+                                        let Some(block) = response.into_preconfirmed_block() else {
+                                            let mut cursor = optimized_cursor.lock().await;
+                                            cursor.optimized_supported = false;
+                                            return client.get_preconfirmed_block(block_number).await.map(|block| {
+                                                Some((block, block_number, None))
+                                            });
+                                        };
+                                        return Ok(Some((
+                                            block,
+                                            response_block_number,
+                                            Some(OptimizedPreconfirmedMeta {
+                                                block_identifier: response_block_identifier,
+                                                is_delta,
+                                                known_transaction_count,
+                                            }),
+                                        )));
+                                    }
+                                    Ok(ProviderBlockPreConfirmedUpdate::Legacy(block)) => {
+                                        let mut cursor = optimized_cursor.lock().await;
+                                        cursor.optimized_supported = false;
+                                        return Ok(Some((block, block_number, None)));
+                                    }
+                                    Err(error) => {
+                                        tracing::debug!(
+                                            "Optimized preconfirmed gateway polling failed, falling back to legacy polling: {error:#}"
+                                        );
+                                        let mut cursor = optimized_cursor.lock().await;
+                                        cursor.optimized_supported = false;
+                                    }
+                                }
+                            }
+
+                            client.get_preconfirmed_block(block_number).await.map(|block| Some((block, block_number, None)))
+                        } => {
+                            match preconfirmed {
+                                Ok(Some((block, block_number, optimized_meta))) => {
+                                    break (Ok(block), block_number, optimized_meta)
+                                }
+                                Ok(None) => return Ok(None),
+                                Err(error) => break (Err(error), block_number, None),
+                            }
                         }
                     }
                 };
@@ -511,19 +629,33 @@ pub fn gateway_preconfirmed_block_sync(
 
                 let n_executed = block.num_executed_transactions();
                 let header = block.header(block_number)?;
+                let optimized_is_delta = optimized_meta.as_ref().is_some_and(|meta| meta.is_delta);
 
                 // How many of these transactions do we already have? When None, we need to make a new pre-confirmed block.
-                let mut common_prefix = None;
+                let mut common_prefix = optimized_is_delta.then_some(0);
 
                 if let Some(mut in_backend) = backend.block_view_on_preconfirmed() {
                     in_backend.refresh_with_candidates(); // we want to compare candidates too.
 
                     if in_backend.block_number() != block_number {
+                        if optimized_is_delta {
+                            let mut cursor = optimized_cursor.lock().await;
+                            cursor.block_identifier = None;
+                            cursor.transaction_count = 0;
+                        }
                         return Ok(None);
                     }
 
-                    // True if this gateway block should be considered as a new pre-confirmed block entirely.
-                    let new_preconfirmed = in_backend.header() != &header
+                    if optimized_is_delta {
+                        if in_backend.header() != &header {
+                            let mut cursor = optimized_cursor.lock().await;
+                            cursor.block_identifier = None;
+                            cursor.transaction_count = 0;
+                            return Ok(None);
+                        }
+                    } else {
+                        // True if this gateway block should be considered as a new pre-confirmed block entirely.
+                        let new_preconfirmed = in_backend.header() != &header
                         || in_backend.num_executed_transactions() > n_executed
                         ||
                         // Compare hashes
@@ -533,21 +665,33 @@ pub fn gateway_preconfirmed_block_sync(
                             block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
                         );
 
-                    if !new_preconfirmed {
-                        common_prefix = Some(in_backend.num_executed_transactions());
-                    }
+                        if !new_preconfirmed {
+                            common_prefix = Some(in_backend.num_executed_transactions());
+                        }
 
-                    // Whether there was no change at all (no need to update the backend)
-                    let has_not_changed = !new_preconfirmed
+                        // Whether there was no change at all (no need to update the backend)
+                        let has_not_changed = !new_preconfirmed
                         && in_backend.num_executed_transactions() == n_executed
                         // Compare candidate hashes.
                         && Iterator::eq(
                         in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
                         block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
                     );
-                    if has_not_changed {
-                        return Ok(None);
+                        if has_not_changed {
+                            if let Some(meta) = &optimized_meta {
+                                let mut cursor = optimized_cursor.lock().await;
+                                cursor.optimized_supported = true;
+                                cursor.block_identifier = Some(meta.block_identifier.clone());
+                                cursor.transaction_count = n_executed;
+                            }
+                            return Ok(None);
+                        }
                     }
+                } else if optimized_is_delta {
+                    let mut cursor = optimized_cursor.lock().await;
+                    cursor.block_identifier = None;
+                    cursor.transaction_count = 0;
+                    return Ok(None);
                 }
 
                 let arrived_at = TxTimestamp::now();
@@ -599,6 +743,14 @@ pub fn gateway_preconfirmed_block_sync(
                     backend
                         .write_access()
                         .append_to_preconfirmed(&executed, /* replace_candidates */ candidates)?;
+                }
+
+                if let Some(meta) = optimized_meta {
+                    let mut cursor = optimized_cursor.lock().await;
+                    cursor.optimized_supported = true;
+                    cursor.block_identifier = Some(meta.block_identifier);
+                    cursor.transaction_count =
+                        if meta.is_delta { meta.known_transaction_count + n_executed } else { n_executed };
                 }
 
                 Ok(Some(()))
