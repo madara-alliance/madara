@@ -1,7 +1,7 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use blockifier::bouncer::BouncerWeights;
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
-use mp_gateway::block::ProviderBlockPreConfirmed;
+use mp_gateway::block::{ProviderBlockPreConfirmed, ProviderBlockPreConfirmedUpdate};
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::feeder::{ProviderTransactionResponse, ProviderTransactionStatus};
 use mp_gateway::user_transaction::{
@@ -9,7 +9,7 @@ use mp_gateway::user_transaction::{
 };
 use mp_gateway::{
     block::{ProviderBlock, ProviderBlockHeader, ProviderBlockSignature},
-    state_update::{ProviderStateUpdate, ProviderStateUpdateWithBlock},
+    state_update::{ProviderStateUpdate, ProviderStateUpdateWithBlock, ProviderStateUpdateWithBlockAndSignature},
     user_transaction::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
@@ -78,6 +78,34 @@ impl GatewayProvider {
                 .with_block_id(&BlockId::Number(block_number));
 
             request.send_get::<ProviderBlockPreConfirmed>().await
+        })
+        .await
+    }
+
+    pub async fn get_preconfirmed_block_optimized(
+        &self,
+        block_id: BlockId,
+        block_identifier: Option<&str>,
+        known_transaction_count: Option<usize>,
+        include_receipts: bool,
+        include_state_diffs: bool,
+    ) -> Result<ProviderBlockPreConfirmedUpdate, SequencerError> {
+        self.retry_get(|| async {
+            let mut request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_preconfirmed_block")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&block_id)
+                .add_param(Cow::from("includeReceipts"), include_receipts.to_string())
+                .add_param(Cow::from("includeStateDiffs"), include_state_diffs.to_string());
+
+            if let Some(block_identifier) = block_identifier {
+                request = request.add_param(Cow::from("blockIdentifier"), block_identifier.to_owned());
+            }
+            if let Some(known_transaction_count) = known_transaction_count {
+                request = request.add_param(Cow::from("knownTransactionCount"), known_transaction_count.to_string());
+            }
+
+            request.send_get::<ProviderBlockPreConfirmedUpdate>().await
         })
         .await
     }
@@ -183,6 +211,23 @@ impl GatewayProvider {
                 .add_param(Cow::from("includeBlock"), "true");
 
             request.send_get::<ProviderStateUpdateWithBlock>().await
+        })
+        .await
+    }
+
+    pub async fn get_state_update_with_block_and_signature(
+        &self,
+        block_id: BlockId,
+    ) -> Result<ProviderStateUpdateWithBlockAndSignature, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .expect("Failed to add URI segment. This should not fail in prod")
+                .with_block_id(&block_id)
+                .add_param(Cow::from("includeBlock"), "true")
+                .add_param(Cow::from("includeSignature"), "true");
+
+            request.send_get::<ProviderStateUpdateWithBlockAndSignature>().await
         })
         .await
     }

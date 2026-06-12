@@ -119,7 +119,21 @@ pub struct ProviderStateUpdateWithBlock {
     pub block: ProviderBlock,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderStateUpdateWithBlockAndSignature {
+    pub state_update: ProviderStateUpdate,
+    pub block: ProviderBlock,
+    pub signature: Vec<Felt>,
+}
+
 impl ProviderStateUpdateWithBlock {
+    pub fn into_full_block(self) -> Result<FullBlock, FromGatewayError> {
+        self.block.into_full_block(self.state_update.state_diff.into())
+    }
+}
+
+impl ProviderStateUpdateWithBlockAndSignature {
     pub fn into_full_block(self) -> Result<FullBlock, FromGatewayError> {
         self.block.into_full_block(self.state_update.state_diff.into())
     }

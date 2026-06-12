@@ -22,16 +22,16 @@ use mc_submit_tx::{
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{convert::ReadSizeLimiter, ClassInfo, ContractClass};
 use mp_gateway::{
-    block::ProviderBlockPreConfirmed,
+    block::{BlockStatus, ProviderBlock, ProviderBlockSignature},
+    state_update::ProviderStateUpdate,
+};
+use mp_gateway::{
+    block::{ProviderBlockPreConfirmed, ProviderBlockPreConfirmedUnchanged, ProviderBlockPreConfirmedWithInfo},
     feeder::{ProviderTransactionResponse, ProviderTransactionStatus},
     user_transaction::{
         AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
         UserTransaction,
     },
-};
-use mp_gateway::{
-    block::{BlockStatus, ProviderBlock, ProviderBlockSignature},
-    state_update::ProviderStateUpdate,
 };
 use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
@@ -42,7 +42,7 @@ use mp_transactions::validated::ValidatedTransaction;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
-use std::{borrow::Cow, io::Read, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, io::Read, sync::Arc};
 
 #[cfg(test)]
 use mp_gateway::feeder::{TransactionExecutionStatus, TransactionStatus};
@@ -153,6 +153,58 @@ fn parse_block_id(params: &std::collections::HashMap<String, String>) -> Result<
     })
 }
 
+fn parse_bool_param(params: &HashMap<String, String>, name: &str, default: bool) -> Result<bool, GatewayError> {
+    match params.get(name).map(|value| value.as_str()) {
+        None => Ok(default),
+        Some("true") => Ok(true),
+        Some("false") => Ok(false),
+        Some(value) => Err(StarknetError::new(
+            StarknetErrorCode::MalformedRequest,
+            format!("Invalid boolean value for {name}: {value}"),
+        )
+        .into()),
+    }
+}
+
+fn preconfirmed_block_identifier(header: &mp_block::header::PreconfirmedHeader) -> String {
+    format!(
+        "madara-preconfirmed:{}:{}:{}:{:?}:{:#x}:{:#x}:{:#x}:{:#x}:{:#x}:{:#x}:{:#x}",
+        header.block_number,
+        header.block_timestamp.0,
+        header.protocol_version,
+        header.l1_da_mode,
+        header.sequencer_address,
+        header.gas_prices.eth_l1_gas_price,
+        header.gas_prices.strk_l1_gas_price,
+        header.gas_prices.eth_l1_data_gas_price,
+        header.gas_prices.strk_l1_data_gas_price,
+        header.gas_prices.eth_l2_gas_price,
+        header.gas_prices.strk_l2_gas_price,
+    )
+}
+
+fn slice_preconfirmed_block(block: ProviderBlockPreConfirmed, skip_first_n: usize) -> ProviderBlockPreConfirmed {
+    ProviderBlockPreConfirmed {
+        status: block.status,
+        starknet_version: block.starknet_version,
+        l1_da_mode: block.l1_da_mode,
+        l1_gas_price: block.l1_gas_price,
+        l1_data_gas_price: block.l1_data_gas_price,
+        l2_gas_price: block.l2_gas_price,
+        timestamp: block.timestamp,
+        sequencer_address: block.sequencer_address,
+        transactions: block.transactions.into_iter().skip(skip_first_n).collect(),
+        transaction_receipts: block.transaction_receipts.into_iter().skip(skip_first_n).collect(),
+        transaction_state_diffs: block.transaction_state_diffs.into_iter().skip(skip_first_n).collect(),
+    }
+}
+
+fn block_signature(backend: &Arc<MadaraBackend>, block_hash: Felt) -> Result<Vec<Felt>, GatewayError> {
+    let private_key = backend.chain_config().private_key.as_ref().context("Private key not available for signing")?;
+    let signature = private_key.sign(&block_hash).context("Failed to sign block hash")?;
+    Ok(vec![signature.r, signature.s])
+}
+
 async fn transaction_status_response(
     transaction_hash: Felt,
     backend: &Arc<MadaraBackend>,
@@ -231,14 +283,18 @@ pub async fn handle_get_preconfirmed_block(
         StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockNumber is required.".into())
     })?;
 
-    let block_number: u64 = block_number
-        .parse()
-        .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
-
     // Use block_view_on_preconfirmed_or_fake() - this always returns a block
     let mut block = backend
         .block_view_on_preconfirmed_or_fake()
         .map_err(|e| StarknetError::new(StarknetErrorCode::BlockNotFound, e.to_string()))?;
+
+    let current_block_number = block.block_number();
+    let block_number: u64 = match block_number.as_str() {
+        "latest" => current_block_number,
+        value => value.parse().map_err(|e: std::num::ParseIntError| {
+            StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string())
+        })?,
+    };
 
     // Check if the requested block number matches the pre-confirmed block number
     if block.block_number() != block_number {
@@ -250,6 +306,7 @@ pub async fn handle_get_preconfirmed_block(
     }
 
     block.refresh_with_candidates(); // We want candidates too :)
+    let block_identifier = preconfirmed_block_identifier(block.header());
     let block = {
         let content = block.borrow_content();
         ProviderBlockPreConfirmed::new(
@@ -260,7 +317,54 @@ pub async fn handle_get_preconfirmed_block(
         )
     };
 
-    Ok(create_json_response(hyper::StatusCode::OK, &block))
+    let wants_optimized_response = params.contains_key("blockIdentifier")
+        || params.contains_key("knownTransactionCount")
+        || params.contains_key("includeReceipts")
+        || params.contains_key("includeStateDiffs")
+        || params.get("blockNumber").is_some_and(|value| value == "latest");
+
+    if !wants_optimized_response {
+        return Ok(create_json_response(hyper::StatusCode::OK, &block));
+    }
+
+    let known_block_identifier = params.get("blockIdentifier");
+    let known_transaction_count = params
+        .get("knownTransactionCount")
+        .map(|count| {
+            count.parse().map_err(|e: std::num::ParseIntError| {
+                StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string())
+            })
+        })
+        .transpose()?
+        .unwrap_or(0);
+    let include_receipts = parse_bool_param(&params, "includeReceipts", true)?;
+    let include_state_diffs = parse_bool_param(&params, "includeStateDiffs", true)?;
+    let transaction_count = block.transactions.len();
+
+    if known_block_identifier.is_some_and(|identifier| identifier == &block_identifier)
+        && known_transaction_count == transaction_count
+    {
+        return Ok(create_json_response(hyper::StatusCode::OK, &ProviderBlockPreConfirmedUnchanged { changed: false }));
+    }
+
+    let skip_first_n = if known_block_identifier.is_some_and(|identifier| identifier == &block_identifier)
+        && known_transaction_count < transaction_count
+    {
+        known_transaction_count
+    } else {
+        0
+    };
+    let block = slice_preconfirmed_block(block, skip_first_n);
+    let response = ProviderBlockPreConfirmedWithInfo::new(
+        block,
+        block_number,
+        block_identifier,
+        true,
+        include_receipts,
+        include_state_diffs,
+    );
+
+    Ok(create_json_response(hyper::StatusCode::OK, &response))
 }
 
 pub async fn handle_get_transaction(
@@ -391,10 +495,10 @@ pub async fn handle_get_signature(
 
     let block_info = confirmed.get_block_info()?;
 
-    let private_key = backend.chain_config().private_key.as_ref().context("Private key not available for signing")?;
-    let signature = private_key.sign(&block_info.block_hash).context("Failed to sign block hash")?;
-    let signature =
-        ProviderBlockSignature { block_hash: block_info.block_hash, signature: vec![signature.r, signature.s] };
+    let signature = ProviderBlockSignature {
+        block_hash: block_info.block_hash,
+        signature: block_signature(&backend, block_info.block_hash)?,
+    };
     Ok(create_json_response(hyper::StatusCode::OK, &signature))
 }
 
@@ -422,12 +526,33 @@ pub async fn handle_get_state_update(
         state_diff: block.get_state_diff()?.into(),
     };
 
+    let include_signature = parse_bool_param(&params, "includeSignature", false)?;
+
     let json_response = if include_block_params(&params) {
         let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
         let block_provider =
             ProviderBlock::new(block_info.block_hash, block_info.header, block.get_executed_transactions(..)?, status);
 
-        create_json_response(hyper::StatusCode::OK, &json!({"block": block_provider, "state_update": state_update}))
+        if include_signature {
+            create_json_response(
+                hyper::StatusCode::OK,
+                &json!({
+                    "block": block_provider,
+                    "state_update": state_update,
+                    "signature": block_signature(&backend, block_info.block_hash)?,
+                }),
+            )
+        } else {
+            create_json_response(hyper::StatusCode::OK, &json!({"block": block_provider, "state_update": state_update}))
+        }
+    } else if include_signature {
+        create_json_response(
+            hyper::StatusCode::OK,
+            &json!({
+                "state_update": state_update,
+                "signature": block_signature(&backend, block_info.block_hash)?,
+            }),
+        )
     } else {
         create_json_response(hyper::StatusCode::OK, &state_update)
     };
@@ -865,6 +990,57 @@ mod tests {
             transactions: vec![tx_with_receipt()],
             events: Default::default(),
         }
+    }
+
+    fn preconfirmed_provider_block(tx_count: usize) -> ProviderBlockPreConfirmed {
+        let header = mp_block::header::PreconfirmedHeader { block_number: 7, ..Default::default() };
+        let transactions = std::iter::repeat_with(preconfirmed_tx).take(tx_count).collect::<Vec<_>>();
+
+        ProviderBlockPreConfirmed::new(
+            &header,
+            transactions.iter().map(|tx| (&tx.transaction, &tx.state_diff)),
+            std::iter::empty::<&ValidatedTransaction>(),
+            BlockStatus::PreConfirmed,
+        )
+    }
+
+    #[test]
+    fn preconfirmed_block_identifier_is_stable_and_header_sensitive() {
+        let header = mp_block::header::PreconfirmedHeader { block_number: 7, ..Default::default() };
+        let same_header = mp_block::header::PreconfirmedHeader { block_number: 7, ..Default::default() };
+        let next_header = mp_block::header::PreconfirmedHeader { block_number: 8, ..Default::default() };
+
+        assert_eq!(preconfirmed_block_identifier(&header), preconfirmed_block_identifier(&same_header));
+        assert_ne!(preconfirmed_block_identifier(&header), preconfirmed_block_identifier(&next_header));
+    }
+
+    #[test]
+    fn slice_preconfirmed_block_keeps_transactions_receipts_and_diffs_aligned() {
+        let block = preconfirmed_provider_block(2);
+
+        let block = slice_preconfirmed_block(block, 1);
+
+        assert_eq!(block.transactions.len(), 1);
+        assert_eq!(block.transaction_receipts.len(), 1);
+        assert_eq!(block.transaction_state_diffs.len(), 1);
+        assert_eq!(
+            block.transactions[0].transaction_hash(),
+            &block.transaction_receipts[0].as_ref().unwrap().transaction_hash
+        );
+    }
+
+    #[test]
+    fn preconfirmed_block_with_info_omits_receipts_and_state_diffs_when_disabled() {
+        let block = preconfirmed_provider_block(1);
+
+        let response =
+            ProviderBlockPreConfirmedWithInfo::new(block, 7, "madara-preconfirmed:test".to_owned(), true, false, false);
+        let value = serde_json::to_value(response).expect("serializes response");
+
+        assert_eq!(value["changed"], true);
+        assert!(value.get("transactions").is_some());
+        assert!(value.get("transaction_receipts").is_none());
+        assert!(value.get("transaction_state_diffs").is_none());
     }
 
     #[tokio::test]

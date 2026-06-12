@@ -202,6 +202,44 @@ pub struct ProviderBlockPreConfirmed {
     pub transaction_state_diffs: Vec<Option<StateDiff>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPreConfirmedWithInfo {
+    pub status: BlockStatus,
+    pub starknet_version: String,
+    pub l1_da_mode: L1DataAvailabilityMode,
+    pub l1_gas_price: ResourcePrice,
+    pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
+    pub timestamp: u64,
+    pub sequencer_address: Felt,
+    pub transactions: Vec<Transaction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_receipts: Option<Vec<Option<ConfirmedReceipt>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_state_diffs: Option<Vec<Option<StateDiff>>>,
+    pub block_number: u64,
+    pub block_identifier: String,
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPreConfirmedUnchanged {
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(test, derive(Eq))]
+pub enum ProviderBlockPreConfirmedUpdate {
+    Unchanged(ProviderBlockPreConfirmedUnchanged),
+    Changed(ProviderBlockPreConfirmedWithInfo),
+    Legacy(ProviderBlockPreConfirmed),
+}
+
 impl ProviderBlockPreConfirmed {
     pub fn new<'a>(
         header: &PreconfirmedHeader,
@@ -325,6 +363,50 @@ impl ProviderBlockPreConfirmed {
             .collect();
 
         (executed, candidates)
+    }
+}
+
+impl ProviderBlockPreConfirmedWithInfo {
+    pub fn new(
+        block: ProviderBlockPreConfirmed,
+        block_number: u64,
+        block_identifier: String,
+        changed: bool,
+        include_receipts: bool,
+        include_state_diffs: bool,
+    ) -> Self {
+        Self {
+            status: block.status,
+            starknet_version: block.starknet_version,
+            l1_da_mode: block.l1_da_mode,
+            l1_gas_price: block.l1_gas_price,
+            l1_data_gas_price: block.l1_data_gas_price,
+            l2_gas_price: block.l2_gas_price,
+            timestamp: block.timestamp,
+            sequencer_address: block.sequencer_address,
+            transactions: block.transactions,
+            transaction_receipts: include_receipts.then_some(block.transaction_receipts),
+            transaction_state_diffs: include_state_diffs.then_some(block.transaction_state_diffs),
+            block_number,
+            block_identifier,
+            changed,
+        }
+    }
+
+    pub fn into_preconfirmed_block(self) -> Option<ProviderBlockPreConfirmed> {
+        Some(ProviderBlockPreConfirmed {
+            status: self.status,
+            starknet_version: self.starknet_version,
+            l1_da_mode: self.l1_da_mode,
+            l1_gas_price: self.l1_gas_price,
+            l1_data_gas_price: self.l1_data_gas_price,
+            l2_gas_price: self.l2_gas_price,
+            timestamp: self.timestamp,
+            sequencer_address: self.sequencer_address,
+            transactions: self.transactions,
+            transaction_receipts: self.transaction_receipts?,
+            transaction_state_diffs: self.transaction_state_diffs?,
+        })
     }
 }
 

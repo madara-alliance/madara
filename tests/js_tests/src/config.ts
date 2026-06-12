@@ -11,6 +11,7 @@ export const UDC_ADDRESS =
 
 export const RPC_PORT = 9944;
 export const ADMIN_PORT = 9943;
+export const GATEWAY_PORT = 8080;
 
 export function getRpcUrl(version: string): string {
   const versionPath = version.replace(/\./g, "_");
@@ -19,6 +20,14 @@ export function getRpcUrl(version: string): string {
 
 export function getAdminUrl(): string {
   return `http://127.0.0.1:${ADMIN_PORT}/`;
+}
+
+export function getGatewayUrl(): string {
+  return `http://127.0.0.1:${GATEWAY_PORT}/gateway/`;
+}
+
+export function getFeederGatewayUrl(): string {
+  return `http://127.0.0.1:${GATEWAY_PORT}/feeder_gateway/`;
 }
 
 export const BLOCK_POLL_INTERVAL_MS = 500;

@@ -74,6 +74,9 @@ jobs:
             --rpc-cors "*" \
             --rpc-external \
             --rpc-admin \
+            --gateway-enable \
+            --gateway-external \
+            --feeder-gateway-enable \
             --devnet \
             --preset devnet \
             --l1-gas-price 0 \
@@ -85,6 +88,7 @@ jobs:
           MADARA_PID=$!
 
           while ! echo exit | nc localhost 9944; do sleep 1; done
+          while ! echo exit | nc localhost 8080; do sleep 1; done
           cd tests/js_tests
           ANVIL_PORT=${{ env.ANVIL_PORT }} CORE_CONTRACT=${{ env.CORE_CONTRACT }} npm test
 
