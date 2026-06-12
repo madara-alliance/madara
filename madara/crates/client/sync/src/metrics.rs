@@ -141,7 +141,10 @@ impl SyncMetrics {
 
         self.l2_sync_time.record(total_sync_time, &[]);
         self.l2_latest_sync_time.record(latest_sync_time, &[]);
-        self.l2_avg_sync_time.record(total_sync_time / (header.block_number - self.starting_block) as f64, &[]);
+        // After a reorg, blocks below `starting_block` can be re-imported: saturate to avoid an
+        // underflow (which panics in debug builds).
+        self.l2_avg_sync_time
+            .record(total_sync_time / header.block_number.saturating_sub(self.starting_block) as f64, &[]);
 
         self.l2_block_number.record(header.block_number as _, &[]);
         self.transaction_count.add(header.transaction_count, &[]);
