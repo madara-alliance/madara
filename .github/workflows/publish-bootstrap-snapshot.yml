@@ -1,0 +1,248 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Publish Bootstrap Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Network to snapshot"
+        required: true
+        type: choice
+        default: mainnet
+        options:
+          - mainnet
+          - sepolia
+      base_path:
+        description: "Existing synced Madara base path on the runner"
+        required: true
+        type: string
+        default: /var/lib/madara
+      output_dir:
+        description: "Directory on the runner for generated snapshot files"
+        required: true
+        type: string
+        default: /srv/madara-snapshots
+      runner_label:
+        description: "AWS self-hosted runner label with the synced DB mounted"
+        required: true
+        type: string
+        default: madara-snapshot
+      publish:
+        description: "Publish to the configured S3 bucket"
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      upload_artifact:
+        description: "Upload files as a GitHub artifact; use only for small test snapshots"
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      s3_prefix:
+        description: "S3 key prefix"
+        required: true
+        type: string
+        default: snapshots
+      public_base_url:
+        description: "Optional public URL root used in the job summary"
+        required: false
+        type: string
+        default: ""
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-bootstrap-snapshot-${{ github.event.inputs.network || vars.MADARA_BOOTSTRAP_SNAPSHOT_NETWORK || 'mainnet' }}
+  cancel-in-progress: false
+
+env:
+  SNAPSHOT_NETWORK: ${{ github.event.inputs.network || vars.MADARA_BOOTSTRAP_SNAPSHOT_NETWORK || 'mainnet' }}
+  SNAPSHOT_BASE_PATH: ${{ github.event.inputs.base_path || vars.MADARA_BOOTSTRAP_SNAPSHOT_BASE_PATH || '/var/lib/madara' }}
+  SNAPSHOT_OUTPUT_DIR: ${{ github.event.inputs.output_dir || vars.MADARA_BOOTSTRAP_SNAPSHOT_OUTPUT_DIR || '/srv/madara-snapshots' }}
+  SNAPSHOT_PUBLISH: ${{ github.event.inputs.publish || vars.MADARA_BOOTSTRAP_SNAPSHOT_PUBLISH || 'false' }}
+  SNAPSHOT_UPLOAD_ARTIFACT: ${{ github.event.inputs.upload_artifact || 'false' }}
+  SNAPSHOT_S3_PREFIX: ${{ github.event.inputs.s3_prefix || vars.MADARA_BOOTSTRAP_SNAPSHOT_PREFIX || 'snapshots' }}
+  SNAPSHOT_PUBLIC_BASE_URL: ${{ github.event.inputs.public_base_url || vars.MADARA_BOOTSTRAP_SNAPSHOT_PUBLIC_BASE_URL || '' }}
+
+jobs:
+  publish-bootstrap-snapshot:
+    name: Publish bootstrap snapshot
+    if: github.event_name == 'workflow_dispatch' || (github.repository == 'madara-alliance/madara' && vars.MADARA_BOOTSTRAP_SNAPSHOT_SCHEDULED == 'true')
+    runs-on:
+      - self-hosted
+      - ${{ github.event.inputs.runner_label || vars.MADARA_BOOTSTRAP_SNAPSHOT_RUNNER_LABEL || 'madara-snapshot' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate runner state
+        run: |
+          set -euo pipefail
+
+          echo "Using mounted Madara base path: $SNAPSHOT_BASE_PATH"
+
+          if [ ! -d "$SNAPSHOT_BASE_PATH" ]; then
+            echo "::error::SNAPSHOT_BASE_PATH does not exist on this runner: $SNAPSHOT_BASE_PATH"
+            exit 1
+          fi
+
+          if [ ! -f "$SNAPSHOT_BASE_PATH/.db-version" ]; then
+            echo "::error::$SNAPSHOT_BASE_PATH is missing .db-version"
+            exit 1
+          fi
+
+          command -v jq >/dev/null 2>&1 || {
+            echo "::error::jq is required on the snapshot runner"
+            exit 1
+          }
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Build Madara
+        run: |
+          CARGO_TARGET_DIR=target cargo build --bin madara --release
+
+      - name: Create and verify snapshot
+        id: snapshot
+        run: |
+          scripts/bootstrap-snapshot-publish.sh \
+            --madara-bin target/release/madara \
+            --network "$SNAPSHOT_NETWORK" \
+            --base-path "$SNAPSHOT_BASE_PATH" \
+            --output-dir "$SNAPSHOT_OUTPUT_DIR"
+
+      - name: Upload snapshot artifact
+        if: env.SNAPSHOT_UPLOAD_ARTIFACT == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: bootstrap-snapshot-${{ env.SNAPSHOT_NETWORK }}-${{ steps.snapshot.outputs.block_number }}
+          path: |
+            ${{ steps.snapshot.outputs.archive_path }}
+            ${{ steps.snapshot.outputs.manifest_path }}
+            ${{ steps.snapshot.outputs.latest_path }}
+          retention-days: 7
+
+      - name: Validate publish configuration
+        if: env.SNAPSHOT_PUBLISH == 'true'
+        env:
+          SNAPSHOT_BUCKET: ${{ vars.MADARA_BOOTSTRAP_SNAPSHOT_BUCKET }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_BOOTSTRAP_SNAPSHOT_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SNAPSHOT_BUCKET" ]; then
+            echo "::error::Set repository variable MADARA_BOOTSTRAP_SNAPSHOT_BUCKET before publishing"
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::Set repository secret AWS_BOOTSTRAP_SNAPSHOT_ROLE_ARN before publishing"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        if: env.SNAPSHOT_PUBLISH == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BOOTSTRAP_SNAPSHOT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Publish snapshot to S3
+        if: env.SNAPSHOT_PUBLISH == 'true'
+        env:
+          SNAPSHOT_BUCKET: ${{ vars.MADARA_BOOTSTRAP_SNAPSHOT_BUCKET }}
+          ARCHIVE_PATH: ${{ steps.snapshot.outputs.archive_path }}
+          ARCHIVE_NAME: ${{ steps.snapshot.outputs.archive_name }}
+          MANIFEST_PATH: ${{ steps.snapshot.outputs.manifest_path }}
+          LATEST_PATH: ${{ steps.snapshot.outputs.latest_path }}
+        run: |
+          set -euo pipefail
+
+          command -v aws >/dev/null 2>&1 || {
+            echo "::error::aws CLI is required on the snapshot runner"
+            exit 1
+          }
+
+          prefix="${SNAPSHOT_S3_PREFIX#/}"
+          prefix="${prefix%/}"
+          if [ -n "$prefix" ]; then
+            s3_root="s3://${SNAPSHOT_BUCKET}/${prefix}/${SNAPSHOT_NETWORK}"
+          else
+            s3_root="s3://${SNAPSHOT_BUCKET}/${SNAPSHOT_NETWORK}"
+          fi
+
+          aws s3 cp "$ARCHIVE_PATH" "$s3_root/$ARCHIVE_NAME" \
+            --content-type application/gzip \
+            --only-show-errors
+          aws s3 cp "$MANIFEST_PATH" "$s3_root/$ARCHIVE_NAME.manifest.json" \
+            --content-type application/json \
+            --only-show-errors
+          aws s3 cp "$LATEST_PATH" "$s3_root/latest.txt" \
+            --content-type text/plain \
+            --only-show-errors
+
+          if [ -n "$SNAPSHOT_PUBLIC_BASE_URL" ]; then
+            public_root="${SNAPSHOT_PUBLIC_BASE_URL%/}"
+            if [ -n "$prefix" ]; then
+              public_root="$public_root/$prefix"
+            fi
+            public_root="$public_root/$SNAPSHOT_NETWORK"
+            archive_url="$public_root/$ARCHIVE_NAME"
+            manifest_url="$public_root/$ARCHIVE_NAME.manifest.json"
+          else
+            archive_url="$s3_root/$ARCHIVE_NAME"
+            manifest_url="$s3_root/$ARCHIVE_NAME.manifest.json"
+          fi
+
+          {
+            echo "archive_url=$archive_url"
+            echo "manifest_url=$manifest_url"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Published bootstrap snapshot"
+            echo ""
+            echo "- Network: \`$SNAPSHOT_NETWORK\`"
+            echo "- Block: \`${{ steps.snapshot.outputs.block_number }}\`"
+            echo "- Chain ID: \`${{ steps.snapshot.outputs.chain_id }}\`"
+            echo "- Archive: \`$archive_url\`"
+            echo "- Manifest: \`$manifest_url\`"
+            echo "- latest.txt: \`$s3_root/latest.txt\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarize local snapshot
+        if: env.SNAPSHOT_PUBLISH != 'true'
+        run: |
+          {
+            echo "### Bootstrap snapshot artifact"
+            echo ""
+            echo "- Network: \`$SNAPSHOT_NETWORK\`"
+            echo "- Block: \`${{ steps.snapshot.outputs.block_number }}\`"
+            echo "- Chain ID: \`${{ steps.snapshot.outputs.chain_id }}\`"
+            echo "- Archive: \`${{ steps.snapshot.outputs.archive_path }}\`"
+            echo "- Manifest: \`${{ steps.snapshot.outputs.manifest_path }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

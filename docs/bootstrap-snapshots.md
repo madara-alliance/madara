@@ -83,8 +83,93 @@ snapshots/
 `latest.txt` can contain the chosen archive filename. Madara does not read this
 file directly; it is only an operator convention for deployment automation.
 
-Before publishing, keep a local copy of the command output and inspect the
-manifest:
+The repository includes a publisher script that creates this layout and
+verifies the archive against the manifest before moving the files into place:
+
+```bash
+scripts/bootstrap-snapshot-publish.sh \
+  --madara-bin ./target/release/madara \
+  --network mainnet \
+  --base-path /var/lib/madara \
+  --output-dir /srv/madara-snapshots
+```
+
+The script writes `latest.txt` only after the canonical archive and manifest
+are present. It does not sync the source node or stop an already-running
+service. Run it against a stopped source node or a dedicated standby node whose
+database is already synced.
+
+For GitHub Actions operations, use
+`.github/workflows/publish-bootstrap-snapshot.yml`. The workflow builds the
+Madara binary, runs the publisher script on a self-hosted runner, and either
+leaves the generated files on the runner or publishes them to S3. GitHub
+artifact upload is available as an explicit opt-in for small test snapshots,
+but should not be used for production mainnet archives.
+
+The workflow intentionally requires a self-hosted runner because production
+snapshots need a persistent synced database. For an AWS-hosted database, run the
+GitHub runner on EC2 in the same AWS environment and expose the Madara base path
+as a local mount, for example an attached EBS volume, a cloned EBS snapshot
+volume, or another filesystem path that contains the synced `db/` and
+`.db-version`. Ephemeral GitHub runners should not download or rebuild a
+current mainnet database from scratch.
+
+The snapshot source must not be locked by a running Madara process. In AWS, the
+usual safe patterns are:
+
+- Run the publisher on a dedicated standby node whose Madara process is stopped
+  during snapshot creation.
+- Create and attach an EBS clone of the synced volume to the snapshot runner,
+  then create the archive from the clone.
+- Schedule a maintenance window that stops Madara, runs the publisher, and
+  starts Madara again.
+
+Manual dry run:
+
+```bash
+gh workflow run publish-bootstrap-snapshot.yml \
+  -f network=mainnet \
+  -f base_path=/var/lib/madara \
+  -f output_dir=/srv/madara-snapshots \
+  -f runner_label=madara-snapshot \
+  -f publish=false
+```
+
+S3 publish run:
+
+```bash
+gh workflow run publish-bootstrap-snapshot.yml \
+  -f network=mainnet \
+  -f base_path=/var/lib/madara \
+  -f output_dir=/srv/madara-snapshots \
+  -f runner_label=madara-snapshot \
+  -f publish=true \
+  -f s3_prefix=snapshots
+```
+
+Recommended repository settings for scheduled publishing:
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| `MADARA_BOOTSTRAP_SNAPSHOT_SCHEDULED` | variable | Set to `true` to enable the workflow schedule. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_RUNNER_LABEL` | variable | AWS self-hosted runner label. Defaults to `madara-snapshot`. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_NETWORK` | variable | Network for scheduled runs. Defaults to `mainnet`. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_BASE_PATH` | variable | Synced source base path on the runner. Defaults to `/var/lib/madara`. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_OUTPUT_DIR` | variable | Local output directory on the runner. Defaults to `/srv/madara-snapshots`. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_PUBLISH` | variable | Set to `true` for scheduled S3 publishing. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_BUCKET` | variable | Destination S3 bucket for published snapshots. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_PREFIX` | variable | Destination object prefix. Defaults to `snapshots`. |
+| `MADARA_BOOTSTRAP_SNAPSHOT_PUBLIC_BASE_URL` | variable | Optional public URL root used in workflow summaries. |
+| `AWS_REGION` | variable or secret | AWS region used by the OIDC publishing role. |
+| `AWS_BOOTSTRAP_SNAPSHOT_ROLE_ARN` | secret | OIDC role assumed by the workflow for S3 writes. |
+
+The AWS role assumed by the workflow needs write access to
+`s3://$MADARA_BOOTSTRAP_SNAPSHOT_BUCKET/$MADARA_BOOTSTRAP_SNAPSHOT_PREFIX/<network>/`
+for the archive, manifest, and `latest.txt`. If the bucket uses KMS encryption,
+the role also needs the matching KMS permissions.
+
+Before publishing manually, keep a local copy of the command output and inspect
+the manifest:
 
 ```bash
 jq . /srv/madara-snapshots/mainnet.tar.gz.manifest.json
