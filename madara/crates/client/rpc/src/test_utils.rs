@@ -890,3 +890,53 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         state_diffs,
     }
 }
+
+/// Generates the shared `estimate_message_fee` regression tests (success + revert) for a
+/// versioned handler. Invoke inside the version's `tests` module — relies on `super::*` plus the
+/// version's `BlockTag` import providing that version's `estimate_message_fee`, `MsgFromL1` and
+/// `BlockId`. The caller passes the expression asserting a non-zero fee, since the estimate DTO
+/// differs by version.
+macro_rules! estimate_message_fee_tests {
+    (|$estimate:ident| $fee_is_nonzero:expr) => {
+        /// A message whose handler executes successfully must return a fee estimate. Regression
+        /// test: the L1 handler used to be built with `paid_fee_on_l1: 0`, which blockifier
+        /// rejects on the *success* path, so every valid message errored.
+        #[tokio::test]
+        async fn estimate_message_fee_success() {
+            let (_backend, rpc, _keys) = $crate::test_utils::rpc_test_setup_with_execution().await;
+
+            let message = MsgFromL1 {
+                from_address: "0x000000000000000000000000000000000000beef".to_string(),
+                to_address: $crate::test_utils::TEST_CONTRACT_ADDRESS,
+                entry_point_selector: ::starknet_core::utils::get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                payload: vec![::starknet_types_core::felt::Felt::ONE, ::starknet_types_core::felt::Felt::TWO],
+            };
+            let $estimate = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await.unwrap();
+
+            assert!($fee_is_nonzero);
+        }
+
+        /// A message whose handler fails must surface as CONTRACT_ERROR. Regression test:
+        /// blockifier reports a failed L1 handler as a successful execution with `revert_error`
+        /// set, which used to be converted into a fee estimate.
+        #[tokio::test]
+        async fn estimate_message_fee_reverted_returns_contract_error() {
+            let (backend, rpc, _keys) = $crate::test_utils::rpc_test_setup_with_execution().await;
+
+            // The fee token ERC20 has no l1 handler: executing the message fails.
+            let message = MsgFromL1 {
+                from_address: "0x000000000000000000000000000000000000beef".to_string(),
+                to_address: backend.chain_config().native_fee_token_address.to_felt(),
+                entry_point_selector: ::starknet_core::utils::get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                payload: vec![::starknet_types_core::felt::Felt::ONE, ::starknet_types_core::felt::Felt::TWO],
+            };
+            let result = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await;
+
+            ::assert_matches::assert_matches!(
+                result.unwrap_err(),
+                $crate::errors::StarknetRpcApiError::ContractError { .. }
+            );
+        }
+    };
+}
+pub(crate) use estimate_message_fee_tests;
