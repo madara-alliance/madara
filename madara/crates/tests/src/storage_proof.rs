@@ -120,31 +120,31 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
           },
           {
             "node": {
-              "left": "0x113a4cb02d845bd88a5466435c9288da65599ff63489cafbe7b187a355d6af5",
+              "left": "0x1c5a6c9966c9f7a1f8f60f2d50cb63fcfa5b261d4549187ac274ab4272cc5e3",
               "right": "0x556551ef2d003cf08323a6c1c60d8de89ec9e6450700b62d0a4e81378a0658d"
             },
-            "node_hash": "0x7e0158524ad463e162a32a538d652d9be1d05a4248e9273f6c4edf6bbe9c031"
+            "node_hash": "0x3e24ca8795469f6af2da26e75b8e764dd85ad6d14f0f64f522b21aec2ff78ba"
           },
           {
             "node": {
-              "left": "0x3476bae64cf909357043bafba4ac368317c39930dd8d73a753f73e7cd012425",
-              "right": "0x2957bdb91e01a0a1524ca6751d0b302374f0976cf5268c9e765dd878479644b"
-            },
-            "node_hash": "0x75ed61949488f1fb243997925cd7717365673860adcbae04115655daa5a46a4"
-          },
-          {
-            "node": {
-              "left": "0x777087b1140cf36e78f089842b5cbe8f5d1e58d5517dcc70a01d02ea72b2ad1",
+              "left": "0x34d7f08975375c6f5b5aa183e047c445a323615d39f29b6880e6fb590e914ad",
               "right": "0x6be4e94f1013c755aea91f4fca72b796777991bfe97ed4fe02924bcaa72f2eb"
             },
-            "node_hash": "0x3476bae64cf909357043bafba4ac368317c39930dd8d73a753f73e7cd012425"
+            "node_hash": "0x46c84b36c0e47eb84d10791590ad616d06267ae8c33008ede4d34bba8e0c4f5"
           },
           {
             "node": {
-              "left": "0x7e0158524ad463e162a32a538d652d9be1d05a4248e9273f6c4edf6bbe9c031",
-              "right": "0x671471198ae4ebf7758c8e3a74fd22f80d3407ca298036b2f2938342168269e"
+              "left": "0x3e24ca8795469f6af2da26e75b8e764dd85ad6d14f0f64f522b21aec2ff78ba",
+              "right": "0x17b6653fa9473af8b2c74d5dd413e0905e71c48568c570fff8150110d54106d"
             },
-            "node_hash": "0x777087b1140cf36e78f089842b5cbe8f5d1e58d5517dcc70a01d02ea72b2ad1"
+            "node_hash": "0x34d7f08975375c6f5b5aa183e047c445a323615d39f29b6880e6fb590e914ad"
+          },
+          {
+            "node": {
+              "left": "0x46c84b36c0e47eb84d10791590ad616d06267ae8c33008ede4d34bba8e0c4f5",
+              "right": "0xfb52642774e8f691b47c7c0ba2af7b2e205bbc10cd31da872cbf214ada6b75"
+            },
+            "node_hash": "0x4196effc79506ae6622b1e38d10dc9d42debf149dd63879b1052db1fd191664"
           }
         ]
       },
@@ -183,17 +183,10 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
           },
           {
             "node": {
-              "left": "0x285bc4342724dd9d19991811fcf952273723569ddc45925592b8939c7849d8a",
-              "right": "0x5f077f4551dcc7afdc85e0bc55d23c5c823886a68361be55019aba06f81504e"
-            },
-            "node_hash": "0x1d84ed85ea21afefe5c8f8529f2839ceb2713b7c54d09092548acf2a358adc4"
-          },
-          {
-            "node": {
               "left": "0x3c1c6fc0a86454b3840874bbe4ea4911f5f9e2ce5179f44f0ff4faafa76f786",
-              "right": "0x77fc03894c569b6036a7f5f8989f726b6f96c95f89ce3a0773ad2235dc8eec9"
+              "right": "0x845b0b9670e0ae63d86c25df621c46524d8b5aca4461bf73ad5e991065230"
             },
-            "node_hash": "0x285bc4342724dd9d19991811fcf952273723569ddc45925592b8939c7849d8a"
+            "node_hash": "0xfbeccd24c1ec3d210e2935bb9058fa04e279b75d5a329dbcd641ad679eb2c7"
           },
           {
             "node": {
@@ -215,13 +208,20 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
               "right": "0x3b8aa8795ea2891d6ee1086fdfd85ddd88be6bc7aa1fb0b4f9b9357bfa9b686"
             },
             "node_hash": "0x3029e51ebd2307c7e813f71c30653ba30444f2722b300dbe52970910c7a81b3"
+          },
+          {
+            "node": {
+              "left": "0xfbeccd24c1ec3d210e2935bb9058fa04e279b75d5a329dbcd641ad679eb2c7",
+              "right": "0x74702711d4d0c46c1cb57aa4814f8ebd586ecd0ecad9f2e85c9d3c5d544de43"
+            },
+            "node_hash": "0x4f10a91055749d100e2833fa26627be2b1cc15c118b36bac21d44b6e23fee4f"
           }
         ]
       ],
       "global_roots": {
         "block_hash": "0x5beb56c7d9a9fc066e695c3fc467f45532cace83d9979db4ccfd6b77ca476af",
-        "classes_tree_root": "0x5ff17fbd8a130acb96f6c97f9f926a2acdc59a76c34aba6ec160f74e30e6635",
-        "contracts_tree_root": "0x75ed61949488f1fb243997925cd7717365673860adcbae04115655daa5a46a4"
+        "classes_tree_root": "0x6eeb97e12755a43e64901f54239ebcb0a0f9b2b87fca9b91dd7059689df7a9",
+        "contracts_tree_root": "0x4196effc79506ae6622b1e38d10dc9d42debf149dd63879b1052db1fd191664"
       }
     });
 
