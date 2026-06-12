@@ -33,6 +33,7 @@ pub struct OrchestratorMetrics {
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
     pub snos_job_processing_time: Histogram<f64>,
+    pub snos_rpc_fallback_total: Counter<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
     pub jobs_per_minute: Gauge<f64>,
@@ -214,6 +215,13 @@ impl Metrics for OrchestratorMetrics {
             "snos_job_processing_time".to_string(),
             "Time to process SNOS jobs".to_string(),
             "s".to_string(),
+        );
+
+        let snos_rpc_fallback_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "snos_rpc_fallback_total".to_string(),
+            "Total number of retried SNOS jobs processed with the backup RPC".to_string(),
+            "jobs".to_string(),
         );
 
         let settlement_time = register_gauge_metric_instrument(
@@ -486,6 +494,7 @@ impl Metrics for OrchestratorMetrics {
             job_e2e_latency,
             proof_generation_time,
             snos_job_processing_time,
+            snos_rpc_fallback_total,
             settlement_time,
             jobs_per_minute,
             blocks_per_hour,
