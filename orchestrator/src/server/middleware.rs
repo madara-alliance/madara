@@ -56,7 +56,7 @@ pub async fn trace_context(mut req: Request<Body>, next: Next) -> Response {
         otel_trace_id = tracing::field::Empty,
         job_id = tracing::field::Empty
     );
-    span.set_parent(parent_cx);
+    let _ = span.set_parent(parent_cx);
 
     // Record ids for log visibility
     let otel_trace_id_str = span.context().span().span_context().trace_id().to_string();
