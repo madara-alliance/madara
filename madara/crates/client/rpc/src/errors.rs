@@ -254,22 +254,47 @@ impl StarknetRpcApiError {
     }
 }
 
+/// How execution-error payloads are rendered in RPC error data: v0.8+ uses the structured
+/// CONTRACT_EXECUTION_ERROR object; v0.7.1 predates it and uses flat strings.
+enum ExecErrorPayload {
+    Structured,
+    FlatString,
+}
+
+/// Single classification of `mc_exec::Error` into RPC errors, shared by every spec version so the
+/// error routing cannot drift between them; only the payload rendering differs.
+fn exec_error_to_rpc_error(err: mc_exec::Error, payload: ExecErrorPayload) -> StarknetRpcApiError {
+    use StarknetRpcApiError as E;
+    match &err {
+        // starknet_call errors: CONTRACT_NOT_FOUND, ENTRYPOINT_NOT_FOUND, or CONTRACT_ERROR with
+        // the failure reason as data.
+        mc_exec::Error::CallContract(error) => {
+            if error.is_entrypoint_not_found() {
+                E::EntrypointNotFound
+            } else if error.is_contract_not_found() {
+                E::contract_not_found()
+            } else {
+                let revert_error = match payload {
+                    ExecErrorPayload::Structured => crate::utils::contract_execution_error(error.error()),
+                    ExecErrorPayload::FlatString => format!("{:#}", err).into(),
+                };
+                E::ContractError { revert_error }
+            }
+        }
+        mc_exec::Error::Reexecution(error) => E::TxnExecutionError {
+            tx_index: error.index(),
+            error: match payload {
+                ExecErrorPayload::Structured => crate::utils::contract_execution_error(error.error()),
+                ExecErrorPayload::FlatString => format!("{:#}", err).into(),
+            },
+        },
+        _ => E::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
+    }
+}
+
 impl From<mc_exec::Error> for StarknetRpcApiError {
     fn from(err: mc_exec::Error) -> Self {
-        match &err {
-            // starknet_call errors: CONTRACT_NOT_FOUND, ENTRYPOINT_NOT_FOUND, or CONTRACT_ERROR
-            // with the failure reason as data.
-            mc_exec::Error::CallContract(error) if error.is_entrypoint_not_found() => Self::EntrypointNotFound,
-            mc_exec::Error::CallContract(error) if error.is_contract_not_found() => Self::contract_not_found(),
-            mc_exec::Error::CallContract(error) => {
-                Self::ContractError { revert_error: crate::utils::contract_execution_error(error.error()) }
-            }
-            mc_exec::Error::Reexecution(error) => Self::TxnExecutionError {
-                tx_index: error.index(),
-                error: crate::utils::contract_execution_error(error.error()),
-            },
-            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
-        }
+        exec_error_to_rpc_error(err, ExecErrorPayload::Structured)
     }
 }
 
@@ -279,15 +304,7 @@ impl StarknetRpcApiError {
     /// shared `From<mc_exec::Error>` impl builds the structured CONTRACT_EXECUTION_ERROR object
     /// introduced in v0.8. v0.7.1 handlers must convert through this instead of `?`/`From`.
     pub fn from_exec_error_v0_7(err: mc_exec::Error) -> Self {
-        match &err {
-            mc_exec::Error::CallContract(error) if error.is_entrypoint_not_found() => Self::EntrypointNotFound,
-            mc_exec::Error::CallContract(error) if error.is_contract_not_found() => Self::contract_not_found(),
-            mc_exec::Error::CallContract(_) => Self::ContractError { revert_error: format!("{:#}", err).into() },
-            mc_exec::Error::Reexecution(error) => {
-                Self::TxnExecutionError { tx_index: error.index(), error: format!("{:#}", err).into() }
-            }
-            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
-        }
+        exec_error_to_rpc_error(err, ExecErrorPayload::FlatString)
     }
 }
 
