@@ -27,6 +27,18 @@ use starknet_types_core::felt::Felt;
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 pub async fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
+    call_with(starknet, request, block_id, StarknetRpcApiError::from_exec_error_v0_7).await
+}
+
+/// The v0.8.1 endpoint shares this implementation but converts execution errors through the
+/// structured (v0.8+) conversion instead of the v0.7.1 flat-string one; the error data shape is
+/// the only difference between the two versions.
+pub(crate) async fn call_with(
+    starknet: &Starknet,
+    request: FunctionCall,
+    block_id: BlockId,
+    exec_error_to_rpc: fn(mc_exec::Error) -> StarknetRpcApiError,
+) -> StarknetRpcResult<Vec<Felt>> {
     let view = starknet.resolve_block_view(block_id)?;
 
     let mut exec_context = view.new_execution_context()?;
@@ -41,7 +53,7 @@ pub async fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId)
         exec_context.call_contract(&contract_address, &entry_point_selector, &calldata)
     })
     .await
-    .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
+    .map_err(exec_error_to_rpc)?;
 
     Ok(results)
 }
