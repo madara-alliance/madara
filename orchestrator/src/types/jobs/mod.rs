@@ -22,6 +22,7 @@ pub enum WorkerTriggerType {
     AggregatorBatching,
     SnosBatching,
     StorageCleanup,
+    JobRecovery,
 }
 
 #[derive(Debug, Serialize, Clone)]

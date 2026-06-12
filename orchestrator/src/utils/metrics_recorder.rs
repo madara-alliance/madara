@@ -226,6 +226,7 @@ fn workload_descriptor_for_worker_trigger(worker_trigger_type: &WorkerTriggerTyp
         WorkerTriggerType::StorageCleanup => {
             WorkloadDescriptor::new(WorkKind::StorageCleanup, WorkPhase::Maintenance, None)
         }
+        WorkerTriggerType::JobRecovery => WorkloadDescriptor::new(WorkKind::Healing, WorkPhase::Maintenance, None),
     }
 }
 

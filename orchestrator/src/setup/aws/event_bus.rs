@@ -30,6 +30,7 @@ lazy_static! {
         WorkerTriggerType::UpdateState,
         WorkerTriggerType::Aggregator,
         WorkerTriggerType::StorageCleanup,
+        WorkerTriggerType::JobRecovery,
     ];
     pub static ref WORKER_TRIGGERS_L3: Vec<WorkerTriggerType> = vec![
         WorkerTriggerType::SnosBatching,
@@ -39,6 +40,7 @@ lazy_static! {
         WorkerTriggerType::DataSubmission,
         WorkerTriggerType::UpdateState,
         WorkerTriggerType::StorageCleanup,
+        WorkerTriggerType::JobRecovery,
     ];
 }
 
@@ -170,10 +172,13 @@ impl InnerAWSEventBridge {
             AWSResourceIdentifier::ARN(arn) => Ok(arn.clone()),
             AWSResourceIdentifier::Name(queue_name) => {
                 let queue_url = self.queue_client.get_queue_url().queue_name(queue_name).send().await?;
+                let queue_url = queue_url
+                    .queue_url
+                    .ok_or_else(|| Error::msg(format!("No queue URL returned for queue {queue_name}")))?;
                 let queue_attributes = self
                     .queue_client
                     .get_queue_attributes()
-                    .queue_url(queue_url.queue_url.unwrap())
+                    .queue_url(queue_url)
                     .attribute_names(QueueAttributeName::QueueArn)
                     .send()
                     .await?;
