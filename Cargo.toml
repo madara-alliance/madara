@@ -302,7 +302,7 @@ c-kzg = "2.1.7"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", rev = "6ff45941b09650067a7f69da9b36a581481870f8" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
@@ -313,8 +313,8 @@ env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
-majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
+majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", rev = "ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818" }
+majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", rev = "ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818" }
 # SNOS 0.14.3 support.
 generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "06507b323f2b994ec1abf3bbb12a7d921c9c4e5c" }
 
@@ -342,8 +342,8 @@ time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]
-rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 # rustc 1.91 turned unsupported-ABI fn-pointer impls (E0570) from a future-incompat warning into
 # a hard error, which breaks size-of 0.1.5 (unmaintained since 2023), pulled in only through
 # swiftness_proof_parser 0.1.3 -> starknet-crypto 0.7 -> starknet-types-core 0.1. This patch is

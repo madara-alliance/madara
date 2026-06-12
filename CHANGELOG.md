@@ -2,6 +2,10 @@
 
 ## Next release
 
+- fix: enable clippy `unwrap_used` workspace-wide, fix lint inheritance gaps, and remove production-path panics
+- feat(orchestrator): JobRecovery worker re-enqueues jobs stranded by queue enqueue failures after DB writes
+- test: add sync reorg/header-verification and block production (bypass, rejection, shutdown) coverage
+- ci: pin git dependencies to exact revs and add cargo-deny (advisories, sources)
 - cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`
 - refactor: refactor mc-sync crate, and remove mc-block-import crate
 - feat: settlement client introduced instead of just ethereum, starknet client added for settlement

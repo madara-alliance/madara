@@ -1,0 +1,75 @@
+# cargo-deny configuration — checked in CI by .github/workflows/task-cargo-deny.yml.
+# CI currently enforces `advisories` and `sources`. The `licenses` check is
+# configured below but not yet enforced: ~30 upstream crates (cairo-lang 1.x,
+# sequencer/apollo, bonsai-trie, ...) ship no license metadata and each needs a
+# [[licenses.clarify]] entry before the check can gate CI.
+# Reference: https://embarkstudios.github.io/cargo-deny/checks/index.html
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "warn"
+# Unmaintained transitive deps (paste, derivative, async-std, ...) are tracked
+# but not enforced yet; flip to "workspace" once direct deps are migrated.
+unmaintained = "none"
+ignore = [
+    # All five below are pulled in via jsonrpsee 0.22 -> rustls 0.22 /
+    # tokio-rustls 0.25 (rustls-webpki 0.102, idna). The fixed versions require
+    # a jsonrpsee/rustls major bump, tracked separately. The node does not use
+    # CRLs and gateway URLs are operator-supplied, so exposure is limited.
+    "RUSTSEC-2024-0421", # idna: punycode labels that decode to ASCII
+    "RUSTSEC-2026-0049", # rustls-webpki: CRLs not considered authoritative
+    "RUSTSEC-2026-0098", # rustls-webpki: name constraints for URI names
+    "RUSTSEC-2026-0099", # rustls-webpki: name constraints with wildcard names
+    "RUSTSEC-2026-0104", # rustls-webpki: reachable panic in CRL parsing
+]
+
+[licenses]
+version = 2
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",
+    "0BSD",
+    "bzip2-1.0.6",
+]
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+# The dependency graph currently carries many duplicate versions; tightening
+# this to "deny" is a separate cleanup.
+multiple-versions = "allow"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    "https://github.com/AbdelStark/majin-blob",
+    "https://github.com/eqlabs/pathfinder",
+    "https://github.com/itsparser/omniqueue-rs",
+    "https://github.com/keep-starknet-strange/snos",
+    "https://github.com/madara-alliance/bonsai-trie",
+    "https://github.com/madara-alliance/rust-rocksdb",
+    "https://github.com/madara-alliance/swiftness",
+    "https://github.com/starkware-libs/cairo",
+    "https://github.com/starkware-libs/sequencer",
+]

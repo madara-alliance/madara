@@ -9168,7 +9168,7 @@ dependencies = [
 [[package]]
 name = "librocksdb-sys"
 version = "0.17.0+9.0.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+source = "git+https://github.com/madara-alliance/rust-rocksdb?rev=75f13c78fdf970b0afd2f21f52caf3317341341c#75f13c78fdf970b0afd2f21f52caf3317341341c"
 dependencies = [
  "bindgen 0.69.5",
  "bzip2-sys",
@@ -9491,7 +9491,7 @@ dependencies = [
 [[package]]
 name = "majin-blob-core"
 version = "0.1.3"
-source = "git+https://github.com/AbdelStark/majin-blob?branch=main#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
+source = "git+https://github.com/AbdelStark/majin-blob?rev=ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
 dependencies = [
  "lazy_static",
  "majin-blob-eip-4844",
@@ -9505,7 +9505,7 @@ dependencies = [
 [[package]]
 name = "majin-blob-eip-4844"
 version = "0.1.3"
-source = "git+https://github.com/AbdelStark/majin-blob?branch=main#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
+source = "git+https://github.com/AbdelStark/majin-blob?rev=ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
 dependencies = [
  "lazy_static",
  "num-bigint",
@@ -9517,7 +9517,7 @@ dependencies = [
 [[package]]
 name = "majin-blob-types"
 version = "0.1.3"
-source = "git+https://github.com/AbdelStark/majin-blob?branch=main#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
+source = "git+https://github.com/AbdelStark/majin-blob?rev=ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818#ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818"
 dependencies = [
  "majin-blob-eip-4844",
  "num-bigint",
@@ -11113,7 +11113,7 @@ dependencies = [
 [[package]]
 name = "omniqueue"
 version = "0.2.0"
-source = "git+https://github.com/itsparser/omniqueue-rs?branch=branch-from-0.2.0#6ff45941b09650067a7f69da9b36a581481870f8"
+source = "git+https://github.com/itsparser/omniqueue-rs?rev=6ff45941b09650067a7f69da9b36a581481870f8#6ff45941b09650067a7f69da9b36a581481870f8"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -13208,7 +13208,7 @@ dependencies = [
 [[package]]
 name = "rocksdb"
 version = "0.22.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+source = "git+https://github.com/madara-alliance/rust-rocksdb?rev=75f13c78fdf970b0afd2f21f52caf3317341341c#75f13c78fdf970b0afd2f21f52caf3317341341c"
 dependencies = [
  "libc",
  "librocksdb-sys",

@@ -91,6 +91,11 @@ jobs:
     needs: update-version-db
     uses: ./.github/workflows/task-lint-code-style.yml
 
+  # Audit dependencies: advisories, licenses, git sources
+  lint-cargo-deny:
+    needs: update-version-db
+    uses: ./.github/workflows/task-cargo-deny.yml
+
   # ========================================================================= #
   #                                   MADARA                                  #
   # ========================================================================= #
