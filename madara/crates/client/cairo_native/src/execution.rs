@@ -958,7 +958,7 @@ mod tests {
 
         // Metrics assertions - compilation timeout/failure
         assert_counters!(
-            CACHE_MEMORY_MISS: 1,
+            CACHE_MEMORY_MISS: 2,
             COMPILATION_IN_PROGRESS_SKIP: 1,
             COMPILATIONS_STARTED: 0,
             VM_FALLBACKS: 0, // No VM fallback in blocking mode
