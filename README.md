@@ -385,6 +385,9 @@ Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`,
 `v0.10.0`, `v0.10.2`, and `v0.10.3`. Method-level availability can vary
 depending on current implementation status and runtime
 retention/configuration.
+RPC conformance tests pin the corresponding OpenRPC files from the official
+`starkware-libs/starknet-specs` repository and nightly parity checks can compare
+Madara against configured Juno and Pathfinder endpoints.
 The default user RPC version is `v0.10.3`; the explicit route is
 `rpc/v0_10_3`.
 Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`,
@@ -474,16 +477,20 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Websocket Methods</summary>
 
-| Status | Method                                                |
-| ------ | ----------------------------------------------------- |
-| ✅     | `starknet_unsubscribe` (v0.8.1+)                      |
-| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)                |
-| ✅     | `starknet_subscribeEvents` (v0.8.1+)                  |
-| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)       |
-| ✅     | `starknet_subscribePendingTransactions` (v0.8.1 only) |
-| ✅     | `starknet_subscribeNewTransactions` (v0.9.0+)         |
-| ✅     | `starknet_subscribeNewTransactionReceipts` (v0.9.0+)  |
-| ✅     | `starknet_subscriptionReorg` (notification, v0.8.1+)  |
+| Status | Method                                                                |
+| ------ | --------------------------------------------------------------------- |
+| ✅     | `starknet_unsubscribe` (v0.8.1+)                                      |
+| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)                                |
+| ✅     | `starknet_subscribeEvents` (v0.8.1+)                                  |
+| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)                       |
+| ✅     | `starknet_subscribePendingTransactions` (v0.8.1 only)                 |
+| ✅     | `starknet_subscribeNewTransactions` (v0.9.0+)                         |
+| ✅     | `starknet_subscribeNewTransactionReceipts` (v0.9.0+)                  |
+| ✅     | `starknet_subscriptionEvents` (notification, v0.8.1+)                 |
+| ✅     | `starknet_subscriptionTransactionStatus` (notification, v0.8.1+)      |
+| ✅     | `starknet_subscriptionNewTransaction` (notification, v0.9.0+)         |
+| ✅     | `starknet_subscriptionNewTransactionReceipts` (notification, v0.9.0+) |
+| ✅     | `starknet_subscriptionReorg` (notification, v0.8.1+)                  |
 
 </details>
 

@@ -1,0 +1,100 @@
+{
+  "upstream": "https://github.com/starkware-libs/starknet-specs",
+  "versions": [
+    {
+      "version": "v0_7_1",
+      "route": "/rpc/v0_7_1/",
+      "expected_spec_version": "0.7.1",
+      "source_ref": "v0.7.1",
+      "source_commit": "76bdde23c7dae370a3340e40f7ca2ef2520e75b9",
+      "source_openrpc_version": "0.7.1",
+      "status": "stable",
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json"
+      ]
+    },
+    {
+      "version": "v0_8_1",
+      "route": "/rpc/v0_8_1/",
+      "expected_spec_version": "0.8.1",
+      "source_ref": "v0.8.1",
+      "source_commit": "a2d10fc6cbaddbe2d3cf6ace5174dd0a306f4885",
+      "source_openrpc_version": "0.8.0",
+      "status": "stable",
+      "known_missing_methods": [
+        {
+          "method": "starknet_getMessagesStatus",
+          "reason": "Current Madara compatibility table advertises getMessagesStatus from v0.9.0 onward; keep v0.8.1 tracked as an OpenRPC gap until runtime compatibility is added."
+        }
+      ],
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json",
+        "starknet_ws_api.json"
+      ]
+    },
+    {
+      "version": "v0_9_0",
+      "route": "/rpc/v0_9_0/",
+      "expected_spec_version": "0.9.0",
+      "source_ref": "v0.9.0",
+      "source_commit": "c2e93098b9c2ca0423b7f4d15b201f52f22d8c36",
+      "source_openrpc_version": "0.9.0",
+      "status": "stable",
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json",
+        "starknet_ws_api.json"
+      ]
+    },
+    {
+      "version": "v0_10_0",
+      "route": "/rpc/v0_10_0/",
+      "expected_spec_version": "0.10.0",
+      "source_ref": "v0.10.0",
+      "source_commit": "39553a2e5216b7b5e06f6d44368317c0ccd79dfa",
+      "source_openrpc_version": "0.10.0",
+      "status": "stable",
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json",
+        "starknet_ws_api.json"
+      ]
+    },
+    {
+      "version": "v0_10_2",
+      "route": "/rpc/v0_10_2/",
+      "expected_spec_version": "0.10.2",
+      "source_ref": "v0.10.2",
+      "source_commit": "f48bec0de25aec1ea3f63b03ace853bcfbf0b0c9",
+      "source_openrpc_version": "0.10.2",
+      "status": "stable",
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json",
+        "starknet_ws_api.json"
+      ]
+    },
+    {
+      "version": "v0_10_3",
+      "route": "/rpc/v0_10_3/",
+      "expected_spec_version": "0.10.3",
+      "source_ref": "v0.10.3-rc.1",
+      "source_commit": "58814c099fa212c4432b4475d9e816da8e6ade1d",
+      "source_openrpc_version": "0.10.3-rc.1",
+      "status": "rc-backed",
+      "openrpc_files": [
+        "starknet_api_openrpc.json",
+        "starknet_trace_api_openrpc.json",
+        "starknet_write_api.json",
+        "starknet_ws_api.json"
+      ]
+    }
+  ]
+}
