@@ -1,0 +1,115 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test RPC Parity
+
+on:
+  workflow_dispatch:
+    inputs:
+      blocks:
+        description: "Comma-separated Sepolia block numbers to compare"
+        required: false
+        type: string
+        default: "2,19"
+      txs:
+        description: "Comma-separated Sepolia transaction hashes to compare"
+        required: false
+        type: string
+        default: "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"
+      timeout_secs:
+        description: "Per-request timeout"
+        required: false
+        type: string
+        default: "30"
+  workflow_call:
+    inputs:
+      blocks:
+        required: false
+        type: string
+        default: "2,19"
+      txs:
+        required: false
+        type: string
+        default: "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"
+      timeout_secs:
+        required: false
+        type: string
+        default: "30"
+    secrets:
+      MADARA_RPC_PARITY_JUNO_URL:
+        required: true
+      MADARA_RPC_PARITY_PATHFINDER_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  test-rpc-parity:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate parity configuration
+        env:
+          MADARA_RPC_PARITY_JUNO_URL: ${{ secrets.MADARA_RPC_PARITY_JUNO_URL }}
+          MADARA_RPC_PARITY_PATHFINDER_URL: ${{ secrets.MADARA_RPC_PARITY_PATHFINDER_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$MADARA_RPC_PARITY_JUNO_URL" ]; then
+            echo "::error::Set MADARA_RPC_PARITY_JUNO_URL secret to run RPC parity"
+            exit 1
+          fi
+
+          if [ -z "$MADARA_RPC_PARITY_PATHFINDER_URL" ]; then
+            echo "::error::Set MADARA_RPC_PARITY_PATHFINDER_URL secret to run RPC parity"
+            exit 1
+          fi
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: workspace-release-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Build Madara
+        run: |
+          CARGO_TARGET_DIR=target cargo build --bin madara --release
+
+      - name: Run RPC parity
+        env:
+          COVERAGE_BIN: ${{ github.workspace }}/target/release/madara
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
+          MADARA_RPC_PARITY_JUNO_URL: ${{ secrets.MADARA_RPC_PARITY_JUNO_URL }}
+          MADARA_RPC_PARITY_PATHFINDER_URL: ${{ secrets.MADARA_RPC_PARITY_PATHFINDER_URL }}
+          MADARA_RPC_PARITY_BLOCKS: ${{ inputs.blocks }}
+          MADARA_RPC_PARITY_TXS: ${{ inputs.txs }}
+          MADARA_RPC_PARITY_TIMEOUT_SECS: ${{ inputs.timeout_secs }}
+          MADARA_RPC_PARITY_REPORT_DIR: target/rpc-parity
+        run: |
+          cargo test \
+            -p mc-e2e-tests \
+            --features rpc-parity \
+            rpc_parity_against_configured_reference_nodes \
+            -- --nocapture
+
+      - name: Upload RPC parity report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: rpc-parity-report
+          path: target/rpc-parity/
+          if-no-files-found: ignore
+          retention-days: 14

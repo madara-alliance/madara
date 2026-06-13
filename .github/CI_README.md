@@ -62,6 +62,18 @@ Located in `.github/actions/setup-foundry/`, this action sets up the Foundry env
 - Madara bootstrap unit coverage for local and remote snapshot import/export.
 - Madara CLI smoke tests for snapshot creation, local import validation, remote manifest validation, and non-empty target rejection.
 
+### RPC conformance and parity
+
+RPC conformance checks live in `mc-e2e-tests` and run with the normal Madara
+test archive. They validate the advertised JSON-RPC routes against pinned
+OpenRPC fixtures from `starkware-libs/starknet-specs`.
+
+`task-test-rpc-parity.yml` is the external differential lane. It compares
+Madara against configured Juno and Pathfinder URLs and uploads a JSON diff
+report. Nightly runs are disabled until `MADARA_RPC_PARITY_ENABLED=true` is set
+and the `MADARA_RPC_PARITY_JUNO_URL` and `MADARA_RPC_PARITY_PATHFINDER_URL`
+secrets are configured.
+
 `publish-bootstrap-snapshot.yml` is an operational workflow for producing
 canonical snapshot artifacts from an already-synced database on a self-hosted
 runner. It is not part of PR CI, and scheduled runs are disabled until

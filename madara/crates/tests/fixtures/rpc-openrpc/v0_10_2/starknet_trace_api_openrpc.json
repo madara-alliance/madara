@@ -1,0 +1,733 @@
+{
+  "components": {
+    "contentDescriptors": {},
+    "errors": {
+      "NO_TRACE_AVAILABLE": {
+        "code": 10,
+        "data": {
+          "description": "Extra information on why trace is not available. Either it wasn't executed yet (RECEIVED), or the transaction failed (REJECTED)",
+          "properties": {
+            "status": {
+              "enum": [
+                "RECEIVED",
+                "REJECTED"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "message": "No trace available for transaction"
+      }
+    },
+    "schemas": {
+      "BLOCK_ID": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/BLOCK_ID"
+      },
+      "BROADCASTED_TXN": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/BROADCASTED_TXN"
+      },
+      "CALL_TYPE": {
+        "enum": [
+          "LIBRARY_CALL",
+          "CALL",
+          "DELEGATE"
+        ],
+        "type": "string"
+      },
+      "ENTRY_POINT_TYPE": {
+        "enum": [
+          "EXTERNAL",
+          "L1_HANDLER",
+          "CONSTRUCTOR"
+        ],
+        "type": "string"
+      },
+      "EVENT": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/EVENT_CONTENT"
+      },
+      "EXECUTION_RESOURCES": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/EXECUTION_RESOURCES"
+      },
+      "FEE_ESTIMATE": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/FEE_ESTIMATE"
+      },
+      "FELT": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/FELT"
+      },
+      "FUNCTION_CALL": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/FUNCTION_CALL"
+      },
+      "FUNCTION_INVOCATION": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/FUNCTION_CALL"
+          },
+          {
+            "properties": {
+              "call_type": {
+                "$ref": "#/components/schemas/CALL_TYPE"
+              },
+              "caller_address": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The address of the invoking contract. 0 for the root invocation",
+                "title": "Caller Address"
+              },
+              "calls": {
+                "description": "The calls made by this invocation",
+                "items": {
+                  "$ref": "#/components/schemas/NESTED_CALL"
+                },
+                "title": "Nested Calls",
+                "type": "array"
+              },
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the class being called",
+                "title": "Class hash"
+              },
+              "entry_point_type": {
+                "$ref": "#/components/schemas/ENTRY_POINT_TYPE"
+              },
+              "events": {
+                "description": "The events emitted in this invocation",
+                "items": {
+                  "$ref": "#/components/schemas/ORDERED_EVENT"
+                },
+                "title": "Invocation Events",
+                "type": "array"
+              },
+              "execution_resources": {
+                "$ref": "#/components/schemas/INNER_CALL_EXECUTION_RESOURCES",
+                "description": "Resources consumed by the call tree rooted at this given call (including the root)",
+                "title": "Execution resources"
+              },
+              "is_reverted": {
+                "description": "true if this inner call panicked",
+                "title": "Is Reverted",
+                "type": "boolean"
+              },
+              "messages": {
+                "description": "The messages sent by this invocation to L1",
+                "items": {
+                  "$ref": "#/components/schemas/ORDERED_MESSAGE"
+                },
+                "title": "L1 Messages",
+                "type": "array"
+              },
+              "result": {
+                "description": "The value returned from the function invocation",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Invocation Result",
+                "type": "array"
+              }
+            },
+            "required": [
+              "caller_address",
+              "class_hash",
+              "entry_point_type",
+              "call_type",
+              "result",
+              "calls",
+              "events",
+              "messages",
+              "execution_resources",
+              "is_reverted"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "INITIAL_READS": {
+        "description": "The set of state values fetched from the underlying state reader during execution. This is a complete witness sufficient to reconstruct the cached state needed for re-execution.",
+        "properties": {
+          "class_hashes": {
+            "description": "Contract class hashes that were read during simulation: contract_address -> class_hash",
+            "items": {
+              "properties": {
+                "class_hash": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "contract_address": {
+                  "$ref": "./api/starknet_api_openrpc.json#/components/schemas/ADDRESS"
+                }
+              },
+              "required": [
+                "contract_address",
+                "class_hash"
+              ],
+              "type": "object"
+            },
+            "title": "Class hashes",
+            "type": "array"
+          },
+          "declared_contracts": {
+            "description": "Class declaration status that was read during simulation: class_hash -> is_declared",
+            "items": {
+              "properties": {
+                "class_hash": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "is_declared": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "class_hash",
+                "is_declared"
+              ],
+              "type": "object"
+            },
+            "title": "Declared contracts",
+            "type": "array"
+          },
+          "nonces": {
+            "description": "Contract nonces that were read during simulation: contract_address -> nonce",
+            "items": {
+              "properties": {
+                "contract_address": {
+                  "$ref": "./api/starknet_api_openrpc.json#/components/schemas/ADDRESS"
+                },
+                "nonce": {
+                  "$ref": "#/components/schemas/FELT"
+                }
+              },
+              "required": [
+                "contract_address",
+                "nonce"
+              ],
+              "type": "object"
+            },
+            "title": "Nonces",
+            "type": "array"
+          },
+          "storage": {
+            "description": "Storage entries that were read during simulation: (contract_address, storage_key) -> value",
+            "items": {
+              "properties": {
+                "contract_address": {
+                  "$ref": "./api/starknet_api_openrpc.json#/components/schemas/ADDRESS"
+                },
+                "key": {
+                  "$ref": "./api/starknet_api_openrpc.json#/components/schemas/STORAGE_KEY"
+                },
+                "value": {
+                  "$ref": "#/components/schemas/FELT"
+                }
+              },
+              "required": [
+                "contract_address",
+                "key",
+                "value"
+              ],
+              "type": "object"
+            },
+            "title": "Storage",
+            "type": "array"
+          }
+        },
+        "title": "Initial reads",
+        "type": "object"
+      },
+      "INNER_CALL_EXECUTION_RESOURCES": {
+        "description": "the resources consumed by an inner call (does not account for state diffs since data is squashed across the transaction)",
+        "properties": {
+          "l1_gas": {
+            "description": "l1 gas consumed by this transaction, used for l2-->l1 messages and state updates if blobs are not used",
+            "minimum": 0,
+            "title": "L1Gas",
+            "type": "integer"
+          },
+          "l2_gas": {
+            "description": "l2 gas consumed by this transaction, used for computation and calldata",
+            "minimum": 0,
+            "title": "L2Gas",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "l1_gas",
+          "l2_gas"
+        ],
+        "title": "Execution resources",
+        "type": "object"
+      },
+      "MSG_TO_L1": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/MSG_TO_L1"
+      },
+      "NESTED_CALL": {
+        "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+      },
+      "ORDERED_EVENT": {
+        "allOf": [
+          {
+            "properties": {
+              "order": {
+                "description": "the order of the event within the transaction",
+                "minimum": 0,
+                "title": "order",
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/EVENT"
+          }
+        ],
+        "description": "an event alongside its order within the transaction",
+        "title": "orderedEvent",
+        "type": "object"
+      },
+      "ORDERED_MESSAGE": {
+        "allOf": [
+          {
+            "properties": {
+              "order": {
+                "description": "the order of the message within the transaction",
+                "minimum": 0,
+                "title": "order",
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/MSG_TO_L1"
+          }
+        ],
+        "description": "a message alongside its order within the transaction",
+        "title": "orderedMessage",
+        "type": "object"
+      },
+      "REVERTIBLE_FUNCTION_INVOCATION": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+          },
+          {
+            "properties": {
+              "revert_reason": {
+                "description": "the revert reason for the failed invocation",
+                "name": "revert reason",
+                "type": "string"
+              }
+            },
+            "required": [
+              "revert_reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "SIMULATION_FLAG": {
+        "description": "Flags that indicate how to simulate a given transaction. By default, the sequencer behavior is replicated locally (enough funds are expected to be in the account, and fee will be deducted from the balance before the simulation of the next transaction). To skip the fee charge, use the SKIP_FEE_CHARGE flag. When RETURN_INITIAL_READS is present, the node returns the minimal set of concrete state values fetched from the underlying state reader during execution for all transactions in the simulation.",
+        "enum": [
+          "SKIP_VALIDATE",
+          "SKIP_FEE_CHARGE",
+          "RETURN_INITIAL_READS"
+        ],
+        "type": "string"
+      },
+      "STATE_DIFF": {
+        "$ref": "./api/starknet_api_openrpc.json#/components/schemas/STATE_DIFF"
+      },
+      "TRACE_FLAG": {
+        "description": "Flags that indicate what additional information should be included in the trace. When RETURN_INITIAL_READS is present, the node returns the minimal set of concrete state values fetched from the underlying state reader during execution for all transactions in the block. Returns an empty object instead of INITIAL_READS when the execution trace for the referenced block is inconsistent with the canonical block trace.",
+        "enum": [
+          "RETURN_INITIAL_READS"
+        ],
+        "type": "string"
+      },
+      "TRANSACTION_TRACE": {
+        "oneOf": [
+          {
+            "description": "the execution trace of an invoke transaction",
+            "name": "INVOKE_TXN_TRACE",
+            "properties": {
+              "execute_invocation": {
+                "$ref": "#/components/schemas/REVERTIBLE_FUNCTION_INVOCATION",
+                "description": "the trace of the __execute__ call"
+              },
+              "execution_resources": {
+                "$ref": "#/components/schemas/EXECUTION_RESOURCES",
+                "description": "the resources consumed by the transaction, includes both computation and data",
+                "title": "Execution resources"
+              },
+              "fee_transfer_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              },
+              "state_diff": {
+                "$ref": "#/components/schemas/STATE_DIFF",
+                "description": "the state diffs induced by the transaction",
+                "title": "state_diff"
+              },
+              "type": {
+                "enum": [
+                  "INVOKE"
+                ],
+                "title": "Type",
+                "type": "string"
+              },
+              "validate_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              }
+            },
+            "required": [
+              "type",
+              "execute_invocation",
+              "execution_resources"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "the execution trace of a declare transaction",
+            "name": "DECLARE_TXN_TRACE",
+            "properties": {
+              "execution_resources": {
+                "$ref": "#/components/schemas/EXECUTION_RESOURCES",
+                "description": "the resources consumed by the transaction, includes both computation and data",
+                "title": "Execution resources"
+              },
+              "fee_transfer_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              },
+              "state_diff": {
+                "$ref": "#/components/schemas/STATE_DIFF",
+                "description": "the state diffs induced by the transaction",
+                "title": "state_diff"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Type",
+                "type": "string"
+              },
+              "validate_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              }
+            },
+            "required": [
+              "type",
+              "execution_resources"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "the execution trace of a deploy account transaction",
+            "name": "DEPLOY_ACCOUNT_TXN_TRACE",
+            "properties": {
+              "constructor_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION",
+                "description": "the trace of the constructor call"
+              },
+              "execution_resources": {
+                "$ref": "#/components/schemas/EXECUTION_RESOURCES",
+                "description": "the resources consumed by the transaction, includes both computation and data",
+                "title": "Execution resources"
+              },
+              "fee_transfer_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              },
+              "state_diff": {
+                "$ref": "#/components/schemas/STATE_DIFF",
+                "description": "the state diffs induced by the transaction",
+                "title": "state_diff"
+              },
+              "type": {
+                "enum": [
+                  "DEPLOY_ACCOUNT"
+                ],
+                "title": "Type",
+                "type": "string"
+              },
+              "validate_invocation": {
+                "$ref": "#/components/schemas/FUNCTION_INVOCATION"
+              }
+            },
+            "required": [
+              "type",
+              "execution_resources",
+              "constructor_invocation"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "the execution trace of an L1 handler transaction",
+            "name": "L1_HANDLER_TXN_TRACE",
+            "properties": {
+              "execution_resources": {
+                "$ref": "#/components/schemas/EXECUTION_RESOURCES",
+                "description": "the resources consumed by the transaction, includes both computation and data",
+                "title": "Execution resources"
+              },
+              "function_invocation": {
+                "$ref": "#/components/schemas/REVERTIBLE_FUNCTION_INVOCATION",
+                "description": "the trace of the L1 handler call"
+              },
+              "state_diff": {
+                "$ref": "#/components/schemas/STATE_DIFF",
+                "description": "the state diffs induced by the transaction",
+                "title": "state_diff"
+              },
+              "type": {
+                "enum": [
+                  "L1_HANDLER"
+                ],
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "function_invocation",
+              "execution_resources"
+            ],
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "license": {},
+    "title": "StarkNet Trace API",
+    "version": "0.10.2"
+  },
+  "methods": [
+    {
+      "description": "Returns the execution trace of the transaction designated by the input hash",
+      "errors": [
+        {
+          "$ref": "./api/starknet_api_openrpc.json#/components/errors/TXN_HASH_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/NO_TRACE_AVAILABLE"
+        }
+      ],
+      "name": "starknet_traceTransaction",
+      "params": [
+        {
+          "name": "transaction_hash",
+          "required": true,
+          "schema": {
+            "$ref": "./api/starknet_api_openrpc.json#/components/schemas/TXN_HASH"
+          },
+          "summary": "The hash of the transaction to trace"
+        }
+      ],
+      "result": {
+        "description": "The function call trace of the transaction designated by the given hash",
+        "name": "trace",
+        "schema": {
+          "$ref": "#/components/schemas/TRANSACTION_TRACE"
+        }
+      },
+      "summary": "For a given executed transaction, return the trace of its execution, including internal calls"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "./api/starknet_api_openrpc.json#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "./api/starknet_api_openrpc.json#/components/errors/TRANSACTION_EXECUTION_ERROR"
+        }
+      ],
+      "name": "starknet_simulateTransactions",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag, for the block referencing the state or call the transaction on.",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID"
+          }
+        },
+        {
+          "description": "The transactions to simulate",
+          "name": "transactions",
+          "required": true,
+          "schema": {
+            "description": "a sequence of transactions to simulate, running each transaction on the state resulting from applying all the previous ones",
+            "items": {
+              "$ref": "#/components/schemas/BROADCASTED_TXN"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "description": "describes what parts of the transaction should be executed",
+          "name": "simulation_flags",
+          "required": true,
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/SIMULATION_FLAG"
+            },
+            "type": "array"
+          }
+        }
+      ],
+      "result": {
+        "description": "The execution trace and consumed resources of the required transactions. When RETURN_INITIAL_READS is not present in simulation_flags, returns an array. When RETURN_INITIAL_READS is present in simulation_flags, returns an object with simulated_transactions and initial_reads fields.",
+        "name": "simulated_transactions",
+        "schema": {
+          "oneOf": [
+            {
+              "description": "The execution trace and consumed resources of the required transactions. This format is returned when RETURN_INITIAL_READS is not present in simulation_flags, maintaining compatibility with JSON-RPC 0.10.0.",
+              "items": {
+                "properties": {
+                  "fee_estimation": {
+                    "$ref": "#/components/schemas/FEE_ESTIMATE",
+                    "title": "the transaction's resources and fee"
+                  },
+                  "transaction_trace": {
+                    "$ref": "#/components/schemas/TRANSACTION_TRACE",
+                    "title": "the transaction's trace"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "description": "The execution trace and consumed resources of the required transactions, along with initial reads when RETURN_INITIAL_READS is present in simulation_flags.",
+              "properties": {
+                "initial_reads": {
+                  "$ref": "#/components/schemas/INITIAL_READS",
+                  "description": "The set of state values fetched from the underlying state reader during execution for all transactions in the simulation. Required when RETURN_INITIAL_READS is present in simulation_flags.",
+                  "title": "Initial reads"
+                },
+                "simulated_transactions": {
+                  "description": "The execution trace and consumed resources of the required transactions",
+                  "items": {
+                    "properties": {
+                      "fee_estimation": {
+                        "$ref": "#/components/schemas/FEE_ESTIMATE",
+                        "title": "the transaction's resources and fee"
+                      },
+                      "transaction_trace": {
+                        "$ref": "#/components/schemas/TRANSACTION_TRACE",
+                        "title": "the transaction's trace"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "simulated_transactions",
+                "initial_reads"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "summary": "Simulate a given sequence of transactions on the requested state, and generate the execution traces. Note that some of the transactions may revert, in which case no error is thrown, but revert details can be seen on the returned trace object. Note that some of the transactions may revert, this will be reflected by the revert_error property in the trace. Other types of failures (e.g. unexpected error or failure in the validation phase) will result in TRANSACTION_EXECUTION_ERROR."
+    },
+    {
+      "description": "Returns the execution traces of all transactions included in the given block",
+      "errors": [
+        {
+          "$ref": "./api/starknet_api_openrpc.json#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_traceBlockTransactions",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BLOCK_ID"
+              },
+              {
+                "not": {
+                  "enum": [
+                    "pre_confirmed"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "description": "Flags that indicate what additional information should be included in the trace",
+          "name": "trace_flags",
+          "required": false,
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/TRACE_FLAG"
+            },
+            "type": "array"
+          }
+        }
+      ],
+      "result": {
+        "description": "The traces of all transactions in the block. When RETURN_INITIAL_READS is not present in trace_flags (or trace_flags is not provided), returns an array. When RETURN_INITIAL_READS is present in trace_flags, returns an object with traces and initial_reads fields.",
+        "name": "traces",
+        "schema": {
+          "oneOf": [
+            {
+              "description": "The traces of all transactions in the block. This format is returned when RETURN_INITIAL_READS is not present in trace_flags (or trace_flags is not provided), maintaining compatibility with JSON-RPC 0.10.0.",
+              "items": {
+                "description": "A single pair of transaction hash and corresponding trace",
+                "properties": {
+                  "trace_root": {
+                    "$ref": "#/components/schemas/TRANSACTION_TRACE"
+                  },
+                  "transaction_hash": {
+                    "$ref": "#/components/schemas/FELT"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "description": "The traces of all transactions in the block, along with initial reads when RETURN_INITIAL_READS is present in trace_flags.",
+              "properties": {
+                "initial_reads": {
+                  "$ref": "#/components/schemas/INITIAL_READS",
+                  "description": "The set of state values fetched from the underlying state reader during execution for all transactions in the block. Required when RETURN_INITIAL_READS is present in trace_flags. Returns an empty object instead of INITIAL_READS when the execution trace for the referenced block is inconsistent with the canonical block trace.",
+                  "title": "Initial reads"
+                },
+                "traces": {
+                  "description": "The traces of all transactions in the block",
+                  "items": {
+                    "description": "A single pair of transaction hash and corresponding trace",
+                    "properties": {
+                      "trace_root": {
+                        "$ref": "#/components/schemas/TRANSACTION_TRACE"
+                      },
+                      "transaction_hash": {
+                        "$ref": "#/components/schemas/FELT"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "traces",
+                "initial_reads"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "summary": "Retrieve traces for all transactions in the given block"
+    }
+  ],
+  "openrpc": "1.0.0-rc1",
+  "servers": []
+}
