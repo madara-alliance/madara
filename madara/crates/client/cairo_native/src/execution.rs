@@ -883,22 +883,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_sierra_class_blocking_compilation_setup_failure(
-        sierra_class: SierraConvertedClass,
-        temp_dir: TempDir,
-    ) {
+    fn test_handle_sierra_class_blocking_compilation_failure(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
-        let cache_dir_file = temp_dir.path().join("cache-dir-is-file");
-        std::fs::write(&cache_dir_file, b"not a directory").expect("Failed to create cache dir placeholder file");
-
-        // Use a file as cache_dir to force a deterministic setup failure before native compilation starts.
+        // Create config with very short timeout to force compilation failure
         let config = Arc::new(
             config::NativeConfig::builder()
-                .with_cache_dir(cache_dir_file)
+                .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Blocking)
+                .with_compilation_timeout(Duration::from_millis(1)) // Very short timeout
                 .build(),
         );
 
@@ -913,7 +908,7 @@ mod tests {
             "Class should not be in failed_compilations initially"
         );
 
-        // Cache directory setup failure expected in blocking mode.
+        // Compilation timeout expected in blocking mode with very short timeout
         let result = handle_sierra_class(
             &sierra_class,
             &class_hash.to_felt(),
@@ -922,34 +917,41 @@ mod tests {
             config.clone(),
         );
 
-        // In blocking mode, setup/compilation failures should return an error (not fall back to VM).
+        // In blocking mode, compilation failures/timeouts should return an error (not fall back to VM)
         // This is the key difference from async mode - blocking mode waits and fails if compilation fails
-        assert!(result.is_err(), "Blocking mode should return error on setup/compilation failure, not fall back to VM");
+        assert!(
+            result.is_err(),
+            "Blocking mode should return error on compilation timeout/failure, not fall back to VM"
+        );
         let error = result.unwrap_err();
-        // Verify error message contains setup failure indication.
+        // Verify error message contains timeout or compilation failure indication
         let error_msg = format!("{:?}", error);
         assert!(
-            error_msg.contains("Failed to create cache directory"),
-            "Error message should indicate cache directory setup failure: {}",
+            error_msg.contains("timeout") || error_msg.contains("Compilation") || error_msg.contains("failed"),
+            "Error message should indicate compilation timeout or failure: {}",
             error_msg
         );
 
-        // Expected: setup failure in blocking mode. Verify class is not cached after failure.
-        assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache after setup failure");
+        // Expected: compilation timeout/failure in blocking mode
+        // Verify class is not cached after failure
+        assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache after compilation failure");
         assert!(
             !compilation::is_compilation_in_progress(&class_hash),
             "Class should not be in compilation_in_progress after failure"
         );
         // In blocking mode, failures don't go to FAILED_COMPILATIONS (that's async mode only)
 
-        // Metrics assertions - setup fails before native compilation starts.
+        // Metrics assertions - compilation timeout/failure
         assert_counters!(
             CACHE_MEMORY_MISS: 1,
             CACHE_DISK_MISS: 1,
-            COMPILATION_BLOCKING_MISS: 1,
-            COMPILATIONS_STARTED: 0,
+            COMPILATIONS_STARTED: 1,
             VM_FALLBACKS: 0, // No VM fallback in blocking mode
         );
+        use std::sync::atomic::Ordering;
+        let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
+            + test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed);
+        assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
     }
 
     /// Tests the memory cache timeout scenario.
