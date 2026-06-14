@@ -249,6 +249,19 @@ impl BonsaiDatabase for BonsaiDB {
         Ok(old_value.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, key, value, batch))]
+    fn insert_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        value: &[u8],
+        batch: &mut Self::Batch,
+    ) -> Result<(), Self::DatabaseError> {
+        tracing::trace!("Inserting untracked into RocksDB: {:?} {:?}", key, value);
+        let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        batch.put_cf(&handle, key.as_slice(), value);
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, key, batch))]
     fn remove(
         &mut self,
@@ -264,6 +277,18 @@ impl BonsaiDatabase for BonsaiDB {
             self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
         }
         Ok(old_value.map(Into::into))
+    }
+
+    #[tracing::instrument(skip(self, key, batch))]
+    fn remove_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        batch: &mut Self::Batch,
+    ) -> Result<(), Self::DatabaseError> {
+        tracing::trace!("Removing untracked from RocksDB: {:?}", key);
+        let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        batch.delete_cf(&handle, key.as_slice());
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, prefix))]
@@ -370,6 +395,16 @@ impl BonsaiDatabase for BonsaiTransaction {
         Ok(None)
     }
 
+    fn insert_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        value: &[u8],
+        _batch: &mut Self::Batch,
+    ) -> Result<(), Self::DatabaseError> {
+        self.changed.insert(to_changed_key(key), Some(value.into()));
+        Ok(())
+    }
+
     fn remove(
         &mut self,
         key: &DatabaseKey,
@@ -377,6 +412,15 @@ impl BonsaiDatabase for BonsaiTransaction {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         self.changed.insert(to_changed_key(key), None);
         Ok(None)
+    }
+
+    fn remove_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        _batch: &mut Self::Batch,
+    ) -> Result<(), Self::DatabaseError> {
+        self.changed.insert(to_changed_key(key), None);
+        Ok(())
     }
 
     fn remove_by_prefix(&mut self, _prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
