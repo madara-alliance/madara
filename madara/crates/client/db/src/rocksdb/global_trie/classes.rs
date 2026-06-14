@@ -37,6 +37,13 @@ impl StagedClassTrie {
         metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
         metrics().class_trie_commit_last.record(class_commit_secs, &[]);
 
+        tracing::info!(
+            target: "trie_perf",
+            block_n = block_number,
+            class_trie_commit_ms = timings.trie_commit.as_secs_f64() * 1000.0,
+            "class trie commit timings"
+        );
+
         Ok(timings)
     }
 }
@@ -86,11 +93,23 @@ pub fn class_trie_root_staged(
 ) -> Result<(Felt, StagedClassTrie)> {
     let mut class_trie = backend.class_trie();
 
+    let insert_start = Instant::now();
     insert_class_updates(&mut class_trie, declared_classes, migrated_classes)?;
+    let insert_duration = insert_start.elapsed();
 
+    let root_start = Instant::now();
     let root_hash = class_trie.root_hash_staged(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
+    let root_duration = root_start.elapsed();
 
     tracing::trace!("class_trie staged root computed");
+    tracing::info!(
+        target: "trie_perf",
+        declared_classes = declared_classes.len(),
+        migrated_classes = migrated_classes.len(),
+        class_insert_ms = insert_duration.as_secs_f64() * 1000.0,
+        class_root_ms = root_duration.as_secs_f64() * 1000.0,
+        "class trie staged timings"
+    );
 
     Ok((root_hash, StagedClassTrie { class_trie }))
 }

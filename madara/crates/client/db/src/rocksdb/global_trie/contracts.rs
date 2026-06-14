@@ -80,6 +80,14 @@ impl StagedContractTries {
         metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
         metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
 
+        tracing::info!(
+            target: "trie_perf",
+            block_n = block_number,
+            contract_storage_commit_ms = timings.storage_commit.as_secs_f64() * 1000.0,
+            contract_trie_commit_ms = timings.trie_commit.as_secs_f64() * 1000.0,
+            "contract trie commit timings"
+        );
+
         self.committed = true;
         Ok(timings)
     }
@@ -100,6 +108,8 @@ pub fn contract_trie_root_staged(
     let mut reset_cached_trie =
         ResetCachedStorageTrieOnDrop { backend: backend.clone(), cache_generation: None, armed: true };
     let cache_generation;
+    let storage_entries_count = storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>();
+    let storage_insert_start = Instant::now();
 
     {
         let mut contract_storage_trie =
@@ -122,6 +132,7 @@ pub fn contract_trie_root_staged(
             contract_leafs.insert(*address, Default::default());
         }
     }
+    let storage_insert_duration = storage_insert_start.elapsed();
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -135,6 +146,7 @@ pub fn contract_trie_root_staged(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
+    let storage_roots_start = Instant::now();
     {
         let contract_storage_trie =
             cached_contract_storage_trie.read().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -144,7 +156,9 @@ pub fn contract_trie_root_staged(
             );
         }
     }
+    let storage_roots_duration = storage_roots_start.elapsed();
 
+    let leaf_hash_start = Instant::now();
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, leaf)| {
@@ -154,16 +168,38 @@ pub fn contract_trie_root_staged(
             anyhow::Ok((bv, leaf_hash))
         })
         .collect::<Result<_>>()?;
+    let leaf_hash_duration = leaf_hash_start.elapsed();
 
+    let contract_insert_start = Instant::now();
     let mut contract_trie = backend.contract_trie();
 
+    let contract_leafs_count = leaf_hashes.len();
     for (k, v) in leaf_hashes {
         contract_trie.insert(super::bonsai_identifier::CONTRACT, &k, &v).map_err(WrappedBonsaiError)?;
     }
+    let contract_insert_duration = contract_insert_start.elapsed();
 
+    let contract_root_start = Instant::now();
     let root_hash = contract_trie.root_hash_staged(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
+    let contract_root_duration = contract_root_start.elapsed();
 
     tracing::trace!("contract_trie staged root computed");
+    tracing::info!(
+        target: "trie_perf",
+        block_n = block_number,
+        deployed_contracts = deployed_contracts.len(),
+        replaced_classes = replaced_classes.len(),
+        nonces = nonces.len(),
+        touched_storage_contracts = storage_diffs.len(),
+        storage_entries = storage_entries_count,
+        contract_leafs = contract_leafs_count,
+        storage_insert_ms = storage_insert_duration.as_secs_f64() * 1000.0,
+        storage_roots_ms = storage_roots_duration.as_secs_f64() * 1000.0,
+        contract_leaf_hash_ms = leaf_hash_duration.as_secs_f64() * 1000.0,
+        contract_insert_ms = contract_insert_duration.as_secs_f64() * 1000.0,
+        contract_root_ms = contract_root_duration.as_secs_f64() * 1000.0,
+        "contract trie staged timings"
+    );
 
     reset_cached_trie.armed = false;
     Ok((
