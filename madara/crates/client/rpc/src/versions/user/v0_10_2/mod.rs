@@ -158,7 +158,7 @@ pub trait StarknetReadRpcApi {
     #[method(name = "getMessagesStatus")]
     fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>>;
 
-    #[method(name = "getStorageProof")]
+    #[method(name = "getStorageProof", blocking)]
     fn get_storage_proof(
         &self,
         block_id: BlockId,

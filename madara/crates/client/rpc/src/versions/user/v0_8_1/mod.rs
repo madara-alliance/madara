@@ -159,7 +159,7 @@ pub trait StarknetReadRpcApi {
     #[method(name = "getStateUpdate")]
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate>;
 
-    #[method(name = "getStorageProof")]
+    #[method(name = "getStorageProof", blocking)]
     fn get_storage_proof(
         &self,
         block_id: BlockId,
