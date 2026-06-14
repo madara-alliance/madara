@@ -34,6 +34,7 @@ use rocksdb::{
 use starknet_types_core::hash::StarkHash;
 use std::{fmt, path::Path, sync::Arc};
 
+pub mod archive_trie;
 mod backup;
 mod blocks;
 mod classes;

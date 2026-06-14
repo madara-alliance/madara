@@ -1,3 +1,6 @@
+use super::archive_trie::{
+    ARCHIVE_CLASS_TRIE_NODE_COLUMN, ARCHIVE_CONTRACT_STORAGE_TRIE_NODE_COLUMN, ARCHIVE_CONTRACT_TRIE_NODE_COLUMN,
+};
 use crate::rocksdb::column::Column;
 use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
@@ -109,6 +112,7 @@ impl RocksDBStorage {
             flat: BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
             trie: BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
             log: BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+            archive_node: Some(ARCHIVE_CONTRACT_STORAGE_TRIE_NODE_COLUMN),
         })
     }
     pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {
@@ -116,6 +120,7 @@ impl RocksDBStorage {
             flat: BONSAI_CONTRACT_FLAT_COLUMN,
             trie: BONSAI_CONTRACT_TRIE_COLUMN,
             log: BONSAI_CONTRACT_LOG_COLUMN,
+            archive_node: Some(ARCHIVE_CONTRACT_TRIE_NODE_COLUMN),
         })
     }
     pub fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
@@ -153,6 +158,7 @@ impl RocksDBStorage {
             flat: BONSAI_CLASS_FLAT_COLUMN,
             trie: BONSAI_CLASS_TRIE_COLUMN,
             log: BONSAI_CLASS_LOG_COLUMN,
+            archive_node: Some(ARCHIVE_CLASS_TRIE_NODE_COLUMN),
         })
     }
 }
@@ -162,6 +168,7 @@ struct DatabaseKeyMapping {
     flat: Column,
     trie: Column,
     log: Column,
+    archive_node: Option<Column>,
 }
 
 impl DatabaseKeyMapping {
@@ -179,6 +186,33 @@ pub struct BonsaiDB {
     snapshots: Arc<Snapshots>,
     /// Mapping from `DatabaseKey` => rocksdb column name
     column_mapping: DatabaseKeyMapping,
+}
+
+impl BonsaiDB {
+    fn archive_trie_node_insert(
+        &self,
+        key: &DatabaseKey,
+        value: &[u8],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<(), TrieError> {
+        let DatabaseKey::Trie(_) = key else { return Ok(()) };
+        let Some(archive_node_col) = self.column_mapping.archive_node else { return Ok(()) };
+
+        let node_hash = match bonsai_trie::persisted_trie_node_hash(value) {
+            Ok(Some(node_hash)) => node_hash,
+            Ok(None) => {
+                tracing::trace!("skipping archive trie node without finalized hash");
+                return Ok(());
+            }
+            Err(err) => {
+                tracing::warn!("failed to decode finalized bonsai trie node for archive: {err}");
+                return Ok(());
+            }
+        };
+
+        self.backend.archive_put_trie_node(batch, archive_node_col, &node_hash, value);
+        Ok(())
+    }
 }
 
 impl fmt::Debug for BonsaiDB {
@@ -243,8 +277,12 @@ impl BonsaiDatabase for BonsaiDB {
         let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
+            self.archive_trie_node_insert(key, value, batch)?;
         } else {
-            self.backend.db.put_cf_opt(&handle, key.as_slice(), value, &self.backend.writeopts)?;
+            let mut batch = Self::Batch::default();
+            batch.put_cf(&handle, key.as_slice(), value);
+            self.archive_trie_node_insert(key, value, &mut batch)?;
+            self.backend.db.write_opt(batch, &self.backend.writeopts)?;
         }
         Ok(old_value.map(Into::into))
     }
@@ -259,6 +297,7 @@ impl BonsaiDatabase for BonsaiDB {
         tracing::trace!("Inserting untracked into RocksDB: {:?} {:?}", key, value);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
         batch.put_cf(&handle, key.as_slice(), value);
+        self.archive_trie_node_insert(key, value, batch)?;
         Ok(())
     }
 
@@ -280,11 +319,7 @@ impl BonsaiDatabase for BonsaiDB {
     }
 
     #[tracing::instrument(skip(self, key, batch))]
-    fn remove_untracked(
-        &mut self,
-        key: &DatabaseKey,
-        batch: &mut Self::Batch,
-    ) -> Result<(), Self::DatabaseError> {
+    fn remove_untracked(&mut self, key: &DatabaseKey, batch: &mut Self::Batch) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Removing untracked from RocksDB: {:?}", key);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
         batch.delete_cf(&handle, key.as_slice());
@@ -414,11 +449,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         Ok(None)
     }
 
-    fn remove_untracked(
-        &mut self,
-        key: &DatabaseKey,
-        _batch: &mut Self::Batch,
-    ) -> Result<(), Self::DatabaseError> {
+    fn remove_untracked(&mut self, key: &DatabaseKey, _batch: &mut Self::Batch) -> Result<(), Self::DatabaseError> {
         self.changed.insert(to_changed_key(key), None);
         Ok(())
     }

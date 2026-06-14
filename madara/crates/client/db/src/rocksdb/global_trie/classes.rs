@@ -23,7 +23,9 @@ fn compute_class_leaf_hash(compiled_class_hash: &Felt) -> Felt {
 
 /// Holds an uncommitted class trie between staged root computation and final commit.
 pub struct StagedClassTrie {
+    backend: RocksDBStorage,
     class_trie: GlobalTrie<Poseidon>,
+    class_trie_root: Felt,
 }
 
 impl StagedClassTrie {
@@ -36,6 +38,10 @@ impl StagedClassTrie {
         let class_commit_secs = timings.trie_commit.as_secs_f64();
         metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
         metrics().class_trie_commit_last.record(class_commit_secs, &[]);
+
+        let mut archive_batch = crate::rocksdb::WriteBatchWithTransaction::default();
+        self.backend.inner.archive_put_class_root(&mut archive_batch, block_number, &self.class_trie_root)?;
+        self.backend.inner.db.write_opt(archive_batch, &self.backend.inner.writeopts)?;
 
         tracing::info!(
             target: "trie_perf",
@@ -111,7 +117,7 @@ pub fn class_trie_root_staged(
         root_duration.as_secs_f64() * 1000.0,
     );
 
-    Ok((root_hash, StagedClassTrie { class_trie }))
+    Ok((root_hash, StagedClassTrie { backend: backend.clone(), class_trie, class_trie_root: root_hash }))
 }
 
 /// Calculates the class trie root (single-phase: inserts + commits immediately).

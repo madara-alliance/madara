@@ -26,6 +26,8 @@ pub struct StagedContractTries {
     contract_storage_trie: SharedContractStorageTrie,
     cache_generation: u64,
     contract_trie: GlobalTrie<Pedersen>,
+    contract_trie_root: Felt,
+    contract_storage_roots: Vec<(Felt, Felt)>,
     committed: bool,
 }
 
@@ -79,6 +81,18 @@ impl StagedContractTries {
         let contract_commit_secs = timings.trie_commit.as_secs_f64();
         metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
         metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
+
+        let mut archive_batch = crate::rocksdb::WriteBatchWithTransaction::default();
+        self.backend.inner.archive_put_contract_root(&mut archive_batch, block_number, &self.contract_trie_root)?;
+        for (contract_address, storage_root) in &self.contract_storage_roots {
+            self.backend.inner.archive_put_contract_storage_root(
+                &mut archive_batch,
+                block_number,
+                contract_address,
+                storage_root,
+            )?;
+        }
+        self.backend.inner.db.write_opt(archive_batch, &self.backend.inner.writeopts)?;
 
         tracing::info!(
             target: "trie_perf",
@@ -159,6 +173,11 @@ pub fn contract_trie_root_staged(
     let storage_roots_duration = storage_roots_start.elapsed();
 
     let leaf_hash_start = Instant::now();
+    let contract_storage_roots: Vec<_> = contract_leafs
+        .iter()
+        .filter_map(|(contract_address, leaf)| leaf.storage_root.map(|storage_root| (*contract_address, storage_root)))
+        .collect();
+
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, leaf)| {
@@ -209,6 +228,8 @@ pub fn contract_trie_root_staged(
             contract_storage_trie: cached_contract_storage_trie,
             cache_generation,
             contract_trie,
+            contract_trie_root: root_hash,
+            contract_storage_roots,
             committed: false,
         },
     ))
