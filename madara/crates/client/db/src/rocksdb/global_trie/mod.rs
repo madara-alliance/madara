@@ -204,21 +204,21 @@ pub fn apply_to_global_trie<'a>(
         metrics().apply_to_global_trie_last.record(block_secs, &[]);
         tracing::info!(
             target: "trie_perf",
+            "global trie apply timings block_n={} total_ms={:.3} contract_total_ms={:.3} class_total_ms={:.3} contract_storage_commit_ms={:.3} contract_trie_commit_ms={:.3} class_trie_commit_ms={:.3} deployed_contracts={} replaced_classes={} nonces={} storage_contracts={} storage_entries={} declared_classes={} migrated_classes={}",
             block_n,
-            total_ms = timings.total.as_secs_f64() * 1000.0,
-            contract_total_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
-            class_total_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
-            contract_storage_commit_ms = timings.contract_trie.storage_commit.as_secs_f64() * 1000.0,
-            contract_trie_commit_ms = timings.contract_trie.trie_commit.as_secs_f64() * 1000.0,
-            class_trie_commit_ms = timings.class_trie.trie_commit.as_secs_f64() * 1000.0,
-            deployed_contracts = state_diff.deployed_contracts.len(),
-            replaced_classes = state_diff.replaced_classes.len(),
-            nonces = state_diff.nonces.len(),
-            storage_contracts = state_diff.storage_diffs.len(),
-            storage_entries = storage_entries_count,
-            declared_classes = state_diff.declared_classes.len(),
-            migrated_classes = state_diff.migrated_compiled_classes.len(),
-            "global trie apply timings"
+            timings.total.as_secs_f64() * 1000.0,
+            timings.contract_trie_root.as_secs_f64() * 1000.0,
+            timings.class_trie_root.as_secs_f64() * 1000.0,
+            timings.contract_trie.storage_commit.as_secs_f64() * 1000.0,
+            timings.contract_trie.trie_commit.as_secs_f64() * 1000.0,
+            timings.class_trie.trie_commit.as_secs_f64() * 1000.0,
+            state_diff.deployed_contracts.len(),
+            state_diff.replaced_classes.len(),
+            state_diff.nonces.len(),
+            state_diff.storage_diffs.len(),
+            storage_entries_count,
+            state_diff.declared_classes.len(),
+            state_diff.migrated_compiled_classes.len(),
         );
     }
 

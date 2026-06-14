@@ -82,10 +82,10 @@ impl StagedContractTries {
 
         tracing::info!(
             target: "trie_perf",
-            block_n = block_number,
-            contract_storage_commit_ms = timings.storage_commit.as_secs_f64() * 1000.0,
-            contract_trie_commit_ms = timings.trie_commit.as_secs_f64() * 1000.0,
-            "contract trie commit timings"
+            "contract trie commit timings block_n={} contract_storage_commit_ms={:.3} contract_trie_commit_ms={:.3}",
+            block_number,
+            timings.storage_commit.as_secs_f64() * 1000.0,
+            timings.trie_commit.as_secs_f64() * 1000.0,
         );
 
         self.committed = true;
@@ -186,19 +186,19 @@ pub fn contract_trie_root_staged(
     tracing::trace!("contract_trie staged root computed");
     tracing::info!(
         target: "trie_perf",
-        block_n = block_number,
-        deployed_contracts = deployed_contracts.len(),
-        replaced_classes = replaced_classes.len(),
-        nonces = nonces.len(),
-        touched_storage_contracts = storage_diffs.len(),
-        storage_entries = storage_entries_count,
-        contract_leafs = contract_leafs_count,
-        storage_insert_ms = storage_insert_duration.as_secs_f64() * 1000.0,
-        storage_roots_ms = storage_roots_duration.as_secs_f64() * 1000.0,
-        contract_leaf_hash_ms = leaf_hash_duration.as_secs_f64() * 1000.0,
-        contract_insert_ms = contract_insert_duration.as_secs_f64() * 1000.0,
-        contract_root_ms = contract_root_duration.as_secs_f64() * 1000.0,
-        "contract trie staged timings"
+        "contract trie staged timings block_n={} deployed_contracts={} replaced_classes={} nonces={} touched_storage_contracts={} storage_entries={} contract_leafs={} storage_insert_ms={:.3} storage_roots_ms={:.3} contract_leaf_hash_ms={:.3} contract_insert_ms={:.3} contract_root_ms={:.3}",
+        block_number,
+        deployed_contracts.len(),
+        replaced_classes.len(),
+        nonces.len(),
+        storage_diffs.len(),
+        storage_entries_count,
+        contract_leafs_count,
+        storage_insert_duration.as_secs_f64() * 1000.0,
+        storage_roots_duration.as_secs_f64() * 1000.0,
+        leaf_hash_duration.as_secs_f64() * 1000.0,
+        contract_insert_duration.as_secs_f64() * 1000.0,
+        contract_root_duration.as_secs_f64() * 1000.0,
     );
 
     reset_cached_trie.armed = false;

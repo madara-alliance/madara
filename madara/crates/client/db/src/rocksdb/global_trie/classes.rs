@@ -39,9 +39,9 @@ impl StagedClassTrie {
 
         tracing::info!(
             target: "trie_perf",
-            block_n = block_number,
-            class_trie_commit_ms = timings.trie_commit.as_secs_f64() * 1000.0,
-            "class trie commit timings"
+            "class trie commit timings block_n={} class_trie_commit_ms={:.3}",
+            block_number,
+            timings.trie_commit.as_secs_f64() * 1000.0,
         );
 
         Ok(timings)
@@ -104,11 +104,11 @@ pub fn class_trie_root_staged(
     tracing::trace!("class_trie staged root computed");
     tracing::info!(
         target: "trie_perf",
-        declared_classes = declared_classes.len(),
-        migrated_classes = migrated_classes.len(),
-        class_insert_ms = insert_duration.as_secs_f64() * 1000.0,
-        class_root_ms = root_duration.as_secs_f64() * 1000.0,
-        "class trie staged timings"
+        "class trie staged timings declared_classes={} migrated_classes={} class_insert_ms={:.3} class_root_ms={:.3}",
+        declared_classes.len(),
+        migrated_classes.len(),
+        insert_duration.as_secs_f64() * 1000.0,
+        root_duration.as_secs_f64() * 1000.0,
     );
 
     Ok((root_hash, StagedClassTrie { class_trie }))
