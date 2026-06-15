@@ -1,0 +1,34 @@
+ARG ORCHESTRATOR_RUNTIME_BASE=ghcr.io/madara-alliance/orchestrator-runtime-base:bookworm-node18-tini0.19-v1
+FROM ${ORCHESTRATOR_RUNTIME_BASE} AS runner
+
+WORKDIR /app
+
+COPY ci-binaries/orchestrator /bin/orchestrator
+RUN chmod +x /bin/orchestrator
+
+COPY orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt \
+  /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
+COPY orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt /tmp/trusted_setup.txt
+
+COPY orchestrator/migrations /app/migrations
+COPY orchestrator/package.json /app/package.json
+COPY orchestrator/migrate-mongo-config.js /app/migrate-mongo-config.js
+
+RUN npm install --omit=dev
+
+RUN echo '#!/bin/bash\n\
+  set -e\n\
+  \n\
+  if [ -n "$MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL" ] && [ -n "$MADARA_ORCHESTRATOR_DATABASE_NAME" ]; then\n\
+  echo "Running database migrations..."\n\
+  cd /app && npx migrate-mongo up\n\
+  echo "Migrations complete"\n\
+  fi\n\
+  \n\
+  exec orchestrator "$@"\n\
+  ' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+EXPOSE 3000
+
+ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]
+CMD ["--help"]

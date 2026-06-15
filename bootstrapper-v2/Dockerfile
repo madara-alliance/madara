@@ -1,84 +1,10 @@
-# Step 0: setup tooling (rust)
-FROM rust:1.89-bookworm AS base-rust
+ARG BOOTSTRAPPER_V2_BUILDER_BASE=ghcr.io/madara-alliance/bootstrapper-v2-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-v1
+ARG BOOTSTRAPPER_V2_RUNTIME_BASE=ghcr.io/madara-alliance/bootstrapper-v2-runtime-base:bookworm-tini0.19-v1
+FROM ${BOOTSTRAPPER_V2_BUILDER_BASE} AS base-rust
+ARG SCCACHE_DIR=/sccache
 WORKDIR /app
 
-ENV SCCACHE_VERSION=v0.10.0
-ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_BIN=/bin/sccache
-ENV SCCACHE_DIR=/sccache
-ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
-
-ENV CHEF_VERSION=v0.1.71
-ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-
-ENV RUSTC_WRAPPER=/bin/sccache
-
-ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
-
-# Copy Makefile for LLVM installation
-COPY Makefile /tmp/Makefile
-
-# Install LLVM 19 for Cairo Native support (required by transitive workspace deps
-# pulled in during `cargo chef cook`, notably tblgen/llvm-sys/mlir-sys).
-RUN apt-get update -y && apt-get install -y \
-  bash \
-  build-essential \
-  ca-certificates \
-  clang \
-  curl \
-  git \
-  gnupg \
-  libgmp3-dev \
-  libssl-dev \
-  make \
-  openssl \
-  software-properties-common \
-  wget && \
-  cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
-  apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Set LLVM environment variables for Cairo Native
-ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
-ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
-ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
-ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
-
-# Set explicit compilers for Cairo Native runtime compilation
-ENV CC=clang-19
-ENV CXX=clang++-19
-
-# Configure linker search paths for Cairo Native runtime compilation.
-# DEB_HOST_MULTIARCH resolves to the correct lib directory for the build runner architecture.
-RUN DEB_HOST_MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" && \
-  printf '%s\n' \
-    "export LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
-    "export LD_LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
-    > /etc/profile.d/cairo-native-libs.sh
-# Use bash (non-login) so BASH_ENV is honored. A login shell would source
-# /etc/profile, which on Debian unconditionally resets PATH and would wipe
-# /usr/local/cargo/bin and /usr/lib/llvm-19/bin from PATH for every later RUN.
-ENV BASH_ENV=/etc/profile.d/cairo-native-libs.sh
 SHELL ["/bin/bash", "-c"]
-
-# Install Python 3.9
-RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
-    && tar xzf Python-3.9.16.tgz \
-    && cd Python-3.9.16 \
-    && ./configure --enable-optimizations \
-    && make altinstall \
-    && cd .. \
-    && rm -rf Python-3.9.16 Python-3.9.16.tgz
-
-# Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/pip/3.9/get-pip.py \
-    && python3.9 get-pip.py \
-    && rm get-pip.py \
-    && python3.9 -m pip install virtualenv
-
-RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
-RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
@@ -127,22 +53,13 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper-v2/Cargo.toml --release
 
 # Step 3: runner
-FROM debian:bookworm-slim AS runner
-
-RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates tini curl &&\
-    apt-get autoremove -y; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+ARG BOOTSTRAPPER_V2_RUNTIME_BASE
+FROM ${BOOTSTRAPPER_V2_RUNTIME_BASE} AS runner
 
 WORKDIR /app
 
 COPY --from=builder-rust /app/target/release/bootstrapper-v2 /bin
 COPY --from=builder-rust /app/build-artifacts /app/build-artifacts
-
-ENV TINI_VERSION=v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
-RUN chmod +x /bin/tini
 
 # Set the entrypoint
 ENTRYPOINT ["tini", "--", "bootstrapper-v2"]

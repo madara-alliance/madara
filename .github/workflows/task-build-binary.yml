@@ -20,6 +20,16 @@ on:
         required: false
         type: boolean
         default: false
+      needs-cairo-native:
+        description: "Whether to install Cairo Native/LLVM setup even for standalone binaries"
+        required: false
+        type: boolean
+        default: false
+      needs-python-cairo:
+        description: "Whether to install Python Cairo setup even for standalone binaries"
+        required: false
+        type: boolean
+        default: false
     outputs:
       binary-hash:
         description: "Hash of the built binary"
@@ -54,11 +64,11 @@ jobs:
           cache-workspaces: ${{ inputs.binary-name }} -> ${{ inputs.binary-name }}/target
 
       - name: Cairo Native setup
-        if: inputs.is-standalone == false
+        if: inputs.is-standalone == false || inputs.needs-cairo-native == true
         uses: ./.github/actions/setup-cairo-native
 
       - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
-        if: inputs.is-standalone == false
+        if: inputs.is-standalone == false || inputs.needs-python-cairo == true
         uses: ./.github/actions/setup-python-cairo
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}

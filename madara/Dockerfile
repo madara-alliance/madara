@@ -1,69 +1,8 @@
-# Step 0: setup tooling (rust)
-FROM rust:1.89-bookworm AS base-rust
+ARG MADARA_BUILDER_BASE=ghcr.io/madara-alliance/madara-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-v1
+ARG MADARA_RUNTIME_BASE=ghcr.io/madara-alliance/madara-runtime-base:bookworm-llvm19-tini0.19-v1
+FROM ${MADARA_BUILDER_BASE} AS base-rust
+ARG SCCACHE_DIR=/sccache
 WORKDIR /app
-
-# Note that we do not install cargo chef and sccache through docker to avoid
-# having to compile them from source
-ENV SCCACHE_VERSION=v0.10.0
-ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_BIN=/bin/sccache
-ENV SCCACHE_DIR=/sccache
-ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
-
-ENV CHEF_VERSION=v0.1.71
-ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-
-ENV RUSTC_WRAPPER=/bin/sccache
-
-ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
-
-# Copy Makefile for LLVM installation
-COPY Makefile /tmp/Makefile
-
-# Install LLVM 19 for Cairo Native support using Makefile target
-RUN apt-get update -y && apt-get install -y wget gnupg software-properties-common make && \
-    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Set LLVM environment variables for Cairo Native
-ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
-ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
-ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
-ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
-
-# Set explicit compilers for Cairo Native runtime compilation
-# Note: clang-19 handles both C and C++ compilation
-ENV CC=clang-19
-ENV CXX=clang-19
-
-# Configure linker search paths for Cairo Native runtime compilation
-ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
-
-# Install Python 3.9
-# Note: --enable-optimizations (PGO) is intentionally omitted. Python here is
-# only used at build time to run cairo-compile for SNOS dependencies, so
-# runtime perf is irrelevant and skipping PGO halves this step's build time
-# (PGO builds Python twice). With CC=clang-19 below, PGO would also require
-# llvm-profdata which adds further fragility.
-RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
-    && tar xzf Python-3.9.16.tgz \
-    && cd Python-3.9.16 \
-    && ./configure \
-    && make altinstall \
-    && cd .. \
-    && rm -rf Python-3.9.16 Python-3.9.16.tgz
-
-# Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/pip/3.9/get-pip.py \
-    && python3.9 get-pip.py \
-    && rm get-pip.py \
-    && python3.9 -m pip install virtualenv
-
-RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
-RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
@@ -121,40 +60,12 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --release --bin madara
 
 # Step 3: runner
-FROM debian:bookworm-slim AS runner
-
-# Copy Makefile for LLVM installation
-COPY Makefile /tmp/Makefile
-
-# Install LLVM 19 for Cairo Native runtime compilation (compiles Sierra to native on-the-fly)
-RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates tini curl wget gnupg software-properties-common make && \
-    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/Makefile
-
-# Set LLVM environment variables for Cairo Native runtime
-ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
-ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
-ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
-ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
-
-# Set compilers for Cairo Native runtime compilation
-ENV CC=clang-19
-ENV CXX=clang-19
-
-# Configure linker search paths for Cairo Native runtime compilation
-ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
+ARG MADARA_RUNTIME_BASE
+FROM ${MADARA_RUNTIME_BASE} AS runner
 
 WORKDIR /app
 
 COPY --from=builder-rust /app/target/release/madara /bin
-
-ENV TINI_VERSION=v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
-RUN chmod +x /bin/tini
 
 # Set the entrypoint
 ENTRYPOINT ["tini", "--", "madara"]
