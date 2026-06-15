@@ -139,10 +139,6 @@ impl BlockProductionService {
     }
 
     async fn run_storage_proof_bootstrap_transactions(&self, contracts: &DevnetKeys) -> anyhow::Result<()> {
-        if contracts.0.is_empty() {
-            return Ok(());
-        }
-
         let mut block_production = BlockProductionTask::new_manual_close_only(
             self.backend.clone(),
             self.mempool.clone(),
@@ -154,6 +150,7 @@ impl BlockProductionService {
         let mut notifications = block_production.subscribe_state_notifications();
         let handle = block_production.handle();
         let ctx = ServiceContext::new();
+        let _shutdown_signal = spawn_bootstrap_shutdown_signal(ctx.clone());
         let task = AbortOnDrop::spawn(async move { block_production.run(ctx).await });
 
         handle
@@ -162,13 +159,15 @@ impl BlockProductionService {
             .context("Submitting devnet bootstrap account class declaration")?;
         self.close_bootstrap_block(&handle, &mut notifications, 1, 1).await?;
 
-        for contract in &contracts.0 {
-            handle
-                .submit_deploy_account_transaction(self.make_deploy_account_tx(contract)?)
-                .await
-                .context("Submitting devnet bootstrap deploy-account transaction")?;
+        if !contracts.0.is_empty() {
+            for contract in &contracts.0 {
+                handle
+                    .submit_deploy_account_transaction(self.make_deploy_account_tx(contract)?)
+                    .await
+                    .context("Submitting devnet bootstrap deploy-account transaction")?;
+            }
+            self.close_bootstrap_block(&handle, &mut notifications, 2, contracts.0.len()).await?;
         }
-        self.close_bootstrap_block(&handle, &mut notifications, 2, contracts.0.len()).await?;
 
         drop(task);
         Ok(())
@@ -369,6 +368,29 @@ fn ensure_bootstrap_transactions_succeeded(
     Ok(())
 }
 
+fn spawn_bootstrap_shutdown_signal(ctx: ServiceContext) -> AbortOnDrop<()> {
+    AbortOnDrop::spawn(async move {
+        let sigint = tokio::signal::ctrl_c();
+        let sigterm = async {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut signal) => signal.recv().await,
+                Err(_) => core::future::pending().await,
+            };
+        };
+
+        tokio::select! {
+            res = sigint => {
+                if let Err(error) = res {
+                    tracing::warn!(%error, "Failed to listen for SIGINT during devnet bootstrap");
+                }
+            },
+            _ = sigterm => {},
+        }
+
+        ctx.cancel_global();
+    })
+}
+
 fn bootstrap_resource_bounds() -> ResourceBoundsMapping {
     ResourceBoundsMapping {
         l1_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
@@ -445,6 +467,48 @@ mod tests {
                 .iter()
                 .any(|deployed| deployed.address == contract.address && deployed.class_hash == contract.class_hash));
         }
+    }
+
+    #[tokio::test]
+    async fn storage_proof_bootstrap_with_no_contracts_still_declares_account_class() {
+        let mut chain_config = ChainConfig::madara_devnet();
+        chain_config.block_time = Duration::from_millis(1);
+        chain_config.no_empty_blocks = false;
+        let chain_config = Arc::new(chain_config);
+        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
+
+        ChainGenesisDescription::empty().build_and_store(&backend).await.unwrap();
+
+        let service = BlockProductionService {
+            backend: Arc::clone(&backend),
+            task: None,
+            mempool: Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default())),
+            metrics: Arc::new(BlockProductionMetrics::register()),
+            l1_client: Arc::new(L1SyncDisabledClient),
+            discard_preconfirmed_on_startup: false,
+            n_devnet_contracts: 0,
+            devnet_storage_proof_bootstrap: true,
+            disabled: false,
+        };
+
+        service.run_storage_proof_bootstrap_transactions(&DevnetKeys(vec![])).await.unwrap();
+
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        assert!(!backend.has_preconfirmed_block());
+
+        let account_class = storage_proof_bootstrap_account_class().unwrap();
+        let block_1 = backend.block_view_on_confirmed(1).unwrap();
+        let block_1_transactions = block_1.get_executed_transactions(..).unwrap();
+        assert_eq!(block_1_transactions.len(), 1);
+        assert_eq!(block_1_transactions[0].receipt.execution_result(), ExecutionResult::Succeeded);
+        assert!(matches!(block_1_transactions[0].receipt, TransactionReceipt::Declare(_)));
+
+        let block_1_state_diff = block_1.get_state_diff().unwrap();
+        assert_eq!(block_1_state_diff.declared_classes.len(), 1);
+        assert_eq!(block_1_state_diff.declared_classes[0].class_hash, account_class.class_hash);
+        assert_eq!(block_1_state_diff.declared_classes[0].compiled_class_hash, account_class.compiled_class_hash);
+        assert!(block_1_state_diff.deployed_contracts.is_empty());
     }
 
     #[tokio::test]
