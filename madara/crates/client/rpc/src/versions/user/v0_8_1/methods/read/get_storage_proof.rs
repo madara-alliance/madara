@@ -5,6 +5,7 @@ use crate::{
 use anyhow::Context;
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 use mc_db::rocksdb::{
+    archive_trie::ArchiveTrie,
     global_trie::bonsai_identifier,
     trie::{BasicId, GlobalTrie, ProofNode},
 };
@@ -15,6 +16,9 @@ use mp_rpc::v0_8_1::{
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
 use std::iter;
+
+const BLOCK_HASH_CONTRACT_ADDRESS: Felt = Felt::ONE;
+const FIRST_BLOCK_HASH_CONTRACT_STORAGE_BLOCK: u64 = 10;
 
 fn saturating_sum(iter: impl IntoIterator<Item = usize>) -> usize {
     iter.into_iter().fold(0, |acc, cur| acc.saturating_add(cur))
@@ -30,8 +34,11 @@ fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
 
 /// Returns (root hash, nodes)
 fn make_trie_proof<H: StarkHash + Send + Sync>(
+    starknet: &Starknet,
     block_n: u64,
+    latest: u64,
     trie: &mut GlobalTrie<H>,
+    archive_trie: ArchiveTrie,
     trie_name: StorageProofTrie,
     identifier: &[u8],
     keys: Vec<Felt>,
@@ -40,6 +47,53 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
     keys.sort();
 
     tracing::debug!("Getting trie proof for {trie_name:?} on block {block_n} for n={} keys", keys.len());
+
+    // The block-hash contract starts storing block hashes at block 10. Before that, the
+    // contract's storage trie is empty, even if a polluted archive-root entry exists from
+    // early bootstrapping/import paths.
+    if matches!(archive_trie, ArchiveTrie::ContractStorage(address) if address == BLOCK_HASH_CONTRACT_ADDRESS)
+        && block_n < FIRST_BLOCK_HASH_CONTRACT_STORAGE_BLOCK
+    {
+        return Ok((Felt::ZERO, Vec::new()));
+    }
+
+    let archive_keys = keys.iter().map(|k| k.as_bitslice()[5..].to_bitvec()).collect::<Vec<_>>();
+    if let Some((root_hash, proof)) = starknet
+        .backend
+        .db
+        .archive_trie_proof(archive_trie, block_n, archive_keys)
+        .context("Getting archive trie proof")?
+    {
+        tracing::debug!("Using archive trie proof for {trie_name:?} on block {block_n}");
+        let converted_proof = proof
+            .into_iter()
+            .map(|(node_hash, n)| {
+                let node = match n {
+                    ProofNode::Binary { left, right } => MerkleNode::Binary { left, right },
+                    ProofNode::Edge { child, path } => {
+                        MerkleNode::Edge { child, path: path_to_felt(path.0.as_bitslice()), length: path.len() }
+                    }
+                };
+                NodeHashToNodeMappingItem { node_hash, node }
+            })
+            .collect();
+        return Ok((root_hash, converted_proof));
+    }
+
+    // For historical contract-storage tries, a missing archive root means the
+    // contract had no storage root at this block. Falling back to Bonsai here
+    // can read a later transactional root for contracts first touched after
+    // this block, which corrupts Pathfinder-style historical proofs.
+    if block_n < latest && matches!(archive_trie, ArchiveTrie::ContractStorage(_)) {
+        tracing::debug!(
+            "Archive storage root unavailable for {trie_name:?} on historical block {block_n}; treating storage trie as empty"
+        );
+        return Ok((Felt::ZERO, Vec::new()));
+    }
+
+    tracing::debug!(
+        "Archive trie proof unavailable for {trie_name:?} on block {block_n}; falling back to transactional state"
+    );
 
     let mut storage = trie
         .get_transactional_state(BasicId::new(block_n), trie.get_config())
@@ -134,21 +188,28 @@ pub fn get_storage_proof(
     // Make the proofs.
 
     let (classes_tree_root, classes_proof) = make_trie_proof(
+        starknet,
         block_view.block_number(),
+        latest,
         &mut starknet.backend.db.class_trie(),
+        ArchiveTrie::Class,
         StorageProofTrie::Classes,
         bonsai_identifier::CLASS,
         class_hashes,
     )?;
 
+    let state_view = block_view.state_view();
     let mut contract_root_hashes = std::collections::HashMap::new();
     let contracts_storage_proofs = contracts_storage_keys
         .into_iter()
         .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
             let identifier = contract_address.to_bytes_be();
             let (root_hash, proof) = make_trie_proof(
+                starknet,
                 block_view.block_number(),
+                latest,
                 &mut starknet.backend.db.contract_storage_trie(),
+                ArchiveTrie::ContractStorage(contract_address),
                 StorageProofTrie::ContractStorage(contract_address),
                 &identifier,
                 storage_keys,
@@ -158,8 +219,24 @@ pub fn get_storage_proof(
         })
         .collect::<StarknetRpcResult<_>>()?;
 
+    for contract_address in &contract_addresses {
+        if !contract_root_hashes.contains_key(contract_address) {
+            let identifier = contract_address.to_bytes_be();
+            let (root_hash, _) = make_trie_proof(
+                starknet,
+                block_view.block_number(),
+                latest,
+                &mut starknet.backend.db.contract_storage_trie(),
+                ArchiveTrie::ContractStorage(*contract_address),
+                StorageProofTrie::ContractStorage(*contract_address),
+                &identifier,
+                Vec::new(),
+            )?;
+            contract_root_hashes.insert(*contract_address, root_hash);
+        }
+    }
+
     // contract leaves data
-    let state_view = block_view.state_view();
     let contract_leaves_data = contract_addresses
         .iter()
         .map(|contract_addr| {
@@ -171,8 +248,11 @@ pub fn get_storage_proof(
         })
         .collect::<StarknetRpcResult<_>>()?;
     let (contracts_tree_root, contracts_proof_nodes) = make_trie_proof(
+        starknet,
         block_view.block_number(),
+        latest,
         &mut starknet.backend.db.contract_trie(),
+        ArchiveTrie::Contract,
         StorageProofTrie::Contracts,
         bonsai_identifier::CONTRACT,
         contract_addresses,

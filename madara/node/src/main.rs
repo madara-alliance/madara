@@ -98,7 +98,7 @@
 //! [m-proc-macros]: m_proc_macros
 #![warn(missing_docs)]
 
-use mc_db::MadaraStorageRead;
+use mc_db::{rocksdb::ArchiveTriePruneMode, MadaraStorageRead};
 mod cli;
 mod service;
 mod submit_tx;
@@ -130,6 +130,52 @@ use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitc
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
+
+fn archive_trie_prune_mode_for_log(mode: ArchiveTriePruneMode) -> String {
+    match mode {
+        ArchiveTriePruneMode::Archive => "full archive".to_string(),
+        ArchiveTriePruneMode::Prune { num_blocks_kept } => format!("latest {num_blocks_kept} blocks"),
+    }
+}
+
+fn rpc_storage_proof_distance_for_log(max_distance: u64) -> String {
+    match max_distance {
+        0 => "latest block only".to_string(),
+        u64::MAX => "unbounded".to_string(),
+        value => format!("latest {value} blocks"),
+    }
+}
+
+fn trie_log_retention_for_log(max_saved_trie_logs: Option<usize>) -> String {
+    match max_saved_trie_logs {
+        Some(0) => "disabled".to_string(),
+        Some(value) => format!("latest {value} logs"),
+        None => "unbounded".to_string(),
+    }
+}
+
+fn snapshot_retention_for_log(max_kept_snapshots: Option<usize>, snapshot_interval: u64) -> String {
+    match max_kept_snapshots {
+        Some(0) => "disabled".to_string(),
+        Some(value) => format!("latest {value} snapshots every {snapshot_interval} blocks"),
+        None => format!("unbounded snapshots every {snapshot_interval} blocks"),
+    }
+}
+
+fn log_fullnode_storage_proof_mode(run_cmd: &RunCmd) {
+    tracing::info!(
+        archive_trie_retention = %archive_trie_prune_mode_for_log(run_cmd.backend_params.db_archive_trie_prune_mode),
+        rpc_storage_proof_max_distance = %rpc_storage_proof_distance_for_log(
+            run_cmd.rpc_params.rpc_storage_proof_max_distance
+        ),
+        bonsai_trie_log_retention = %trie_log_retention_for_log(run_cmd.backend_params.db_max_saved_trie_logs),
+        bonsai_snapshot_retention = %snapshot_retention_for_log(
+            run_cmd.backend_params.db_max_kept_snapshots,
+            run_cmd.backend_params.db_snapshot_interval
+        ),
+        "🧾 Full-node storage proof mode"
+    );
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -233,6 +279,9 @@ async fn main() -> anyhow::Result<()> {
 
     if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {
         tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");
+    }
+    if !run_cmd.is_sequencer() {
+        log_fullnode_storage_proof_mode(&run_cmd);
     }
 
     // Initialize Cairo Native configuration

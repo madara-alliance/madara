@@ -141,6 +141,8 @@ pub fn apply_to_global_trie<'a>(
 
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
         tracing::debug!("applying state_diff block_n={block_n}");
+        let storage_entries_count =
+            state_diff.storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>();
         let block_start = Instant::now();
 
         let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
@@ -200,6 +202,24 @@ pub fn apply_to_global_trie<'a>(
         let block_secs = timings.total.as_secs_f64();
         metrics().apply_to_global_trie_duration.record(block_secs, &[]);
         metrics().apply_to_global_trie_last.record(block_secs, &[]);
+        tracing::info!(
+            target: "trie_perf",
+            "global trie apply timings block_n={} total_ms={:.3} contract_total_ms={:.3} class_total_ms={:.3} contract_storage_commit_ms={:.3} contract_trie_commit_ms={:.3} class_trie_commit_ms={:.3} deployed_contracts={} replaced_classes={} nonces={} storage_contracts={} storage_entries={} declared_classes={} migrated_classes={}",
+            block_n,
+            timings.total.as_secs_f64() * 1000.0,
+            timings.contract_trie_root.as_secs_f64() * 1000.0,
+            timings.class_trie_root.as_secs_f64() * 1000.0,
+            timings.contract_trie.storage_commit.as_secs_f64() * 1000.0,
+            timings.contract_trie.trie_commit.as_secs_f64() * 1000.0,
+            timings.class_trie.trie_commit.as_secs_f64() * 1000.0,
+            state_diff.deployed_contracts.len(),
+            state_diff.replaced_classes.len(),
+            state_diff.nonces.len(),
+            state_diff.storage_diffs.len(),
+            storage_entries_count,
+            state_diff.declared_classes.len(),
+            state_diff.migrated_compiled_classes.len(),
+        );
     }
 
     let root = state_root.context("Applying an empty batch to the global trie")?;
@@ -252,10 +272,14 @@ pub fn get_state_root(backend: &RocksDBStorage, protocol_version: StarknetVersio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rocksdb::archive_trie::ArchiveTrie;
     use crate::MadaraBackend;
+    use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec, view::AsBits};
     use mp_chain_config::ChainConfig;
     use mp_state_update::{ContractStorageDiffItem, StorageEntry};
     use rstest::*;
+    use starknet_types_core::hash::Pedersen;
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     #[fixture]
@@ -340,5 +364,108 @@ mod tests {
             Felt::from_hex_unchecked("0x68bcf9e9257ab6bffd9425833a208aaab6b85649fd21c787a546cb7cb9abf"),
             "Global state root for 0.14.1 genesis state diff should equal Poseidon(STARKNET_STATE_V0, contract_root, 0)"
         );
+    }
+
+    fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
+        let mut arr = [0u8; 32];
+        let slice = &mut BitSlice::from_slice_mut(&mut arr)[5..];
+        let slice_len = slice.len();
+        slice[slice_len - path.len()..].copy_from_bitslice(path);
+        Felt::from_bytes_be(&arr)
+    }
+
+    fn verify_archive_proof<H: StarkHash>(
+        commitment: &Felt,
+        path: &Felt,
+        proof_nodes: &HashMap<Felt, bonsai_trie::ProofNode>,
+    ) {
+        let start = 5;
+        let mut index = start;
+        let path_bits: BitVec<_, Msb0> = BitVec::from_slice(&path.to_bytes_be());
+        let mut next_node_hash = *commitment;
+
+        loop {
+            let node = proof_nodes
+                .get(&next_node_hash)
+                .unwrap_or_else(|| panic!("proof did not contain preimage for node {next_node_hash:#x}"));
+
+            match node {
+                bonsai_trie::ProofNode::Binary { left, right } => {
+                    assert_eq!(H::hash(left, right), next_node_hash, "incorrect binary node hash");
+                    next_node_hash = if path_bits[index] { *right } else { *left };
+                    index += 1;
+                }
+                bonsai_trie::ProofNode::Edge { child, path } => {
+                    let length = path.len();
+                    let relevant_path = &path_bits[index..index + length];
+                    assert_eq!(relevant_path, path.0.as_bitslice(), "incorrect edge path");
+
+                    let length_felt = Felt::from(length as u64);
+                    assert_eq!(
+                        H::hash(child, &path_to_felt(path.0.as_bitslice())) + length_felt,
+                        next_node_hash,
+                        "incorrect edge node hash"
+                    );
+                    next_node_hash = *child;
+                    index += length;
+                }
+            }
+
+            assert!(index <= 256, "invalid proof, path too long");
+            if index == 256 {
+                break;
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_archive_contract_storage_proof_survives_live_trie_updates(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+        let contract_address = Felt::from_hex_unchecked("0x2");
+        let storage_key = Felt::ZERO;
+
+        let first_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: contract_address,
+                storage_entries: vec![StorageEntry { key: storage_key, value: Felt::from_hex_unchecked("0x80") }],
+            }],
+            ..Default::default()
+        };
+        let second_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: contract_address,
+                storage_entries: vec![StorageEntry { key: storage_key, value: Felt::from_hex_unchecked("0x81") }],
+            }],
+            ..Default::default()
+        };
+
+        apply_to_global_trie(&backend.db, 0, [&first_diff], StarknetVersion::V0_14_1)
+            .expect("first trie update should succeed");
+
+        let proof_key = storage_key.to_bytes_be().as_bits()[5..].to_bitvec();
+        let (archived_root_at_0, archived_proof_at_0) = backend
+            .db
+            .archive_trie_proof(ArchiveTrie::ContractStorage(contract_address), 0, [proof_key.clone()])
+            .expect("archive proof lookup should succeed")
+            .expect("archive root should exist for block 0");
+
+        apply_to_global_trie(&backend.db, 1, [&second_diff], StarknetVersion::V0_14_1)
+            .expect("second trie update should succeed");
+
+        let current_root = backend.db.contract_storage_trie().root_hash(&contract_address.to_bytes_be()).unwrap();
+        assert_ne!(archived_root_at_0, current_root, "test setup should advance the live storage root");
+
+        let archived_proof_nodes = archived_proof_at_0.into_iter().collect::<HashMap<_, _>>();
+        verify_archive_proof::<Pedersen>(&archived_root_at_0, &storage_key, &archived_proof_nodes);
+
+        let (archived_root_at_1, archived_proof_at_1) = backend
+            .db
+            .archive_trie_proof(ArchiveTrie::ContractStorage(contract_address), 1, [proof_key])
+            .expect("archive proof lookup should succeed")
+            .expect("archive root should exist for block 1");
+        assert_eq!(archived_root_at_1, current_root);
+
+        let archived_proof_nodes = archived_proof_at_1.into_iter().collect::<HashMap<_, _>>();
+        verify_archive_proof::<Pedersen>(&archived_root_at_1, &storage_key, &archived_proof_nodes);
     }
 }

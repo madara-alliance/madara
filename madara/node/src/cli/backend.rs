@@ -1,4 +1,4 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::rocksdb::{ArchiveTriePruneMode, DbWriteMode, RocksDBConfig};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ContractAddress;
@@ -92,6 +92,12 @@ pub struct BackendParams {
     /// See `--db-max-kept-snapshots` to understand what snapshots are used for.
     #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 5)]
     pub db_snapshot_interval: u64,
+
+    /// Retention for Pathfinder-style archive trie proof data.
+    ///
+    /// Use `archive` to keep all archive trie history, or an integer N to keep the latest N+1 trie states.
+    #[clap(env = "MADARA_DB_ARCHIVE_TRIE_PRUNE_MODE", long, default_value = "archive")]
+    pub db_archive_trie_prune_mode: ArchiveTriePruneMode,
 
     /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
     #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
@@ -279,6 +285,7 @@ impl BackendParams {
             max_saved_trie_logs: self.db_max_saved_trie_logs,
             max_kept_snapshots: self.db_max_kept_snapshots,
             snapshot_interval: self.db_snapshot_interval,
+            archive_trie_prune_mode: self.db_archive_trie_prune_mode,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },

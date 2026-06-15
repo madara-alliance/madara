@@ -6,7 +6,7 @@ pub enum ColumnMemoryBudget {
     Contracts,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Column {
     pub rocksdb_name: &'static str,
     pub prefix_extractor_len: Option<usize>,
@@ -41,6 +41,16 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::l1_to_l2_messages::L1_TO_L2_L1_BLOCK_BY_NONCE,
     super::mempool::MEMPOOL_TRANSACTIONS_COLUMN,
     super::external_outbox::MEMPOOL_EXTERNAL_OUTBOX_COLUMN,
+    super::archive_trie::ARCHIVE_CLASS_TRIE_NODE_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_TRIE_NODE_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_STORAGE_TRIE_NODE_COLUMN,
+    super::archive_trie::ARCHIVE_CLASS_TRIE_NODE_REMOVAL_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_TRIE_NODE_REMOVAL_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_STORAGE_TRIE_NODE_REMOVAL_COLUMN,
+    super::archive_trie::ARCHIVE_CLASS_ROOT_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_ROOT_COLUMN,
+    super::archive_trie::ARCHIVE_CONTRACT_STORAGE_ROOT_COLUMN,
+    super::archive_trie::ARCHIVE_META_COLUMN,
     super::trie::BONSAI_CONTRACT_FLAT_COLUMN,
     super::trie::BONSAI_CONTRACT_TRIE_COLUMN,
     super::trie::BONSAI_CONTRACT_LOG_COLUMN,

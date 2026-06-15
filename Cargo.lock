@@ -3064,7 +3064,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/madara-alliance/bonsai-trie?tag=v1.0.0#13e8f7b3e5b398367c3c5b32544dc5381292e35b"
+source = "git+https://github.com/madara-alliance/bonsai-trie?rev=aaa32f1a5af1e0c9fa4d7dd439b5b69499c0b096#aaa32f1a5af1e0c9fa4d7dd439b5b69499c0b096"
 dependencies = [
  "bitvec",
  "derive_more 0.99.20",
@@ -7033,7 +7033,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=v0.14.2-rc.4#fef6c4bf2da5c3d2941e5be24b87f876087a05db"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1ee6711471524aa7620cdce027161b0713f6cea5#1ee6711471524aa7620cdce027161b0713f6cea5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -13007,7 +13007,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=v0.14.2-rc.4#fef6c4bf2da5c3d2941e5be24b87f876087a05db"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1ee6711471524aa7620cdce027161b0713f6cea5#1ee6711471524aa7620cdce027161b0713f6cea5"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -14433,7 +14433,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=v0.14.2-rc.4#fef6c4bf2da5c3d2941e5be24b87f876087a05db"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=1ee6711471524aa7620cdce027161b0713f6cea5#1ee6711471524aa7620cdce027161b0713f6cea5"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",

@@ -34,6 +34,7 @@ use rocksdb::{
 use starknet_types_core::hash::StarkHash;
 use std::{fmt, path::Path, sync::Arc};
 
+pub mod archive_trie;
 mod backup;
 mod blocks;
 mod classes;
@@ -59,6 +60,7 @@ pub mod global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
+pub use archive_trie::ArchiveTriePruneMode;
 pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
@@ -212,6 +214,7 @@ pub struct RocksDBStorage {
     inner: Arc<RocksDBStorageInner>,
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
+    contract_storage_hot_cache: Arc<trie::LazySharedContractStorageTrie>,
     metrics: DbMetrics,
 }
 
@@ -306,6 +309,7 @@ impl RocksDBStorage {
         Ok(Self {
             inner,
             snapshots: snapshot.into(),
+            contract_storage_hot_cache: Default::default(),
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
@@ -995,6 +999,7 @@ impl MadaraStorageWrite for RocksDBStorage {
                 .commit(target_id)
                 .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
         }
+        self.reset_cached_contract_storage_trie();
         tracing::info!("✅ REORG: All tries committed successfully");
 
         // Revert database state using the three revert functions
