@@ -25,6 +25,9 @@ pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 pub use bonsai_trie::id::BasicId;
 pub use bonsai_trie::ProofNode;
 
+// Mirrors bonsai-trie v1.0.0 commit 13e8f7b3e5b398367c3c5b32544dc5381292e35b:
+// https://github.com/madara-alliance/bonsai-trie/blob/13e8f7b3e5b398367c3c5b32544dc5381292e35b/src/changes.rs
+// https://github.com/madara-alliance/bonsai-trie/blob/13e8f7b3e5b398367c3c5b32544dc5381292e35b/src/trie/trie_db.rs
 const TRIE_LOG_KEY_SEPARATOR: u8 = 0x00;
 const TRIE_LOG_NEW_VALUE: u8 = 0x00;
 const TRIE_LOG_OLD_VALUE: u8 = 0x01;

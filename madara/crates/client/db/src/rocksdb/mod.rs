@@ -1161,12 +1161,13 @@ mod tests {
     #[test]
     fn bonsai_transactional_state_rewinds_snapshot_to_requested_block() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let config = RocksDBConfig { max_kept_snapshots: Some(10), snapshot_interval: 1, ..Default::default() };
+        let config = RocksDBConfig { max_kept_snapshots: Some(10), snapshot_interval: 3, ..Default::default() };
         let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
 
         let key_a = contract_trie_key(Felt::from(1u64));
         let key_b = contract_trie_key(Felt::from(2u64));
         let key_c = contract_trie_key(Felt::from(3u64));
+        let key_d = contract_trie_key(Felt::from(4u64));
 
         let mut trie = storage.contract_trie();
         trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
@@ -1184,20 +1185,29 @@ mod tests {
         let root_at_2 = trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
         storage.snapshots.set_new_head(2);
 
+        trie.insert(bonsai_identifier::CONTRACT, &key_d, &Felt::from(44u64)).unwrap();
+        trie.commit(BasicId::new(3)).unwrap();
+        let root_at_3 = trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
+        storage.snapshots.set_new_head(3);
+
+        let (closest_snapshot, _) = storage.snapshots.get_closest(1);
+        assert_eq!(closest_snapshot, Some(3));
+
         let trie = storage.contract_trie();
-        let transaction_at_0 = trie
-            .get_transactional_state(BasicId::new(0), trie.get_config())
-            .unwrap()
-            .expect("snapshot at block 0 should exist");
         let transaction_at_1 = trie
             .get_transactional_state(BasicId::new(1), trie.get_config())
             .unwrap()
-            .expect("snapshot at block 1 should exist");
+            .expect("snapshot newer than block 1 should rewind");
+        let transaction_at_2 = trie
+            .get_transactional_state(BasicId::new(2), trie.get_config())
+            .unwrap()
+            .expect("snapshot newer than block 2 should rewind");
 
-        assert_eq!(transaction_at_0.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_0);
         assert_eq!(transaction_at_1.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_1);
-        assert_eq!(trie.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_2);
-        assert_ne!(root_at_0, root_at_2);
-        assert_ne!(root_at_1, root_at_2);
+        assert_eq!(transaction_at_2.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_2);
+        assert_eq!(trie.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_3);
+        assert_ne!(root_at_0, root_at_3);
+        assert_ne!(root_at_1, root_at_3);
+        assert_ne!(root_at_2, root_at_3);
     }
 }

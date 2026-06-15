@@ -286,6 +286,8 @@ impl BlockProductionService {
 }
 
 fn bootstrap_address() -> Felt {
+    // SNOS accepts this undeployed BOOTSTRAP sender only for the storage-proof bootstrap declare:
+    // it uses nonce 0, zero resource bounds, and the temporary producer runs with fee charging disabled.
     Felt::from_hex_unchecked("0x424f4f545354524150")
 }
 

@@ -184,8 +184,8 @@ impl ChainGenesisDescription {
 
         let account_class = storage_proof_bootstrap_account_class().context("Failed to add bootstrap account class")?;
         Ok(make_devnet_contracts(n_addr, account_class.class_hash, |_| ContractFeeTokensBalance {
-            fri: (10_000 * STRK_FRI_DECIMALS).into(),
-            wei: (10_000 * ETH_WEI_DECIMALS).into(),
+            fri: Felt::ZERO,
+            wei: Felt::ZERO,
         }))
     }
 
@@ -563,8 +563,10 @@ mod tests {
         let chain_config = ChainConfig::madara_devnet();
         let (block, _) = genesis.into_block(&chain_config).unwrap();
 
-        assert!(contracts.0.iter().all(|contract| contract.balance.fri == (10_000 * STRK_FRI_DECIMALS).into()
-            && contract.balance.wei == (10_000 * ETH_WEI_DECIMALS).into()));
+        assert!(contracts
+            .0
+            .iter()
+            .all(|contract| contract.balance.fri == Felt::ZERO && contract.balance.wei == Felt::ZERO));
         let alias_storage =
             block.state_diff.storage_diffs.iter().find(|diff| diff.address == ALIAS_CONTRACT_ADDRESS).unwrap();
         let alias_counter =
