@@ -1,7 +1,13 @@
+//! Conversion helpers and small numeric newtypes shared across Madara
+//! primitives: `Felt` conversions, a fixed-point type, and serde adapters for
+//! hex- and `H256`-encoded values.
+#![warn(missing_docs)]
+
 mod felt;
 mod fixed;
 mod to_felt;
 
+/// serde adapters for (de)serializing values as `H256`.
 pub mod hash256_serde;
 pub mod hex_serde;
 
@@ -10,6 +16,7 @@ pub use fixed::FixedPoint;
 pub use primitive_types::{H160, H256};
 pub use to_felt::*;
 
+/// Test-only conversion helpers shared across crates.
 pub mod test {
     /// Asserts that the conversion between two types is consistent.
     /// Use this function only for testing purposes.

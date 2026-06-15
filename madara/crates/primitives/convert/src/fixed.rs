@@ -14,18 +14,22 @@ impl FixedPoint {
         Self { value, decimals }
     }
 
+    /// Returns the raw integer value, scaled by `decimals`.
     pub fn value(&self) -> u128 {
         self.value
     }
 
+    /// Returns the number of decimal places the value is scaled to.
     pub fn decimals(&self) -> u32 {
         self.decimals
     }
 
+    /// Returns the fixed-point representation of zero.
     pub const fn zero() -> Self {
         Self { value: 0, decimals: 0 }
     }
 
+    /// Returns the fixed-point representation of one.
     pub const fn one() -> Self {
         Self { value: 1, decimals: 0 }
     }

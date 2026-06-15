@@ -12,7 +12,9 @@ use std::ops::Deref;
 
 pub use starknet_types_core::felt::Felt;
 
+/// Infallible conversion of a Starknet-related type into its `Felt` representation.
 pub trait ToFelt {
+    /// Consumes `self` and returns the equivalent `Felt`.
     fn to_felt(self) -> Felt;
 }
 
@@ -107,6 +109,7 @@ impl_for_wrapper!(EntryPointSelector);
 impl_for_wrapper!(CompiledClassHash);
 impl_for_wrapper!(ContractAddressSalt);
 
+/// Extension trait wrapping a felt-like value so it is displayed as hexadecimal.
 pub trait FeltHexDisplay {
     /// Force-display this felt as hexadecimal when using the [`fmt::Display`] or [`fmt::Debug`] traits.
     fn hex_display(self) -> DisplayFeltAsHex;
@@ -122,6 +125,7 @@ impl FeltHexDisplay for Felt {
     }
 }
 
+/// Wrapper that displays the inner `Felt` as hexadecimal. See [`FeltHexDisplay`].
 pub struct DisplayFeltAsHex(pub Felt);
 impl fmt::Display for DisplayFeltAsHex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

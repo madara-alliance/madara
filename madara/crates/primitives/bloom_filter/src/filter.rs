@@ -177,6 +177,7 @@ impl<H: Hasher + Default, B> BloomFilter<H, B> {
         self.hash_count
     }
 
+    /// Returns a reference to the underlying bit-storage backend.
     pub fn storage(&self) -> &B {
         &self.storage
     }
