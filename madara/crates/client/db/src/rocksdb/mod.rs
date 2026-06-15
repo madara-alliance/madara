@@ -60,6 +60,7 @@ pub mod global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
+pub use archive_trie::ArchiveTriePruneMode;
 pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;

@@ -1,6 +1,6 @@
 use super::ClassTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::{GlobalTrie, WrappedBonsaiError};
+use crate::rocksdb::trie::{with_archive_commit_block, GlobalTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -33,7 +33,8 @@ impl StagedClassTrie {
         let mut timings = ClassTrieTimings::default();
 
         let class_commit_start = Instant::now();
-        self.class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        with_archive_commit_block(block_number, || self.class_trie.commit(BasicId::new(block_number)))
+            .map_err(WrappedBonsaiError)?;
         timings.trie_commit = class_commit_start.elapsed();
         let class_commit_secs = timings.trie_commit.as_secs_f64();
         metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
@@ -42,6 +43,7 @@ impl StagedClassTrie {
         let mut archive_batch = crate::rocksdb::WriteBatchWithTransaction::default();
         self.backend.inner.archive_put_class_root(&mut archive_batch, block_number, &self.class_trie_root)?;
         self.backend.inner.db.write_opt(archive_batch, &self.backend.inner.writeopts)?;
+        self.backend.inner.archive_prune(block_number)?;
 
         tracing::info!(
             target: "trie_perf",

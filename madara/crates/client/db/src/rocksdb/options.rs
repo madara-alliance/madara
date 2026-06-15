@@ -95,7 +95,10 @@
 
 use std::path::PathBuf;
 
-use crate::rocksdb::column::{Column, ColumnMemoryBudget};
+use crate::rocksdb::{
+    archive_trie::ArchiveTriePruneMode,
+    column::{Column, ColumnMemoryBudget},
+};
 use anyhow::{Context, Result};
 use rocksdb::{DBCompactionStyle, DBCompressionType, Env, Options, SliceTransform, WriteOptions};
 use serde::{Deserialize, Serialize};
@@ -206,6 +209,8 @@ pub struct RocksDBConfig {
     pub max_kept_snapshots: Option<usize>,
     /// Number of blocks between snapshots
     pub snapshot_interval: u64,
+    /// Retention mode for Pathfinder-style archive trie proof data.
+    pub archive_trie_prune_mode: ArchiveTriePruneMode,
 
     /// When present, every flush will create a backup.
     pub backup_dir: Option<PathBuf>,
@@ -254,6 +259,7 @@ impl Default for RocksDBConfig {
             max_saved_trie_logs: None,
             max_kept_snapshots: Some(0),
             snapshot_interval: 5,
+            archive_trie_prune_mode: ArchiveTriePruneMode::Archive,
             backup_dir: None,
             restore_from_latest_backup: false,
             write_mode: DbWriteMode::default(),

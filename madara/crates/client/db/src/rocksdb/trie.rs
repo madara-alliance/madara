@@ -10,6 +10,7 @@ use bonsai_trie::{
 };
 use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,6 +29,23 @@ pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log").set_
 pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 pub(crate) type SharedContractStorageTrie = Arc<ContractStorageTrieCache>;
 pub(crate) type LazySharedContractStorageTrie = OnceLock<SharedContractStorageTrie>;
+
+thread_local! {
+    static ARCHIVE_COMMIT_BLOCK: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+pub(crate) fn with_archive_commit_block<T>(block_n: u64, f: impl FnOnce() -> T) -> T {
+    ARCHIVE_COMMIT_BLOCK.with(|cell| {
+        let previous = cell.replace(Some(block_n));
+        let result = f();
+        cell.set(previous);
+        result
+    })
+}
+
+fn archive_commit_block() -> Option<u64> {
+    ARCHIVE_COMMIT_BLOCK.with(Cell::get)
+}
 
 #[derive(Debug)]
 pub(crate) struct ContractStorageTrieCache {
@@ -189,6 +207,20 @@ pub struct BonsaiDB {
 }
 
 impl BonsaiDB {
+    fn archive_trie_node_hash(value: &[u8]) -> Option<Felt> {
+        match bonsai_trie::persisted_trie_node_hash(value) {
+            Ok(Some(node_hash)) => Some(node_hash),
+            Ok(None) => {
+                tracing::trace!("skipping archive trie node without finalized hash");
+                None
+            }
+            Err(err) => {
+                tracing::warn!("failed to decode finalized bonsai trie node for archive: {err}");
+                None
+            }
+        }
+    }
+
     fn archive_trie_node_insert(
         &self,
         key: &DatabaseKey,
@@ -197,21 +229,57 @@ impl BonsaiDB {
     ) -> Result<(), TrieError> {
         let DatabaseKey::Trie(_) = key else { return Ok(()) };
         let Some(archive_node_col) = self.column_mapping.archive_node else { return Ok(()) };
+        let Some(node_hash) = Self::archive_trie_node_hash(value) else { return Ok(()) };
 
-        let node_hash = match bonsai_trie::persisted_trie_node_hash(value) {
-            Ok(Some(node_hash)) => node_hash,
-            Ok(None) => {
-                tracing::trace!("skipping archive trie node without finalized hash");
-                return Ok(());
-            }
-            Err(err) => {
-                tracing::warn!("failed to decode finalized bonsai trie node for archive: {err}");
-                return Ok(());
-            }
-        };
-
-        self.backend.archive_put_trie_node(batch, archive_node_col, &node_hash, value);
+        self.backend.archive_put_trie_node_for_source_key(batch, archive_node_col, key.as_slice(), &node_hash, value);
         Ok(())
+    }
+
+    fn archive_trie_node_remove(
+        &self,
+        key: &DatabaseKey,
+        old_value: &[u8],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<(), TrieError> {
+        let DatabaseKey::Trie(_) = key else { return Ok(()) };
+        let Some(archive_node_col) = self.column_mapping.archive_node else { return Ok(()) };
+        let Some(node_hash) = Self::archive_trie_node_hash(old_value) else { return Ok(()) };
+
+        self.backend.archive_put_trie_node_for_source_key(
+            batch,
+            archive_node_col,
+            key.as_slice(),
+            &node_hash,
+            old_value,
+        );
+        if let Some(block_n) = archive_commit_block() {
+            self.backend.archive_mark_trie_node_removed_for_source_key(
+                batch,
+                archive_node_col,
+                key.as_slice(),
+                &node_hash,
+                block_n,
+            );
+        }
+        Ok(())
+    }
+
+    fn archive_existing_trie_node_if_needed(
+        &self,
+        key: &DatabaseKey,
+        new_value: Option<&[u8]>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<Option<ByteVec>, TrieError> {
+        let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        if let Some(old_value) = old_value.as_deref() {
+            let old_hash = Self::archive_trie_node_hash(old_value);
+            let new_hash = new_value.and_then(Self::archive_trie_node_hash);
+            if old_hash.is_some() && old_hash != new_hash {
+                self.archive_trie_node_remove(key, old_value, batch)?;
+            }
+        }
+        Ok(old_value.map(Into::into))
     }
 }
 
@@ -274,17 +342,19 @@ impl BonsaiDatabase for BonsaiDB {
         tracing::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
 
-        let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
+            let old_value = self.archive_existing_trie_node_if_needed(key, Some(value), batch)?;
             batch.put_cf(&handle, key.as_slice(), value);
             self.archive_trie_node_insert(key, value, batch)?;
+            Ok(old_value)
         } else {
             let mut batch = Self::Batch::default();
+            let old_value = self.archive_existing_trie_node_if_needed(key, Some(value), &mut batch)?;
             batch.put_cf(&handle, key.as_slice(), value);
             self.archive_trie_node_insert(key, value, &mut batch)?;
             self.backend.db.write_opt(batch, &self.backend.writeopts)?;
+            Ok(old_value)
         }
-        Ok(old_value.map(Into::into))
     }
 
     #[tracing::instrument(skip(self, key, value, batch))]
@@ -296,6 +366,7 @@ impl BonsaiDatabase for BonsaiDB {
     ) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Inserting untracked into RocksDB: {:?} {:?}", key, value);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        self.archive_existing_trie_node_if_needed(key, Some(value), batch)?;
         batch.put_cf(&handle, key.as_slice(), value);
         self.archive_trie_node_insert(key, value, batch)?;
         Ok(())
@@ -309,19 +380,24 @@ impl BonsaiDatabase for BonsaiDB {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Removing from RocksDB: {:?}", key);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
-        let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
         if let Some(batch) = batch {
+            let old_value = self.archive_existing_trie_node_if_needed(key, None, batch)?;
             batch.delete_cf(&handle, key.as_slice());
+            Ok(old_value)
         } else {
-            self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
+            let mut batch = Self::Batch::default();
+            let old_value = self.archive_existing_trie_node_if_needed(key, None, &mut batch)?;
+            batch.delete_cf(&handle, key.as_slice());
+            self.backend.db.write_opt(batch, &self.backend.writeopts)?;
+            Ok(old_value)
         }
-        Ok(old_value.map(Into::into))
     }
 
     #[tracing::instrument(skip(self, key, batch))]
     fn remove_untracked(&mut self, key: &DatabaseKey, batch: &mut Self::Batch) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Removing untracked from RocksDB: {:?}", key);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        self.archive_existing_trie_node_if_needed(key, None, batch)?;
         batch.delete_cf(&handle, key.as_slice());
         Ok(())
     }

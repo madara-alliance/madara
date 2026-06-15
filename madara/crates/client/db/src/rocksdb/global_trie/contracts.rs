@@ -1,6 +1,6 @@
 use super::ContractTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::{GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
+use crate::rocksdb::trie::{with_archive_commit_block, GlobalTrie, SharedContractStorageTrie, WrappedBonsaiError};
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
@@ -68,7 +68,8 @@ impl StagedContractTries {
             self.contract_storage_trie.generation() == self.cache_generation,
             "cached contract storage trie generation changed before staged commit"
         );
-        contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        with_archive_commit_block(block_number, || contract_storage_trie.commit(BasicId::new(block_number)))
+            .map_err(WrappedBonsaiError)?;
         timings.storage_commit = storage_commit_start.elapsed();
         let storage_commit_secs = timings.storage_commit.as_secs_f64();
         metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
@@ -76,7 +77,8 @@ impl StagedContractTries {
         drop(contract_storage_trie);
 
         let contract_commit_start = Instant::now();
-        self.contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+        with_archive_commit_block(block_number, || self.contract_trie.commit(BasicId::new(block_number)))
+            .map_err(WrappedBonsaiError)?;
         timings.trie_commit = contract_commit_start.elapsed();
         let contract_commit_secs = timings.trie_commit.as_secs_f64();
         metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
@@ -93,6 +95,7 @@ impl StagedContractTries {
             )?;
         }
         self.backend.inner.db.write_opt(archive_batch, &self.backend.inner.writeopts)?;
+        self.backend.inner.archive_prune(block_number)?;
 
         tracing::info!(
             target: "trie_perf",
