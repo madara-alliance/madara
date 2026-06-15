@@ -132,7 +132,10 @@ mp-convert = { workspace = true }
 mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
-mp-utils = { workspace = true }
+mp-utils = { workspace = true, features = ["testing"] }
+
+# Client crates with test helpers gated behind feature flags.
+mc-db = { workspace = true, features = ["testing"] }
 
 # Testing
 assert_matches.workspace = true

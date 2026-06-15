@@ -298,3 +298,71 @@ fn bootstrap_resource_bounds() -> ResourceBoundsMapping {
         l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mc_mempool::{Mempool, MempoolConfig};
+    use mc_settlement_client::L1SyncDisabledClient;
+    use mp_chain_config::ChainConfig;
+    use mp_receipt::{ExecutionResult, TransactionReceipt};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn storage_proof_bootstrap_transactions_create_declare_and_deploy_blocks() {
+        let chain_config = Arc::new(ChainConfig::madara_devnet());
+        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
+
+        let mut genesis = ChainGenesisDescription::empty();
+        let contracts = genesis.add_devnet_contracts_for_storage_proof_bootstrap(2).unwrap();
+        contracts.save_to_db(&backend).unwrap();
+        genesis.build_and_store(&backend).await.unwrap();
+
+        let service = BlockProductionService {
+            backend: Arc::clone(&backend),
+            task: None,
+            mempool: Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default())),
+            metrics: Arc::new(BlockProductionMetrics::register()),
+            l1_client: Arc::new(L1SyncDisabledClient),
+            discard_preconfirmed_on_startup: false,
+            n_devnet_contracts: contracts.0.len() as u64,
+            devnet_storage_proof_bootstrap: true,
+            disabled: false,
+        };
+
+        service.run_storage_proof_bootstrap_transactions(&contracts).await.unwrap();
+
+        assert_eq!(backend.latest_confirmed_block_n(), Some(2));
+        assert!(!backend.has_preconfirmed_block());
+
+        let account_class = storage_proof_bootstrap_account_class().unwrap();
+        let block_1 = backend.block_view_on_confirmed(1).unwrap();
+        let block_1_transactions = block_1.get_executed_transactions(..).unwrap();
+        assert_eq!(block_1_transactions.len(), 1);
+        assert_eq!(block_1_transactions[0].receipt.execution_result(), ExecutionResult::Succeeded);
+        assert!(matches!(block_1_transactions[0].receipt, TransactionReceipt::Declare(_)));
+
+        let block_1_state_diff = block_1.get_state_diff().unwrap();
+        assert_eq!(block_1_state_diff.declared_classes.len(), 1);
+        assert_eq!(block_1_state_diff.declared_classes[0].class_hash, account_class.class_hash);
+        assert_eq!(block_1_state_diff.declared_classes[0].compiled_class_hash, account_class.compiled_class_hash);
+
+        let block_2 = backend.block_view_on_confirmed(2).unwrap();
+        let block_2_transactions = block_2.get_executed_transactions(..).unwrap();
+        assert_eq!(block_2_transactions.len(), contracts.0.len());
+        assert!(block_2_transactions.iter().all(|tx| {
+            tx.receipt.execution_result() == ExecutionResult::Succeeded
+                && matches!(tx.receipt, TransactionReceipt::DeployAccount(_))
+        }));
+
+        let block_2_state_diff = block_2.get_state_diff().unwrap();
+        assert_eq!(block_2_state_diff.deployed_contracts.len(), contracts.0.len());
+        for contract in &contracts.0 {
+            assert!(block_2_state_diff
+                .deployed_contracts
+                .iter()
+                .any(|deployed| deployed.address == contract.address && deployed.class_hash == contract.class_hash));
+        }
+    }
+}
