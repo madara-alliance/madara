@@ -25,15 +25,6 @@ pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 pub use bonsai_trie::id::BasicId;
 pub use bonsai_trie::ProofNode;
 
-// Mirrors bonsai-trie v1.0.0 commit 13e8f7b3e5b398367c3c5b32544dc5381292e35b:
-// https://github.com/madara-alliance/bonsai-trie/blob/13e8f7b3e5b398367c3c5b32544dc5381292e35b/src/changes.rs
-// https://github.com/madara-alliance/bonsai-trie/blob/13e8f7b3e5b398367c3c5b32544dc5381292e35b/src/trie/trie_db.rs
-const TRIE_LOG_KEY_SEPARATOR: u8 = 0x00;
-const TRIE_LOG_NEW_VALUE: u8 = 0x00;
-const TRIE_LOG_OLD_VALUE: u8 = 0x01;
-const TRIE_KEY_TYPE_TRIE: u8 = 0x00;
-const TRIE_KEY_TYPE_FLAT: u8 = 0x01;
-
 /// Wrapper because bonsai requires a special DBError trait implementation.
 /// TODO: Remove that upstream in bonsai-trie, this is dumb.
 #[derive(thiserror::Error, Debug)]
@@ -234,66 +225,6 @@ fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
     )
 }
 
-fn parse_trie_log_key(id_len: usize, key: &[u8]) -> Option<(u8, ByteVec, u8)> {
-    if key.len() < id_len + 3 || key.get(id_len) != Some(&TRIE_LOG_KEY_SEPARATOR) {
-        return None;
-    }
-
-    let change_type = *key.last()?;
-    let key_type = key[key.len() - 2];
-    let trie_key = key[id_len + 1..key.len() - 2].into();
-
-    Some((key_type, trie_key, change_type))
-}
-
-fn apply_trie_log_revert(transaction: &mut BonsaiTransaction, id_len: usize, changes: Vec<(ByteVec, ByteVec)>) -> bool {
-    let mut grouped_changes: BTreeMap<(u8, ByteVec), (Option<ByteVec>, bool)> = BTreeMap::new();
-
-    for (key, value) in changes {
-        let Some((key_type, trie_key, change_type)) = parse_trie_log_key(id_len, &key) else {
-            tracing::warn!("Invalid trie log key format");
-            return false;
-        };
-
-        let (old_value, has_new_value) = grouped_changes.entry((key_type, trie_key)).or_default();
-        match change_type {
-            TRIE_LOG_OLD_VALUE => *old_value = Some(value),
-            TRIE_LOG_NEW_VALUE => *has_new_value = true,
-            _ => {
-                tracing::warn!("Invalid trie log change type: {change_type}");
-                return false;
-            }
-        }
-    }
-
-    for ((key_type, trie_key), (old_value, has_new_value)) in grouped_changes {
-        let key = match key_type {
-            TRIE_KEY_TYPE_TRIE => DatabaseKey::Trie(&trie_key),
-            TRIE_KEY_TYPE_FLAT => DatabaseKey::Flat(&trie_key),
-            _ => {
-                tracing::warn!("Invalid trie key type: {key_type}");
-                return false;
-            }
-        };
-
-        match old_value {
-            Some(old_value) => {
-                if transaction.insert(&key, &old_value, None).is_err() {
-                    return false;
-                }
-            }
-            None if has_new_value => {
-                if transaction.remove(&key, None).is_err() {
-                    return false;
-                }
-            }
-            None => {}
-        }
-    }
-
-    true
-}
-
 /// The backing database for a bonsai storage view. This is used
 /// to implement historical access (for storage proofs), by applying
 /// changes from the trie-log without modifying the real database.
@@ -399,9 +330,6 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
 
         tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={snapshot_id:?}");
 
-        let mut transaction =
-            BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: Default::default() };
-
         let snapshot_block_n = snapshot_id?;
         if snapshot_block_n < requested_block_n {
             tracing::warn!(
@@ -410,16 +338,10 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
             return None;
         }
 
-        for block_n in ((requested_block_n + 1)..=snapshot_block_n).rev() {
-            let id = BasicId::new(block_n);
-            let id_bytes = id.to_bytes();
-            let changes = self.get_by_prefix(&DatabaseKey::TrieLog(&id_bytes)).ok()?;
-            if !apply_trie_log_revert(&mut transaction, id_bytes.len(), changes) {
-                return None;
-            }
-        }
-
-        Some((requested_id, transaction))
+        Some((
+            requested_id,
+            BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: Default::default() },
+        ))
     }
 
     fn merge<'a>(&mut self, _transaction: Self::Transaction<'a>) -> Result<(), Self::DatabaseError>
