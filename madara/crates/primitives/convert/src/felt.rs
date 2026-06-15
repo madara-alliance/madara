@@ -4,20 +4,33 @@ use primitive_types::{H160, H256};
 use starknet_types_core::felt::Felt;
 use std::cmp::Ordering;
 
+/// Error returned when bytes do not represent a valid field element (i.e. they
+/// are longer than 32 bytes or exceed the Starknet field modulus).
 #[derive(Debug, thiserror::Error)]
 #[error("Malformated field element.")]
 pub struct MalformatedFelt;
 
+/// Error returned when a `Felt` is too large to fit into an `H160` (20 bytes).
 #[derive(Debug, thiserror::Error)]
 #[error("Felt is too big to convert to H160.")]
 pub struct FeltToH160Error;
 
+/// Extension trait adding checked conversions between `Felt` and byte slices,
+/// `H160` and `U256`.
 pub trait FeltExt {
+    /// Builds a `Felt` from a big-endian byte slice, erroring if it is longer
+    /// than 32 bytes or overflows the field modulus.
     fn from_slice_be_checked(slice: &[u8]) -> Result<Felt, MalformatedFelt>;
+    /// Builds a `Felt` from 32 big-endian bytes, erroring if it overflows the
+    /// field modulus.
     fn from_bytes_checked(bytes: &[u8; 32]) -> Result<Felt, MalformatedFelt>;
 
+    /// Returns the minimal number of big-endian bytes needed to represent this
+    /// felt (leading zero bytes are not counted).
     fn slice_be_len(&self) -> usize;
+    /// Converts this felt into an `H160`, erroring if it does not fit in 20 bytes.
     fn to_h160(&self) -> Result<H160, FeltToH160Error>;
+    /// Converts this felt into a `U256`.
     fn to_u256(&self) -> U256;
 }
 
@@ -86,25 +99,32 @@ impl FeltExt for Felt {
         U256::from_be_bytes(self.to_bytes_be())
     }
 }
+/// A 32-byte L1 transaction hash, stored big-endian. Convertible to/from both
+/// the Starknet (`Felt`) and Ethereum (`H256`) representations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct L1TransactionHash(pub [u8; 32]);
 
 impl L1TransactionHash {
+    /// Builds the hash from a Starknet `Felt` (big-endian bytes).
     pub fn from_starknet(value: Felt) -> Self {
         Self(value.to_bytes_be())
     }
+    /// Converts the hash into a `Felt`, erroring if the bytes overflow the field modulus.
     pub fn into_starknet(self) -> Result<Felt, MalformatedFelt> {
         Felt::from_bytes_checked(&self.0)
     }
+    /// Builds the hash from an Ethereum `H256`.
     pub fn from_eth(value: H256) -> Self {
         Self(value.to_fixed_bytes())
     }
+    /// Converts the hash into an Ethereum `H256`.
     pub fn into_eth(self) -> H256 {
         H256(self.0)
     }
 }
 
+/// The nonce of the L1 core contract, serialized transparently as a `u64`.
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct L1CoreContractNonce(u64);
