@@ -185,10 +185,17 @@ pub fn get_storage_proof(
         class_hashes,
     )?;
 
+    let state_view = block_view.state_view();
+    let historical_block = block_view.block_number() < latest;
     let mut contract_root_hashes = std::collections::HashMap::new();
     let contracts_storage_proofs = contracts_storage_keys
         .into_iter()
         .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
+            if historical_block && state_view.get_contract_class_hash(&contract_address)?.is_none() {
+                contract_root_hashes.insert(contract_address, Felt::ZERO);
+                return Ok(Vec::new());
+            }
+
             let identifier = contract_address.to_bytes_be();
             let (root_hash, proof) = make_trie_proof(
                 starknet,
@@ -206,6 +213,11 @@ pub fn get_storage_proof(
 
     for contract_address in &contract_addresses {
         if !contract_root_hashes.contains_key(contract_address) {
+            if historical_block && state_view.get_contract_class_hash(contract_address)?.is_none() {
+                contract_root_hashes.insert(*contract_address, Felt::ZERO);
+                continue;
+            }
+
             let identifier = contract_address.to_bytes_be();
             let (root_hash, _) = make_trie_proof(
                 starknet,
@@ -221,13 +233,32 @@ pub fn get_storage_proof(
     }
 
     // contract leaves data
-    let state_view = block_view.state_view();
     let contract_leaves_data = contract_addresses
         .iter()
         .map(|contract_addr| {
+            let class_hash = match state_view.get_contract_class_hash(contract_addr)? {
+                Some(class_hash) => class_hash,
+                None if historical_block => {
+                    return Ok(ContractLeavesDataItem {
+                        nonce: Felt::ZERO,
+                        class_hash: Felt::ZERO,
+                        storage_root: Felt::ZERO,
+                    });
+                }
+                None => Felt::ZERO,
+            };
+
+            if historical_block && class_hash == Felt::ZERO {
+                return Ok(ContractLeavesDataItem {
+                    nonce: Felt::ZERO,
+                    class_hash: Felt::ZERO,
+                    storage_root: Felt::ZERO,
+                });
+            };
+
             Ok(ContractLeavesDataItem {
                 nonce: state_view.get_contract_nonce(contract_addr)?.unwrap_or(Felt::ZERO),
-                class_hash: state_view.get_contract_class_hash(contract_addr)?.unwrap_or(Felt::ZERO),
+                class_hash,
                 storage_root: *contract_root_hashes.get(contract_addr).unwrap_or(&Felt::ZERO),
             })
         })
