@@ -180,23 +180,22 @@ impl BlockProductionService {
         expected_latest: u64,
         expected_txs: usize,
     ) -> anyhow::Result<()> {
-        if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
+        if self.latest_confirmed_block_reached(expected_latest) {
+            self.validate_confirmed_bootstrap_block(expected_latest, expected_txs)?;
             return Ok(());
         }
 
         self.wait_for_bootstrap_transactions(notifications, expected_latest, expected_txs).await?;
 
-        if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
+        if self.latest_confirmed_block_reached(expected_latest) {
+            self.validate_confirmed_bootstrap_block(expected_latest, expected_txs)?;
             return Ok(());
         }
 
         handle.close_block().await.context("Closing devnet bootstrap block")?;
         self.wait_for_bootstrap_block_close(notifications).await?;
 
-        anyhow::ensure!(
-            self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)?,
-            "Devnet bootstrap block #{expected_latest} was not confirmed after close notification"
-        );
+        self.validate_confirmed_bootstrap_block(expected_latest, expected_txs)?;
 
         Ok(())
     }
@@ -220,7 +219,8 @@ impl BlockProductionService {
                     }
                 }
                 Ok(Some(BlockProductionStateNotification::ClosedBlock)) => {
-                    if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
+                    if self.latest_confirmed_block_reached(expected_latest) {
+                        self.validate_confirmed_bootstrap_block(expected_latest, expected_txs)?;
                         return Ok(());
                     }
                 }
@@ -249,13 +249,15 @@ impl BlockProductionService {
         Ok(())
     }
 
-    fn confirmed_bootstrap_block_is_ready(&self, expected_latest: u64, expected_txs: usize) -> anyhow::Result<bool> {
-        let Some(latest) = self.backend.latest_confirmed_block_n() else {
-            return Ok(false);
-        };
-        if latest < expected_latest {
-            return Ok(false);
-        }
+    fn latest_confirmed_block_reached(&self, expected_latest: u64) -> bool {
+        self.backend.latest_confirmed_block_n().is_some_and(|latest| latest >= expected_latest)
+    }
+
+    fn validate_confirmed_bootstrap_block(&self, expected_latest: u64, expected_txs: usize) -> anyhow::Result<()> {
+        let latest = self
+            .backend
+            .latest_confirmed_block_n()
+            .with_context(|| format!("Devnet bootstrap block #{expected_latest} should be confirmed"))?;
 
         let transactions = self
             .backend
@@ -275,7 +277,7 @@ impl BlockProductionService {
             "Devnet bootstrap advanced to block #{latest} while waiting for block #{expected_latest} to close"
         );
 
-        Ok(true)
+        Ok(())
     }
 
     fn make_bootstrap_account_declare_tx(&self) -> anyhow::Result<BroadcastedDeclareTxn> {
