@@ -8,7 +8,7 @@ use crate::{
         Column, RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction,
     },
 };
-use bitvec::{order::Msb0, vec::BitVec};
+use bitvec::{order::Msb0, slice::BitSlice, vec::BitVec};
 use bonsai_trie::ProofNode;
 use mp_convert::Felt;
 use rocksdb::{Direction, IteratorMode};
@@ -177,7 +177,7 @@ impl RocksDBStorage {
                 return Ok(());
             }
 
-            let Some(node) = self.archive_trie_node(trie, current_hash)? else {
+            let Some(node) = self.archive_trie_node(trie, current_hash, &key[..path_len])? else {
                 anyhow::bail!("archive trie node missing for hash {current_hash:#x}");
             };
 
@@ -202,47 +202,57 @@ impl RocksDBStorage {
         }
     }
 
-    fn archive_trie_node(&self, trie: ArchiveTrie, hash: Felt) -> Result<Option<ProofNode>> {
+    fn archive_trie_node(
+        &self,
+        trie: ArchiveTrie,
+        hash: Felt,
+        source_path: &BitSlice<u8, Msb0>,
+    ) -> Result<Option<ProofNode>> {
         let col = trie.node_column();
         let col_handle = self.inner.get_column(col);
         let Some(encoded) = self.inner.db.get_cf(&col_handle, hash.to_bytes_be())? else {
-            return self.lazy_archive_trie_node(trie, hash);
+            return self.lazy_archive_trie_node(trie, hash, source_path);
         };
         Ok(Some(self.decode_archive_trie_node(hash, &encoded)?))
     }
 
-    fn lazy_archive_trie_node(&self, trie: ArchiveTrie, hash: Felt) -> Result<Option<ProofNode>> {
+    fn lazy_archive_trie_node(
+        &self,
+        trie: ArchiveTrie,
+        hash: Felt,
+        source_path: &BitSlice<u8, Msb0>,
+    ) -> Result<Option<ProofNode>> {
         let archive_col = trie.node_column();
         let Some(source_col) = source_column_for_archive_node_column(archive_col) else { return Ok(None) };
         let source_col = self.inner.get_column(source_col);
-        let source_prefix = source_key_prefix_for_archive_trie(trie);
-        let iterator_mode = IteratorMode::From(&source_prefix, Direction::Forward);
-        let mut scanned_nodes = 0usize;
+        let source_key = source_key_for_archive_trie(trie, source_path);
+        let Some(encoded) = self.inner.db.get_cf(&source_col, &source_key)? else {
+            tracing::debug!("archive trie lazy lookup missed source key hash={hash:#x} path_len={}", source_path.len());
+            return Ok(None);
+        };
 
-        for item in self.inner.db.iterator_cf(&source_col, iterator_mode) {
-            let (key, encoded) = item?;
-            if !key.starts_with(&source_prefix) {
-                break;
-            }
-            scanned_nodes += 1;
-            let Ok(Some(decoded_hash)) = bonsai_trie::persisted_trie_node_hash(&encoded) else { continue };
-            if decoded_hash != hash {
-                continue;
-            }
-
-            let archive_col = self.inner.get_column(archive_col);
-            let mut batch = WriteBatchWithTransaction::default();
-            batch.put_cf(&archive_col, hash.to_bytes_be(), &encoded);
-            self.inner.db.write_opt(batch, &self.inner.writeopts)?;
+        let Some(decoded_hash) = bonsai_trie::persisted_trie_node_hash(&encoded)? else {
+            tracing::debug!("archive trie lazy lookup found non-finalized source node hash={hash:#x}");
+            return Ok(None);
+        };
+        if decoded_hash != hash {
             tracing::debug!(
-                "lazily copied existing bonsai trie node into archive column hash={hash:#x} scanned_nodes={scanned_nodes}"
+                "archive trie lazy lookup source hash mismatch expected={hash:#x} actual={decoded_hash:#x} path_len={}",
+                source_path.len()
             );
-            return Ok(Some(self.decode_archive_trie_node(hash, &encoded)?));
+            return Ok(None);
         }
 
-        tracing::debug!("archive trie lazy lookup missed hash={hash:#x} scanned_nodes={scanned_nodes}");
+        let archive_col = self.inner.get_column(archive_col);
+        let mut batch = WriteBatchWithTransaction::default();
+        batch.put_cf(&archive_col, hash.to_bytes_be(), &encoded);
+        self.inner.db.write_opt(batch, &self.inner.writeopts)?;
+        tracing::debug!(
+            "lazily copied existing bonsai trie node into archive column hash={hash:#x} path_len={}",
+            source_path.len()
+        );
 
-        Ok(None)
+        Ok(Some(self.decode_archive_trie_node(hash, &encoded)?))
     }
 
     fn decode_archive_trie_node(&self, hash: Felt, encoded: &[u8]) -> Result<ProofNode> {
@@ -274,4 +284,36 @@ fn source_key_prefix_for_archive_trie(trie: ArchiveTrie) -> Vec<u8> {
         ArchiveTrie::Contract => bonsai_identifier::CONTRACT.to_vec(),
         ArchiveTrie::ContractStorage(contract_address) => contract_address.to_bytes_be().to_vec(),
     }
+}
+
+fn source_key_for_archive_trie(trie: ArchiveTrie, source_path: &BitSlice<u8, Msb0>) -> Vec<u8> {
+    let mut source_key = source_key_prefix_for_archive_trie(trie);
+    source_key.extend_from_slice(&encode_bonsai_path(source_path));
+    source_key
+}
+
+fn encode_bonsai_path(source_path: &BitSlice<u8, Msb0>) -> Vec<u8> {
+    debug_assert!(source_path.len() <= 251);
+
+    let mut encoded = Vec::with_capacity(1 + source_path.len().div_ceil(8));
+    encoded.push(source_path.len() as u8);
+
+    let mut next_store = 0u8;
+    let mut pos_in_next_store = 7u8;
+    for bit in source_path {
+        next_store |= u8::from(*bit) << pos_in_next_store;
+
+        if pos_in_next_store == 0 {
+            pos_in_next_store = 8;
+            encoded.push(next_store);
+            next_store = 0;
+        }
+        pos_in_next_store -= 1;
+    }
+
+    if pos_in_next_store < 7 {
+        encoded.push(next_store);
+    }
+
+    encoded
 }
