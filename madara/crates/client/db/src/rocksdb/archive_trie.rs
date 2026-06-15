@@ -255,7 +255,7 @@ impl RocksDBStorageInner {
         let iter = self.db.iterator_cf(&removal_col, IteratorMode::Start);
         for item in iter {
             let (key, _) = item?;
-            if key.len() < 9 || &key[..8] >= cutoff_key.as_ref() {
+            if key.len() < 9 || &key[..8] >= &cutoff_key[..] {
                 break;
             }
             batch.delete_cf(&node_col, &key[8..]);

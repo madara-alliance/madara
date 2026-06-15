@@ -8,6 +8,7 @@ use bonsai_trie::id::Id;
 use bonsai_trie::{
     BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
 };
+use mp_convert::Felt;
 use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::cell::Cell;
