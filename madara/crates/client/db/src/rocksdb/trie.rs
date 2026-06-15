@@ -1,8 +1,9 @@
 use crate::rocksdb::column::Column;
 use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
+use bonsai_trie::id::Id;
 use bonsai_trie::{
-    id::Id, BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
+    BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
 };
 use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
@@ -266,7 +267,7 @@ impl BonsaiDatabase for BonsaiTransaction {
             return Ok(val.clone());
         }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(Into::into))
+        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -276,11 +277,8 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
-        if let Some(value) = self.changed.get(&to_changed_key(key)) {
-            return Ok(value.is_some());
-        }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
+        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
     }
 
     fn insert(
@@ -325,23 +323,20 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
     #[tracing::instrument(skip(self))]
     fn transaction(&self, requested_id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
         tracing::trace!("Generating RocksDB transaction");
-        let requested_block_n = requested_id.as_u64();
-        let (snapshot_id, snapshot) = self.snapshots.get_closest(requested_block_n);
+        let (id, snapshot) = self.snapshots.get_closest(requested_id.as_u64());
 
-        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={snapshot_id:?}");
+        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={id:?}");
 
-        let snapshot_block_n = snapshot_id?;
-        if snapshot_block_n < requested_block_n {
-            tracing::warn!(
-                "Snapshot for requested block_id={requested_id:?} is older than the requested block: {snapshot_block_n}"
-            );
-            return None;
-        }
-
-        Some((
-            requested_id,
-            BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: Default::default() },
-        ))
+        id.map(|id| {
+            (
+                BasicId::new(id),
+                BonsaiTransaction {
+                    snapshot,
+                    column_mapping: self.column_mapping.clone(),
+                    changed: Default::default(),
+                },
+            )
+        })
     }
 
     fn merge<'a>(&mut self, _transaction: Self::Transaction<'a>) -> Result<(), Self::DatabaseError>

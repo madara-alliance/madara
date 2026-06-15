@@ -11,6 +11,7 @@ use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mc_submit_tx::SubmitTransaction;
 use mp_convert::ToFelt;
+use mp_receipt::ExecutionResult;
 use mp_rpc::v0_9_0::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, BroadcastedTxn, DaMode,
     DeployAccountTxnV3, ResourceBounds, ResourceBoundsMapping,
@@ -238,18 +239,26 @@ impl BlockProductionService {
             return Ok(false);
         }
 
-        let actual_txs = self
+        let transactions = self
             .backend
             .block_view_on_confirmed(expected_latest)
             .with_context(|| format!("Devnet bootstrap block #{expected_latest} should be confirmed"))?
             .get_executed_transactions(..)
-            .with_context(|| format!("Reading devnet bootstrap block #{expected_latest} transactions"))?
-            .len();
+            .with_context(|| format!("Reading devnet bootstrap block #{expected_latest} transactions"))?;
+        let actual_txs = transactions.len();
         anyhow::ensure!(
             actual_txs == expected_txs,
             "Devnet bootstrap block #{expected_latest} closed with {actual_txs} transactions, expected {expected_txs}; \
              the configured block_time may be too short for storage-proof bootstrap"
         );
+        if let Some((tx_index, tx)) =
+            transactions.iter().enumerate().find(|(_, tx)| tx.receipt.execution_result() != ExecutionResult::Succeeded)
+        {
+            anyhow::bail!(
+                "Devnet bootstrap block #{expected_latest} transaction #{tx_index} reverted: {:?}",
+                tx.receipt.execution_result()
+            );
+        }
         anyhow::ensure!(
             latest == expected_latest,
             "Devnet bootstrap advanced to block #{latest} while waiting for block #{expected_latest} to close"
