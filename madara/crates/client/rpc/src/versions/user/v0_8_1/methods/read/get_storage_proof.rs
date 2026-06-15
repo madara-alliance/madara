@@ -17,6 +17,9 @@ use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
 use std::iter;
 
+const BLOCK_HASH_CONTRACT_ADDRESS: Felt = Felt::ONE;
+const FIRST_BLOCK_HASH_CONTRACT_STORAGE_BLOCK: u64 = 10;
+
 fn saturating_sum(iter: impl IntoIterator<Item = usize>) -> usize {
     iter.into_iter().fold(0, |acc, cur| acc.saturating_add(cur))
 }
@@ -43,6 +46,15 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
     keys.sort();
 
     tracing::debug!("Getting trie proof for {trie_name:?} on block {block_n} for n={} keys", keys.len());
+
+    // The block-hash contract starts storing block hashes at block 10. Before that, the
+    // contract's storage trie is empty, even if a polluted archive-root entry exists from
+    // early bootstrapping/import paths.
+    if matches!(archive_trie, ArchiveTrie::ContractStorage(address) if address == BLOCK_HASH_CONTRACT_ADDRESS)
+        && block_n < FIRST_BLOCK_HASH_CONTRACT_STORAGE_BLOCK
+    {
+        return Ok((Felt::ZERO, Vec::new()));
+    }
 
     let archive_keys = keys.iter().map(|k| k.as_bitslice()[5..].to_bitvec()).collect::<Vec<_>>();
     if let Some((root_hash, proof)) = starknet
