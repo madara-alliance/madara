@@ -466,6 +466,11 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
     }
 
+    pub fn record_snos_rpc_fallback(job: &JobItem) {
+        let attributes = [KeyValue::new("operation_job_type", format!("{:?}", job.job_type))];
+        ORCHESTRATOR_METRICS.snos_rpc_fallback_total.add(1.0, &attributes);
+    }
+
     /// Record settlement time
     pub fn record_settlement_time(job_type: &JobType, duration_seconds: f64) {
         let attributes =

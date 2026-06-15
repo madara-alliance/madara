@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use std::fmt as stdfmt;
 use tracing::{
     field::{Field, Visit},
-    Event, Level, Subscriber,
+    Event, Subscriber,
 };
 use tracing_error::ErrorLayer;
+use tracing_log::NormalizeEvent;
 use tracing_subscriber::field::{MakeVisitor, VisitFmt, VisitOutput};
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
@@ -115,7 +116,8 @@ where
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
-        let meta = event.metadata();
+        let normalized_meta = event.normalized_metadata();
+        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
         let now = Utc::now().format("%y-%m-%d %H:%M:%S").to_string();
 
         // Extract queue from span fields
@@ -257,7 +259,8 @@ where
     N: for<'a> FormatFields<'a> + 'static,
 {
     fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
-        let meta = event.metadata();
+        let normalized_meta = event.normalized_metadata();
+        let meta = normalized_meta.as_ref().unwrap_or_else(|| event.metadata());
         let ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
         // Extract event message and fields
@@ -400,13 +403,16 @@ pub fn init_logging() {
         .install()
         .expect("Unable to install color_eyre");
 
+    // Bridge library crates using the `log` facade, such as SNOS, into the
+    // orchestrator tracing subscriber so `RUST_LOG` filtering applies to them.
+    let _ = tracing_log::LogTracer::init();
+
     // Read from `RUST_LOG` environment variable, with fallback to default
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        // Fallback if RUST_LOG is not set or invalid
-        EnvFilter::builder()
-            .with_default_directive(Level::INFO.into())
-            .parse("orchestrator=info")
-            .expect("Invalid filter directive and Logger control")
+        // Fallback if RUST_LOG is not set or invalid. Keep orchestrator INFO
+        // logs by default, but require explicit opt-in for bridged SNOS and
+        // other third-party log targets.
+        EnvFilter::builder().parse("error,orchestrator=info").expect("Invalid filter directive and Logger control")
     });
 
     // Check LOG_FORMAT environment variable
@@ -457,6 +463,7 @@ pub fn init_logging() {
 ///
 /// - **Orchestrator crates** → Specific service names (ATLANTIC, UTILS, GPS_FACT_CHK, etc.)
 /// - **Generic orchestrator** → "-" (no specific service, core orchestrator code)
+/// - **SNOS crates** → "SNOS" (`generate_pie` / `rpc_client` logs bridged through `log`)
 /// - **Third-party dependencies** → "EXTERNAL" (logs from Rust ecosystem crates)
 ///
 /// Note: "EXTERNAL" refers to third-party Rust crates (tokio, hyper, reqwest, etc.),
@@ -467,6 +474,8 @@ pub fn init_logging() {
 /// ```ignore
 /// extract_service_name("orchestrator_atlantic_service::client") → "ATLANTIC"
 /// extract_service_name("orchestrator_utils::logging")           → "UTILS"
+/// extract_service_name("generate_pie::state_update")            → "SNOS"
+/// extract_service_name("rpc_client::client")                    → "SNOS"
 /// extract_service_name("orchestrator::core::config")            → "-"
 /// extract_service_name("tokio::runtime")                        → "EXTERNAL"
 /// extract_service_name("hyper::client")                         → "EXTERNAL"
@@ -480,6 +489,8 @@ fn extract_service_name(target: &str) -> &'static str {
         "PROVER_IFACE"
     } else if target.starts_with("orchestrator_utils") {
         "UTILS"
+    } else if target.starts_with("generate_pie") || target == "rpc_client" || target.starts_with("rpc_client::") {
+        "SNOS"
     } else if target.starts_with("orchestrator") {
         "-"
     } else {
@@ -504,4 +515,15 @@ pub fn queue_type_to_parts(queue_type: &str) -> (String, String) {
     // Remove "_job" or "_JOB" if present
     let prefix = prefix.trim_end_matches("_job").trim_end_matches("_JOB");
     (prefix.to_uppercase(), suffix.to_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_service_name;
+
+    #[test]
+    fn classify_snos_targets() {
+        assert_eq!(extract_service_name("generate_pie::state_update"), "SNOS");
+        assert_eq!(extract_service_name("rpc_client::client"), "SNOS");
+    }
 }

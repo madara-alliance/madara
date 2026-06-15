@@ -116,9 +116,35 @@ impl<S: Stream + Unpin> Stream for LivenessStream<S> {
 /// The alloy poller polls every ~7s, so 60s allows ~8 missed cycles.
 const POLLER_LIVENESS_TIMEOUT: Duration = Duration::from_secs(60);
 
-fn decode_log(log: &Log) -> alloy::sol_types::Result<LogMessageToL2> {
+fn decode_log<E: SolEvent>(log: &Log) -> alloy::sol_types::Result<E> {
     let log_data: &alloy::primitives::LogData = log.as_ref();
-    LogMessageToL2::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
+    E::decode_raw_log(log_data.topics().iter().copied(), &log_data.data)
+}
+
+/// Wraps an alloy event poller with the [`LivenessStream`] watchdog and decodes raw
+/// logs into typed events.
+///
+/// Always use this instead of `EventPoller::into_stream()`: alloy's poller swallows
+/// transport errors internally and retries a dead filter forever (see
+/// [`LivenessStream`]), so an unguarded stream hangs silently when the provider drops
+/// the filter. With this wrapper the stream terminates after
+/// [`POLLER_LIVENESS_TIMEOUT`] of silence, letting the caller reconnect with a fresh
+/// filter.
+pub(crate) fn watch_events_with_liveness<E: SolEvent>(
+    watcher: EventPoller<E>,
+) -> impl Stream<Item = alloy::sol_types::Result<(E, Log)>> {
+    decode_batches_with_liveness(watcher.poller.into_stream(), POLLER_LIVENESS_TIMEOUT)
+}
+
+/// Testable inner layer of [`watch_events_with_liveness`]: takes the raw batch stream
+/// instead of an `EventPoller` (which cannot be constructed without a live provider).
+fn decode_batches_with_liveness<E: SolEvent, S: Stream<Item = Vec<Log>> + Unpin>(
+    batches: S,
+    max_silence: Duration,
+) -> impl Stream<Item = alloy::sol_types::Result<(E, Log)>> {
+    LivenessStream::new(batches, max_silence)
+        .flat_map(futures::stream::iter)
+        .map(|log: Log| decode_log::<E>(&log).map(|e| (e, log)))
 }
 
 type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
@@ -130,15 +156,7 @@ pub struct EthereumEventStream {
 
 impl EthereumEventStream {
     pub fn new(watcher: EventPoller<LogMessageToL2>) -> Self {
-        // Don't use `watcher.into_stream()` — alloy's PollerStream swallows transport
-        // errors internally and retries forever, hiding the "filter not found" case
-        // from Alchemy (HTTP 400). Instead, wrap the raw poller with a liveness check
-        // that terminates the stream when the poller stops yielding batches.
-        let poller_stream = watcher.poller.into_stream();
-        let stream = LivenessStream::new(poller_stream, POLLER_LIVENESS_TIMEOUT)
-            .flat_map(futures::stream::iter)
-            .map(|log: Log| decode_log(&log).map(|e| (e, log)));
-        Self { stream: Box::pin(stream) }
+        Self { stream: Box::pin(watch_events_with_liveness(watcher)) }
     }
 }
 
@@ -375,6 +393,42 @@ pub mod eth_event_stream_tests {
         // Now go silent for longer than the timeout
         tokio::time::advance(Duration::from_secs(6)).await;
         assert!(stream.next().await.is_none(), "stream should terminate after silence");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_state_update_stream_decodes_and_terminates_on_stuck_poller() {
+        use crate::eth::StarknetCoreContract::LogStateUpdate;
+        use alloy::primitives::I256;
+
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<Log>>(10);
+        let mut stream =
+            Box::pin(decode_batches_with_liveness::<LogStateUpdate, _>(receiver_stream(rx), Duration::from_secs(5)));
+
+        // A healthy poller delivers a batch containing one state update event.
+        let event = LogStateUpdate {
+            globalRoot: U256::from(1234u64),
+            blockNumber: I256::try_from(875466).unwrap(),
+            blockHash: U256::from(5678u64),
+        };
+        let log = Log {
+            inner: alloy::primitives::Log {
+                address: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
+                data: event.encode_log_data(),
+            },
+            ..mock_log(1)
+        };
+        tx.send(vec![log]).await.unwrap();
+
+        let decoded = stream.next().await.expect("stream should yield an item").expect("log should decode");
+        assert_eq!(decoded.0.globalRoot, event.globalRoot);
+        assert_eq!(decoded.0.blockNumber, event.blockNumber);
+        assert_eq!(decoded.0.blockHash, event.blockHash);
+
+        // The provider drops the filter and the poller goes silent. The liveness
+        // watchdog must terminate the stream so `state_update_worker` can reconnect,
+        // instead of hanging forever as the unguarded `into_stream()` did.
+        tokio::time::advance(Duration::from_secs(6)).await;
+        assert!(stream.next().await.is_none(), "stream should terminate when poller is stuck");
     }
 
     #[tokio::test(start_paused = true)]

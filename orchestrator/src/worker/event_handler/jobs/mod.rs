@@ -78,6 +78,8 @@ pub trait JobHandlerTrait: Send + Sync {
     ///
     /// # Arguments
     /// * `config` - Shared configuration for the job
+    /// * `job` - Job being considered for processing. Handlers can inspect metadata
+    ///   such as retry attempt count to select the dependency they should check.
     ///
     /// # Returns
     /// * `Ok(())` - Dependencies are ready, proceed with processing
@@ -85,7 +87,7 @@ pub trait JobHandlerTrait: Send + Sync {
     ///
     /// # Default Implementation
     /// Returns `Ok(())` - always ready to process
-    async fn check_ready_to_process(&self, _config: Arc<Config>) -> Result<(), Duration> {
+    async fn check_ready_to_process(&self, _config: Arc<Config>, _job: &JobItem) -> Result<(), Duration> {
         Ok(())
     }
 }
