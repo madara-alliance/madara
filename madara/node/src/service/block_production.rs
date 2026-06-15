@@ -218,7 +218,10 @@ impl BlockProductionService {
         .await
         .context("Timed out waiting for devnet bootstrap block to close")??;
 
-        self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)?;
+        anyhow::ensure!(
+            self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)?,
+            "Devnet bootstrap block #{expected_latest} was not confirmed after close notification"
+        );
 
         Ok(())
     }
