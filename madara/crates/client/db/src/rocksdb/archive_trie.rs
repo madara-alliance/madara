@@ -1,7 +1,9 @@
 use crate::{
     prelude::*,
     rocksdb::{
-        deserialize, serialize_to_smallvec,
+        deserialize,
+        global_trie::bonsai_identifier,
+        serialize_to_smallvec,
         trie::{BONSAI_CLASS_TRIE_COLUMN, BONSAI_CONTRACT_STORAGE_TRIE_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN},
         Column, RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction,
     },
@@ -122,7 +124,7 @@ impl RocksDBStorage {
 
         let mut proof = HashMap::new();
         for key in keys {
-            self.collect_archive_proof_nodes(trie.node_column(), root, &key, &mut proof)?;
+            self.collect_archive_proof_nodes(trie, root, &key, &mut proof)?;
         }
 
         Ok(Some((root, proof.into_iter().collect())))
@@ -162,7 +164,7 @@ impl RocksDBStorage {
 
     fn collect_archive_proof_nodes(
         &self,
-        node_col: Column,
+        trie: ArchiveTrie,
         root: Felt,
         key: &BitVec<u8, Msb0>,
         proof: &mut HashMap<Felt, ProofNode>,
@@ -175,7 +177,7 @@ impl RocksDBStorage {
                 return Ok(());
             }
 
-            let Some(node) = self.archive_trie_node(node_col, current_hash)? else {
+            let Some(node) = self.archive_trie_node(trie, current_hash)? else {
                 anyhow::bail!("archive trie node missing for hash {current_hash:#x}");
             };
 
@@ -200,20 +202,29 @@ impl RocksDBStorage {
         }
     }
 
-    fn archive_trie_node(&self, col: Column, hash: Felt) -> Result<Option<ProofNode>> {
+    fn archive_trie_node(&self, trie: ArchiveTrie, hash: Felt) -> Result<Option<ProofNode>> {
+        let col = trie.node_column();
         let col_handle = self.inner.get_column(col);
         let Some(encoded) = self.inner.db.get_cf(&col_handle, hash.to_bytes_be())? else {
-            return self.lazy_archive_trie_node(col, hash);
+            return self.lazy_archive_trie_node(trie, hash);
         };
         Ok(Some(self.decode_archive_trie_node(hash, &encoded)?))
     }
 
-    fn lazy_archive_trie_node(&self, archive_col: Column, hash: Felt) -> Result<Option<ProofNode>> {
+    fn lazy_archive_trie_node(&self, trie: ArchiveTrie, hash: Felt) -> Result<Option<ProofNode>> {
+        let archive_col = trie.node_column();
         let Some(source_col) = source_column_for_archive_node_column(archive_col) else { return Ok(None) };
         let source_col = self.inner.get_column(source_col);
+        let source_prefix = source_key_prefix_for_archive_trie(trie);
+        let iterator_mode = IteratorMode::From(&source_prefix, Direction::Forward);
+        let mut scanned_nodes = 0usize;
 
-        for item in self.inner.db.iterator_cf(&source_col, IteratorMode::Start) {
-            let (_key, encoded) = item?;
+        for item in self.inner.db.iterator_cf(&source_col, iterator_mode) {
+            let (key, encoded) = item?;
+            if !key.starts_with(&source_prefix) {
+                break;
+            }
+            scanned_nodes += 1;
             let Ok(Some(decoded_hash)) = bonsai_trie::persisted_trie_node_hash(&encoded) else { continue };
             if decoded_hash != hash {
                 continue;
@@ -223,9 +234,13 @@ impl RocksDBStorage {
             let mut batch = WriteBatchWithTransaction::default();
             batch.put_cf(&archive_col, hash.to_bytes_be(), &encoded);
             self.inner.db.write_opt(batch, &self.inner.writeopts)?;
-            tracing::debug!("lazily copied existing bonsai trie node into archive column hash={hash:#x}");
+            tracing::debug!(
+                "lazily copied existing bonsai trie node into archive column hash={hash:#x} scanned_nodes={scanned_nodes}"
+            );
             return Ok(Some(self.decode_archive_trie_node(hash, &encoded)?));
         }
+
+        tracing::debug!("archive trie lazy lookup missed hash={hash:#x} scanned_nodes={scanned_nodes}");
 
         Ok(None)
     }
@@ -250,5 +265,13 @@ fn source_column_for_archive_node_column(archive_col: Column) -> Option<Column> 
             Some(BONSAI_CONTRACT_STORAGE_TRIE_COLUMN)
         }
         _ => None,
+    }
+}
+
+fn source_key_prefix_for_archive_trie(trie: ArchiveTrie) -> Vec<u8> {
+    match trie {
+        ArchiveTrie::Class => bonsai_identifier::CLASS.to_vec(),
+        ArchiveTrie::Contract => bonsai_identifier::CONTRACT.to_vec(),
+        ArchiveTrie::ContractStorage(contract_address) => contract_address.to_bytes_be().to_vec(),
     }
 }
