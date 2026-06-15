@@ -32,11 +32,12 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_SNAP_SYNC", long)]
     pub snap_sync: bool,
 
-    /// Gateway api key to avoid rate limiting (optional).
+    /// Gateway API key used as an x-throttling-bypass header when the selected
+    /// gateway has issued one.
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
 
-    /// Feeder gateway url used to sync blocks, state updates and classes
+    /// Feeder gateway URL used to sync blocks, state updates and classes.
     #[clap(env = "MADARA_GATEWAY_URL", long, value_parser = parse_url, value_name = "URL")]
     pub gateway_url: Option<Url>,
 
