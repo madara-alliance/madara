@@ -16,14 +16,14 @@ use serde_json::json;
 use starknet_types_core::felt::Felt;
 
 enum Frame {
-    Call { contract_address: Felt, class_hash: Option<Felt>, selector: Option<Felt> },
+    Call { contract_address: Felt, class_hash: Felt, selector: Option<Felt> },
     Str(String),
 }
 
 fn push_cairo1_revert_summary(summary: &Cairo1RevertSummary, frames: &mut Vec<Frame>) {
     frames.extend(summary.stack.iter().map(|frame| Frame::Call {
         contract_address: *frame.contract_address.0.key(),
-        class_hash: frame.class_hash.map(|class_hash| class_hash.0),
+        class_hash: frame.class_hash.map(|class_hash| class_hash.0).unwrap_or_default(),
         selector: Some(frame.selector.0),
     }));
     frames.push(Frame::Str(starknet_api::execution_utils::format_panic_data(&summary.last_retdata.0)));
@@ -35,7 +35,7 @@ fn flatten_error_stack(stack: &ErrorStack) -> Vec<Frame> {
         match segment {
             ErrorStackSegment::EntryPoint(entry_point) => frames.push(Frame::Call {
                 contract_address: *entry_point.storage_address.0.key(),
-                class_hash: Some(entry_point.class_hash.0),
+                class_hash: entry_point.class_hash.0,
                 selector: entry_point.selector.map(|s| s.0),
             }),
             ErrorStackSegment::Cairo1RevertSummary(summary) => push_cairo1_revert_summary(summary, &mut frames),
@@ -64,19 +64,12 @@ fn frames_to_json(frames: Vec<Frame>) -> serde_json::Value {
         })
         .rev()
         .fold(json!(leaf), |child, (contract_address, class_hash, selector)| {
-            let mut frame = json!({
+            json!({
                 "contract_address": contract_address,
+                "class_hash": class_hash,
+                "selector": selector,
                 "error": child,
-            });
-            // Cairo 1 revert frames may carry no class hash and constructor frames have no
-            // selector: omit the keys instead of serializing fallback values.
-            if let Some(class_hash) = class_hash {
-                frame["class_hash"] = json!(class_hash);
-            }
-            if let Some(selector) = selector {
-                frame["selector"] = json!(selector);
-            }
-            frame
+            })
         })
 }
 
@@ -176,9 +169,9 @@ mod tests {
         assert_eq!(frames_to_json(flatten_error_stack(&stack)), json!("Unknown error, no string frame available."));
     }
 
-    /// Cairo 1 revert frames without a class hash omit the key instead of emitting 0x0.
+    /// Cairo 1 revert frames without a class hash use Pathfinder's `0x0` fallback.
     #[test]
-    fn cairo1_frame_without_class_hash_omits_key() {
+    fn cairo1_frame_without_class_hash_uses_zero_fallback() {
         let stack = ErrorStack {
             header: ErrorStackHeader::Execution,
             stack: vec![ErrorStackSegment::Cairo1RevertSummary(Cairo1RevertSummary {
@@ -199,15 +192,16 @@ mod tests {
             json,
             json!({
                 "contract_address": "0xa1",
+                "class_hash": "0x0",
                 "selector": "0xc1",
                 "error": "0x61626364 ('abcd')",
             })
         );
     }
 
-    /// Constructor frames have no selector: the key is omitted, not serialized as null.
+    /// Constructor frames have no selector: keep Pathfinder's explicit null value.
     #[test]
-    fn constructor_frame_omits_selector() {
+    fn constructor_frame_has_null_selector() {
         let stack = ErrorStack {
             header: ErrorStackHeader::Constructor,
             stack: vec![
@@ -229,6 +223,7 @@ mod tests {
             json!({
                 "contract_address": "0xa1",
                 "class_hash": "0xb1",
+                "selector": null,
                 "error": "constructor failed",
             })
         );
