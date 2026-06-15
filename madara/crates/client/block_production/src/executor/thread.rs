@@ -78,6 +78,7 @@ impl ExecutorThreadState {
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
     metrics: Arc<BlockProductionMetrics>,
+    close_on_block_time: bool,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -104,10 +105,12 @@ impl ExecutorThread {
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
         metrics: Arc<BlockProductionMetrics>,
+        close_on_block_time: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
             metrics,
+            close_on_block_time,
             incoming_batches,
             replies_sender,
             commands,
@@ -311,7 +314,11 @@ impl ExecutorThread {
         loop {
             // Take transactions to execute.
             if to_exec.len() < batch_size {
-                let wait_deadline = if block_empty && no_empty_blocks { None } else { Some(next_block_deadline) };
+                let wait_deadline = if !self.close_on_block_time || (block_empty && no_empty_blocks) {
+                    None
+                } else {
+                    Some(next_block_deadline)
+                };
                 // should_wait: We don't want to wait if we already have transactions to process - but we would still like to fill up our batch if possible.
 
                 let taken = match self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) {
@@ -535,7 +542,7 @@ impl ExecutorThread {
             // This transitions the state machine from ExecutorState::Executing to ExecutorState::NewBlock.
 
             let now = Instant::now();
-            let block_time_deadline_reached = now >= next_block_deadline;
+            let block_time_deadline_reached = self.close_on_block_time && now >= next_block_deadline;
             if force_close || block_full || block_time_deadline_reached {
                 tracing::debug!(
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",

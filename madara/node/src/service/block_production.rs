@@ -142,7 +142,7 @@ impl BlockProductionService {
             return Ok(());
         }
 
-        let mut block_production = BlockProductionTask::new(
+        let mut block_production = BlockProductionTask::new_manual_close_only(
             self.backend.clone(),
             self.mempool.clone(),
             self.metrics.clone(),
@@ -360,7 +360,10 @@ mod tests {
 
     #[tokio::test]
     async fn storage_proof_bootstrap_transactions_create_declare_and_deploy_blocks() {
-        let chain_config = Arc::new(ChainConfig::madara_devnet());
+        let mut chain_config = ChainConfig::madara_devnet();
+        chain_config.block_time = Duration::from_millis(1);
+        chain_config.no_empty_blocks = false;
+        let chain_config = Arc::new(chain_config);
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         backend.set_l1_gas_quote_for_testing();
 
