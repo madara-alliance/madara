@@ -10,6 +10,7 @@ use mc_devnet::{
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mc_submit_tx::SubmitTransaction;
+use mp_block::TransactionWithReceipt;
 use mp_convert::ToFelt;
 use mp_receipt::ExecutionResult;
 use mp_rpc::v0_9_0::{
@@ -180,6 +181,33 @@ impl BlockProductionService {
         expected_latest: u64,
         expected_txs: usize,
     ) -> anyhow::Result<()> {
+        if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
+            return Ok(());
+        }
+
+        self.wait_for_bootstrap_transactions(notifications, expected_latest, expected_txs).await?;
+
+        if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
+            return Ok(());
+        }
+
+        handle.close_block().await.context("Closing devnet bootstrap block")?;
+        self.wait_for_bootstrap_block_close(notifications).await?;
+
+        anyhow::ensure!(
+            self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)?,
+            "Devnet bootstrap block #{expected_latest} was not confirmed after close notification"
+        );
+
+        Ok(())
+    }
+
+    async fn wait_for_bootstrap_transactions(
+        &self,
+        notifications: &mut tokio::sync::mpsc::UnboundedReceiver<BlockProductionStateNotification>,
+        expected_latest: u64,
+        expected_txs: usize,
+    ) -> anyhow::Result<()> {
         loop {
             match tokio::time::timeout(Duration::from_secs(30), notifications.recv()).await {
                 Ok(Some(BlockProductionStateNotification::BatchExecuted)) => {
@@ -189,11 +217,11 @@ impl BlockProductionService {
                         .map(|view| view.num_executed_transactions() >= expected_txs)
                         .unwrap_or(false)
                     {
-                        break;
+                        return Ok(());
                     }
                 }
                 Ok(Some(BlockProductionStateNotification::ClosedBlock)) => {
-                    if self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)? {
+                    if self.confirmed_bootstrap_block_is_ready(expected_latest, expected_txs)? {
                         return Ok(());
                     }
                 }
@@ -201,12 +229,12 @@ impl BlockProductionService {
                 Err(_) => anyhow::bail!("Timed out waiting for devnet bootstrap transactions to execute"),
             }
         }
+    }
 
-        if self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)? {
-            return Ok(());
-        }
-
-        handle.close_block().await.context("Closing devnet bootstrap block")?;
+    async fn wait_for_bootstrap_block_close(
+        &self,
+        notifications: &mut tokio::sync::mpsc::UnboundedReceiver<BlockProductionStateNotification>,
+    ) -> anyhow::Result<()> {
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 match notifications.recv().await {
@@ -219,19 +247,10 @@ impl BlockProductionService {
         .await
         .context("Timed out waiting for devnet bootstrap block to close")??;
 
-        anyhow::ensure!(
-            self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)?,
-            "Devnet bootstrap block #{expected_latest} was not confirmed after close notification"
-        );
-
         Ok(())
     }
 
-    fn bootstrap_block_closed_with_expected_transactions(
-        &self,
-        expected_latest: u64,
-        expected_txs: usize,
-    ) -> anyhow::Result<bool> {
+    fn confirmed_bootstrap_block_is_ready(&self, expected_latest: u64, expected_txs: usize) -> anyhow::Result<bool> {
         let Some(latest) = self.backend.latest_confirmed_block_n() else {
             return Ok(false);
         };
@@ -251,14 +270,7 @@ impl BlockProductionService {
             "Devnet bootstrap block #{expected_latest} closed with {actual_txs} transactions, expected {expected_txs}; \
              the configured block_time may be too short for storage-proof bootstrap"
         );
-        if let Some((tx_index, tx)) =
-            transactions.iter().enumerate().find(|(_, tx)| tx.receipt.execution_result() != ExecutionResult::Succeeded)
-        {
-            anyhow::bail!(
-                "Devnet bootstrap block #{expected_latest} transaction #{tx_index} reverted: {:?}",
-                tx.receipt.execution_result()
-            );
-        }
+        ensure_bootstrap_transactions_succeeded(expected_latest, &transactions)?;
         anyhow::ensure!(
             latest == expected_latest,
             "Devnet bootstrap advanced to block #{latest} while waiting for block #{expected_latest} to close"
@@ -339,6 +351,22 @@ fn bootstrap_address() -> Felt {
     // SNOS accepts this undeployed BOOTSTRAP sender only for the storage-proof bootstrap declare:
     // it uses nonce 0, zero resource bounds, and the temporary producer runs with fee charging disabled.
     Felt::from_hex_unchecked("0x424f4f545354524150")
+}
+
+fn ensure_bootstrap_transactions_succeeded(
+    expected_latest: u64,
+    transactions: &[TransactionWithReceipt],
+) -> anyhow::Result<()> {
+    if let Some((tx_index, tx)) =
+        transactions.iter().enumerate().find(|(_, tx)| tx.receipt.execution_result() != ExecutionResult::Succeeded)
+    {
+        anyhow::bail!(
+            "Devnet bootstrap block #{expected_latest} transaction #{tx_index} reverted: {:?}",
+            tx.receipt.execution_result()
+        );
+    }
+
+    Ok(())
 }
 
 fn bootstrap_resource_bounds() -> ResourceBoundsMapping {
