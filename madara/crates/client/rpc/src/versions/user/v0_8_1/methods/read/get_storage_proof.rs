@@ -36,6 +36,7 @@ fn path_to_felt(path: &BitSlice<u8, Msb0>) -> Felt {
 fn make_trie_proof<H: StarkHash + Send + Sync>(
     starknet: &Starknet,
     block_n: u64,
+    latest: u64,
     trie: &mut GlobalTrie<H>,
     archive_trie: ArchiveTrie,
     trie_name: StorageProofTrie,
@@ -77,6 +78,17 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
             })
             .collect();
         return Ok((root_hash, converted_proof));
+    }
+
+    // For historical contract-storage tries, a missing archive root means the
+    // contract had no storage root at this block. Falling back to Bonsai here
+    // can read a later transactional root for contracts first touched after
+    // this block, which corrupts Pathfinder-style historical proofs.
+    if block_n < latest && matches!(archive_trie, ArchiveTrie::ContractStorage(_)) {
+        tracing::debug!(
+            "Archive storage root unavailable for {trie_name:?} on historical block {block_n}; treating storage trie as empty"
+        );
+        return Ok((Felt::ZERO, Vec::new()));
     }
 
     tracing::debug!(
@@ -178,6 +190,7 @@ pub fn get_storage_proof(
     let (classes_tree_root, classes_proof) = make_trie_proof(
         starknet,
         block_view.block_number(),
+        latest,
         &mut starknet.backend.db.class_trie(),
         ArchiveTrie::Class,
         StorageProofTrie::Classes,
@@ -186,20 +199,15 @@ pub fn get_storage_proof(
     )?;
 
     let state_view = block_view.state_view();
-    let historical_block = block_view.block_number() < latest;
     let mut contract_root_hashes = std::collections::HashMap::new();
     let contracts_storage_proofs = contracts_storage_keys
         .into_iter()
         .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
-            if historical_block && state_view.get_contract_class_hash(&contract_address)?.is_none() {
-                contract_root_hashes.insert(contract_address, Felt::ZERO);
-                return Ok(Vec::new());
-            }
-
             let identifier = contract_address.to_bytes_be();
             let (root_hash, proof) = make_trie_proof(
                 starknet,
                 block_view.block_number(),
+                latest,
                 &mut starknet.backend.db.contract_storage_trie(),
                 ArchiveTrie::ContractStorage(contract_address),
                 StorageProofTrie::ContractStorage(contract_address),
@@ -213,15 +221,11 @@ pub fn get_storage_proof(
 
     for contract_address in &contract_addresses {
         if !contract_root_hashes.contains_key(contract_address) {
-            if historical_block && state_view.get_contract_class_hash(contract_address)?.is_none() {
-                contract_root_hashes.insert(*contract_address, Felt::ZERO);
-                continue;
-            }
-
             let identifier = contract_address.to_bytes_be();
             let (root_hash, _) = make_trie_proof(
                 starknet,
                 block_view.block_number(),
+                latest,
                 &mut starknet.backend.db.contract_storage_trie(),
                 ArchiveTrie::ContractStorage(*contract_address),
                 StorageProofTrie::ContractStorage(*contract_address),
@@ -236,29 +240,9 @@ pub fn get_storage_proof(
     let contract_leaves_data = contract_addresses
         .iter()
         .map(|contract_addr| {
-            let class_hash = match state_view.get_contract_class_hash(contract_addr)? {
-                Some(class_hash) => class_hash,
-                None if historical_block => {
-                    return Ok(ContractLeavesDataItem {
-                        nonce: Felt::ZERO,
-                        class_hash: Felt::ZERO,
-                        storage_root: Felt::ZERO,
-                    });
-                }
-                None => Felt::ZERO,
-            };
-
-            if historical_block && class_hash == Felt::ZERO {
-                return Ok(ContractLeavesDataItem {
-                    nonce: Felt::ZERO,
-                    class_hash: Felt::ZERO,
-                    storage_root: Felt::ZERO,
-                });
-            };
-
             Ok(ContractLeavesDataItem {
                 nonce: state_view.get_contract_nonce(contract_addr)?.unwrap_or(Felt::ZERO),
-                class_hash,
+                class_hash: state_view.get_contract_class_hash(contract_addr)?.unwrap_or(Felt::ZERO),
                 storage_root: *contract_root_hashes.get(contract_addr).unwrap_or(&Felt::ZERO),
             })
         })
@@ -266,6 +250,7 @@ pub fn get_storage_proof(
     let (contracts_tree_root, contracts_proof_nodes) = make_trie_proof(
         starknet,
         block_view.block_number(),
+        latest,
         &mut starknet.backend.db.contract_trie(),
         ArchiveTrie::Contract,
         StorageProofTrie::Contracts,
