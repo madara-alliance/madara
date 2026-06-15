@@ -2,7 +2,8 @@
 
 ## Next release
 
-- fix(rpc): surface failed executions in starknet_call and starknet_estimateMessageFee (ENTRYPOINT_NOT_FOUND, CONTRACT_NOT_FOUND, CONTRACT_ERROR with revert_error data)
+- fix(rpc): surface failed executions in starknet_call and starknet_estimateMessageFee
+  (ENTRYPOINT_NOT_FOUND, CONTRACT_NOT_FOUND, CONTRACT_ERROR with revert_error data)
 - cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`
 - refactor: refactor mc-sync crate, and remove mc-block-import crate
 - feat: settlement client introduced instead of just ethereum, starknet client added for settlement
