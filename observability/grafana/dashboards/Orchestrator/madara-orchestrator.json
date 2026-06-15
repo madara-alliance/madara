@@ -1220,6 +1220,11 @@
           "expr": "sum by (operation_job_type, retry_reason) (increase(job_retry_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
           "legendFormat": "{{operation_job_type}} - {{retry_reason}}",
           "refId": "A"
+        },
+        {
+          "expr": "sum(increase(snos_rpc_fallback_total_jobs_total{service_name=\"${namespace}\"}[1h])) or vector(0)",
+          "legendFormat": "SNOS backup RPC fallback",
+          "refId": "B"
         }
       ],
       "title": "Job Retry Count by Type (1h)",
