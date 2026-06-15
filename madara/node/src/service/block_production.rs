@@ -1,6 +1,8 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
-use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
+use mc_block_production::{
+    metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionStateNotification, BlockProductionTask,
+};
 use mc_db::MadaraBackend;
 use mc_devnet::{
     storage_proof_bootstrap_account_class, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract,
@@ -179,7 +181,7 @@ impl BlockProductionService {
     ) -> anyhow::Result<()> {
         loop {
             match tokio::time::timeout(Duration::from_secs(30), notifications.recv()).await {
-                Ok(Some(mc_block_production::BlockProductionStateNotification::BatchExecuted)) => {
+                Ok(Some(BlockProductionStateNotification::BatchExecuted)) => {
                     if self
                         .backend
                         .block_view_on_preconfirmed()
@@ -189,18 +191,26 @@ impl BlockProductionService {
                         break;
                     }
                 }
-                Ok(Some(mc_block_production::BlockProductionStateNotification::ClosedBlock)) => continue,
+                Ok(Some(BlockProductionStateNotification::ClosedBlock)) => {
+                    if self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)? {
+                        return Ok(());
+                    }
+                }
                 Ok(None) => anyhow::bail!("Block production stopped before executing devnet bootstrap transactions"),
                 Err(_) => anyhow::bail!("Timed out waiting for devnet bootstrap transactions to execute"),
             }
+        }
+
+        if self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)? {
+            return Ok(());
         }
 
         handle.close_block().await.context("Closing devnet bootstrap block")?;
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 match notifications.recv().await {
-                    Some(mc_block_production::BlockProductionStateNotification::ClosedBlock) => return anyhow::Ok(()),
-                    Some(mc_block_production::BlockProductionStateNotification::BatchExecuted) => continue,
+                    Some(BlockProductionStateNotification::ClosedBlock) => return anyhow::Ok(()),
+                    Some(BlockProductionStateNotification::BatchExecuted) => continue,
                     None => anyhow::bail!("Block production stopped before closing devnet bootstrap block"),
                 }
             }
@@ -208,13 +218,41 @@ impl BlockProductionService {
         .await
         .context("Timed out waiting for devnet bootstrap block to close")??;
 
-        anyhow::ensure!(
-            self.backend.latest_confirmed_block_n() == Some(expected_latest),
-            "Devnet bootstrap block closed at {:?}, expected {expected_latest}",
-            self.backend.latest_confirmed_block_n()
-        );
+        self.bootstrap_block_closed_with_expected_transactions(expected_latest, expected_txs)?;
 
         Ok(())
+    }
+
+    fn bootstrap_block_closed_with_expected_transactions(
+        &self,
+        expected_latest: u64,
+        expected_txs: usize,
+    ) -> anyhow::Result<bool> {
+        let Some(latest) = self.backend.latest_confirmed_block_n() else {
+            return Ok(false);
+        };
+        if latest < expected_latest {
+            return Ok(false);
+        }
+
+        let actual_txs = self
+            .backend
+            .block_view_on_confirmed(expected_latest)
+            .with_context(|| format!("Devnet bootstrap block #{expected_latest} should be confirmed"))?
+            .get_executed_transactions(..)
+            .with_context(|| format!("Reading devnet bootstrap block #{expected_latest} transactions"))?
+            .len();
+        anyhow::ensure!(
+            actual_txs == expected_txs,
+            "Devnet bootstrap block #{expected_latest} closed with {actual_txs} transactions, expected {expected_txs}; \
+             the configured block_time may be too short for storage-proof bootstrap"
+        );
+        anyhow::ensure!(
+            latest == expected_latest,
+            "Devnet bootstrap advanced to block #{latest} while waiting for block #{expected_latest} to close"
+        );
+
+        Ok(true)
     }
 
     fn make_bootstrap_account_declare_tx(&self) -> anyhow::Result<BroadcastedDeclareTxn> {
@@ -364,5 +402,50 @@ mod tests {
                 .iter()
                 .any(|deployed| deployed.address == contract.address && deployed.class_hash == contract.class_hash));
         }
+    }
+
+    #[tokio::test]
+    async fn close_bootstrap_block_accepts_already_closed_expected_block() {
+        let mut chain_config = ChainConfig::madara_devnet();
+        chain_config.block_time = Duration::from_millis(1);
+        chain_config.no_empty_blocks = true;
+        let chain_config = Arc::new(chain_config);
+        let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
+
+        ChainGenesisDescription::empty().build_and_store(&backend).await.unwrap();
+
+        let service = BlockProductionService {
+            backend: Arc::clone(&backend),
+            task: None,
+            mempool: Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default())),
+            metrics: Arc::new(BlockProductionMetrics::register()),
+            l1_client: Arc::new(L1SyncDisabledClient),
+            discard_preconfirmed_on_startup: false,
+            n_devnet_contracts: 0,
+            devnet_storage_proof_bootstrap: true,
+            disabled: false,
+        };
+
+        let mut block_production = BlockProductionTask::new(
+            Arc::clone(&backend),
+            Arc::clone(&service.mempool),
+            Arc::clone(&service.metrics),
+            Arc::clone(&service.l1_client),
+            true,
+            false,
+        );
+        let mut notifications = block_production.subscribe_state_notifications();
+        let handle = block_production.handle();
+        let ctx = ServiceContext::new();
+        let task = AbortOnDrop::spawn(async move { block_production.run(ctx).await });
+
+        handle.submit_declare_transaction(service.make_bootstrap_account_declare_tx().unwrap()).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        service.close_bootstrap_block(&handle, &mut notifications, 1, 1).await.unwrap();
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+
+        drop(task);
     }
 }
