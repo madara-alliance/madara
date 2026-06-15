@@ -14,6 +14,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LockResult, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -209,14 +210,19 @@ pub struct BonsaiDB {
 
 impl BonsaiDB {
     fn archive_trie_node_hash(value: &[u8]) -> Option<Felt> {
-        match bonsai_trie::persisted_trie_node_hash(value) {
-            Ok(Some(node_hash)) => Some(node_hash),
-            Ok(None) => {
+        let decoded = catch_unwind(AssertUnwindSafe(|| bonsai_trie::persisted_trie_node_hash(value)));
+        match decoded {
+            Ok(Ok(Some(node_hash))) => Some(node_hash),
+            Ok(Ok(None)) => {
                 tracing::trace!("skipping archive trie node without finalized hash");
                 None
             }
-            Err(err) => {
-                tracing::warn!("failed to decode finalized bonsai trie node for archive: {err}");
+            Ok(Err(err)) => {
+                tracing::debug!("skipping undecodable bonsai trie node for archive: {err}");
+                None
+            }
+            Err(_) => {
+                tracing::debug!("skipping bonsai trie node that panicked during archive hash decoding");
                 None
             }
         }
