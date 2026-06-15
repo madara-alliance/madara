@@ -1157,4 +1157,47 @@ mod tests {
         assert!(!revert_single_trie("class", &mut missing, None, 8).unwrap());
         assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN).unwrap(), None);
     }
+
+    #[test]
+    fn bonsai_transactional_state_rewinds_snapshot_to_requested_block() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config = RocksDBConfig { max_kept_snapshots: Some(10), snapshot_interval: 1, ..Default::default() };
+        let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
+
+        let key_a = contract_trie_key(Felt::from(1u64));
+        let key_b = contract_trie_key(Felt::from(2u64));
+        let key_c = contract_trie_key(Felt::from(3u64));
+
+        let mut trie = storage.contract_trie();
+        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        let root_at_0 = trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
+        storage.snapshots.set_new_head(0);
+
+        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        let root_at_1 = trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
+        storage.snapshots.set_new_head(1);
+
+        trie.insert(bonsai_identifier::CONTRACT, &key_c, &Felt::from(33u64)).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+        let root_at_2 = trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
+        storage.snapshots.set_new_head(2);
+
+        let trie = storage.contract_trie();
+        let transaction_at_0 = trie
+            .get_transactional_state(BasicId::new(0), trie.get_config())
+            .unwrap()
+            .expect("snapshot at block 0 should exist");
+        let transaction_at_1 = trie
+            .get_transactional_state(BasicId::new(1), trie.get_config())
+            .unwrap()
+            .expect("snapshot at block 1 should exist");
+
+        assert_eq!(transaction_at_0.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_0);
+        assert_eq!(transaction_at_1.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_1);
+        assert_eq!(trie.root_hash(bonsai_identifier::CONTRACT).unwrap(), root_at_2);
+        assert_ne!(root_at_0, root_at_2);
+        assert_ne!(root_at_1, root_at_2);
+    }
 }
