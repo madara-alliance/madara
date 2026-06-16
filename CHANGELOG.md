@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): failure_reason in tx status, getEvents numeric bounds past tip, BLOCK_NOT_FOUND for tag resolution
 - feat(rpc): discover minimal L2 gas limit in estimateFee/simulateTransactions; SKIP_VALIDATE relaxes the strict nonce check
 - fix(rpc): structured CONTRACT_EXECUTION_ERROR data and real transaction_index in execution errors
 - fix(rpc): surface failed executions in starknet_call and starknet_estimateMessageFee

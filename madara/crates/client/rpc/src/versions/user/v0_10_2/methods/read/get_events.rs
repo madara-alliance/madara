@@ -98,17 +98,14 @@ fn resolve_block_range(
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
 ) -> StarknetRpcResult<(u64, u64)> {
-    let from_block_n = from_block.map(|block_id| resolve_block_n(starknet, block_id)).transpose()?.unwrap_or(0);
+    let from_block_n =
+        from_block.map(|block_id| starknet.resolve_event_from_block_bound(block_id)).transpose()?.unwrap_or(0);
     let to_block_n = to_block
-        .map(|block_id| resolve_block_n(starknet, block_id))
+        .map(|block_id| starknet.resolve_event_to_block_bound(block_id))
         .transpose()?
         .unwrap_or_else(|| view.latest_block_n().unwrap_or(0));
 
     Ok((from_block_n, to_block_n))
-}
-
-fn resolve_block_n(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<u64> {
-    Ok(starknet.resolve_view_on(block_id)?.latest_block_n().unwrap_or(0))
 }
 
 fn parse_continuation_token(
@@ -234,6 +231,7 @@ fn empty_events_chunk() -> EventsChunk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::rpc_test_setup;
     use rstest::rstest;
 
     fn dummy_event(block_number: u64, event_index_in_block: u64) -> EventWithInfo {
@@ -309,5 +307,52 @@ mod tests {
     fn validate_filter_limits_rejects_zero_chunk_size() {
         let err = validate_filter_limits(0, None).expect_err("zero-sized event pages should be rejected");
         assert_eq!(err, StarknetRpcApiError::PageSizeTooBig);
+    }
+
+    /// Numeric range bounds past the chain tip return an empty page instead of BLOCK_NOT_FOUND,
+    /// like pathfinder and juno: clients paginating by block number at the tip must not error.
+    #[rstest]
+    fn get_events_beyond_chain_tip_returns_empty_page(
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet),
+    ) {
+        let (_backend, rpc) = rpc_test_setup;
+
+        let chunk = get_events(
+            &rpc,
+            EventFilterWithPageRequest {
+                address: None,
+                from_block: Some(BlockId::Number(100)),
+                to_block: Some(BlockId::Number(200)),
+                keys: None,
+                chunk_size: 10,
+                continuation_token: None,
+            },
+        )
+        .unwrap();
+
+        assert!(chunk.events.is_empty());
+        assert!(chunk.continuation_token.is_none());
+    }
+
+    #[rstest]
+    fn get_events_from_latest_on_empty_chain_returns_block_not_found(
+        rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, crate::Starknet),
+    ) {
+        let (_backend, rpc) = rpc_test_setup;
+
+        let err = get_events(
+            &rpc,
+            EventFilterWithPageRequest {
+                address: None,
+                from_block: Some(BlockId::Tag(mp_rpc::v0_9_0::BlockTag::Latest)),
+                to_block: None,
+                keys: None,
+                chunk_size: 10,
+                continuation_token: None,
+            },
+        )
+        .unwrap_err();
+
+        assert_eq!(err, StarknetRpcApiError::BlockNotFound);
     }
 }

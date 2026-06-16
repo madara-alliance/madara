@@ -5,28 +5,42 @@
       "id": "unknown_method_returns_32601",
       "method": "starknet_thisMethodDoesNotExist",
       "params": {},
-      "expected_error": { "code": -32601 },
+      "expected_error": {
+        "code": -32601
+      },
       "description": "Unknown method must return JSON-RPC Method not found"
     },
     {
       "id": "invalid_params_getBlockWithTxs",
       "method": "starknet_getBlockWithTxs",
-      "params": { "bad": "payload" },
-      "expected_error": { "code": -32602 },
+      "params": {
+        "bad": "payload"
+      },
+      "expected_error": {
+        "code": -32602
+      },
       "description": "Known method with invalid params must return Invalid params"
     },
     {
       "id": "invalid_params_getTransactionByHash",
       "method": "starknet_getTransactionByHash",
       "params": {},
-      "expected_error": { "code": -32602 },
+      "expected_error": {
+        "code": -32602
+      },
       "description": "Missing required transaction_hash param"
     },
     {
       "id": "block_not_found",
       "method": "starknet_getBlockWithTxHashes",
-      "params": { "block_id": { "block_number": 999999 } },
-      "expected_error": { "code": 24 },
+      "params": {
+        "block_id": {
+          "block_number": 999999
+        }
+      },
+      "expected_error": {
+        "code": 24
+      },
       "description": "Non-existent block number returns BLOCK_NOT_FOUND (code 24)"
     },
     {
@@ -35,7 +49,9 @@
       "params": {
         "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000dead"
       },
-      "expected_error": { "code": 29 },
+      "expected_error": {
+        "code": 29
+      },
       "description": "Non-existent tx hash returns TXN_HASH_NOT_FOUND (code 29)"
     },
     {
@@ -45,7 +61,9 @@
         "block_id": "latest",
         "contract_address": "0x0000000000000000000000000000000000000000000000000000000000dead"
       },
-      "expected_error": { "code": 20 },
+      "expected_error": {
+        "code": 20
+      },
       "description": "Non-existent contract returns CONTRACT_NOT_FOUND (code 20)"
     },
     {
@@ -55,17 +73,23 @@
         "block_id": "latest",
         "class_hash": "0x0000000000000000000000000000000000000000000000000000000000dead"
       },
-      "expected_error": { "code": 28 },
+      "expected_error": {
+        "code": 28
+      },
       "description": "Non-existent class hash returns CLASS_HASH_NOT_FOUND (code 28)"
     },
     {
       "id": "invalid_tx_index",
       "method": "starknet_getTransactionByBlockIdAndIndex",
       "params": {
-        "block_id": { "block_number": 0 },
+        "block_id": {
+          "block_number": 0
+        },
         "index": 999
       },
-      "expected_error": { "code": 27 },
+      "expected_error": {
+        "code": 27
+      },
       "description": "Out-of-range tx index returns INVALID_TXN_INDEX (code 27)"
     },
     {
@@ -74,7 +98,9 @@
       "params": {
         "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
       },
-      "expected_error": { "code": 29 },
+      "expected_error": {
+        "code": 29
+      },
       "description": "Unknown L1 tx hash returns TXN_HASH_NOT_FOUND (code 29)"
     },
     {
@@ -91,6 +117,115 @@
       },
       "expected_error": { "code": 40 },
       "description": "Reverted L1 handler fee estimation returns CONTRACT_ERROR (code 40)"
+    },
+    {
+      "id": "call_non_existent_entrypoint",
+      "method": "starknet_call",
+      "params": {
+        "request": {
+          "contract_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "entry_point_selector": "$computed:sn_keccak:definitely_not_an_entrypoint",
+          "calldata": []
+        },
+        "block_id": "latest"
+      },
+      "expected_error": {
+        "code": 21
+      },
+      "description": "Calling a non-existent selector returns ENTRYPOINT_NOT_FOUND (21). Regression: blockifier >= 0.13.4 reports this as a successful execution with ENTRYPOINT_NOT_FOUND retdata, which used to be returned as a successful call result."
+    },
+    {
+      "id": "call_non_existent_contract",
+      "method": "starknet_call",
+      "params": {
+        "request": {
+          "contract_address": "0x0000000000000000000000000000000000000000000000000000000000dead",
+          "entry_point_selector": "$computed:sn_keccak:get_balance",
+          "calldata": []
+        },
+        "block_id": "latest"
+      },
+      "expected_error": {
+        "code": 20
+      },
+      "description": "Calling a non-existent contract returns CONTRACT_NOT_FOUND (20)."
+    },
+    {
+      "id": "call_reverted_structured_error",
+      "method": "starknet_call",
+      "params": {
+        "request": {
+          "contract_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "entry_point_selector": "$computed:sn_keccak:transfer",
+          "calldata": [
+            "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+            "0x1",
+            "0x0"
+          ]
+        },
+        "block_id": "latest"
+      },
+      "expected_error": {
+        "code": 40,
+        "data": {
+          "revert_error": {
+            "contract_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+            "selector": "$computed:sn_keccak:transfer",
+            "error": "$exists"
+          }
+        }
+      },
+      "description": "A reverted call (caller of starknet_call is 0, so the ERC20 panics with ERC20: transfer from 0) returns CONTRACT_ERROR (40) with the structured CONTRACT_EXECUTION_ERROR object as data, not a successful result with the panic retdata."
+    },
+    {
+      "id": "estimate_message_fee_reverted_handler",
+      "method": "starknet_estimateMessageFee",
+      "params": {
+        "message": {
+          "from_address": "0x000000000000000000000000000000000000beef",
+          "to_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+          "entry_point_selector": "$computed:sn_keccak:l1_handler_entrypoint",
+          "payload": ["0x1", "0x2"]
+        },
+        "block_id": "latest"
+      },
+      "expected_error": {
+        "code": 40
+      },
+      "description": "A message whose handler fails (the fee token has no l1 handler) returns CONTRACT_ERROR (40). Regression: blockifier reports a failed L1 handler as a successful execution with revert_error set, which used to be priced as a fee estimate."
+    },
+    {
+      "id": "estimate_message_fee_contract_not_found",
+      "method": "starknet_estimateMessageFee",
+      "params": {
+        "message": {
+          "from_address": "0x000000000000000000000000000000000000beef",
+          "to_address": "0x0000000000000000000000000000000000000000000000000000000000dead",
+          "entry_point_selector": "$computed:sn_keccak:l1_handler_entrypoint",
+          "payload": ["0x1", "0x2"]
+        },
+        "block_id": "latest"
+      },
+      "expected_error": {
+        "code": 20
+      },
+      "description": "A message to a non-existent contract returns CONTRACT_NOT_FOUND (20) on v0.10+."
+    },
+    {
+      "id": "get_events_unknown_hash_bound",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_hash": "0x0000000000000000000000000000000000000000000000000000000000dead"
+          },
+          "chunk_size": 10
+        }
+      },
+      "expected_error": {
+        "code": 24
+      },
+      "description": "Hash range bounds must resolve through the backend: an unknown block hash is BLOCK_NOT_FOUND (24). Only numeric bounds are exempt from existence checks."
     }
   ]
 }

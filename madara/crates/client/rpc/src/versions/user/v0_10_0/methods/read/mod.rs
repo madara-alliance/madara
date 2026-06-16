@@ -150,7 +150,7 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         V0_8_1Impl::get_storage_proof(
             self,
             mp_rpc::v0_8_1::BlockId::Number(
-                block_view.latest_confirmed_block_n().ok_or(StarknetRpcApiError::NoBlocks)?,
+                block_view.latest_confirmed_block_n().ok_or(StarknetRpcApiError::BlockNotFound)?,
             ),
             class_hashes,
             contract_addresses,
