@@ -37,7 +37,8 @@ pub async fn trace_transaction(
             exec_context,
         ))
     })
-    .await?;
+    .await
+    .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
 
     let execution_result = executions_results.pop().context("No execution info returned")?;
 

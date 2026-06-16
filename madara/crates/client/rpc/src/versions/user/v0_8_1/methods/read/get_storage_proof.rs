@@ -90,7 +90,7 @@ pub fn get_storage_proof(
         starknet.resolve_block_view(block_id)?.into_confirmed().context("View cannot be preconfirmed here")?;
 
     let Some(latest) = starknet.backend.latest_confirmed_block_n() else {
-        return Err(StarknetRpcApiError::NoBlocks);
+        return Err(StarknetRpcApiError::BlockNotFound);
     };
 
     if latest.saturating_sub(block_view.block_number()) > starknet.storage_proof_config.max_distance {

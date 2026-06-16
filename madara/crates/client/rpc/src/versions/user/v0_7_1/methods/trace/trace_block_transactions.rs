@@ -46,7 +46,8 @@ pub async fn trace_block_transactions_view(
     let (executions_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
     })
-    .await?;
+    .await
+    .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
 
     let traces = executions_results
         .into_iter()

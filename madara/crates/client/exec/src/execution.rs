@@ -26,6 +26,27 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         transactions_before: impl IntoIterator<Item = Transaction>,
         transactions_to_trace: impl IntoIterator<Item = Transaction>,
     ) -> Result<Vec<ExecutionResult>, Error> {
+        self.execute_transactions_inner(transactions_before, transactions_to_trace, false)
+    }
+
+    /// Same as [`Self::execute_transactions`], for fee estimation and simulation: transactions
+    /// subject to L2 gas accounting (Sierra >= 1.7 senders, fee charge disabled) are executed with
+    /// the minimal viable L2 gas limit discovered by [`Self::find_l2_gas_limit`] instead of their
+    /// user-provided bounds, and the result carries the gas vector to price estimates with.
+    pub fn execute_transactions_for_estimation(
+        &mut self,
+        transactions_before: impl IntoIterator<Item = Transaction>,
+        transactions_to_trace: impl IntoIterator<Item = Transaction>,
+    ) -> Result<Vec<ExecutionResult>, Error> {
+        self.execute_transactions_inner(transactions_before, transactions_to_trace, true)
+    }
+
+    fn execute_transactions_inner(
+        &mut self,
+        transactions_before: impl IntoIterator<Item = Transaction>,
+        transactions_to_trace: impl IntoIterator<Item = Transaction>,
+        find_l2_gas_limits: bool,
+    ) -> Result<Vec<ExecutionResult>, Error> {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
@@ -45,7 +66,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         transactions_to_trace
             .into_iter()
             .enumerate()
-            .map(|(index, tx): (_, Transaction)| {
+            .map(|(index, mut tx): (_, Transaction)| {
                 let hash = tx.tx_hash();
                 tracing::debug!("executing {:#x} (trace)", hash.to_felt());
                 let tx_type = tx.tx_type();
@@ -59,9 +80,24 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     Transaction::L1Handler(_) => None, // There is no minimal_l1_gas field for L1 handler transactions.
                 };
 
+                let gas_vector_computation_mode = match &tx {
+                    Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
+                    Transaction::L1Handler(_) => GasVectorComputationMode::NoL2Gas,
+                };
+
                 let view = self.view().clone();
                 let make_reexec_error =
                     |err| TxExecError { view: format!("{view}"), hash, index: executed_prev + index, err };
+
+                // The L2 gas limit search executes against the protocol execution cap, which is
+                // only valid when the fee is not charged (i.e. estimation semantics).
+                let mut gas_for_fee_estimate = None;
+                if find_l2_gas_limits
+                    && matches!(&tx, Transaction::Account(tx) if !tx.execution_flags.charge_fee)
+                    && self.l2_gas_accounting_enabled(&tx, &gas_vector_computation_mode)?
+                {
+                    gas_for_fee_estimate = self.find_l2_gas_limit(&mut tx, &make_reexec_error)?;
+                }
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
@@ -102,11 +138,6 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     _ => None,
                 };
 
-                let gas_vector_computation_mode = match tx {
-                    Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
-                    Transaction::L1Handler(_) => GasVectorComputationMode::NoL2Gas,
-                };
-
                 Ok(ExecutionResult {
                     hash,
                     tx_type,
@@ -117,6 +148,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     state_diff: state_diff.state_maps.into(),
                     deployed_contracts,
                     deprecated_declared_class,
+                    gas_for_fee_estimate,
                 })
             })
             .collect::<Result<Vec<_>, _>>()

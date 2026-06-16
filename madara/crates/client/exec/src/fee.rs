@@ -11,7 +11,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     ) -> Result<mp_rpc::v0_7_1::FeeEstimate, Error> {
         let gas_price_vector = self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);
         let minimal_gas_vector = executions_result.minimal_l1_gas.unwrap_or_default();
-        let gas_vector = executions_result.execution_info.receipt.gas;
+        let gas_vector = executions_result.gas_for_fee_pricing();
         let mut gas_vector = GasVector {
             l1_gas: gas_vector.l1_gas.max(minimal_gas_vector.l1_gas),
             l1_data_gas: gas_vector.l1_data_gas.max(minimal_gas_vector.l1_data_gas),
@@ -50,7 +50,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     ) -> Result<mp_rpc::v0_8_1::FeeEstimate, Error> {
         let gas_price_vector = self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);
         let minimal_gas_vector = executions_result.minimal_l1_gas.unwrap_or_default();
-        let gas_vector = executions_result.execution_info.receipt.gas;
+        let gas_vector = executions_result.gas_for_fee_pricing();
         let mut gas_vector = GasVector {
             l1_gas: gas_vector.l1_gas.max(minimal_gas_vector.l1_gas),
             l1_data_gas: gas_vector.l1_data_gas.max(minimal_gas_vector.l1_data_gas),
@@ -91,7 +91,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     ) -> Result<mp_rpc::v0_9_0::FeeEstimateCommon, Error> {
         let gas_price_vector = self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);
         let minimal_gas_vector = executions_result.minimal_l1_gas.unwrap_or_default();
-        let gas_vector = executions_result.execution_info.receipt.gas;
+        let gas_vector = executions_result.gas_for_fee_pricing();
         let mut gas_vector = GasVector {
             l1_gas: gas_vector.l1_gas.max(minimal_gas_vector.l1_gas),
             l1_data_gas: gas_vector.l1_data_gas.max(minimal_gas_vector.l1_data_gas),

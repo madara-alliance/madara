@@ -77,6 +77,93 @@ impl TransactionLookup for TestTransactionProvider {
     }
 }
 
+/// Address at which [`m_cairo_test_contracts::TEST_CONTRACT_SIERRA`] is predeployed by
+/// [`rpc_test_setup_with_execution`]. This contract exposes an `l1_handler_entrypoint` l1 handler.
+#[cfg(test)]
+pub const TEST_CONTRACT_ADDRESS: Felt = Felt::from_hex_unchecked("0x123456789");
+
+/// A chain whose genesis holds the devnet contracts (fee-token ERC20s, UDC, funded accounts) plus
+/// the test contract, for RPC tests that need to execute against real classes.
+#[cfg(test)]
+pub async fn rpc_test_setup_with_execution() -> (Arc<MadaraBackend>, Starknet, mc_devnet::DevnetKeys) {
+    let chain_config = Arc::new(ChainConfig::madara_devnet());
+    let backend = MadaraBackend::open_for_testing(chain_config.clone());
+    backend.set_l1_gas_quote_for_testing();
+
+    let mut genesis = mc_devnet::ChainGenesisDescription::base_config().unwrap();
+    let keys = genesis.add_devnet_contracts(2).unwrap();
+    let test_class =
+        mc_devnet::InitiallyDeclaredClass::new_sierra(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
+    genesis.deployed_contracts.insert(TEST_CONTRACT_ADDRESS, test_class.class_hash());
+    genesis.declared_classes.insert(test_class);
+    genesis.build_and_store(&backend).await.unwrap();
+
+    let provider = Arc::new(TestTransactionProvider);
+    let rpc = Starknet::new(
+        backend.clone(),
+        Arc::clone(&provider) as _,
+        provider,
+        Default::default(),
+        None,
+        ServiceContext::new_for_testing(),
+    );
+    (backend, rpc, keys)
+}
+
+/// A fee-token transfer of 1 wei from `account` (a v3 invoke), signed iff `valid_signature`.
+/// For use with [`rpc_test_setup_with_execution`].
+#[cfg(test)]
+pub fn devnet_transfer_tx(
+    backend: &MadaraBackend,
+    account: &mc_devnet::DevnetPredeployedContract,
+    nonce: Felt,
+    valid_signature: bool,
+) -> mp_rpc::v0_9_0::BroadcastedTxn {
+    use mc_devnet::{Call, Multicall, Selector};
+    use mp_convert::ToFelt;
+    use mp_rpc::v0_9_0::{
+        BroadcastedInvokeTxn, BroadcastedTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
+    };
+    use mp_transactions::IntoStarknetApiExt;
+
+    let mut tx = InvokeTxnV3 {
+        sender_address: account.address,
+        calldata: Multicall::default()
+            .with(Call {
+                to: backend.chain_config().native_fee_token_address.to_felt(),
+                selector: Selector::from("transfer"),
+                calldata: vec![account.address, Felt::ONE, Felt::ZERO],
+            })
+            .flatten()
+            .collect::<Vec<_>>()
+            .into(),
+        signature: vec![Felt::ONE, Felt::TWO].into(),
+        nonce,
+        resource_bounds: ResourceBoundsMapping {
+            l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+            l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+            l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+        },
+        tip: 0,
+        paymaster_data: vec![],
+        account_deployment_data: vec![],
+        nonce_data_availability_mode: DaMode::L1,
+        fee_data_availability_mode: DaMode::L1,
+    };
+    if valid_signature {
+        let api_tx = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx.clone()))
+            .into_validated_tx(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                TxTimestamp::now(),
+            )
+            .unwrap();
+        let signature = account.secret.sign(&api_tx.hash).unwrap();
+        tx.signature = vec![signature.r, signature.s].into();
+    }
+    BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx))
+}
+
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
@@ -857,3 +944,53 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         state_diffs,
     }
 }
+
+/// Generates the shared `estimate_message_fee` regression tests (success + revert) for a
+/// versioned handler. Invoke inside the version's `tests` module — relies on `super::*` plus the
+/// version's `BlockTag` import providing that version's `estimate_message_fee`, `MsgFromL1` and
+/// `BlockId`. The caller passes the expression asserting a non-zero fee, since the estimate DTO
+/// differs by version.
+macro_rules! estimate_message_fee_tests {
+    (|$estimate:ident| $fee_is_nonzero:expr) => {
+        /// A message whose handler executes successfully must return a fee estimate. Regression
+        /// test: the L1 handler used to be built with `paid_fee_on_l1: 0`, which blockifier
+        /// rejects on the *success* path, so every valid message errored.
+        #[tokio::test]
+        async fn estimate_message_fee_success() {
+            let (_backend, rpc, _keys) = $crate::test_utils::rpc_test_setup_with_execution().await;
+
+            let message = MsgFromL1 {
+                from_address: "0x000000000000000000000000000000000000beef".to_string(),
+                to_address: $crate::test_utils::TEST_CONTRACT_ADDRESS,
+                entry_point_selector: ::starknet_core::utils::get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                payload: vec![::starknet_types_core::felt::Felt::ONE, ::starknet_types_core::felt::Felt::TWO],
+            };
+            let $estimate = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await.unwrap();
+
+            assert!($fee_is_nonzero);
+        }
+
+        /// A message whose handler fails must surface as CONTRACT_ERROR. Regression test:
+        /// blockifier reports a failed L1 handler as a successful execution with `revert_error`
+        /// set, which used to be converted into a fee estimate.
+        #[tokio::test]
+        async fn estimate_message_fee_reverted_returns_contract_error() {
+            let (backend, rpc, _keys) = $crate::test_utils::rpc_test_setup_with_execution().await;
+
+            // The fee token ERC20 has no l1 handler: executing the message fails.
+            let message = MsgFromL1 {
+                from_address: "0x000000000000000000000000000000000000beef".to_string(),
+                to_address: backend.chain_config().native_fee_token_address.to_felt(),
+                entry_point_selector: ::starknet_core::utils::get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                payload: vec![::starknet_types_core::felt::Felt::ONE, ::starknet_types_core::felt::Felt::TWO],
+            };
+            let result = estimate_message_fee(&rpc, message, BlockId::Tag(BlockTag::Latest)).await;
+
+            ::assert_matches::assert_matches!(
+                result.unwrap_err(),
+                $crate::errors::StarknetRpcApiError::ContractError { .. }
+            );
+        }
+    };
+}
+pub(crate) use estimate_message_fee_tests;

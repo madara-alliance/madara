@@ -28,9 +28,9 @@ pub async fn get_transaction_status(
     if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
         let transaction = res.get_transaction()?;
 
-        let execution_status = match transaction.receipt.execution_result() {
-            ExecutionResult::Reverted { .. } => Some(TxnExecutionStatus::Reverted),
-            ExecutionResult::Succeeded => Some(TxnExecutionStatus::Succeeded),
+        let (execution_status, failure_reason) = match transaction.receipt.execution_result() {
+            ExecutionResult::Reverted { reason } => (Some(TxnExecutionStatus::Reverted), Some(reason.clone())),
+            ExecutionResult::Succeeded => (Some(TxnExecutionStatus::Succeeded), None),
         };
 
         let finality_status = if res.block.is_on_l1() {
@@ -41,9 +41,13 @@ pub async fn get_transaction_status(
             TxnStatus::PreConfirmed
         };
 
-        Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status })
+        Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status, failure_reason })
     } else if starknet.transaction_lookup.received_transaction(transaction_hash).await.is_some_and(|b| b) {
-        Ok(TxnFinalityAndExecutionStatus { finality_status: TxnStatus::Received, execution_status: None })
+        Ok(TxnFinalityAndExecutionStatus {
+            finality_status: TxnStatus::Received,
+            execution_status: None,
+            failure_reason: None,
+        })
     } else {
         Err(StarknetRpcApiError::TxnHashNotFound)
     }
@@ -151,7 +155,11 @@ mod tests {
 
         assert_eq!(
             status,
-            TxnFinalityAndExecutionStatus { finality_status: TxnStatus::Received, execution_status: None }
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::Received,
+                execution_status: None,
+                failure_reason: None
+            }
         );
     }
 
@@ -171,7 +179,8 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::AcceptedOnL2,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
+                failure_reason: None
             }
         );
     }
@@ -203,7 +212,8 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::PreConfirmed,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
+                failure_reason: None
             }
         );
     }
@@ -225,7 +235,8 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::AcceptedOnL1,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
+                failure_reason: None
             }
         );
     }
@@ -234,5 +245,41 @@ mod tests {
     #[rstest::rstest]
     async fn get_transaction_status_err_not_found(_logs: (), starknet: Starknet) {
         assert_eq!(get_transaction_status(&starknet, TX_HASH).await, Err(StarknetRpcApiError::TxnHashNotFound));
+    }
+
+    /// Reverted transactions must carry the failure reason in the status result.
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn get_transaction_status_reverted_includes_failure_reason(
+        _logs: (),
+        starknet: Starknet,
+        tx: mp_rpc::v0_9_0::BroadcastedInvokeTxn,
+    ) {
+        let block = mp_block::FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![mp_block::TransactionWithReceipt {
+                transaction: mp_transactions::Transaction::Invoke(tx.into()),
+                receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                    transaction_hash: TX_HASH,
+                    execution_result: mp_receipt::ExecutionResult::Reverted { reason: "Insufficient fee".into() },
+                    ..Default::default()
+                }),
+            }],
+            events: Default::default(),
+        };
+        let backend = std::sync::Arc::clone(&starknet.backend);
+        backend.write_access().add_full_block_with_classes(&block, &[], true).expect("Failed to store block");
+
+        let status = get_transaction_status(&starknet, TX_HASH).await.expect("Failed to retrieve transaction status");
+
+        assert_eq!(
+            status,
+            TxnFinalityAndExecutionStatus {
+                finality_status: TxnStatus::AcceptedOnL2,
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Reverted),
+                failure_reason: Some("Insufficient fee".into())
+            }
+        );
     }
 }
