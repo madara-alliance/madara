@@ -12,14 +12,6 @@ use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
-pub enum StarknetTransactionExecutionError {
-    ContractNotFound,
-    ClassAlreadyDeclared,
-    ClassHashNotFound,
-    InvalidContractClass,
-    ContractError,
-}
-
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageProofLimit {
@@ -72,7 +64,7 @@ pub enum StarknetRpcApiError {
     #[error("Failed to fetch pending transactions")]
     FailedToFetchPendingTransactions,
     #[error("Contract error")]
-    ContractError,
+    ContractError { revert_error: Cow<'static, str> },
     #[error("Transaction execution error")]
     TxnExecutionError { tx_index: usize, error: String },
     #[error("Invalid contract class")]
@@ -175,7 +167,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidContinuationToken => 33,
             StarknetRpcApiError::TooManyKeysInFilter => 34,
             StarknetRpcApiError::FailedToFetchPendingTransactions => 38,
-            StarknetRpcApiError::ContractError => 40,
+            StarknetRpcApiError::ContractError { .. } => 40,
             StarknetRpcApiError::TxnExecutionError { .. } => 41,
             StarknetRpcApiError::StorageProofNotSupported => 42,
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
@@ -210,6 +202,9 @@ impl StarknetRpcApiError {
             StarknetRpcApiError::TxnExecutionError { tx_index, error } => Some(json!({
                 "transaction_index": tx_index,
                 "execution_error": error,
+            })),
+            StarknetRpcApiError::ContractError { revert_error } => Some(json!({
+                "revert_error": revert_error,
             })),
             StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
                 Some(json!({ "kind": kind, "limit": limit, "got": got }))
@@ -249,7 +244,6 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidContinuationToken
             | StarknetRpcApiError::TooManyKeysInFilter
             | StarknetRpcApiError::FailedToFetchPendingTransactions
-            | StarknetRpcApiError::ContractError
             | StarknetRpcApiError::StorageProofNotSupported
             | StarknetRpcApiError::ReplacementTxnUnderpriced
             | StarknetRpcApiError::FeeBelowMinimum
@@ -262,26 +256,13 @@ impl StarknetRpcApiError {
 
 impl From<mc_exec::Error> for StarknetRpcApiError {
     fn from(err: mc_exec::Error) -> Self {
-        if err.is_call_contract_entrypoint_not_found() {
-            return Self::EntrypointNotFound;
-        }
-
-        if err.is_message_fee_execution_error() {
-            return Self::ContractError;
-        }
-
-        Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
-    }
-}
-
-impl From<StarknetTransactionExecutionError> for StarknetRpcApiError {
-    fn from(err: StarknetTransactionExecutionError) -> Self {
-        match err {
-            StarknetTransactionExecutionError::ContractNotFound => StarknetRpcApiError::contract_not_found(),
-            StarknetTransactionExecutionError::ClassAlreadyDeclared => StarknetRpcApiError::class_already_declared(),
-            StarknetTransactionExecutionError::ClassHashNotFound => StarknetRpcApiError::class_hash_not_found(),
-            StarknetTransactionExecutionError::InvalidContractClass => StarknetRpcApiError::invalid_contract_class(),
-            StarknetTransactionExecutionError::ContractError => StarknetRpcApiError::ContractError,
+        match &err {
+            // starknet_call errors: CONTRACT_NOT_FOUND, ENTRYPOINT_NOT_FOUND, or CONTRACT_ERROR
+            // with the failure reason as data.
+            mc_exec::Error::CallContract(error) if error.is_entrypoint_not_found() => Self::EntrypointNotFound,
+            mc_exec::Error::CallContract(error) if error.is_contract_not_found() => Self::contract_not_found(),
+            mc_exec::Error::CallContract(error) => Self::ContractError { revert_error: error.revert_reason().into() },
+            _ => Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) },
         }
     }
 }
@@ -464,6 +445,14 @@ mod tests {
         assert_eq!(i32::from(&StarknetRpcApiError::EntrypointNotFound), 21);
         assert_eq!(i32::from(&StarknetRpcApiError::StorageProofNotSupported), 42);
         assert_eq!(i32::from(&StarknetRpcApiError::InvalidProof), 69);
+    }
+
+    #[test]
+    fn contract_error_is_code_40_with_revert_error_data() {
+        let error = StarknetRpcApiError::ContractError { revert_error: "ENTRYPOINT_FAILED".into() };
+
+        assert_eq!(i32::from(&error), 40);
+        assert_eq!(error.data(), Some(json!({ "revert_error": "ENTRYPOINT_FAILED" })));
     }
 
     #[test]

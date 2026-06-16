@@ -3,6 +3,9 @@ use blockifier::context::TransactionContext;
 use blockifier::execution::entry_point::{
     CallEntryPoint, CallType, EntryPointExecutionContext, SierraGasRevertTracker,
 };
+use blockifier::execution::errors::{EntryPointExecutionError, PreExecutionError};
+use blockifier::execution::stack_trace::{extract_trailing_cairo1_revert_trace, Cairo1RevertHeader};
+use blockifier::execution::syscalls::hint_processor::ENTRYPOINT_NOT_FOUND_ERROR_FELT;
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
@@ -68,6 +71,31 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                 selector: entry_point_selector,
             })
             .map_err(make_err)?;
+
+        // When reverts are enabled (protocol >= 0.13.2), blockifier does not return an error for a
+        // missing entrypoint or a contract panic: it returns a CallInfo with `execution.failed` set
+        // and the failure reason in the retdata. Surface those as errors instead of a successful
+        // call result.
+        if res.execution.failed {
+            let error = if res.execution.retdata.0 == [ENTRYPOINT_NOT_FOUND_ERROR_FELT] {
+                EntryPointExecutionError::PreExecutionError(PreExecutionError::EntryPointNotFound(entry_point_selector))
+            } else {
+                EntryPointExecutionError::ExecutionFailed {
+                    error_trace: extract_trailing_cairo1_revert_trace(&res, Cairo1RevertHeader::Execution),
+                }
+            };
+            return Err(make_err(TransactionExecutionError::ExecutionError {
+                error: Box::new(error),
+                // NB: `class_hash` is `ClassHash(0)` if the contract is not deployed. That cannot
+                // happen here: a missing contract fails inside `execute` with
+                // `UninitializedStorageAddress` (a hard error, handled above), never with
+                // `execution.failed`.
+                class_hash,
+                storage_address,
+                selector: entry_point_selector,
+            })
+            .into());
+        }
 
         Ok(res.execution.retdata.0)
     }

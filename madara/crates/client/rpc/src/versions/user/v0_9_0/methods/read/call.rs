@@ -44,3 +44,98 @@ pub async fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId)
 
     Ok(results)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{rpc_test_setup_with_execution, TEST_CONTRACT_ADDRESS};
+    use assert_matches::assert_matches;
+    use mp_convert::ToFelt;
+    use mp_rpc::v0_9_0::{BlockTag, FunctionCall};
+    use starknet_core::utils::get_selector_from_name;
+    use std::sync::Arc;
+
+    /// Since blockifier 0.13.4, calling a non-existent entrypoint produces a *failed* execution
+    /// with `ENTRYPOINT_NOT_FOUND` retdata instead of an error. This must surface as RPC error 21,
+    /// not as a successful call result.
+    #[tokio::test]
+    async fn call_non_existent_entrypoint_returns_entrypoint_not_found() {
+        let (backend, rpc, _keys) = rpc_test_setup_with_execution().await;
+
+        let request = FunctionCall {
+            contract_address: backend.chain_config().native_fee_token_address.to_felt(),
+            entry_point_selector: get_selector_from_name("non_existent_entrypoint").unwrap(),
+            calldata: Arc::new(vec![]),
+        };
+        let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_eq!(result.unwrap_err(), StarknetRpcApiError::EntrypointNotFound);
+    }
+
+    #[tokio::test]
+    async fn call_non_existent_contract_returns_contract_not_found() {
+        let (_backend, rpc, _keys) = rpc_test_setup_with_execution().await;
+
+        let request = FunctionCall {
+            contract_address: Felt::from_hex_unchecked("0xdeadbeefdeadbeef"),
+            entry_point_selector: get_selector_from_name("non_existent_entrypoint").unwrap(),
+            calldata: Arc::new(vec![]),
+        };
+        let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::ContractNotFound { .. });
+    }
+
+    /// A contract panic must surface as CONTRACT_ERROR with the failure reason as data, not as a
+    /// successful call result containing the panic retdata.
+    #[tokio::test]
+    async fn call_reverted_returns_contract_error() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        // The caller address of starknet_call is 0: the ERC20 panics with
+        // 'ERC20: transfer from 0'.
+        let request = FunctionCall {
+            contract_address: backend.chain_config().native_fee_token_address.to_felt(),
+            entry_point_selector: get_selector_from_name("transfer").unwrap(),
+            calldata: Arc::new(vec![keys.0[0].address, Felt::ONE, Felt::ZERO]),
+        };
+        let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::ContractError { revert_error } => {
+            assert!(revert_error.contains("ERC20: transfer from 0"), "unexpected revert error: {revert_error}");
+        });
+    }
+
+    #[tokio::test]
+    async fn call_existing_entrypoint_succeeds() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let request = FunctionCall {
+            contract_address: backend.chain_config().native_fee_token_address.to_felt(),
+            entry_point_selector: get_selector_from_name("balance_of").unwrap(),
+            calldata: Arc::new(vec![keys.0[0].address]),
+        };
+        let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await.unwrap();
+
+        // u256 balance: [low, high], non-zero for a funded devnet account.
+        assert_eq!(result.len(), 2);
+        assert_ne!(result[0], Felt::ZERO);
+    }
+
+    /// Calling the test contract's l1 handler through starknet_call must not work as an external
+    /// entrypoint, but the selector exists on the contract: sanity-check that we still classify
+    /// this as entrypoint-not-found (it is not an *external* entrypoint).
+    #[tokio::test]
+    async fn call_l1_handler_selector_returns_entrypoint_not_found() {
+        let (_backend, rpc, _keys) = rpc_test_setup_with_execution().await;
+
+        let request = FunctionCall {
+            contract_address: TEST_CONTRACT_ADDRESS,
+            entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+            calldata: Arc::new(vec![Felt::ONE, Felt::TWO, Felt::THREE]),
+        };
+        let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_eq!(result.unwrap_err(), StarknetRpcApiError::EntrypointNotFound);
+    }
+}

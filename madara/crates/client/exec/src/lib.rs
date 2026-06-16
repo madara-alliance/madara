@@ -189,10 +189,6 @@ pub enum Error {
     #[error(transparent)]
     Reexecution(#[from] TxExecError),
     #[error(transparent)]
-    FeeEstimation(#[from] TxFeeEstimationError),
-    #[error(transparent)]
-    MessageFeeEstimation(#[from] MessageFeeEstimationError),
-    #[error(transparent)]
     CallContract(#[from] CallContractError),
     #[error("Internal error: {0:#}")]
     Internal(#[from] anyhow::Error),
@@ -215,6 +211,10 @@ fn is_entrypoint_not_found(error: &EntryPointExecutionError) -> bool {
     )
 }
 
+fn is_contract_not_found(error: &EntryPointExecutionError) -> bool {
+    matches!(error, EntryPointExecutionError::PreExecutionError(PreExecutionError::UninitializedStorageAddress(_)))
+}
+
 fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) -> bool {
     match error {
         TransactionExecutionError::ExecutionError { error, .. }
@@ -226,13 +226,29 @@ fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) 
     }
 }
 
-impl Error {
-    pub fn is_call_contract_entrypoint_not_found(&self) -> bool {
-        matches!(self, Self::CallContract(error) if transaction_error_is_entrypoint_not_found(&error.err))
+fn transaction_error_is_contract_not_found(error: &TransactionExecutionError) -> bool {
+    match error {
+        TransactionExecutionError::ExecutionError { error, .. }
+        | TransactionExecutionError::ValidateTransactionError { error, .. } => is_contract_not_found(error),
+        TransactionExecutionError::ContractConstructorExecutionFailed(
+            ConstructorEntryPointExecutionError::ExecutionError { error, .. },
+        ) => is_contract_not_found(error),
+        _ => false,
+    }
+}
+
+impl CallContractError {
+    pub fn is_entrypoint_not_found(&self) -> bool {
+        transaction_error_is_entrypoint_not_found(&self.err)
     }
 
-    pub fn is_message_fee_execution_error(&self) -> bool {
-        matches!(self, Self::MessageFeeEstimation(_))
+    pub fn is_contract_not_found(&self) -> bool {
+        transaction_error_is_contract_not_found(&self.err)
+    }
+
+    /// The execution failure reason, without the context about which view it was executed on.
+    pub fn revert_reason(&self) -> String {
+        format!("{:#}", self.err)
     }
 }
 
@@ -242,23 +258,6 @@ pub struct TxExecError {
     view: String,
     hash: TransactionHash,
     index: usize,
-    #[source]
-    err: TransactionExecutionError,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Estimating fee for tx index {index} on top of {view}: {err:#}")]
-pub struct TxFeeEstimationError {
-    view: String,
-    index: usize,
-    #[source]
-    err: TransactionExecutionError,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Estimating message fee on top of {view}: {err:#}")]
-pub struct MessageFeeEstimationError {
-    view: String,
     #[source]
     err: TransactionExecutionError,
 }

@@ -555,26 +555,6 @@
       "description": "Fee estimate via starknet.js Account. Returns overall_fee, unit, resourceBounds."
     },
     {
-      "id": "estimate_message_fee",
-      "method": "starknet_estimateMessageFee",
-      "params": {
-        "message": {
-          "from_address": "0x00000000000000000000000000000000deadbeef",
-          "to_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
-          "entry_point_selector": "0x0",
-          "payload": ["0x1", "0x2"]
-        },
-        "block_id": "latest"
-      },
-      "expected": {
-        "overall_fee": "$any",
-        "unit": "WEI",
-        "l1_gas_consumed": "$exists",
-        "l2_gas_consumed": "$exists"
-      },
-      "description": "Estimate L1 handler fee targeting the default pre-deployed account."
-    },
-    {
       "id": "simulate_transactions",
       "method": "starknet_simulateTransactions",
       "params": {

@@ -76,6 +76,21 @@
       },
       "expected_error": { "code": 29 },
       "description": "Unknown L1 tx hash returns TXN_HASH_NOT_FOUND (code 29)"
+    },
+    {
+      "id": "estimate_message_fee_reverted_l1_handler",
+      "method": "starknet_estimateMessageFee",
+      "params": {
+        "message": {
+          "from_address": "0x00000000000000000000000000000000deadbeef",
+          "to_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
+          "entry_point_selector": "0x0",
+          "payload": ["0x1", "0x2"]
+        },
+        "block_id": "latest"
+      },
+      "expected_error": { "code": 40 },
+      "description": "Reverted L1 handler fee estimation returns CONTRACT_ERROR (code 40)"
     }
   ]
 }
