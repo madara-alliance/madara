@@ -64,12 +64,15 @@ fn frames_to_json(frames: Vec<Frame>) -> serde_json::Value {
         })
         .rev()
         .fold(json!(leaf), |child, (contract_address, class_hash, selector)| {
-            json!({
+            let mut frame = json!({
                 "contract_address": contract_address,
                 "class_hash": class_hash,
-                "selector": selector,
                 "error": child,
-            })
+            });
+            if let Some(selector) = selector {
+                frame["selector"] = json!(selector);
+            }
+            frame
         })
 }
 
@@ -199,9 +202,9 @@ mod tests {
         );
     }
 
-    /// Constructor frames have no selector: keep Pathfinder's explicit null value.
+    /// Constructor frames have no selector: omit the key rather than emitting schema-invalid null.
     #[test]
-    fn constructor_frame_has_null_selector() {
+    fn constructor_frame_omits_selector() {
         let stack = ErrorStack {
             header: ErrorStackHeader::Constructor,
             stack: vec![
@@ -223,7 +226,6 @@ mod tests {
             json!({
                 "contract_address": "0xa1",
                 "class_hash": "0xb1",
-                "selector": null,
                 "error": "constructor failed",
             })
         );
