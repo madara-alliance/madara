@@ -276,7 +276,7 @@ fn exec_error_to_rpc_error(err: mc_exec::Error, payload: ExecErrorPayload) -> St
             } else {
                 let revert_error = match payload {
                     ExecErrorPayload::Structured => crate::utils::contract_execution_error(error.error()),
-                    ExecErrorPayload::FlatString => format!("{:#}", err).into(),
+                    ExecErrorPayload::FlatString => format!("{:#}", error.error()).into(),
                 };
                 E::ContractError { revert_error }
             }

@@ -89,6 +89,10 @@ mod tests {
                 revert_error.as_str().unwrap().contains("ERC20: transfer from 0"),
                 "unexpected revert error: {revert_error}"
             );
+            assert!(
+                !revert_error.as_str().unwrap().contains("Calling contract"),
+                "v0.7.1 revert_error must not include internal call wrapper context: {revert_error}"
+            );
         });
     }
 }
