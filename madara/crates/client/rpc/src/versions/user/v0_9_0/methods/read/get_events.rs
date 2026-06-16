@@ -40,14 +40,13 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
-    // Get the block numbers for the requested range
-
+    // Get the block numbers for the requested range.
     let from_block_n = match filter.from_block {
-        Some(block_id) => starknet.resolve_view_on(block_id)?.latest_block_n().unwrap_or(0),
+        Some(block_id) => starknet.resolve_event_from_block_bound(block_id)?,
         None => 0,
     };
     let to_block_n = match filter.to_block {
-        Some(block_id) => starknet.resolve_view_on(block_id)?.latest_block_n().unwrap_or(0),
+        Some(block_id) => starknet.resolve_event_to_block_bound(block_id)?,
         None => view.latest_block_n().unwrap_or(0),
     };
 

@@ -330,6 +330,9 @@ pub struct TxnFinalityAndExecutionStatus {
     #[serde(default)]
     pub execution_status: Option<TxnExecutionStatus>,
     pub finality_status: TxnStatus,
+    /// The failure reason, only appears if execution_status is REVERTED.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Copy, Debug, Default)]
