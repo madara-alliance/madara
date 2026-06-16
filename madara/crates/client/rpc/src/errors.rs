@@ -12,14 +12,6 @@ use std::fmt::Display;
 
 pub type StarknetRpcResult<T> = Result<T, StarknetRpcApiError>;
 
-pub enum StarknetTransactionExecutionError {
-    ContractNotFound,
-    ClassAlreadyDeclared,
-    ClassHashNotFound,
-    InvalidContractClass,
-    ContractError,
-}
-
 #[derive(Clone, Copy, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageProofLimit {
@@ -72,9 +64,9 @@ pub enum StarknetRpcApiError {
     #[error("Failed to fetch pending transactions")]
     FailedToFetchPendingTransactions,
     #[error("Contract error")]
-    ContractError,
+    ContractError { revert_error: serde_json::Value },
     #[error("Transaction execution error")]
-    TxnExecutionError { tx_index: usize, error: String },
+    TxnExecutionError { tx_index: usize, error: serde_json::Value },
     #[error("Invalid contract class")]
     InvalidContractClass { error: Cow<'static, str> },
     #[error("Class already declared")]
@@ -119,6 +111,8 @@ pub enum StarknetRpcApiError {
     StorageProofNotSupported,
     #[error("The proof field in the invoke v3 transaction is invalid")]
     InvalidProof,
+    #[error("Invalid params")]
+    InvalidParams { error: Cow<'static, str> },
 }
 
 impl StarknetRpcApiError {
@@ -175,7 +169,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidContinuationToken => 33,
             StarknetRpcApiError::TooManyKeysInFilter => 34,
             StarknetRpcApiError::FailedToFetchPendingTransactions => 38,
-            StarknetRpcApiError::ContractError => 40,
+            StarknetRpcApiError::ContractError { .. } => 40,
             StarknetRpcApiError::TxnExecutionError { .. } => 41,
             StarknetRpcApiError::StorageProofNotSupported => 42,
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
@@ -199,6 +193,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
+            // Standard JSON-RPC invalid params error.
+            StarknetRpcApiError::InvalidParams { .. } => -32602,
         }
     }
 }
@@ -211,10 +207,14 @@ impl StarknetRpcApiError {
                 "transaction_index": tx_index,
                 "execution_error": error,
             })),
+            StarknetRpcApiError::ContractError { revert_error } => Some(json!({
+                "revert_error": revert_error,
+            })),
             StarknetRpcApiError::ProofLimitExceeded { kind, limit, got } => {
                 Some(json!({ "kind": kind, "limit": limit, "got": got }))
             }
             StarknetRpcApiError::ErrUnexpectedError { error }
+            | StarknetRpcApiError::InvalidParams { error }
             | StarknetRpcApiError::NoTraceAvailable { error }
             | StarknetRpcApiError::ValidationFailure { error }
             | StarknetRpcApiError::ContractNotFound { error }
@@ -249,7 +249,6 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidContinuationToken
             | StarknetRpcApiError::TooManyKeysInFilter
             | StarknetRpcApiError::FailedToFetchPendingTransactions
-            | StarknetRpcApiError::ContractError
             | StarknetRpcApiError::StorageProofNotSupported
             | StarknetRpcApiError::ReplacementTxnUnderpriced
             | StarknetRpcApiError::FeeBelowMinimum
@@ -260,29 +259,57 @@ impl StarknetRpcApiError {
     }
 }
 
-impl From<mc_exec::Error> for StarknetRpcApiError {
-    fn from(err: mc_exec::Error) -> Self {
-        if err.is_call_contract_entrypoint_not_found() {
-            return Self::EntrypointNotFound;
-        }
+/// How execution-error payloads are rendered in RPC error data: v0.8+ uses the structured
+/// CONTRACT_EXECUTION_ERROR object; v0.7.1 predates it and uses flat strings.
+enum ExecErrorPayload {
+    Structured,
+    FlatString,
+}
 
-        if err.is_message_fee_execution_error() {
-            return Self::ContractError;
+/// Single classification of `mc_exec::Error` into RPC errors, shared by every spec version so the
+/// error routing cannot drift between them; only the payload rendering differs.
+fn exec_error_to_rpc_error(err: mc_exec::Error, payload: ExecErrorPayload) -> StarknetRpcApiError {
+    use StarknetRpcApiError as E;
+    match &err {
+        // starknet_call errors: CONTRACT_NOT_FOUND, ENTRYPOINT_NOT_FOUND, or CONTRACT_ERROR with
+        // the failure reason as data.
+        mc_exec::Error::CallContract(error) => {
+            if error.is_entrypoint_not_found() {
+                E::EntrypointNotFound
+            } else if error.is_contract_not_found() {
+                E::contract_not_found()
+            } else {
+                let revert_error = match payload {
+                    ExecErrorPayload::Structured => crate::utils::contract_execution_error(error.error()),
+                    ExecErrorPayload::FlatString => format!("{:#}", error.error()).into(),
+                };
+                E::ContractError { revert_error }
+            }
         }
-
-        Self::TxnExecutionError { tx_index: 0, error: format!("{:#}", err) }
+        mc_exec::Error::Reexecution(error) => E::TxnExecutionError {
+            tx_index: error.index(),
+            error: match payload {
+                ExecErrorPayload::Structured => crate::utils::contract_execution_error(error.error()),
+                ExecErrorPayload::FlatString => format!("{:#}", err).into(),
+            },
+        },
+        _ => E::TxnExecutionError { tx_index: 0, error: format!("{:#}", err).into() },
     }
 }
 
-impl From<StarknetTransactionExecutionError> for StarknetRpcApiError {
-    fn from(err: StarknetTransactionExecutionError) -> Self {
-        match err {
-            StarknetTransactionExecutionError::ContractNotFound => StarknetRpcApiError::contract_not_found(),
-            StarknetTransactionExecutionError::ClassAlreadyDeclared => StarknetRpcApiError::class_already_declared(),
-            StarknetTransactionExecutionError::ClassHashNotFound => StarknetRpcApiError::class_hash_not_found(),
-            StarknetTransactionExecutionError::InvalidContractClass => StarknetRpcApiError::invalid_contract_class(),
-            StarknetTransactionExecutionError::ContractError => StarknetRpcApiError::ContractError,
-        }
+impl From<mc_exec::Error> for StarknetRpcApiError {
+    fn from(err: mc_exec::Error) -> Self {
+        exec_error_to_rpc_error(err, ExecErrorPayload::Structured)
+    }
+}
+
+impl StarknetRpcApiError {
+    /// The v0.7.1 spec predates structured execution errors: both CONTRACT_ERROR `revert_error`
+    /// and TRANSACTION_EXECUTION_ERROR `execution_error` are flat strings there, whereas the
+    /// shared `From<mc_exec::Error>` impl builds the structured CONTRACT_EXECUTION_ERROR object
+    /// introduced in v0.8. v0.7.1 handlers must convert through this instead of `?`/`From`.
+    pub fn from_exec_error_v0_7(err: mc_exec::Error) -> Self {
+        exec_error_to_rpc_error(err, ExecErrorPayload::FlatString)
     }
 }
 
@@ -464,6 +491,14 @@ mod tests {
         assert_eq!(i32::from(&StarknetRpcApiError::EntrypointNotFound), 21);
         assert_eq!(i32::from(&StarknetRpcApiError::StorageProofNotSupported), 42);
         assert_eq!(i32::from(&StarknetRpcApiError::InvalidProof), 69);
+    }
+
+    #[test]
+    fn contract_error_is_code_40_with_revert_error_data() {
+        let error = StarknetRpcApiError::ContractError { revert_error: "ENTRYPOINT_FAILED".into() };
+
+        assert_eq!(i32::from(&error), 40);
+        assert_eq!(error.data(), Some(json!({ "revert_error": "ENTRYPOINT_FAILED" })));
     }
 
     #[test]

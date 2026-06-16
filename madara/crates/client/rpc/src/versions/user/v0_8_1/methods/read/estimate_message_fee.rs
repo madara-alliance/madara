@@ -1,14 +1,12 @@
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
+use crate::utils::execute_message_fee_estimation;
 use crate::Starknet;
-use anyhow::Context;
-use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use mp_convert::ToFelt;
 use mp_rpc::v0_8_1::{BlockId, FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
-use starknet_api::transaction::{fields::Fee, TransactionHash};
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -33,39 +31,35 @@ pub async fn estimate_message_fee(
 ) -> StarknetRpcResult<FeeEstimate> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
     let view = starknet.resolve_block_view(block_id)?;
-    let mut exec_context = view.new_execution_context()?;
+    let exec_context = view.new_execution_context()?;
 
     if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let l1_handler: L1HandlerTransaction = message.into();
-    let tx_hash = l1_handler.compute_hash(
-        view.backend().chain_config().chain_id.to_felt(),
-        /* offset_version */ false,
-        /* legacy */ false,
-    );
-    let tx: starknet_api::transaction::L1HandlerTransaction = l1_handler.try_into().map_err(|e| {
-        StarknetRpcApiError::ContractNotFound { error: format!("Invalid message to_address: {e}").into() }
-    })?;
-    let transaction = blockifier::transaction::transaction_execution::Transaction::L1Handler(
-        starknet_api::executable_transaction::L1HandlerTransaction {
-            tx,
-            tx_hash: TransactionHash(tx_hash),
-            paid_fee_on_l1: Fee::default(),
-        },
-    );
+    let chain_id = view.backend().chain_config().chain_id.to_felt();
+    let (execution_result, exec_context, tip) =
+        execute_message_fee_estimation(exec_context, l1_handler, chain_id).await?;
 
-    let tip = transaction.tip().unwrap_or_default();
-    // spawn_blocking: avoid starving the tokio workers during execution.
-    let (mut execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], [transaction])?, exec_context))
-    })
-    .await?;
-
-    let execution_result = execution_results.pop().context("There should be one result")?;
+    // A failed L1 handler execution is not an error for blockifier: it returns a successful
+    // execution with `revert_error` set. Surface it as CONTRACT_ERROR instead of returning a fee
+    // estimate for a message that cannot be executed.
+    if let Some(revert_error) = &execution_result.execution_info.revert_error {
+        return Err(StarknetRpcApiError::ContractError {
+            revert_error: crate::utils::contract_execution_error_from_revert(revert_error),
+        });
+    }
 
     let fee_estimate = exec_context.execution_result_to_fee_estimate_v0_8(&execution_result, tip)?;
 
     Ok(fee_estimate)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_rpc::v0_8_1::BlockTag;
+
+    crate::test_utils::estimate_message_fee_tests!(|estimate| estimate.overall_fee > 0);
 }

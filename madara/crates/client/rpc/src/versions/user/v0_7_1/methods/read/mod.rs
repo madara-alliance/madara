@@ -11,7 +11,7 @@ use mp_rpc::v0_7_1::{
 };
 
 mod block_hash_and_number;
-mod call;
+pub(crate) mod call;
 mod estimate_fee;
 mod estimate_message_fee;
 mod get_block_transaction_count;

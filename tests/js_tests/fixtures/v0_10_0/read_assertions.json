@@ -40,7 +40,9 @@
       "id": "get_block_tx_hashes_single",
       "method": "starknet_getBlockWithTxHashes",
       "params": {
-        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:declare_hello.block_number"
+        }
       },
       "expected": {
         "status": "ACCEPTED_ON_L2",
@@ -52,9 +54,18 @@
         "starknet_version": "$any",
         "timestamp": "$gt:0",
         "l1_da_mode": "$any",
-        "l1_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
-        "l1_data_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
-        "l2_gas_price": { "price_in_fri": "$any", "price_in_wei": "$any" },
+        "l1_gas_price": {
+          "price_in_fri": "$any",
+          "price_in_wei": "$any"
+        },
+        "l1_data_gas_price": {
+          "price_in_fri": "$any",
+          "price_in_wei": "$any"
+        },
+        "l2_gas_price": {
+          "price_in_fri": "$any",
+          "price_in_wei": "$any"
+        },
         "transaction_commitment": "$any",
         "event_commitment": "$any",
         "receipt_commitment": "$any",
@@ -70,7 +81,9 @@
       "id": "get_block_tx_hashes_multi",
       "method": "starknet_getBlockWithTxHashes",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": {
         "status": "ACCEPTED_ON_L2",
@@ -87,7 +100,9 @@
       "id": "get_block_tx_hashes_by_hash",
       "method": "starknet_getBlockWithTxHashes",
       "params": {
-        "block_id": { "block_hash": "$ref:declare_hello.block_hash" }
+        "block_id": {
+          "block_hash": "$ref:declare_hello.block_hash"
+        }
       },
       "expected": {
         "block_hash": "$ref:declare_hello.block_hash",
@@ -99,7 +114,9 @@
       "id": "get_block_with_txs",
       "method": "starknet_getBlockWithTxs",
       "params": {
-        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:declare_hello.block_number"
+        }
       },
       "expected": {
         "status": "ACCEPTED_ON_L2",
@@ -123,7 +140,9 @@
       "id": "get_block_with_txs_deploy_account",
       "method": "starknet_getBlockWithTxs",
       "params": {
-        "block_id": { "block_number": "$ref:deploy_new_account.block_number" }
+        "block_id": {
+          "block_number": "$ref:deploy_new_account.block_number"
+        }
       },
       "expected": {
         "status": "ACCEPTED_ON_L2",
@@ -135,26 +154,35 @@
       "id": "get_block_with_receipts",
       "method": "starknet_getBlockWithReceipts",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": {
         "status": "ACCEPTED_ON_L2",
         "transactions": [
           {
-            "transaction": { "type": "INVOKE" },
+            "transaction": {
+              "type": "INVOKE"
+            },
             "receipt": {
               "type": "INVOKE",
               "transaction_hash": "$ref:invoke_increase_42.transaction_hash",
               "execution_status": "SUCCEEDED",
               "finality_status": "ACCEPTED_ON_L2",
-              "actual_fee": { "amount": "$any", "unit": "FRI" },
+              "actual_fee": {
+                "amount": "$any",
+                "unit": "FRI"
+              },
               "execution_resources": "$any",
               "events": "$any",
               "messages_sent": "$any"
             }
           },
           {
-            "transaction": { "type": "INVOKE" },
+            "transaction": {
+              "type": "INVOKE"
+            },
             "receipt": {
               "type": "INVOKE",
               "transaction_hash": "$ref:invoke_increase_100.transaction_hash",
@@ -169,7 +197,9 @@
       "id": "get_block_tx_count_multi",
       "method": "starknet_getBlockTransactionCount",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": 2
     },
@@ -177,7 +207,9 @@
       "id": "get_block_tx_count_empty",
       "method": "starknet_getBlockTransactionCount",
       "params": {
-        "block_id": { "block_number": "$ref:empty_block.block_number" }
+        "block_id": {
+          "block_number": "$ref:empty_block.block_number"
+        }
       },
       "expected": 0,
       "description": "Empty block must return 0, not error"
@@ -185,7 +217,9 @@
     {
       "id": "get_tx_by_hash_declare",
       "method": "starknet_getTransactionByHash",
-      "params": { "transaction_hash": "$ref:declare_hello.transaction_hash" },
+      "params": {
+        "transaction_hash": "$ref:declare_hello.transaction_hash"
+      },
       "expected": {
         "transaction_hash": "$ref:declare_hello.transaction_hash",
         "type": "DECLARE",
@@ -232,7 +266,9 @@
       "id": "get_tx_by_block_and_index_0",
       "method": "starknet_getTransactionByBlockIdAndIndex",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" },
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        },
         "index": 0
       },
       "expected": {
@@ -245,7 +281,9 @@
       "id": "get_tx_by_block_and_index_1",
       "method": "starknet_getTransactionByBlockIdAndIndex",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" },
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        },
         "index": 1
       },
       "expected": {
@@ -257,7 +295,9 @@
     {
       "id": "get_tx_receipt_declare",
       "method": "starknet_getTransactionReceipt",
-      "params": { "transaction_hash": "$ref:declare_hello.transaction_hash" },
+      "params": {
+        "transaction_hash": "$ref:declare_hello.transaction_hash"
+      },
       "expected": {
         "type": "DECLARE",
         "transaction_hash": "$ref:declare_hello.transaction_hash",
@@ -265,7 +305,10 @@
         "block_number": "$ref:declare_hello.block_number",
         "execution_status": "SUCCEEDED",
         "finality_status": "ACCEPTED_ON_L2",
-        "actual_fee": { "amount": "$any", "unit": "FRI" },
+        "actual_fee": {
+          "amount": "$any",
+          "unit": "FRI"
+        },
         "execution_resources": {
           "l1_gas": "$exists",
           "l2_gas": "$exists",
@@ -288,7 +331,10 @@
         "block_number": "$ref:invoke_increase_100.block_number",
         "execution_status": "SUCCEEDED",
         "finality_status": "ACCEPTED_ON_L2",
-        "actual_fee": { "amount": "$any", "unit": "FRI" }
+        "actual_fee": {
+          "amount": "$any",
+          "unit": "FRI"
+        }
       },
       "description": "invoke_increase_42 is in same block as invoke_increase_100"
     },
@@ -310,7 +356,9 @@
     {
       "id": "get_tx_receipt_l1_handler",
       "method": "starknet_getTransactionReceipt",
-      "params": { "transaction_hash": "$ref:l1_handler_call.transaction_hash" },
+      "params": {
+        "transaction_hash": "$ref:l1_handler_call.transaction_hash"
+      },
       "expected": {
         "type": "L1_HANDLER",
         "execution_status": "SUCCEEDED",
@@ -334,7 +382,9 @@
       "id": "get_state_update_declare",
       "method": "starknet_getStateUpdate",
       "params": {
-        "block_id": { "block_number": "$ref:declare_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:declare_hello.block_number"
+        }
       },
       "expected": {
         "block_hash": "$ref:declare_hello.block_hash",
@@ -356,7 +406,9 @@
       "id": "get_state_update_deploy",
       "method": "starknet_getStateUpdate",
       "params": {
-        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:deploy_hello.block_number"
+        }
       },
       "expected": {
         "state_diff": {
@@ -370,7 +422,9 @@
       "id": "get_state_update_invoke",
       "method": "starknet_getStateUpdate",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": {
         "state_diff": {
@@ -386,7 +440,9 @@
       "params": {
         "contract_address": "$ref:deploy_hello.contract_address",
         "key": "$computed:sn_keccak:balance",
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": "0x8e",
       "description": "HelloStarknet.balance = 0x2a + 0x64 = 0x8e (142). Key computed by runner via sn_keccak('balance')."
@@ -397,7 +453,9 @@
       "params": {
         "contract_address": "$ref:deploy_hello.contract_address",
         "key": "$computed:sn_keccak:balance",
-        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:deploy_hello.block_number"
+        }
       },
       "expected": "0x0",
       "description": "Balance is 0 right after deploy, before any invoke. Catches: block_id ignored."
@@ -416,7 +474,9 @@
       "id": "get_nonce_at_genesis",
       "method": "starknet_getNonce",
       "params": {
-        "block_id": { "block_number": 0 },
+        "block_id": {
+          "block_number": 0
+        },
         "contract_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d"
       },
       "expected": "0x0",
@@ -469,7 +529,9 @@
     {
       "id": "get_compiled_casm",
       "method": "starknet_getCompiledCasm",
-      "params": { "class_hash": "$ref:declare_hello.class_hash" },
+      "params": {
+        "class_hash": "$ref:declare_hello.class_hash"
+      },
       "expected": {
         "prime": "$any",
         "compiler_version": "$any",
@@ -515,7 +577,9 @@
           "entry_point_selector": "$computed:sn_keccak:get_balance",
           "calldata": []
         },
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": ["0x8e"],
       "description": "get_balance() returns 142. Cross-validates with getStorageAt."
@@ -529,7 +593,9 @@
           "entry_point_selector": "$computed:sn_keccak:get_balance",
           "calldata": []
         },
-        "block_id": { "block_number": "$ref:deploy_hello.block_number" }
+        "block_id": {
+          "block_number": "$ref:deploy_hello.block_number"
+        }
       },
       "expected": ["0x0"],
       "description": "Balance is 0 after deploy, before invoke. Catches: call ignores block_id."
@@ -560,19 +626,19 @@
       "params": {
         "message": {
           "from_address": "0x00000000000000000000000000000000deadbeef",
-          "to_address": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
-          "entry_point_selector": "0x0",
+          "to_address": "$ref:deploy_new_account.contract_address",
+          "entry_point_selector": "$computed:sn_keccak:l1_handler_entrypoint",
           "payload": ["0x1", "0x2"]
         },
         "block_id": "latest"
       },
       "expected": {
-        "overall_fee": "$any",
+        "overall_fee": "$gt:0",
         "unit": "WEI",
         "l1_gas_consumed": "$exists",
         "l2_gas_consumed": "$exists"
       },
-      "description": "Estimate L1 handler fee targeting the default pre-deployed account."
+      "description": "Estimate fee for a message whose L1 handler executes successfully. Regression: the handler used to be built with paid_fee_on_l1=0, which blockifier rejects on the success path, so every valid message errored (and reverted handlers were priced instead)."
     },
     {
       "id": "simulate_transactions",
@@ -607,7 +673,9 @@
       "id": "trace_block_transactions",
       "method": "starknet_traceBlockTransactions",
       "params": {
-        "block_id": { "block_number": "$ref:invoke_increase_100.block_number" }
+        "block_id": {
+          "block_number": "$ref:invoke_increase_100.block_number"
+        }
       },
       "expected": "$length:2",
       "description": "Multi-tx block must produce 2 traces"
@@ -617,8 +685,12 @@
       "method": "starknet_getEvents",
       "params": {
         "filter": {
-          "from_block": { "block_number": "$ref:transfer_strk.block_number" },
-          "to_block": { "block_number": "$ref:transfer_strk.block_number" },
+          "from_block": {
+            "block_number": "$ref:transfer_strk.block_number"
+          },
+          "to_block": {
+            "block_number": "$ref:transfer_strk.block_number"
+          },
           "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
           "keys": [["$computed:sn_keccak:Transfer"]],
           "chunk_size": 100
@@ -630,6 +702,45 @@
       "description": "ERC20 Transfer events in transfer block"
     },
     {
+      "id": "get_events_beyond_tip_numeric",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_number": 100000
+          },
+          "to_block": {
+            "block_number": 200000
+          },
+          "chunk_size": 10
+        }
+      },
+      "expected": {
+        "events": "$length:0",
+        "continuation_token": null
+      },
+      "description": "Numeric range bounds past the tip return an empty page, not BLOCK_NOT_FOUND, like pathfinder and juno."
+    },
+    {
+      "id": "get_events_to_block_beyond_tip",
+      "method": "starknet_getEvents",
+      "params": {
+        "filter": {
+          "from_block": {
+            "block_number": 0
+          },
+          "to_block": {
+            "block_number": 100000
+          },
+          "chunk_size": 5
+        }
+      },
+      "expected": {
+        "events": "$length_gte:1"
+      },
+      "description": "An out-of-range numeric to_block scans up to the tip and still returns events."
+    },
+    {
       "id": "get_events_messaging",
       "method": "starknet_getEvents",
       "params": {
@@ -637,7 +748,9 @@
           "from_block": {
             "block_number": "$ref:invoke_fire_event.block_number"
           },
-          "to_block": { "block_number": "$ref:invoke_fire_event.block_number" },
+          "to_block": {
+            "block_number": "$ref:invoke_fire_event.block_number"
+          },
           "address": "$ref:deploy_messaging.contract_address",
           "keys": [],
           "chunk_size": 100
@@ -684,8 +797,12 @@
       "method": "starknet_getEvents",
       "params": {
         "filter": {
-          "from_block": { "block_number": "$ref:l1_handler_call.block_number" },
-          "to_block": { "block_number": "$ref:l1_handler_call.block_number" },
+          "from_block": {
+            "block_number": "$ref:l1_handler_call.block_number"
+          },
+          "to_block": {
+            "block_number": "$ref:l1_handler_call.block_number"
+          },
           "address": "$ref:deploy_new_account.contract_address",
           "keys": [],
           "chunk_size": 100

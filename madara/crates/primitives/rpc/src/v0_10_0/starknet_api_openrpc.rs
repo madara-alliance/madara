@@ -217,7 +217,7 @@ pub struct EmittedEvent {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct EventsChunk {
     /// Use this token in a subsequent query to obtain the next page. Should not appear if there are no more pages.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation_token: Option<String>,
     /// The events matching the filter
     pub events: Vec<EmittedEvent>,

@@ -107,7 +107,10 @@ export interface ErrorAssertion {
   id: string;
   method: string;
   params: any;
-  expected_error: { code: number };
+  /// `data`, when present, is partially matched against the error's data field
+  /// with the same matcher vocabulary as read assertions ($ref/$computed are
+  /// resolved first).
+  expected_error: { code: number; data?: any };
   description?: string;
 }
 

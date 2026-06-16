@@ -27,6 +27,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
+    crate::utils::check_estimate_batch_size(request.len(), "estimated")?;
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
@@ -42,7 +43,8 @@ pub async fn estimate_fee(
             let only_query = tx.is_query();
             let (api_tx, _) =
                 tx.into_starknet_api(view.backend().chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            let execution_flags =
+                ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: validate };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
@@ -51,7 +53,7 @@ pub async fn estimate_fee(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], transactions)?, exec_context))
     })
     .await?;
 
@@ -63,7 +65,14 @@ pub async fn estimate_fee(
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
-                    error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
+                    error: result
+                        .execution_info
+                        .revert_error
+                        .as_ref()
+                        .map(crate::utils::contract_execution_error_from_revert)
+                        // Reverted executions always carry a revert_error; make the fallback
+                        // visible instead of silently emitting null.
+                        .unwrap_or_else(|| serde_json::json!("unknown revert reason")),
                 });
             }
             Ok(exec_context.execution_result_to_fee_estimate_v0_8(result, tip)?)

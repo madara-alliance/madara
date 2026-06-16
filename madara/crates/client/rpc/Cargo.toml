@@ -58,7 +58,9 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 assert_matches = { workspace = true }
+m-cairo-test-contracts = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
+mc-devnet = { workspace = true }
 mc-mempool = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
 rstest = { workspace = true }

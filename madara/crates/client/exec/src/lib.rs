@@ -172,6 +172,7 @@ mod blockifier_state_adapter;
 mod call;
 mod execution_read_cache;
 mod fee;
+mod l2_gas_search;
 mod layered_state_adapter;
 pub mod metrics;
 pub mod trace;
@@ -191,10 +192,6 @@ pub enum Error {
     UnsupportedProtocolVersion(#[from] mp_chain_config::UnsupportedProtocolVersion),
     #[error(transparent)]
     Reexecution(#[from] TxExecError),
-    #[error(transparent)]
-    FeeEstimation(#[from] TxFeeEstimationError),
-    #[error(transparent)]
-    MessageFeeEstimation(#[from] MessageFeeEstimationError),
     #[error(transparent)]
     CallContract(#[from] CallContractError),
     #[error("Internal error: {0:#}")]
@@ -222,6 +219,10 @@ fn annotated_entrypoint_is_not_found(error: &AnnotatedEntryPointExecutionError) 
     is_entrypoint_not_found(error.unannotated())
 }
 
+fn is_contract_not_found(error: &EntryPointExecutionError) -> bool {
+    matches!(error, EntryPointExecutionError::PreExecutionError(PreExecutionError::UninitializedStorageAddress(_)))
+}
+
 fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) -> bool {
     match error {
         TransactionExecutionError::ExecutionError { error, .. }
@@ -233,13 +234,41 @@ fn transaction_error_is_entrypoint_not_found(error: &TransactionExecutionError) 
     }
 }
 
-impl Error {
-    pub fn is_call_contract_entrypoint_not_found(&self) -> bool {
-        matches!(self, Self::CallContract(error) if transaction_error_is_entrypoint_not_found(&error.err))
+fn transaction_error_is_contract_not_found(error: &TransactionExecutionError) -> bool {
+    match error {
+        TransactionExecutionError::ExecutionError { error, .. }
+        | TransactionExecutionError::ValidateTransactionError { error, .. } => is_contract_not_found(error),
+        TransactionExecutionError::ContractConstructorExecutionFailed(
+            ConstructorEntryPointExecutionError::ExecutionError { error, .. },
+        ) => is_contract_not_found(error),
+        _ => false,
+    }
+}
+
+impl CallContractError {
+    pub fn is_entrypoint_not_found(&self) -> bool {
+        transaction_error_is_entrypoint_not_found(&self.err)
     }
 
-    pub fn is_message_fee_execution_error(&self) -> bool {
-        matches!(self, Self::MessageFeeEstimation(_))
+    pub fn is_contract_not_found(&self) -> bool {
+        transaction_error_is_contract_not_found(&self.err)
+    }
+
+    /// The underlying execution error, without the context about which view it was executed on.
+    pub fn error(&self) -> &TransactionExecutionError {
+        &self.err
+    }
+}
+
+impl TxExecError {
+    /// Index of the failing transaction within the executed batch.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The underlying execution error, without the context about which view it was executed on.
+    pub fn error(&self) -> &TransactionExecutionError {
+        &self.err
     }
 }
 
@@ -249,23 +278,6 @@ pub struct TxExecError {
     view: String,
     hash: TransactionHash,
     index: usize,
-    #[source]
-    err: TransactionExecutionError,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Estimating fee for tx index {index} on top of {view}: {err:#}")]
-pub struct TxFeeEstimationError {
-    view: String,
-    index: usize,
-    #[source]
-    err: TransactionExecutionError,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Estimating message fee on top of {view}: {err:#}")]
-pub struct MessageFeeEstimationError {
-    view: String,
     #[source]
     err: TransactionExecutionError,
 }
@@ -287,10 +299,23 @@ pub struct ExecutionResult {
     pub execution_info: TransactionExecutionInfo,
     pub state_diff: CommitmentStateDiff,
     pub gas_vector_computation_mode: GasVectorComputationMode,
+    /// When the minimal viable L2 gas limit was discovered through
+    /// [`ExecutionContext::execute_transactions_for_estimation`], the gas vector to price fee
+    /// estimates with: the consumed gas with `l2_gas` replaced by the discovered limit. The
+    /// receipt in `execution_info` keeps the actually consumed amounts.
+    pub gas_for_fee_estimate: Option<GasVector>,
     /// Addresses that were newly deployed by this transaction (vs class replacements).
     pub deployed_contracts: HashSet<Felt>,
     /// Class hash declared as deprecated (Cairo 0) by this transaction, if any.
     pub deprecated_declared_class: Option<Felt>,
+}
+
+impl ExecutionResult {
+    /// The gas amounts fee estimates are priced with: the L2-gas-search adjusted vector when the
+    /// search ran, the receipt amounts otherwise.
+    pub fn gas_for_fee_pricing(&self) -> GasVector {
+        self.gas_for_fee_estimate.unwrap_or(self.execution_info.receipt.gas)
+    }
 }
 
 pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {

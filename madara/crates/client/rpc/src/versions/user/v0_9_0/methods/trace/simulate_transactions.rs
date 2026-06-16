@@ -16,6 +16,7 @@ pub async fn simulate_transactions(
     transactions: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlag>,
 ) -> StarknetRpcResult<Vec<SimulateTransactionsResult>> {
+    crate::utils::check_estimate_batch_size(transactions.len(), "simulated")?;
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
@@ -32,7 +33,7 @@ pub async fn simulate_transactions(
             let only_query = tx.is_query();
             let (api_tx, _) = tx
                 .into_starknet_api(starknet.backend.chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: true };
+            let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: validate };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
@@ -41,7 +42,10 @@ pub async fn simulate_transactions(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], user_transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((
+            exec_context.execute_transactions_for_estimation([], user_transactions)?,
+            exec_context,
+        ))
     })
     .await?;
 
@@ -66,4 +70,45 @@ pub async fn simulate_transactions(
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
     Ok(simulated_transactions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::{devnet_transfer_tx, rpc_test_setup_with_execution};
+    use mp_rpc::v0_9_0::BlockTag;
+    use starknet_types_core::felt::Felt;
+
+    /// Simulation executes each transaction (several times with L2 gas discovery): the
+    /// per-request transaction count must be bounded, mirroring estimateFee.
+    #[tokio::test]
+    async fn simulate_rejects_oversized_batch() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let tx = devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, false);
+        let txs = vec![tx; crate::constants::MAX_ESTIMATE_TRANSACTIONS + 1];
+        let result = simulate_transactions(&rpc, BlockId::Tag(BlockTag::Latest), txs, vec![]).await;
+
+        assert_matches::assert_matches!(result.unwrap_err(), StarknetRpcApiError::InvalidParams { .. });
+    }
+
+    /// SKIP_VALIDATE must relax the strict nonce check here too, mirroring estimateFee: wallets
+    /// simulate queued transactions with future nonces. The signature is valid so the future
+    /// nonce is the only relaxed check.
+    #[tokio::test]
+    async fn simulate_skip_validate_allows_future_nonce() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![devnet_transfer_tx(&backend, &keys.0[0], Felt::from(5), true)];
+        let result = simulate_transactions(
+            &rpc,
+            BlockId::Tag(BlockTag::Latest),
+            txs,
+            vec![SimulationFlag::SkipValidate, SimulationFlag::SkipFeeCharge],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+    }
 }
