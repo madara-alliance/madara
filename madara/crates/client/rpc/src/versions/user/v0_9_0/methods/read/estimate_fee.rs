@@ -27,6 +27,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
+    crate::utils::check_estimate_batch_size(request.len(), "estimated")?;
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
@@ -42,7 +43,8 @@ pub async fn estimate_fee(
             let only_query = tx.is_query();
             let (api_tx, _) =
                 tx.into_starknet_api(view.backend().chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            let execution_flags =
+                ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: validate };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
@@ -51,7 +53,7 @@ pub async fn estimate_fee(
 
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
-        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
+        Ok::<_, mc_exec::Error>((exec_context.execute_transactions_for_estimation([], transactions)?, exec_context))
     })
     .await?;
 
@@ -86,57 +88,10 @@ pub async fn estimate_fee(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::rpc_test_setup_with_execution;
+    use crate::test_utils::{devnet_transfer_tx, rpc_test_setup_with_execution};
     use assert_matches::assert_matches;
-    use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
-    use mp_rpc::v0_9_0::{BlockTag, BroadcastedInvokeTxn, DaMode, InvokeTxnV3, ResourceBounds, ResourceBoundsMapping};
-    use mp_transactions::validated::TxTimestamp;
+    use mp_rpc::v0_9_0::BlockTag;
     use starknet_types_core::felt::Felt;
-
-    /// A fee-token transfer of 1 wei from `account`, signed iff `valid_signature`.
-    fn transfer_tx(
-        backend: &mc_db::MadaraBackend,
-        account: &DevnetPredeployedContract,
-        nonce: Felt,
-        valid_signature: bool,
-    ) -> BroadcastedTxn {
-        let mut tx = InvokeTxnV3 {
-            sender_address: account.address,
-            calldata: Multicall::default()
-                .with(Call {
-                    to: backend.chain_config().native_fee_token_address.to_felt(),
-                    selector: Selector::from("transfer"),
-                    calldata: vec![account.address, Felt::ONE, Felt::ZERO],
-                })
-                .flatten()
-                .collect::<Vec<_>>()
-                .into(),
-            signature: vec![Felt::ONE, Felt::TWO].into(),
-            nonce,
-            resource_bounds: ResourceBoundsMapping {
-                l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
-                l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-            },
-            tip: 0,
-            paymaster_data: vec![],
-            account_deployment_data: vec![],
-            nonce_data_availability_mode: DaMode::L1,
-            fee_data_availability_mode: DaMode::L1,
-        };
-        if valid_signature {
-            let api_tx = BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx.clone()))
-                .into_validated_tx(
-                    backend.chain_config().chain_id.to_felt(),
-                    backend.chain_config().latest_protocol_version,
-                    TxTimestamp::now(),
-                )
-                .unwrap();
-            let signature = account.secret.sign(&api_tx.hash).unwrap();
-            tx.signature = vec![signature.r, signature.s].into();
-        }
-        BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx))
-    }
 
     /// The error 41 data must blame the actual failing transaction, not transaction 0: the first
     /// transaction is valid, the second fails validation (bad signature).
@@ -145,8 +100,8 @@ mod tests {
         let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
 
         let txs = vec![
-            transfer_tx(&backend, &keys.0[0], Felt::ZERO, true),
-            transfer_tx(&backend, &keys.0[1], Felt::ZERO, false),
+            devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, true),
+            devnet_transfer_tx(&backend, &keys.0[1], Felt::ZERO, false),
         ];
         let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
 
@@ -161,10 +116,50 @@ mod tests {
     async fn estimate_fee_success() {
         let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
 
-        let txs = vec![transfer_tx(&backend, &keys.0[0], Felt::ZERO, true)];
+        let txs = vec![devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, true)];
         let estimates = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await.unwrap();
 
         assert_eq!(estimates.len(), 1);
         assert!(estimates[0].common.overall_fee > 0);
+    }
+
+    /// SKIP_VALIDATE must relax the strict nonce check, like pathfinder
+    /// (`strict_nonce_check: !skip_validate`) and juno: wallets estimate queued transactions with
+    /// future nonces. The signature is valid so the future nonce is the only relaxed check.
+    #[tokio::test]
+    async fn estimate_fee_skip_validate_allows_future_nonce() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![devnet_transfer_tx(&backend, &keys.0[0], Felt::from(5), true)];
+        let estimates =
+            estimate_fee(&rpc, txs, vec![SimulationFlagForEstimateFee::SkipValidate], BlockId::Tag(BlockTag::Latest))
+                .await
+                .unwrap();
+
+        assert_eq!(estimates.len(), 1);
+    }
+
+    /// Estimation executes each transaction (several times with L2 gas discovery): the
+    /// per-request transaction count must be bounded.
+    #[tokio::test]
+    async fn estimate_fee_rejects_oversized_batch() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let tx = devnet_transfer_tx(&backend, &keys.0[0], Felt::ZERO, false);
+        let txs = vec![tx; crate::constants::MAX_ESTIMATE_TRANSACTIONS + 1];
+        let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::InvalidParams { .. });
+    }
+
+    /// Without SKIP_VALIDATE the strict nonce check still applies.
+    #[tokio::test]
+    async fn estimate_fee_future_nonce_fails_without_skip_validate() {
+        let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
+
+        let txs = vec![devnet_transfer_tx(&backend, &keys.0[0], Felt::from(5), true)];
+        let result = estimate_fee(&rpc, txs, vec![], BlockId::Tag(BlockTag::Latest)).await;
+
+        assert_matches!(result.unwrap_err(), StarknetRpcApiError::TxnExecutionError { tx_index: 0, .. });
     }
 }

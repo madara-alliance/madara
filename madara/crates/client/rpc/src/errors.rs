@@ -111,6 +111,8 @@ pub enum StarknetRpcApiError {
     StorageProofNotSupported,
     #[error("The proof field in the invoke v3 transaction is invalid")]
     InvalidProof,
+    #[error("Invalid params")]
+    InvalidParams { error: Cow<'static, str> },
 }
 
 impl StarknetRpcApiError {
@@ -191,6 +193,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
+            // Standard JSON-RPC invalid params error.
+            StarknetRpcApiError::InvalidParams { .. } => -32602,
         }
     }
 }
@@ -210,6 +214,7 @@ impl StarknetRpcApiError {
                 Some(json!({ "kind": kind, "limit": limit, "got": got }))
             }
             StarknetRpcApiError::ErrUnexpectedError { error }
+            | StarknetRpcApiError::InvalidParams { error }
             | StarknetRpcApiError::NoTraceAvailable { error }
             | StarknetRpcApiError::ValidationFailure { error }
             | StarknetRpcApiError::ContractNotFound { error }
