@@ -171,7 +171,7 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::AcceptedOnL2,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
             }
         );
     }
@@ -203,7 +203,7 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::PreConfirmed,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
             }
         );
     }
@@ -225,7 +225,7 @@ mod tests {
             status,
             TxnFinalityAndExecutionStatus {
                 finality_status: TxnStatus::AcceptedOnL1,
-                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded)
+                execution_status: Some(mp_rpc::v0_9_0::TxnExecutionStatus::Succeeded),
             }
         );
     }

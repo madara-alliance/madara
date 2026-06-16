@@ -86,23 +86,31 @@ mod tests {
         assert_matches!(result.unwrap_err(), StarknetRpcApiError::ContractNotFound { .. });
     }
 
-    /// A contract panic must surface as CONTRACT_ERROR with the failure reason as data, not as a
-    /// successful call result containing the panic retdata.
+    /// A contract panic must surface as CONTRACT_ERROR with the failure reason as structured
+    /// CONTRACT_EXECUTION_ERROR data, not as a successful call result containing the panic retdata.
     #[tokio::test]
     async fn call_reverted_returns_contract_error() {
         let (backend, rpc, keys) = rpc_test_setup_with_execution().await;
 
+        let fee_token = backend.chain_config().native_fee_token_address.to_felt();
         // The caller address of starknet_call is 0: the ERC20 panics with
         // 'ERC20: transfer from 0'.
         let request = FunctionCall {
-            contract_address: backend.chain_config().native_fee_token_address.to_felt(),
+            contract_address: fee_token,
             entry_point_selector: get_selector_from_name("transfer").unwrap(),
             calldata: Arc::new(vec![keys.0[0].address, Felt::ONE, Felt::ZERO]),
         };
         let result = call(&rpc, request, BlockId::Tag(BlockTag::Latest)).await;
 
         assert_matches!(result.unwrap_err(), StarknetRpcApiError::ContractError { revert_error } => {
-            assert!(revert_error.contains("ERC20: transfer from 0"), "unexpected revert error: {revert_error}");
+            // Outermost frame points at the called contract.
+            assert_eq!(revert_error["contract_address"], serde_json::json!(fee_token));
+            assert_eq!(revert_error["selector"], serde_json::json!(get_selector_from_name("transfer").unwrap()));
+            // The panic reason is in the innermost string.
+            assert!(
+                serde_json::to_string(&revert_error).unwrap().contains("ERC20: transfer from 0"),
+                "unexpected revert error: {revert_error}"
+            );
         });
     }
 

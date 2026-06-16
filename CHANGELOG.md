@@ -2,6 +2,7 @@
 
 ## Next release
 
+- fix(rpc): structured CONTRACT_EXECUTION_ERROR data and real transaction_index in execution errors
 - fix(rpc): surface failed executions in starknet_call and starknet_estimateMessageFee
   (ENTRYPOINT_NOT_FOUND, CONTRACT_NOT_FOUND, CONTRACT_ERROR with revert_error data)
 - cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`

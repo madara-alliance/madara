@@ -12,6 +12,7 @@ use mp_rpc::v0_8_1::{
 };
 use starknet_types_core::felt::Felt;
 
+pub mod call;
 pub mod estimate_fee;
 pub mod estimate_message_fee;
 pub mod get_block_with_receipts;
@@ -46,7 +47,7 @@ impl StarknetReadRpcApiV0_8_1Server for Starknet {
     }
 
     async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
-        V0_7_1Impl::call(self, request, block_id).await
+        Ok(call::call(self, request, block_id).await?)
     }
 
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {

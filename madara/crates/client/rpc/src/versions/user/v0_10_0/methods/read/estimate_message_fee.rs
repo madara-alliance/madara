@@ -40,7 +40,9 @@ pub async fn estimate_message_fee(
     // execution with `revert_error` set. Surface it as CONTRACT_ERROR instead of returning a fee
     // estimate for a message that cannot be executed.
     if let Some(revert_error) = &execution_result.execution_info.revert_error {
-        return Err(StarknetRpcApiError::ContractError { revert_error: revert_error.to_string().into() });
+        return Err(StarknetRpcApiError::ContractError {
+            revert_error: crate::utils::contract_execution_error_from_revert(revert_error),
+        });
     }
 
     let fee_estimate = exec_context.execution_result_to_fee_estimate_v0_9(&execution_result, tip)?;

@@ -39,8 +39,9 @@ pub async fn estimate_message_fee(
 
     let l1_handler: L1HandlerTransaction = message.into();
     let chain_id = view.backend().chain_config().chain_id.to_felt();
-    let (execution_result, exec_context, tip) =
-        execute_message_fee_estimation(exec_context, l1_handler, chain_id).await?;
+    let (execution_result, exec_context, tip) = execute_message_fee_estimation(exec_context, l1_handler, chain_id)
+        .await
+        .map_err(StarknetRpcApiError::from_exec_error_v0_7)?;
 
     // A failed L1 handler execution is not an error for blockifier: it returns a successful
     // execution with `revert_error` set. Surface it as CONTRACT_ERROR instead of returning a fee
