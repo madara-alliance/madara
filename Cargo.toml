@@ -256,7 +256,7 @@ httpmock = "0.7.0"
 mockall = "0.13.0"
 fdlimit = "0.3.0"
 assert_matches = "1.5"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 # Macros
 indoc = "2"
