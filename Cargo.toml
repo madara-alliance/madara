@@ -207,7 +207,7 @@ serde_with = { version = "3.11", default-features = false, features = [
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
-bincode = "1.3"
+bincode = "3.0"
 parity-scale-codec = { version = "3.2.2", default-features = false, features = [
   "std",
 ] }
