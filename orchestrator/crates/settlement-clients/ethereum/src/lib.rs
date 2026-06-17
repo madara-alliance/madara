@@ -41,7 +41,7 @@ use mockall::automock;
 use tokio::time::sleep;
 #[cfg(not(feature = "testing"))]
 use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -336,23 +336,15 @@ impl SettlementClient for EthereumSettlementClient {
             );
 
             // Waiting for transaction finality
-            let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
+            self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?.ok_or_else(|| {
+                eyre!("Transaction {} not finalized before finality retry limit", pending_transaction.tx_hash())
+            })?;
 
-            match res {
-                Some(_) => {
-                    info!(
-                        tx_hash = %pending_transaction.tx_hash(),
-                        attempt = attempt,
-                        "Transaction finalized successfully"
-                    );
-                }
-                None => {
-                    error!(
-                        tx_hash = %pending_transaction.tx_hash(),
-                        "Transaction not finalized"
-                    );
-                }
-            }
+            info!(
+                tx_hash = %pending_transaction.tx_hash(),
+                attempt = attempt,
+                "Transaction finalized successfully"
+            );
             return Ok(pending_transaction.tx_hash().to_string());
         }
     }
@@ -414,6 +406,10 @@ impl SettlementClient for EthereumSettlementClient {
             if let Some(receipt) =
                 self.provider.get_transaction_receipt(B256::from_str(tx_hash).expect("Unable to form")).await?
             {
+                if !receipt.status() {
+                    bail!("Transaction {} was rejected by the settlement layer", tx_hash);
+                }
+
                 if let Some(block_number) = receipt.block_number {
                     let latest_block = self.provider.get_block_number().await?;
                     let confirmations = latest_block.saturating_sub(block_number);

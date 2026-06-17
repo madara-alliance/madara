@@ -14,6 +14,7 @@ use crate::types::constant::{
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
 };
+use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
@@ -110,6 +111,85 @@ async fn process_job_invalid_input_gap_panics() {
             let expected_error = JobError::StateUpdateJobError(err);
             assert_eq!(e.to_string(), expected_error.to_string());
         }
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn verify_job_waits_when_contract_is_at_previous_batch_boundary() {
+    let current_batch_index = 559;
+    let previous_batch_index = 558;
+    let previous_end_block = 902785;
+    let current_end_block = 902875;
+
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_last_settled_block().times(1).returning(move || Ok(Some(previous_end_block)));
+
+    let mut database_client = MockDatabaseClient::new();
+    database_client.expect_get_aggregator_batches().times(2).returning(
+        move |query: AggregatorBatchDbQuery| match query.indexes.as_deref() {
+            Some([index]) if *index == current_batch_index => {
+                Ok(vec![test_aggregator_batch(current_batch_index, previous_end_block + 1, current_end_block)])
+            }
+            Some([index]) if *index == previous_batch_index => {
+                Ok(vec![test_aggregator_batch(previous_batch_index, 902695, previous_end_block)])
+            }
+            _ => panic!("unexpected aggregator batch query: {:?}", query.indexes),
+        },
+    );
+
+    let services = TestConfigBuilder::new()
+        .configure_settlement_client(settlement_client.into())
+        .configure_database(database_client.into())
+        .build()
+        .await;
+
+    let mut job = state_transition_job_for_batch(current_batch_index).await;
+    let result = StateUpdateJobHandler.verify_job(services.config, &mut job).await;
+
+    assert_eq!(result.unwrap(), JobVerificationStatus::Pending);
+}
+
+#[rstest]
+#[tokio::test]
+async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
+    let current_batch_index = 559;
+    let previous_batch_index = 558;
+    let previous_end_block = 902785;
+    let current_end_block = 902875;
+    let actual_settled_block = 902700;
+
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_last_settled_block().times(1).returning(move || Ok(Some(actual_settled_block)));
+
+    let mut database_client = MockDatabaseClient::new();
+    database_client.expect_get_aggregator_batches().times(2).returning(
+        move |query: AggregatorBatchDbQuery| match query.indexes.as_deref() {
+            Some([index]) if *index == current_batch_index => {
+                Ok(vec![test_aggregator_batch(current_batch_index, previous_end_block + 1, current_end_block)])
+            }
+            Some([index]) if *index == previous_batch_index => {
+                Ok(vec![test_aggregator_batch(previous_batch_index, 902695, previous_end_block)])
+            }
+            _ => panic!("unexpected aggregator batch query: {:?}", query.indexes),
+        },
+    );
+
+    let services = TestConfigBuilder::new()
+        .configure_settlement_client(settlement_client.into())
+        .configure_database(database_client.into())
+        .build()
+        .await;
+
+    let mut job = state_transition_job_for_batch(current_batch_index).await;
+    let result = StateUpdateJobHandler.verify_job(services.config, &mut job).await;
+
+    assert_eq!(
+        result.unwrap(),
+        JobVerificationStatus::Rejected(format!(
+            "Last settle bock expected was {} but found {}",
+            current_end_block, actual_settled_block
+        ))
     );
 }
 
@@ -237,3 +317,32 @@ async fn test_process_job_l2_with_da_segment(
 }
 
 // ==================== Utility functions ===========================
+
+fn test_aggregator_batch(index: u64, start_block: u64, end_block: u64) -> AggregatorBatch {
+    AggregatorBatch::new(
+        index,
+        start_block,
+        String::new(),
+        256,
+        AggregatorBatchWeights::default(),
+        StarknetVersion::V0_14_1,
+    )
+    .update(end_block, 256, AggregatorBatchWeights::default(), None)
+}
+
+async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs::job_item::JobItem {
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            snos_output_path: None,
+            program_output_path: Some(format!("batch/{batch_index}/program_output.txt")),
+            blob_data_path: None,
+            da_segment_path: Some(format!("batch/{batch_index}/da_blob.json")),
+            tx_hash: Some("0x1234".to_string()),
+            context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
+            storage_artifacts_tagged_at: None,
+        }),
+    };
+
+    StateUpdateJobHandler.create_job(batch_index, metadata).await.expect("state transition job should be created")
+}

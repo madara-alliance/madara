@@ -216,9 +216,48 @@ impl StateUpdateJobHandler {
         internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
-        let (expected_last_block_number, batch_index) = match config.layer() {
+        let (expected_last_block_number, batch_index) =
+            Self::get_expected_last_block_number(config, num_settled).await?;
+
+        let last_settled_block_number =
+            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+        match last_settled_block_number {
+            Some(block_num) => {
+                let block_status = if block_num >= expected_last_block_number {
+                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
+                    Self::mark_batch_completed(config, batch_index).await?;
+                    SettlementVerificationStatus::Verified
+                } else if Self::settlement_is_at_previous_boundary(config, num_settled, block_num).await? {
+                    info!(
+                        log_type = "pending",
+                        category = "state_update",
+                        function_type = "verify_job",
+                        job_id = %job_id,
+                        num = %internal_id,
+                        expected = %expected_last_block_number,
+                        actual = %block_num,
+                        "Last settled block is still at the previous settlement boundary."
+                    );
+                    SettlementVerificationStatus::Pending
+                } else {
+                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
+                    SettlementVerificationStatus::Rejected(format!(
+                        "Last settle bock expected was {} but found {}",
+                        expected_last_block_number, block_num
+                    ))
+                };
+                Ok(block_status.into())
+            }
+            None => {
+                panic!("Incorrect state after settling blocks")
+            }
+        }
+    }
+
+    async fn get_expected_last_block_number(config: &Arc<Config>, num_settled: u64) -> Result<(u64, u64), JobError> {
+        match config.layer() {
             Layer::L2 => {
-                // Get the batch details for the settled batch
                 let batches = config
                     .database()
                     .get_aggregator_batches(AggregatorBatchDbQuery {
@@ -227,63 +266,81 @@ impl StateUpdateJobHandler {
                     })
                     .await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
             Layer::L3 => {
-                // Get the batch details for the settled batch
                 let batches = config
                     .database()
                     .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![num_settled]), ..Default::default() })
                     .await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
-        }?;
+        }
+    }
 
-        let last_settled_block_number =
-            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+    async fn settlement_is_at_previous_boundary(
+        config: &Arc<Config>,
+        num_settled: u64,
+        block_num: u64,
+    ) -> Result<bool, JobError> {
+        let Some(previous_num) = num_settled.checked_sub(1) else {
+            return Ok(false);
+        };
 
-        match last_settled_block_number {
-            Some(block_num) => {
-                let block_status = if block_num == expected_last_block_number {
-                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
-                    SettlementVerificationStatus::Verified
-                } else {
-                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
-                    SettlementVerificationStatus::Rejected(format!(
-                        "Last settle bock expected was {} but found {}",
-                        expected_last_block_number, block_num
-                    ))
-                };
-                // Update batch status
-                match config.layer() {
-                    Layer::L2 => {
-                        config
-                            .database()
-                            .update_aggregator_batch_status_by_index(batch_index, AggregatorBatchStatus::Completed)
-                            .await?;
-                    }
-                    Layer::L3 => {
-                        config
-                            .database()
-                            .update_snos_batch_status_by_index(batch_index, SnosBatchStatus::Completed)
-                            .await?;
-                    }
-                }
-                Ok(block_status.into())
+        let Some(previous_last_block_number) =
+            Self::get_optional_expected_last_block_number(config, previous_num).await?
+        else {
+            return Ok(false);
+        };
+
+        Ok(block_num == previous_last_block_number)
+    }
+
+    async fn get_optional_expected_last_block_number(
+        config: &Arc<Config>,
+        num_settled: u64,
+    ) -> Result<Option<u64>, JobError> {
+        match config.layer() {
+            Layer::L2 => {
+                let batches = config
+                    .database()
+                    .get_aggregator_batches(AggregatorBatchDbQuery {
+                        indexes: Some(vec![num_settled]),
+                        ..Default::default()
+                    })
+                    .await?;
+                Ok(batches.first().map(|batch| batch.end_block))
             }
-            None => {
-                panic!("Incorrect state after settling blocks")
+            Layer::L3 => {
+                let batches = config
+                    .database()
+                    .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![num_settled]), ..Default::default() })
+                    .await?;
+                Ok(batches.first().map(|batch| batch.end_block))
             }
         }
+    }
+
+    async fn mark_batch_completed(config: &Arc<Config>, batch_index: u64) -> Result<(), JobError> {
+        match config.layer() {
+            Layer::L2 => {
+                config
+                    .database()
+                    .update_aggregator_batch_status_by_index(batch_index, AggregatorBatchStatus::Completed)
+                    .await?;
+            }
+            Layer::L3 => {
+                config.database().update_snos_batch_status_by_index(batch_index, SnosBatchStatus::Completed).await?;
+            }
+        }
+        Ok(())
     }
 
     #[cfg(feature = "testing")]
