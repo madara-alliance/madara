@@ -81,6 +81,10 @@ impl TryFrom<RunCmd> for SettlementConfig {
                         .ok_or_else(|| {
                             OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
                         })?,
+                    ethereum_tx_confirmation_timeout_secs: run_cmd
+                        .ethereum_settlement_args
+                        .ethereum_tx_confirmation_timeout_secs,
+                    ethereum_max_fee_bumps: run_cmd.ethereum_settlement_args.ethereum_max_fee_bumps,
                     max_gas_price_mul_factor: run_cmd.ethereum_settlement_args.max_gas_price_mul_factor,
                     disable_peerdas: run_cmd.ethereum_settlement_args.disable_peerdas,
                 };

@@ -12,6 +12,27 @@ pub enum SettlementVerificationStatus {
     Rejected(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxAttempt {
+    pub tx_hash: String,
+    pub nonce: u64,
+    pub gas_multiplier: f64,
+    pub status: StateUpdateTxAttemptStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateUpdateTxAttemptStatus {
+    Finalized,
+    Replaced,
+    TimedOut,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxResult {
+    pub tx_hash: String,
+    pub attempts: Vec<StateUpdateTxAttempt>,
+}
+
 /// Trait for every new Settlement Layer to implement
 #[automock]
 #[async_trait]
@@ -35,7 +56,7 @@ pub trait SettlementClient: Send + Sync {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
-    ) -> Result<String>;
+    ) -> Result<StateUpdateTxResult>;
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus>;

@@ -198,6 +198,8 @@ async fn update_state_worker_continues_from_previous_state_update() {
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
         da_segment_path: None,
         tx_hash: None,
+        tx_nonce: None,
+        tx_attempts: Vec::new(),
         context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
         storage_artifacts_tagged_at: None,
     };
@@ -255,6 +257,8 @@ async fn update_state_worker_next_block_missing() {
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
         da_segment_path: None,
         tx_hash: None,
+        tx_nonce: None,
+        tx_attempts: Vec::new(),
         context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
         storage_artifacts_tagged_at: None,
     };

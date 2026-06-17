@@ -32,6 +32,15 @@ pub struct EthereumSettlementCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS", long, default_value = "60")]
     pub ethereum_finality_retry_wait_in_secs: Option<u64>,
 
+    /// Maximum time to wait for a submitted Ethereum state-update transaction to finalize
+    /// before submitting a same-nonce fee-bump replacement.
+    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_TX_CONFIRMATION_TIMEOUT_SECS", long, default_value = "300")]
+    pub ethereum_tx_confirmation_timeout_secs: u64,
+
+    /// Maximum number of same-nonce fee-bump replacements for a state-update transaction.
+    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS", long, default_value = "2")]
+    pub ethereum_max_fee_bumps: u64,
+
     /// Maximum gas price multiplier for blob transaction retries.
     /// Blob transactions require 100% (2x) price bump to replace stuck transactions.
     /// With start=1.1x and 2.0x increment: 1.1 → 2.2 → fail. Max 2 attempts to avoid overpaying.

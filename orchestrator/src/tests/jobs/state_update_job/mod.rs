@@ -23,7 +23,7 @@ use bytes::Bytes;
 use httpmock::prelude::*;
 use lazy_static::lazy_static;
 use mockall::predicate::eq;
-use orchestrator_settlement_client_interface::MockSettlementClient;
+use orchestrator_settlement_client_interface::{MockSettlementClient, StateUpdateTxResult};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -49,6 +49,8 @@ async fn create_job_works() {
             blob_data_path: Some(format!("1/{}", BLOB_DATA_FILE_NAME)),
             da_segment_path: None,
             tx_hash: None,
+            tx_nonce: None,
+            tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
             storage_artifacts_tagged_at: None,
         }),
@@ -94,6 +96,8 @@ async fn process_job_invalid_input_gap_panics() {
             blob_data_path: Some(format!("{}/{}", 6, BLOB_DATA_FILE_NAME)),
             da_segment_path: None,
             tx_hash: None,
+            tx_nonce: None,
+            tx_attempts: Vec::new(),
             context: SettlementContext::Block(SettlementContextData {
                 to_settle: 6, // Gap between 4 and 6
                 last_failed: None,
@@ -269,9 +273,7 @@ async fn test_process_job_l2_with_da_segment(
         .expect_update_state_with_blobs()
         .withf(move |po, blobs, _| po == &expected_program_output && blobs == &expected_blobs)
         .times(1)
-        .returning(|_, _, _| Ok("0xabcd".to_string()));
-
-    settlement_client.expect_wait_for_tx_finality().with(eq("0xabcd")).times(1).returning(|_| Ok(Some(1)));
+        .returning(|_, _, _| Ok(StateUpdateTxResult { tx_hash: "0xabcd".to_string(), attempts: Vec::new() }));
 
     // Mock storage for DA segment
     let da_segment_key = get_batch_artifact_file(batch_index, DA_SEGMENT_FILE_NAME);
@@ -305,6 +307,8 @@ async fn test_process_job_l2_with_da_segment(
             blob_data_path: None, // Not used for L2 with DA segments
             da_segment_path: Some(da_segment_key),
             tx_hash: None,
+            tx_nonce: None,
+            tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,
         }),
@@ -339,6 +343,8 @@ async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs:
             blob_data_path: None,
             da_segment_path: Some(format!("batch/{batch_index}/da_blob.json")),
             tx_hash: Some("0x1234".to_string()),
+            tx_nonce: None,
+            tx_attempts: Vec::new(),
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
             storage_artifacts_tagged_at: None,
         }),

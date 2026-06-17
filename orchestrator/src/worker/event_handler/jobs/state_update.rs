@@ -8,6 +8,7 @@ use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+    StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
 };
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -15,7 +16,9 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
-use orchestrator_settlement_client_interface::SettlementVerificationStatus;
+use orchestrator_settlement_client_interface::{
+    SettlementVerificationStatus, StateUpdateTxAttemptStatus as SettlementTxAttemptStatus,
+};
 
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
@@ -31,6 +34,12 @@ struct StateUpdateArtifacts {
     snos_output: Option<Vec<Felt>>,
     program_output: Vec<[u8; 32]>,
     blob_data: Vec<Vec<u8>>,
+}
+
+struct StateUpdateProcessingResult {
+    tx_hash: String,
+    tx_nonce: Option<u64>,
+    tx_attempts: Vec<StateUpdateTxAttempt>,
 }
 
 pub struct StateUpdateJobHandler;
@@ -128,7 +137,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
 
-            let txn_hash = match self
+            let txn_result = match self
                 .update_state(
                     config.clone(),
                     to_settle_num,
@@ -149,22 +158,16 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
             info!(
                 job_id = %job.id,
-                tx_hash = %txn_hash,
+                tx_hash = %txn_result.tx_hash,
                 nonce = %nonce,
-                "State update transaction submitted successfully for job {}. Validating transaction receipt", internal_id
+                "State update transaction finalized for job {}", internal_id
             );
 
-            config.settlement_client()
-                .wait_for_tx_finality(&txn_hash)
-                .await
-                .map_err(|e| {
-                    error!(job_id = %internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
-                    JobError::Other(OtherError(e))
-                })?;
-
-            state_metadata.tx_hash = Some(txn_hash.clone());
+            state_metadata.tx_hash = Some(txn_result.tx_hash.clone());
+            state_metadata.tx_nonce = txn_result.tx_nonce;
+            state_metadata.tx_attempts = txn_result.tx_attempts;
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-            job.external_id = txn_hash.into();
+            job.external_id = txn_result.tx_hash.into();
         }
 
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::StateTransition, internal_id);
@@ -437,7 +440,7 @@ impl StateUpdateJobHandler {
         to_settle_num: u64,
         nonce: u64,
         artifacts: StateUpdateArtifacts,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         match config.layer() {
             Layer::L2 => self.update_state_for_l2s(config, nonce, artifacts).await,
             Layer::L3 => {
@@ -462,15 +465,32 @@ impl StateUpdateJobHandler {
         config: Arc<Config>,
         nonce: u64,
         artifacts: StateUpdateArtifacts,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         // Get the snos settlement client
         let settlement_client = config.settlement_client();
 
         // Update state with blobs
-        settlement_client
+        let result = settlement_client
             .update_state_with_blobs(artifacts.program_output, artifacts.blob_data, nonce)
             .await
-            .map_err(|e| JobError::Other(OtherError(e)))
+            .map_err(|e| JobError::Other(OtherError(e)))?;
+
+        let tx_attempts = result
+            .attempts
+            .into_iter()
+            .map(|attempt| StateUpdateTxAttempt {
+                tx_hash: attempt.tx_hash,
+                nonce: attempt.nonce,
+                gas_multiplier: format!("{:.2}", attempt.gas_multiplier),
+                status: match attempt.status {
+                    SettlementTxAttemptStatus::Finalized => StateUpdateTxAttemptStatus::Finalized,
+                    SettlementTxAttemptStatus::Replaced => StateUpdateTxAttemptStatus::Replaced,
+                    SettlementTxAttemptStatus::TimedOut => StateUpdateTxAttemptStatus::TimedOut,
+                },
+            })
+            .collect();
+
+        Ok(StateUpdateProcessingResult { tx_hash: result.tx_hash, tx_nonce: Some(nonce), tx_attempts })
     }
 
     /// Update the state for the corresponding block using the settlement layer.
@@ -482,7 +502,7 @@ impl StateUpdateJobHandler {
         _nonce: u64,
         _program_output: Vec<[u8; 32]>,
         _blob_data: Vec<Vec<u8>>,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         let settlement_client = config.settlement_client();
 
         // NOTE: State updates are performed using call data, even when the KZG DA flag is enabled.
@@ -533,7 +553,11 @@ impl StateUpdateJobHandler {
             Err(StateUpdateError::UseKZGDaError { block_no })?
         };
 
-        Ok(last_tx_hash_executed)
+        Ok(StateUpdateProcessingResult {
+            tx_hash: last_tx_hash_executed,
+            tx_nonce: Some(_nonce),
+            tx_attempts: Vec::new(),
+        })
     }
 }
 
