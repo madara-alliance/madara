@@ -246,15 +246,13 @@ impl StateUpdateJobHandler {
                 } else {
                     warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
                     SettlementVerificationStatus::Rejected(format!(
-                        "Last settle bock expected was {} but found {}",
+                        "Last settle block expected was {} but found {}",
                         expected_last_block_number, block_num
                     ))
                 };
                 Ok(block_status.into())
             }
-            None => {
-                panic!("Incorrect state after settling blocks")
-            }
+            None => Err(JobError::Other(OtherError(eyre!("Last settled block unavailable after state update")))),
         }
     }
 

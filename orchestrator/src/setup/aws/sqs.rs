@@ -64,8 +64,8 @@ impl Resource for InnerSQS {
             let queue_url = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, queue_type);
-                    tracing::info!("Queue Arn provided, reconciling setup for {}", &queue_name);
-                    self.get_queue_url_from_arn(arn, queue_type)?
+                    tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
+                    continue;
                 }
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);

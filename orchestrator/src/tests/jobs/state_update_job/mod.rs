@@ -191,7 +191,7 @@ async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
     assert_eq!(
         result.unwrap(),
         JobVerificationStatus::Rejected(format!(
-            "Last settle bock expected was {} but found {}",
+            "Last settle block expected was {} but found {}",
             current_end_block, actual_settled_block
         ))
     );
