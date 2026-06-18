@@ -24,7 +24,6 @@ use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::RequestBuilder;
 
 use crate::error::AtlanticError;
-use crate::types::AtlanticQueryStep;
 
 /// Parameters for proving layer specific configuration
 pub struct ProvingParams {
@@ -69,15 +68,12 @@ impl ProvingLayer for EthereumLayer {
 
 /// Starknet proving layer
 ///
-/// For Starknet settlement, we need to add the result step
-/// and layout parameters to the request.
+/// For Starknet settlement, we add the layout parameter to the request.
 pub struct StarknetLayer;
 
 impl ProvingLayer for StarknetLayer {
     fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a> {
-        request
-            .form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
-            .form_text("layout", params.layout.to_str())
+        request.form_text("layout", params.layout.to_str())
     }
 }
 

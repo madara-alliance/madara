@@ -3,7 +3,6 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
@@ -19,7 +18,6 @@ use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
 use std::sync::Arc;
-use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -416,41 +414,10 @@ impl StateUpdateJobHandler {
         // updates with call data: this configuration effectively replicates private DA functionality,
         // as the state diff is not in the snos_output while still maintaining the ability to update state.
         let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) || snos.get(8) == Some(&Felt::ONE) {
-            let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
-            debug!(%proof_key, "Fetching snos proof file");
-
-            let proof_file = config.storage().get_data(&proof_key).await?;
-
-            let snos_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let parsed_snos_proof: StarkProof = parse(snos_proof.clone()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let proof_key = format!("{block_no}/{PROOF_PART2_FILE_NAME}");
-            debug!(%proof_key, "Fetching 2nd proof file");
-
-            let proof_file = config.storage().get_data(&proof_key).await?;
-
-            let second_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let parsed_bridge_proof: StarkProof = parse(second_proof.clone()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
-            let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
+            let snos_output = vec_felt_to_vec_bytes32(snos);
 
             settlement_client
-                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
+                .update_state_calldata(snos_output, Vec::new(), [0u8; 32], [0u8; 32])
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
@@ -459,20 +426,6 @@ impl StateUpdateJobHandler {
 
         Ok(last_tx_hash_executed)
     }
-}
-
-pub fn calculate_output(proof: StarkProof) -> Vec<Felt> {
-    let output_segment = proof.public_input.segments[2].clone();
-    let output_len = output_segment.stop_ptr - output_segment.begin_addr;
-    let start = proof.public_input.main_page.len() - output_len as usize;
-    let end = proof.public_input.main_page.len();
-    let program_output =
-        proof.public_input.main_page[start..end].iter().map(|cell| cell.value.clone()).collect::<Vec<_>>();
-    let mut felts = vec![];
-    for elem in &program_output {
-        felts.push(Felt::from_dec_str(&elem.to_string()).unwrap());
-    }
-    felts
 }
 
 pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {
