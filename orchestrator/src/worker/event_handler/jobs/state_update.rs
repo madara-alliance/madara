@@ -10,7 +10,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
+use crate::worker::utils::{fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
@@ -39,21 +39,16 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
-        // Validate required paths based on layer configuration
-        // L2: requires program_output_path + da_segment_path
-        // L3: requires program_output_path + blob_data_path + snos_output_path
-        if state_metadata.program_output_path.is_none() {
-            error!("program_output_path is required for all state updates");
-            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_path in metadata"))));
-        }
-
-        let is_l2_config = state_metadata.da_segment_path.is_some();
-        let is_l3_config = state_metadata.blob_data_path.is_some() && state_metadata.snos_output_path.is_some();
+        // Validate required paths based on layer configuration.
+        // L2: requires program_output_path + da_segment_path.
+        // L3: requires only snos_output_path; the Satellite fact check makes proof/layout outputs obsolete.
+        let is_l2_config = state_metadata.program_output_path.is_some() && state_metadata.da_segment_path.is_some();
+        let is_l3_config = state_metadata.snos_output_path.is_some();
 
         if !is_l2_config && !is_l3_config {
-            error!("Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)");
+            error!("Missing required paths: must provide either (program_output_path + da_segment_path for L2) or snos_output_path for L3");
             return Err(JobError::Other(OtherError(eyre!(
-                "Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)"
+                "Missing required paths: must provide either (program_output_path + da_segment_path for L2) or snos_output_path for L3"
             ))));
         }
         let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
@@ -117,12 +112,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                         None
                     }
                 };
-            let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
-            let blob_data = match config.layer() {
-                // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
-                // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+            let (program_output, blob_data) = match config.layer() {
+                Layer::L2 => {
+                    let program_output =
+                        fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
+                    let blob_data = fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?;
+                    (program_output, blob_data)
+                }
+                Layer::L3 => (Vec::new(), Vec::new()),
             };
 
             let txn_hash = match self
@@ -371,8 +368,6 @@ impl StateUpdateJobHandler {
                         to_settle_num
                     ))))?,
                     nonce,
-                    artifacts.program_output,
-                    artifacts.blob_data,
                 )
                 .await
             }
@@ -402,8 +397,6 @@ impl StateUpdateJobHandler {
         block_no: u64,
         snos: Vec<Felt>,
         _nonce: u64,
-        _program_output: Vec<[u8; 32]>,
-        _blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
 

@@ -8,6 +8,7 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
+use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
@@ -91,11 +92,19 @@ async fn create_l3_proof_registration_jobs(config: Arc<Config>) -> color_eyre::R
             e
         })?;
 
+        let cairo_pie_path = snos_metadata.cairo_pie_path.ok_or_else(|| {
+            error!(job_id = %job.internal_id, "SNOS job is missing Cairo PIE path; cannot create L3 proof registration job");
+            eyre!(
+                "SNOS job {} is missing Cairo PIE path; cannot create L3 proof registration job",
+                job.internal_id
+            )
+        })?;
+
         let metadata = JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: snos_metadata.start_block,
-                input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
+                input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
                 ensure_on_chain_registration: None,
                 n_steps: snos_metadata.snos_n_steps,
                 bucket_id: None,
