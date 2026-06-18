@@ -5,6 +5,9 @@ name: Task - Build And Publish Nightly Docker Image
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   build-nightly-and-publish:
     runs-on: blacksmith-8vcpu-ubuntu-2204

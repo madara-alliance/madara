@@ -13,6 +13,9 @@ env:
   TAPLO_VERSION: "0.9.3"
   TAPLO_CONFIG: "./taplo/taplo.toml"
 
+permissions:
+  contents: read
+
 jobs:
   # Run prettier for code formatting
   prettier:

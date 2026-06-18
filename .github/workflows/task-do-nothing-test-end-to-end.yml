@@ -4,6 +4,9 @@ name: Task - Test E2E
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-end-to-end:
     runs-on: blacksmith-8vcpu-ubuntu-2204

@@ -5,6 +5,9 @@ name: Task - Run CLI tests
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-cli:
     runs-on: blacksmith-8vcpu-ubuntu-2204

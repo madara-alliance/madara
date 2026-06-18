@@ -5,6 +5,9 @@ name: Task - Test JavaScript
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-js:
     runs-on: blacksmith-8vcpu-ubuntu-2204

@@ -17,6 +17,9 @@ on:
         description: "Hash of the built madara binary"
         value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-binaries:
     runs-on: blacksmith-8vcpu-ubuntu-2204
