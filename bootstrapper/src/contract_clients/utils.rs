@@ -200,7 +200,6 @@ pub(crate) async fn deploy_account_using_priv_key(
     let chain_id = provider.chain_id().await.unwrap();
 
     let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex(&priv_key).unwrap()));
-    log::debug!("signer : {:?}", signer);
     let mut oz_account_factory =
         OpenZeppelinAccountFactory::new(oz_account_class_hash, chain_id, signer, provider).await.unwrap();
     oz_account_factory.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));

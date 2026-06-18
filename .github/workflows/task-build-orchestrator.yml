@@ -12,6 +12,9 @@ on:
         description: "Hash of the built orchestrator binary"
         value: ${{ jobs.build-orchestrator.outputs.binary-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-orchestrator:
     uses: ./.github/workflows/task-build-binary.yml
