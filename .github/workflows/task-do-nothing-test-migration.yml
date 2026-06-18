@@ -5,6 +5,9 @@ name: Task - Test Migration
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-migration:
     runs-on: ubuntu-latest

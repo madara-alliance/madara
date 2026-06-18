@@ -10,6 +10,9 @@ on:
         description: "Hash of the built bootstrapper binary"
         value: ${{ jobs.build-bootstrapper.outputs.binary-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-bootstrapper:
     uses: ./.github/workflows/task-build-binary.yml
