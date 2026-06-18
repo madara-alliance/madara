@@ -5,6 +5,9 @@ name: Task - Integration Tests and Coverage (Madara)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-madara:
     runs-on: blacksmith-8vcpu-ubuntu-2204

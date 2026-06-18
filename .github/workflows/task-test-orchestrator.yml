@@ -25,6 +25,9 @@ on:
       RPC_FOR_SNOS:
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   test-orchestrator:
     runs-on: blacksmith-8vcpu-ubuntu-2204
