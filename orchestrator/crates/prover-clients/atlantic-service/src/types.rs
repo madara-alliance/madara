@@ -189,6 +189,7 @@ pub enum AtlanticBucketType {
 pub enum AtlanticHints {
     HerodotusEvmGrower,
     HerodotusSnGrower,
+    GenericInput,
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum, Serialize, Deserialize)]
@@ -267,6 +268,7 @@ pub enum AtlanticQueryStep {
     ProofGenerationAndVerification,
     FactHashRegistration,
     TraceAndMetadataGeneration,
+    BridgeFactHash,
 }
 
 impl std::fmt::Display for AtlanticQueryStep {

@@ -3,7 +3,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{
-    AtlanticCairoVm, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
@@ -14,6 +14,58 @@ mod constants;
 // ============================================================================
 // Integration tests
 // ============================================================================
+
+#[test]
+fn atlantic_status_response_deserializes_l2_bridge_fact_hash_step() {
+    let response = serde_json::json!({
+        "atlanticQuery": {
+            "id": "01KVE0Q23ESMNMR7N3HWSDXTP5",
+            "externalId": "",
+            "transactionId": "01KVE0Q8RME79ZA5JJVRG4BVVV",
+            "status": "DONE",
+            "step": "BRIDGE_FACT_HASH",
+            "programHash": "0x555444da05154c46b4828affa18b90c38a333e98fee633fda0af05441eceb24",
+            "integrityFactHash": "0x33fdbc9f1f08bf5a2bf88b046a282e081450e1eb8413faf61889a2d1ac40145",
+            "sharpFactHash": "0x88113d00660188d8e77f0552bfa57f40c94065e119fc616774f8183c415ade47",
+            "layout": "dynamic",
+            "isFactMocked": false,
+            "isProofMocked": false,
+            "chain": "L2",
+            "jobSize": "S",
+            "declaredJobSize": "S",
+            "cairoVm": "python",
+            "cairoVersion": "cairo0",
+            "steps": [
+                "TRACE_AND_METADATA_GENERATION",
+                "PROOF_GENERATION_AND_VERIFICATION",
+                "BRIDGE_FACT_HASH"
+            ],
+            "result": "PROOF_VERIFICATION_ON_L2",
+            "network": "TESTNET",
+            "hints": "generic_input",
+            "sharpProver": "stwo",
+            "errorReason": null,
+            "submittedByClient": "01JTP1DGSTSZ46TCKREJE0JG84",
+            "projectId": "01JNFXEF9JFBQFCKXDANCBE5CN",
+            "bucketId": "",
+            "bucketJobIndex": null,
+            "customerName": "atlantic_karnot",
+            "isJobSizeValid": false,
+            "createdAt": "2026-06-18T18:43:24.708Z",
+            "completedAt": "2026-06-18T21:23:25.861Z"
+        },
+        "metadataUrls": [
+            "https://storage.googleapis.com/hero-atlantic-bucket/queries/01KVE0Q23ESMNMR7N3HWSDXTP5/metadata.json"
+        ]
+    });
+
+    let status: AtlanticGetStatusResponse =
+        serde_json::from_value(response).expect("status response should deserialize");
+
+    assert!(matches!(status.atlantic_query.status, AtlanticQueryStatus::Done));
+    assert!(matches!(status.atlantic_query.step, Some(AtlanticQueryStep::BridgeFactHash)));
+    assert!(status.atlantic_query.steps.iter().any(|step| matches!(step, AtlanticQueryStep::BridgeFactHash)));
+}
 
 #[tokio::test]
 async fn atlantic_client_submit_task_when_mock_works() {
