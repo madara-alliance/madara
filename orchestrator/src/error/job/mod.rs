@@ -114,3 +114,12 @@ pub enum JobError {
     #[error("Orchestrator Error: {0}")]
     AnyHowError(#[from] anyhow::Error),
 }
+
+impl JobError {
+    pub fn is_retryable_processing_failure(&self) -> bool {
+        match self {
+            Self::SnosJobError(error) => error.is_retryable(),
+            _ => false,
+        }
+    }
+}

@@ -137,7 +137,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
             error!(error = %e, "SNOS execution failed");
-            SnosError::SnosExecutionError { internal_id, message: e.to_string() }
+            SnosError::SnosExecutionError { internal_id, source: e }
         })?;
         debug!("generate_pie function completed successfully");
 

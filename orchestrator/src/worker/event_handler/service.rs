@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
 use crate::core::config::Config;
 use crate::error::job::JobError;
+use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
@@ -137,7 +138,8 @@ impl JobHandlerService {
     /// * `Created` -> `LockedForProcessing` -> `PendingVerification`
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
-    /// * `LockedForProcessing` -> `Failed` (on processing error or panic — message is ACKed, no SQS retry)
+    /// * `LockedForProcessing` -> `Failed` (on non-retryable processing error or panic)
+    /// * `LockedForProcessing` -> original status (on retryable SNOS processing error, message is NACKed)
     ///
     /// # Metrics
     /// * Updates block gauge
@@ -153,12 +155,10 @@ impl JobHandlerService {
     ///   timeout (stale), otherwise acks the message assuming it's a duplicate
     ///
     /// # Failure handling
-    /// Processing errors (including transient ones) immediately move the job to `Failed` and ACK the
-    /// SQS message. There are no SQS-level retries for explicit failures — job handlers that talk to
-    /// external APIs (SHARP, Atlantic, Ethereum, Starknet) implement their own internal retry logic
-    /// before surfacing an error. SQS `maxReceiveCount` only protects against implicit failures
-    /// (OOM, consumer crash) where the handler never reaches the error path.
-    /// Failed jobs can be retried via the `retry_job` endpoint.
+    /// Retryable SNOS processing errors restore the job to its pre-processing status and return an
+    /// error so SQS can retry the message until it reaches the DLQ. Non-retryable processing errors
+    /// and panics still fail fast by moving the job to `Failed` and ACKing the message so alerting
+    /// can stop the sequencer quickly. Failed jobs can be retried via the `retry_job` endpoint.
     ///
     /// # Important
     /// The queue visibility timeout MUST be greater than the job healing timeout configured via
@@ -285,6 +285,10 @@ impl JobHandlerService {
             return Ok(());
         }
 
+        // Save original status so retryable processing failures can restore the job to the
+        // pre-processing state and let SQS own the retry lifecycle.
+        let original_status = job.status.clone();
+
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
         // it would fail to update the job in the database because the version would be outdated
@@ -334,6 +338,28 @@ impl JobHandlerService {
                 external_id
             }
             Ok(Err(e)) => {
+                let reason = format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, e);
+
+                if e.is_retryable_processing_failure() {
+                    warn!(
+                        job_id = ?id,
+                        job_type = ?job.job_type,
+                        internal_id = %job.internal_id,
+                        status = ?original_status,
+                        error = ?e,
+                        "Retryable SNOS processing failure detected, restoring job state for SQS retry"
+                    );
+                    workload.finish_error();
+                    return Err(Self::reset_job_for_retryable_processing_error(
+                        &mut job,
+                        config.clone(),
+                        original_status,
+                        reason,
+                        e,
+                    )
+                    .await);
+                }
+
                 error!(
                     job_id = ?id,
                     job_type = ?job.job_type,
@@ -342,12 +368,12 @@ impl JobHandlerService {
                     error = ?e,
                     "Failed to process job, marking as failed"
                 );
-                let reason = format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, e);
                 MetricsRecorder::record_job_state_transition(
                     JobStatus::LockedForProcessing,
                     JobStatus::Failed,
                     &job.job_type,
                 );
+                workload.finish_error();
                 return JobService::move_job_to_failed(&job, config.clone(), reason).await;
             }
             Err(panic) => {
@@ -365,6 +391,7 @@ impl JobHandlerService {
                     JobStatus::Failed,
                     &job.job_type,
                 );
+                workload.finish_error();
                 return JobService::move_job_to_failed(&job, config.clone(), reason).await;
             }
         };
@@ -433,6 +460,52 @@ impl JobHandlerService {
         workload.finish_success();
 
         Ok(())
+    }
+
+    async fn reset_job_for_retryable_processing_error(
+        job: &mut crate::types::jobs::job_item::JobItem,
+        config: Arc<Config>,
+        original_status: JobStatus,
+        reason: String,
+        original_error: JobError,
+    ) -> JobError {
+        job.metadata.common.process_retry_attempt_no += 1;
+        job.metadata.common.process_started_at = None;
+        job.metadata.common.process_completed_at = None;
+
+        if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
+            job.metadata.common.previous_failure_reasons.push(previous_reason);
+        }
+        job.metadata.common.failure_reason = Some(reason);
+
+        match config
+            .database()
+            .update_job(
+                job,
+                JobItemUpdates::new()
+                    .update_status(original_status.clone())
+                    .update_metadata(job.metadata.clone())
+                    .build(),
+            )
+            .await
+        {
+            Ok(_) => {
+                MetricsRecorder::record_job_state_transition(
+                    JobStatus::LockedForProcessing,
+                    original_status.clone(),
+                    &job.job_type,
+                );
+                MetricsRecorder::record_job_status(job, &original_status);
+                original_error
+            }
+            Err(db_err) => {
+                error!(job_id = ?job.id, error = ?db_err, "Failed to reset retryable job state for SQS retry");
+                JobError::Other(OtherError::from(format!(
+                    "Failed to reset job state: {}. Original error: {}",
+                    db_err, original_error
+                )))
+            }
+        }
     }
 
     /// Verify Job Function
