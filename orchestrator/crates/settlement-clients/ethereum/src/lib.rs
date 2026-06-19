@@ -64,8 +64,8 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
 // See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
 // See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
-// With 1.1x start, 2.0x increment, and default max of 2.5x: 1.1 → 2.2 → 4.4 (exceeds max, fails).
-// The max multiplier is configurable via MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR env variable.
+// With 1.1x start, 2.0x increment, and the default max of 2 fee bumps: 1.1 -> 2.2 -> 4.4.
+// The number of replacements is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
@@ -86,27 +86,11 @@ struct PreparedStateUpdateTransaction {
     fee_caps: StateUpdateFeeCaps,
 }
 
-/// Calculates the next gas price multiplier for transaction retry.
-/// Returns None if the next multiplier would exceed the maximum allowed.
-fn calculate_next_gas_mul_factor(current_mul: f64, max_mul: f64) -> Option<f64> {
-    let next_mul = GAS_PRICE_INCREMENT_FACTOR * current_mul;
-    if next_mul > max_mul {
-        None
-    } else {
-        Some(next_mul)
-    }
-}
-
-fn calculate_next_fee_bump_mul_factor(
-    current_mul: f64,
-    max_mul: f64,
-    fee_bumps_used: u64,
-    max_fee_bumps: u64,
-) -> Option<f64> {
+fn calculate_next_fee_bump_mul_factor(current_mul: f64, fee_bumps_used: u64, max_fee_bumps: u64) -> Option<f64> {
     if fee_bumps_used >= max_fee_bumps {
         None
     } else {
-        calculate_next_gas_mul_factor(current_mul, max_mul)
+        Some(GAS_PRICE_INCREMENT_FACTOR * current_mul)
     }
 }
 
@@ -155,20 +139,18 @@ fn state_update_tx_error(
     attempts: &[StateUpdateTxAttempt],
     timeout_seconds: u64,
     next_multiplier: f64,
-    max_multiplier: f64,
     fee_bumps_used: u64,
     max_fee_bumps: u64,
 ) -> StateUpdateTxError {
     StateUpdateTxError {
         message: format!(
-            "State update transaction failed after {} fee attempts ({} / {} fee bumps used) over {}s confirmation windows.\nFee attempts:\n{}\nFailure: Next required bump would be {}, but retry policy does not allow it (max multiplier {}, fee bumps used {}/{}).",
+            "State update transaction failed after {} fee attempts ({} / {} fee bumps used) over {}s confirmation windows.\nFee attempts:\n{}\nFailure: Next required bump would be {}, but fee bump retry budget is exhausted ({}/{}).",
             attempts.len(),
             fee_bumps_used,
             max_fee_bumps,
             timeout_seconds,
             format_tx_attempts(attempts, timeout_seconds),
             format_multiplier(next_multiplier),
-            format_multiplier(max_multiplier),
             fee_bumps_used,
             max_fee_bumps
         ),
@@ -201,8 +183,6 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub ethereum_max_fee_bumps: u64,
 
-    pub max_gas_price_mul_factor: f64,
-
     pub disable_peerdas: bool,
 }
 
@@ -216,7 +196,6 @@ pub struct EthereumSettlementClient {
     tx_finality_retry_wait_in_seconds: u64,
     tx_confirmation_timeout_seconds: u64,
     max_fee_bumps: u64,
-    max_gas_price_mul_factor: f64,
     disable_peerdas: bool,
 }
 
@@ -247,7 +226,6 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
             tx_confirmation_timeout_seconds: settlement_cfg.ethereum_tx_confirmation_timeout_secs,
             max_fee_bumps: settlement_cfg.ethereum_max_fee_bumps,
-            max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
             disable_peerdas: settlement_cfg.disable_peerdas,
         }
     }
@@ -274,7 +252,6 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
-            max_gas_price_mul_factor: 2.5f64,
             tx_finality_retry_wait_in_seconds: 10,
             tx_confirmation_timeout_seconds: 300,
             max_fee_bumps: 2,
@@ -372,8 +349,8 @@ impl SettlementClient for EthereumSettlementClient {
     ///
     /// The transaction is retried when the transaction is rejected because a transaction with the
     /// same nonce is already in the mempool. In that case, we'll send more transactions with
-    /// an increasing gas price multiplication factor. The multiplication factor is capped by
-    /// `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR` env variable.
+    /// an increasing gas price multiplication factor. The number of fee-bump replacements is capped by
+    /// `MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS` env variable.
     async fn update_state_with_blobs(
         &self,
         program_output: Vec<[u8; 32]>,
@@ -400,7 +377,6 @@ impl SettlementClient for EthereumSettlementClient {
                 attempt = attempt_no,
                 nonce = nonce,
                 gas_multiplier = %gas_multiplier,
-                max_multiplier = %self.max_gas_price_mul_factor,
                 "Preparing transaction with gas multiplier"
             );
 
@@ -428,12 +404,7 @@ impl SettlementClient for EthereumSettlementClient {
                         status: StateUpdateTxAttemptStatus::RejectedUnderpriced,
                         error: Some(rpc_err.to_string()),
                     });
-                    match calculate_next_fee_bump_mul_factor(
-                        gas_multiplier,
-                        self.max_gas_price_mul_factor,
-                        fee_bumps_used,
-                        self.max_fee_bumps,
-                    ) {
+                    match calculate_next_fee_bump_mul_factor(gas_multiplier, fee_bumps_used, self.max_fee_bumps) {
                         Some(next_mul_factor) => {
                             fee_bumps_used += 1;
                             info!(
@@ -447,7 +418,6 @@ impl SettlementClient for EthereumSettlementClient {
                             debug!(
                                 current_multiplier = %gas_multiplier,
                                 next_multiplier = %next_mul_factor,
-                                max_multiplier = %self.max_gas_price_mul_factor,
                                 error = ?rpc_err,
                                 "Increasing gas multiplier for replacement transaction"
                             );
@@ -461,7 +431,6 @@ impl SettlementClient for EthereumSettlementClient {
                                 &attempts,
                                 self.tx_confirmation_timeout_seconds,
                                 next_mul,
-                                self.max_gas_price_mul_factor,
                                 fee_bumps_used,
                                 self.max_fee_bumps,
                             )
@@ -542,30 +511,25 @@ impl SettlementClient for EthereumSettlementClient {
                     &attempts,
                     self.tx_confirmation_timeout_seconds,
                     next_mul,
-                    self.max_gas_price_mul_factor,
                     fee_bumps_used,
                     self.max_fee_bumps,
                 )
                 .into());
             }
 
-            let next_mul_factor = calculate_next_fee_bump_mul_factor(
-                gas_multiplier,
-                self.max_gas_price_mul_factor,
-                fee_bumps_used,
-                self.max_fee_bumps,
-            )
-            .ok_or_else(|| {
-                let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
-                state_update_tx_error(
-                    &attempts,
-                    self.tx_confirmation_timeout_seconds,
-                    next_mul,
-                    self.max_gas_price_mul_factor,
-                    fee_bumps_used,
-                    self.max_fee_bumps,
-                )
-            })?;
+            let next_mul_factor =
+                calculate_next_fee_bump_mul_factor(gas_multiplier, fee_bumps_used, self.max_fee_bumps).ok_or_else(
+                    || {
+                        let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
+                        state_update_tx_error(
+                            &attempts,
+                            self.tx_confirmation_timeout_seconds,
+                            next_mul,
+                            fee_bumps_used,
+                            self.max_fee_bumps,
+                        )
+                    },
+                )?;
 
             fee_bumps_used += 1;
             info!(
@@ -944,58 +908,17 @@ mod gas_multiplier_tests {
     use super::*;
 
     #[test]
-    fn test_first_retry_succeeds() {
-        // First attempt: 1.1x, retry should give 2.2x (within 2.5 max)
-        let result = calculate_next_gas_mul_factor(1.1, 2.5);
-        assert!(result.is_some());
-        let next_mul = result.unwrap();
-        assert!((next_mul - 2.2).abs() < 0.0001, "Expected 2.2, got {}", next_mul);
-    }
-
-    #[test]
-    fn test_second_retry_fails() {
-        // Second attempt: 2.2x * 2.0 = 4.4x (exceeds 2.5 max)
-        let result = calculate_next_gas_mul_factor(2.2, 2.5);
-        assert!(result.is_none(), "Expected None when multiplier exceeds max");
-    }
-
-    #[test]
-    fn test_exactly_at_max_succeeds() {
-        // Edge case: next_mul exactly equals max_mul should succeed
-        // 1.25 * 2.0 = 2.5 (exactly at max)
-        let result = calculate_next_gas_mul_factor(1.25, 2.5);
-        assert!(result.is_some());
-        let next_mul = result.unwrap();
-        assert!((next_mul - 2.5).abs() < 0.0001, "Expected 2.5, got {}", next_mul);
-    }
-
-    #[test]
-    fn test_just_over_max_fails() {
-        // Edge case: next_mul just over max_mul should fail
-        // 1.26 * 2.0 = 2.52 (just over 2.5)
-        let result = calculate_next_gas_mul_factor(1.26, 2.5);
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn test_fee_bump_policy_allows_two_bumps_to_four_point_four() {
-        let first_bump = calculate_next_fee_bump_mul_factor(1.1, 4.5, 0, 2).expect("first bump should fit policy");
+        let first_bump = calculate_next_fee_bump_mul_factor(1.1, 0, 2).expect("first bump should fit policy");
         assert!((first_bump - 2.2).abs() < 0.0001, "Expected 2.2, got {}", first_bump);
 
-        let second_bump =
-            calculate_next_fee_bump_mul_factor(first_bump, 4.5, 1, 2).expect("second bump should fit policy");
+        let second_bump = calculate_next_fee_bump_mul_factor(first_bump, 1, 2).expect("second bump should fit policy");
         assert!((second_bump - 4.4).abs() < 0.0001, "Expected 4.4, got {}", second_bump);
     }
 
     #[test]
     fn test_fee_bump_policy_stops_after_max_bumps() {
-        let result = calculate_next_fee_bump_mul_factor(4.4, 10.0, 2, 2);
+        let result = calculate_next_fee_bump_mul_factor(4.4, 2, 2);
         assert!(result.is_none(), "Expected None when fee bump budget is exhausted");
-    }
-
-    #[test]
-    fn test_fee_bump_policy_stops_at_multiplier_cap() {
-        let result = calculate_next_fee_bump_mul_factor(2.2, 2.5, 1, 2);
-        assert!(result.is_none(), "Expected None when next multiplier exceeds cap");
     }
 }
