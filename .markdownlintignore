@@ -1,5 +1,5 @@
 **/lib/**/*.md
-node_modules/**/*.md
+**/node_modules/**
 **/target/**/*.md
 docs/**/*.md
 AI_docs/**/*.md
