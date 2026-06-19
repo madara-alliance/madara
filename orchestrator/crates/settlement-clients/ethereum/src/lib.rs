@@ -772,12 +772,16 @@ impl EthereumSettlementClient {
         // replacements target the same pending transaction.
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
-        // Get gas price estimates with margin
-        let fee_caps = self.get_gas_price_estimates(mul_factor).await?;
+        // For replacement transactions, the multiplier applies to the previously attempted fee
+        // caps through `replacement_fee_floor`. The fresh network estimate is kept at the normal
+        // safety margin so replacements do not overpay by multiplying both paths.
+        let estimate_mul_factor = if replacement_fee_floor.is_some() { GAS_PRICE_MULTIPLIER_START } else { mul_factor };
+        let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
         let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
         debug!(
             nonce = nonce,
             gas_multiplier = %mul_factor,
+            estimate_multiplier = %estimate_mul_factor,
             max_fee_per_gas = fee_caps.max_fee_per_gas,
             max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
             max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
