@@ -583,12 +583,14 @@ async fn process_job_job_handler_returns_error_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
     job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
-    // Expecting process job function in job processor to return an error.
-    let failure_reason = "Failed to process job";
-    job_handler
-        .expect_process_job()
-        .times(1)
-        .returning(move |_, _| Err(JobError::Other(failure_reason.to_string().into())));
+    // Expecting process job function in job processor to return a non-retryable SNOS error.
+    let failure_reason = "cairo vm execution failed";
+    job_handler.expect_process_job().times(1).returning(move |_, _| {
+        Err(JobError::from(SnosError::SnosExecutionError {
+            internal_id: 1,
+            source: PieGenerationError::OsExecution(failure_reason.to_string()),
+        }))
+    });
 
     // building config
     let services = TestConfigBuilder::new()
@@ -624,6 +626,63 @@ async fn process_job_job_handler_returns_error_works() {
     );
     assert!(
         recorded_reason.contains(failure_reason),
+        "failure_reason should contain the original error. Got: {}",
+        recorded_reason
+    );
+}
+
+/// Tests that unclassified SNOS processing errors restore the original job status and rely on SQS/DLQ retries.
+#[rstest]
+#[case::created(JobStatus::Created)]
+#[case::verification_failed(JobStatus::VerificationFailed)]
+#[case::pending_retry(JobStatus::PendingRetry)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_unclassified_snos_error_restores_original_status_for_sqs_retry(#[case] initial_status: JobStatus) {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(0);
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| Err(JobError::Other("simulated generic snos processing failure".to_string().into())));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, initial_status.clone(), 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_err(), "generic SNOS processing errors should bubble up so the message is not ACKed");
+
+    let retriable_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(retriable_job.status, initial_status);
+    assert_eq!(retriable_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(retriable_job.metadata.common.process_retry_attempt_no, 1);
+    assert!(retriable_job.metadata.common.process_started_at.is_none());
+
+    let recorded_reason = retriable_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        recorded_reason.contains("Processing attempt 1 failed"),
+        "failure_reason should contain attempt info. Got: {}",
+        recorded_reason
+    );
+    assert!(
+        recorded_reason.contains("simulated generic snos processing failure"),
         "failure_reason should contain the original error. Got: {}",
         recorded_reason
     );

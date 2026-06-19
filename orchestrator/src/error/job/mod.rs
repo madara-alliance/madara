@@ -116,10 +116,7 @@ pub enum JobError {
 }
 
 impl JobError {
-    pub fn is_retryable_processing_failure(&self) -> bool {
-        match self {
-            Self::SnosJobError(error) => error.is_retryable(),
-            _ => false,
-        }
+    pub fn is_fail_fast_snos_processing_failure(&self) -> bool {
+        matches!(self, Self::SnosJobError(error) if !error.is_retryable())
     }
 }

@@ -70,9 +70,7 @@ impl SnosError {
 
 fn is_retryable_pie_generation_error(error: &PieGenerationError) -> bool {
     match error {
-        PieGenerationError::BlockProcessing { source, .. } => source
-            .downcast_ref::<BlockProcessingError>()
-            .map_or_else(|| error_chain_is_retryable(source.as_ref()), is_retryable_block_processing_error),
+        PieGenerationError::BlockProcessing { source, .. } => is_retryable_block_processing_error(source),
         PieGenerationError::RpcClient(message)
         | PieGenerationError::StateProcessing(message)
         | PieGenerationError::ContractClassProcessing(message) => is_retryable_remote_message(message),
@@ -195,14 +193,6 @@ mod tests {
     use super::*;
     use starknet::core::types::StarknetError;
     use starknet::providers::ProviderError;
-    use thiserror::Error;
-
-    #[derive(Debug, Error)]
-    #[error("wrapped block processing error: {source}")]
-    struct WrappedBlockProcessingError {
-        #[source]
-        source: BlockProcessingError,
-    }
 
     #[test]
     fn snos_rpc_errors_are_retryable() {
@@ -225,21 +215,6 @@ mod tests {
         };
 
         assert!(!error.is_retryable());
-    }
-
-    #[test]
-    fn wrapped_block_processing_rpc_errors_stay_retryable() {
-        let error = SnosError::SnosExecutionError {
-            internal_id: 7,
-            source: PieGenerationError::BlockProcessing {
-                block_number: 12,
-                source: Box::new(WrappedBlockProcessingError {
-                    source: BlockProcessingError::RpcClient(Box::new(ProviderError::RateLimited)),
-                }),
-            },
-        };
-
-        assert!(error.is_retryable());
     }
 
     #[test]

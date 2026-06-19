@@ -342,7 +342,7 @@ impl JobHandlerService {
             Ok(Err(e)) => {
                 let reason = format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, e);
 
-                if job.job_type != JobType::SnosRun || e.is_retryable_processing_failure() {
+                if job.job_type != JobType::SnosRun || !e.is_fail_fast_snos_processing_failure() {
                     warn!(
                         job_id = ?id,
                         job_type = ?job.job_type,
