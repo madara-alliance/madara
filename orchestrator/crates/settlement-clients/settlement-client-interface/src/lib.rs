@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use mockall::automock;
 use mockall::predicate::*;
+use std::fmt;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
 
@@ -14,10 +15,12 @@ pub enum SettlementVerificationStatus {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StateUpdateTxAttempt {
-    pub tx_hash: String,
+    pub attempt_no: u64,
+    pub tx_hash: Option<String>,
     pub nonce: u64,
     pub gas_multiplier: f64,
     pub status: StateUpdateTxAttemptStatus,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +28,8 @@ pub enum StateUpdateTxAttemptStatus {
     Finalized,
     Replaced,
     TimedOut,
+    RejectedUnderpriced,
+    SubmissionFailed,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +37,20 @@ pub struct StateUpdateTxResult {
     pub tx_hash: String,
     pub attempts: Vec<StateUpdateTxAttempt>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxError {
+    pub message: String,
+    pub attempts: Vec<StateUpdateTxAttempt>,
+}
+
+impl fmt::Display for StateUpdateTxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for StateUpdateTxError {}
 
 /// Trait for every new Settlement Layer to implement
 #[automock]

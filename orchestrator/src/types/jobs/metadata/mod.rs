@@ -100,14 +100,21 @@ pub enum StateUpdateTxAttemptStatus {
     Finalized,
     Replaced,
     TimedOut,
+    RejectedUnderpriced,
+    SubmissionFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StateUpdateTxAttempt {
-    pub tx_hash: String,
+    #[serde(default)]
+    pub attempt_no: u64,
+    #[serde(default)]
+    pub tx_hash: Option<String>,
     pub nonce: u64,
     pub gas_multiplier: String,
     pub status: StateUpdateTxAttemptStatus,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// Metadata specific to aggregator job

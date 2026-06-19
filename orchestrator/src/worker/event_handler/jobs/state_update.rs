@@ -17,7 +17,8 @@ use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_outp
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::{
-    SettlementVerificationStatus, StateUpdateTxAttemptStatus as SettlementTxAttemptStatus,
+    SettlementVerificationStatus, StateUpdateTxAttempt as SettlementTxAttempt,
+    StateUpdateTxAttemptStatus as SettlementTxAttemptStatus, StateUpdateTxError,
 };
 
 use orchestrator_utils::layer::Layer;
@@ -108,7 +109,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
         };
 
-        let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
         debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
         if !self.should_send_state_update_txn(&config, to_settle_num).await? {
@@ -120,6 +120,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
+            let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+
             // Get the artifacts for the block/batch
             let snos_output =
                 match fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await {
@@ -150,9 +152,48 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Err(e) => {
                     error!(num = %to_settle_num, error = %e, "Error updating state for block/batch");
                     state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
+                    let state_update_tx_error = Self::state_update_tx_error(&e).cloned();
+
+                    if let Some(tx_error) = &state_update_tx_error {
+                        state_metadata.tx_attempts = Self::convert_tx_attempts(tx_error.attempts.clone());
+                        state_metadata.tx_nonce = state_metadata.tx_attempts.last().map(|attempt| attempt.nonce);
+                        if let Some(last_hash) =
+                            state_metadata.tx_attempts.iter().rev().find_map(|attempt| attempt.tx_hash.clone())
+                        {
+                            state_metadata.tx_hash = Some(last_hash);
+                        }
+                    }
+
+                    match self.should_send_state_update_txn(&config, to_settle_num).await {
+                        Ok(false) => {
+                            info!(
+                                num = %to_settle_num,
+                                "Contract state advanced after state update error, skipping retry and moving to verification"
+                            );
+                            if state_metadata.tx_hash.is_none() {
+                                state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
+                            }
+                            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
+                            job.external_id =
+                                state_metadata.tx_hash.clone().unwrap_or_else(|| EMPTY_TX_HASH.to_string()).into();
+                            return Ok(to_settle_num.to_string());
+                        }
+                        Ok(true) => {}
+                        Err(check_error) => {
+                            warn!(
+                                num = %to_settle_num,
+                                error = %check_error,
+                                "Failed to reconcile contract state after state update error"
+                            );
+                        }
+                    }
+
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
 
-                    return Err(JobError::Other(OtherError(eyre!("Error occurred during the state update: {e}"))));
+                    let error_message = state_update_tx_error
+                        .map(|tx_error| tx_error.message)
+                        .unwrap_or_else(|| format!("Error occurred during state update: {e}"));
+                    return Err(JobError::Other(OtherError(eyre!("{}", error_message))));
                 }
             };
 
@@ -212,6 +253,33 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 }
 
 impl StateUpdateJobHandler {
+    fn state_update_tx_error(error: &JobError) -> Option<&StateUpdateTxError> {
+        match error {
+            JobError::Other(other) => other.0.downcast_ref::<StateUpdateTxError>(),
+            _ => None,
+        }
+    }
+
+    fn convert_tx_attempts(attempts: Vec<SettlementTxAttempt>) -> Vec<StateUpdateTxAttempt> {
+        attempts
+            .into_iter()
+            .map(|attempt| StateUpdateTxAttempt {
+                attempt_no: attempt.attempt_no,
+                tx_hash: attempt.tx_hash,
+                nonce: attempt.nonce,
+                gas_multiplier: format!("{:.2}", attempt.gas_multiplier),
+                status: match attempt.status {
+                    SettlementTxAttemptStatus::Finalized => StateUpdateTxAttemptStatus::Finalized,
+                    SettlementTxAttemptStatus::Replaced => StateUpdateTxAttemptStatus::Replaced,
+                    SettlementTxAttemptStatus::TimedOut => StateUpdateTxAttemptStatus::TimedOut,
+                    SettlementTxAttemptStatus::RejectedUnderpriced => StateUpdateTxAttemptStatus::RejectedUnderpriced,
+                    SettlementTxAttemptStatus::SubmissionFailed => StateUpdateTxAttemptStatus::SubmissionFailed,
+                },
+                error: attempt.error,
+            })
+            .collect()
+    }
+
     async fn verify_through_contract(
         config: &Arc<Config>,
         num_settled: u64,
@@ -473,20 +541,7 @@ impl StateUpdateJobHandler {
             .await
             .map_err(|e| JobError::Other(OtherError(e)))?;
 
-        let tx_attempts = result
-            .attempts
-            .into_iter()
-            .map(|attempt| StateUpdateTxAttempt {
-                tx_hash: attempt.tx_hash,
-                nonce: attempt.nonce,
-                gas_multiplier: format!("{:.2}", attempt.gas_multiplier),
-                status: match attempt.status {
-                    SettlementTxAttemptStatus::Finalized => StateUpdateTxAttemptStatus::Finalized,
-                    SettlementTxAttemptStatus::Replaced => StateUpdateTxAttemptStatus::Replaced,
-                    SettlementTxAttemptStatus::TimedOut => StateUpdateTxAttemptStatus::TimedOut,
-                },
-            })
-            .collect();
+        let tx_attempts = Self::convert_tx_attempts(result.attempts);
 
         Ok(StateUpdateProcessingResult { tx_hash: result.tx_hash, tx_nonce: Some(nonce), tx_attempts })
     }

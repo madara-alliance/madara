@@ -22,7 +22,7 @@ use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{
     SettlementClient, SettlementVerificationStatus, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
-    StateUpdateTxResult,
+    StateUpdateTxError, StateUpdateTxResult,
 };
 #[cfg(feature = "testing")]
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -93,6 +93,72 @@ fn calculate_next_fee_bump_mul_factor(
         None
     } else {
         calculate_next_gas_mul_factor(current_mul, max_mul)
+    }
+}
+
+fn format_multiplier(multiplier: f64) -> String {
+    format!("{multiplier:.2}x")
+}
+
+fn format_tx_attempt(attempt: &StateUpdateTxAttempt, timeout_seconds: u64) -> String {
+    let prefix = format!(
+        "{}. {} attempted, nonce={}",
+        attempt.attempt_no,
+        format_multiplier(attempt.gas_multiplier),
+        attempt.nonce
+    );
+
+    match attempt.status {
+        StateUpdateTxAttemptStatus::Finalized => {
+            format!("{prefix}, accepted with tx hash {}, finalized.", attempt.tx_hash.as_deref().unwrap_or("<missing>"))
+        }
+        StateUpdateTxAttemptStatus::Replaced | StateUpdateTxAttemptStatus::TimedOut => {
+            format!(
+                "{prefix}, accepted with tx hash {}, timed out after {timeout_seconds}s.",
+                attempt.tx_hash.as_deref().unwrap_or("<missing>")
+            )
+        }
+        StateUpdateTxAttemptStatus::RejectedUnderpriced => {
+            format!(
+                "{prefix}, rejected as underpriced, no hash{}.",
+                attempt.error.as_deref().map(|error| format!(" ({error})")).unwrap_or_default()
+            )
+        }
+        StateUpdateTxAttemptStatus::SubmissionFailed => {
+            format!(
+                "{prefix}, submission failed, no hash{}.",
+                attempt.error.as_deref().map(|error| format!(" ({error})")).unwrap_or_default()
+            )
+        }
+    }
+}
+
+fn format_tx_attempts(attempts: &[StateUpdateTxAttempt], timeout_seconds: u64) -> String {
+    attempts.iter().map(|attempt| format_tx_attempt(attempt, timeout_seconds)).collect::<Vec<_>>().join("\n")
+}
+
+fn state_update_tx_error(
+    attempts: &[StateUpdateTxAttempt],
+    timeout_seconds: u64,
+    next_multiplier: f64,
+    max_multiplier: f64,
+    fee_bumps_used: u64,
+    max_fee_bumps: u64,
+) -> StateUpdateTxError {
+    StateUpdateTxError {
+        message: format!(
+            "State update transaction failed after {} fee attempts ({} / {} fee bumps used) over {}s confirmation windows.\nFee attempts:\n{}\nFailure: Next required bump would be {}, but retry policy does not allow it (max multiplier {}, fee bumps used {}/{}).",
+            attempts.len(),
+            fee_bumps_used,
+            max_fee_bumps,
+            timeout_seconds,
+            format_tx_attempts(attempts, timeout_seconds),
+            format_multiplier(next_multiplier),
+            format_multiplier(max_multiplier),
+            fee_bumps_used,
+            max_fee_bumps
+        ),
+        attempts: attempts.to_vec(),
     }
 }
 
@@ -328,6 +394,14 @@ impl SettlementClient for EthereumSettlementClient {
             let pending_transaction = match self.send_transaction(tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
+                    attempts.push(StateUpdateTxAttempt {
+                        attempt_no,
+                        tx_hash: None,
+                        nonce,
+                        gas_multiplier,
+                        status: StateUpdateTxAttemptStatus::RejectedUnderpriced,
+                        error: Some(rpc_err.to_string()),
+                    });
                     match calculate_next_fee_bump_mul_factor(
                         gas_multiplier,
                         self.max_gas_price_mul_factor,
@@ -357,17 +431,37 @@ impl SettlementClient for EthereumSettlementClient {
                         }
                         None => {
                             let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
-                            return Err(eyre!(
-                                "Transaction retry limit reached: next multiplier ({:.2}x), maximum multiplier ({:.2}x), fee bumps used ({}/{}).",
+                            return Err(state_update_tx_error(
+                                &attempts,
+                                self.tx_confirmation_timeout_seconds,
                                 next_mul,
                                 self.max_gas_price_mul_factor,
                                 fee_bumps_used,
-                                self.max_fee_bumps
-                            ));
+                                self.max_fee_bumps,
+                            )
+                            .into());
                         }
                     }
                 }
-                Result::Err(e) => return Err(e.into()),
+                Result::Err(e) => {
+                    attempts.push(StateUpdateTxAttempt {
+                        attempt_no,
+                        tx_hash: None,
+                        nonce,
+                        gas_multiplier,
+                        status: StateUpdateTxAttemptStatus::SubmissionFailed,
+                        error: Some(e.to_string()),
+                    });
+                    return Err(StateUpdateTxError {
+                        message: format!(
+                            "State update transaction submission failed after {} fee attempts.\nFee attempts:\n{}",
+                            attempts.len(),
+                            format_tx_attempts(&attempts, self.tx_confirmation_timeout_seconds)
+                        ),
+                        attempts,
+                    }
+                    .into());
+                }
             };
 
             info!(
@@ -389,10 +483,12 @@ impl SettlementClient for EthereumSettlementClient {
 
             if let Some(block_number) = finalized_block {
                 attempts.push(StateUpdateTxAttempt {
-                    tx_hash: tx_hash.clone(),
+                    attempt_no,
+                    tx_hash: Some(tx_hash.clone()),
                     nonce,
                     gas_multiplier,
                     status: StateUpdateTxAttemptStatus::Finalized,
+                    error: None,
                 });
                 info!(
                     tx_hash = %tx_hash,
@@ -405,21 +501,26 @@ impl SettlementClient for EthereumSettlementClient {
                 return Ok(StateUpdateTxResult { tx_hash, attempts });
             }
 
-            let status = if fee_bumps_used < self.max_fee_bumps {
-                StateUpdateTxAttemptStatus::Replaced
-            } else {
-                StateUpdateTxAttemptStatus::TimedOut
-            };
-            attempts.push(StateUpdateTxAttempt { tx_hash: tx_hash.clone(), nonce, gas_multiplier, status });
+            attempts.push(StateUpdateTxAttempt {
+                attempt_no,
+                tx_hash: Some(tx_hash.clone()),
+                nonce,
+                gas_multiplier,
+                status: StateUpdateTxAttemptStatus::TimedOut,
+                error: None,
+            });
 
             if fee_bumps_used >= self.max_fee_bumps {
-                let attempted_hashes = attempts.iter().map(|attempt| attempt.tx_hash.as_str()).collect::<Vec<_>>();
-                return Err(eyre!(
-                    "State update transaction did not finalize after {} fee bumps over {}s windows. Attempted tx hashes: {}",
-                    self.max_fee_bumps,
+                let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
+                return Err(state_update_tx_error(
+                    &attempts,
                     self.tx_confirmation_timeout_seconds,
-                    attempted_hashes.join(", ")
-                ));
+                    next_mul,
+                    self.max_gas_price_mul_factor,
+                    fee_bumps_used,
+                    self.max_fee_bumps,
+                )
+                .into());
             }
 
             let next_mul_factor = calculate_next_fee_bump_mul_factor(
@@ -430,12 +531,13 @@ impl SettlementClient for EthereumSettlementClient {
             )
             .ok_or_else(|| {
                 let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
-                eyre!(
-                    "Transaction retry limit reached: next multiplier ({:.2}x), maximum multiplier ({:.2}x), fee bumps used ({}/{}).",
+                state_update_tx_error(
+                    &attempts,
+                    self.tx_confirmation_timeout_seconds,
                     next_mul,
                     self.max_gas_price_mul_factor,
                     fee_bumps_used,
-                    self.max_fee_bumps
+                    self.max_fee_bumps,
                 )
             })?;
 
