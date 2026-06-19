@@ -39,16 +39,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
-        // Validate required paths based on layer configuration.
-        // L2: requires program_output_path + da_segment_path.
-        // L3: requires only snos_output_path; the Satellite fact check makes proof/layout outputs obsolete.
+        // Validate required path shapes.
+        // L2 state updates require program output and DA segment artifacts.
+        // L3 state updates should only carry raw SNOS output; proof/layout artifacts are obsolete.
         let is_l2_config = state_metadata.program_output_path.is_some() && state_metadata.da_segment_path.is_some();
-        let is_l3_config = state_metadata.snos_output_path.is_some();
+        let is_l3_config = state_metadata.snos_output_path.is_some()
+            && state_metadata.program_output_path.is_none()
+            && state_metadata.da_segment_path.is_none();
 
         if !is_l2_config && !is_l3_config {
-            error!("Missing required paths: must provide either (program_output_path + da_segment_path for L2) or snos_output_path for L3");
+            error!(
+                "Invalid state update paths: provide either (program_output_path + da_segment_path for L2) or only snos_output_path for L3"
+            );
             return Err(JobError::Other(OtherError(eyre!(
-                "Missing required paths: must provide either (program_output_path + da_segment_path for L2) or snos_output_path for L3"
+                "Invalid state update paths: provide either (program_output_path + da_segment_path for L2) or only snos_output_path for L3"
             ))));
         }
         let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);

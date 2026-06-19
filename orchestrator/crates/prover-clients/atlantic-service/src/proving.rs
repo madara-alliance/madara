@@ -7,7 +7,7 @@
 //! # Background
 //!
 //! Different blockchain networks have different requirements for proof verification.
-//! For example, Starknet requires specific layout and result parameters that
+//! For example, Starknet requires a specific layout parameter that
 //! Ethereum doesn't need. This module abstracts these differences behind a
 //! common trait.
 //!
@@ -15,7 +15,7 @@
 //!
 //! - [`ProvingLayer`]: Trait for adding network-specific proving parameters
 //! - [`EthereumLayer`]: Implementation for Ethereum settlement (no extra params)
-//! - [`StarknetLayer`]: Implementation for Starknet settlement (adds layout/result)
+//! - [`StarknetLayer`]: Implementation for Starknet settlement (adds layout)
 //! - [`ProvingParams`]: Parameters passed to the proving layer
 //! - [`create_proving_layer`]: Factory function to create the appropriate layer
 //!
@@ -40,7 +40,7 @@ pub struct ProvingParams {
 /// # Implementations
 ///
 /// - `EthereumLayer`: No additional parameters needed
-/// - `StarknetLayer`: Adds result and layout parameters
+/// - `StarknetLayer`: Adds the layout parameter
 pub trait ProvingLayer: Send + Sync {
     /// Adds proving layer specific parameters to the request
     ///

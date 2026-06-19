@@ -1,8 +1,8 @@
 use crate::core::config::Config;
 use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::metadata::{
-    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
-    SettlementContextData, SnosMetadata, StateUpdateMetadata,
+    AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData,
+    SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
@@ -180,21 +180,6 @@ impl UpdateStateJobTrigger {
         })?;
 
         state_metadata.snos_output_path = snos_metadata.snos_output_path.clone();
-        state_metadata.program_output_path = snos_metadata.program_output_path.clone();
-
-        // Get DA job blob path
-        let da_job = config
-            .database()
-            .get_job_by_internal_id_and_type(block_number, &JobType::DataSubmission)
-            .await?
-            .ok_or_else(|| eyre!("DA job not found for block {}", block_number))?;
-
-        let da_metadata: DaMetadata = da_job.metadata.specific.try_into().map_err(|e| {
-            error!(job_id = %da_job.internal_id, error = %e, "Invalid metadata type for DA job");
-            e
-        })?;
-
-        state_metadata.blob_data_path = da_metadata.blob_data_path.clone();
 
         Ok(())
     }
