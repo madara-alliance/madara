@@ -68,9 +68,23 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // The max multiplier is configurable via MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR env variable.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
+const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
+const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
+
+#[derive(Clone, Copy, Debug)]
+struct StateUpdateFeeCaps {
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    max_fee_per_blob_gas: u128,
+}
+
+struct PreparedStateUpdateTransaction {
+    tx_envelope: Signed<TxEip4844Variant<BlobTransactionSidecarVariant>>,
+    fee_caps: StateUpdateFeeCaps,
+}
 
 /// Calculates the next gas price multiplier for transaction retry.
 /// Returns None if the next multiplier would exceed the maximum allowed.
@@ -379,6 +393,7 @@ impl SettlementClient for EthereumSettlementClient {
         let mut attempt_no = 1_u64;
         let mut fee_bumps_used = 0_u64;
         let mut attempts = Vec::new();
+        let mut previous_fee_caps = None;
 
         loop {
             debug!(
@@ -389,9 +404,20 @@ impl SettlementClient for EthereumSettlementClient {
                 "Preparing transaction with gas multiplier"
             );
 
-            let tx_envelope =
-                self.create_transaction(program_output.clone(), state_diff.clone(), nonce, gas_multiplier).await?;
-            let pending_transaction = match self.send_transaction(tx_envelope).await {
+            let replacement_fee_floor = previous_fee_caps.map(Self::replacement_fee_floor);
+            let prepared_transaction = self
+                .create_transaction(
+                    program_output.clone(),
+                    state_diff.clone(),
+                    nonce,
+                    gas_multiplier,
+                    replacement_fee_floor,
+                )
+                .await?;
+            let attempted_fee_caps = prepared_transaction.fee_caps;
+            previous_fee_caps = Some(attempted_fee_caps);
+
+            let pending_transaction = match self.send_transaction(prepared_transaction.tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
                     attempts.push(StateUpdateTxAttempt {
@@ -737,7 +763,8 @@ impl EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
         mul_factor: f64,
-    ) -> Result<Signed<TxEip4844Variant<BlobTransactionSidecarVariant>>> {
+        replacement_fee_floor: Option<StateUpdateFeeCaps>,
+    ) -> Result<PreparedStateUpdateTransaction> {
         // Prepare the sidecar based on the chain ID
         let sidecar = prepare_sidecar(&state_diff, &KZG_SETTINGS, self.disable_peerdas)?;
 
@@ -746,8 +773,17 @@ impl EthereumSettlementClient {
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
         // Get gas price estimates with margin
-        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            self.get_gas_price_estimates(mul_factor).await?;
+        let fee_caps = self.get_gas_price_estimates(mul_factor).await?;
+        let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
+        debug!(
+            nonce = nonce,
+            gas_multiplier = %mul_factor,
+            max_fee_per_gas = fee_caps.max_fee_per_gas,
+            max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
+            max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
+            replacement_fee_floor = ?replacement_fee_floor,
+            "Resolved state update transaction fee caps"
+        );
 
         // Prepare input bytes for transaction
         let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
@@ -757,9 +793,9 @@ impl EthereumSettlementClient {
             chain_id,
             nonce,
             gas_limit: GAS_LIMIT_STATE_UPDATE,
-            max_fee_per_blob_gas,
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
+            max_fee_per_blob_gas: fee_caps.max_fee_per_blob_gas,
+            max_fee_per_gas: fee_caps.max_fee_per_gas,
+            max_priority_fee_per_gas: fee_caps.max_priority_fee_per_gas,
             to: self.core_contract_client.contract_address(),
             value: U256::from(0),
             access_list: AccessList(vec![]),
@@ -772,22 +808,45 @@ impl EthereumSettlementClient {
         let mut variant = TxEip4844Variant::from(tx_with_sidecar);
         // Sign transaction
         let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
-        Ok(variant.into_signed(signature))
+        Ok(PreparedStateUpdateTransaction { tx_envelope: variant.into_signed(signature), fee_caps })
     }
 
-    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
+    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<StateUpdateFeeCaps> {
         let eip1559_est = self.provider.estimate_eip1559_fees().await?;
 
         let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
         let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
         let max_fee_per_blob_gas: u128 = self.add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
 
-        Ok((max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas))
+        Ok(StateUpdateFeeCaps { max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas })
     }
 
     // add a safety margin to the gas price to handle fluctuations
     fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
-        (value as f64 * mul_factor) as u128
+        (value as f64 * mul_factor).ceil() as u128
+    }
+
+    fn replacement_fee_floor(previous_fee_caps: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
+        StateUpdateFeeCaps {
+            max_fee_per_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_fee_per_gas),
+            max_priority_fee_per_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_priority_fee_per_gas),
+            max_fee_per_blob_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_fee_per_blob_gas),
+        }
+    }
+
+    fn replacement_fee_cap_floor(previous_fee_cap: u128) -> u128 {
+        previous_fee_cap
+            .checked_mul(REPLACEMENT_FEE_BUMP_NUMERATOR)
+            .map(|value| value.div_ceil(REPLACEMENT_FEE_BUMP_DENOMINATOR))
+            .unwrap_or(u128::MAX)
+    }
+
+    fn max_fee_caps(left: StateUpdateFeeCaps, right: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
+        StateUpdateFeeCaps {
+            max_fee_per_gas: left.max_fee_per_gas.max(right.max_fee_per_gas),
+            max_priority_fee_per_gas: left.max_priority_fee_per_gas.max(right.max_priority_fee_per_gas),
+            max_fee_per_blob_gas: left.max_fee_per_blob_gas.max(right.max_fee_per_blob_gas),
+        }
     }
 
     /// Method to send blob transaction (standard EIP4844)
