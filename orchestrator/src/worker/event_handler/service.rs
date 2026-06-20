@@ -138,9 +138,9 @@ impl JobHandlerService {
     /// * `Created` -> `LockedForProcessing` -> `PendingVerification`
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
-    /// * `LockedForProcessing` -> `Failed` (on non-retryable SNOS processing error or panic)
+    /// * `LockedForProcessing` -> `Failed` (on non-retryable SNOS processing error)
     /// * `LockedForProcessing` -> original status (on retryable SNOS processing error, or any
-    ///   non-SNOS processing failure/panic; message is NACKed)
+    ///   processing panic, or any non-SNOS processing failure; message is NACKed)
     ///
     /// # Metrics
     /// * Updates block gauge
@@ -157,10 +157,10 @@ impl JobHandlerService {
     ///
     /// # Failure handling
     /// Retryable SNOS processing errors restore the job to its pre-processing status and return an
-    /// error so SQS can retry the message until it reaches the DLQ. All non-SNOS processing errors
-    /// and panics also defer to SQS/DLQ retries. Only non-retryable SNOS processing errors and panics
-    /// still fail fast by moving the job to `Failed` and ACKing the message so alerting can stop the
-    /// sequencer quickly. Failed jobs can be retried via the `retry_job` endpoint.
+    /// error so SQS can retry the message until it reaches the DLQ. All processing panics and all
+    /// non-SNOS processing errors also defer to SQS/DLQ retries. Only non-retryable SNOS processing
+    /// errors still fail fast by moving the job to `Failed` and ACKing the message so alerting can
+    /// stop the sequencer quickly. Failed jobs can be retried via the `retry_job` endpoint.
     ///
     /// # Important
     /// The queue visibility timeout MUST be greater than the job healing timeout configured via
@@ -385,32 +385,21 @@ impl JobHandlerService {
                 let reason =
                     format!("Processing attempt {} panicked: {}", job.metadata.common.process_attempt_no, panic_msg);
 
-                if job.job_type != JobType::SnosRun {
-                    error!(
-                        job_id = ?id,
-                        job_type = ?job.job_type,
-                        panic_msg = %panic_msg,
-                        "Job handler panicked during processing, restoring job state for SQS retry"
-                    );
-                    workload.finish_error();
-                    return Err(Self::reset_job_for_sqs_retry(
-                        &mut job,
-                        config.clone(),
-                        original_status,
-                        reason,
-                        panic_error,
-                    )
-                    .await);
-                }
-
-                error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing, marking as failed");
-                MetricsRecorder::record_job_state_transition(
-                    JobStatus::LockedForProcessing,
-                    JobStatus::Failed,
-                    &job.job_type,
+                error!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    panic_msg = %panic_msg,
+                    "Job handler panicked during processing, restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return JobService::move_job_to_failed(&job, config.clone(), reason).await;
+                return Err(Self::reset_job_for_sqs_retry(
+                    &mut job,
+                    config.clone(),
+                    original_status,
+                    reason,
+                    panic_error,
+                )
+                .await);
             }
         };
 
