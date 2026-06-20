@@ -6,7 +6,7 @@ use orchestrator_atlantic_service::types::{
     AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
-use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
+use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task, TaskStatus, TaskType};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
 mod constants;
@@ -14,6 +14,84 @@ mod constants;
 // ============================================================================
 // Integration tests
 // ============================================================================
+
+fn atlantic_params_for_status_tests(result: AtlanticQueryStep) -> AtlanticValidatedArgs {
+    AtlanticValidatedArgs {
+        atlantic_api_key: "test-api-key".to_string(),
+        atlantic_service_url: Url::parse("http://127.0.0.1:1").unwrap(),
+        atlantic_rpc_node_url: Url::parse("http://127.0.0.1:2").unwrap(),
+        atlantic_mock_fact_hash: "true".to_string(),
+        atlantic_prover_type: "atlantic".to_string(),
+        atlantic_settlement_layer: "starknet".to_string(),
+        atlantic_verifier_contract_address: "0x0".to_string(),
+        atlantic_network: "TESTNET".to_string(),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: result,
+        atlantic_sharp_prover: AtlanticSharpProver::Stwo,
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
+    }
+}
+
+fn atlantic_done_status_response(result: Option<&str>, step: Option<&str>, steps: Vec<&str>) -> serde_json::Value {
+    serde_json::json!({
+        "atlanticQuery": {
+            "id": "query-id",
+            "externalId": "",
+            "transactionId": "tx-id",
+            "status": "DONE",
+            "step": step,
+            "programHash": "0x555444da05154c46b4828affa18b90c38a333e98fee633fda0af05441eceb24",
+            "integrityFactHash": "0x33fdbc9f1f08bf5a2bf88b046a282e081450e1eb8413faf61889a2d1ac40145",
+            "sharpFactHash": "0x88113d00660188d8e77f0552bfa57f40c94065e119fc616774f8183c415ade47",
+            "layout": "dynamic",
+            "isFactMocked": false,
+            "isProofMocked": false,
+            "chain": "L2",
+            "jobSize": "S",
+            "declaredJobSize": "S",
+            "cairoVm": "python",
+            "cairoVersion": "cairo0",
+            "steps": steps,
+            "result": result,
+            "network": "TESTNET",
+            "hints": "generic_input",
+            "sharpProver": "stwo",
+            "errorReason": null,
+            "submittedByClient": "client",
+            "projectId": "project",
+            "bucketId": "",
+            "bucketJobIndex": null,
+            "customerName": "atlantic_karnot",
+            "isJobSizeValid": false,
+            "createdAt": "2026-06-18T18:43:24.708Z",
+            "completedAt": "2026-06-18T21:23:25.861Z"
+        },
+        "metadataUrls": []
+    })
+}
+
+async fn get_mocked_job_status(result: Option<&str>, step: Option<&str>, steps: Vec<&str>) -> TaskStatus {
+    let mock_server = MockServer::start();
+    let status_mock = mock_server.mock(|when, then| {
+        when.method("GET").path("/atlantic-query/query-id");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(atlantic_done_status_response(result, step, steps));
+    });
+
+    let atlantic_params = atlantic_params_for_status_tests(AtlanticQueryStep::ProofVerificationOnL2);
+    let atlantic_service =
+        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+
+    let status = atlantic_service
+        .get_task_status(TaskType::Job, "query-id", None, false)
+        .await
+        .expect("status fetch should succeed");
+
+    status_mock.assert();
+    status
+}
 
 #[test]
 fn atlantic_status_response_deserializes_l2_bridge_fact_hash_step() {
@@ -65,6 +143,52 @@ fn atlantic_status_response_deserializes_l2_bridge_fact_hash_step() {
     assert!(matches!(status.atlantic_query.status, AtlanticQueryStatus::Done));
     assert!(matches!(status.atlantic_query.step, Some(AtlanticQueryStep::BridgeFactHash)));
     assert!(status.atlantic_query.steps.iter().any(|step| matches!(step, AtlanticQueryStep::BridgeFactHash)));
+}
+
+#[tokio::test]
+async fn atlantic_l2_verification_status_accepts_bridge_fact_hash_completion() {
+    let status = get_mocked_job_status(
+        Some("PROOF_VERIFICATION_ON_L2"),
+        Some("BRIDGE_FACT_HASH"),
+        vec!["TRACE_AND_METADATA_GENERATION", "PROOF_GENERATION_AND_VERIFICATION", "BRIDGE_FACT_HASH"],
+    )
+    .await;
+
+    assert_eq!(status, TaskStatus::Succeeded);
+}
+
+#[tokio::test]
+async fn atlantic_l2_verification_status_rejects_wrong_result() {
+    let status = get_mocked_job_status(
+        Some("PROOF_GENERATION"),
+        Some("BRIDGE_FACT_HASH"),
+        vec!["TRACE_AND_METADATA_GENERATION", "PROOF_GENERATION_AND_VERIFICATION", "BRIDGE_FACT_HASH"],
+    )
+    .await;
+
+    match status {
+        TaskStatus::Failed(reason) => {
+            assert!(reason.contains("expected ProofVerificationOnL2"), "unexpected reason: {}", reason);
+        }
+        _ => panic!("expected failed status, got {:?}", status),
+    }
+}
+
+#[tokio::test]
+async fn atlantic_l2_verification_status_rejects_missing_bridge_fact_hash_step() {
+    let status = get_mocked_job_status(
+        Some("PROOF_VERIFICATION_ON_L2"),
+        Some("PROOF_GENERATION_AND_VERIFICATION"),
+        vec!["TRACE_AND_METADATA_GENERATION", "PROOF_GENERATION_AND_VERIFICATION"],
+    )
+    .await;
+
+    match status {
+        TaskStatus::Failed(reason) => {
+            assert!(reason.contains("BridgeFactHash"), "unexpected reason: {}", reason);
+        }
+        _ => panic!("expected failed status, got {:?}", status),
+    }
 }
 
 #[tokio::test]

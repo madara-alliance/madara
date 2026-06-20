@@ -257,7 +257,7 @@ impl AtlanticCairoVersion {
     }
 }
 
-#[derive(Debug, Clone, clap::ValueEnum, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, clap::ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticQueryStep {
     TraceGeneration,
