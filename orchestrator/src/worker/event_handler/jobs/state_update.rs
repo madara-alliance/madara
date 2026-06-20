@@ -240,7 +240,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        1
+        3
     }
 
     fn max_verification_attempts(&self) -> u64 {
