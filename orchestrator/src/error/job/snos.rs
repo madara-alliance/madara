@@ -74,10 +74,11 @@ fn is_retryable_pie_generation_error(error: &PieGenerationError) -> bool {
         PieGenerationError::RpcClient(message)
         | PieGenerationError::StateProcessing(message)
         | PieGenerationError::ContractClassProcessing(message) => is_retryable_remote_message(message),
-        PieGenerationError::TaskJoin(_)
-        | PieGenerationError::OsExecution(_)
-        | PieGenerationError::Io(_)
-        | PieGenerationError::InvalidConfig(_) => false,
+        // A tokio JoinError means an internal SNOS task panicked or was cancelled. At this
+        // boundary we cannot safely distinguish a deterministic bug from a transient RPC path
+        // that panicked internally, so align it with the service-level panic policy and retry.
+        PieGenerationError::TaskJoin(_) => true,
+        PieGenerationError::OsExecution(_) | PieGenerationError::Io(_) | PieGenerationError::InvalidConfig(_) => false,
     }
 }
 
@@ -215,6 +216,19 @@ mod tests {
         };
 
         assert!(!error.is_retryable());
+    }
+
+    #[tokio::test]
+    async fn snos_task_join_errors_are_retryable() {
+        let join_error = tokio::spawn(async {
+            panic!("simulated inner snos task panic");
+        })
+        .await
+        .unwrap_err();
+
+        let error = SnosError::SnosExecutionError { internal_id: 7, source: PieGenerationError::TaskJoin(join_error) };
+
+        assert!(error.is_retryable());
     }
 
     #[test]
