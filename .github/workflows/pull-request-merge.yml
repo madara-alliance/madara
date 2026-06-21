@@ -57,6 +57,10 @@ jobs:
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
 
+  # Run production bootstrap snapshot tests
+  test-bootstrap-snapshots:
+    uses: ./.github/workflows/task-do-nothing-test-bootstrap-snapshots.yml
+
   # ========================================================================= #
   #                                E2E Test                                   #
   # ========================================================================= #

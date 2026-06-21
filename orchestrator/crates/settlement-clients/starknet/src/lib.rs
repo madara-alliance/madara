@@ -171,7 +171,7 @@ impl SettlementClient for StarknetSettlementClient {
                     category = "verify_tx",
                     tx_hash = %tx_hash,
                     function_type = "inclusion",
-                    revert_reason = %execution_result.revert_reason().unwrap(),
+                    revert_reason = %execution_result.revert_reason().unwrap_or_default(),
                     "Tx inclusion verified."
                 );
                 Ok(SettlementVerificationStatus::Rejected(format!(

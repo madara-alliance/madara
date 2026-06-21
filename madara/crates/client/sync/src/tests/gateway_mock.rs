@@ -44,6 +44,23 @@ impl GatewayMock {
         });
     }
 
+    pub fn mock_compiled_class_from_json(&self, class_hash: impl Into<String>, json: impl Into<String>) -> Mock<'_> {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_compiled_class_by_class_hash").query_param("classHash", class_hash);
+            then.status(200).header("content-type", "application/json").body(json.into());
+        })
+    }
+
+    pub fn mock_compiled_class_not_found(&self, class_hash: impl Into<String>) -> Mock<'_> {
+        self.mock_server.mock(|when, then| {
+            when.method("GET").path_contains("get_compiled_class_by_class_hash").query_param("classHash", class_hash);
+            then.status(400).header("content-type", "application/json").json_body(json!({
+                "code": "StarknetErrorCode.UNDECLARED_CLASS",
+                "message": "Class with hash is not declared"
+            }));
+        })
+    }
+
     pub fn mock_header_latest(&self, block_number: u64, hash: Felt) -> Mock<'_> {
         self.mock_server.mock(|when, then| {
             when.method("GET")
@@ -57,8 +74,8 @@ impl GatewayMock {
         })
     }
 
-    pub fn mock_block(&self, block_number: u64, hash: Felt, parent_hash: Felt) {
-        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, "0.13.2.1");
+    pub fn mock_block(&self, block_number: u64, hash: Felt, parent_hash: Felt) -> Mock<'_> {
+        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, "0.13.2.1")
     }
 
     pub fn mock_block_with_starknet_version(
@@ -67,8 +84,8 @@ impl GatewayMock {
         hash: Felt,
         parent_hash: Felt,
         starknet_version: impl Into<String>,
-    ) {
-        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, starknet_version);
+    ) -> Mock<'_> {
+        self.mock_block_with_declared_class_and_version(block_number, hash, parent_hash, None, starknet_version)
     }
 
     fn mock_block_with_declared_class_and_version(
@@ -78,7 +95,7 @@ impl GatewayMock {
         parent_hash: Felt,
         declared_class: Option<DeclaredClassItem>,
         starknet_version: impl Into<String>,
-    ) {
+    ) -> Mock<'_> {
         let starknet_version = starknet_version.into();
         let declared_classes = declared_class
             .map(|item| {
@@ -189,7 +206,7 @@ impl GatewayMock {
                     }
                 }
             }));
-        });
+        })
     }
 
     pub fn mock_block_pending(&self, block_number: u64) -> Mock<'_> {

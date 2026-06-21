@@ -1,0 +1,3990 @@
+{
+  "components": {
+    "contentDescriptors": {},
+    "errors": {
+      "BLOCK_NOT_FOUND": {
+        "code": 24,
+        "message": "Block not found"
+      },
+      "CLASS_HASH_NOT_FOUND": {
+        "code": 28,
+        "message": "Class hash not found"
+      },
+      "CONTRACT_ERROR": {
+        "code": 40,
+        "data": {
+          "description": "More data about the execution failure",
+          "properties": {
+            "revert_error": {
+              "description": "a string encoding the execution trace up to the point of failure",
+              "title": "revert error",
+              "type": "string"
+            }
+          },
+          "required": "revert_error",
+          "type": "object"
+        },
+        "message": "Contract error"
+      },
+      "CONTRACT_NOT_FOUND": {
+        "code": 20,
+        "message": "Contract not found"
+      },
+      "FAILED_TO_RECEIVE_TXN": {
+        "code": 1,
+        "message": "Failed to write transaction"
+      },
+      "INVALID_CONTINUATION_TOKEN": {
+        "code": 33,
+        "message": "The supplied continuation token is invalid or unknown"
+      },
+      "INVALID_TXN_INDEX": {
+        "code": 27,
+        "message": "Invalid transaction index in a block"
+      },
+      "NO_BLOCKS": {
+        "code": 32,
+        "message": "There are no blocks"
+      },
+      "PAGE_SIZE_TOO_BIG": {
+        "code": 31,
+        "message": "Requested page size is too big"
+      },
+      "TOO_MANY_KEYS_IN_FILTER": {
+        "code": 34,
+        "message": "Too many keys provided in a filter"
+      },
+      "TRANSACTION_EXECUTION_ERROR": {
+        "code": 41,
+        "data": {
+          "description": "More data about the execution failure",
+          "properties": {
+            "execution_error": {
+              "description": "a string encoding the execution trace up to the point of failure",
+              "title": "revert error",
+              "type": "string"
+            },
+            "transaction_index": {
+              "description": "The index of the first transaction failing in a sequence of given transactions",
+              "title": "Transaction index",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "transaction_index",
+            "execution_error"
+          ],
+          "type": "object"
+        },
+        "message": "Transaction execution error"
+      },
+      "TXN_HASH_NOT_FOUND": {
+        "code": 29,
+        "message": "Transaction hash not found"
+      }
+    },
+    "schemas": {
+      "ADDRESS": {
+        "$ref": "#/components/schemas/FELT",
+        "title": "Address"
+      },
+      "BLOCK_BODY_WITH_RECEIPTS": {
+        "properties": {
+          "transactions": {
+            "description": "The transactions in this block",
+            "items": {
+              "properties": {
+                "receipt": {
+                  "$ref": "#/components/schemas/TXN_RECEIPT",
+                  "title": "receipt"
+                },
+                "transaction": {
+                  "$ref": "#/components/schemas/TXN",
+                  "title": "transaction"
+                }
+              },
+              "required": [
+                "transaction",
+                "receipt"
+              ],
+              "title": "transaction and receipt",
+              "type": "object"
+            },
+            "title": "Transactions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "transactions"
+        ],
+        "title": "Block body with transactions and receipts",
+        "type": "object"
+      },
+      "BLOCK_BODY_WITH_TXS": {
+        "properties": {
+          "transactions": {
+            "description": "The transactions in this block",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/TXN",
+                  "title": "transaction"
+                },
+                {
+                  "properties": {
+                    "transaction_hash": {
+                      "$ref": "#/components/schemas/TXN_HASH",
+                      "title": "transaction hash"
+                    }
+                  },
+                  "required": [
+                    "transaction_hash"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "title": "transactions in block",
+              "type": "object"
+            },
+            "title": "Transactions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "transactions"
+        ],
+        "title": "Block body with transactions",
+        "type": "object"
+      },
+      "BLOCK_BODY_WITH_TX_HASHES": {
+        "properties": {
+          "transactions": {
+            "description": "The hashes of the transactions included in this block",
+            "items": {
+              "$ref": "#/components/schemas/TXN_HASH",
+              "description": "The hash of a single transaction"
+            },
+            "title": "Transaction hashes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "transactions"
+        ],
+        "title": "Block body with transaction hashes",
+        "type": "object"
+      },
+      "BLOCK_HASH": {
+        "$ref": "#/components/schemas/FELT",
+        "title": "Block hash"
+      },
+      "BLOCK_HEADER": {
+        "properties": {
+          "block_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "title": "Block hash"
+          },
+          "block_number": {
+            "$ref": "#/components/schemas/BLOCK_NUMBER",
+            "description": "The block number (its height)",
+            "title": "Block number"
+          },
+          "l1_da_mode": {
+            "description": "specifies whether the data of this block is published via blob data or calldata",
+            "enum": [
+              "BLOB",
+              "CALLDATA"
+            ],
+            "title": "L1 da mode",
+            "type": "string"
+          },
+          "l1_data_gas_price": {
+            "$ref": "#/components/schemas/RESOURCE_PRICE",
+            "description": "The price of l1 data gas in the block",
+            "title": "L1 data gas price"
+          },
+          "l1_gas_price": {
+            "$ref": "#/components/schemas/RESOURCE_PRICE",
+            "description": "The price of l1 gas in the block",
+            "title": "L1 gas price"
+          },
+          "new_root": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The new global state root",
+            "title": "New root"
+          },
+          "parent_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "description": "The hash of this block's parent",
+            "title": "Parent hash"
+          },
+          "sequencer_address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The StarkNet identity of the sequencer submitting this block",
+            "title": "Sequencer address"
+          },
+          "starknet_version": {
+            "description": "Semver of the current Starknet protocol",
+            "title": "Starknet version",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "The time in which the block was created, encoded in Unix time",
+            "minimum": 0,
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "block_hash",
+          "parent_hash",
+          "block_number",
+          "new_root",
+          "timestamp",
+          "sequencer_address",
+          "l1_gas_price",
+          "l1_data_gas_price",
+          "l1_da_mode",
+          "starknet_version"
+        ],
+        "title": "Block header",
+        "type": "object"
+      },
+      "BLOCK_ID": {
+        "description": "Block hash, number or tag",
+        "oneOf": [
+          {
+            "properties": {
+              "block_hash": {
+                "$ref": "#/components/schemas/BLOCK_HASH",
+                "title": "Block hash"
+              }
+            },
+            "required": [
+              "block_hash"
+            ],
+            "title": "Block hash",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "block_number": {
+                "$ref": "#/components/schemas/BLOCK_NUMBER",
+                "title": "Block number"
+              }
+            },
+            "required": [
+              "block_number"
+            ],
+            "title": "Block number",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_TAG",
+            "title": "Block tag"
+          }
+        ],
+        "title": "Block id"
+      },
+      "BLOCK_NUMBER": {
+        "description": "The block's number (its height)",
+        "minimum": 0,
+        "title": "Block number",
+        "type": "integer"
+      },
+      "BLOCK_STATUS": {
+        "description": "The status of the block",
+        "enum": [
+          "PENDING",
+          "ACCEPTED_ON_L2",
+          "ACCEPTED_ON_L1",
+          "REJECTED"
+        ],
+        "title": "Block status",
+        "type": "string"
+      },
+      "BLOCK_TAG": {
+        "description": "A tag specifying a dynamic reference to a block",
+        "enum": [
+          "latest",
+          "pending"
+        ],
+        "title": "Block tag",
+        "type": "string"
+      },
+      "BLOCK_WITH_RECEIPTS": {
+        "allOf": [
+          {
+            "properties": {
+              "status": {
+                "$ref": "#/components/schemas/BLOCK_STATUS",
+                "title": "Status"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "title": "block with txs",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_HEADER",
+            "title": "Block header"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_RECEIPTS",
+            "title": "Block body with transactions and receipts"
+          }
+        ],
+        "description": "The block object",
+        "title": "Block with transactions and receipts"
+      },
+      "BLOCK_WITH_TXS": {
+        "allOf": [
+          {
+            "properties": {
+              "status": {
+                "$ref": "#/components/schemas/BLOCK_STATUS",
+                "title": "Status"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "title": "block with txs",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_HEADER",
+            "title": "Block header"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_TXS",
+            "title": "Block body with transactions"
+          }
+        ],
+        "description": "The block object",
+        "title": "Block with transactions"
+      },
+      "BLOCK_WITH_TX_HASHES": {
+        "allOf": [
+          {
+            "properties": {
+              "status": {
+                "$ref": "#/components/schemas/BLOCK_STATUS",
+                "title": "Status"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "title": "Block status",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_HEADER",
+            "title": "Block header"
+          },
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_TX_HASHES",
+            "title": "Block body with transaction hashes"
+          }
+        ],
+        "description": "The block object",
+        "title": "Block with transaction hashes"
+      },
+      "BROADCASTED_DECLARE_TXN": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BROADCASTED_DECLARE_TXN_V1",
+            "title": "Broadcasted declare transaction V1"
+          },
+          {
+            "$ref": "#/components/schemas/BROADCASTED_DECLARE_TXN_V2",
+            "title": "Broadcasted declare transaction V2"
+          },
+          {
+            "$ref": "#/components/schemas/BROADCASTED_DECLARE_TXN_V3",
+            "title": "Broadcasted declare transaction V3"
+          }
+        ],
+        "title": "Broadcasted declare transaction"
+      },
+      "BROADCASTED_DECLARE_TXN_V1": {
+        "allOf": [
+          {
+            "properties": {
+              "contract_class": {
+                "$ref": "#/components/schemas/DEPRECATED_CONTRACT_CLASS",
+                "description": "The class to be declared",
+                "title": "Contract class"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x1",
+                  "0x100000000000000000000000000000001"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "max_fee",
+              "version",
+              "signature",
+              "nonce",
+              "contract_class"
+            ],
+            "title": "Declare txn v1",
+            "type": "object"
+          }
+        ],
+        "title": "Broadcasted declare contract transaction V1"
+      },
+      "BROADCASTED_DECLARE_TXN_V2": {
+        "allOf": [
+          {
+            "properties": {
+              "compiled_class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the Cairo assembly resulting from the Sierra compilation",
+                "title": "Compiled class hash"
+              },
+              "contract_class": {
+                "$ref": "#/components/schemas/CONTRACT_CLASS",
+                "description": "The class to be declared",
+                "title": "Contract class"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x2",
+                  "0x100000000000000000000000000000002"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "compiled_class_hash",
+              "max_fee",
+              "version",
+              "signature",
+              "nonce",
+              "contract_class"
+            ],
+            "title": "Declare txn v2",
+            "type": "object"
+          }
+        ],
+        "description": "Broadcasted declare Contract Transaction V2",
+        "title": "Broadcasted declare Transaction V2"
+      },
+      "BROADCASTED_DECLARE_TXN_V3": {
+        "allOf": [
+          {
+            "properties": {
+              "account_deployment_data": {
+                "description": "data needed to deploy the account contract from which this tx will be initiated",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Account deployment data",
+                "type": "array"
+              },
+              "compiled_class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the Cairo assembly resulting from the Sierra compilation",
+                "title": "Compiled class hash"
+              },
+              "contract_class": {
+                "$ref": "#/components/schemas/CONTRACT_CLASS",
+                "description": "The class to be declared",
+                "title": "Contract class"
+              },
+              "fee_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's balance from which fee will be charged",
+                "title": "Fee DA mode"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "nonce_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's nonce (an account has a nonce per DA mode)",
+                "title": "Nonce DA mode"
+              },
+              "paymaster_data": {
+                "description": "data needed to allow the paymaster to pay for the transaction in native tokens",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Paymaster data",
+                "type": "array"
+              },
+              "resource_bounds": {
+                "$ref": "#/components/schemas/RESOURCE_BOUNDS_MAPPING",
+                "description": "resource bounds for the transaction execution",
+                "title": "Resource bounds"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "tip": {
+                "$ref": "#/components/schemas/u64",
+                "description": "the tip for the transaction",
+                "title": "Tip"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x3",
+                  "0x100000000000000000000000000000003"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "compiled_class_hash",
+              "version",
+              "signature",
+              "nonce",
+              "contract_class",
+              "resource_bounds",
+              "tip",
+              "paymaster_data",
+              "account_deployment_data",
+              "nonce_data_availability_mode",
+              "fee_data_availability_mode"
+            ],
+            "title": "Declare txn v3",
+            "type": "object"
+          }
+        ],
+        "description": "Broadcasted declare Contract Transaction V3",
+        "title": "Broadcasted declare Transaction V3"
+      },
+      "BROADCASTED_DEPLOY_ACCOUNT_TXN": {
+        "$ref": "#/components/schemas/DEPLOY_ACCOUNT_TXN",
+        "title": "Broadcasted deploy account transaction"
+      },
+      "BROADCASTED_INVOKE_TXN": {
+        "$ref": "#/components/schemas/INVOKE_TXN",
+        "title": "Broadcasted invoke transaction"
+      },
+      "BROADCASTED_TXN": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BROADCASTED_INVOKE_TXN"
+          },
+          {
+            "$ref": "#/components/schemas/BROADCASTED_DECLARE_TXN"
+          },
+          {
+            "$ref": "#/components/schemas/BROADCASTED_DEPLOY_ACCOUNT_TXN"
+          }
+        ]
+      },
+      "CHAIN_ID": {
+        "description": "StarkNet chain id, given in hex representation.",
+        "pattern": "^0x[a-fA-F0-9]+$",
+        "title": "Chain id",
+        "type": "string"
+      },
+      "COMMON_RECEIPT_PROPERTIES": {
+        "allOf": [
+          {
+            "description": "Common properties for a transaction receipt",
+            "properties": {
+              "actual_fee": {
+                "$ref": "#/components/schemas/FEE_PAYMENT",
+                "description": "The fee that was charged by the sequencer",
+                "title": "Actual fee"
+              },
+              "events": {
+                "description": "The events emitted as part of this transaction",
+                "items": {
+                  "$ref": "#/components/schemas/EVENT"
+                },
+                "title": "Events",
+                "type": "array"
+              },
+              "execution_resources": {
+                "$ref": "#/components/schemas/EXECUTION_RESOURCES",
+                "description": "The resources consumed by the transaction",
+                "title": "Execution resources"
+              },
+              "finality_status": {
+                "$ref": "#/components/schemas/TXN_FINALITY_STATUS",
+                "description": "finality status of the tx",
+                "title": "Finality status"
+              },
+              "messages_sent": {
+                "items": {
+                  "$ref": "#/components/schemas/MSG_TO_L1"
+                },
+                "title": "Messages sent",
+                "type": "array"
+              },
+              "transaction_hash": {
+                "$ref": "#/components/schemas/TXN_HASH",
+                "description": "The hash identifying the transaction",
+                "title": "Transaction hash"
+              }
+            },
+            "required": [
+              "transaction_hash",
+              "actual_fee",
+              "finality_status",
+              "messages_sent",
+              "events",
+              "execution_resources"
+            ],
+            "title": "Common receipt properties",
+            "type": "object"
+          },
+          {
+            "oneOf": [
+              {
+                "description": "Common properties for a transaction receipt that was executed successfully",
+                "properties": {
+                  "execution_status": {
+                    "description": "The execution status of the transaction",
+                    "enum": [
+                      "SUCCEEDED"
+                    ],
+                    "title": "Execution status",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "execution_status"
+                ],
+                "title": "Successful Common receipt properties",
+                "type": "object"
+              },
+              {
+                "description": "Common properties for a transaction receipt that was reverted",
+                "properties": {
+                  "execution_status": {
+                    "description": "The execution status of the transaction",
+                    "enum": [
+                      "REVERTED"
+                    ],
+                    "title": "Execution status",
+                    "type": "string"
+                  },
+                  "revert_reason": {
+                    "description": "the revert reason for the failed execution",
+                    "name": "revert reason",
+                    "title": "Revert reason",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "execution_status",
+                  "revert_reason"
+                ],
+                "title": "Reverted Common receipt properties",
+                "type": "object"
+              }
+            ]
+          }
+        ]
+      },
+      "COMPUTATION_RESOURCES": {
+        "description": "The resources consumed by the VM",
+        "properties": {
+          "bitwise_builtin_applications": {
+            "description": "the number of BITWISE builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "BITWISE applications",
+            "type": "integer"
+          },
+          "ec_op_builtin_applications": {
+            "description": "the number of EC_OP builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "EC_OP applications",
+            "type": "integer"
+          },
+          "ecdsa_builtin_applications": {
+            "description": "the number of ECDSA builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "ECDSA applications",
+            "type": "integer"
+          },
+          "keccak_builtin_applications": {
+            "description": "The number of KECCAK builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "Keccak applications",
+            "type": "integer"
+          },
+          "memory_holes": {
+            "description": "The number of unused memory cells (each cell is roughly equivalent to a step)",
+            "not": {
+              "const": 0
+            },
+            "title": "Memory holes",
+            "type": "integer"
+          },
+          "pedersen_builtin_applications": {
+            "description": "The number of Pedersen builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "Pedersen applications",
+            "type": "integer"
+          },
+          "poseidon_builtin_applications": {
+            "description": "The number of Poseidon builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "Poseidon applications",
+            "type": "integer"
+          },
+          "range_check_builtin_applications": {
+            "description": "The number of RANGE_CHECK builtin instances",
+            "not": {
+              "const": 0
+            },
+            "title": "Range check applications",
+            "type": "integer"
+          },
+          "segment_arena_builtin": {
+            "description": "The number of accesses to the segment arena",
+            "not": {
+              "const": 0
+            },
+            "title": "Segment arena",
+            "type": "integer"
+          },
+          "steps": {
+            "description": "The number of Cairo steps used",
+            "not": {
+              "const": 0
+            },
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "title": "Computation resources",
+        "type": "object"
+      },
+      "CONTRACT_ABI": {
+        "items": {
+          "$ref": "#/components/schemas/CONTRACT_ABI_ENTRY"
+        },
+        "title": "Contract ABI",
+        "type": "array"
+      },
+      "CONTRACT_ABI_ENTRY": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/FUNCTION_ABI_ENTRY",
+            "title": "Function ABI entry"
+          },
+          {
+            "$ref": "#/components/schemas/EVENT_ABI_ENTRY",
+            "title": "Event ABI entry"
+          },
+          {
+            "$ref": "#/components/schemas/STRUCT_ABI_ENTRY",
+            "title": "Struct ABI entry"
+          }
+        ],
+        "title": "Contract ABI entry"
+      },
+      "CONTRACT_CLASS": {
+        "properties": {
+          "abi": {
+            "description": "The class ABI, as supplied by the user declaring the class",
+            "title": "ABI",
+            "type": "string"
+          },
+          "contract_class_version": {
+            "description": "The version of the contract class object. Currently, the Starknet OS supports version 0.1.0",
+            "title": "Contract class version",
+            "type": "string"
+          },
+          "entry_points_by_type": {
+            "properties": {
+              "CONSTRUCTOR": {
+                "items": {
+                  "$ref": "#/components/schemas/SIERRA_ENTRY_POINT"
+                },
+                "title": "Constructor",
+                "type": "array"
+              },
+              "EXTERNAL": {
+                "items": {
+                  "$ref": "#/components/schemas/SIERRA_ENTRY_POINT"
+                },
+                "title": "External",
+                "type": "array"
+              },
+              "L1_HANDLER": {
+                "items": {
+                  "$ref": "#/components/schemas/SIERRA_ENTRY_POINT"
+                },
+                "title": "L1 handler",
+                "type": "array"
+              }
+            },
+            "required": [
+              "CONSTRUCTOR",
+              "EXTERNAL",
+              "L1_HANDLER"
+            ],
+            "title": "Entry points by type",
+            "type": "object"
+          },
+          "sierra_program": {
+            "description": "The list of Sierra instructions of which the program consists",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Sierra program",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sierra_program",
+          "contract_class_version",
+          "entry_points_by_type"
+        ],
+        "title": "Contract class",
+        "type": "object"
+      },
+      "CONTRACT_STORAGE_DIFF_ITEM": {
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The contract address for which the storage changed",
+            "title": "Address"
+          },
+          "storage_entries": {
+            "description": "The changes in the storage of the contract",
+            "items": {
+              "properties": {
+                "key": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The key of the changed value",
+                  "title": "Key"
+                },
+                "value": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The new value applied to the given address",
+                  "title": "Value"
+                }
+              },
+              "title": "Storage diff item",
+              "type": "object"
+            },
+            "title": "Storage entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "address",
+          "storage_entries"
+        ],
+        "title": "Contract storage diff item",
+        "type": "object"
+      },
+      "DA_MODE": {
+        "description": "Specifies a storage domain in Starknet. Each domain has different gurantess regarding availability",
+        "enum": [
+          "L1",
+          "L2"
+        ],
+        "title": "DA mode",
+        "type": "string"
+      },
+      "DECLARE_TXN": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN_V0",
+            "title": "Declare transaction V0"
+          },
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN_V1",
+            "title": "Declare transaction V1"
+          },
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN_V2",
+            "title": "Declare transaction V2"
+          },
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN_V3",
+            "title": "Declare transaction V3"
+          }
+        ],
+        "title": "Declare transaction"
+      },
+      "DECLARE_TXN_RECEIPT": {
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "Declare txn receipt",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/COMMON_RECEIPT_PROPERTIES",
+            "title": "Common receipt properties"
+          }
+        ],
+        "title": "Declare Transaction Receipt"
+      },
+      "DECLARE_TXN_V0": {
+        "allOf": [
+          {
+            "properties": {
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the declared class",
+                "title": "Class hash"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x0",
+                  "0x100000000000000000000000000000000"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "max_fee",
+              "version",
+              "signature",
+              "class_hash"
+            ],
+            "title": "Declare txn v0",
+            "type": "object"
+          }
+        ],
+        "description": "Declare Contract Transaction V0",
+        "title": "Declare Contract Transaction V0"
+      },
+      "DECLARE_TXN_V1": {
+        "allOf": [
+          {
+            "properties": {
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the declared class",
+                "title": "Class hash"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x1",
+                  "0x100000000000000000000000000000001"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "max_fee",
+              "version",
+              "signature",
+              "nonce",
+              "class_hash"
+            ],
+            "title": "Declare txn v1",
+            "type": "object"
+          }
+        ],
+        "description": "Declare Contract Transaction V1",
+        "title": "Declare Contract Transaction V1"
+      },
+      "DECLARE_TXN_V2": {
+        "allOf": [
+          {
+            "properties": {
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the declared class",
+                "title": "Class hash"
+              },
+              "compiled_class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the Cairo assembly resulting from the Sierra compilation",
+                "title": "Compiled class hash"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x2",
+                  "0x100000000000000000000000000000002"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "compiled_class_hash",
+              "max_fee",
+              "version",
+              "signature",
+              "nonce",
+              "class_hash"
+            ],
+            "title": "Declare txn v2",
+            "type": "object"
+          }
+        ],
+        "description": "Declare Contract Transaction V2",
+        "title": "Declare Transaction V2"
+      },
+      "DECLARE_TXN_V3": {
+        "allOf": [
+          {
+            "properties": {
+              "account_deployment_data": {
+                "description": "data needed to deploy the account contract from which this tx will be initiated",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Account deployment data",
+                "type": "array"
+              },
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the declared class",
+                "title": "Class hash"
+              },
+              "compiled_class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the Cairo assembly resulting from the Sierra compilation",
+                "title": "Compiled class hash"
+              },
+              "fee_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's balance from which fee will be charged",
+                "title": "Fee DA mode"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "nonce_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's nonce (an account has a nonce per DA mode)",
+                "title": "Nonce DA mode"
+              },
+              "paymaster_data": {
+                "description": "data needed to allow the paymaster to pay for the transaction in native tokens",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Paymaster data",
+                "type": "array"
+              },
+              "resource_bounds": {
+                "$ref": "#/components/schemas/RESOURCE_BOUNDS_MAPPING",
+                "description": "resource bounds for the transaction execution",
+                "title": "Resource bounds"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "description": "The address of the account contract sending the declaration transaction",
+                "title": "Sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "tip": {
+                "$ref": "#/components/schemas/u64",
+                "description": "the tip for the transaction",
+                "title": "Tip"
+              },
+              "type": {
+                "enum": [
+                  "DECLARE"
+                ],
+                "title": "Declare",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x3",
+                  "0x100000000000000000000000000000003"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "compiled_class_hash",
+              "version",
+              "signature",
+              "nonce",
+              "class_hash",
+              "resource_bounds",
+              "tip",
+              "paymaster_data",
+              "account_deployment_data",
+              "nonce_data_availability_mode",
+              "fee_data_availability_mode"
+            ],
+            "title": "Declare txn v3",
+            "type": "object"
+          }
+        ],
+        "description": "Declare Contract Transaction V3",
+        "title": "Declare Transaction V3"
+      },
+      "DEPLOYED_CONTRACT_ITEM": {
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The address of the contract",
+            "title": "Address"
+          },
+          "class_hash": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The hash of the contract code",
+            "title": "Class hash"
+          }
+        },
+        "required": [
+          "address",
+          "class_hash"
+        ],
+        "title": "Deployed contract item",
+        "type": "object"
+      },
+      "DEPLOY_ACCOUNT_TXN": {
+        "description": "deploys a new account contract",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DEPLOY_ACCOUNT_TXN_V1",
+            "title": "Deploy account V1"
+          },
+          {
+            "$ref": "#/components/schemas/DEPLOY_ACCOUNT_TXN_V3",
+            "title": "Deploy account V3"
+          }
+        ],
+        "title": "Deploy account transaction"
+      },
+      "DEPLOY_ACCOUNT_TXN_RECEIPT": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/COMMON_RECEIPT_PROPERTIES",
+            "title": "Common receipt properties"
+          },
+          {
+            "properties": {
+              "contract_address": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The address of the deployed contract",
+                "title": "Contract address"
+              },
+              "type": {
+                "enum": [
+                  "DEPLOY_ACCOUNT"
+                ],
+                "title": "Deploy account",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "contract_address"
+            ],
+            "title": "DeployAccount txn receipt",
+            "type": "object"
+          }
+        ],
+        "title": "Deploy Account Transaction Receipt"
+      },
+      "DEPLOY_ACCOUNT_TXN_V1": {
+        "description": "Deploys an account contract, charges fee from the pre-funded account addresses",
+        "properties": {
+          "class_hash": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The hash of the deployed contract's class",
+            "title": "Class hash"
+          },
+          "constructor_calldata": {
+            "description": "The parameters passed to the constructor",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Constructor calldata",
+            "type": "array"
+          },
+          "contract_address_salt": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The salt for the address of the deployed contract",
+            "title": "Contract address salt"
+          },
+          "max_fee": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The maximal fee that can be charged for including the transaction",
+            "title": "Max fee"
+          },
+          "nonce": {
+            "$ref": "#/components/schemas/FELT",
+            "title": "Nonce"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SIGNATURE",
+            "title": "Signature"
+          },
+          "type": {
+            "enum": [
+              "DEPLOY_ACCOUNT"
+            ],
+            "title": "Deploy account",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of the transaction scheme",
+            "enum": [
+              "0x1",
+              "0x100000000000000000000000000000001"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_fee",
+          "version",
+          "signature",
+          "nonce",
+          "type",
+          "contract_address_salt",
+          "constructor_calldata",
+          "class_hash"
+        ],
+        "title": "Deploy account transaction",
+        "type": "object"
+      },
+      "DEPLOY_ACCOUNT_TXN_V3": {
+        "description": "Deploys an account contract, charges fee from the pre-funded account addresses",
+        "properties": {
+          "class_hash": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The hash of the deployed contract's class",
+            "title": "Class hash"
+          },
+          "constructor_calldata": {
+            "description": "The parameters passed to the constructor",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Constructor calldata",
+            "type": "array"
+          },
+          "contract_address_salt": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The salt for the address of the deployed contract",
+            "title": "Contract address salt"
+          },
+          "fee_data_availability_mode": {
+            "$ref": "#/components/schemas/DA_MODE",
+            "description": "The storage domain of the account's balance from which fee will be charged",
+            "title": "Fee DA mode"
+          },
+          "nonce": {
+            "$ref": "#/components/schemas/FELT",
+            "title": "Nonce"
+          },
+          "nonce_data_availability_mode": {
+            "$ref": "#/components/schemas/DA_MODE",
+            "description": "The storage domain of the account's nonce (an account has a nonce per DA mode)",
+            "title": "Nonce DA mode"
+          },
+          "paymaster_data": {
+            "description": "data needed to allow the paymaster to pay for the transaction in native tokens",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Paymaster data",
+            "type": "array"
+          },
+          "resource_bounds": {
+            "$ref": "#/components/schemas/RESOURCE_BOUNDS_MAPPING",
+            "description": "resource bounds for the transaction execution",
+            "title": "Resource bounds"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SIGNATURE",
+            "title": "Signature"
+          },
+          "tip": {
+            "$ref": "#/components/schemas/u64",
+            "description": "the tip for the transaction",
+            "title": "Tip"
+          },
+          "type": {
+            "enum": [
+              "DEPLOY_ACCOUNT"
+            ],
+            "title": "Deploy account",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of the transaction scheme",
+            "enum": [
+              "0x3",
+              "0x100000000000000000000000000000003"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "signature",
+          "nonce",
+          "type",
+          "contract_address_salt",
+          "constructor_calldata",
+          "class_hash",
+          "resource_bounds",
+          "tip",
+          "paymaster_data",
+          "nonce_data_availability_mode",
+          "fee_data_availability_mode"
+        ],
+        "title": "Deploy account transaction",
+        "type": "object"
+      },
+      "DEPLOY_TXN": {
+        "allOf": [
+          {
+            "properties": {
+              "class_hash": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The hash of the deployed contract's class",
+                "title": "Class hash"
+              },
+              "constructor_calldata": {
+                "description": "The parameters passed to the constructor",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Constructor calldata",
+                "type": "array"
+              },
+              "contract_address_salt": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The salt for the address of the deployed contract",
+                "title": "Contract address salt"
+              },
+              "type": {
+                "enum": [
+                  "DEPLOY"
+                ],
+                "title": "Deploy",
+                "type": "string"
+              },
+              "version": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "Version of the transaction scheme",
+                "title": "Version"
+              }
+            },
+            "required": [
+              "version",
+              "type",
+              "constructor_calldata",
+              "contract_address_salt",
+              "class_hash"
+            ],
+            "title": "Deploy txn",
+            "type": "object"
+          }
+        ],
+        "description": "The structure of a deploy transaction. Note that this transaction type is deprecated and will no longer be supported in future versions",
+        "title": "Deploy Contract Transaction"
+      },
+      "DEPLOY_TXN_RECEIPT": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/COMMON_RECEIPT_PROPERTIES",
+            "title": "Common receipt properties"
+          },
+          {
+            "properties": {
+              "contract_address": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The address of the deployed contract",
+                "title": "Contract address"
+              },
+              "type": {
+                "enum": [
+                  "DEPLOY"
+                ],
+                "title": "Deploy",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "contract_address"
+            ],
+            "title": "Deploy txn receipt",
+            "type": "object"
+          }
+        ],
+        "title": "Deploy Transaction Receipt"
+      },
+      "DEPRECATED_CAIRO_ENTRY_POINT": {
+        "properties": {
+          "offset": {
+            "$ref": "#/components/schemas/NUM_AS_HEX",
+            "description": "The offset of the entry point in the program",
+            "title": "Offset"
+          },
+          "selector": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "A unique identifier of the entry point (function) in the program",
+            "title": "Selector"
+          }
+        },
+        "required": [
+          "offset",
+          "selector"
+        ],
+        "title": "Deprecated Cairo entry point",
+        "type": "object"
+      },
+      "DEPRECATED_CONTRACT_CLASS": {
+        "description": "The definition of a StarkNet contract class",
+        "properties": {
+          "abi": {
+            "$ref": "#/components/schemas/CONTRACT_ABI",
+            "title": "Contract ABI"
+          },
+          "entry_points_by_type": {
+            "properties": {
+              "CONSTRUCTOR": {
+                "items": {
+                  "$ref": "#/components/schemas/DEPRECATED_CAIRO_ENTRY_POINT"
+                },
+                "title": "Deprecated constructor",
+                "type": "array"
+              },
+              "EXTERNAL": {
+                "items": {
+                  "$ref": "#/components/schemas/DEPRECATED_CAIRO_ENTRY_POINT"
+                },
+                "title": "Deprecated external",
+                "type": "array"
+              },
+              "L1_HANDLER": {
+                "items": {
+                  "$ref": "#/components/schemas/DEPRECATED_CAIRO_ENTRY_POINT"
+                },
+                "title": "Deprecated L1 handler",
+                "type": "array"
+              }
+            },
+            "title": "Deprecated entry points by type",
+            "type": "object"
+          },
+          "program": {
+            "description": "A base64 representation of the compressed program code",
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$",
+            "title": "Program",
+            "type": "string"
+          }
+        },
+        "required": [
+          "program",
+          "entry_points_by_type"
+        ],
+        "title": "Deprecated contract class",
+        "type": "object"
+      },
+      "EMITTED_EVENT": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EVENT",
+            "description": "The event information",
+            "title": "Event"
+          },
+          {
+            "description": "The event emission information",
+            "properties": {
+              "block_hash": {
+                "$ref": "#/components/schemas/BLOCK_HASH",
+                "description": "The hash of the block in which the event was emitted",
+                "title": "Block hash"
+              },
+              "block_number": {
+                "$ref": "#/components/schemas/BLOCK_NUMBER",
+                "description": "The number of the block in which the event was emitted",
+                "title": "Block number"
+              },
+              "transaction_hash": {
+                "$ref": "#/components/schemas/TXN_HASH",
+                "description": "The transaction that emitted the event",
+                "title": "Transaction hash"
+              }
+            },
+            "required": [
+              "transaction_hash"
+            ],
+            "title": "Event context",
+            "type": "object"
+          }
+        ],
+        "description": "Event information decorated with metadata on where it was emitted / An event emitted as a result of transaction execution",
+        "title": "Emitted event"
+      },
+      "ETH_ADDRESS": {
+        "$comment": "An ethereum address",
+        "description": "an ethereum address represented as 40 hex digits",
+        "pattern": "^0x[a-fA-F0-9]{40}$",
+        "title": "Ethereum address",
+        "type": "string"
+      },
+      "EVENT": {
+        "allOf": [
+          {
+            "properties": {
+              "from_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "title": "From address"
+              }
+            },
+            "required": [
+              "from_address"
+            ],
+            "title": "Event emitter",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/EVENT_CONTENT",
+            "title": "Event content"
+          }
+        ],
+        "description": "A StarkNet event",
+        "title": "Event"
+      },
+      "EVENTS_CHUNK": {
+        "properties": {
+          "continuation_token": {
+            "description": "Use this token in a subsequent query to obtain the next page. Should not appear if there are no more pages.",
+            "title": "Continuation token",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EMITTED_EVENT"
+            },
+            "title": "Matching Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "Events chunk",
+        "type": "object"
+      },
+      "EVENT_ABI_ENTRY": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/TYPED_PARAMETER"
+            },
+            "title": "Typed parameter",
+            "type": "array"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/TYPED_PARAMETER"
+            },
+            "title": "Typed parameter",
+            "type": "array"
+          },
+          "name": {
+            "description": "The event name",
+            "title": "Event name",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EVENT_ABI_TYPE",
+            "title": "Event ABI type"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "keys",
+          "data"
+        ],
+        "title": "Event ABI entry",
+        "type": "object"
+      },
+      "EVENT_ABI_TYPE": {
+        "enum": [
+          "event"
+        ],
+        "title": "Event ABI type",
+        "type": "string"
+      },
+      "EVENT_CONTENT": {
+        "description": "The content of an event",
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys",
+          "data"
+        ],
+        "title": "Event content",
+        "type": "object"
+      },
+      "EVENT_FILTER": {
+        "description": "An event filter/query",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "from contract"
+          },
+          "from_block": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "from block"
+          },
+          "keys": {
+            "description": "The values used to filter the events",
+            "items": {
+              "description": "Per key (by position), designate the possible values to be matched for events to be returned. Empty array designates 'any' value",
+              "items": {
+                "$ref": "#/components/schemas/FELT"
+              },
+              "title": "Keys",
+              "type": "array"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "to_block": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "to block"
+          }
+        },
+        "required": [],
+        "title": "Event filter",
+        "type": "object"
+      },
+      "EXECUTION_RESOURCES": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/COMPUTATION_RESOURCES",
+            "title": "ComputationResources"
+          },
+          {
+            "description": "the data-availability resources of this transaction",
+            "properties": {
+              "data_availability": {
+                "properties": {
+                  "l1_data_gas": {
+                    "description": "the data gas consumed by this transaction's data, 0 if it uses gas for DA",
+                    "title": "L1DataGas",
+                    "type": "integer"
+                  },
+                  "l1_gas": {
+                    "description": "the gas consumed by this transaction's data, 0 if it uses data gas for DA",
+                    "title": "L1Gas",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "l1_gas",
+                  "l1_data_gas"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "data_availability"
+            ],
+            "title": "DataResources",
+            "type": "object"
+          }
+        ],
+        "description": "the resources consumed by the transaction, includes both computation and data",
+        "title": "Execution resources",
+        "type": "object"
+      },
+      "FEE_ESTIMATE": {
+        "properties": {
+          "data_gas_consumed": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The Ethereum data gas consumption of the transaction",
+            "title": "Data gas consumed"
+          },
+          "data_gas_price": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The data gas price (in wei or fri, depending on the tx version) that was used in the cost estimation",
+            "title": "Data gas price"
+          },
+          "gas_consumed": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The Ethereum gas consumption of the transaction",
+            "title": "Gas consumed"
+          },
+          "gas_price": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The gas price (in wei or fri, depending on the tx version) that was used in the cost estimation",
+            "title": "Gas price"
+          },
+          "overall_fee": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The estimated fee for the transaction (in wei or fri, depending on the tx version), equals to gas_consumed*gas_price + data_gas_consumed*data_gas_price",
+            "title": "Overall fee"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/PRICE_UNIT",
+            "description": "units in which the fee is given",
+            "title": "Fee unit"
+          }
+        },
+        "required": [
+          "gas_consumed",
+          "gas_price",
+          "data_gas_consumed",
+          "data_gas_price",
+          "overall_fee",
+          "unit"
+        ],
+        "title": "Fee estimation",
+        "type": "object"
+      },
+      "FEE_PAYMENT": {
+        "description": "fee payment info as it appears in receipts",
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "amount paid",
+            "title": "Amount"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/PRICE_UNIT",
+            "description": "units in which the fee is given",
+            "title": "Fee unit"
+          }
+        },
+        "required": [
+          "amount",
+          "unit"
+        ],
+        "title": "Fee Payment",
+        "type": "object"
+      },
+      "FELT": {
+        "description": "A field element. represented by at most 63 hex digits",
+        "pattern": "^0x(0|[a-fA-F1-9]{1}[a-fA-F0-9]{0,62})$",
+        "title": "Field element",
+        "type": "string"
+      },
+      "FUNCTION_ABI_ENTRY": {
+        "properties": {
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/TYPED_PARAMETER"
+            },
+            "title": "Typed parameter",
+            "type": "array"
+          },
+          "name": {
+            "description": "The function name",
+            "title": "Function name",
+            "type": "string"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/TYPED_PARAMETER"
+            },
+            "title": "Typed parameter",
+            "type": "array"
+          },
+          "stateMutability": {
+            "$ref": "#/components/schemas/FUNCTION_STATE_MUTABILITY",
+            "title": "Function state mutability"
+          },
+          "type": {
+            "$ref": "#/components/schemas/FUNCTION_ABI_TYPE",
+            "title": "Function ABI type"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "inputs",
+          "outputs"
+        ],
+        "title": "Function ABI entry",
+        "type": "object"
+      },
+      "FUNCTION_ABI_TYPE": {
+        "enum": [
+          "function",
+          "l1_handler",
+          "constructor"
+        ],
+        "title": "Function ABI type",
+        "type": "string"
+      },
+      "FUNCTION_CALL": {
+        "description": "Function call information",
+        "properties": {
+          "calldata": {
+            "description": "The parameters passed to the function",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Calldata",
+            "type": "array"
+          },
+          "contract_address": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Contract address"
+          },
+          "entry_point_selector": {
+            "$ref": "#/components/schemas/FELT",
+            "title": "Entry point selector"
+          }
+        },
+        "required": [
+          "contract_address",
+          "entry_point_selector",
+          "calldata"
+        ],
+        "title": "Function call",
+        "type": "object"
+      },
+      "FUNCTION_STATE_MUTABILITY": {
+        "enum": [
+          "view"
+        ],
+        "title": "Function state mutability type",
+        "type": "string"
+      },
+      "INVOKE_TXN": {
+        "description": "Initiate a transaction from an account",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/INVOKE_TXN_V0",
+            "title": "Invoke transaction V0"
+          },
+          {
+            "$ref": "#/components/schemas/INVOKE_TXN_V1",
+            "title": "Invoke transaction V1"
+          },
+          {
+            "$ref": "#/components/schemas/INVOKE_TXN_V3",
+            "title": "Invoke transaction V3"
+          }
+        ],
+        "title": "Invoke transaction"
+      },
+      "INVOKE_TXN_RECEIPT": {
+        "allOf": [
+          {
+            "properties": {
+              "type": {
+                "enum": [
+                  "INVOKE"
+                ],
+                "title": "Type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "title": "Type",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/COMMON_RECEIPT_PROPERTIES",
+            "title": "Common receipt properties"
+          }
+        ],
+        "title": "Invoke Transaction Receipt"
+      },
+      "INVOKE_TXN_V0": {
+        "description": "invokes a specific function in the desired contract (not necessarily an account)",
+        "properties": {
+          "calldata": {
+            "description": "The parameters passed to the function",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Calldata",
+            "type": "array"
+          },
+          "contract_address": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Contract address"
+          },
+          "entry_point_selector": {
+            "$ref": "#/components/schemas/FELT",
+            "title": "Entry point selector"
+          },
+          "max_fee": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The maximal fee that can be charged for including the transaction",
+            "title": "Max fee"
+          },
+          "signature": {
+            "$ref": "#/components/schemas/SIGNATURE",
+            "title": "Signature"
+          },
+          "type": {
+            "enum": [
+              "INVOKE"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of the transaction scheme",
+            "enum": [
+              "0x0",
+              "0x100000000000000000000000000000000"
+            ],
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "contract_address",
+          "entry_point_selector",
+          "calldata",
+          "max_fee",
+          "version",
+          "signature"
+        ],
+        "title": "Invoke transaction V0",
+        "type": "object"
+      },
+      "INVOKE_TXN_V1": {
+        "allOf": [
+          {
+            "properties": {
+              "calldata": {
+                "description": "The data expected by the account's `execute` function (in most usecases, this includes the called contract address and a function selector)",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "calldata",
+                "type": "array"
+              },
+              "max_fee": {
+                "$ref": "#/components/schemas/FELT",
+                "description": "The maximal fee that can be charged for including the transaction",
+                "title": "Max fee"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "title": "sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "type": {
+                "enum": [
+                  "INVOKE"
+                ],
+                "title": "Type",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x1",
+                  "0x100000000000000000000000000000001"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "calldata",
+              "max_fee",
+              "version",
+              "signature",
+              "nonce"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "initiates a transaction from a given account",
+        "title": "Invoke transaction V1"
+      },
+      "INVOKE_TXN_V3": {
+        "allOf": [
+          {
+            "properties": {
+              "account_deployment_data": {
+                "description": "data needed to deploy the account contract from which this tx will be initiated",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Account deployment data",
+                "type": "array"
+              },
+              "calldata": {
+                "description": "The data expected by the account's `execute` function (in most usecases, this includes the called contract address and a function selector)",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "calldata",
+                "type": "array"
+              },
+              "fee_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's balance from which fee will be charged",
+                "title": "Fee DA mode"
+              },
+              "nonce": {
+                "$ref": "#/components/schemas/FELT",
+                "title": "Nonce"
+              },
+              "nonce_data_availability_mode": {
+                "$ref": "#/components/schemas/DA_MODE",
+                "description": "The storage domain of the account's nonce (an account has a nonce per DA mode)",
+                "title": "Nonce DA mode"
+              },
+              "paymaster_data": {
+                "description": "data needed to allow the paymaster to pay for the transaction in native tokens",
+                "items": {
+                  "$ref": "#/components/schemas/FELT"
+                },
+                "title": "Paymaster data",
+                "type": "array"
+              },
+              "resource_bounds": {
+                "$ref": "#/components/schemas/RESOURCE_BOUNDS_MAPPING",
+                "description": "resource bounds for the transaction execution",
+                "title": "Resource bounds"
+              },
+              "sender_address": {
+                "$ref": "#/components/schemas/ADDRESS",
+                "title": "sender address"
+              },
+              "signature": {
+                "$ref": "#/components/schemas/SIGNATURE",
+                "title": "Signature"
+              },
+              "tip": {
+                "$ref": "#/components/schemas/u64",
+                "description": "the tip for the transaction",
+                "title": "Tip"
+              },
+              "type": {
+                "enum": [
+                  "INVOKE"
+                ],
+                "title": "Type",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x3",
+                  "0x100000000000000000000000000000003"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sender_address",
+              "calldata",
+              "version",
+              "signature",
+              "nonce",
+              "resource_bounds",
+              "tip",
+              "paymaster_data",
+              "account_deployment_data",
+              "nonce_data_availability_mode",
+              "fee_data_availability_mode"
+            ],
+            "type": "object"
+          }
+        ],
+        "description": "initiates a transaction from a given account",
+        "title": "Invoke transaction V3"
+      },
+      "L1_HANDLER_TXN": {
+        "allOf": [
+          {
+            "description": "a call to an l1_handler on an L2 contract induced by a message from L1",
+            "properties": {
+              "nonce": {
+                "$ref": "#/components/schemas/NUM_AS_HEX",
+                "description": "The L1->L2 message nonce field of the SN Core L1 contract at the time the transaction was sent",
+                "title": "Nonce"
+              },
+              "type": {
+                "enum": [
+                  "L1_HANDLER"
+                ],
+                "title": "type",
+                "type": "string"
+              },
+              "version": {
+                "description": "Version of the transaction scheme",
+                "enum": [
+                  "0x0"
+                ],
+                "title": "Version",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "type",
+              "nonce"
+            ],
+            "title": "L1 handler transaction",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/FUNCTION_CALL",
+            "title": "Function call"
+          }
+        ],
+        "title": "L1 Handler transaction"
+      },
+      "L1_HANDLER_TXN_RECEIPT": {
+        "allOf": [
+          {
+            "properties": {
+              "message_hash": {
+                "$ref": "#/components/schemas/NUM_AS_HEX",
+                "description": "The message hash as it appears on the L1 core contract",
+                "title": "Message hash"
+              },
+              "type": {
+                "enum": [
+                  "L1_HANDLER"
+                ],
+                "title": "type",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "message_hash"
+            ],
+            "title": "Transaction type",
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/COMMON_RECEIPT_PROPERTIES",
+            "title": "Common receipt properties"
+          }
+        ],
+        "description": "receipt for l1 handler transaction",
+        "title": "L1 Handler Transaction Receipt"
+      },
+      "MSG_FROM_L1": {
+        "properties": {
+          "entry_point_selector": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The selector of the l1_handler in invoke in the target contract",
+            "title": "Selector"
+          },
+          "from_address": {
+            "$ref": "#/components/schemas/ETH_ADDRESS",
+            "description": "The address of the L1 contract sending the message"
+          },
+          "payload": {
+            "description": "The payload of the message",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Payload",
+            "type": "array"
+          },
+          "to_address": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "description": "The target L2 address the message is sent to",
+            "title": "To address"
+          }
+        },
+        "required": [
+          "from_address",
+          "to_address",
+          "payload",
+          "entry_point_selector"
+        ],
+        "title": "Message from L1",
+        "type": "object"
+      },
+      "MSG_TO_L1": {
+        "properties": {
+          "from_address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The address of the L2 contract sending the message"
+          },
+          "payload": {
+            "description": "The payload of the message",
+            "items": {
+              "$ref": "#/components/schemas/FELT"
+            },
+            "title": "Payload",
+            "type": "array"
+          },
+          "to_address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The target L1 address the message is sent to",
+            "title": "To address"
+          }
+        },
+        "required": [
+          "from_address",
+          "to_address",
+          "payload"
+        ],
+        "title": "Message to L1",
+        "type": "object"
+      },
+      "NUM_AS_HEX": {
+        "description": "An integer number in hex format (0x...)",
+        "pattern": "^0x[a-fA-F0-9]+$",
+        "title": "Number as hex",
+        "type": "string"
+      },
+      "PENDING_BLOCK_HEADER": {
+        "not": {
+          "required": [
+            "block_hash",
+            "block_number",
+            "new_root"
+          ]
+        },
+        "properties": {
+          "l1_da_mode": {
+            "description": "specifies whether the data of this block is published via blob data or calldata",
+            "enum": [
+              "BLOB",
+              "CALLDATA"
+            ],
+            "title": "L1 da mode",
+            "type": "string"
+          },
+          "l1_data_gas_price": {
+            "$ref": "#/components/schemas/RESOURCE_PRICE",
+            "description": "The price of l1 data gas in the block",
+            "title": "L1 data gas price"
+          },
+          "l1_gas_price": {
+            "$ref": "#/components/schemas/RESOURCE_PRICE",
+            "description": "The price of l1 gas in the block",
+            "title": "L1 gas price"
+          },
+          "parent_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "description": "The hash of this block's parent",
+            "title": "Parent hash"
+          },
+          "sequencer_address": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The StarkNet identity of the sequencer submitting this block",
+            "title": "Sequencer address"
+          },
+          "starknet_version": {
+            "description": "Semver of the current Starknet protocol",
+            "title": "Starknet version",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "The time in which the block was created, encoded in Unix time",
+            "minimum": 0,
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "parent_hash",
+          "timestamp",
+          "sequencer_address",
+          "l1_gas_price",
+          "l1_data_gas_price",
+          "l1_da_mode",
+          "starknet_version"
+        ],
+        "title": "Pending block header",
+        "type": "object"
+      },
+      "PENDING_BLOCK_WITH_RECEIPTS": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_RECEIPTS",
+            "title": "Block body with transactions and receipts"
+          },
+          {
+            "$ref": "#/components/schemas/PENDING_BLOCK_HEADER",
+            "title": "Pending block header"
+          }
+        ],
+        "description": "The dynamic block being constructed by the sequencer. Note that this object will be deprecated upon decentralization.",
+        "title": "Pending block with transactions and receipts"
+      },
+      "PENDING_BLOCK_WITH_TXS": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_TXS",
+            "title": "Block body with transactions"
+          },
+          {
+            "$ref": "#/components/schemas/PENDING_BLOCK_HEADER",
+            "title": "Pending block header"
+          }
+        ],
+        "description": "The dynamic block being constructed by the sequencer. Note that this object will be deprecated upon decentralization.",
+        "title": "Pending block with transactions"
+      },
+      "PENDING_BLOCK_WITH_TX_HASHES": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/BLOCK_BODY_WITH_TX_HASHES",
+            "title": "Block body with transactions hashes"
+          },
+          {
+            "$ref": "#/components/schemas/PENDING_BLOCK_HEADER",
+            "title": "Pending block header"
+          }
+        ],
+        "description": "The dynamic block being constructed by the sequencer. Note that this object will be deprecated upon decentralization.",
+        "title": "Pending block with transaction hashes"
+      },
+      "PENDING_STATE_UPDATE": {
+        "additionalProperties": false,
+        "description": "Pending state update",
+        "properties": {
+          "old_root": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The previous global state root",
+            "title": "Old root"
+          },
+          "state_diff": {
+            "$ref": "#/components/schemas/STATE_DIFF",
+            "title": "State diff"
+          }
+        },
+        "required": [
+          "old_root",
+          "state_diff"
+        ],
+        "title": "Pending state update",
+        "type": "object"
+      },
+      "PRICE_UNIT": {
+        "enum": [
+          "WEI",
+          "FRI"
+        ],
+        "title": "price unit",
+        "type": "string"
+      },
+      "RESOURCE_BOUNDS": {
+        "properties": {
+          "max_amount": {
+            "$ref": "#/components/schemas/u64",
+            "description": "the max amount of the resource that can be used in the tx",
+            "title": "max amount"
+          },
+          "max_price_per_unit": {
+            "$ref": "#/components/schemas/u128",
+            "description": "the max price per unit of this resource for this tx",
+            "title": "max price"
+          }
+        },
+        "required": [
+          "max_amount",
+          "max_price_per_unit"
+        ],
+        "type": "object"
+      },
+      "RESOURCE_BOUNDS_MAPPING": {
+        "properties": {
+          "l1_gas": {
+            "$ref": "#/components/schemas/RESOURCE_BOUNDS",
+            "description": "The max amount and max price per unit of L1 gas used in this tx",
+            "title": "L1 Gas"
+          },
+          "l2_gas": {
+            "$ref": "#/components/schemas/RESOURCE_BOUNDS",
+            "description": "The max amount and max price per unit of L2 gas used in this tx",
+            "title": "L2 Gas"
+          }
+        },
+        "required": [
+          "l1_gas",
+          "l2_gas"
+        ],
+        "type": "object"
+      },
+      "RESOURCE_PRICE": {
+        "properties": {
+          "price_in_fri": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "the price of one unit of the given resource, denominated in fri (10^-18 strk)",
+            "title": "price in fri"
+          },
+          "price_in_wei": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "the price of one unit of the given resource, denominated in wei",
+            "title": "price in wei"
+          }
+        },
+        "required": [
+          "price_in_wei",
+          "price_in_fri"
+        ],
+        "type": "object"
+      },
+      "RESULT_PAGE_REQUEST": {
+        "properties": {
+          "chunk_size": {
+            "minimum": 1,
+            "title": "Chunk size",
+            "type": "integer"
+          },
+          "continuation_token": {
+            "description": "The token returned from the previous query. If no token is provided the first page is returned.",
+            "title": "Continuation token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_size"
+        ],
+        "title": "Result page request",
+        "type": "object"
+      },
+      "SIERRA_ENTRY_POINT": {
+        "properties": {
+          "function_idx": {
+            "description": "The index of the function in the program",
+            "title": "Function index",
+            "type": "integer"
+          },
+          "selector": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "A unique identifier of the entry point (function) in the program",
+            "title": "Selector"
+          }
+        },
+        "required": [
+          "selector",
+          "function_idx"
+        ],
+        "title": "Sierra entry point",
+        "type": "object"
+      },
+      "SIGNATURE": {
+        "description": "A transaction signature",
+        "items": {
+          "$ref": "#/components/schemas/FELT"
+        },
+        "title": "Signature",
+        "type": "array"
+      },
+      "SIMULATION_FLAG_FOR_ESTIMATE_FEE": {
+        "description": "Flags that indicate how to simulate a given transaction. By default, the sequencer behavior is replicated locally",
+        "enum": [
+          "SKIP_VALIDATE"
+        ],
+        "type": "string"
+      },
+      "STATE_DIFF": {
+        "description": "The change in state applied in this block, given as a mapping of addresses to the new values and/or new contracts",
+        "properties": {
+          "declared_classes": {
+            "items": {
+              "description": "The declared class hash and compiled class hash",
+              "properties": {
+                "class_hash": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The hash of the declared class",
+                  "title": "Class hash"
+                },
+                "compiled_class_hash": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The Cairo assembly hash corresponding to the declared class",
+                  "title": "Compiled class hash"
+                }
+              },
+              "title": "New classes",
+              "type": "object"
+            },
+            "title": "Declared classes",
+            "type": "array"
+          },
+          "deployed_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/DEPLOYED_CONTRACT_ITEM",
+              "description": "A new contract deployed as part of the state update"
+            },
+            "title": "Deployed contracts",
+            "type": "array"
+          },
+          "deprecated_declared_classes": {
+            "items": {
+              "$ref": "#/components/schemas/FELT",
+              "description": "The hash of the declared class"
+            },
+            "title": "Deprecated declared classes",
+            "type": "array"
+          },
+          "nonces": {
+            "items": {
+              "description": "The updated nonce per contract address",
+              "properties": {
+                "contract_address": {
+                  "$ref": "#/components/schemas/ADDRESS",
+                  "description": "The address of the contract",
+                  "title": "Contract address"
+                },
+                "nonce": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The nonce for the given address at the end of the block",
+                  "title": "Nonce"
+                }
+              },
+              "title": "Nonce update",
+              "type": "object"
+            },
+            "title": "Nonces",
+            "type": "array"
+          },
+          "replaced_classes": {
+            "items": {
+              "description": "The list of contracts whose class was replaced",
+              "properties": {
+                "class_hash": {
+                  "$ref": "#/components/schemas/FELT",
+                  "description": "The new class hash",
+                  "title": "Class hash"
+                },
+                "contract_address": {
+                  "$ref": "#/components/schemas/ADDRESS",
+                  "description": "The address of the contract whose class was replaced",
+                  "title": "Contract address"
+                }
+              },
+              "title": "Replaced class",
+              "type": "object"
+            },
+            "title": "Replaced classes",
+            "type": "array"
+          },
+          "storage_diffs": {
+            "items": {
+              "$ref": "#/components/schemas/CONTRACT_STORAGE_DIFF_ITEM",
+              "description": "The changes in the storage per contract address"
+            },
+            "title": "Storage diffs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "storage_diffs",
+          "deprecated_declared_classes",
+          "declared_classes",
+          "replaced_classes",
+          "deployed_contracts",
+          "nonces"
+        ],
+        "type": "object"
+      },
+      "STATE_UPDATE": {
+        "properties": {
+          "block_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "title": "Block hash"
+          },
+          "new_root": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The new global state root",
+            "title": "New root"
+          },
+          "old_root": {
+            "$ref": "#/components/schemas/FELT",
+            "description": "The previous global state root",
+            "title": "Old root"
+          },
+          "state_diff": {
+            "$ref": "#/components/schemas/STATE_DIFF",
+            "title": "State diff"
+          }
+        },
+        "required": [
+          "state_diff",
+          "block_hash",
+          "old_root",
+          "new_root"
+        ],
+        "title": "State update",
+        "type": "object"
+      },
+      "STORAGE_KEY": {
+        "$comment": "A storage key, represented as a string of hex digits",
+        "description": "A storage key. Represented as up to 62 hex digits, 3 bits, and 5 leading zeroes.",
+        "pattern": "^0x(0|[0-7]{1}[a-fA-F0-9]{0,62}$)",
+        "title": "Storage key",
+        "type": "string"
+      },
+      "STRUCT_ABI_ENTRY": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/STRUCT_MEMBER"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "description": "The struct name",
+            "title": "Struct name",
+            "type": "string"
+          },
+          "size": {
+            "minimum": 1,
+            "title": "Size",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/STRUCT_ABI_TYPE",
+            "title": "Struct ABI type"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "size",
+          "members"
+        ],
+        "title": "Struct ABI entry",
+        "type": "object"
+      },
+      "STRUCT_ABI_TYPE": {
+        "enum": [
+          "struct"
+        ],
+        "title": "Struct ABI type",
+        "type": "string"
+      },
+      "STRUCT_MEMBER": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TYPED_PARAMETER",
+            "title": "Typed parameter"
+          },
+          {
+            "properties": {
+              "offset": {
+                "description": "offset of this property within the struct",
+                "title": "Offset",
+                "type": "integer"
+              }
+            },
+            "title": "Offset",
+            "type": "object"
+          }
+        ],
+        "title": "Struct member"
+      },
+      "SYNC_STATUS": {
+        "description": "An object describing the node synchronization status",
+        "properties": {
+          "current_block_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "description": "The hash of the current block being synchronized",
+            "title": "Current block hash"
+          },
+          "current_block_num": {
+            "$ref": "#/components/schemas/BLOCK_NUMBER",
+            "description": "The number (height) of the current block being synchronized",
+            "title": "Current block number"
+          },
+          "highest_block_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "description": "The hash of the estimated highest block to be synchronized",
+            "title": "Highest block hash"
+          },
+          "highest_block_num": {
+            "$ref": "#/components/schemas/BLOCK_NUMBER",
+            "description": "The number (height) of the estimated highest block to be synchronized",
+            "title": "Highest block number"
+          },
+          "starting_block_hash": {
+            "$ref": "#/components/schemas/BLOCK_HASH",
+            "description": "The hash of the block from which the sync started",
+            "title": "Starting block hash"
+          },
+          "starting_block_num": {
+            "$ref": "#/components/schemas/BLOCK_NUMBER",
+            "description": "The number (height) of the block from which the sync started",
+            "title": "Starting block number"
+          }
+        },
+        "required": [
+          "starting_block_hash",
+          "starting_block_num",
+          "current_block_hash",
+          "current_block_num",
+          "highest_block_hash",
+          "highest_block_num"
+        ],
+        "title": "Sync status",
+        "type": "object"
+      },
+      "TXN": {
+        "description": "The transaction schema, as it appears inside a block",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/INVOKE_TXN",
+            "title": "Invoke transaction"
+          },
+          {
+            "$ref": "#/components/schemas/L1_HANDLER_TXN",
+            "title": "L1 handler transaction"
+          },
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN",
+            "title": "Declare transaction"
+          },
+          {
+            "$ref": "#/components/schemas/DEPLOY_TXN",
+            "title": "Deploy transaction"
+          },
+          {
+            "$ref": "#/components/schemas/DEPLOY_ACCOUNT_TXN",
+            "title": "Deploy account transaction"
+          }
+        ],
+        "title": "Transaction"
+      },
+      "TXN_EXECUTION_STATUS": {
+        "description": "The execution status of the transaction",
+        "enum": [
+          "SUCCEEDED",
+          "REVERTED"
+        ],
+        "title": "Execution status",
+        "type": "string"
+      },
+      "TXN_FINALITY_STATUS": {
+        "description": "The finality status of the transaction",
+        "enum": [
+          "ACCEPTED_ON_L2",
+          "ACCEPTED_ON_L1"
+        ],
+        "title": "Finality status",
+        "type": "string"
+      },
+      "TXN_HASH": {
+        "$ref": "#/components/schemas/FELT",
+        "description": "The transaction hash, as assigned in StarkNet",
+        "title": "Transaction hash"
+      },
+      "TXN_RECEIPT": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/INVOKE_TXN_RECEIPT",
+            "title": "Invoke transaction receipt"
+          },
+          {
+            "$ref": "#/components/schemas/L1_HANDLER_TXN_RECEIPT",
+            "title": "L1 handler transaction receipt"
+          },
+          {
+            "$ref": "#/components/schemas/DECLARE_TXN_RECEIPT",
+            "title": "Declare transaction receipt"
+          },
+          {
+            "$ref": "#/components/schemas/DEPLOY_TXN_RECEIPT",
+            "title": "Deploy transaction receipt"
+          },
+          {
+            "$ref": "#/components/schemas/DEPLOY_ACCOUNT_TXN_RECEIPT",
+            "title": "Deploy account transaction receipt"
+          }
+        ],
+        "title": "Transaction Receipt"
+      },
+      "TXN_RECEIPT_WITH_BLOCK_INFO": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TXN_RECEIPT",
+            "title": "Transaction receipt"
+          },
+          {
+            "properties": {
+              "block_hash": {
+                "$ref": "#/components/schemas/BLOCK_HASH",
+                "description": "If this field is missing, it means the receipt belongs to the pending block",
+                "title": "Block hash"
+              },
+              "block_number": {
+                "$ref": "#/components/schemas/BLOCK_NUMBER",
+                "description": "If this field is missing, it means the receipt belongs to the pending block",
+                "title": "Block number"
+              }
+            },
+            "type": "object"
+          }
+        ],
+        "title": "Transaction receipt with block info"
+      },
+      "TXN_STATUS": {
+        "description": "The finality status of the transaction, including the case the txn is still in the mempool or failed validation during the block construction phase",
+        "enum": [
+          "RECEIVED",
+          "REJECTED",
+          "ACCEPTED_ON_L2",
+          "ACCEPTED_ON_L1"
+        ],
+        "title": "Transaction status",
+        "type": "string"
+      },
+      "TXN_TYPE": {
+        "description": "The type of the transaction",
+        "enum": [
+          "DECLARE",
+          "DEPLOY",
+          "DEPLOY_ACCOUNT",
+          "INVOKE",
+          "L1_HANDLER"
+        ],
+        "title": "Transaction type",
+        "type": "string"
+      },
+      "TYPED_PARAMETER": {
+        "properties": {
+          "name": {
+            "description": "The parameter's name",
+            "title": "Parameter name",
+            "type": "string"
+          },
+          "type": {
+            "description": "The parameter's type",
+            "title": "Parameter type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "Typed parameter",
+        "type": "object"
+      },
+      "u128": {
+        "description": "64 bit integers, represented by hex string of length at most 32",
+        "pattern": "^0x(0|[a-fA-F1-9]{1}[a-fA-F0-9]{0,31})$",
+        "title": "u128",
+        "type": "string"
+      },
+      "u64": {
+        "description": "64 bit integers, represented by hex string of length at most 16",
+        "pattern": "^0x(0|[a-fA-F1-9]{1}[a-fA-F0-9]{0,15})$",
+        "title": "u64",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "license": {},
+    "title": "StarkNet Node API",
+    "version": "0.7.1"
+  },
+  "methods": [
+    {
+      "name": "starknet_specVersion",
+      "params": [],
+      "result": {
+        "description": "Semver of Starknet's JSON-RPC spec being used",
+        "name": "result",
+        "required": true,
+        "schema": {
+          "title": "JSON-RPC spec version",
+          "type": "string"
+        }
+      },
+      "summary": "Returns the version of the Starknet JSON-RPC specification being used"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getBlockWithTxHashes",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The resulting block information with transaction hashes",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/BLOCK_WITH_TX_HASHES",
+              "title": "Block with transaction hashes"
+            },
+            {
+              "$ref": "#/components/schemas/PENDING_BLOCK_WITH_TX_HASHES",
+              "title": "Pending block with transaction hashes"
+            }
+          ],
+          "title": "Starknet get block hash with tx hashes result"
+        }
+      },
+      "summary": "Get block information with transaction hashes given the block id"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getBlockWithTxs",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The resulting block information with full transactions",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/BLOCK_WITH_TXS",
+              "title": "Block with transactions"
+            },
+            {
+              "$ref": "#/components/schemas/PENDING_BLOCK_WITH_TXS",
+              "title": "Pending block with transactions"
+            }
+          ],
+          "title": "Starknet get block with txs result"
+        }
+      },
+      "summary": "Get block information with full transactions given the block id"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getBlockWithReceipts",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The resulting block information with full transactions",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/BLOCK_WITH_RECEIPTS",
+              "title": "Block with transactions"
+            },
+            {
+              "$ref": "#/components/schemas/PENDING_BLOCK_WITH_RECEIPTS",
+              "title": "Pending block with transactions"
+            }
+          ],
+          "title": "Starknet get block with txs and receipts result"
+        }
+      },
+      "summary": "Get block information with full transactions and receipts given the block id"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getStateUpdate",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The information about the state update of the requested block",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/STATE_UPDATE",
+              "title": "State update"
+            },
+            {
+              "$ref": "#/components/schemas/PENDING_STATE_UPDATE",
+              "title": "Pending state update"
+            }
+          ],
+          "title": "Starknet get state update result"
+        }
+      },
+      "summary": "Get the information about the result of executing the requested block"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/CONTRACT_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getStorageAt",
+      "params": [
+        {
+          "description": "The address of the contract to read from",
+          "name": "contract_address",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Address"
+          },
+          "summary": "The address of the contract to read from"
+        },
+        {
+          "description": "The key to the storage value for the given contract",
+          "name": "key",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/STORAGE_KEY",
+            "title": "Storage key"
+          },
+          "summary": "The key to the storage value for the given contract"
+        },
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The value at the given key for the given contract. 0 if no value is found",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/FELT",
+          "title": "Field element"
+        },
+        "summary": "The value at the given key for the given contract."
+      },
+      "summary": "Get the value of the storage at the given address and key"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/TXN_HASH_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getTransactionStatus",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "transaction_hash",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/TXN_HASH",
+            "title": "Transaction hash"
+          },
+          "summary": "The hash of the requested transaction"
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "properties": {
+            "execution_status": {
+              "$ref": "#/components/schemas/TXN_EXECUTION_STATUS",
+              "title": "execution status"
+            },
+            "finality_status": {
+              "$ref": "#/components/schemas/TXN_STATUS",
+              "title": "finality status"
+            }
+          },
+          "required": [
+            "finality_status"
+          ],
+          "title": "Transaction status",
+          "type": "object"
+        }
+      },
+      "summary": "Gets the transaction status (possibly reflecting that the tx is still in the mempool, or dropped from it)"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/TXN_HASH_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getTransactionByHash",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "transaction_hash",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/TXN_HASH",
+            "title": "Transaction hash"
+          },
+          "summary": "The hash of the requested transaction"
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/TXN"
+            },
+            {
+              "properties": {
+                "transaction_hash": {
+                  "$ref": "#/components/schemas/TXN_HASH",
+                  "title": "transaction hash"
+                }
+              },
+              "required": [
+                "transaction_hash"
+              ],
+              "type": "object"
+            }
+          ],
+          "title": "Transaction"
+        }
+      },
+      "summary": "Get the details and status of a submitted transaction"
+    },
+    {
+      "description": "Get the details of the transaction given by the identified block and index in that block. If no transaction is found, null is returned.",
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/INVALID_TXN_INDEX"
+        }
+      ],
+      "name": "starknet_getTransactionByBlockIdAndIndex",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        },
+        {
+          "name": "index",
+          "required": true,
+          "schema": {
+            "minimum": 0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "summary": "The index in the block to search for the transaction"
+        }
+      ],
+      "result": {
+        "name": "transactionResult",
+        "schema": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/TXN"
+            },
+            {
+              "properties": {
+                "transaction_hash": {
+                  "$ref": "#/components/schemas/TXN_HASH",
+                  "title": "transaction hash"
+                }
+              },
+              "required": [
+                "transaction_hash"
+              ],
+              "type": "object"
+            }
+          ],
+          "title": "Transaction"
+        }
+      },
+      "summary": "Get the details of a transaction by a given block id and index"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/TXN_HASH_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getTransactionReceipt",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "transaction_hash",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/TXN_HASH",
+            "title": "Transaction hash"
+          },
+          "summary": "The hash of the requested transaction"
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/TXN_RECEIPT_WITH_BLOCK_INFO",
+          "title": "Transaction receipt with block info"
+        }
+      },
+      "summary": "Get the transaction receipt by the transaction hash"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/CLASS_HASH_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getClass",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        },
+        {
+          "description": "The hash of the requested contract class",
+          "name": "class_hash",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/FELT",
+            "title": "Field element"
+          }
+        }
+      ],
+      "result": {
+        "description": "The contract class, if found",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/DEPRECATED_CONTRACT_CLASS",
+              "title": "Deprecated contract class"
+            },
+            {
+              "$ref": "#/components/schemas/CONTRACT_CLASS",
+              "title": "Contract class"
+            }
+          ],
+          "title": "Starknet get class result"
+        }
+      },
+      "summary": "Get the contract class definition in the given block associated with the given hash"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/CONTRACT_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getClassHashAt",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        },
+        {
+          "description": "The address of the contract whose class hash will be returned",
+          "name": "contract_address",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Address"
+          }
+        }
+      ],
+      "result": {
+        "description": "The class hash of the given contract",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/FELT",
+          "title": "Field element"
+        }
+      },
+      "summary": "Get the contract class hash in the given block for the contract deployed at the given address"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/CONTRACT_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getClassAt",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        },
+        {
+          "description": "The address of the contract whose class definition will be returned",
+          "name": "contract_address",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Address"
+          }
+        }
+      ],
+      "result": {
+        "description": "The contract class",
+        "name": "result",
+        "schema": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/DEPRECATED_CONTRACT_CLASS",
+              "title": "Deprecated contract class"
+            },
+            {
+              "$ref": "#/components/schemas/CONTRACT_CLASS",
+              "title": "Contract class"
+            }
+          ],
+          "title": "Starknet get class at result"
+        }
+      },
+      "summary": "Get the contract class definition in the given block at the given address"
+    },
+    {
+      "description": "Returns the number of transactions in the designated block.",
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getBlockTransactionCount",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The number of transactions in the designated block",
+        "name": "result",
+        "schema": {
+          "minimum": 0,
+          "title": "Block transaction count",
+          "type": "integer"
+        },
+        "summary": "The number of transactions in the designated block"
+      },
+      "summary": "Get the number of transactions in a block given a block id"
+    },
+    {
+      "description": "Calls a function in a contract and returns the return value.  Using this call will not create a transaction; hence, will not change the state",
+      "errors": [
+        {
+          "$ref": "#/components/errors/CONTRACT_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/CONTRACT_ERROR"
+        },
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_call",
+      "params": [
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/FUNCTION_CALL",
+            "title": "Function call"
+          },
+          "summary": "The details of the function call"
+        },
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag, for the block referencing the state or call the transaction on.",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "The function's return value, as defined in the Cairo output",
+        "name": "result",
+        "schema": {
+          "items": {
+            "$ref": "#/components/schemas/FELT"
+          },
+          "title": "Field element",
+          "type": "array"
+        },
+        "summary": "The function's return value"
+      },
+      "summary": "call a starknet function without creating a StarkNet transaction"
+    },
+    {
+      "description": "Estimates the resources required by a given sequence of transactions when applied on a given state. If one of the transactions reverts or fails due to any reason (e.g. validation failure or an internal error), a TRANSACTION_EXECUTION_ERROR is returned. For v0-2 transactions the estimate is given in wei, and for v3 transactions it is given in fri.",
+      "errors": [
+        {
+          "$ref": "#/components/errors/TRANSACTION_EXECUTION_ERROR"
+        },
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_estimateFee",
+      "params": [
+        {
+          "name": "request",
+          "required": true,
+          "schema": {
+            "description": "a sequence of transactions to estimate, running each transaction on the state resulting from applying all the previous ones",
+            "items": {
+              "$ref": "#/components/schemas/BROADCASTED_TXN"
+            },
+            "title": "Transaction",
+            "type": "array"
+          },
+          "summary": "The transaction to estimate"
+        },
+        {
+          "description": "describes what parts of the transaction should be executed",
+          "name": "simulation_flags",
+          "required": true,
+          "schema": {
+            "items": {
+              "$ref": "#/components/schemas/SIMULATION_FLAG_FOR_ESTIMATE_FEE"
+            },
+            "type": "array"
+          }
+        },
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag, for the block referencing the state or call the transaction on.",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "the fee estimations",
+        "name": "result",
+        "schema": {
+          "description": "a sequence of fee estimatione where the i'th estimate corresponds to the i'th transaction",
+          "items": {
+            "$ref": "#/components/schemas/FEE_ESTIMATE"
+          },
+          "title": "Estimation",
+          "type": "array"
+        }
+      },
+      "summary": "estimate the fee for of StarkNet transactions"
+    },
+    {
+      "description": "estimates the resources required by the l1_handler transaction induced by the message",
+      "errors": [
+        {
+          "$ref": "#/components/errors/CONTRACT_ERROR"
+        },
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_estimateMessageFee",
+      "params": [
+        {
+          "description": "the message's parameters",
+          "name": "message",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/MSG_FROM_L1"
+          }
+        },
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag, for the block referencing the state or call the transaction on.",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        }
+      ],
+      "result": {
+        "description": "the fee estimation",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/FEE_ESTIMATE"
+        }
+      },
+      "summary": "estimate the L2 fee of a message sent on L1"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/NO_BLOCKS"
+        }
+      ],
+      "name": "starknet_blockNumber",
+      "params": [],
+      "result": {
+        "description": "The latest block number",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/BLOCK_NUMBER",
+          "title": "Block number"
+        }
+      },
+      "summary": "Get the most recent accepted block number"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/NO_BLOCKS"
+        }
+      ],
+      "name": "starknet_blockHashAndNumber",
+      "params": [],
+      "result": {
+        "description": "The latest block hash and number",
+        "name": "result",
+        "schema": {
+          "properties": {
+            "block_hash": {
+              "$ref": "#/components/schemas/BLOCK_HASH",
+              "title": "Block hash"
+            },
+            "block_number": {
+              "$ref": "#/components/schemas/BLOCK_NUMBER",
+              "title": "Block number"
+            }
+          },
+          "required": [
+            "block_hash",
+            "block_number"
+          ],
+          "title": "Starknet block hash and number result",
+          "type": "object"
+        }
+      },
+      "summary": "Get the most recent accepted block hash and number"
+    },
+    {
+      "name": "starknet_chainId",
+      "params": [],
+      "result": {
+        "description": "The chain id this node is connected to",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/CHAIN_ID",
+          "title": "Chain id"
+        }
+      },
+      "summary": "Return the currently configured StarkNet chain id"
+    },
+    {
+      "name": "starknet_syncing",
+      "params": [],
+      "result": {
+        "description": "The status of the node, if it is currently synchronizing state. FALSE otherwise",
+        "name": "syncing",
+        "schema": {
+          "oneOf": [
+            {
+              "description": "only legal value is FALSE here",
+              "title": "False",
+              "type": "boolean"
+            },
+            {
+              "$ref": "#/components/schemas/SYNC_STATUS",
+              "title": "Sync status"
+            }
+          ],
+          "title": "SyncingStatus"
+        },
+        "summary": "The state of the synchronization, or false if the node is not synchronizing"
+      },
+      "summary": "Returns an object about the sync status, or false if the node is not synching"
+    },
+    {
+      "description": "Returns all event objects matching the conditions in the provided filter",
+      "errors": [
+        {
+          "$ref": "#/components/errors/PAGE_SIZE_TOO_BIG"
+        },
+        {
+          "$ref": "#/components/errors/INVALID_CONTINUATION_TOKEN"
+        },
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/TOO_MANY_KEYS_IN_FILTER"
+        }
+      ],
+      "name": "starknet_getEvents",
+      "params": [
+        {
+          "name": "filter",
+          "required": true,
+          "schema": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EVENT_FILTER",
+                "title": "Event filter"
+              },
+              {
+                "$ref": "#/components/schemas/RESULT_PAGE_REQUEST",
+                "title": "Result page request"
+              }
+            ],
+            "title": "Events request"
+          },
+          "summary": "The conditions used to filter the returned events"
+        }
+      ],
+      "result": {
+        "description": "All the event objects matching the filter",
+        "name": "events",
+        "schema": {
+          "$ref": "#/components/schemas/EVENTS_CHUNK",
+          "title": "Events chunk"
+        }
+      },
+      "summary": "Returns all events matching the given filter"
+    },
+    {
+      "errors": [
+        {
+          "$ref": "#/components/errors/BLOCK_NOT_FOUND"
+        },
+        {
+          "$ref": "#/components/errors/CONTRACT_NOT_FOUND"
+        }
+      ],
+      "name": "starknet_getNonce",
+      "params": [
+        {
+          "description": "The hash of the requested block, or number (height) of the requested block, or a block tag",
+          "name": "block_id",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BLOCK_ID",
+            "title": "Block id"
+          }
+        },
+        {
+          "description": "The address of the contract whose nonce we're seeking",
+          "name": "contract_address",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ADDRESS",
+            "title": "Address"
+          }
+        }
+      ],
+      "result": {
+        "description": "The contract's nonce at the requested state",
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/FELT",
+          "title": "Field element"
+        }
+      },
+      "summary": "Get the nonce associated with the given address in the given block"
+    }
+  ],
+  "openrpc": "1.0.0-rc1",
+  "servers": []
+}

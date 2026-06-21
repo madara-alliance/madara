@@ -31,8 +31,8 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 print_stdout = "warn"
 print_stderr = "warn"
-# todo: uncomment these & fix them
-# unwrap_used = "warn"
+unwrap_used = "warn"
+# todo: uncomment and fix
 # missing_docs = "warn"
 
 [workspace.metadata.build]
@@ -106,32 +106,32 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.0-rc.2" }
-starknet-contract = { package = "starknet-rust-contract", version = "0.19.0-rc.2" }
-starknet-core = { package = "starknet-rust-core", version = "0.19.0-rc.2" }
-starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.0-rc.2" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.0-rc.2" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.19.0-rc.2" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" }
-starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
-starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.19.1" }
+starknet-contract = { package = "starknet-rust-contract", version = "0.19.1" }
+starknet-core = { package = "starknet-rust-core", version = "0.19.1" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.19.1" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.19.1" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.19.1" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.19.1" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.19.1" }
+starknet = { package = "starknet-rust", version = "0.19.1" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
   "serde",
 ] }
 
-blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix", features = [
+blockifier = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.3-RC.6", features = [
   "node_api",
 ] }
-starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
-cairo-lang-starknet-classes = "=2.17.0"
-cairo-lang-utils = "=2.17.0"
-casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.17.0" }
-casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.17.0" }
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.3-RC.6" }
+cairo-lang-starknet-classes = "=2.19.0-rc.0"
+cairo-lang-utils = "=2.19.0-rc.0"
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.19.0-rc.0" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.19.0-rc.0" }
 cairo-vm = "=3.2.0"
-cairo-native = "0.9.0-rc.2"
-alloy = { version = "1.1.0", features = [
+cairo-native = "0.9.0-rc.7"
+alloy = { version = "2.0", features = [
   "node-bindings",
   "eips",
   "rpc-types",
@@ -142,20 +142,20 @@ alloy = { version = "1.1.0", features = [
 ] }
 
 # Instrumentation
-opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
-opentelemetry_sdk = { version = "0.30.0", features = [
+opentelemetry = { version = "0.32.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.32.0", features = [
   "rt-tokio",
   "logs",
   "experimental_metrics_custom_reader",
 ] }
-opentelemetry-stdout = { version = "0.30.0" }
-opentelemetry-otlp = { version = "0.30.0", features = [
+opentelemetry-stdout = { version = "0.32.0" }
+opentelemetry-otlp = { version = "0.32.0", features = [
   "grpc-tonic",
   "metrics",
   "logs",
 ] }
-opentelemetry-semantic-conventions = { version = "0.30.0" }
-opentelemetry-appender-tracing = { version = "0.30.0", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.32.0" }
+opentelemetry-appender-tracing = { version = "0.32.0", default-features = false }
 tracing = { version = "0.1.40", default-features = false }
 tracing-core = { version = "0.1.32", default-features = false }
 tracing-subscriber = { version = "0.3.18", features = [
@@ -164,7 +164,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-test = "0.2.5"
-tracing-opentelemetry = "0.31.0"
+tracing-opentelemetry = "0.33.0"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
@@ -176,7 +176,7 @@ tower-http = { version = "0.4", features = ["cors"] }
 governor = "0.6"
 hyper = { version = "1.5.0", features = ["full"] }
 hyper-tls = "0.6"
-hyper-util = "0.1.9"
+hyper-util = "0.1.20"
 http = "1.1.0"
 http-body-util = "0.1.2"
 ip_network = "0.4"
@@ -221,7 +221,7 @@ bigdecimal = "0.4.5"
 num-traits = "0.2"
 num-bigint = "0.4"
 primitive-types = "0.12"
-rand = "0.8"
+rand = "0.9"
 crypto-bigint = "0.5.5"
 zeroize = "1.8"
 ahash = "0.8"
@@ -236,9 +236,9 @@ lazy_static = { version = "1.4", default-features = false }
 once_cell = "1.21.3"
 itertools = "0.14.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
-bytes = "1.6.0"
+bytes = "1.11.1"
 derive_more = { version = "2.0.1", features = ["from_str"] }
-indexmap = "2.2.6"
+indexmap = "2.14.0"
 libc = "0.2"
 
 
@@ -249,7 +249,7 @@ anyhow = "1.0"
 # Testing
 rstest = "0.26"
 proptest = "1.5.0"
-proptest-derive = "0.5.0"
+proptest-derive = "0.8.0"
 proptest-state-machine = "0.3.1"
 tempfile = "3.10.1"
 httpmock = "0.7.0"
@@ -274,14 +274,15 @@ figment = "0.10.19"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.12"
-tar = "0.4.44"
+sha2 = "0.10"
+tar = "0.4.46"
 inline_colorization = "0.1.6"
 subxt-lightclient = { version = "0.35.3", default-features = false }
 
 # Orchestrator
 num = { version = "0.4.1" }
-alloy-primitives = { version = "0.8.5", default-features = false }
-alloy-sol-types = "0.8.5"
+alloy-primitives = { version = "1.4", default-features = false }
+alloy-sol-types = "1.4"
 aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
 aws-sdk-s3 = { version = "1.38.0", features = ["behavior-version-latest"] }
 aws-sdk-eventbridge = { version = "1.41.0", features = [
@@ -297,24 +298,25 @@ aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 color-eyre = "0.6.3"
 chrono = { version = "0.4", features = ["serde"] }
-c-kzg = "2.1.5"
+c-kzg = "2.1.7"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", rev = "6ff45941b09650067a7f69da9b36a581481870f8" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
-testcontainers = "0.18.0"
+testcontainers = "0.27.2"
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
-majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", tag = "v0.14.2-rc.5" }
+majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", rev = "ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818" }
+majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", rev = "ac23e1584a81ee144fdc7d6912bcc5f1bf6f8818" }
+# SNOS 0.14.3 support.
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos.git", rev = "06507b323f2b994ec1abf3bbb12a7d921c9c4e5c" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -324,8 +326,8 @@ orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settleme
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
 orchestrator-utils = { path = "orchestrator/crates/utils" }
 orchestrator-aggregator-runner = { path = "orchestrator/crates/aggregator-runner" }
-apollo_starknet_os_program = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
-starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.2-RC.7-fix" }
+apollo_starknet_os_program = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.3-RC.6" }
+starknet_os = { git = "https://github.com/starkware-libs/sequencer", tag = "APOLLO-0.14.3-RC.6" }
 orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clients/prover-client-interface" }
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
@@ -340,5 +342,11 @@ time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]
-rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
+# rustc 1.91 turned unsupported-ABI fn-pointer impls (E0570) from a future-incompat warning into
+# a hard error, which breaks size-of 0.1.5 (unmaintained since 2023), pulled in only through
+# swiftness_proof_parser 0.1.3 -> starknet-crypto 0.7 -> starknet-types-core 0.1. This patch is
+# upstream v0.1.3 plus a two-line dependency bump to starknet-crypto 0.8 (types-core 0.2, which
+# dropped size-of); the parser only uses pedersen_hash/Felt, identical across 0.7 -> 0.8.
+swiftness_proof_parser = { git = "https://github.com/madara-alliance/swiftness", rev = "1227d56690bdd90f6872c048140f8340560244b9" }

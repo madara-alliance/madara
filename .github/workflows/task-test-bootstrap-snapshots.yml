@@ -1,0 +1,45 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Bootstrap Snapshot Tests
+
+# Focused regression coverage for production bootstrap snapshots. This stays
+# separate from the broad Madara test archive because the archive currently
+# targets the mc/mp library crates, while these tests exercise the madara binary
+# CLI and the RocksDB checkpoint path.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test-bootstrap-snapshots:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: workspace-bootstrap-snapshots-${{ runner.os }}-rust-${{ env.BUILD_RUST_VERSION }}
+
+      - name: Cairo Native setup
+        uses: ./.github/actions/setup-cairo-native
+
+      - name: Build Cairo artifacts
+        run: yes | make artifacts
+
+      - name: Run bootstrap snapshot tests
+        timeout-minutes: 30
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          cargo test -p mc-db create_checkpoint_writes_openable_rocksdb_checkpoint
+          cargo test -p madara --bin madara bootstrap
+          cargo test -p madara --test bootstrap_cli

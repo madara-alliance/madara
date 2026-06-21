@@ -108,11 +108,34 @@ pub struct GetEventsParams {
 /// These are FELT values stored with the transaction.
 pub type ProofFactElem = Felt;
 
-/// Proof element type (NEW in v0.10.2)
-/// Represents a proof element in broadcasted transactions.
-/// According to spec: "type": "array", "items": { "type": "integer" }
-/// These are integers passed when submitting transactions.
-pub type ProofElem = u64;
+/// A STARK proof attached to a broadcasted transaction (spec `PROOF`).
+///
+/// Holds the raw proof bytes; encoded on the wire as a base64 string of the
+/// underlying byte array, matching `starknet_api::transaction::fields::Proof`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Proof(pub Vec<u8>);
+
+impl Serialize for Proof {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use base64::Engine;
+        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(&self.0))
+    }
+}
+
+impl<'de> Deserialize<'de> for Proof {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use base64::Engine;
+        let s = String::deserialize(deserializer)?;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&s).map_err(serde::de::Error::custom)?;
+        Ok(Self(bytes))
+    }
+}
+
+impl From<Vec<u8>> for Proof {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
 
 /// INVOKE_TXN_V3 with optional proof_facts (NEW in v0.10.2)
 ///
@@ -141,7 +164,7 @@ pub struct BroadcastedInvokeTxnV3 {
     pub inner: crate::v0_10_0::InvokeTxnV3,
     /// Optional proof to be passed to the gateway (NEW in v0.10.2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proof: Option<Vec<ProofElem>>,
+    pub proof: Option<Proof>,
     /// Optional proof facts to use directly for replay/admin submission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proof_facts: Option<Vec<ProofFactElem>>,

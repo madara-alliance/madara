@@ -639,23 +639,18 @@
 //! }
 //! ```
 //!
-//! #### `starknet_subscribePendingTransactions`
+//! #### Transaction Stream Subscriptions
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
+//! Madara supports different transaction-stream methods depending on the Starknet RPC version:
 //!
-//! Creates a subscription for pending transactions.
+//! - `v0.8.1`: [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
+//! - `v0.9.0`: [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transactions`]
+//! - `v0.10.0`: [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transactions`]
 //!
-//! ```json
-//! {
-//!   "jsonrpc": "2.0",
-//!   "method": "starknet_subscribePendingTransactions",
-//!   "params": {
-//!     "transaction_details": false,
-//!     "sender_address": ["0x123...", "0x456..."]
-//!   },
-//!   "id": 1
-//! }
-//! ```
+//! `v0.9.0+` also supports receipt streaming through:
+//!
+//! - [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transaction_receipts`]
+//! - [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transaction_receipts`]
 //!
 //! #### `starknet_unsubscribe`
 //!
@@ -801,10 +796,13 @@ mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
-use mc_mempool::Mempool;
+use mc_mempool::{
+    Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus, WatchTransactionStatus,
+};
 use mc_submit_tx::{SubmitTransaction, TransactionLookup};
+use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -825,6 +823,106 @@ impl Default for StorageProofConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxStatusSnapshot {
+    Received,
+    Candidate,
+    PreConfirmed,
+    AcceptedOnL2,
+    AcceptedOnL1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxStatusUpdate {
+    Status(TxStatusSnapshot),
+    NotFound,
+}
+
+pub trait TxStatusWatch: Send {
+    fn take_current(&mut self) -> TxStatusUpdate;
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusUpdate>> + Send + '_>>;
+}
+
+pub trait TxStatusWatcher: Send + Sync {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewTransactionsWatchError {
+    Lagged,
+}
+
+pub type NewTransactionsWatchOutput = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>;
+pub type NewTransactionsWatchFuture<'a> = Pin<Box<dyn Future<Output = NewTransactionsWatchOutput> + Send + 'a>>;
+
+pub trait NewTransactionsWatch: Send {
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_>;
+}
+
+pub trait NewTransactionsWatcher: Send + Sync {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>>;
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
+    fn take_current(&mut self) -> TxStatusUpdate {
+        tx_status_update_from_mempool(WatchTransactionStatus::take_current(self).clone())
+    }
+
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusUpdate>> + Send + '_>> {
+        Box::pin(async move {
+            let status = WatchTransactionStatus::recv(self).await.clone();
+            Some(tx_status_update_from_mempool(status))
+        })
+    }
+}
+
+fn tx_status_update_from_mempool(status: Option<MempoolTransactionStatus>) -> TxStatusUpdate {
+    match status {
+        Some(MempoolTransactionStatus::Preconfirmed(status)) => match status {
+            PreConfirmationStatus::Received(_) => TxStatusUpdate::Status(TxStatusSnapshot::Received),
+            PreConfirmationStatus::Candidate { .. } => TxStatusUpdate::Status(TxStatusSnapshot::Candidate),
+            PreConfirmationStatus::Executed { .. } => TxStatusUpdate::Status(TxStatusSnapshot::PreConfirmed),
+        },
+        Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
+            if is_on_l1 {
+                TxStatusUpdate::Status(TxStatusSnapshot::AcceptedOnL1)
+            } else {
+                TxStatusUpdate::Status(TxStatusSnapshot::AcceptedOnL2)
+            }
+        }
+        None => TxStatusUpdate::NotFound,
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatcher for Mempool<D> {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        let watch = self.watch_transaction_status(transaction_hash).ok()?;
+        Some(Box::new(watch))
+    }
+}
+
+struct BroadcastNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>>,
+}
+
+impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_> {
+        Box::pin(async move {
+            match self.receiver.recv().await {
+                Ok(tx) => Ok(Some(tx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Err(NewTransactionsWatchError::Lagged),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => Ok(None),
+            }
+        })
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead + mc_db::MadaraStorageWrite> NewTransactionsWatcher for Mempool<D> {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(BroadcastNewTransactionsWatch { receiver: self.subscribe_new_transactions() }))
+    }
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
@@ -834,6 +932,8 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
     pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
+    pub(crate) tx_status_watcher: Option<Arc<dyn TxStatusWatcher>>,
+    pub(crate) new_transactions_watcher: Option<Arc<dyn NewTransactionsWatcher>>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -856,6 +956,8 @@ impl Starknet {
             ws_handles,
             transaction_submitter,
             transaction_lookup,
+            tx_status_watcher: None,
+            new_transactions_watcher: None,
             storage_proof_config,
             block_prod_handle,
             ctx,
@@ -874,6 +976,14 @@ impl Starknet {
 
     pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
         self.mempool = Some(mempool);
+    }
+
+    pub fn set_tx_status_watcher(&mut self, watcher: Option<Arc<dyn TxStatusWatcher>>) {
+        self.tx_status_watcher = watcher;
+    }
+
+    pub fn set_new_transactions_watcher(&mut self, watcher: Option<Arc<dyn NewTransactionsWatcher>>) {
+        self.new_transactions_watcher = watcher;
     }
 }
 
@@ -905,6 +1015,11 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
 
+    rpc_api.merge(versions::user::v0_10_3::StarknetReadRpcApiV0_10_3Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_3::StarknetWriteRpcApiV0_10_3Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_3::StarknetWsRpcApiV0_10_3Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_3::StarknetTraceRpcApiV0_10_3Server::into_rpc(starknet.clone()))?;
+
     Ok(rpc_api)
 }
 
@@ -917,6 +1032,37 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
+}
+
+struct WsSubscriptionHandle {
+    cancelled: std::sync::atomic::AtomicBool,
+    notify: tokio::sync::Notify,
+}
+
+impl WsSubscriptionHandle {
+    fn new() -> Self {
+        Self { cancelled: std::sync::atomic::AtomicBool::new(false), notify: tokio::sync::Notify::new() }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::Release);
+        // Wake currently-registered waiters and also leave a stored permit behind for the
+        // race where cancellation lands before a waiter has fully registered with `Notify`.
+        self.notify.notify_waiters();
+        self.notify.notify_one();
+    }
+
+    async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        self.notify.notified().await;
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 pub(crate) struct WsSubscribeHandles {
@@ -948,7 +1094,7 @@ pub(crate) struct WsSubscribeHandles {
     /// [DashMap]: dashmap::DashMap
     /// [DashMap::entry]: dashmap::DashMap::entry
     /// [Arc]: std::sync::Arc
-    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    handles: std::sync::Arc<dashmap::DashMap<String, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscribeHandles {
@@ -956,27 +1102,20 @@ impl WsSubscribeHandles {
         Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
     }
 
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
     pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
-        let id = match id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
-            }
-        };
+        let id = subscription_id_to_string(id);
 
-        let handle = std::sync::Arc::new(tokio::sync::Notify::new());
+        let handle = std::sync::Arc::new(WsSubscriptionHandle::new());
         let map = std::sync::Arc::clone(&self.handles);
 
-        self.handles.insert(id, std::sync::Arc::clone(&handle));
+        self.handles.insert(id.clone(), std::sync::Arc::clone(&handle));
 
         WsSubscriptionGuard { id, handle, map }
     }
 
-    pub async fn subscription_close(&self, id: u64) -> bool {
-        if let Some((_, handle)) = self.handles.remove(&id) {
-            handle.notify_one();
+    pub async fn subscription_close(&self, id: &str) -> bool {
+        if let Some((_, handle)) = self.handles.remove(id) {
+            handle.cancel();
             true
         } else {
             false
@@ -984,24 +1123,176 @@ impl WsSubscribeHandles {
     }
 }
 
+/// The jsonrpsee server is configured with [`jsonrpsee::server::RandomStringIdProvider`], so live
+/// subscription ids are strings (as the spec requires since v0.9.0). Test servers fall back to
+/// jsonrpsee's default integer provider, so numeric ids are stringified to the same key space.
+pub(crate) fn subscription_id_to_string(id: jsonrpsee::types::SubscriptionId<'_>) -> String {
+    match id {
+        jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+        jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+    }
+}
+
 pub(crate) struct WsSubscriptionGuard {
-    id: u64,
+    id: String,
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
-    handle: std::sync::Arc<tokio::sync::Notify>,
-    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    handle: std::sync::Arc<WsSubscriptionHandle>,
+    map: std::sync::Arc<dashmap::DashMap<String, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscriptionGuard {
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
     pub async fn cancelled(&self) {
-        self.handle.notified().await
+        self.handle.cancelled().await
     }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.handle.is_cancelled()
+    }
+}
+
+pub(crate) async fn close_ws_subscription(
+    starknet: &Starknet,
+    subscription_id: jsonrpsee::types::SubscriptionId<'_>,
+) -> Result<(), errors::StarknetWsApiError> {
+    let subscription_id = subscription_id_to_string(subscription_id);
+    let _ = starknet.ws_handles.subscription_close(&subscription_id).await;
+    Ok(())
+}
+
+pub(crate) enum LiveConfirmedHeadResolution {
+    Block(Box<mp_block::MadaraBlockInfo>),
+    Reorg(mc_db::ReorgNotification),
+    RetryBackfill,
+}
+
+pub(crate) fn resolve_live_confirmed_head(
+    backend: &std::sync::Arc<mc_db::MadaraBackend>,
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
+    next_block_n: u64,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
+) -> Result<LiveConfirmedHeadResolution, errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    match reorgs.try_recv() {
+        Ok(reorg) => return Ok(LiveConfirmedHeadResolution::Reorg(reorg)),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => return Err(missed_reorg_error()),
+        Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+            return Err(errors::StarknetWsApiError::Internal);
+        }
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+    }
+
+    let Some(block_view) = backend.block_view_on_confirmed(next_block_n) else {
+        return Ok(LiveConfirmedHeadResolution::RetryBackfill);
+    };
+    let block_info = block_view
+        .get_block_info()
+        .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
+
+    if block_info.header.block_number != next_block_n {
+        let err = format!("Retrieved mismatched block {}, expected {next_block_n}", block_info.header.block_number);
+        return Err(errors::StarknetWsApiError::internal_server_error(err));
+    }
+
+    Ok(LiveConfirmedHeadResolution::Block(Box::new(block_info)))
 }
 
 impl Drop for WsSubscriptionGuard {
     fn drop(&mut self) {
         self.map.remove(&self.id);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{resolve_live_confirmed_head, LiveConfirmedHeadResolution, WsSubscriptionHandle};
+    use crate::{errors::StarknetWsApiError, test_utils::rpc_test_setup};
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
+
+    fn add_block_at(backend: &Arc<mc_db::MadaraBackend>, n: u64) -> Felt {
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: n, ..Default::default() },
+                    state_diff: mp_state_update::StateDiff::default(),
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .expect("Storing block")
+            .block_hash
+    }
+
+    #[test]
+    fn resolve_live_confirmed_head_returns_pending_reorg_before_reading_db() {
+        let (backend, _rpc) = rpc_test_setup();
+        let block_0_hash = add_block_at(&backend, 0);
+        let block_1_hash = add_block_at(&backend, 1);
+        let mut reorgs = backend.subscribe_reorgs();
+
+        backend.revert_to(&block_0_hash).expect("Revert should succeed");
+
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, || StarknetWsApiError::Internal)
+            .expect("Reorg resolution should succeed")
+        {
+            LiveConfirmedHeadResolution::Reorg(reorg) => {
+                assert_eq!(reorg.first_reverted_block_n, 1);
+                assert_eq!(reorg.first_reverted_block_hash, block_1_hash);
+            }
+            LiveConfirmedHeadResolution::Block(_) => panic!("Expected queued reorg before block read"),
+            LiveConfirmedHeadResolution::RetryBackfill => panic!("Expected queued reorg before backfill retry"),
+        }
+    }
+
+    #[test]
+    fn resolve_live_confirmed_head_retries_backfill_when_block_is_missing() {
+        let (backend, _rpc) = rpc_test_setup();
+        let mut reorgs = backend.subscribe_reorgs();
+
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, || StarknetWsApiError::Internal)
+            .expect("Missing block should not error")
+        {
+            LiveConfirmedHeadResolution::RetryBackfill => {}
+            LiveConfirmedHeadResolution::Block(_) => panic!("Expected missing block to retry backfill"),
+            LiveConfirmedHeadResolution::Reorg(_) => panic!("Expected missing block without reorg to retry backfill"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ws_subscription_handle_cancel_wakes_all_waiters() {
+        let handle = Arc::new(WsSubscriptionHandle::new());
+        let handle_1 = Arc::clone(&handle);
+        let handle_2 = Arc::clone(&handle);
+
+        let waiter_1 = tokio::spawn(async move { handle_1.cancelled().await });
+        let waiter_2 = tokio::spawn(async move { handle_2.cancelled().await });
+
+        tokio::task::yield_now().await;
+        handle.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            waiter_1.await.expect("First waiter should complete");
+            waiter_2.await.expect("Second waiter should complete");
+        })
+        .await
+        .expect("Cancellation should wake all waiters");
+    }
+
+    #[tokio::test]
+    async fn ws_subscription_handle_cancelled_returns_immediately_after_cancel() {
+        let handle = WsSubscriptionHandle::new();
+        handle.cancel();
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), handle.cancelled())
+            .await
+            .expect("Cancelled handle should resolve immediately");
     }
 }

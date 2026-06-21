@@ -13,8 +13,11 @@ pub enum SequencerError {
     HyperError(#[from] hyper::Error),
     #[error("No URL available to use this request")]
     NoUrl,
+    /// The URL stored here must already be redacted with [`redact_url_for_logging`]: operators
+    /// commonly embed API keys in custom gateway URLs (`--gateway-url`), and this error (like the
+    /// whole [`SequencerError`] chain) ends up in logs and error contexts.
     #[error("Invalid URL: {0}")]
-    InvalidUrl(url::Url),
+    InvalidUrl(String),
     #[error("HTTP error: {0:#}")]
     HttpError(#[from] hyper::http::Error),
     #[error("Error calling HTTP client: {0:#}")]
@@ -27,6 +30,51 @@ pub enum SequencerError {
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
     #[error("Failed to parse returned error with http status {http_status}: {serde_error:#}")]
     InvalidStarknetError { http_status: StatusCode, serde_error: serde_json::Error },
+}
+
+/// Renders a gateway URL so that it is safe to embed in logs and error messages.
+///
+/// Operators commonly embed API keys in custom gateway URLs (`--gateway-url`), either as
+/// userinfo (`https://user:key@host/...`), as a query parameter (`?apikey=...`), or as a path
+/// segment (`https://host/<api-key>/feeder_gateway`, the style used by most RPC providers).
+/// Anything that could carry a credential is masked:
+///
+/// - userinfo (username and password) is replaced with `***`,
+/// - every query parameter *value* is masked (parameter names are kept),
+/// - path segments that look like tokens (16+ characters of `[A-Za-z0-9_-]` containing at least
+///   one digit) are masked. Standard gateway path segments (`feeder_gateway`, `get_block`,
+///   `get_compiled_class_by_class_hash`, ...) contain no digits and are preserved.
+///
+/// Note that the `--gateway-key` flag is sent as an HTTP header and never appears in URLs; this
+/// helper protects keys embedded in the URL itself.
+pub fn redact_url_for_logging(url: &url::Url) -> String {
+    fn is_token_like(segment: &str) -> bool {
+        segment.len() >= 16
+            && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            && segment.chars().any(|c| c.is_ascii_digit())
+    }
+
+    let mut url = url.clone();
+    if url.password().is_some() {
+        let _ = url.set_password(Some("***"));
+    }
+    if !url.username().is_empty() {
+        let _ = url.set_username("***");
+    }
+    if url.query().is_some() {
+        let masked = url.query_pairs().map(|(key, _)| format!("{key}=***")).collect::<Vec<_>>().join("&");
+        url.set_query(Some(&masked));
+    }
+    if url.path_segments().is_some_and(|mut segments| segments.any(is_token_like)) {
+        let masked = url
+            .path_segments()
+            .expect("checked by the condition above")
+            .map(|segment| if is_token_like(segment) { "***" } else { segment })
+            .collect::<Vec<_>>()
+            .join("/");
+        url.set_path(&masked);
+    }
+    url.to_string()
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -183,4 +231,57 @@ pub enum StarknetErrorCode {
     InvalidContractClassVersion,
     #[serde(rename = "StarknetErrorCode.RATE_LIMITED")]
     RateLimited,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use url::Url;
+
+    #[test]
+    fn redact_url_masks_query_param_values() {
+        let url = Url::parse("https://gateway.example.com/feeder_gateway/get_block?apikey=SECRETKEY123&x=1").unwrap();
+        let redacted = redact_url_for_logging(&url);
+        assert!(!redacted.contains("SECRETKEY123"), "{redacted}");
+        assert_eq!(redacted, "https://gateway.example.com/feeder_gateway/get_block?apikey=***&x=***");
+    }
+
+    #[test]
+    fn redact_url_masks_userinfo() {
+        let url = Url::parse("https://user:hunter2@gateway.example.com/feeder_gateway").unwrap();
+        let redacted = redact_url_for_logging(&url);
+        assert!(!redacted.contains("hunter2"), "{redacted}");
+        assert!(!redacted.contains("user:"), "{redacted}");
+        assert_eq!(redacted, "https://***:***@gateway.example.com/feeder_gateway");
+    }
+
+    #[test]
+    fn redact_url_masks_token_like_path_segments() {
+        // RPC-provider style URL with the project API key as a path segment.
+        let url =
+            Url::parse("https://starknet-mainnet.example.io/8237aafe06d8f6213d839e25a8637b3c/feeder_gateway").unwrap();
+        let redacted = redact_url_for_logging(&url);
+        assert!(!redacted.contains("8237aafe06d8f6213d839e25a8637b3c"), "{redacted}");
+        assert_eq!(redacted, "https://starknet-mainnet.example.io/***/feeder_gateway");
+    }
+
+    #[test]
+    fn redact_url_keeps_normal_gateway_urls_readable() {
+        let url =
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/get_compiled_class_by_class_hash")
+                .unwrap();
+        assert_eq!(redact_url_for_logging(&url), url.as_str());
+    }
+
+    #[test]
+    fn invalid_url_error_string_does_not_leak_api_key() {
+        let url =
+            Url::parse("https://host.example.com/0123456789abcdef0123456789abcdef/feeder_gateway?api_key=TOPSECRET9")
+                .unwrap();
+        let error = SequencerError::InvalidUrl(redact_url_for_logging(&url));
+        let message = error.to_string();
+        assert!(!message.contains("0123456789abcdef"), "{message}");
+        assert!(!message.contains("TOPSECRET9"), "{message}");
+        assert!(message.contains("host.example.com"), "{message}");
+    }
 }

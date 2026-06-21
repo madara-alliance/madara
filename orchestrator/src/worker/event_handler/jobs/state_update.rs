@@ -595,8 +595,8 @@ impl StateUpdateJobHandler {
                 JobError::Other(OtherError(eyre!("{}", e)))
             })?;
 
-            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
-            let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
+            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone())?);
+            let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof)?);
 
             settlement_client
                 .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
@@ -614,7 +614,7 @@ impl StateUpdateJobHandler {
     }
 }
 
-pub fn calculate_output(proof: StarkProof) -> Vec<Felt> {
+pub fn calculate_output(proof: StarkProof) -> Result<Vec<Felt>, JobError> {
     let output_segment = proof.public_input.segments[2].clone();
     let output_len = output_segment.stop_ptr - output_segment.begin_addr;
     let start = proof.public_input.main_page.len() - output_len as usize;
@@ -623,9 +623,12 @@ pub fn calculate_output(proof: StarkProof) -> Vec<Felt> {
         proof.public_input.main_page[start..end].iter().map(|cell| cell.value.clone()).collect::<Vec<_>>();
     let mut felts = vec![];
     for elem in &program_output {
-        felts.push(Felt::from_dec_str(&elem.to_string()).unwrap());
+        felts.push(
+            Felt::from_dec_str(&elem.to_string())
+                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse proof output as felt: {e}"))))?,
+        );
     }
-    felts
+    Ok(felts)
 }
 
 pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {

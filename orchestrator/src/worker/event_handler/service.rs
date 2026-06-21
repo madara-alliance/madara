@@ -24,6 +24,7 @@ use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
 use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
+use crate::worker::event_handler::triggers::job_recovery::JobRecoveryTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
@@ -1009,6 +1010,7 @@ impl JobHandlerService {
             WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::StorageCleanup => Box::new(StorageCleanupTrigger),
+            WorkerTriggerType::JobRecovery => Box::new(JobRecoveryTrigger),
         }
     }
 }

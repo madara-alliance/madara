@@ -53,7 +53,7 @@ jobs:
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     with:
-      should_run: ${{ needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false' }}
+      should_run: ${{ (needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false') && 'true' || 'false' }}
       artifact-version: ${{ needs.update-version-artifacts.outputs.version }}
     permissions:
       contents: read
@@ -68,7 +68,7 @@ jobs:
       image-name: artifacts
       tag: ${{ needs.build-artifacts.outputs.artifacts }}
       tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
-      should_run: ${{ needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false' }}
+      should_run: ${{ (needs.update-version-artifacts.outputs.update == 'true' || needs.update-version-artifacts.outputs.tag-exists == 'false') && 'true' || 'false' }}
     permissions:
       contents: read
       packages: write
@@ -90,6 +90,11 @@ jobs:
   lint-code-style:
     needs: update-version-db
     uses: ./.github/workflows/task-lint-code-style.yml
+
+  # Audit dependencies: advisories, licenses, git sources
+  lint-cargo-deny:
+    needs: update-version-db
+    uses: ./.github/workflows/task-cargo-deny.yml
 
   # ========================================================================= #
   #                                   MADARA                                  #
@@ -128,6 +133,13 @@ jobs:
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       madara-tests-hash: ${{ needs.build-madara-tests.outputs.madara-tests-hash }}
+    secrets: inherit
+
+  # Run production bootstrap snapshot tests
+  test-bootstrap-snapshots:
+    needs: publish-artifacts
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-test-bootstrap-snapshots.yml
     secrets: inherit
 
   # Run migration tests

@@ -28,7 +28,7 @@ interface RpcFixture {
   errorAssertions: ErrorAssertions;
 }
 
-const FIXTURE_DIR_NAMES = ["v0_10_0", "v0_10_2"];
+const FIXTURE_DIR_NAMES = ["v0_10_0", "v0_10_2", "v0_10_3"];
 
 function loadFixture(fixtureDirName: string): RpcFixture {
   const fixtureDir = path.resolve(__dirname, "../fixtures", fixtureDirName);

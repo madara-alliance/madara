@@ -121,7 +121,7 @@ pub fn get_storage_proof(
     let n_tries = saturating_sum(
         iter::once(!class_hashes.is_empty() as usize)
             .chain(iter::once(!contract_addresses.is_empty() as usize))
-            .chain(contracts_storage_keys.iter().map(|keys| (!keys.storage_keys.is_empty() as usize))),
+            .chain(contracts_storage_keys.iter().map(|keys| !keys.storage_keys.is_empty() as usize)),
     );
     if n_tries > starknet.storage_proof_config.max_tries {
         return Err(StarknetRpcApiError::ProofLimitExceeded {

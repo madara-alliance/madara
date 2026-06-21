@@ -100,10 +100,11 @@
 //! # }
 //! ```
 //!
-//! ## Notifications via tx_sender
+//! ## Notifications via new_transactions
 //!
-//! The `tx_sender` broadcast channel sends a continuous stream of transaction hashes as they are
-//! added to the mempool. This is used by `mc-rpc` to implement transaction status subscriptions.
+//! The `new_transactions` broadcast channel sends a continuous stream of validated transactions as
+//! they are newly accepted into the mempool. This is used by `mc-rpc` to implement websocket
+//! subscriptions for new or pending transactions.
 //!
 //! ## Quick Checks via received_txs
 //!
@@ -141,9 +142,11 @@ mod transaction_status;
 
 pub use inner::*;
 pub use notify::MempoolWriteAccess;
-pub use transaction_status::{PreConfirmationStatus, TransactionStatus};
+pub use transaction_status::{PreConfirmationStatus, TransactionStatus, WatchTransactionStatus};
 
 pub mod metrics;
+
+const NEW_TRANSACTIONS_CHANNEL_CAPACITY: usize = 1024;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MempoolInsertionError {
@@ -222,12 +225,15 @@ pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
     ttl: Option<Duration>,
     /// Pubsub for transaction statuses.
     watch_transaction_status: TopicWatchPubsub<Felt, Option<TransactionStatus>>,
+    /// Broadcast channel for newly accepted transactions.
+    new_transactions: tokio::sync::broadcast::Sender<Arc<ValidatedTransaction>>,
     /// All current transaction statuses for mempool & preconfirmed block.
     preconfirmed_transactions_statuses: DashMap<Felt, PreConfirmationStatus>,
 }
 
 impl<D: MadaraStorageRead> Mempool<D> {
     pub fn new(backend: Arc<MadaraBackend<D>>, config: MempoolConfig) -> Self {
+        let (new_transactions, _) = tokio::sync::broadcast::channel(NEW_TRANSACTIONS_CHANNEL_CAPACITY);
         Mempool {
             inner: MempoolInnerWithNotify::new(backend.chain_config()),
             ttl: backend.chain_config().mempool_ttl,
@@ -237,6 +243,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
             metrics: MempoolMetrics::register(),
             external_db_outbox_metrics: ExternalDbOutboxMetrics::register(),
             watch_transaction_status: Default::default(),
+            new_transactions,
             preconfirmed_transactions_statuses: Default::default(),
         }
     }
@@ -352,6 +359,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             entry.insert(status.clone());
             self.watch_transaction_status.publish(&tx.hash, Some(TransactionStatus::Preconfirmed(status)));
         }
+
+        if is_new_tx && self.new_transactions.receiver_count() > 0 {
+            let _ = self.new_transactions.send(Arc::new(tx.clone()));
+        }
     }
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
@@ -404,7 +415,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     pub async fn run_mempool_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
 
-        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx))?;
+        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx, true))?;
+        Ok(())
+    }
+
+    pub async fn run_status_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
+        self.run_chain_watcher_task(ctx, false).await?;
         Ok(())
     }
 
@@ -547,6 +563,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// This holds the lock to the inner mempool - use with care.
     pub async fn get_consumer(&self) -> MempoolConsumer {
         MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
+    }
+
+    pub fn subscribe_new_transactions(&self) -> tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>> {
+        self.new_transactions.subscribe()
     }
 }
 
@@ -699,6 +719,28 @@ pub(crate) mod tests {
 
         assert_matches::assert_matches!(mempool.load_txs_from_db().await, Ok(()));
         assert!(mempool.is_empty().await);
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_subscribe_new_transactions_emits_received_tx(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Arc::new(Mempool::new(backend, MempoolConfig::default()));
+        let expected = tx_account.clone();
+        let mut receiver = mempool.subscribe_new_transactions();
+
+        mempool.accept_tx(tx_account).await.unwrap();
+
+        let received = tokio::time::timeout(Duration::from_millis(500), receiver.recv())
+            .await
+            .expect("Timed out waiting for new transaction")
+            .expect("Broadcast receiver closed");
+
+        assert_eq!(&*received, &expected);
     }
 
     /// This test makes sure that taking a transaction from the mempool works as

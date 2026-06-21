@@ -49,7 +49,7 @@ jobs:
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
-    needs: [test-end-to-end]
+    needs: [check-merged-today, test-end-to-end]
     if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -70,7 +70,7 @@ jobs:
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
-    needs: [test-end-to-end]
+    needs: [check-merged-today, test-end-to-end]
     if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -84,7 +84,7 @@ jobs:
     with:
       image-name: bootstrapper-v2
       image-file: ./bootstrapper-v2/Dockerfile
-    needs: [test-end-to-end]
+    needs: [check-merged-today, test-end-to-end]
     if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -117,6 +117,13 @@ jobs:
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
 
+  # Run live JSON-RPC parity against configured Juno and Pathfinder endpoints.
+  test-rpc-parity:
+    needs: [check-merged-today]
+    if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && vars.MADARA_RPC_PARITY_ENABLED == 'true'
+    uses: ./.github/workflows/task-test-rpc-parity.yml
+    secrets: inherit
+
   # ========================================================================= #
   #                                E2E Test                                   #
   # ========================================================================= #
@@ -143,7 +150,8 @@ jobs:
       - build-nightly-and-publish-madara
       - build-nightly-and-publish-orchestrator
       - build-nightly-and-publish-bootstrapper-v2
-    if: always() && (needs.test-end-to-end.result == 'failure' || needs.build-nightly-and-publish-madara.result == 'failure' || needs.build-nightly-and-publish-orchestrator.result == 'failure' || needs.build-nightly-and-publish-bootstrapper-v2.result == 'failure')
+      - test-rpc-parity
+    if: always() && (needs.test-end-to-end.result == 'failure' || needs.build-nightly-and-publish-madara.result == 'failure' || needs.build-nightly-and-publish-orchestrator.result == 'failure' || needs.build-nightly-and-publish-bootstrapper-v2.result == 'failure' || needs.test-rpc-parity.result == 'failure')
     steps:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -165,6 +173,9 @@ jobs:
           fi
           if [ "${{ needs.build-nightly-and-publish-bootstrapper-v2.result }}" == "failure" ]; then
             FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-bootstrapper-v2\n"
+          fi
+          if [ "${{ needs.test-rpc-parity.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- test-rpc-parity\n"
           fi
 
           MESSAGE="Nightly Run Failed

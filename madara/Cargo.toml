@@ -81,6 +81,7 @@ derive_more = { workspace = true, features = ["from_str"] }
 dotenv.workspace = true
 fdlimit.workspace = true
 figment = { workspace = true, features = ["toml", "json", "yaml"] }
+flate2.workspace = true
 futures = { workspace = true, features = ["thread-pool"] }
 governor.workspace = true
 http.workspace = true
@@ -98,6 +99,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_with.workspace = true
 serde_yaml.workspace = true
+sha2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true

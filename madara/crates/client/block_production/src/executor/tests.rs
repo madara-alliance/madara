@@ -1,7 +1,7 @@
 #![cfg(test)]
 use super::*;
 use crate::metrics::BlockProductionMetrics;
-use crate::tests::{make_declare_tx, make_udc_call, DevnetSetup};
+use crate::tests::{corrupt_invoke_signature, make_declare_tx, make_transfer_invoke_tx, make_udc_call, DevnetSetup};
 use crate::{tests::devnet_setup, util::AdditionalTxInfo};
 use assert_matches::assert_matches;
 use blockifier::transaction::transaction_execution::Transaction;
@@ -324,4 +324,62 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
+}
+
+// A transaction that fails non-revertibly (invalid signature, caught by the account's
+// __validate__ at execution time) is rejected by the executor, but it must not abort the batch:
+// the following transaction in the same batch still executes, the stats reflect the rejection,
+// and the block can still be closed normally afterwards.
+#[rstest::rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_rejected_tx_does_not_abort_batch(
+    // long block time, no pending tick
+    #[with(Duration::from_secs(30000))]
+    #[future]
+    devnet_setup: DevnetSetup,
+) {
+    let setup = devnet_setup.await;
+
+    let (commands_sender, commands) = mpsc::unbounded_channel();
+    let mut handle =
+        start_executor_thread(setup.backend.clone(), commands, Arc::new(BlockProductionMetrics::register())).unwrap();
+
+    let mut bad_tx = make_transfer_invoke_tx(&setup.contracts.0[0], &setup.contracts.0[1], &setup.backend, Felt::ZERO);
+    corrupt_invoke_signature(&mut bad_tx);
+    let good_tx = make_transfer_invoke_tx(&setup.contracts.0[1], &setup.contracts.0[2], &setup.backend, Felt::ZERO);
+
+    handle
+        .send_batch
+        .as_mut()
+        .unwrap()
+        .send(
+            [
+                make_tx(&setup.backend, BroadcastedTxn::Invoke(bad_tx)),
+                make_tx(&setup.backend, BroadcastedTxn::Invoke(good_tx)),
+            ]
+            .into_iter()
+            .collect(),
+        )
+        .await
+        .unwrap();
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        // Both txs were consumed from the batch...
+        assert_eq!(res.executed_txs.len(), 2);
+        // ...the first one was rejected (non-revertible execution error)...
+        assert!(res.blockifier_results[0].is_err());
+        // ...while the second one still executed successfully.
+        assert!(!res.blockifier_results[1].as_ref().unwrap().0.is_reverted());
+        assert_eq!(res.stats.n_executed, 2);
+        assert_eq!(res.stats.n_rejected, 1);
+        assert_eq!(res.stats.n_added_to_block, 1);
+    });
+
+    // The executor is still healthy: the block closes normally.
+    let (sender, recv) = oneshot::channel();
+    commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    recv.await.unwrap().unwrap();
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }

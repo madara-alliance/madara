@@ -1,9 +1,10 @@
-use crate::errors::{ErrorExtWs, StarknetWsApiError};
-use mp_block::{
-    event_with_info::{drain_block_events, event_match_filter},
-    BlockId,
+use crate::{
+    constants::MAX_EVENTS_KEYS,
+    errors::{ErrorExtWs, StarknetWsApiError},
 };
-use mp_rpc::v0_8_1::EmittedEvent;
+use anyhow::Context;
+use mc_db::{subscription::SubscribeNewBlocksTag, EventFilter};
+use mp_rpc::v0_8_1::{BlockId, BlockTag, EmittedEvent};
 use starknet_types_core::felt::Felt;
 
 use super::BLOCK_PAST_LIMIT;
@@ -15,52 +16,139 @@ pub async fn subscribe_events(
     keys: Option<Vec<Vec<Felt>>>,
     block_id: Option<BlockId>,
 ) -> Result<(), StarknetWsApiError> {
+    if let Err(err) = validate_keys(&keys) {
+        subscription_sink.reject(err).await;
+        return Ok(());
+    }
+
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-
-    let mut rx = starknet.backend.subscribe_events(from_address);
+    let mut next_block_n = starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1));
+    let mut reorgs = starknet.backend.subscribe_reorgs();
 
     if let Some(block_id) = block_id {
-        let latest_block = starknet
-            .backend
-            .get_latest_block_n()
-            .or_internal_server_error("Failed to retrieve latest block")?
-            .ok_or(StarknetWsApiError::NoBlocks)?;
+        if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
+            return Err(StarknetWsApiError::Pending);
+        }
 
-        let block_n = starknet
-            .backend
-            .resolve_block_id(&block_id)
-            .or_internal_server_error("Failed to resolve block id")?
-            .ok_or(StarknetWsApiError::BlockNotFound)?
-            .block_n()
-            .ok_or(StarknetWsApiError::Pending)?;
+        let view = starknet.backend.view_on_latest();
+        let latest_block = view.latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
+        let block_n = match starknet.resolve_view_on(block_id) {
+            Ok(view) => view.latest_block_n().unwrap_or(0),
+            Err(crate::StarknetRpcApiError::BlockNotFound) => return Err(StarknetWsApiError::BlockNotFound),
+            Err(crate::StarknetRpcApiError::NoBlocks) => return Err(StarknetWsApiError::NoBlocks),
+            Err(err) => return Err(StarknetWsApiError::internal_server_error(err.to_string())),
+        };
 
         if block_n < latest_block.saturating_sub(BLOCK_PAST_LIMIT) {
             return Err(StarknetWsApiError::TooManyBlocksBack);
         }
-        for block_number in block_n..=latest_block {
-            let block = starknet
-                .get_block(&BlockId::Number(block_number))
-                .or_internal_server_error("Failed to retrieve block")?;
-            for event in drain_block_events(block)
-                .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
-            {
-                send_event(event, &sink).await?;
+
+        next_block_n = block_n;
+    }
+
+    'backfill: loop {
+        // Bound the backfill to the confirmed tip: a preconfirmed block must be handled by the live
+        // phase, otherwise the backfill walks past it without emitting its ACCEPTED_ON_L2 events
+        // once it confirms.
+        let backfill_to_block_n = starknet.backend.latest_confirmed_block_n();
+
+        while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
+            if sink.is_closed() {
+                return Ok(());
             }
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
+
+            match reorgs.try_recv() {
+                Ok(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    next_block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                    return Err(super::missed_reorg_notifications_error());
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                    return Err(crate::errors::StarknetWsApiError::Internal);
+                }
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+            }
+
+            if ctx.is_cancelled() {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
+            send_block_events(starknet, &sink, &from_address, &keys, next_block_n).await?;
+            next_block_n = next_block_n.saturating_add(1);
+        }
+
+        let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Confirmed);
+        heads.set_start_from(next_block_n);
+
+        loop {
+            let block_n = tokio::select! {
+                head = heads.next_head() => head.latest_confirmed_block_n(),
+                reorg = reorgs.recv() => {
+                    match reorg {
+                        Ok(reorg) => {
+                            super::send_reorg_notification(&sink, &reorg).await?;
+                            next_block_n = reorg.first_reverted_block_n;
+                            continue 'backfill;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            return Err(super::missed_reorg_notifications_error());
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            return Err(crate::errors::StarknetWsApiError::Internal);
+                        }
+                    }
+                },
+                _ = sink.closed() => return Ok(()),
+                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
+            };
+
+            let block_n = block_n.expect("Confirmed block subscription should always yield a confirmed block number");
+            send_block_events(starknet, &sink, &from_address, &keys, block_n).await?;
         }
     }
+}
 
-    loop {
-        let event = tokio::select! {
-            event = rx.recv() => event.or_internal_server_error("Failed to retrieve event")?,
-            _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
-        };
-
-        if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
-            send_event(event, &sink).await?;
-        }
+fn validate_keys(keys: &Option<Vec<Vec<Felt>>>) -> Result<(), StarknetWsApiError> {
+    let total_keys = keys.as_ref().map(|patterns| patterns.iter().map(Vec::len).sum::<usize>()).unwrap_or(0);
+    if total_keys > MAX_EVENTS_KEYS {
+        return Err(StarknetWsApiError::TooManyKeysInFilter);
     }
+
+    Ok(())
+}
+
+async fn send_block_events(
+    starknet: &crate::Starknet,
+    sink: &jsonrpsee::server::SubscriptionSink,
+    from_address: &Option<Felt>,
+    keys: &Option<Vec<Vec<Felt>>>,
+    block_n: u64,
+) -> Result<(), StarknetWsApiError> {
+    let events = starknet
+        .backend
+        .view_on_latest()
+        .get_events(EventFilter {
+            start_block: block_n,
+            start_event_index: 0,
+            end_block: block_n,
+            from_address: *from_address,
+            keys_pattern: keys.clone(),
+            max_events: usize::MAX,
+        })
+        .context("Error getting filtered events")
+        .or_internal_server_error("Failed to retrieve events")?;
+
+    for event in events {
+        send_event(event, sink).await?;
+    }
+
+    Ok(())
 }
 
 async fn send_event(
@@ -68,8 +156,7 @@ async fn send_event(
     sink: &jsonrpsee::server::SubscriptionSink,
 ) -> Result<(), StarknetWsApiError> {
     let event = EmittedEvent::from(event);
-    let item = super::SubscriptionItem::new(sink.subscription_id(), event);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let msg = super::notification_message(super::EVENTS_NOTIFICATION_METHOD, sink, &event)
         .or_internal_server_error("Failed to create response message")?;
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
 }
@@ -77,6 +164,7 @@ async fn send_event(
 #[cfg(test)]
 mod test {
     use crate::{
+        constants::MAX_EVENTS_KEYS,
         versions::user::v0_8_1::{StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server},
         Starknet,
     };
@@ -133,34 +221,54 @@ mod test {
     // Each block contains two receipts:
     // 1. First receipt with 1 event and 1 key
     // 2. Second receipt with 2 events and 2 keys
-    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = Vec<EmittedEvent>> + '_ {
+    fn block_generator(backend: &std::sync::Arc<mc_db::MadaraBackend>) -> impl Iterator<Item = Vec<EmittedEvent>> + '_ {
         (0..).map(|n| {
-            let block_info = mp_block::MadaraBlockInfo {
-                header: mp_block::Header { parent_block_hash: Felt::from(n), block_number: n, ..Default::default() },
-                block_hash: Felt::from(n),
-                tx_hashes: vec![],
-            };
-
             let receipts = vec![generate_receipt(n * 2, 1, 1), generate_receipt(n * 2 + 1, 2, 2)];
-
-            let block_inner = mp_block::MadaraBlockInner { transactions: vec![], receipts };
+            let transactions = receipts
+                .into_iter()
+                .enumerate()
+                .map(|(idx, receipt)| mp_block::TransactionWithReceipt {
+                    transaction: mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(
+                        mp_transactions::InvokeTransactionV0 {
+                            contract_address: Felt::from((n << 16) | idx as u64),
+                            ..Default::default()
+                        },
+                    )),
+                    receipt,
+                })
+                .collect::<Vec<_>>();
+            let events = transactions.iter().flat_map(|transaction| {
+                transaction.receipt.events().iter().cloned().map(move |event| mp_receipt::EventWithTransactionHash {
+                    transaction_hash: *transaction.receipt.transaction_hash(),
+                    event,
+                })
+            });
 
             backend
-                .store_block(
-                    mp_block::MadaraMaybePendingBlock {
-                        info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info.clone()),
-                        inner: block_inner.clone(),
+                .write_access()
+                .add_full_block_with_classes(
+                    &mp_block::FullBlockWithoutCommitments {
+                        header: mp_block::PreconfirmedHeader { block_number: n, ..Default::default() },
+                        state_diff: mp_state_update::StateDiff::default(),
+                        transactions: transactions.clone(),
+                        events: events.collect(),
                     },
-                    mp_state_update::StateDiff::default(),
-                    vec![],
+                    &[],
+                    false,
                 )
                 .expect("Storing block");
 
-            block_inner
-                .receipts
+            let block_info = backend
+                .block_view_on_confirmed(n)
+                .expect("Retrieving block view")
+                .get_block_info()
+                .expect("Retrieving block info");
+
+            transactions
                 .into_iter()
+                .map(|transaction| transaction.receipt)
                 .flat_map(|receipt| {
-                    let tx_hash = receipt.transaction_hash();
+                    let tx_hash = *receipt.transaction_hash();
                     receipt.into_events().into_iter().map(move |events| (tx_hash, events))
                 })
                 .map(|(transaction_hash, event)| EmittedEvent {
@@ -198,7 +306,7 @@ mod test {
             let events = generator.next().expect("Retrieving block");
             for event in events {
                 let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                assert_eq!(received.result, event);
+                assert_eq!(received, event);
                 nb_events += 1;
             }
         }
@@ -230,7 +338,7 @@ mod test {
             for event in events {
                 if event.event.from_address == from_address {
                     let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                    assert_eq!(received.result, event);
+                    assert_eq!(received, event);
                     nb_events += 1;
                 }
             }
@@ -260,40 +368,43 @@ mod test {
 
         let mut sub = client.subscribe_events(None, Some(keys.clone()), None).await.expect("Subscribing to events");
 
-        let expected_events = vec![
-            EmittedEvent {
-                event: Event {
-                    from_address: Felt::from(0x300000001u64),
-                    event_content: EventContent {
-                        keys: vec![Felt::from(0x300000002u64), Felt::from(0x300000003u64)],
-                        data: vec![],
-                    },
-                },
-                block_hash: Some(Felt::from(1u64)),
-                block_number: Some(1),
-                transaction_hash: Felt::from(0x300000000u64),
-            },
-            EmittedEvent {
-                event: Event {
-                    from_address: Felt::from(0x500000001u64),
-                    event_content: EventContent {
-                        keys: vec![Felt::from(0x500000002u64), Felt::from(0x500000003u64)],
-                        data: vec![],
-                    },
-                },
-                block_hash: Some(Felt::from(2u64)),
-                block_number: Some(2),
-                transaction_hash: Felt::from(0x500000000u64),
-            },
-        ];
-
-        for _ in 0..10 {
-            let _ = generator.next().expect("Retrieving block");
-        }
+        let expected_events = (0..10)
+            .flat_map(|_| generator.next().expect("Retrieving block"))
+            .filter(|event| {
+                let event_keys = &event.event.event_content.keys;
+                event_keys.len() == keys.len()
+                    && event_keys
+                        .iter()
+                        .zip(keys.iter())
+                        .all(|(event_key, accepted_keys)| accepted_keys.contains(event_key))
+            })
+            .collect::<Vec<_>>();
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
+        }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_events_rejects_too_many_keys(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (_backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let err = client
+            .subscribe_events(None, Some(vec![vec![Felt::ONE; MAX_EVENTS_KEYS + 1]]), None)
+            .await
+            .expect_err("Subscription should fail");
+
+        match err {
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyKeysInFilter.into());
+            }
+            other => panic!("Unexpected error: {other:?}"),
         }
     }
 
@@ -333,7 +444,7 @@ mod test {
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
         }
     }
 
@@ -351,16 +462,40 @@ mod test {
         let mut sub = client.subscribe_events(None, None, None).await.expect("Subscribing to events");
 
         let events = generator.next().expect("Retrieving block");
-        let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
+        let _first = sub.next().await.unwrap().unwrap();
+        let jsonrpsee::core::client::SubscriptionKind::Subscription(sub_id) = sub.kind().clone() else {
+            panic!("Expected a subscription id");
+        };
+        let subscription_id = match sub_id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
+        };
         client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
 
         let mut nb_events = 0;
         for event in events.into_iter().skip(1) {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received.result, event);
+            assert_eq!(received, event);
             nb_events += 1;
         }
         assert_eq!(nb_events, 2);
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_events_pending_closes_stream(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (_backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut sub = client
+            .subscribe_events(None, None, Some(BlockId::Tag(BlockTag::Pending)))
+            .await
+            .expect("Subscribing against the pending block should succeed then close");
 
         assert!(sub.next().await.is_none());
     }

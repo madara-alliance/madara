@@ -89,6 +89,15 @@ pub struct L2SyncParams {
     /// operators who want to manually handle chain divergences.
     #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = false)]
     pub disable_reorg: bool,
+
+    /// Skip fetching and verifying the sequencer's block signatures during sync.
+    /// By default, when the chain config provides a `sequencer_public_key`, the sync service
+    /// fetches the block signature from the feeder gateway for every post-v0.13.2 block and
+    /// verifies it. Enabling this flag trusts the gateway instead, saving one gateway request
+    /// per block.
+    #[clap(env = "MADARA_TRUST_BLOCK_SIGNATURES", long, default_value_t = false)]
+    #[serde(default)]
+    pub trust_block_signatures: bool,
 }
 
 impl L2SyncParams {
@@ -109,10 +118,11 @@ impl L2SyncParams {
         let mut client = GatewayProvider::new(gateway, feeder_gateway);
 
         if let Some(api_key) = &self.gateway_key {
-            client.add_header(
-                HeaderName::from_static("x-throttling-bypass"),
-                HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?,
-            )
+            let mut value = HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?;
+            // Mark the API key as sensitive so it is masked in any `Debug` output (e.g. if the
+            // provider, its headers, or a request ever end up in a log or error message).
+            value.set_sensitive(true);
+            client.add_header(HeaderName::from_static("x-throttling-bypass"), value)
         }
 
         Ok(Arc::new(client))

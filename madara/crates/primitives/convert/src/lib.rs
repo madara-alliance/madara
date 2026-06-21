@@ -1,7 +1,13 @@
+//! Conversion helpers and small numeric newtypes shared across Madara
+//! primitives: `Felt` conversions, a fixed-point type, and serde adapters for
+//! hex- and `H256`-encoded values.
+#![warn(missing_docs)]
+
 mod felt;
 mod fixed;
 mod to_felt;
 
+/// serde adapters for (de)serializing values as `H256`.
 pub mod hash256_serde;
 pub mod hex_serde;
 
@@ -10,6 +16,7 @@ pub use fixed::FixedPoint;
 pub use primitive_types::{H160, H256};
 pub use to_felt::*;
 
+/// Test-only conversion helpers shared across crates.
 pub mod test {
     /// Asserts that the conversion between two types is consistent.
     /// Use this function only for testing purposes.
@@ -20,10 +27,10 @@ pub mod test {
         <T1 as TryFrom<T2>>::Error: std::fmt::Debug,
         <T2 as TryFrom<T1>>::Error: std::fmt::Debug,
     {
-        let b: T2 = a.clone().try_into().unwrap();
-        let c: T1 = b.clone().try_into().unwrap();
+        let b: T2 = a.clone().try_into().expect("for testing: T1 to T2 conversion should succeed");
+        let c: T1 = b.clone().try_into().expect("for testing: T2 to T1 conversion should succeed");
         assert_eq!(a, c);
-        let d: T2 = c.clone().try_into().unwrap();
+        let d: T2 = c.clone().try_into().expect("for testing: T1 to T2 conversion should succeed");
         assert_eq!(b, d);
     }
 }

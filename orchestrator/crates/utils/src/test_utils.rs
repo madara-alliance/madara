@@ -122,7 +122,8 @@ fn decompress_file(file_path: &Path) -> Result<()> {
 fn decompress_zip(file_path: &Path) -> Result<()> {
     let file = fs::File::open(file_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
-    let extract_dir = file_path.parent().unwrap();
+    let extract_dir =
+        file_path.parent().ok_or_else(|| eyre!("archive path {} has no parent directory", file_path.display()))?;
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
@@ -152,7 +153,8 @@ fn decompress_tar_gz(file_path: &Path) -> Result<()> {
     let file = fs::File::open(file_path)?;
     let decoder = GzDecoder::new(file);
     let mut archive = tar::Archive::new(decoder);
-    let extract_dir = file_path.parent().unwrap();
+    let extract_dir =
+        file_path.parent().ok_or_else(|| eyre!("archive path {} has no parent directory", file_path.display()))?;
 
     archive.unpack(extract_dir)?;
 

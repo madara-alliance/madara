@@ -1,7 +1,21 @@
 // Re-export unchanged WebSocket types from v0.10.0
-pub use crate::v0_10_0::EmittedEventWithFinality;
+pub use crate::v0_10_0::{EmittedEventWithFinality, FinalityStatus, ReorgData, TxnStatusWithoutL1};
 
 use serde::{Deserialize, Serialize};
+
+/// Result payload for `starknet_subscriptionTransactionStatus` notifications (spec `NEW_TXN_STATUS`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NewTxnStatus {
+    pub transaction_hash: starknet_types_core::felt::Felt,
+    pub status: crate::v0_9_0::TxnFinalityAndExecutionStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TxnWithHashAndStatus {
+    #[serde(flatten)]
+    pub transaction: super::TxnWithHashAndProofFacts,
+    pub finality_status: TxnStatusWithoutL1,
+}
 
 /// Subscription tag for controlling response fields (NEW in v0.10.2)
 ///

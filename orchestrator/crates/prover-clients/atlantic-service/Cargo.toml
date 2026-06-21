@@ -34,3 +34,6 @@ uuid.workspace = true
 [dev-dependencies]
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 tokio.workspace = true
+
+[lints]
+workspace = true

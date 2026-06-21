@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-mod gateway_mock;
+pub(crate) mod gateway_mock;
 mod pipeline;
 mod realistic;
 mod reorg;

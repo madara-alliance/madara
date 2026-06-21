@@ -2,6 +2,10 @@
 
 ## Next release
 
+- fix: enable clippy `unwrap_used` workspace-wide, fix lint inheritance gaps, and remove production-path panics
+- feat(orchestrator): JobRecovery worker re-enqueues jobs stranded by queue enqueue failures after DB writes
+- test: add sync reorg/header-verification and block production (bypass, rejection, shutdown) coverage
+- ci: pin git dependencies to exact revs and add cargo-deny (advisories, sources)
 - fix(rpc): failure_reason in tx status, getEvents numeric bounds past tip, BLOCK_NOT_FOUND for tag resolution
 - feat(rpc): discover minimal L2 gas limit in estimateFee/simulateTransactions; SKIP_VALIDATE relaxes the strict nonce check
 - fix(rpc): structured CONTRACT_EXECUTION_ERROR data and real transaction_index in execution errors

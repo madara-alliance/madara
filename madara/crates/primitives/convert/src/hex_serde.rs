@@ -1,6 +1,10 @@
+//! `serde_with` adapters and helpers for (de)serializing `u64`/`u128` values as
+//! `0x`-prefixed hexadecimal strings.
+
 use serde::{Deserialize, Deserializer, Serializer};
 use serde_with::{DeserializeAs, SerializeAs};
 
+/// `serde_with` adapter (de)serializing a `u64` as a `0x`-prefixed hex string.
 pub struct U64AsHex;
 
 impl SerializeAs<u64> for U64AsHex {
@@ -22,14 +26,17 @@ impl<'de> DeserializeAs<'de, u64> for U64AsHex {
     }
 }
 
+/// Parses a `0x`-prefixed (or bare) hexadecimal string into a `u64`.
 pub fn hex_str_to_u64(s: &str) -> Result<u64, std::num::ParseIntError> {
     u64::from_str_radix(s.trim_start_matches("0x"), 16)
 }
 
+/// Formats a `u64` as a `0x`-prefixed hexadecimal string.
 pub fn u64_to_hex_string(n: u64) -> String {
     format!("0x{:x}", n)
 }
 
+/// `serde_with` adapter (de)serializing a `u128` as a `0x`-prefixed hex string.
 pub struct U128AsHex;
 
 impl SerializeAs<u128> for U128AsHex {
@@ -51,10 +58,12 @@ impl<'de> DeserializeAs<'de, u128> for U128AsHex {
     }
 }
 
+/// Parses a `0x`-prefixed (or bare) hexadecimal string into a `u128`.
 pub fn hex_str_to_u128(s: &str) -> Result<u128, std::num::ParseIntError> {
     u128::from_str_radix(s.trim_start_matches("0x"), 16)
 }
 
+/// Formats a `u128` as a `0x`-prefixed hexadecimal string.
 pub fn u128_to_hex_string(n: u128) -> String {
     format!("0x{:x}", n)
 }

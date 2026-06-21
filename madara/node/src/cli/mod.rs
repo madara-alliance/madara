@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub mod backend;
 pub mod block_production;
+pub mod bootstrap;
 pub mod cairo_native;
 pub mod chain_config_overrides;
 pub mod external_db;
@@ -21,6 +22,7 @@ pub mod validator;
 
 pub use backend::*;
 pub use block_production::*;
+pub use bootstrap::*;
 pub use cairo_native::*;
 pub use chain_config_overrides::*;
 pub use external_db::*;
@@ -98,8 +100,8 @@ pub struct ArgsPresetParams {
     pub gateway: bool,
 
     /// Public RPC provider preset. Exposes user RPC on 0.0.0.0, enables admin
-    /// RPC on localhost, and allows all CORS origins. For localhost-only user
-    /// RPC, omit this flag and configure --rpc-port if needed.
+    /// RPC on localhost, and allows all CORS origins. Local-only RPC is already
+    /// enabled by default; omit this flag and use --rpc-port for a private node.
     #[clap(env = "MADARA_RPC", long, value_name = "RPC", group = "args-preset")]
     pub rpc: bool,
 }
@@ -113,7 +115,10 @@ impl ArgsPresetParams {
         } else if self.gateway {
             tracing::info!("💫 Running Gateway preset")
         } else if self.rpc {
-            tracing::info!("💫 Running Rpc preset")
+            tracing::info!("💫 Running Rpc preset");
+            tracing::warn!(
+                "--rpc exposes user RPC on 0.0.0.0 with admin RPC enabled on localhost and CORS allowing all origins"
+            )
         }
     }
 }
@@ -155,6 +160,11 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub backend_params: BackendParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    #[serde(default)]
+    pub bootstrap_params: BootstrapParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

@@ -1,3 +1,8 @@
+//! Starknet state-update primitives: state diffs, the per-transaction state
+//! update used during block production, and conversions to/from the Starknet
+//! and blockifier representations.
+#![warn(missing_docs)]
+
 use mp_convert::ToFelt;
 use starknet_types_core::{
     felt::Felt,
@@ -6,19 +11,27 @@ use starknet_types_core::{
 use std::collections::HashMap;
 mod into_starknet_types;
 
+/// The compiled-class side of a class declaration: either a Sierra class (with
+/// its compiled class hash) or a legacy (Cairo 0) class.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeclaredClassCompiledClass {
+    /// A Sierra class, holding its compiled class hash.
     Sierra(/* compiled_class_hash */ Felt),
+    /// A legacy (Cairo 0) class.
     Legacy,
 }
 
+/// How a contract's class was set in a block: freshly deployed or replaced via `replace_class`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum ClassUpdateItem {
+    /// Class hash of a newly deployed contract.
     DeployedContract(Felt),
+    /// Class hash a contract was replaced with.
     ReplacedClass(Felt),
 }
 
 impl ClassUpdateItem {
+    /// Returns the class hash carried by this update, regardless of variant.
     pub fn class_hash(&self) -> &Felt {
         match self {
             ClassUpdateItem::DeployedContract(class_hash) => class_hash,
@@ -27,11 +40,18 @@ impl ClassUpdateItem {
     }
 }
 
+/// A state update accumulated while executing a single transaction, keyed by map
+/// for fast merging. Convert to/from [`StateDiff`] for the canonical
+/// (sorted, vector-based) representation.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct TransactionStateUpdate {
+    /// Updated contract nonces: `contract_address => nonce`.
     pub nonces: HashMap<Felt, Felt>,
+    /// Changed storage values: `(contract_address, storage_key) => value`.
     pub storage_diffs: HashMap<(Felt, Felt), Felt>,
+    /// Classes declared in this transaction: `class_hash => compiled class`.
     pub declared_classes: HashMap<Felt, DeclaredClassCompiledClass>,
+    /// Contract class assignments: `contract_address => deployed/replaced class`.
     pub contract_class_hashes: HashMap<Felt, ClassUpdateItem>,
 }
 
@@ -80,12 +100,14 @@ impl TransactionStateUpdate {
         );
     }
 
+    /// Builds a `TransactionStateUpdate` from a [`StateDiff`].
     pub fn from_state_diff(state_diff: &StateDiff) -> Self {
         let mut this = Self::default();
         this.append_state_diff(state_diff);
         this
     }
 
+    /// Converts this update into the canonical, sorted [`StateDiff`] representation.
     pub fn to_state_diff(&self) -> StateDiff {
         fn sorted_by_key<T, K: Ord, F: FnMut(&T) -> K>(mut vec: Vec<T>, f: F) -> Vec<T> {
             vec.sort_by_key(f);
@@ -161,20 +183,29 @@ impl From<TransactionStateUpdate> for StateDiff {
     }
 }
 
+/// A confirmed block's state update: the state-root transition and the diff applied.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
+    /// Hash of the block this update belongs to.
     pub block_hash: Felt,
+    /// Global state root before applying the diff.
     pub old_root: Felt,
+    /// Global state root after applying the diff.
     pub new_root: Felt,
+    /// The state changes applied by the block.
     pub state_diff: StateDiff,
 }
 
+/// The state update of a pending (not-yet-closed) block, which has no final root yet.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PendingStateUpdate {
+    /// Global state root before applying the diff.
     pub old_root: Felt,
+    /// The state changes accumulated in the pending block.
     pub state_diff: StateDiff,
 }
 
+/// The canonical, sorted representation of all state changes in a block.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     /// Changed storage values. Mapping (contract_address, storage_key) => value.
@@ -194,6 +225,7 @@ pub struct StateDiff {
 }
 
 impl StateDiff {
+    /// Returns `true` if the diff contains no changes of any kind.
     pub fn is_empty(&self) -> bool {
         self.deployed_contracts.is_empty()
             && self.declared_classes.is_empty()
@@ -204,6 +236,7 @@ impl StateDiff {
             && self.migrated_compiled_classes.is_empty()
     }
 
+    /// Returns the total number of individual changes across all categories.
     pub fn len(&self) -> usize {
         let mut result = 0usize;
         result += self.deployed_contracts.len();
@@ -219,6 +252,7 @@ impl StateDiff {
         result
     }
 
+    /// Sorts every category (and nested storage entries) into a canonical order.
     pub fn sort(&mut self) {
         self.storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort_storage_entries());
         self.storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
@@ -230,6 +264,7 @@ impl StateDiff {
         self.migrated_compiled_classes.sort_by_key(|migrated_class| migrated_class.class_hash);
     }
 
+    /// Computes the Starknet state-diff commitment (Poseidon hash) per the `STARKNET_STATE_DIFF0` layout.
     pub fn compute_hash(&self) -> Felt {
         let updated_contracts_sorted = {
             let mut updated_contracts = self
@@ -316,6 +351,7 @@ impl StateDiff {
         Poseidon::hash_array(&elements)
     }
 
+    /// Returns every class declared in this diff (Sierra and legacy) as a `class_hash => compiled class` map.
     pub fn all_declared_classes(&self) -> HashMap<Felt, DeclaredClassCompiledClass> {
         self.declared_classes
             .iter()
@@ -421,9 +457,12 @@ impl StateDiff {
     }
 }
 
+/// Storage changes for a single contract.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractStorageDiffItem {
+    /// Address of the contract whose storage changed.
     pub address: Felt,
+    /// The individual changed storage slots.
     pub storage_entries: Vec<StorageEntry>,
 }
 
@@ -432,48 +471,67 @@ impl ContractStorageDiffItem {
         self.storage_entries.len()
     }
 
+    /// Sorts the storage entries by key.
     pub fn sort_storage_entries(&mut self) {
         self.storage_entries.sort_by_key(|storage_entry| storage_entry.key);
     }
 }
 
+/// A single changed storage slot.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageEntry {
+    /// Storage key (slot address).
     pub key: Felt,
+    /// New value stored at the key.
     pub value: Felt,
 }
 
+/// A newly declared Sierra class and its compiled class hash.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeclaredClassItem {
+    /// Hash of the declared class.
     pub class_hash: Felt,
+    /// Hash of the corresponding compiled (CASM) class.
     pub compiled_class_hash: Felt,
 }
 
+/// A contract deployed in the block.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeployedContractItem {
+    /// Address of the deployed contract.
     pub address: Felt,
+    /// Class hash of the deployed contract.
     pub class_hash: Felt,
 }
 
+/// A contract whose class was replaced via `replace_class`.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReplacedClassItem {
+    /// Address of the contract whose class changed.
     pub contract_address: Felt,
+    /// New class hash assigned to the contract.
     pub class_hash: Felt,
 }
 
+/// A class migrated from the Poseidon to the BLAKE compiled-class hash (SNIP-34).
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MigratedClassItem {
+    /// Hash of the migrated class.
     pub class_hash: Felt,
+    /// New (BLAKE) compiled class hash.
     pub compiled_class_hash: Felt,
 }
 
+/// A contract's updated nonce.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NonceUpdate {
+    /// Address of the contract.
     pub contract_address: Felt,
+    /// New nonce value.
     pub nonce: Felt,
 }
 

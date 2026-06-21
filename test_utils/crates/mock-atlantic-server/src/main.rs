@@ -98,34 +98,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Display startup information
-    println!("╭───────────────────────────────────────╮");
-    println!("│     🚀 Mock Atlantic Server           │");
-    println!("╰───────────────────────────────────────╯");
-    println!();
-    println!("Configuration:");
-    println!("  📡 Address: {}:{}", bind_addr, args.port);
-    println!("  ⏱️  Processing delay: {}ms", args.processing_delay_ms);
-    println!("  ⏱️  Completion delay: {}ms", args.completion_delay_ms);
-    println!("  📦 Max jobs in memory: {}", args.max_jobs_in_memory);
-    println!("  🔄 Max concurrent jobs: {}", args.max_concurrent_jobs);
-    println!("  ✅ Auto-complete jobs: {}", args.auto_complete_jobs);
+    tracing::info!("Mock Atlantic Server");
+    tracing::info!("Address: {}:{}", bind_addr, args.port);
+    tracing::info!("Processing delay: {}ms", args.processing_delay_ms);
+    tracing::info!("Completion delay: {}ms", args.completion_delay_ms);
+    tracing::info!("Max jobs in memory: {}", args.max_jobs_in_memory);
+    tracing::info!("Max concurrent jobs: {}", args.max_concurrent_jobs);
+    tracing::info!("Auto-complete jobs: {}", args.auto_complete_jobs);
 
     if args.failure_rate > 0.0 {
-        println!("  ⚡ Failure simulation: enabled");
-        println!("  📊 Failure rate: {:.1}%", args.failure_rate * 100.0);
+        tracing::info!("Failure simulation: enabled ({:.1}%)", args.failure_rate * 100.0);
     } else {
-        println!("  ⚡ Failure simulation: disabled");
+        tracing::info!("Failure simulation: disabled");
     }
 
-    println!();
-    println!("Endpoints:");
-    println!("  🔗 Health check: http://{}:{}/is-alive", bind_addr, args.port);
-    println!("  📮 Submit job: POST http://{}:{}/atlantic-query", bind_addr, args.port);
-    println!("  🔍 Check job: GET http://{}:{}/atlantic-query/{{job_id}}", bind_addr, args.port);
-    println!();
-    println!("Starting server... Press Ctrl+C to stop");
-    println!("────────────────────────────────────────");
-    println!();
+    tracing::info!("Health check: http://{}:{}/is-alive", bind_addr, args.port);
+    tracing::info!("Submit job: POST http://{}:{}/atlantic-query", bind_addr, args.port);
+    tracing::info!("Check job: GET http://{}:{}/atlantic-query/{{job_id}}", bind_addr, args.port);
+    tracing::info!("Starting server... Press Ctrl+C to stop");
 
     let server = MockAtlanticServer::new(addr, config);
     server.run().await?;

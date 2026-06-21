@@ -29,24 +29,24 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     Address::from_str(&run_cmd.ethereum_settlement_args.l1_core_contract_address.clone().ok_or(
                         OrchestratorError::SetupCommandError("L1 core contract address is required".to_string()),
                     )?)?;
-                let ethereum_operator_address = Address::from_slice(
-                    &hex::decode(
-                        run_cmd
-                            .ethereum_settlement_args
-                            .starknet_operator_address
-                            .clone()
-                            .ok_or_else(|| {
-                                OrchestratorError::SetupCommandError(
-                                    "Starknet operator address is required".to_string(),
-                                )
-                            })?
-                            .strip_prefix("0x")
-                            .ok_or_else(|| {
-                                OrchestratorError::SetupCommandError("Invalid Starknet operator address".to_string())
-                            })?,
-                    )
-                    .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
-                );
+                let operator_address =
+                    run_cmd.ethereum_settlement_args.starknet_operator_address.clone().ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Starknet operator address is required".to_string())
+                    })?;
+                let operator_address_hex = operator_address.strip_prefix("0x").ok_or_else(|| {
+                    OrchestratorError::SetupCommandError("Invalid Starknet operator address".to_string())
+                })?;
+                let operator_address_bytes = hex::decode(operator_address_hex).map_err(|e| {
+                    OrchestratorError::SetupCommandError(format!("Invalid Starknet operator address: {e}"))
+                })?;
+                // An Ethereum address is 20 bytes; guard the length so `Address::from_slice` cannot panic.
+                if operator_address_bytes.len() != 20 {
+                    return Err(OrchestratorError::SetupCommandError(format!(
+                        "Invalid Starknet operator address: expected 20 bytes, got {}",
+                        operator_address_bytes.len()
+                    )));
+                }
+                let ethereum_operator_address = Address::from_slice(&operator_address_bytes);
 
                 // Resolve secrets: _FILE env vars take precedence over direct values
                 let ethereum_rpc_url = match resolve_secret_from_file("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL")

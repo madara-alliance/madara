@@ -450,7 +450,7 @@ const MISSED_CLASS_HASHES_JSON: &[u8] = include_bytes!("../resources/missed_clas
 
 lazy_static::lazy_static! {
     pub static ref MISSED_CLASS_HASHES: HashMap::<u64, Vec<Felt>> =
-        serde_json::from_slice(MISSED_CLASS_HASHES_JSON).unwrap();
+        serde_json::from_slice(MISSED_CLASS_HASHES_JSON).expect("missed_classes.json bundled in the binary is valid");
 }
 
 #[cfg(test)]

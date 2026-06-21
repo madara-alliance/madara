@@ -293,6 +293,6 @@ impl L1ClientMock {
         Self { sender, pending_l1_to_l2_messages: tokio::sync::Mutex::new(recv).into() }
     }
     pub fn add_tx(&self, tx: L1HandlerTransactionWithFee) {
-        self.sender.send(tx).unwrap()
+        self.sender.send(tx).expect("L1ClientMock receiver should not be dropped")
     }
 }

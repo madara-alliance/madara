@@ -4,8 +4,7 @@ use crate::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
-use anyhow::Context;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
@@ -39,13 +38,7 @@ impl ReorgTestContext {
     }
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
-        let result = self.backend.revert_to(block_hash)?;
-
-        let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
-
-        Ok(result)
+        self.backend.revert_to(block_hash)
     }
 }
 
@@ -347,4 +340,145 @@ async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
     assert!(block_2_after.is_none(), "Block 2 should not exist after reorg");
 
     tracing::info!("✅ Declared class revert validated: all block 2 classes removed");
+}
+
+// ---------------------------------------------------------------------------
+// Fork-following tests: exercise the *automatic* reorg detection in the blocks
+// pipeline (parent hash mismatch -> find_common_ancestor -> revert_to ->
+// pipeline reinit), as opposed to the tests above which call `revert_to`
+// manually. These use mock blocks with fake hashes (verifications disabled),
+// in the style of `tests/pipeline.rs`.
+// ---------------------------------------------------------------------------
+
+struct ForkTestContext {
+    backend: Arc<MadaraBackend>,
+    importer: Arc<BlockImporter>,
+    gateway_mock: GatewayMock,
+}
+
+#[fixture]
+fn fork_ctx(gateway_mock: GatewayMock) -> ForkTestContext {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let importer = Arc::new(BlockImporter::new(
+        backend.clone(),
+        BlockValidationConfig::default().all_verifications_disabled(true),
+    ));
+    ForkTestContext { backend, importer, gateway_mock }
+}
+
+impl ForkTestContext {
+    async fn sync_to_with_config(&self, block_n: u64, config: ForwardSyncConfig) -> anyhow::Result<()> {
+        let mut sync = crate::gateway::forward_sync(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.gateway_mock.client(),
+            SyncControllerConfig::default().stop_on_sync(true).stop_at_block_n(Some(block_n)),
+            config,
+        );
+        sync.run(ServiceContext::default()).await
+    }
+
+    async fn sync_to(&self, block_n: u64) -> anyhow::Result<()> {
+        self.sync_to_with_config(block_n, ForwardSyncConfig::default()).await
+    }
+
+    fn block_hash(&self, block_n: u64) -> Option<mp_convert::Felt> {
+        self.backend
+            .block_view_on_confirmed(block_n)
+            .and_then(|view| view.get_block_info().ok())
+            .map(|info| info.block_hash)
+    }
+}
+
+#[rstest]
+#[tokio::test]
+/// When the gateway switches to a fork, the blocks pipeline must detect the parent hash mismatch,
+/// find the common ancestor by walking backwards, revert the orphaned blocks, and resync the fork
+/// chain - all without manual intervention.
+async fn test_sync_auto_reorgs_to_common_ancestor_on_fork(fork_ctx: ForkTestContext) {
+    // Original chain: 0 (0x10) <- 1 (0x11) <- 2 (0x12).
+    fork_ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    fork_ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
+    let mut old_block_2 = fork_ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
+    let mut latest = fork_ctx.gateway_mock.mock_header_latest(2, felt!("0x12"));
+    fork_ctx.gateway_mock.mock_block_pending_not_found();
+
+    fork_ctx.sync_to(2).await.unwrap();
+    assert_eq!(fork_ctx.block_hash(2), Some(felt!("0x12")));
+
+    // The gateway now serves a fork: block 2' (0x22) replaces 0x12, block 3 builds on the fork.
+    // Common ancestor is block 1.
+    old_block_2.delete();
+    latest.delete();
+    fork_ctx.gateway_mock.mock_block(2, felt!("0x22"), felt!("0x11"));
+    fork_ctx.gateway_mock.mock_block(3, felt!("0x23"), felt!("0x22"));
+    fork_ctx.gateway_mock.mock_header_latest(3, felt!("0x23"));
+
+    fork_ctx.sync_to(3).await.unwrap();
+
+    // The unchanged prefix is kept, the orphaned block 2 (0x12) is replaced by the fork block.
+    assert_eq!(fork_ctx.block_hash(0), Some(felt!("0x10")));
+    assert_eq!(fork_ctx.block_hash(1), Some(felt!("0x11")));
+    assert_eq!(fork_ctx.block_hash(2), Some(felt!("0x22")));
+    assert_eq!(fork_ctx.block_hash(3), Some(felt!("0x23")));
+    assert_eq!(fork_ctx.backend.latest_confirmed_block_n(), Some(3));
+}
+
+#[rstest]
+#[tokio::test]
+/// When reorgs are disabled by config, a fork must make the sync fail with an explicit error
+/// instead of silently reverting blocks; the local chain must be left untouched.
+async fn test_sync_fails_on_fork_when_reorg_disabled(fork_ctx: ForkTestContext) {
+    fork_ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    fork_ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
+    let mut old_block_2 = fork_ctx.gateway_mock.mock_block(2, felt!("0x12"), felt!("0x11"));
+    let mut latest = fork_ctx.gateway_mock.mock_header_latest(2, felt!("0x12"));
+    fork_ctx.gateway_mock.mock_block_pending_not_found();
+
+    fork_ctx.sync_to(2).await.unwrap();
+
+    old_block_2.delete();
+    latest.delete();
+    fork_ctx.gateway_mock.mock_block(2, felt!("0x22"), felt!("0x11"));
+    fork_ctx.gateway_mock.mock_block(3, felt!("0x23"), felt!("0x22"));
+    fork_ctx.gateway_mock.mock_header_latest(3, felt!("0x23"));
+
+    let err = fork_ctx
+        .sync_to_with_config(3, ForwardSyncConfig::default().disable_reorg(true))
+        .await
+        .expect_err("sync must fail when a reorg is required but disabled by config");
+    let err = format!("{err:#}");
+    assert!(err.contains("Reorg required but disabled by config"), "{err}");
+
+    // The local chain must not have been reverted or extended.
+    assert_eq!(fork_ctx.block_hash(2), Some(felt!("0x12")));
+    assert_eq!(fork_ctx.backend.latest_confirmed_block_n(), Some(2));
+    assert_eq!(fork_ctx.backend.block_view_on_confirmed(3), None);
+}
+
+#[rstest]
+#[tokio::test]
+/// When the gateway serves a chain with a different genesis (no common ancestor at all), the sync
+/// must wipe the local database and resync from the upstream genesis instead of erroring forever.
+async fn test_genesis_mismatch_wipes_db_and_resyncs(fork_ctx: ForkTestContext) {
+    let mut old_genesis = fork_ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    let mut latest = fork_ctx.gateway_mock.mock_header_latest(0, felt!("0x10"));
+    fork_ctx.gateway_mock.mock_block_pending_not_found();
+
+    fork_ctx.sync_to(0).await.unwrap();
+    assert_eq!(fork_ctx.block_hash(0), Some(felt!("0x10")));
+
+    // The gateway now serves an entirely different chain: genesis 0x90 <- block 1 (0x91).
+    old_genesis.delete();
+    latest.delete();
+    fork_ctx.gateway_mock.mock_block(0, felt!("0x90"), felt!("0x0"));
+    fork_ctx.gateway_mock.mock_block(1, felt!("0x91"), felt!("0x90"));
+    fork_ctx.gateway_mock.mock_header_latest(1, felt!("0x91"));
+
+    fork_ctx.sync_to(1).await.unwrap();
+
+    // The old genesis must be gone and the upstream chain fully imported.
+    assert_eq!(fork_ctx.block_hash(0), Some(felt!("0x90")));
+    assert_eq!(fork_ctx.block_hash(1), Some(felt!("0x91")));
+    assert_eq!(fork_ctx.backend.latest_confirmed_block_n(), Some(1));
 }

@@ -9,7 +9,8 @@ use mc_db::{
     MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
 };
 use mc_gateway_client::{BlockId, GatewayProvider};
-use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+use mp_block::{BlockHeaderWithSignatures, ConsensusSignature, FullBlock, Header};
+use mp_chain_config::StarknetVersion;
 use mp_convert::Felt;
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
@@ -29,6 +30,7 @@ pub fn block_with_state_update_pipeline(
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
     disable_reorg: bool,
+    verify_block_signatures: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
         GatewaySyncSteps {
@@ -38,6 +40,7 @@ pub fn block_with_state_update_pipeline(
             keep_pre_v0_13_2_hashes,
             sync_bouncer_config,
             disable_reorg,
+            verify_block_signatures,
         },
         parallelization,
         batch_size,
@@ -53,6 +56,7 @@ pub struct GatewaySyncSteps {
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
     disable_reorg: bool,
+    verify_block_signatures: bool,
 }
 
 impl GatewaySyncSteps {
@@ -261,6 +265,32 @@ impl PipelineSteps for GatewaySyncSteps {
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
+                // Pre-v0.13.2 signatures cover a legacy message format whose integrity we do not
+                // check (see `BlockImporterCtx::verify_header`), so only fetch them for newer blocks.
+                let consensus_signatures = if self.verify_block_signatures
+                    && gateway_block.header.protocol_version >= StarknetVersion::V0_13_2
+                {
+                    let signature = self
+                        .client
+                        .get_signature(BlockId::Number(block_n))
+                        .await
+                        .with_context(|| format!("Getting block signature with block_n={block_n}"))?;
+                    anyhow::ensure!(
+                        signature.signature.len() == 2,
+                        "Invalid block signature for block_n={block_n}: expected 2 felts, got {}",
+                        signature.signature.len()
+                    );
+                    anyhow::ensure!(
+                        signature.block_hash == gateway_block.block_hash,
+                        "Block signature is for block hash {:#x}, expected {:#x} for block_n={block_n}",
+                        signature.block_hash,
+                        gateway_block.block_hash
+                    );
+                    vec![ConsensusSignature { r: signature.signature[0], s: signature.signature[1] }]
+                } else {
+                    vec![]
+                };
+
                 if block_n == 0 {
                     // Check if we already have a genesis block
                     if let Some(local_genesis_view) = self._backend.block_view_on_confirmed(0) {
@@ -289,10 +319,33 @@ impl PipelineSteps for GatewaySyncSteps {
                 if block_n > 0 {
                     // Try to get the parent block's info (only confirmed blocks during gateway sync)
                     match self._backend.block_view_on_confirmed(block_n - 1) {
-                        Some(parent_view) => {
-                            let parent_info = parent_view.get_block_info()?;
+                        Some(_parent_view) => {
+                            // With --unsafe-starting-block, the chain tip is forced to the starting block
+                            // without its block data being stored: the parent of the first synced block has
+                            // a confirmed view but no block info. There is nothing to compare the parent
+                            // hash against in that case, so skip the check for that boundary block only.
+                            let parent_info = self
+                                ._backend
+                                .db
+                                .get_block_info(block_n - 1)
+                                .with_context(|| format!("Getting block info for block {}", block_n - 1))?;
                             let incoming_parent_hash = gateway_block.header.parent_block_hash;
-                            let local_parent_hash = parent_info.block_hash;
+                            let local_parent_hash = match parent_info {
+                                Some(parent_info) => parent_info.block_hash,
+                                None if confirmed_tip_at_start == Some(block_n - 1) => {
+                                    tracing::info!(
+                                        "Parent block #{} is confirmed but its data is not stored (unsafe starting block), \
+                                         skipping parent hash check for block #{}",
+                                        block_n - 1, block_n
+                                    );
+                                    // Nothing to compare against: accept the incoming parent hash.
+                                    incoming_parent_hash
+                                }
+                                None => anyhow::bail!(
+                                    "Database inconsistency: Chain tip indicates block {} is confirmed, but its block info cannot be found",
+                                    block_n - 1
+                                ),
+                            };
 
                             if incoming_parent_hash != local_parent_hash {
                                 tracing::warn!(
@@ -336,12 +389,7 @@ impl PipelineSteps for GatewaySyncSteps {
                                             self._backend.revert_to(&common_ancestor_hash)?;
 
                                             self._backend.db.flush()?;
-
-                                            let fresh_chain_tip = self._backend.db.get_chain_tip()
-                                                .context("Getting fresh chain tip after reorg")?;
-                                            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-                                            self._backend.chain_tip.send_replace(backend_chain_tip);
-                                            tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
+                                            tracing::info!("✅ Reorg completed successfully, aborting pipeline to restart from new chain tip");
 
                                             anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
                                         }
@@ -398,7 +446,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         let mut signed_header = BlockHeaderWithSignatures {
                             header: gateway_block.header,
                             block_hash: gateway_block.block_hash,
-                            consensus_signatures: vec![],
+                            consensus_signatures,
                         };
 
                         // Allow the gateway format, which has legacy commitments.

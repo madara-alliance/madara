@@ -414,6 +414,8 @@ impl L1HandlerTransaction {
 }
 
 impl From<mp_rpc::v0_7_1::MsgFromL1> for L1HandlerTransaction {
+    // from_address is an unvalidated String; making this conversion fallible is a cross-crate API change.
+    #[allow(clippy::unwrap_used)]
     fn from(msg: mp_rpc::v0_7_1::MsgFromL1) -> Self {
         Self {
             version: Felt::ZERO,

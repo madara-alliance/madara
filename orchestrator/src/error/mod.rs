@@ -10,7 +10,6 @@ use aws_sdk_s3::operation::list_buckets::ListBucketsError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use opentelemetry_otlp::ExporterBuildError;
-use opentelemetry_sdk::trace::TraceError;
 use starknet_core::types::FromStrError;
 use thiserror::Error;
 
@@ -69,8 +68,6 @@ pub enum OrchestratorError {
     ExporterBuildError(#[from] ExporterBuildError),
     #[error("OLT Metrics Error: {0}")]
     OTLMetricsError(String),
-    #[error("OLT Trace Error: {0}")]
-    OLTTraceError(#[from] TraceError),
     #[error("Invalid layout name: {0}")]
     InvalidLayoutError(String),
     /// Configuration error

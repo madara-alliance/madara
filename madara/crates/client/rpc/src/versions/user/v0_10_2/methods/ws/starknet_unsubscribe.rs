@@ -1,9 +1,10 @@
-use crate::errors::StarknetRpcResult;
-use crate::Starknet;
-
-/// Unsubscribes from a WebSocket subscription by ID.
-pub async fn starknet_unsubscribe(_starknet: &Starknet, _subscription_id: u64) -> StarknetRpcResult<bool> {
-    // FIXME(subscriptions): Implement proper unsubscription once subscriptions are working.
-    // For now, return true to indicate successful unsubscription.
-    Ok(true)
+pub async fn starknet_unsubscribe(
+    starknet: &crate::Starknet,
+    subscription_id: String,
+) -> crate::StarknetRpcResult<bool> {
+    if starknet.ws_handles.subscription_close(&subscription_id).await {
+        Ok(true)
+    } else {
+        Err(crate::StarknetRpcApiError::InvalidSubscriptionId)
+    }
 }

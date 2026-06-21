@@ -105,9 +105,9 @@ mod submit_tx;
 mod util;
 
 use crate::service::{L1SyncConfig, MempoolService};
-use anyhow::{bail, Context};
+use anyhow::{bail, ensure, Context};
 use clap::Parser;
-use cli::RunCmd;
+use cli::{BootstrapSnapshotManifest, BootstrapSnapshotMetadata, RunCmd};
 use dotenv::dotenv;
 use figment::{
     providers::{Format, Json, Serialized, Toml, Yaml},
@@ -130,6 +130,15 @@ use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitc
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
+
+/// Maximum time to wait, after all services have shut down, for work that was offloaded onto
+/// the detached global rayon pool (e.g. a snap-sync batched global-trie update) to finish
+/// before exiting the process. Exiting while those threads are still inside RocksDB can
+/// SIGSEGV during process teardown (issue #1091). A large snap-sync trie batch can legitimately
+/// take minutes on slow hardware, so this is intentionally generous; node operators using
+/// systemd should make sure `TimeoutStopSec` accounts for it (a timeout there results in
+/// SIGKILL, which RocksDB recovers from, rather than a segfault).
+const SHUTDOWN_POOL_DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -266,6 +275,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     run_cmd.backend_params.validate().context("Validating backend configuration")?;
+    let bootstrap_manifest = run_cmd
+        .bootstrap_params
+        .import_snapshot_if_requested(&run_cmd.backend_params.base_path, &chain_config)
+        .context("Importing bootstrap snapshot")?;
 
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
@@ -283,6 +296,29 @@ async fn main() -> anyhow::Result<()> {
 
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
     tracing::info!("💼 Starting chain with block: {}", chain_tip);
+    if let Some(manifest) = bootstrap_manifest.as_ref() {
+        validate_bootstrap_snapshot(&backend, manifest).context("Validating imported bootstrap snapshot")?;
+    }
+
+    if run_cmd.bootstrap_params.should_create_snapshot() {
+        let snapshot_metadata =
+            bootstrap_snapshot_metadata(&backend).context("Reading bootstrap snapshot metadata from database")?;
+        run_cmd
+            .bootstrap_params
+            .create_snapshot_from_checkpoint_if_requested(
+                &run_cmd.backend_params.base_path,
+                &chain_config,
+                snapshot_metadata,
+                |checkpoint_path| {
+                    backend
+                        .db
+                        .create_checkpoint(checkpoint_path)
+                        .context("Creating RocksDB checkpoint for bootstrap snapshot")
+                },
+            )
+            .context("Creating bootstrap snapshot")?;
+        return Ok(());
+    }
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
@@ -351,10 +387,11 @@ async fn main() -> anyhow::Result<()> {
         provider = provider.with_madara_gateway_url(url)
     }
     if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
-        provider.add_header(
-            HeaderName::from_static("x-throttling-bypass"),
-            HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
-        )
+        let mut value = HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?;
+        // Mark the API key as sensitive so it is masked in any `Debug` output (e.g. if the
+        // provider, its headers, or a request ever end up in a log or error message).
+        value.set_sensitive(true);
+        provider.add_header(HeaderName::from_static("x-throttling-bypass"), value)
     }
 
     let gateway_client = Arc::new(provider);
@@ -412,8 +449,13 @@ async fn main() -> anyhow::Result<()> {
 
     // User-facing RPC
 
-    let service_rpc_user =
-        RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone(), tx_lookup.clone());
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        tx_lookup.clone(),
+        Some(service_mempool.mempool()),
+    );
 
     // Admin-facing RPC (for node operators)
 
@@ -422,6 +464,7 @@ async fn main() -> anyhow::Result<()> {
         backend.clone(),
         tx_submit.clone(),
         tx_lookup.clone(),
+        Some(service_mempool.mempool()),
         service_block_production.handle(),
         service_mempool.mempool(),
     );
@@ -469,7 +512,8 @@ async fn main() -> anyhow::Result<()> {
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
 
-    if run_cmd.should_run_mempool() {
+    let rpc_configured = !run_cmd.rpc_params.rpc_disable || run_cmd.rpc_params.rpc_admin;
+    if run_cmd.should_run_mempool() || rpc_configured {
         app.activate(MadaraServiceId::Mempool);
     }
     app.activate(MadaraServiceId::Telemetry);
@@ -507,6 +551,29 @@ async fn main() -> anyhow::Result<()> {
 
     let result = app.start().await;
 
+    // All services have stopped, but service shutdown is cooperative-cancellation based:
+    // dropping a cancelled service future does not stop CPU work it already offloaded onto the
+    // detached global rayon pool (e.g. snap-sync applying a batched global-trie update, which
+    // can run for a long time). Those rayon workers hold references into the RocksDB backend.
+    // Returning from `main` while they are still running tears the process down (libc `exit`
+    // runs static destructors) under live threads, which can SIGSEGV — see issue #1091.
+    // Wait for the pool to drain *before* the final flush, so the flush also captures those
+    // tasks' writes and so the backend drop (final flush + RocksDB background-work cancel)
+    // happens after all of its users are gone.
+    let in_flight = mp_utils::rayon::global_rayon_tasks_in_flight();
+    if in_flight > 0 {
+        tracing::info!("⏳ Waiting for {in_flight} in-flight background task(s) to finish before shutdown...");
+    }
+    if tokio::time::timeout(SHUTDOWN_POOL_DRAIN_TIMEOUT, mp_utils::rayon::wait_global_rayon_tasks_finished())
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            "Background tasks did not finish within {SHUTDOWN_POOL_DRAIN_TIMEOUT:?}; shutting down anyway. \
+             The database may need to replay un-flushed work on next startup."
+        );
+    }
+
     // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
     if let Err(e) = backend.flush() {
         tracing::error!("Failed to flush database during shutdown: {}", e);
@@ -515,4 +582,152 @@ async fn main() -> anyhow::Result<()> {
     }
 
     result
+}
+
+fn validate_bootstrap_snapshot(
+    backend: &Arc<MadaraBackend>,
+    manifest: &BootstrapSnapshotManifest,
+) -> anyhow::Result<()> {
+    let chain_tip = backend.db.get_chain_tip().context("Reading chain tip after bootstrap snapshot import")?;
+    match chain_tip {
+        mc_db::storage::StorageChainTip::Confirmed(block_n) => ensure!(
+            block_n == manifest.block_number,
+            "Imported bootstrap snapshot chain tip mismatch: expected confirmed block #{}, got confirmed block #{}",
+            manifest.block_number,
+            block_n
+        ),
+        other => {
+            bail!("Imported bootstrap snapshot must end at confirmed block #{}, got {}", manifest.block_number, other)
+        }
+    }
+
+    let block_info = backend
+        .db
+        .get_block_info(manifest.block_number)
+        .with_context(|| format!("Reading bootstrap snapshot block info for #{}", manifest.block_number))?
+        .with_context(|| format!("Bootstrap snapshot block #{} is missing from database", manifest.block_number))?;
+
+    if let Some(expected) = manifest.block_hash_felt()? {
+        ensure!(
+            block_info.block_hash == expected,
+            "Imported bootstrap snapshot block hash mismatch at #{}: expected {:#x}, got {:#x}",
+            manifest.block_number,
+            expected,
+            block_info.block_hash
+        );
+    }
+
+    if let Some(expected) = manifest.state_root_felt()? {
+        ensure!(
+            block_info.header.global_state_root == expected,
+            "Imported bootstrap snapshot state root mismatch at #{}: expected {:#x}, got {:#x}",
+            manifest.block_number,
+            expected,
+            block_info.header.global_state_root
+        );
+    }
+
+    tracing::info!(
+        block_number = manifest.block_number,
+        block_hash = %format!("{:#x}", block_info.block_hash),
+        state_root = %format!("{:#x}", block_info.header.global_state_root),
+        "Validated imported bootstrap snapshot"
+    );
+
+    Ok(())
+}
+
+fn bootstrap_snapshot_metadata(backend: &Arc<MadaraBackend>) -> anyhow::Result<BootstrapSnapshotMetadata> {
+    let chain_tip = backend.db.get_chain_tip().context("Reading chain tip for bootstrap snapshot")?;
+    let block_number = match chain_tip {
+        mc_db::storage::StorageChainTip::Confirmed(block_n) => block_n,
+        other => bail!("Bootstrap snapshots can only be created from a confirmed chain tip, got {}", other),
+    };
+
+    let block_info = backend
+        .db
+        .get_block_info(block_number)
+        .with_context(|| format!("Reading bootstrap snapshot block info for #{}", block_number))?
+        .with_context(|| format!("Bootstrap snapshot block #{} is missing from database", block_number))?;
+
+    Ok(BootstrapSnapshotMetadata {
+        block_number,
+        block_hash: block_info.block_hash,
+        state_root: block_info.header.global_state_root,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::BootstrapParams;
+    use mc_class_exec::config::NativeConfig;
+    use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
+    use mp_chain_config::ChainConfig;
+
+    fn open_test_backend(base_path: &Path, chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
+        MadaraBackend::open_rocksdb(
+            base_path,
+            chain_config,
+            MadaraBackendConfig::default(),
+            RocksDBConfig::default(),
+            Arc::new(NativeConfig::default()),
+        )
+        .expect("opening test backend should succeed")
+    }
+
+    fn test_block(block_number: u64) -> FullBlockWithoutCommitments {
+        FullBlockWithoutCommitments {
+            header: PreconfirmedHeader { block_number, ..Default::default() },
+            state_diff: Default::default(),
+            transactions: vec![],
+            events: vec![],
+        }
+    }
+
+    #[test]
+    fn bootstrap_snapshot_round_trips_real_backend_checkpoint() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let source_base_path = temp.path().join("source");
+        let imported_base_path = temp.path().join("imported");
+        let archive_path = temp.path().join("snapshot.tar.gz");
+        let chain_config = Arc::new(ChainConfig::madara_test());
+
+        let source_backend = open_test_backend(&source_base_path, chain_config.clone());
+        let added_block = source_backend
+            .write_access()
+            .add_full_block_with_classes(&test_block(0), &[], false)
+            .expect("adding source block should succeed");
+        let snapshot_metadata =
+            bootstrap_snapshot_metadata(&source_backend).expect("snapshot metadata should be readable");
+
+        assert_eq!(snapshot_metadata.block_number, 0);
+        assert_eq!(snapshot_metadata.block_hash, added_block.block_hash);
+        assert_eq!(snapshot_metadata.state_root, added_block.new_state_root);
+
+        let create_params =
+            BootstrapParams { create_bootstrap_snapshot: Some(archive_path.clone()), ..Default::default() };
+        let manifest = create_params
+            .create_snapshot_from_checkpoint_if_requested(
+                &source_base_path,
+                &chain_config,
+                snapshot_metadata,
+                |checkpoint_path| source_backend.db.create_checkpoint(checkpoint_path),
+            )
+            .expect("snapshot creation should succeed")
+            .expect("snapshot creation should return a manifest");
+        drop(source_backend);
+
+        let import_params = BootstrapParams { bootstrap_snapshot: Some(archive_path), ..Default::default() };
+        let imported_manifest = import_params
+            .import_snapshot_if_requested(&imported_base_path, &chain_config)
+            .expect("snapshot import should succeed")
+            .expect("snapshot import should return a manifest");
+        assert_eq!(imported_manifest, manifest);
+
+        let imported_backend = open_test_backend(&imported_base_path, chain_config);
+        validate_bootstrap_snapshot(&imported_backend, &manifest).expect("imported snapshot should validate");
+        assert_eq!(imported_backend.latest_confirmed_block_n(), Some(0));
+    }
 }

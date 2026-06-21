@@ -1,3 +1,7 @@
+// Test harness: panicking on setup failure is intended. Helper fns in integration-test
+// binaries are not covered by `allow-unwrap-in-tests`.
+#![allow(clippy::unwrap_used)]
+
 use bincode::Options;
 use futures::TryStreamExt;
 use mc_e2e_tests::MadaraCmdBuilder;

@@ -868,19 +868,14 @@ mod test_config {
             TxEip4844Variant::TxEip4844(_) => {
                 panic!("Wrong transaction type")
             }
-            TxEip4844Variant::TxEip4844WithSidecar(tx_with_sidecar) => {
-                let sidecar = match &tx_with_sidecar.sidecar {
-                    BlobTransactionSidecarVariant::Eip4844(sidecar) => sidecar,
-                    BlobTransactionSidecarVariant::Eip7594(_) => {
-                        panic!("Wrong sidecar type")
-                    }
-                };
-                let tx = TxEip4844WithSidecar { tx: tx_with_sidecar.tx.clone(), sidecar: sidecar.clone() };
-                match tx_with_sidecar {
-                    &_ => {}
+            TxEip4844Variant::TxEip4844WithSidecar(tx_with_sidecar) => match &tx_with_sidecar.sidecar {
+                BlobTransactionSidecarVariant::Eip4844(_) => <TransactionRequest as From<
+                    TxEip4844WithSidecar<BlobTransactionSidecarVariant>,
+                >>::from(tx_with_sidecar.clone()),
+                BlobTransactionSidecarVariant::Eip7594(_) => {
+                    panic!("Wrong sidecar type")
                 }
-                <TransactionRequest as From<TxEip4844WithSidecar>>::from(tx)
-            }
+            },
         };
 
         // IMPORTANT to understand #[cfg(test)], #[cfg(not(test))] and SHOULD_IMPERSONATE_ACCOUNT
@@ -893,8 +888,13 @@ mod test_config {
         // Note : changing between "0" and "1" is handled automatically by each test function, `no` manual
         // change in `env.test` is needed.
         if let Some(impersonate_account) = impersonate_account {
-            let nonce =
-                provider.get_transaction_count(impersonate_account).await.unwrap().to_string().parse::<u64>().unwrap();
+            let nonce = provider
+                .get_transaction_count(impersonate_account)
+                .await
+                .expect("failed to fetch transaction count for impersonated account")
+                .to_string()
+                .parse::<u64>()
+                .expect("transaction count fits in u64");
             txn_request.set_nonce(nonce);
             txn_request = txn_request.with_from(impersonate_account);
         }

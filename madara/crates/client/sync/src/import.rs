@@ -7,14 +7,17 @@ use mp_block::{
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
-    class_hash::ComputeClassHashError, compile::ClassCompilationError, ClassInfo, ClassInfoWithHash, ClassType,
-    ConvertedClass, LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
+    class_hash::ComputeClassHashError,
+    compile::{ClassCompilationError, CompiledClassHashes},
+    ClassInfo, ClassInfoWithHash, ClassType, CompiledSierra, ConvertedClass, LegacyClassInfo, LegacyConvertedClass,
+    SierraClassInfo, SierraConvertedClass,
 };
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use opentelemetry::{global, metrics::Counter, InstrumentationScope, KeyValue};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
@@ -91,6 +94,8 @@ pub enum BlockImportError {
     BlockNumber { got: u64, expected: u64 },
     #[error("Block hash mismatch: expected {expected:#x}, got {got:#x}")]
     BlockHash { got: Felt, expected: Felt },
+    #[error("Invalid block signature for block hash {block_hash:#x} against sequencer public key {public_key:#x}")]
+    BlockSignature { block_hash: Felt, public_key: Felt },
 
     #[error("Global state root mismatch: expected {expected:#x}, got {got:#x}")]
     GlobalStateRoot { got: Felt, expected: Felt },
@@ -118,11 +123,17 @@ pub struct BlockImporter {
     db: Arc<MadaraBackend>,
     config: BlockValidationConfig,
     rayon_pool: Arc<RayonPool>,
+    gateway_casm_fallback_counter: Counter<u64>,
 }
 
 impl BlockImporter {
     pub fn new(db: Arc<MadaraBackend>, config: BlockValidationConfig) -> BlockImporter {
-        Self { db, config, rayon_pool: Arc::new(RayonPool::new()) }
+        Self {
+            db,
+            config,
+            rayon_pool: Arc::new(RayonPool::new()),
+            gateway_casm_fallback_counter: gateway_casm_fallback_counter(),
+        }
     }
 
     pub async fn run_in_rayon_pool<F, R>(&self, func: F) -> R
@@ -146,15 +157,50 @@ impl BlockImporter {
     }
 
     fn ctx(&self) -> BlockImporterCtx {
-        BlockImporterCtx { backend: self.db.clone(), config: self.config.clone() }
+        BlockImporterCtx {
+            backend: self.db.clone(),
+            config: self.config.clone(),
+            gateway_casm_fallback_counter: self.gateway_casm_fallback_counter.clone(),
+        }
     }
+}
+
+/// Counts declared classes whose CASM was taken from the feeder gateway because local
+/// Sierra-to-CASM compilation failed (see issue #1097), so operators can alert on the fallback
+/// engaging. Recorded with an `outcome` attribute of `verified_blake`, `verified_poseidon` or
+/// `historical_tolerance`.
+///
+/// Class verification runs in a rayon-pool context with no access to the sync service's
+/// [`crate::metrics::SyncMetrics`] registry, so the counter is created through the OTel global
+/// meter once at [`BlockImporter`] construction and carried into the rayon context by
+/// [`BlockImporterCtx`].
+fn gateway_casm_fallback_counter() -> Counter<u64> {
+    // Same instrumentation scope as `crate::metrics::SyncMetrics`, so the counter is grouped with
+    // the other sync metrics in OTel backends.
+    global::meter_with_scope(
+        InstrumentationScope::builder("crates.sync.opentelemetry")
+            .with_attributes([KeyValue::new("crate", "sync")])
+            .build(),
+    )
+    .u64_counter("class_gateway_casm_fallback")
+    .with_description(
+        "Number of declared classes whose CASM was fetched from the feeder gateway because \
+         local Sierra-to-CASM compilation failed",
+    )
+    .build()
 }
 
 pub struct BlockImporterCtx {
     backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
+    gateway_casm_fallback_counter: Counter<u64>,
 }
 impl BlockImporterCtx {
+    /// See [`gateway_casm_fallback_counter`].
+    fn record_gateway_casm_fallback(&self, outcome: &'static str) {
+        self.gateway_casm_fallback_counter.add(1, &[KeyValue::new("outcome", outcome)]);
+    }
+
     // HEADERS
 
     pub fn verify_header(
@@ -162,8 +208,6 @@ impl BlockImporterCtx {
         block_n: u64,
         signed_header: &BlockHeaderWithSignatures,
     ) -> Result<(), BlockImportError> {
-        // TODO: verify signatures
-
         // verify block_number
         if !self.config.no_check && block_n != signed_header.header.block_number {
             return Err(BlockImportError::BlockNumber { expected: block_n, got: signed_header.header.block_number });
@@ -226,6 +270,26 @@ impl BlockImporterCtx {
             .compute_hash(self.backend.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
         if !self.config.no_check && signed_header.block_hash != block_hash {
             return Err(BlockImportError::BlockHash { got: signed_header.block_hash, expected: block_hash });
+        }
+
+        // Verify the sequencer's ECDSA signature over the block hash, when a signature is
+        // attached and the chain config provides the sequencer public key. Gateway sync only
+        // attaches signatures for post-v0.13.2 blocks: pre-v0.13.2 signatures cover a legacy
+        // message format and are skipped along with the rest of the integrity checks above.
+        if !self.config.no_check && !signed_header.consensus_signatures.is_empty() {
+            if let Some(public_key) = self.backend.chain_config().sequencer_public_key {
+                for signature in &signed_header.consensus_signatures {
+                    let valid = starknet_core::crypto::ecdsa_verify(
+                        &public_key,
+                        &block_hash,
+                        &starknet_core::crypto::Signature { r: signature.r, s: signature.s },
+                    )
+                    .unwrap_or(false);
+                    if !valid {
+                        return Err(BlockImportError::BlockSignature { block_hash, public_key });
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -322,31 +386,32 @@ impl BlockImporterCtx {
     // CLASSES
 
     /// Called in a rayon-pool context.
-    pub fn verify_compile_classes(
-        &self,
-        block_n: Option<u64>,
-        declared_classes: Vec<ClassInfoWithHash>,
-        check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
-    ) -> Result<Vec<ConvertedClass>, BlockImportError> {
-        if check_against.len() != declared_classes.len() {
-            return Err(BlockImportError::ClassCount {
-                got: declared_classes.len() as _,
-                expected: check_against.len() as _,
-            });
-        }
-        let classes = declared_classes
-            .into_par_iter()
-            .map(|class| self.verify_compile_class(block_n, class, check_against))
-            .collect::<Result<_, _>>()?;
-        Ok(classes)
-    }
-
-    /// Called in a rayon-pool context.
-    fn verify_compile_class(
+    ///
+    /// `gateway_casm_fallback` maps class hashes to a canonical CASM fetched from the (trusted)
+    /// feeder gateway. When a Sierra class hash is present in this map, the provided CASM is used
+    /// instead of compiling the Sierra class locally. This is used to recover from historical
+    /// classes that modern compiler toolchains can no longer compile (see issue #1097).
+    ///
+    /// Each accepted gateway CASM is counted in the `class_gateway_casm_fallback` metric, with an
+    /// `outcome` attribute of `verified_blake`, `verified_poseidon` or `historical_tolerance`.
+    ///
+    /// # Compiled class hash variants
+    ///
+    /// The recomputed compiled class hash is compared against the hash declared by the gateway
+    /// using the variant canonical for the block's protocol version (see
+    /// [`StarknetVersion::uses_blake_compiled_class_hash`]):
+    /// - v0.14.1+ blocks declare the BLAKE2s compiled class hash, which must match the local
+    ///   recomputation exactly (even when the CASM comes from the gateway fallback);
+    /// - older blocks — this includes every historical class that may need the gateway CASM
+    ///   fallback — declare the Poseidon compiled class hash, where a mismatch is tolerated with
+    ///   a WARN, because historical gateway hashes may not match a local recomputation after
+    ///   compiler/toolchain upgrades.
+    pub(crate) fn verify_compile_class(
         &self,
         block_n: Option<u64>,
         class: ClassInfoWithHash,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
+        gateway_casm_fallback: &HashMap<Felt, CompiledSierra>,
     ) -> Result<ConvertedClass, BlockImportError> {
         let class_hash = class.class_hash;
 
@@ -396,11 +461,19 @@ impl BlockImporterCtx {
                     .map(|info| info.header.protocol_version.uses_blake_compiled_class_hash())
                     .unwrap_or(false);
 
-                // Compile and get both Poseidon and BLAKE hashes
-                let hashes = sierra
-                    .contract_class
-                    .compile_to_casm_with_hashes()
-                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?;
+                // Compile and get both Poseidon and BLAKE hashes. If a canonical CASM fetched
+                // from the (trusted) feeder gateway is available for this class, use it instead
+                // of compiling locally: some early-2023 historical Sierra classes can no longer
+                // be compiled by modern toolchains (see issue #1097).
+                let gateway_provided_casm = gateway_casm_fallback.get(&class_hash);
+                let hashes = match gateway_provided_casm {
+                    Some(compiled) => CompiledClassHashes::from_compiled_sierra(compiled)
+                        .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?,
+                    None => sierra
+                        .contract_class
+                        .compile_to_casm_with_hashes()
+                        .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: Box::new(e) })?,
+                };
 
                 // Verify compiled class hash based on protocol version.
                 // For v0.14.1+ the gateway-provided hash is the canonical BLAKE hash and must match
@@ -408,6 +481,8 @@ impl BlockImporterCtx {
                 // Poseidon hash, since historical gateway hashes may not match a local recomputation
                 // after compiler/toolchain upgrades.
                 let (stored_poseidon, stored_blake) = if uses_blake {
+                    // Modern (v0.14.1+) classes get no historical tolerance: a recomputed hash
+                    // mismatch is always an error, even for a gateway-provided CASM.
                     if !self.config.no_check && hashes.blake_hash != gateway_hash {
                         return Err(BlockImportError::CompiledClassHash {
                             class_hash,
@@ -415,15 +490,44 @@ impl BlockImporterCtx {
                             expected: hashes.blake_hash,
                         });
                     }
+                    if gateway_provided_casm.is_some() {
+                        tracing::warn!(
+                            class_hash = %format!("{class_hash:#x}"),
+                            block_n = ?block_n,
+                            compiled_class_hash = %format!("{gateway_hash:#x}"),
+                            "Accepted gateway-provided CASM: BLAKE compiled class hash verified",
+                        );
+                        self.record_gateway_casm_fallback("verified_blake");
+                    }
                     (None, Some(gateway_hash))
                 } else {
                     if !self.config.no_check && hashes.poseidon_hash != gateway_hash {
+                        if let Some(compiled) = gateway_provided_casm {
+                            tracing::warn!(
+                                class_hash = %format!("{class_hash:#x}"),
+                                block_n = ?block_n,
+                                declared_compiled_class_hash = %format!("{gateway_hash:#x}"),
+                                computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
+                                casm_size = compiled.0.len(),
+                                "Accepted gateway-provided CASM under historical compiled_class_hash tolerance",
+                            );
+                            self.record_gateway_casm_fallback("historical_tolerance");
+                        } else {
+                            tracing::warn!(
+                                class_hash = %format!("{class_hash:#x}"),
+                                gateway_hash = %format!("{gateway_hash:#x}"),
+                                computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
+                                "Retaining gateway-provided historical compiled_class_hash for Sierra class",
+                            );
+                        }
+                    } else if gateway_provided_casm.is_some() {
                         tracing::warn!(
                             class_hash = %format!("{class_hash:#x}"),
-                            gateway_hash = %format!("{gateway_hash:#x}"),
-                            computed_poseidon_hash = %format!("{:#x}", hashes.poseidon_hash),
-                            "Retaining gateway-provided historical compiled_class_hash for Sierra class",
+                            block_n = ?block_n,
+                            compiled_class_hash = %format!("{gateway_hash:#x}"),
+                            "Accepted gateway-provided CASM: Poseidon compiled class hash verified",
                         );
+                        self.record_gateway_casm_fallback("verified_poseidon");
                     }
                     (Some(gateway_hash), None)
                 };
@@ -651,7 +755,7 @@ mod tests {
     use super::{BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig};
     use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
-    use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+    use mp_block::{BlockHeaderWithSignatures, ConsensusSignature, FullBlock, Header};
     use mp_chain_config::ChainConfig;
     use mp_gateway::state_update::ProviderStateUpdateWithBlock;
     use mp_receipt::{ExecutionResult, TransactionReceipt};
@@ -728,6 +832,62 @@ mod tests {
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }
 
+    /// After a reorg (or a pipeline restart), `apply_to_global_trie` can be called again with
+    /// block ranges that were already applied. Already-applied blocks must be skipped, never
+    /// re-applied: re-applying would corrupt the global trie.
+    #[rstest]
+    #[tokio::test]
+    async fn test_apply_to_global_trie_skips_already_applied_blocks() {
+        // State root after applying `applied_diff` at block 0 (see test_update_tries::success).
+        let root_after_applied_diff = felt!("0x34d3e676a44c29cff0939ab2285ec02ffc3efd9eb548d85f59a6c7dd544e64d");
+        let applied_diff = StateDiff {
+            deployed_contracts: vec![DeployedContractItem { address: felt!("0x1"), class_hash: felt!("0x1") }],
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: felt!("0x1"),
+                storage_entries: vec![StorageEntry { key: felt!("0x1"), value: felt!("0x1") }],
+            }],
+            ..Default::default()
+        };
+        // A diff that, if it were (incorrectly) re-applied over an already-applied block, would
+        // change the contract trie and make the state root check fail.
+        let garbage_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: felt!("0x2"),
+                storage_entries: vec![StorageEntry { key: felt!("0x2"), value: felt!("0x99") }],
+            }],
+            ..Default::default()
+        };
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        // Block 1 has an empty state diff, so both headers expect the same state root.
+        for block_number in 0..2u64 {
+            backend
+                .write_access()
+                .write_header(BlockHeaderWithSignatures {
+                    block_hash: felt!("0x123123") + Felt::from(block_number),
+                    consensus_signatures: vec![],
+                    header: Header { global_state_root: root_after_applied_diff, block_number, ..Default::default() },
+                })
+                .unwrap();
+        }
+        let importer = BlockImporter::new(backend.clone(), BlockValidationConfig::default());
+
+        // First application goes through and records the trie head.
+        importer.ctx().apply_to_global_trie(0..1, vec![applied_diff]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(0));
+
+        // Re-applying a fully applied range must be a no-op: the garbage diff would fail the
+        // state root check if it were actually applied.
+        importer.ctx().apply_to_global_trie(0..1, vec![garbage_diff.clone()]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(0));
+
+        // A range overlapping already-applied blocks must skip the applied prefix: only the empty
+        // diff for block 1 is applied (state root unchanged), the garbage diff for block 0 is
+        // ignored.
+        importer.ctx().apply_to_global_trie(0..2, vec![garbage_diff, StateDiff::default()]).unwrap();
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(1));
+    }
+
     struct Ctx {
         importer: BlockImporterCtx,
         block_n: u64,
@@ -769,6 +929,57 @@ mod tests {
                 &BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash),
             )
             .unwrap();
+    }
+
+    #[rstest]
+    fn verify_header_accepts_valid_block_signature(ctx: Ctx) {
+        // Real signature for sepolia block 100000, from
+        // https://feeder.alpha-sepolia.starknet.io/feeder_gateway/get_signature?blockNumber=100000
+        let signed_header = BlockHeaderWithSignatures {
+            header: ctx.block.header,
+            block_hash: ctx.block.block_hash,
+            consensus_signatures: vec![ConsensusSignature {
+                r: felt!("0x3e82db606fe17470125fb100b9ea61ce490473e07b58473f8f7e28a2605e8fd"),
+                s: felt!("0x7386d01a9a221a4a7ba05bb0f37b5f648d8cb12b4419519f3d4c69b8a66906d"),
+            }],
+        };
+        ctx.importer.verify_header(ctx.block_n, &signed_header).unwrap();
+    }
+
+    #[rstest]
+    fn test_error_block_number(ctx: Ctx) {
+        let signed_header = BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash);
+        // Importing a block at the wrong height must be rejected, even if the block itself is valid.
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n + 1, &signed_header),
+            Err(BlockImportError::BlockNumber { got: 100000, expected: 100001 })
+        );
+    }
+
+    #[rstest]
+    fn test_error_block_hash(ctx: Ctx) {
+        let expected_hash = ctx.block.block_hash;
+        // A header whose claimed block hash does not match the recomputed hash must be rejected.
+        let signed_header = BlockHeaderWithSignatures::new_unsigned(ctx.block.header, Felt::ONE);
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n, &signed_header),
+            Err(BlockImportError::BlockHash { got, expected }) => {
+                assert_eq!((got, expected), (Felt::ONE, expected_hash));
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_error_block_signature(ctx: Ctx) {
+        let signed_header = BlockHeaderWithSignatures {
+            header: ctx.block.header,
+            block_hash: ctx.block.block_hash,
+            consensus_signatures: vec![ConsensusSignature { r: Felt::ONE, s: Felt::TWO }],
+        };
+        assert_matches!(
+            ctx.importer.verify_header(ctx.block_n, &signed_header),
+            Err(BlockImportError::BlockSignature { .. })
+        );
     }
 
     // Negative tests: we insert some errors and see if we correctly catch them.

@@ -132,10 +132,11 @@ pub trait StarknetReadRpcApi {
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
 }
 
-type SubscriptionItemPendingTxs = methods::ws::SubscriptionItem<mp_rpc::v0_9_0::TxnReceiptWithBlockInfo>;
-type SubscriptionItemEvents = methods::ws::SubscriptionItem<mp_rpc::v0_9_0::EmittedEvent>;
-type SubscriptionItemNewHeads = methods::ws::SubscriptionItem<mp_rpc::v0_9_0::BlockHeader>;
-type SubscriptionItemTransactionStatus = methods::ws::SubscriptionItem<mp_rpc::v0_9_0::TxnStatus>;
+type SubscriptionItemEvents = mp_rpc::v0_9_0::EmittedEventWithFinality;
+type SubscriptionItemNewHeads = mp_rpc::v0_9_0::BlockHeader;
+type SubscriptionItemNewTransactions = mp_rpc::v0_9_0::TxnWithHashAndStatus;
+type SubscriptionItemNewTransactionReceipts = mp_rpc::v0_9_0::TxnReceiptWithBlockInfo;
+type SubscriptionItemTransactionStatus = mp_rpc::v0_9_0::NewTxnStatus;
 
 #[versioned_rpc("V0_9_0", "starknet")]
 pub trait StarknetWsRpcApi {
@@ -153,6 +154,7 @@ pub trait StarknetWsRpcApi {
         from_address: Option<Felt>,
         keys: Option<Vec<Vec<Felt>>>,
         block: Option<BlockId>,
+        finality_status: Option<mp_rpc::v0_9_0::FinalityStatus>,
     ) -> jsonrpsee::core::SubscriptionResult;
 
     #[subscription(
@@ -164,18 +166,30 @@ pub trait StarknetWsRpcApi {
     async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
 
     #[subscription(
-        name = "subscribePendingTransactions",
-        unsubscribe = "unsubscribePendingTransactions",
-        item = SubscriptionItemPendingTxs,
+        name = "subscribeNewTransactions",
+        unsubscribe = "unsubscribeNewTransactions",
+        item = SubscriptionItemNewTransactions,
         param_kind = map
     )]
-    async fn subscribe_pending_transactions(
+    async fn subscribe_new_transactions(
         &self,
-        transaction_details: bool,
-        sender_address: Vec<starknet_types_core::felt::Felt>,
+        finality_status: Option<Vec<mp_rpc::v0_9_0::TxnStatusWithoutL1>>,
+        sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
+    ) -> jsonrpsee::core::SubscriptionResult;
+
+    #[subscription(
+        name = "subscribeNewTransactionReceipts",
+        unsubscribe = "unsubscribeNewTransactionReceipts",
+        item = SubscriptionItemNewTransactionReceipts,
+        param_kind = map
+    )]
+    async fn subscribe_new_transaction_receipts(
+        &self,
+        finality_status: Option<Vec<mp_rpc::v0_9_0::FinalityStatus>>,
+        sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
     ) -> jsonrpsee::core::SubscriptionResult;
     #[method(name = "unsubscribe")]
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> RpcResult<bool>;
+    async fn starknet_unsubscribe(&self, subscription_id: String) -> RpcResult<bool>;
 }
 
 #[versioned_rpc("V0_9_0", "starknet")]
