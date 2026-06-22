@@ -32,12 +32,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use generate_pie::error::{BlockProcessingError, PieGenerationError};
 use mockall::predicate::eq;
 use mongodb::bson::doc;
 use rstest::rstest;
+use starknet::providers::ProviderError;
 use tokio::time::sleep;
 
 use crate::core::client::alert::MockAlertClient;
+use crate::error::job::snos::SnosError;
 use crate::tests::common::MessagePayloadType;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
@@ -306,11 +309,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
 
-/// Tests `process_job` function when job handler panics during execution.
-/// This test verifies that:
-/// 1. The panic is properly caught and handled
-/// 2. The job is marked as Failed immediately
-/// 3. The message is ACKed and a failure alert is sent
+/// Tests that SNOS panics restore the original job status and rely on SQS/DLQ retries.
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
@@ -320,7 +319,7 @@ async fn process_job_handles_panic() {
     let _test_lock = acquire_test_lock();
 
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+    mock_alert_client.expect_send_message().times(0);
 
     // Building config
     let services = TestConfigBuilder::new()
@@ -352,13 +351,17 @@ async fn process_job_handles_panic() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
-    // Process job should return Ok so message is ACKed after the panic is recorded as a job failure
+    // Process job should return Err so the message is NACKed and SQS can retry it.
     let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_ok(), "process_job should return Ok after marking the job as Failed");
+    assert!(result.is_err(), "process_job should return Err so the message is not ACKed");
 
-    // DB checks - verify the job was moved to Failed with the panic reason recorded
+    // DB checks - verify the job was restored for retry with the panic reason recorded
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(job_in_db.status, JobStatus::Failed);
+    assert_eq!(job_in_db.status, JobStatus::Created);
+    assert_eq!(job_in_db.metadata.common.process_attempt_no, 1);
+    assert_eq!(job_in_db.metadata.common.process_retry_attempt_no, 1);
+    assert!(job_in_db.metadata.common.process_started_at.is_none());
+
     let failure_reason = job_in_db.metadata.common.failure_reason.as_ref().unwrap();
     assert!(
         failure_reason.contains("Processing attempt") && failure_reason.contains("panicked"),
@@ -565,7 +568,7 @@ async fn process_job_two_workers_process_same_job_works() {
     assert_eq!(final_job_in_db.status, JobStatus::PendingVerification);
 }
 
-/// Tests `process_job` function when the job handler returns an error.
+/// Tests `process_job` function when the SNOS job handler returns a non-retryable error.
 /// The job should be marked as Failed immediately and the message should be ACKed.
 #[rstest]
 #[tokio::test]
@@ -580,12 +583,14 @@ async fn process_job_job_handler_returns_error_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting check_ready_to_process to return Ok (dependencies are ready)
     job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
-    // Expecting process job function in job processor to return an error.
-    let failure_reason = "Failed to process job";
-    job_handler
-        .expect_process_job()
-        .times(1)
-        .returning(move |_, _| Err(JobError::Other(failure_reason.to_string().into())));
+    // Expecting process job function in job processor to return a non-retryable SNOS error.
+    let failure_reason = "cairo vm execution failed";
+    job_handler.expect_process_job().times(1).returning(move |_, _| {
+        Err(JobError::from(SnosError::SnosExecutionError {
+            internal_id: 1,
+            source: PieGenerationError::OsExecution(failure_reason.to_string()),
+        }))
+    });
 
     // building config
     let services = TestConfigBuilder::new()
@@ -623,6 +628,285 @@ async fn process_job_job_handler_returns_error_works() {
         recorded_reason.contains(failure_reason),
         "failure_reason should contain the original error. Got: {}",
         recorded_reason
+    );
+}
+
+/// Tests that unclassified SNOS processing errors restore the original job status and rely on SQS/DLQ retries.
+#[rstest]
+#[case::created(JobStatus::Created)]
+#[case::verification_failed(JobStatus::VerificationFailed)]
+#[case::pending_retry(JobStatus::PendingRetry)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_unclassified_snos_error_restores_original_status_for_sqs_retry(#[case] initial_status: JobStatus) {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(0);
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| Err(JobError::Other("simulated generic snos processing failure".to_string().into())));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, initial_status.clone(), 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_err(), "generic SNOS processing errors should bubble up so the message is not ACKed");
+
+    let retriable_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(retriable_job.status, initial_status);
+    assert_eq!(retriable_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(retriable_job.metadata.common.process_retry_attempt_no, 1);
+    assert!(retriable_job.metadata.common.process_started_at.is_none());
+
+    let recorded_reason = retriable_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        recorded_reason.contains("Processing attempt 1 failed"),
+        "failure_reason should contain attempt info. Got: {}",
+        recorded_reason
+    );
+    assert!(
+        recorded_reason.contains("simulated generic snos processing failure"),
+        "failure_reason should contain the original error. Got: {}",
+        recorded_reason
+    );
+}
+
+/// Tests that non-SNOS processing errors restore the original job status and rely on SQS/DLQ retries.
+#[rstest]
+#[case::created(JobStatus::Created)]
+#[case::verification_failed(JobStatus::VerificationFailed)]
+#[case::pending_retry(JobStatus::PendingRetry)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_non_snos_error_restores_original_status_for_sqs_retry(#[case] initial_status: JobStatus) {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(0);
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| Err(JobError::Other("simulated non-snos processing failure".to_string().into())));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::DataSubmission, initial_status.clone(), 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_err(), "non-SNOS processing errors should bubble up so the message is not ACKed");
+
+    let retriable_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(retriable_job.status, initial_status);
+    assert_eq!(retriable_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(retriable_job.metadata.common.process_retry_attempt_no, 1);
+    assert!(retriable_job.metadata.common.process_started_at.is_none());
+
+    let failure_reason = retriable_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt 1 failed"),
+        "failure_reason should record the processing failure. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("simulated non-snos processing failure"),
+        "failure_reason should include the underlying error. Got: {}",
+        failure_reason
+    );
+}
+
+/// Tests that retryable SNOS execution errors restore the original job status and rely on SQS/DLQ retries.
+#[rstest]
+#[case::created(JobStatus::Created)]
+#[case::verification_failed(JobStatus::VerificationFailed)]
+#[case::pending_retry(JobStatus::PendingRetry)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_retryable_snos_error_restores_original_status_for_sqs_retry(#[case] initial_status: JobStatus) {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(0);
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| {
+        Err(JobError::from(SnosError::SnosExecutionError {
+            internal_id: 1,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 42,
+                source: Box::new(BlockProcessingError::RpcClient(Box::new(ProviderError::RateLimited))),
+            },
+        }))
+    });
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, initial_status.clone(), 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_err(), "retryable SNOS errors should bubble up so the message is not ACKed");
+
+    let retriable_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(retriable_job.status, initial_status);
+    assert_eq!(retriable_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(retriable_job.metadata.common.process_retry_attempt_no, 1);
+    assert!(retriable_job.metadata.common.process_started_at.is_none());
+
+    let failure_reason = retriable_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt 1 failed"),
+        "failure_reason should record the retryable processing failure. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("RPC client error"),
+        "failure_reason should include the underlying RPC error. Got: {}",
+        failure_reason
+    );
+}
+
+/// Tests that Cairo/OS execution failures still fail fast so alerting can stop the sequencer quickly.
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_cairo_execution_failure_still_fails_fast() {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| {
+        Err(JobError::from(SnosError::SnosExecutionError {
+            internal_id: 1,
+            source: PieGenerationError::OsExecution("cairo vm execution failed".to_string()),
+        }))
+    });
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_ok(), "non-retryable Cairo execution failures should still ACK after marking failed");
+
+    let failed_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(failed_job.status, JobStatus::Failed);
+    assert_eq!(failed_job.metadata.common.process_retry_attempt_no, 0);
+
+    let failure_reason = failed_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("cairo vm execution failed"),
+        "failure_reason should contain the Cairo execution error. Got: {}",
+        failure_reason
+    );
+}
+
+/// Tests that non-SNOS panics restore the original job status and rely on SQS/DLQ retries.
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_non_snos_panic_restores_original_status_for_sqs_retry() {
+    let _test_lock = acquire_test_lock();
+
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(0);
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| -> Result<String, JobError> { panic!("Simulated non-SNOS panic in process_job") });
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::DataSubmission, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+
+    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
+    assert!(result.is_err(), "non-SNOS panics should bubble up so the message is not ACKed");
+
+    let retriable_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(retriable_job.status, JobStatus::Created);
+    assert_eq!(retriable_job.metadata.common.process_attempt_no, 1);
+    assert_eq!(retriable_job.metadata.common.process_retry_attempt_no, 1);
+    assert!(retriable_job.metadata.common.process_started_at.is_none());
+
+    let failure_reason = retriable_job.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt 1 panicked"),
+        "failure_reason should record the panic attempt info. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("Simulated non-SNOS panic in process_job"),
+        "failure_reason should contain the panic message. Got: {}",
+        failure_reason
     );
 }
 
@@ -974,8 +1258,11 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
 }
 
 #[rstest]
+#[case::created(JobType::SnosRun, JobStatus::Created)]
+#[case::verification_failed(JobType::SnosRun, JobStatus::VerificationFailed)]
 #[case::pending_verification(JobType::SnosRun, JobStatus::PendingVerification)]
 #[case::verification_timeout(JobType::SnosRun, JobStatus::VerificationTimeout)]
+#[case::pending_retry(JobType::SnosRun, JobStatus::PendingRetry)]
 #[tokio::test]
 async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobType, #[case] job_status: JobStatus) {
     let mut mock_alert_client = MockAlertClient::new();
@@ -1237,67 +1524,5 @@ async fn move_job_to_failed_accumulates_failure_history() {
         updated_job_2.metadata.common.previous_failure_reasons,
         vec!["Processing attempt 1 failed: initial error".to_string()],
         "Previous failure should be in previous_failure_reasons"
-    );
-}
-
-/// Tests that a processing failure immediately marks the job as Failed.
-/// This test verifies that when process_job fails:
-/// 1. process_job returns Ok (so the message is ACKed, no SQS retries)
-/// 2. Job status is set to Failed with the failure reason
-#[rstest]
-#[tokio::test]
-#[allow(clippy::await_holding_lock)]
-async fn process_job_failure_marks_job_as_failed() {
-    let _test_lock = acquire_test_lock();
-
-    // Set up mock alert client
-    let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
-
-    let services = TestConfigBuilder::new()
-        .configure_database(ConfigType::Actual)
-        .configure_queue_client(ConfigType::Actual)
-        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
-        .build()
-        .await;
-
-    let database_client = services.config.database();
-
-    // Create a job that will fail processing
-    // process_attempt_no starts at 0, and gets incremented to 1 when process_job runs
-    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
-    let job_id = job_item.id;
-    database_client.create_job(job_item.clone()).await.unwrap();
-
-    // Set up mock job handler that fails on process
-    let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
-    job_handler
-        .expect_process_job()
-        .times(1)
-        .returning(|_, _| Err(JobError::Other("Simulated processing failure".to_string().into())));
-
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx_guard = get_job_handler_context_safe();
-    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
-
-    // Process job - should return Ok so the message is ACKed (no SQS retries)
-    let result = JobHandlerService::process_job(job_id, services.config.clone()).await;
-    assert!(result.is_ok(), "process_job should return Ok to ACK the message");
-
-    // Verify job is marked as Failed with the failure reason
-    let failed_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    assert_eq!(failed_job.status, JobStatus::Failed);
-
-    let failure_reason = failed_job.metadata.common.failure_reason.as_ref().unwrap();
-    assert!(
-        failure_reason.contains("Processing attempt") && failure_reason.contains("failed"),
-        "failure_reason should contain attempt info. Got: {}",
-        failure_reason
-    );
-    assert!(
-        failure_reason.contains("Simulated processing failure"),
-        "failure_reason should contain original error. Got: {}",
-        failure_reason
     );
 }

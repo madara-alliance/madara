@@ -114,3 +114,9 @@ pub enum JobError {
     #[error("Orchestrator Error: {0}")]
     AnyHowError(#[from] anyhow::Error),
 }
+
+impl JobError {
+    pub fn is_fail_fast_snos_processing_failure(&self) -> bool {
+        matches!(self, Self::SnosJobError(error) if !error.is_retryable())
+    }
+}
