@@ -23,7 +23,9 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
-use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
+use crate::types::{
+    AtlanticBucketStatus, AtlanticCairoVm, AtlanticChain, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
+};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -185,7 +187,7 @@ impl ProverClient for AtlanticProverService {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::Done => {
-                        if matches!(&self.result, AtlanticQueryStep::ProofVerificationOnL2) {
+                        if Self::is_l2_verification_query(&atlantic_query) {
                             if let Err(reason) = Self::ensure_l2_verification_completed(&atlantic_query) {
                                 return Ok(TaskStatus::Failed(reason));
                             }
@@ -444,6 +446,13 @@ impl AtlanticProverService {
 
     fn should_mock_proof(&self) -> bool {
         self.mock_fact_hash
+    }
+
+    fn is_l2_verification_query(atlantic_query: &AtlanticQuery) -> bool {
+        matches!(atlantic_query.chain.as_ref(), Some(AtlanticChain::L2))
+            || matches!(atlantic_query.result.as_ref(), Some(AtlanticQueryStep::ProofVerificationOnL2))
+            || matches!(atlantic_query.step.as_ref(), Some(AtlanticQueryStep::BridgeFactHash))
+            || atlantic_query.steps.iter().any(|step| matches!(step, AtlanticQueryStep::BridgeFactHash))
     }
 
     fn ensure_l2_verification_completed(atlantic_query: &AtlanticQuery) -> Result<(), String> {

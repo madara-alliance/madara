@@ -71,7 +71,12 @@ fn atlantic_done_status_response(result: Option<&str>, step: Option<&str>, steps
     })
 }
 
-async fn get_mocked_job_status(result: Option<&str>, step: Option<&str>, steps: Vec<&str>) -> TaskStatus {
+async fn get_mocked_job_status_with_service_result(
+    service_result: AtlanticQueryStep,
+    result: Option<&str>,
+    step: Option<&str>,
+    steps: Vec<&str>,
+) -> TaskStatus {
     let mock_server = MockServer::start();
     let status_mock = mock_server.mock(|when, then| {
         when.method("GET").path("/atlantic-query/query-id");
@@ -80,7 +85,7 @@ async fn get_mocked_job_status(result: Option<&str>, step: Option<&str>, steps: 
             .json_body(atlantic_done_status_response(result, step, steps));
     });
 
-    let atlantic_params = atlantic_params_for_status_tests(AtlanticQueryStep::ProofVerificationOnL2);
+    let atlantic_params = atlantic_params_for_status_tests(service_result);
     let atlantic_service =
         AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
 
@@ -91,6 +96,10 @@ async fn get_mocked_job_status(result: Option<&str>, step: Option<&str>, steps: 
 
     status_mock.assert();
     status
+}
+
+async fn get_mocked_job_status(result: Option<&str>, step: Option<&str>, steps: Vec<&str>) -> TaskStatus {
+    get_mocked_job_status_with_service_result(AtlanticQueryStep::ProofVerificationOnL2, result, step, steps).await
 }
 
 #[test]
@@ -148,6 +157,19 @@ fn atlantic_status_response_deserializes_l2_bridge_fact_hash_step() {
 #[tokio::test]
 async fn atlantic_l2_verification_status_accepts_bridge_fact_hash_completion() {
     let status = get_mocked_job_status(
+        Some("PROOF_VERIFICATION_ON_L2"),
+        Some("BRIDGE_FACT_HASH"),
+        vec!["TRACE_AND_METADATA_GENERATION", "PROOF_GENERATION_AND_VERIFICATION", "BRIDGE_FACT_HASH"],
+    )
+    .await;
+
+    assert_eq!(status, TaskStatus::Succeeded);
+}
+
+#[tokio::test]
+async fn atlantic_l2_verification_status_uses_polled_query_result_not_service_default() {
+    let status = get_mocked_job_status_with_service_result(
+        AtlanticQueryStep::ProofGeneration,
         Some("PROOF_VERIFICATION_ON_L2"),
         Some("BRIDGE_FACT_HASH"),
         vec!["TRACE_AND_METADATA_GENERATION", "PROOF_GENERATION_AND_VERIFICATION", "BRIDGE_FACT_HASH"],
