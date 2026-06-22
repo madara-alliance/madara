@@ -2,8 +2,9 @@
 //! the Starknet mainnet. This allows you to produce your own local state and experiment on it. It
 //! is also very useful in setting up a sample chain for running tests.
 //!
-//! PS: Important point to note here that we are not updating the tries here, hence SNOS won't work
-//! as we won't have storage proofs of the declaration and other transactions here!!!
+//! The default devnet bootstrap writes a deterministic genesis state directly. This keeps local
+//! startup fast, but it does not create transaction execution history for the bootstrap
+//! declarations, deployments, or funding.
 //!
 //! Below is a list of the core responsibilities of the Madara devnet.
 //!
@@ -78,9 +79,9 @@ use mp_transactions::compute_hash::calculate_contract_address;
 pub use predeployed_contracts::*;
 
 // 1 ETH = 1e18 WEI
-const ETH_WEI_DECIMALS: u128 = 1_000_000_000_000_000_000;
+pub const ETH_WEI_DECIMALS: u128 = 1_000_000_000_000_000_000;
 // 1 STRK = 1e18 FRI
-const STRK_FRI_DECIMALS: u128 = 1_000_000_000_000_000_000;
+pub const STRK_FRI_DECIMALS: u128 = 1_000_000_000_000_000_000;
 
 #[derive(Debug, Clone, Default)]
 pub struct StorageDiffs(HashMap<ContractAddress, HashMap<StorageKey, Felt>>);
@@ -110,14 +111,20 @@ pub const UDC_CONTRACT_ADDRESS: Felt =
 
 const ERC20_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../../build-artifacts/cairo_artifacts/openzeppelin_ERC20Upgradeable.contract_class.json");
-const ERC20_STRK_CONTRACT_ADDRESS: Felt =
+pub const ERC20_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
-const ERC20_ETH_CONTRACT_ADDRESS: Felt =
+pub const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
+
+const ALIAS_CONTRACT_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
+const ALIAS_COUNTER_STORAGE_KEY: Felt = Felt::ZERO;
+const INITIAL_AVAILABLE_ALIAS: Felt = Felt::from_hex_unchecked("0x80");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] = include_bytes!(
     "../../../../../build-artifacts/cairo_artifacts/openzeppelin_AccountUpgradeable.contract_class.json"
 );
+const STORAGE_PROOF_BOOTSTRAP_ACCOUNT_CLASS_DEFINITION: &[u8] =
+    include_bytes!("../../../../../build-artifacts/oz-account-sierra-1-4-0/OpenZeppelinAccountCairoOne.sierra.json");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -130,6 +137,10 @@ pub struct ChainGenesisDescription {
 }
 
 impl ChainGenesisDescription {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     #[tracing::instrument(fields(module = "ChainGenesisDescription"))]
     pub fn base_config() -> anyhow::Result<Self> {
         let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
@@ -148,55 +159,66 @@ impl ChainGenesisDescription {
 
     #[tracing::instrument(skip(self), fields(module = "ChainGenesisDescription"))]
     pub fn add_devnet_contracts(&mut self, n_addr: u64) -> anyhow::Result<DevnetKeys> {
+        self.add_devnet_contracts_with_genesis_selector(
+            n_addr,
+            |_| true,
+            |_| ContractFeeTokensBalance {
+                fri: (10_000 * STRK_FRI_DECIMALS).into(),
+                wei: (10_000 * ETH_WEI_DECIMALS).into(),
+            },
+            |_| ContractFeeTokensBalance {
+                fri: (10_000 * STRK_FRI_DECIMALS).into(),
+                wei: (10_000 * ETH_WEI_DECIMALS).into(),
+            },
+        )
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "ChainGenesisDescription"))]
+    pub fn add_devnet_contracts_for_storage_proof_bootstrap(&mut self, n_addr: u64) -> anyhow::Result<DevnetKeys> {
+        self.initial_storage
+            .contract_mut(ALIAS_CONTRACT_ADDRESS.try_into().expect("alias contract address is valid"))
+            .insert(
+                ALIAS_COUNTER_STORAGE_KEY.try_into().expect("alias counter storage key is valid"),
+                INITIAL_AVAILABLE_ALIAS,
+            );
+
+        let account_class = storage_proof_bootstrap_account_class().context("Failed to add bootstrap account class")?;
+        Ok(make_devnet_contracts(n_addr, account_class.class_hash, |_| ContractFeeTokensBalance {
+            fri: Felt::ZERO,
+            wei: Felt::ZERO,
+        }))
+    }
+
+    fn add_devnet_contracts_with_genesis_selector(
+        &mut self,
+        n_addr: u64,
+        deploy_in_genesis: impl Fn(u64) -> bool,
+        genesis_balance_for: impl Fn(u64) -> ContractFeeTokensBalance,
+        contract_balance_for: impl Fn(u64) -> ContractFeeTokensBalance,
+    ) -> anyhow::Result<DevnetKeys> {
         let account_class =
             InitiallyDeclaredClass::new_sierra(ACCOUNT_CLASS_DEFINITION).context("Failed to add account class")?;
         let account_class_hash = account_class.class_hash();
         self.declared_classes.insert(account_class);
 
+        let contracts = make_devnet_contracts(n_addr, account_class_hash, contract_balance_for);
+
         fn get_contract_pubkey_storage_address() -> StorageKey {
             get_storage_var_address("Account_public_key", &[])
         }
 
-        // We may want to make this seed a cli argument in the future.
-        let seed = Felt::from_hex_unchecked("0x1278b36872363a1276387");
-
-        fn rand_from_i(seed: Felt, i: u64) -> Felt {
-            Poseidon::hash(&seed, &(31 ^ !i).into())
+        for (addr_idx, contract) in contracts.0.iter().enumerate() {
+            if deploy_in_genesis(addr_idx as u64) {
+                self.deployed_contracts.insert(contract.address, account_class_hash);
+                self.initial_balances
+                    .insert(ContractAddress::try_from(contract.address).unwrap(), genesis_balance_for(addr_idx as u64));
+                self.initial_storage
+                    .contract_mut(contract.address.try_into().unwrap())
+                    .insert(get_contract_pubkey_storage_address(), contract.pubkey);
+            }
         }
 
-        Ok(DevnetKeys(
-            (0..n_addr)
-                .map(|addr_idx| {
-                    let secret_scalar = rand_from_i(seed, addr_idx);
-                    let key = SigningKey::from_secret_scalar(secret_scalar);
-                    let pubkey = key.verifying_key();
-
-                    // calculating actual address w.r.t. the class hash.
-                    let calculated_address =
-                        calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
-
-                    let balance = ContractFeeTokensBalance {
-                        fri: (10_000 * ETH_WEI_DECIMALS).into(),
-                        wei: (10_000 * STRK_FRI_DECIMALS).into(),
-                    };
-
-                    self.deployed_contracts.insert(calculated_address, account_class_hash);
-                    self.initial_balances
-                        .insert(ContractAddress::try_from(calculated_address).unwrap(), balance.clone());
-                    self.initial_storage
-                        .contract_mut(calculated_address.try_into().unwrap())
-                        .insert(get_contract_pubkey_storage_address(), pubkey.scalar());
-
-                    DevnetPredeployedContract {
-                        secret: key,
-                        pubkey: pubkey.scalar(),
-                        balance,
-                        address: calculated_address,
-                        class_hash: account_class_hash,
-                    }
-                })
-                .collect(),
-        ))
+        Ok(contracts)
     }
 
     #[tracing::instrument(skip(self, chain_config), fields(module = "ChainGenesisDescription"))]
@@ -254,6 +276,50 @@ impl ChainGenesisDescription {
             .add_full_block_with_classes(&block, &classes, /* pre_v0_13_2_hash_override */ true)?;
         Ok(())
     }
+}
+
+pub fn storage_proof_bootstrap_account_class() -> anyhow::Result<InitiallyDeclaredSierraClass> {
+    let class = InitiallyDeclaredClass::new_sierra(STORAGE_PROOF_BOOTSTRAP_ACCOUNT_CLASS_DEFINITION)
+        .context("Failed to add bootstrap account class")?;
+    let InitiallyDeclaredClass::Sierra(class) = class else {
+        unreachable!("bootstrap account class is a sierra class")
+    };
+    Ok(class)
+}
+
+fn make_devnet_contracts(
+    n_addr: u64,
+    account_class_hash: Felt,
+    contract_balance_for: impl Fn(u64) -> ContractFeeTokensBalance,
+) -> DevnetKeys {
+    // We may want to make this seed a cli argument in the future.
+    let seed = Felt::from_hex_unchecked("0x1278b36872363a1276387");
+
+    fn rand_from_i(seed: Felt, i: u64) -> Felt {
+        Poseidon::hash(&seed, &(31 ^ !i).into())
+    }
+
+    DevnetKeys(
+        (0..n_addr)
+            .map(|addr_idx| {
+                let secret_scalar = rand_from_i(seed, addr_idx);
+                let key = SigningKey::from_secret_scalar(secret_scalar);
+                let pubkey = key.verifying_key();
+
+                // calculating actual address w.r.t. the class hash.
+                let calculated_address =
+                    calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
+
+                DevnetPredeployedContract {
+                    secret: key,
+                    pubkey: pubkey.scalar(),
+                    balance: contract_balance_for(addr_idx),
+                    address: calculated_address,
+                    class_hash: account_class_hash,
+                }
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -488,6 +554,30 @@ mod tests {
         };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
+    }
+
+    #[test]
+    fn test_storage_proof_bootstrap_genesis_only_initializes_alias_counter() {
+        let mut genesis = ChainGenesisDescription::empty();
+        let contracts = genesis.add_devnet_contracts_for_storage_proof_bootstrap(3).unwrap();
+        let chain_config = ChainConfig::madara_devnet();
+        let (block, _) = genesis.into_block(&chain_config).unwrap();
+
+        assert!(contracts
+            .0
+            .iter()
+            .all(|contract| contract.balance.fri == Felt::ZERO && contract.balance.wei == Felt::ZERO));
+        let alias_storage =
+            block.state_diff.storage_diffs.iter().find(|diff| diff.address == ALIAS_CONTRACT_ADDRESS).unwrap();
+        let alias_counter =
+            alias_storage.storage_entries.iter().find(|entry| entry.key == ALIAS_COUNTER_STORAGE_KEY).unwrap();
+
+        assert_eq!(block.state_diff.storage_diffs.len(), 1);
+        assert_eq!(alias_counter.value, INITIAL_AVAILABLE_ALIAS);
+        assert!(block.state_diff.old_declared_contracts.is_empty());
+        assert!(block.state_diff.declared_classes.is_empty());
+        assert!(block.state_diff.deployed_contracts.is_empty());
+        assert!(block.state_diff.nonces.is_empty());
     }
 
     #[rstest]

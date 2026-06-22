@@ -323,6 +323,7 @@ pub struct BlockProductionTask {
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     no_charge_fee: bool,
     discard_preconfirmed_on_startup: bool,
+    close_on_block_time: bool,
 }
 
 impl BlockProductionTask {
@@ -343,6 +344,29 @@ impl BlockProductionTask {
         no_charge_fee: bool,
         discard_preconfirmed_on_startup: bool,
     ) -> Self {
+        Self::new_inner(backend, mempool, metrics, l1_client, no_charge_fee, discard_preconfirmed_on_startup, true)
+    }
+
+    pub fn new_manual_close_only(
+        backend: Arc<MadaraBackend>,
+        mempool: Arc<Mempool>,
+        metrics: Arc<BlockProductionMetrics>,
+        l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool,
+        discard_preconfirmed_on_startup: bool,
+    ) -> Self {
+        Self::new_inner(backend, mempool, metrics, l1_client, no_charge_fee, discard_preconfirmed_on_startup, false)
+    }
+
+    fn new_inner(
+        backend: Arc<MadaraBackend>,
+        mempool: Arc<Mempool>,
+        metrics: Arc<BlockProductionMetrics>,
+        l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool,
+        discard_preconfirmed_on_startup: bool,
+        close_on_block_time: bool,
+    ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
         Self {
@@ -357,6 +381,7 @@ impl BlockProductionTask {
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
             discard_preconfirmed_on_startup,
+            close_on_block_time,
         }
     }
 
@@ -1029,6 +1054,7 @@ impl BlockProductionTask {
             Arc::clone(&self.backend),
             self.executor_commands_recv.take().context("Task already started")?,
             self.metrics.clone(),
+            self.close_on_block_time,
         )
         .context("Starting executor thread")?;
 
