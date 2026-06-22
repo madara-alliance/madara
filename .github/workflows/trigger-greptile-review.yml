@@ -19,10 +19,11 @@ jobs:
         with:
           script: |
             const branch = 'starknet-full-node';
+            const [owner, repo] = github.repository.split('/');
             const { data: prs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.name,
-              head: `${context.repo.owner}:${branch}`,
+              owner,
+              repo,
+              head: `${owner}:${branch}`,
               state: 'open',
             });
             if (prs.length === 0) {
@@ -30,10 +31,9 @@ jobs:
               return;
             }
             const pr = prs[0];
-            const mainSha = context.payload.after;
             await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.name,
+              owner,
+              repo,
               issue_number: pr.number,
               body: `@greptileai please review — rebased \`${branch}\` onto latest \`main\`.`,
             });
