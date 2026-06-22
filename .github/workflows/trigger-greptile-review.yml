@@ -1,0 +1,39 @@
+name: Trigger Greptile Review
+
+on:
+  push:
+    branches:
+      - starknet-full-node
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  request-review:
+    if: contains(github.event.head_commit.message, 'trigger greptile review')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Greptile to review the open PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = 'starknet-full-node';
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+            if (prs.length === 0) {
+              core.info(`No open PR found for ${branch}`);
+              return;
+            }
+            const pr = prs[0];
+            const mainSha = context.payload.after;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.name,
+              issue_number: pr.number,
+              body: `@greptileai please review — rebased \`${branch}\` onto latest \`main\`.`,
+            });
