@@ -19,7 +19,8 @@ jobs:
         with:
           script: |
             const branch = 'starknet-full-node';
-            const [owner, repo] = github.repository.split('/');
+            const owner = context.repo.owner;
+            const repo = context.payload.repository.name;
             const { data: prs } = await github.rest.pulls.list({
               owner,
               repo,
