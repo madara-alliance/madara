@@ -20,6 +20,11 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
+        if matches!(config.layer(), Layer::L3) {
+            debug!("Skipping proof creation trigger for L3; proof registration submits Cairo PIE directly");
+            return Ok(());
+        }
+
         let successful_snos_jobs = config
             .database()
             .get_jobs_without_successor(

@@ -7,7 +7,7 @@
 //! # Background
 //!
 //! Different blockchain networks have different requirements for proof verification.
-//! For example, Starknet requires specific layout and result parameters that
+//! For example, Starknet requires a specific layout parameter that
 //! Ethereum doesn't need. This module abstracts these differences behind a
 //! common trait.
 //!
@@ -15,7 +15,7 @@
 //!
 //! - [`ProvingLayer`]: Trait for adding network-specific proving parameters
 //! - [`EthereumLayer`]: Implementation for Ethereum settlement (no extra params)
-//! - [`StarknetLayer`]: Implementation for Starknet settlement (adds layout/result)
+//! - [`StarknetLayer`]: Implementation for Starknet settlement (adds layout)
 //! - [`ProvingParams`]: Parameters passed to the proving layer
 //! - [`create_proving_layer`]: Factory function to create the appropriate layer
 //!
@@ -24,7 +24,6 @@ use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::RequestBuilder;
 
 use crate::error::AtlanticError;
-use crate::types::AtlanticQueryStep;
 
 /// Parameters for proving layer specific configuration
 pub struct ProvingParams {
@@ -41,7 +40,7 @@ pub struct ProvingParams {
 /// # Implementations
 ///
 /// - `EthereumLayer`: No additional parameters needed
-/// - `StarknetLayer`: Adds result and layout parameters
+/// - `StarknetLayer`: Adds the layout parameter
 pub trait ProvingLayer: Send + Sync {
     /// Adds proving layer specific parameters to the request
     ///
@@ -69,15 +68,12 @@ impl ProvingLayer for EthereumLayer {
 
 /// Starknet proving layer
 ///
-/// For Starknet settlement, we need to add the result step
-/// and layout parameters to the request.
+/// For Starknet settlement, we add the layout parameter to the request.
 pub struct StarknetLayer;
 
 impl ProvingLayer for StarknetLayer {
     fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a> {
-        request
-            .form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
-            .form_text("layout", params.layout.to_str())
+        request.form_text("layout", params.layout.to_str())
     }
 }
 

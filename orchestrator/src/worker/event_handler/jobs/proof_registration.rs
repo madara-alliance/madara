@@ -8,8 +8,9 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
+use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
-use orchestrator_prover_client_interface::{TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{CreateJobInfo, Task, TaskStatus, TaskType};
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
@@ -33,40 +34,57 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             error!(error = %e, "Failed to convert metadata to ProvingMetadata");
         })?;
 
-        // Get the proof path from input_path
-        let proof_key = match proving_metadata.input_path {
-            Some(ProvingInputType::Proof(path)) => path,
-            Some(ProvingInputType::CairoPie(_)) => {
-                return Err(JobError::Other(OtherError(eyre!("Expected Proof input, got CairoPie"))));
+        let task_id = internal_id.to_string();
+        let external_id = match proving_metadata.input_path {
+            Some(ProvingInputType::Proof(proof_key)) => {
+                debug!(%proof_key, "Fetching proof file");
+
+                let proof_file = config.storage().get_data(&proof_key).await?;
+
+                let proof = String::from_utf8(proof_file.to_vec()).context(format!(
+                    "Failed to parse proof file as UTF-8 for job_id: {}, proof_key: {}",
+                    internal_id, proof_key
+                ))?;
+
+                let _: StarkProof = parse(proof.clone())
+                    .context(format!("Failed to parse proof file as UTF-8, internal-id: {}", internal_id))?;
+
+                let formatted_proof = format!("{{\n\t\"proof\": {}\n}}", proof);
+
+                config
+                    .prover_client()
+                    .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps)
+                    .await
+                    .inspect_err(|e| {
+                        error!(error = %e, "Failed to submit proof for L2 verification for job {}",
+                        internal_id);
+                    })?
+            }
+            Some(ProvingInputType::CairoPie(input_path)) => {
+                debug!(%input_path, "Fetching Cairo PIE file for L2 proof verification");
+
+                let cairo_pie_file = config.storage().get_data(&input_path).await?;
+                let cairo_pie = Box::new(
+                    CairoPie::from_bytes(cairo_pie_file.to_vec().as_slice())
+                        .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse Cairo PIE file: {}", e))))?,
+                );
+
+                config
+                    .prover_client()
+                    .submit_task(Task::CreateJob(CreateJobInfo {
+                        cairo_pie,
+                        bucket_id: None,
+                        bucket_job_index: None,
+                        num_steps: proving_metadata.n_steps,
+                        dedup_id: job.id.to_string(),
+                    }))
+                    .await
+                    .inspect_err(|e| {
+                        error!(error = %e, "Failed to submit Cairo PIE for L2 proof verification for job {}", internal_id);
+                    })?
             }
             None => return Err(JobError::Other(OtherError(eyre!("Input path not found in job metadata")))),
         };
-        debug!(%proof_key, "Fetching proof file");
-
-        let proof_file = config.storage().get_data(&proof_key).await?;
-
-        let proof = String::from_utf8(proof_file.to_vec()).context(format!(
-            "Failed to parse proof file as UTF-8 for job_id: {}, proof_key: {}",
-            internal_id, proof_key
-        ))?;
-
-        let _: StarkProof = parse(proof.clone())
-            .context(format!("Failed to parse proof file as UTF-8, internal-id: {}", internal_id))?;
-
-        // Format proof for submission
-        let formatted_proof = format!("{{\n\t\"proof\": {}\n}}", proof);
-
-        let task_id = internal_id.to_string();
-
-        // Submit proof for L2 verification
-        let external_id = config
-            .prover_client()
-            .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps)
-            .await
-            .inspect_err(|e| {
-                error!(error = %e, "Failed to submit proof for L2 verification for job {}",
-                internal_id);
-            })?;
 
         info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "{:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
         Ok(external_id)

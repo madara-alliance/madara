@@ -23,7 +23,9 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
-use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
+use crate::types::{
+    AtlanticBucketStatus, AtlanticCairoVm, AtlanticChain, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
+};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -180,10 +182,17 @@ impl ProverClient for AtlanticProverService {
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             TaskType::Job => {
-                match self.atlantic_client.get_job_status(job_key).await?.atlantic_query.status {
+                let atlantic_query = self.atlantic_client.get_job_status(job_key).await?.atlantic_query;
+                match atlantic_query.status {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::Done => {
+                        if Self::is_l2_verification_query(&atlantic_query) {
+                            if let Err(reason) = Self::ensure_l2_verification_completed(&atlantic_query) {
+                                return Ok(TaskStatus::Failed(reason));
+                            }
+                        }
+
                         if !cross_verify {
                             tracing::debug!("Skipping cross-verification as it's disabled");
                             return Ok(TaskStatus::Succeeded);
@@ -409,11 +418,11 @@ impl AtlanticProverService {
             "random_api_key".to_string(),
             AtlanticJobConfig {
                 proof_layout: *proof_layout,
-                cairo_vm: AtlanticCairoVm::Rust,
-                result: AtlanticQueryStep::ProofVerificationOnL1,
+                cairo_vm: atlantic_params.atlantic_cairo_vm.clone(),
+                result: atlantic_params.atlantic_result.clone(),
                 network: "TESTNET".to_string(),
                 chain_id_hex: None,
-                sharp_prover: AtlanticSharpProver::default(),
+                sharp_prover: atlantic_params.atlantic_sharp_prover.clone(),
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
@@ -437,6 +446,38 @@ impl AtlanticProverService {
 
     fn should_mock_proof(&self) -> bool {
         self.mock_fact_hash
+    }
+
+    fn is_l2_verification_query(atlantic_query: &AtlanticQuery) -> bool {
+        matches!(atlantic_query.chain.as_ref(), Some(AtlanticChain::L2))
+            || matches!(atlantic_query.result.as_ref(), Some(AtlanticQueryStep::ProofVerificationOnL2))
+            || matches!(atlantic_query.step.as_ref(), Some(AtlanticQueryStep::BridgeFactHash))
+            || atlantic_query.steps.iter().any(|step| matches!(step, AtlanticQueryStep::BridgeFactHash))
+    }
+
+    fn ensure_l2_verification_completed(atlantic_query: &AtlanticQuery) -> Result<(), String> {
+        if !matches!(atlantic_query.result.as_ref(), Some(AtlanticQueryStep::ProofVerificationOnL2)) {
+            return Err(format!(
+                "Atlantic query {} completed with result {:?}; expected {:?}",
+                atlantic_query.id,
+                atlantic_query.result,
+                AtlanticQueryStep::ProofVerificationOnL2
+            ));
+        }
+
+        let reached_bridge_step = matches!(atlantic_query.step.as_ref(), Some(AtlanticQueryStep::BridgeFactHash))
+            || atlantic_query.steps.iter().any(|step| matches!(step, AtlanticQueryStep::BridgeFactHash));
+        if !reached_bridge_step {
+            return Err(format!(
+                "Atlantic query {} completed without reaching {:?}; final step {:?}, steps {:?}",
+                atlantic_query.id,
+                AtlanticQueryStep::BridgeFactHash,
+                atlantic_query.step,
+                atlantic_query.steps
+            ));
+        }
+
+        Ok(())
     }
 
     fn ensure_bucket_details_match(

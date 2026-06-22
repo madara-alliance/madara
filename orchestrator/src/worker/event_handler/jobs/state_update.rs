@@ -3,7 +3,6 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
@@ -11,7 +10,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
+use crate::worker::utils::{fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
@@ -19,7 +18,6 @@ use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
 use std::sync::Arc;
-use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -41,21 +39,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
-        // Validate required paths based on layer configuration
-        // L2: requires program_output_path + da_segment_path
-        // L3: requires program_output_path + blob_data_path + snos_output_path
-        if state_metadata.program_output_path.is_none() {
-            error!("program_output_path is required for all state updates");
-            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_path in metadata"))));
-        }
-
-        let is_l2_config = state_metadata.da_segment_path.is_some();
-        let is_l3_config = state_metadata.blob_data_path.is_some() && state_metadata.snos_output_path.is_some();
+        // Validate required path shapes.
+        // L2 state updates require program output and DA segment artifacts.
+        // L3 state updates should only carry raw SNOS output; proof/layout artifacts are obsolete.
+        let is_l2_config = state_metadata.program_output_path.is_some() && state_metadata.da_segment_path.is_some();
+        let is_l3_config = state_metadata.snos_output_path.is_some()
+            && state_metadata.program_output_path.is_none()
+            && state_metadata.da_segment_path.is_none();
 
         if !is_l2_config && !is_l3_config {
-            error!("Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)");
+            error!(
+                "Invalid state update paths: provide either (program_output_path + da_segment_path for L2) or only snos_output_path for L3"
+            );
             return Err(JobError::Other(OtherError(eyre!(
-                "Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)"
+                "Invalid state update paths: provide either (program_output_path + da_segment_path for L2) or only snos_output_path for L3"
             ))));
         }
         let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
@@ -119,12 +116,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                         None
                     }
                 };
-            let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
-            let blob_data = match config.layer() {
-                // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
-                // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+            let (program_output, blob_data) = match config.layer() {
+                Layer::L2 => {
+                    let program_output =
+                        fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
+                    let blob_data = fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?;
+                    (program_output, blob_data)
+                }
+                Layer::L3 => (Vec::new(), Vec::new()),
             };
 
             let txn_hash = match self
@@ -373,8 +372,6 @@ impl StateUpdateJobHandler {
                         to_settle_num
                     ))))?,
                     nonce,
-                    artifacts.program_output,
-                    artifacts.blob_data,
                 )
                 .await
             }
@@ -404,8 +401,6 @@ impl StateUpdateJobHandler {
         block_no: u64,
         snos: Vec<Felt>,
         _nonce: u64,
-        _program_output: Vec<[u8; 32]>,
-        _blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
 
@@ -416,41 +411,10 @@ impl StateUpdateJobHandler {
         // updates with call data: this configuration effectively replicates private DA functionality,
         // as the state diff is not in the snos_output while still maintaining the ability to update state.
         let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) || snos.get(8) == Some(&Felt::ONE) {
-            let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
-            debug!(%proof_key, "Fetching snos proof file");
-
-            let proof_file = config.storage().get_data(&proof_key).await?;
-
-            let snos_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let parsed_snos_proof: StarkProof = parse(snos_proof.clone()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let proof_key = format!("{block_no}/{PROOF_PART2_FILE_NAME}");
-            debug!(%proof_key, "Fetching 2nd proof file");
-
-            let proof_file = config.storage().get_data(&proof_key).await?;
-
-            let second_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let parsed_bridge_proof: StarkProof = parse(second_proof.clone()).map_err(|e| {
-                error!(error = %e, "Failed to parse proof file as UTF-8");
-                JobError::Other(OtherError(eyre!("{}", e)))
-            })?;
-
-            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
-            let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
+            let snos_output = vec_felt_to_vec_bytes32(snos);
 
             settlement_client
-                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
+                .update_state_calldata(snos_output, Vec::new(), [0u8; 32], [0u8; 32])
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
@@ -459,20 +423,6 @@ impl StateUpdateJobHandler {
 
         Ok(last_tx_hash_executed)
     }
-}
-
-pub fn calculate_output(proof: StarkProof) -> Vec<Felt> {
-    let output_segment = proof.public_input.segments[2].clone();
-    let output_len = output_segment.stop_ptr - output_segment.begin_addr;
-    let start = proof.public_input.main_page.len() - output_len as usize;
-    let end = proof.public_input.main_page.len();
-    let program_output =
-        proof.public_input.main_page[start..end].iter().map(|cell| cell.value.clone()).collect::<Vec<_>>();
-    let mut felts = vec![];
-    for elem in &program_output {
-        felts.push(Felt::from_dec_str(&elem.to_string()).unwrap());
-    }
-    felts
 }
 
 pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {

@@ -1,6 +1,6 @@
 use crate::cli::RunCmd;
 use crate::OrchestratorError;
-use orchestrator_atlantic_service::AtlanticValidatedArgs;
+use orchestrator_atlantic_service::{types::AtlanticQueryStep, AtlanticValidatedArgs};
 use orchestrator_sharp_service::SharpValidatedArgs;
 use orchestrator_utils::layer::Layer;
 
@@ -54,12 +54,27 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
             (false, true) => {
                 let atlantic_args = run_cmd.atlantic_args;
-                // NOTE: Just making sure Cairo Verifier Program Hash is there for L3
                 if run_cmd.layer == Layer::L3 && atlantic_args.cairo_verifier_program_hash.is_none() {
                     return Err(OrchestratorError::RunCommandError(
                         "Cairo verifier program hash is required for L3".to_string(),
                     ));
                 }
+
+                let atlantic_result = atlantic_args
+                    .atlantic_verifier_result
+                    .ok_or_else(|| OrchestratorError::SetupCommandError("Atlantic result is required".to_string()))?;
+
+                if run_cmd.layer == Layer::L3 && !matches!(&atlantic_result, &AtlanticQueryStep::ProofVerificationOnL2)
+                {
+                    return Err(OrchestratorError::RunCommandError(
+                        "Atlantic result must be PROOF_VERIFICATION_ON_L2 for L3".to_string(),
+                    ));
+                }
+
+                let atlantic_sharp_prover = atlantic_args.atlantic_sharp_prover.ok_or_else(|| {
+                    OrchestratorError::RunCommandError("Atlantic sharp prover is required".to_string())
+                })?;
+
                 Ok(Self::Atlantic(AtlanticValidatedArgs {
                     atlantic_api_key: atlantic_args.atlantic_api_key.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Atlantic API key is required".to_string())
@@ -92,18 +107,96 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_cairo_vm: atlantic_args.atlantic_verifier_cairo_vm.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Atlantic cairo vm is required".to_string())
                     })?,
-                    atlantic_result: atlantic_args.atlantic_verifier_result.ok_or_else(|| {
-                        OrchestratorError::SetupCommandError("Atlantic result is required".to_string())
-                    })?,
+                    atlantic_result,
                     cairo_verifier_program_hash: atlantic_args.cairo_verifier_program_hash,
-                    atlantic_sharp_prover: atlantic_args.atlantic_sharp_prover.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic sharp prover is required".to_string())
-                    })?,
+                    atlantic_sharp_prover,
                     atlantic_artifacts_base_url: atlantic_args.atlantic_artifacts_base_url.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Atlantic artifacts base URL is required".to_string())
                     })?,
                 }))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn l3_atlantic_run_cmd(extra_args: &[&str]) -> RunCmd {
+        let mut args = vec![
+            "orchestrator",
+            "--aws",
+            "--aws-s3",
+            "--aws-sqs",
+            "--aws-sns",
+            "--da-on-starknet",
+            "--starknet-da-rpc-url",
+            "http://localhost:9944",
+            "--settle-on-starknet",
+            "--starknet-rpc-url",
+            "http://localhost:9944",
+            "--starknet-private-key",
+            "0x1",
+            "--starknet-account-address",
+            "0x1",
+            "--starknet-cairo-core-contract-address",
+            "0x1",
+            "--starknet-finality-retry-wait-in-secs",
+            "1",
+            "--atlantic",
+            "--atlantic-api-key",
+            "test-api-key",
+            "--atlantic-service-url",
+            "http://localhost:8080",
+            "--atlantic-rpc-node-url",
+            "http://localhost:9944",
+            "--atlantic-verifier-contract-address",
+            "0x1",
+            "--atlantic-settlement-layer",
+            "starknet",
+            "--atlantic-mock-fact-hash",
+            "true",
+            "--atlantic-prover-type",
+            "atlantic",
+            "--atlantic-network",
+            "TESTNET",
+            "--cairo-verifier-program-hash",
+            "0x123",
+            "--madara-rpc-url",
+            "http://localhost:9944",
+            "--madara-version",
+            "0.14.0",
+            "--rpc-for-snos",
+            "http://localhost:9944",
+            "--max-batch-time-seconds",
+            "60",
+            "--layer",
+            "l3",
+        ];
+        args.extend_from_slice(extra_args);
+
+        RunCmd::try_parse_from(args).expect("valid L3 Atlantic CLI args")
+    }
+
+    #[test]
+    fn l3_atlantic_requires_proof_verification_on_l2() {
+        let err = ProverConfig::try_from(l3_atlantic_run_cmd(&[])).expect_err("default proof generation is invalid");
+
+        assert!(err.to_string().contains("Atlantic result must be PROOF_VERIFICATION_ON_L2 for L3"));
+    }
+
+    #[test]
+    fn l3_atlantic_accepts_proof_verification_on_l2() {
+        let config =
+            ProverConfig::try_from(l3_atlantic_run_cmd(&["--atlantic-verifier-result", "proof-verification-on-l2"]))
+                .expect("proof verification on L2 should be valid for L3");
+
+        let ProverConfig::Atlantic(args) = config else {
+            panic!("expected Atlantic prover config");
+        };
+
+        assert!(matches!(args.atlantic_result, AtlanticQueryStep::ProofVerificationOnL2));
     }
 }
