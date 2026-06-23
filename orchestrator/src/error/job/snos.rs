@@ -87,7 +87,9 @@ fn is_retryable_pie_generation_error(error: &PieGenerationError) -> bool {
 
 fn is_retryable_block_processing_error(error: &BlockProcessingError) -> bool {
     match error {
-        BlockProcessingError::RpcClient(source) => error_chain_is_retryable(source.as_ref()),
+        BlockProcessingError::RpcClient(source) => {
+            error_chain_contains_block_not_found(source.as_ref()) || error_chain_is_retryable(source.as_ref())
+        }
         BlockProcessingError::TransactionConversion { source, .. } => error_chain_is_retryable(source.as_ref()),
         BlockProcessingError::StateUpdate(source) => error_chain_is_retryable(source),
         BlockProcessingError::StorageProof(source) | BlockProcessingError::ClassProof(source) => {
@@ -126,6 +128,22 @@ fn error_chain_is_retryable(error: &(dyn std::error::Error + 'static)) -> bool {
     let mut source = error.source();
     while let Some(next) = source {
         if is_retryable_remote_message(&next.to_string()) {
+            return true;
+        }
+        source = next.source();
+    }
+
+    false
+}
+
+fn error_chain_contains_block_not_found(error: &(dyn std::error::Error + 'static)) -> bool {
+    if is_block_not_found_message(&error.to_string()) {
+        return true;
+    }
+
+    let mut source = error.source();
+    while let Some(next) = source {
+        if is_block_not_found_message(&next.to_string()) {
             return true;
         }
         source = next.source();
@@ -176,13 +194,13 @@ fn is_retryable_state_error(error: &StateError) -> bool {
 }
 
 fn is_retryable_state_read_message(message: &str) -> bool {
+    is_block_not_found_message(message)
+}
+
+fn is_block_not_found_message(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
 
-    if lower.contains("blocknotfound") || lower.contains("block not found") {
-        return true;
-    }
-
-    is_retryable_remote_message(message)
+    lower.contains("blocknotfound") || lower.contains("block not found")
 }
 
 fn is_retryable_pending_block_state(message: &str) -> bool {
@@ -316,6 +334,61 @@ mod tests {
     }
 
     #[test]
+    fn rpc_client_block_not_found_is_retryable() {
+        let error = SnosError::SnosExecutionError {
+            internal_id: 7,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 12,
+                source: Box::new(BlockProcessingError::RpcClient(Box::new(ProviderError::StarknetError(
+                    StarknetError::BlockNotFound,
+                )))),
+            },
+        };
+
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn exact_rpc_client_block_not_found_error_string_is_retryable() {
+        let error = crate::error::job::JobError::from(SnosError::SnosExecutionError {
+            internal_id: 646856,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 2222689,
+                source: Box::new(BlockProcessingError::RpcClient(Box::new(ProviderError::StarknetError(
+                    StarknetError::BlockNotFound,
+                )))),
+            },
+        });
+
+        assert_eq!(
+            error.to_string(),
+            "Snos Error: Error while running SNOS (snos job #646856): Block processing failed for block 2222689: \
+             RPC client error: BlockNotFound"
+        );
+        assert!(!error.is_fail_fast_snos_processing_failure());
+    }
+
+    #[test]
+    fn exact_block_not_found_error_string_is_retryable() {
+        let error = SnosError::SnosExecutionError {
+            internal_id: 645003,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 2216682,
+                source: Box::new(BlockProcessingError::TransactionExecution(TransactionExecutorError::StateError(
+                    StateError::StateReadError("BlockNotFound".to_string()),
+                ))),
+            },
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "Error while running SNOS (snos job #645003): Block processing failed for block 2216682: \
+             Transaction execution error: Failed to read from state: BlockNotFound."
+        );
+        assert!(error.is_retryable());
+    }
+
+    #[test]
     fn transaction_execution_non_block_not_found_state_reads_fail_fast() {
         let error = SnosError::SnosExecutionError {
             internal_id: 7,
@@ -323,6 +396,21 @@ mod tests {
                 block_number: 12,
                 source: Box::new(BlockProcessingError::TransactionExecution(TransactionExecutorError::StateError(
                     StateError::StateReadError("Failed to decompress legacy contract class".to_string()),
+                ))),
+            },
+        };
+
+        assert!(!error.is_retryable());
+    }
+
+    #[test]
+    fn transaction_execution_state_read_rpc_errors_do_not_retry_via_block_not_found_rule() {
+        let error = SnosError::SnosExecutionError {
+            internal_id: 7,
+            source: PieGenerationError::BlockProcessing {
+                block_number: 12,
+                source: Box::new(BlockProcessingError::TransactionExecution(TransactionExecutorError::StateError(
+                    StateError::StateReadError("RPC error: timeout".to_string()),
                 ))),
             },
         };
