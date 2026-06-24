@@ -187,7 +187,7 @@ pub struct ProvingMetadata {
 ///
 /// # Field Management
 /// - Worker-initialized fields: start_block, end_block, num_blocks, full_output, and path configurations
-/// - Job-populated fields: snos_fact (during processing)
+/// - Job-populated fields: snos_fact and timing fields (during processing)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SnosMetadata {
     // Worker-initialized fields
@@ -215,6 +215,15 @@ pub struct SnosMetadata {
     pub snos_fact: Option<String>,
     /// SNOS total steps taken
     pub snos_n_steps: Option<usize>,
+    /// Total wall-clock time SNOS spent processing this job.
+    #[serde(default)]
+    pub snos_total_processing_time_ms: Option<u64>,
+    /// Wall-clock time SNOS spent waiting for RPC calls while processing this job.
+    #[serde(default)]
+    pub snos_rpc_wait_time_ms: Option<u64>,
+    /// Wall-clock time SNOS spent on local execution/processing outside RPC waits.
+    #[serde(default)]
+    pub snos_execution_time_ms: Option<u64>,
 }
 
 /// Metadata specific to state update jobs.

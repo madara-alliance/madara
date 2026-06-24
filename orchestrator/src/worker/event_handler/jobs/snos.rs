@@ -141,6 +141,7 @@ impl JobHandlerTrait for SnosJobHandler {
         })?;
         debug!("generate_pie function completed successfully");
 
+        let snos_timing = snos_output.timing;
         let cairo_pie = snos_output.output.cairo_pie;
 
         // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
@@ -181,6 +182,9 @@ impl JobHandlerTrait for SnosJobHandler {
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
             metadata.snos_fact = Some(fact_hash.to_string());
             metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
+            metadata.snos_total_processing_time_ms = Some(snos_timing.total_processing_time_ms);
+            metadata.snos_rpc_wait_time_ms = Some(snos_timing.rpc_wait_time_ms);
+            metadata.snos_execution_time_ms = Some(snos_timing.execution_time_ms);
         }
 
         debug!("Storing SNOS outputs");
