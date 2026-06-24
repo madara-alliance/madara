@@ -15,6 +15,9 @@ on:
         description: "Hash of the built cairo artifacts"
         value: ${{ jobs.build-cairo-artifacts.outputs.cairo-artifacts-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-cairo-artifacts:
     runs-on: blacksmith-8vcpu-ubuntu-2204

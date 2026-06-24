@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use mockall::automock;
 use mockall::predicate::*;
+use std::fmt;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
 
@@ -11,6 +12,45 @@ pub enum SettlementVerificationStatus {
     Verified,
     Rejected(String),
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxAttempt {
+    pub attempt_no: u64,
+    pub tx_hash: Option<String>,
+    pub nonce: u64,
+    pub gas_multiplier: f64,
+    pub status: StateUpdateTxAttemptStatus,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateUpdateTxAttemptStatus {
+    Finalized,
+    Replaced,
+    TimedOut,
+    RejectedUnderpriced,
+    SubmissionFailed,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxResult {
+    pub tx_hash: String,
+    pub attempts: Vec<StateUpdateTxAttempt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateUpdateTxError {
+    pub message: String,
+    pub attempts: Vec<StateUpdateTxAttempt>,
+}
+
+impl fmt::Display for StateUpdateTxError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for StateUpdateTxError {}
 
 /// Trait for every new Settlement Layer to implement
 #[automock]
@@ -35,7 +75,7 @@ pub trait SettlementClient: Send + Sync {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
-    ) -> Result<String>;
+    ) -> Result<StateUpdateTxResult>;
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus>;

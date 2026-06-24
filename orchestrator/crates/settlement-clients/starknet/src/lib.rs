@@ -16,7 +16,7 @@ use interfaces::core_contract::CoreContract;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
-use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus, StateUpdateTxResult};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
@@ -211,7 +211,7 @@ impl SettlementClient for StarknetSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
-    ) -> Result<String> {
+    ) -> Result<StateUpdateTxResult> {
         !unimplemented!("not implemented yet.")
     }
 

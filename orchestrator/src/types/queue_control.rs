@@ -9,6 +9,7 @@ use std::time::Duration;
 /// IMPORTANT: This value must be greater than [DEFAULT_TIMEOUT_SECONDS] for orphan healing logic to work correctly
 const QUEUE_VISIBILITY_TIMEOUT_SECONDS: u32 = DEFAULT_TIMEOUT_SECONDS as u32 + 60;
 const QUEUE_MAX_RECEIVE_COUNT: u32 = 5;
+const UPDATE_STATE_VISIBILITY_TIMEOUT_BUFFER_SECONDS: u32 = 600;
 
 /// Maximum time to wait for the priority slot to become empty.
 pub const PRIORITY_SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -19,6 +20,24 @@ pub const PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: u64 = QUEUE_VISIBILITY_TIMEOUT_S
 
 /// Interval between priority slot availability checks.
 pub const PRIORITY_SLOT_CHECK_INTERVAL: Duration = Duration::from_millis(1000);
+
+fn update_state_processing_visibility_timeout_seconds() -> u32 {
+    let state_transition_timeout = get_env_var_or_default(
+        "MADARA_ORCHESTRATOR_STATE_TRANSITION_TIMEOUT_SECONDS",
+        &DEFAULT_TIMEOUT_SECONDS.to_string(),
+    )
+    .parse::<u32>()
+    .expect("MADARA_ORCHESTRATOR_STATE_TRANSITION_TIMEOUT_SECONDS must be a whole number");
+
+    update_state_processing_visibility_timeout_seconds_for_timeout(state_transition_timeout)
+}
+
+fn update_state_processing_visibility_timeout_seconds_for_timeout(state_transition_timeout: u32) -> u32 {
+    std::cmp::max(
+        3 * QUEUE_VISIBILITY_TIMEOUT_SECONDS,
+        state_transition_timeout + UPDATE_STATE_VISIBILITY_TIMEOUT_BUFFER_SECONDS,
+    )
+}
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -187,7 +206,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
     map.insert(
         QueueType::UpdateStateJobProcessing,
         QueueConfig {
-            visibility_timeout: 3 * QUEUE_VISIBILITY_TIMEOUT_SECONDS,
+            visibility_timeout: update_state_processing_visibility_timeout_seconds(),
             dlq_config: Some(DlqConfig {
                 max_receive_count: QUEUE_MAX_RECEIVE_COUNT,
                 dlq_name: QueueType::JobHandleFailure,
@@ -243,7 +262,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
     map.insert(
         QueueType::PriorityProcessingQueue,
         QueueConfig {
-            visibility_timeout: 2 * QUEUE_VISIBILITY_TIMEOUT_SECONDS, // 2x expected max processing time for slot wait + processing
+            visibility_timeout: update_state_processing_visibility_timeout_seconds(),
             dlq_config: Some(DlqConfig {
                 max_receive_count: QUEUE_MAX_RECEIVE_COUNT,
                 dlq_name: QueueType::JobHandleFailure,
@@ -268,3 +287,21 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
     );
     map
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_state_visibility_keeps_old_default_floor() {
+        assert_eq!(
+            update_state_processing_visibility_timeout_seconds_for_timeout(DEFAULT_TIMEOUT_SECONDS as u32),
+            3 * QUEUE_VISIBILITY_TIMEOUT_SECONDS
+        );
+    }
+
+    #[test]
+    fn update_state_visibility_exceeds_configured_state_transition_timeout() {
+        assert_eq!(update_state_processing_visibility_timeout_seconds_for_timeout(1800), 2400);
+    }
+}

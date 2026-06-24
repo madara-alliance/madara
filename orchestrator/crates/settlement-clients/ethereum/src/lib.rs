@@ -20,7 +20,10 @@ use c_kzg::{Blob, Bytes32, KzgProof, KzgSettings};
 use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
-use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+use orchestrator_settlement_client_interface::{
+    SettlementClient, SettlementVerificationStatus, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
+    StateUpdateTxError, StateUpdateTxResult,
+};
 #[cfg(feature = "testing")]
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
@@ -38,10 +41,10 @@ use crate::error::SendTransactionError;
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpProvider};
 use lazy_static::lazy_static;
 use mockall::automock;
-use tokio::time::sleep;
+use tokio::time::{sleep, Instant};
 #[cfg(not(feature = "testing"))]
 use tracing::warn;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -61,22 +64,97 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
 // See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
 // See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
-// With 1.1x start, 2.0x increment, and default max of 2.5x: 1.1 → 2.2 → 4.4 (exceeds max, fails).
-// The max multiplier is configurable via MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR env variable.
+// With 1.1x start, 2.0x increment, and the default max of 2 fee bumps: 1.1 -> 2.2 -> 4.4.
+// The number of replacements is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
+const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
+const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 
-/// Calculates the next gas price multiplier for transaction retry.
-/// Returns None if the next multiplier would exceed the maximum allowed.
-fn calculate_next_gas_mul_factor(current_mul: f64, max_mul: f64) -> Option<f64> {
-    let next_mul = GAS_PRICE_INCREMENT_FACTOR * current_mul;
-    if next_mul > max_mul {
+#[derive(Clone, Copy, Debug)]
+struct StateUpdateFeeCaps {
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    max_fee_per_blob_gas: u128,
+}
+
+struct PreparedStateUpdateTransaction {
+    tx_envelope: Signed<TxEip4844Variant<BlobTransactionSidecarVariant>>,
+    fee_caps: StateUpdateFeeCaps,
+}
+
+fn calculate_next_fee_bump_mul_factor(current_mul: f64, fee_bumps_used: u64, max_fee_bumps: u64) -> Option<f64> {
+    if fee_bumps_used >= max_fee_bumps {
         None
     } else {
-        Some(next_mul)
+        Some(GAS_PRICE_INCREMENT_FACTOR * current_mul)
+    }
+}
+
+fn format_multiplier(multiplier: f64) -> String {
+    format!("{multiplier:.2}x")
+}
+
+fn format_tx_attempt(attempt: &StateUpdateTxAttempt, timeout_seconds: u64) -> String {
+    let prefix = format!(
+        "{}. {} attempted, nonce={}",
+        attempt.attempt_no,
+        format_multiplier(attempt.gas_multiplier),
+        attempt.nonce
+    );
+
+    match attempt.status {
+        StateUpdateTxAttemptStatus::Finalized => {
+            format!("{prefix}, accepted with tx hash {}, finalized.", attempt.tx_hash.as_deref().unwrap_or("<missing>"))
+        }
+        StateUpdateTxAttemptStatus::Replaced | StateUpdateTxAttemptStatus::TimedOut => {
+            format!(
+                "{prefix}, accepted with tx hash {}, timed out after {timeout_seconds}s.",
+                attempt.tx_hash.as_deref().unwrap_or("<missing>")
+            )
+        }
+        StateUpdateTxAttemptStatus::RejectedUnderpriced => {
+            format!(
+                "{prefix}, rejected as underpriced, no hash{}.",
+                attempt.error.as_deref().map(|error| format!(" ({error})")).unwrap_or_default()
+            )
+        }
+        StateUpdateTxAttemptStatus::SubmissionFailed => {
+            format!(
+                "{prefix}, submission failed, no hash{}.",
+                attempt.error.as_deref().map(|error| format!(" ({error})")).unwrap_or_default()
+            )
+        }
+    }
+}
+
+fn format_tx_attempts(attempts: &[StateUpdateTxAttempt], timeout_seconds: u64) -> String {
+    attempts.iter().map(|attempt| format_tx_attempt(attempt, timeout_seconds)).collect::<Vec<_>>().join("\n")
+}
+
+fn state_update_tx_error(
+    attempts: &[StateUpdateTxAttempt],
+    timeout_seconds: u64,
+    next_multiplier: f64,
+    fee_bumps_used: u64,
+    max_fee_bumps: u64,
+) -> StateUpdateTxError {
+    StateUpdateTxError {
+        message: format!(
+            "State update transaction failed after {} fee attempts ({} / {} fee bumps used) over {}s confirmation windows.\nFee attempts:\n{}\nFailure: Next required bump would be {}, but fee bump retry budget is exhausted ({}/{}).",
+            attempts.len(),
+            fee_bumps_used,
+            max_fee_bumps,
+            timeout_seconds,
+            format_tx_attempts(attempts, timeout_seconds),
+            format_multiplier(next_multiplier),
+            fee_bumps_used,
+            max_fee_bumps
+        ),
+        attempts: attempts.to_vec(),
     }
 }
 
@@ -101,7 +179,9 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub ethereum_finality_retry_wait_in_secs: u64,
 
-    pub max_gas_price_mul_factor: f64,
+    pub ethereum_tx_confirmation_timeout_secs: u64,
+
+    pub ethereum_max_fee_bumps: u64,
 
     pub disable_peerdas: bool,
 }
@@ -114,7 +194,8 @@ pub struct EthereumSettlementClient {
     #[allow(unused)]
     impersonate_account: Option<Address>,
     tx_finality_retry_wait_in_seconds: u64,
-    max_gas_price_mul_factor: f64,
+    tx_confirmation_timeout_seconds: u64,
+    max_fee_bumps: u64,
     disable_peerdas: bool,
 }
 
@@ -143,7 +224,8 @@ impl EthereumSettlementClient {
             wallet_address,
             impersonate_account: None,
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
-            max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
+            tx_confirmation_timeout_seconds: settlement_cfg.ethereum_tx_confirmation_timeout_secs,
+            max_fee_bumps: settlement_cfg.ethereum_max_fee_bumps,
             disable_peerdas: settlement_cfg.disable_peerdas,
         }
     }
@@ -170,8 +252,9 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
-            max_gas_price_mul_factor: 2.5f64,
             tx_finality_retry_wait_in_seconds: 10,
+            tx_confirmation_timeout_seconds: 300,
+            max_fee_bumps: 2,
             disable_peerdas: true,
         }
     }
@@ -266,14 +349,14 @@ impl SettlementClient for EthereumSettlementClient {
     ///
     /// The transaction is retried when the transaction is rejected because a transaction with the
     /// same nonce is already in the mempool. In that case, we'll send more transactions with
-    /// an increasing gas price multiplication factor. The multiplication factor is capped by
-    /// `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR` env variable.
+    /// an increasing gas price multiplication factor. The number of fee-bump replacements is capped by
+    /// `MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS` env variable.
     async fn update_state_with_blobs(
         &self,
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
-        _nonce: u64,
-    ) -> Result<String> {
+        nonce: u64,
+    ) -> Result<StateUpdateTxResult> {
         // TODO(prakhar,20/11/2025): Update the logs to add custom formatter - https://github.com/madara-alliance/madara/blob/d2a1e8050a3d01ccf398f57616cbc4fb6386aaa6/madara/crates/client/analytics/src/formatter.rs#L288
         info!(
             log_type = "starting",
@@ -283,46 +366,97 @@ impl SettlementClient for EthereumSettlementClient {
             "Updating state with blob"
         );
 
-        let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
-        let mut attempt = 1;
+        let mut gas_multiplier = GAS_PRICE_MULTIPLIER_START;
+        let mut attempt_no = 1_u64;
+        let mut fee_bumps_used = 0_u64;
+        let mut attempts = Vec::new();
+        let mut previous_fee_caps = None;
 
         loop {
             debug!(
-                attempt = attempt,
-                gas_multiplier = %mul_factor,
-                max_multiplier = %self.max_gas_price_mul_factor,
+                attempt = attempt_no,
+                nonce = nonce,
+                gas_multiplier = %gas_multiplier,
                 "Preparing transaction with gas multiplier"
             );
 
-            let tx_envelope = self.create_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
-            let pending_transaction = match self.send_transaction(tx_envelope).await {
+            let replacement_fee_floor = previous_fee_caps.map(Self::replacement_fee_floor);
+            let prepared_transaction = self
+                .create_transaction(
+                    program_output.clone(),
+                    state_diff.clone(),
+                    nonce,
+                    gas_multiplier,
+                    replacement_fee_floor,
+                )
+                .await?;
+            let attempted_fee_caps = prepared_transaction.fee_caps;
+            previous_fee_caps = Some(attempted_fee_caps);
+
+            let pending_transaction = match self.send_transaction(prepared_transaction.tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
-                    match calculate_next_gas_mul_factor(mul_factor, self.max_gas_price_mul_factor) {
+                    attempts.push(StateUpdateTxAttempt {
+                        attempt_no,
+                        tx_hash: None,
+                        nonce,
+                        gas_multiplier,
+                        status: StateUpdateTxAttemptStatus::RejectedUnderpriced,
+                        error: Some(rpc_err.to_string()),
+                    });
+                    match calculate_next_fee_bump_mul_factor(gas_multiplier, fee_bumps_used, self.max_fee_bumps) {
                         Some(next_mul_factor) => {
-                            info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
-                            debug!(
-                                current_multiplier = %mul_factor,
+                            fee_bumps_used += 1;
+                            info!(
+                                attempt = attempt_no,
+                                nonce = nonce,
                                 next_multiplier = %next_mul_factor,
-                                max_multiplier = %self.max_gas_price_mul_factor,
+                                fee_bumps_used = fee_bumps_used,
+                                max_fee_bumps = self.max_fee_bumps,
+                                "Transaction underpriced, sending replacement transaction"
+                            );
+                            debug!(
+                                current_multiplier = %gas_multiplier,
+                                next_multiplier = %next_mul_factor,
                                 error = ?rpc_err,
                                 "Increasing gas multiplier for replacement transaction"
                             );
-                            mul_factor = next_mul_factor;
-                            attempt += 1;
+                            gas_multiplier = next_mul_factor;
+                            attempt_no += 1;
                             continue;
                         }
                         None => {
-                            let next_mul = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
-                            return Err(eyre!(
-                                "Transaction retry limit reached: next multiplier ({:.2}x) exceeds maximum ({:.2}x)",
+                            let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
+                            return Err(state_update_tx_error(
+                                &attempts,
+                                self.tx_confirmation_timeout_seconds,
                                 next_mul,
-                                self.max_gas_price_mul_factor
-                            ));
+                                fee_bumps_used,
+                                self.max_fee_bumps,
+                            )
+                            .into());
                         }
                     }
                 }
-                Result::Err(e) => return Err(e.into()),
+                Result::Err(e) => {
+                    attempts.push(StateUpdateTxAttempt {
+                        attempt_no,
+                        tx_hash: None,
+                        nonce,
+                        gas_multiplier,
+                        status: StateUpdateTxAttemptStatus::SubmissionFailed,
+                        error: Some(e.to_string()),
+                    });
+                    return Err(StateUpdateTxError {
+                        message: format!(
+                            "State update transaction submission failed after {} fee attempts.\nFee attempts:\n{}",
+                            attempts.len(),
+                            format_tx_attempts(&attempts, self.tx_confirmation_timeout_seconds)
+                        ),
+                        attempts,
+                    }
+                    .into());
+                }
             };
 
             info!(
@@ -331,29 +465,86 @@ impl SettlementClient for EthereumSettlementClient {
                 function_type = "blobs",
                 tx_type = if self.disable_peerdas { "blob_proofs" } else { "cell_proofs" },
                 tx_hash = %pending_transaction.tx_hash(),
-                attempt = attempt,
+                attempt = attempt_no,
+                nonce = nonce,
+                gas_multiplier = %gas_multiplier,
                 "State update transaction submitted to Ethereum with blobs"
             );
 
-            // Waiting for transaction finality
-            let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
+            let tx_hash = pending_transaction.tx_hash().to_string();
+            let finalized_block = self
+                .wait_for_tx_finality_until(&tx_hash, Duration::from_secs(self.tx_confirmation_timeout_seconds))
+                .await?;
 
-            match res {
-                Some(_) => {
-                    info!(
-                        tx_hash = %pending_transaction.tx_hash(),
-                        attempt = attempt,
-                        "Transaction finalized successfully"
-                    );
-                }
-                None => {
-                    error!(
-                        tx_hash = %pending_transaction.tx_hash(),
-                        "Transaction not finalized"
-                    );
-                }
+            if let Some(block_number) = finalized_block {
+                attempts.push(StateUpdateTxAttempt {
+                    attempt_no,
+                    tx_hash: Some(tx_hash.clone()),
+                    nonce,
+                    gas_multiplier,
+                    status: StateUpdateTxAttemptStatus::Finalized,
+                    error: None,
+                });
+                info!(
+                    tx_hash = %tx_hash,
+                    attempt = attempt_no,
+                    nonce = nonce,
+                    gas_multiplier = %gas_multiplier,
+                    finalized_block = block_number,
+                    "Transaction finalized successfully"
+                );
+                return Ok(StateUpdateTxResult { tx_hash, attempts });
             }
-            return Ok(pending_transaction.tx_hash().to_string());
+
+            attempts.push(StateUpdateTxAttempt {
+                attempt_no,
+                tx_hash: Some(tx_hash.clone()),
+                nonce,
+                gas_multiplier,
+                status: StateUpdateTxAttemptStatus::TimedOut,
+                error: None,
+            });
+
+            if fee_bumps_used >= self.max_fee_bumps {
+                let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
+                return Err(state_update_tx_error(
+                    &attempts,
+                    self.tx_confirmation_timeout_seconds,
+                    next_mul,
+                    fee_bumps_used,
+                    self.max_fee_bumps,
+                )
+                .into());
+            }
+
+            let next_mul_factor =
+                calculate_next_fee_bump_mul_factor(gas_multiplier, fee_bumps_used, self.max_fee_bumps).ok_or_else(
+                    || {
+                        let next_mul = GAS_PRICE_INCREMENT_FACTOR * gas_multiplier;
+                        state_update_tx_error(
+                            &attempts,
+                            self.tx_confirmation_timeout_seconds,
+                            next_mul,
+                            fee_bumps_used,
+                            self.max_fee_bumps,
+                        )
+                    },
+                )?;
+
+            fee_bumps_used += 1;
+            info!(
+                tx_hash = %tx_hash,
+                attempt = attempt_no,
+                nonce = nonce,
+                current_multiplier = %gas_multiplier,
+                next_multiplier = %next_mul_factor,
+                fee_bumps_used = fee_bumps_used,
+                max_fee_bumps = self.max_fee_bumps,
+                confirmation_timeout_seconds = self.tx_confirmation_timeout_seconds,
+                "Transaction not finalized before timeout, sending fee-bump replacement"
+            );
+            gas_multiplier = next_mul_factor;
+            attempt_no += 1;
         }
     }
 
@@ -414,6 +605,10 @@ impl SettlementClient for EthereumSettlementClient {
             if let Some(receipt) =
                 self.provider.get_transaction_receipt(B256::from_str(tx_hash).expect("Unable to form")).await?
             {
+                if !receipt.status() {
+                    bail!("Transaction {} was rejected by the settlement layer", tx_hash);
+                }
+
                 if let Some(block_number) = receipt.block_number {
                     let latest_block = self.provider.get_block_number().await?;
                     let confirmations = latest_block.saturating_sub(block_number);
@@ -450,6 +645,35 @@ impl SettlementClient for EthereumSettlementClient {
 }
 
 impl EthereumSettlementClient {
+    async fn wait_for_tx_finality_until(&self, tx_hash: &str, timeout: Duration) -> Result<Option<u64>> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(receipt) =
+                self.provider.get_transaction_receipt(B256::from_str(tx_hash).expect("Unable to form")).await?
+            {
+                if !receipt.status() {
+                    bail!("Transaction {} was rejected by the settlement layer", tx_hash);
+                }
+
+                if let Some(block_number) = receipt.block_number {
+                    let latest_block = self.provider.get_block_number().await?;
+                    let confirmations = latest_block.saturating_sub(block_number);
+                    if confirmations >= REQUIRED_BLOCK_CONFIRMATIONS {
+                        return Ok(Some(block_number));
+                    }
+                }
+            }
+
+            let now = Instant::now();
+            if now >= deadline {
+                return Ok(None);
+            }
+
+            let sleep_duration = Duration::from_secs(self.tx_finality_retry_wait_in_seconds).min(deadline - now);
+            sleep(sleep_duration).await;
+        }
+    }
+
     /// Method to build the input bytes for a state update transaction
     pub async fn build_input_bytes(program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
         let n_blobs = match program_output.get(N_BLOBS_OFFSET) {
@@ -501,18 +725,33 @@ impl EthereumSettlementClient {
         &self,
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
+        nonce: u64,
         mul_factor: f64,
-    ) -> Result<Signed<TxEip4844Variant<BlobTransactionSidecarVariant>>> {
+        replacement_fee_floor: Option<StateUpdateFeeCaps>,
+    ) -> Result<PreparedStateUpdateTransaction> {
         // Prepare the sidecar based on the chain ID
         let sidecar = prepare_sidecar(&state_diff, &KZG_SETTINGS, self.disable_peerdas)?;
 
-        // Get chain id and nonce for the transaction
+        // Get chain id for the transaction. The nonce is pinned by the caller so fee-bump
+        // replacements target the same pending transaction.
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
-        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
 
-        // Get gas price estimates with margin
-        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
-            self.get_gas_price_estimates(mul_factor).await?;
+        // For replacement transactions, the multiplier applies to the previously attempted fee
+        // caps through `replacement_fee_floor`. The fresh network estimate is kept at the normal
+        // safety margin so replacements do not overpay by multiplying both paths.
+        let estimate_mul_factor = if replacement_fee_floor.is_some() { GAS_PRICE_MULTIPLIER_START } else { mul_factor };
+        let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
+        let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
+        debug!(
+            nonce = nonce,
+            gas_multiplier = %mul_factor,
+            estimate_multiplier = %estimate_mul_factor,
+            max_fee_per_gas = fee_caps.max_fee_per_gas,
+            max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
+            max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
+            replacement_fee_floor = ?replacement_fee_floor,
+            "Resolved state update transaction fee caps"
+        );
 
         // Prepare input bytes for transaction
         let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
@@ -522,9 +761,9 @@ impl EthereumSettlementClient {
             chain_id,
             nonce,
             gas_limit: GAS_LIMIT_STATE_UPDATE,
-            max_fee_per_blob_gas,
-            max_fee_per_gas,
-            max_priority_fee_per_gas,
+            max_fee_per_blob_gas: fee_caps.max_fee_per_blob_gas,
+            max_fee_per_gas: fee_caps.max_fee_per_gas,
+            max_priority_fee_per_gas: fee_caps.max_priority_fee_per_gas,
             to: self.core_contract_client.contract_address(),
             value: U256::from(0),
             access_list: AccessList(vec![]),
@@ -537,22 +776,45 @@ impl EthereumSettlementClient {
         let mut variant = TxEip4844Variant::from(tx_with_sidecar);
         // Sign transaction
         let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
-        Ok(variant.into_signed(signature))
+        Ok(PreparedStateUpdateTransaction { tx_envelope: variant.into_signed(signature), fee_caps })
     }
 
-    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
+    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<StateUpdateFeeCaps> {
         let eip1559_est = self.provider.estimate_eip1559_fees().await?;
 
         let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
         let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
         let max_fee_per_blob_gas: u128 = self.add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
 
-        Ok((max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas))
+        Ok(StateUpdateFeeCaps { max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas })
     }
 
     // add a safety margin to the gas price to handle fluctuations
     fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
-        (value as f64 * mul_factor) as u128
+        (value as f64 * mul_factor).ceil() as u128
+    }
+
+    fn replacement_fee_floor(previous_fee_caps: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
+        StateUpdateFeeCaps {
+            max_fee_per_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_fee_per_gas),
+            max_priority_fee_per_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_priority_fee_per_gas),
+            max_fee_per_blob_gas: Self::replacement_fee_cap_floor(previous_fee_caps.max_fee_per_blob_gas),
+        }
+    }
+
+    fn replacement_fee_cap_floor(previous_fee_cap: u128) -> u128 {
+        previous_fee_cap
+            .checked_mul(REPLACEMENT_FEE_BUMP_NUMERATOR)
+            .map(|value| value.div_ceil(REPLACEMENT_FEE_BUMP_DENOMINATOR))
+            .unwrap_or(u128::MAX)
+    }
+
+    fn max_fee_caps(left: StateUpdateFeeCaps, right: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
+        StateUpdateFeeCaps {
+            max_fee_per_gas: left.max_fee_per_gas.max(right.max_fee_per_gas),
+            max_priority_fee_per_gas: left.max_priority_fee_per_gas.max(right.max_priority_fee_per_gas),
+            max_fee_per_blob_gas: left.max_fee_per_blob_gas.max(right.max_fee_per_blob_gas),
+        }
     }
 
     /// Method to send blob transaction (standard EIP4844)
@@ -646,36 +908,17 @@ mod gas_multiplier_tests {
     use super::*;
 
     #[test]
-    fn test_first_retry_succeeds() {
-        // First attempt: 1.1x, retry should give 2.2x (within 2.5 max)
-        let result = calculate_next_gas_mul_factor(1.1, 2.5);
-        assert!(result.is_some());
-        let next_mul = result.unwrap();
-        assert!((next_mul - 2.2).abs() < 0.0001, "Expected 2.2, got {}", next_mul);
+    fn test_fee_bump_policy_allows_two_bumps_to_four_point_four() {
+        let first_bump = calculate_next_fee_bump_mul_factor(1.1, 0, 2).expect("first bump should fit policy");
+        assert!((first_bump - 2.2).abs() < 0.0001, "Expected 2.2, got {}", first_bump);
+
+        let second_bump = calculate_next_fee_bump_mul_factor(first_bump, 1, 2).expect("second bump should fit policy");
+        assert!((second_bump - 4.4).abs() < 0.0001, "Expected 4.4, got {}", second_bump);
     }
 
     #[test]
-    fn test_second_retry_fails() {
-        // Second attempt: 2.2x * 2.0 = 4.4x (exceeds 2.5 max)
-        let result = calculate_next_gas_mul_factor(2.2, 2.5);
-        assert!(result.is_none(), "Expected None when multiplier exceeds max");
-    }
-
-    #[test]
-    fn test_exactly_at_max_succeeds() {
-        // Edge case: next_mul exactly equals max_mul should succeed
-        // 1.25 * 2.0 = 2.5 (exactly at max)
-        let result = calculate_next_gas_mul_factor(1.25, 2.5);
-        assert!(result.is_some());
-        let next_mul = result.unwrap();
-        assert!((next_mul - 2.5).abs() < 0.0001, "Expected 2.5, got {}", next_mul);
-    }
-
-    #[test]
-    fn test_just_over_max_fails() {
-        // Edge case: next_mul just over max_mul should fail
-        // 1.26 * 2.0 = 2.52 (just over 2.5)
-        let result = calculate_next_gas_mul_factor(1.26, 2.5);
-        assert!(result.is_none());
+    fn test_fee_bump_policy_stops_after_max_bumps() {
+        let result = calculate_next_fee_bump_mul_factor(4.4, 2, 2);
+        assert!(result.is_none(), "Expected None when fee bump budget is exhausted");
     }
 }

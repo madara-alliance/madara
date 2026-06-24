@@ -211,9 +211,8 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 10,
-            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
-                .parse()
-                .expect("Invalid max gas price mul factor"),
+            ethereum_tx_confirmation_timeout_secs: 300,
+            ethereum_max_fee_bumps: 2,
             disable_peerdas: true,
         };
 
@@ -243,27 +242,27 @@ mod settlement_client_tests {
             .expect("Could not go through update_state_with_blobs.");
 
         // Asserting, Expected to receive transaction hash.
-        assert!(!update_state_result.is_empty(), "No transaction Hash received.");
+        assert!(!update_state_result.tx_hash.is_empty(), "No transaction Hash received.");
 
         let txn = setup
             .provider
-            .get_transaction_by_hash(TxHash::from_str(update_state_result.as_str()).expect("Invalid tx hash"))
+            .get_transaction_by_hash(TxHash::from_str(update_state_result.tx_hash.as_str()).expect("Invalid tx hash"))
             .await
             .expect("did not get txn from hash")
             .unwrap();
 
-        assert_eq!(txn.inner.tx_hash().to_string(), update_state_result.to_string());
+        assert_eq!(txn.inner.tx_hash().to_string(), update_state_result.tx_hash);
         assert!(!txn.inner.signature().as_bytes().is_empty());
         assert_eq!(txn.inner.to().unwrap(), *contract.address());
 
         // Testing verify_tx_inclusion
         sleep(Duration::from_secs(BLOCK_TIME + 2)).await;
         ethereum_settlement_client
-            .wait_for_tx_finality(update_state_result.as_str())
+            .wait_for_tx_finality(update_state_result.tx_hash.as_str())
             .await
             .expect("Could not wait for txn finality.");
         let verified_inclusion = ethereum_settlement_client
-            .verify_tx_inclusion(update_state_result.as_str())
+            .verify_tx_inclusion(update_state_result.tx_hash.as_str())
             .await
             .expect("Could not verify inclusion.");
         assert_eq!(verified_inclusion, SettlementVerificationStatus::Verified);
@@ -296,9 +295,8 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 60u64,
-            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
-                .parse()
-                .expect("Invalid max gas price mul factor"),
+            ethereum_tx_confirmation_timeout_secs: 300,
+            ethereum_max_fee_bumps: 2,
             disable_peerdas: false, // for tests, default to sepolia/testnet behavior
         };
 
@@ -333,16 +331,16 @@ mod settlement_client_tests {
             .expect("Could not go through update_state_with_blobs.");
 
         // Asserting, Expected to receive transaction hash.
-        assert!(!update_state_result.is_empty(), "No transaction Hash received.");
+        assert!(!update_state_result.tx_hash.is_empty(), "No transaction Hash received.");
 
         sleep(Duration::from_secs(10)).await;
         ethereum_settlement_client
-            .wait_for_tx_finality(update_state_result.as_str())
+            .wait_for_tx_finality(update_state_result.tx_hash.as_str())
             .await
             .expect("Could not wait for txn finality.");
 
         let verified_inclusion = ethereum_settlement_client
-            .verify_tx_inclusion(update_state_result.as_str())
+            .verify_tx_inclusion(update_state_result.tx_hash.as_str())
             .await
             .expect("Could not verify inclusion.");
         assert_eq!(verified_inclusion, SettlementVerificationStatus::Verified);
@@ -373,9 +371,8 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 60u64,
-            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
-                .parse()
-                .expect("Invalid max gas price mul factor"),
+            ethereum_tx_confirmation_timeout_secs: 300,
+            ethereum_max_fee_bumps: 2,
             disable_peerdas: false, // for tests, default to sepolia/testnet behavior
         };
 

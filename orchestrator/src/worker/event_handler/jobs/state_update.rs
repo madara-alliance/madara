@@ -8,6 +8,7 @@ use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+    StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
 };
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -15,7 +16,10 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
-use orchestrator_settlement_client_interface::SettlementVerificationStatus;
+use orchestrator_settlement_client_interface::{
+    SettlementVerificationStatus, StateUpdateTxAttempt as SettlementTxAttempt,
+    StateUpdateTxAttemptStatus as SettlementTxAttemptStatus, StateUpdateTxError,
+};
 
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
@@ -31,6 +35,12 @@ struct StateUpdateArtifacts {
     snos_output: Option<Vec<Felt>>,
     program_output: Vec<[u8; 32]>,
     blob_data: Vec<Vec<u8>>,
+}
+
+struct StateUpdateProcessingResult {
+    tx_hash: String,
+    tx_nonce: Option<u64>,
+    tx_attempts: Vec<StateUpdateTxAttempt>,
 }
 
 pub struct StateUpdateJobHandler;
@@ -99,7 +109,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
         };
 
-        let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
         debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
         if !self.should_send_state_update_txn(&config, to_settle_num).await? {
@@ -111,6 +120,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
+            let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+
             // Get the artifacts for the block/batch
             let snos_output =
                 match fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await {
@@ -128,7 +139,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
 
-            let txn_hash = match self
+            let txn_result = match self
                 .update_state(
                     config.clone(),
                     to_settle_num,
@@ -141,30 +152,63 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Err(e) => {
                     error!(num = %to_settle_num, error = %e, "Error updating state for block/batch");
                     state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
+                    let state_update_tx_error = Self::state_update_tx_error(&e).cloned();
+
+                    if let Some(tx_error) = &state_update_tx_error {
+                        state_metadata.tx_attempts = Self::convert_tx_attempts(tx_error.attempts.clone());
+                        state_metadata.tx_nonce = state_metadata.tx_attempts.last().map(|attempt| attempt.nonce);
+                        if let Some(last_hash) =
+                            state_metadata.tx_attempts.iter().rev().find_map(|attempt| attempt.tx_hash.clone())
+                        {
+                            state_metadata.tx_hash = Some(last_hash);
+                        }
+                    }
+
+                    match self.should_send_state_update_txn(&config, to_settle_num).await {
+                        Ok(false) => {
+                            info!(
+                                num = %to_settle_num,
+                                "Contract state advanced after state update error, skipping retry and moving to verification"
+                            );
+                            if state_metadata.tx_hash.is_none() {
+                                state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
+                            }
+                            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
+                            job.external_id =
+                                state_metadata.tx_hash.clone().unwrap_or_else(|| EMPTY_TX_HASH.to_string()).into();
+                            return Ok(to_settle_num.to_string());
+                        }
+                        Ok(true) => {}
+                        Err(check_error) => {
+                            warn!(
+                                num = %to_settle_num,
+                                error = %check_error,
+                                "Failed to reconcile contract state after state update error"
+                            );
+                        }
+                    }
+
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
 
-                    return Err(JobError::Other(OtherError(eyre!("Error occurred during the state update: {e}"))));
+                    let error_message = state_update_tx_error
+                        .map(|tx_error| tx_error.message)
+                        .unwrap_or_else(|| format!("Error occurred during state update: {e}"));
+                    return Err(JobError::Other(OtherError(eyre!("{}", error_message))));
                 }
             };
 
             info!(
                 job_id = %job.id,
-                tx_hash = %txn_hash,
+                tx_hash = %txn_result.tx_hash,
                 nonce = %nonce,
-                "State update transaction submitted successfully for job {}. Validating transaction receipt", internal_id
+                "State update transaction finalized for job {}", internal_id
             );
 
-            config.settlement_client()
-                .wait_for_tx_finality(&txn_hash)
-                .await
-                .map_err(|e| {
-                    error!(job_id = %internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
-                    JobError::Other(OtherError(e))
-                })?;
-
-            state_metadata.tx_hash = Some(txn_hash.clone());
+            state_metadata.tx_hash = Some(txn_result.tx_hash.clone());
+            state_metadata.tx_nonce = txn_result.tx_nonce;
+            state_metadata.tx_attempts = txn_result.tx_attempts;
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-            job.external_id = txn_hash.into();
+            job.external_id = txn_result.tx_hash.into();
         }
 
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::StateTransition, internal_id);
@@ -196,7 +240,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        1
+        3
     }
 
     fn max_verification_attempts(&self) -> u64 {
@@ -209,6 +253,33 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 }
 
 impl StateUpdateJobHandler {
+    fn state_update_tx_error(error: &JobError) -> Option<&StateUpdateTxError> {
+        match error {
+            JobError::Other(other) => other.0.downcast_ref::<StateUpdateTxError>(),
+            _ => None,
+        }
+    }
+
+    fn convert_tx_attempts(attempts: Vec<SettlementTxAttempt>) -> Vec<StateUpdateTxAttempt> {
+        attempts
+            .into_iter()
+            .map(|attempt| StateUpdateTxAttempt {
+                attempt_no: attempt.attempt_no,
+                tx_hash: attempt.tx_hash,
+                nonce: attempt.nonce,
+                gas_multiplier: format!("{:.2}", attempt.gas_multiplier),
+                status: match attempt.status {
+                    SettlementTxAttemptStatus::Finalized => StateUpdateTxAttemptStatus::Finalized,
+                    SettlementTxAttemptStatus::Replaced => StateUpdateTxAttemptStatus::Replaced,
+                    SettlementTxAttemptStatus::TimedOut => StateUpdateTxAttemptStatus::TimedOut,
+                    SettlementTxAttemptStatus::RejectedUnderpriced => StateUpdateTxAttemptStatus::RejectedUnderpriced,
+                    SettlementTxAttemptStatus::SubmissionFailed => StateUpdateTxAttemptStatus::SubmissionFailed,
+                },
+                error: attempt.error,
+            })
+            .collect()
+    }
+
     async fn verify_through_contract(
         config: &Arc<Config>,
         num_settled: u64,
@@ -216,9 +287,46 @@ impl StateUpdateJobHandler {
         internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
-        let (expected_last_block_number, batch_index) = match config.layer() {
+        let (expected_last_block_number, batch_index) =
+            Self::get_expected_last_block_number(config, num_settled).await?;
+
+        let last_settled_block_number =
+            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+
+        match last_settled_block_number {
+            Some(block_num) => {
+                let block_status = if block_num >= expected_last_block_number {
+                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
+                    Self::mark_batch_completed(config, batch_index).await?;
+                    SettlementVerificationStatus::Verified
+                } else if Self::settlement_is_at_previous_boundary(config, num_settled, block_num).await? {
+                    info!(
+                        log_type = "pending",
+                        category = "state_update",
+                        function_type = "verify_job",
+                        job_id = %job_id,
+                        num = %internal_id,
+                        expected = %expected_last_block_number,
+                        actual = %block_num,
+                        "Last settled block is still at the previous settlement boundary."
+                    );
+                    SettlementVerificationStatus::Pending
+                } else {
+                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
+                    SettlementVerificationStatus::Rejected(format!(
+                        "Last settle block expected was {} but found {}",
+                        expected_last_block_number, block_num
+                    ))
+                };
+                Ok(block_status.into())
+            }
+            None => Err(JobError::Other(OtherError(eyre!("Last settled block unavailable after state update")))),
+        }
+    }
+
+    async fn get_expected_last_block_number(config: &Arc<Config>, num_settled: u64) -> Result<(u64, u64), JobError> {
+        match config.layer() {
             Layer::L2 => {
-                // Get the batch details for the settled batch
                 let batches = config
                     .database()
                     .get_aggregator_batches(AggregatorBatchDbQuery {
@@ -227,63 +335,81 @@ impl StateUpdateJobHandler {
                     })
                     .await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
             Layer::L3 => {
-                // Get the batch details for the settled batch
                 let batches = config
                     .database()
                     .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![num_settled]), ..Default::default() })
                     .await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
-        }?;
+        }
+    }
 
-        let last_settled_block_number =
-            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+    async fn settlement_is_at_previous_boundary(
+        config: &Arc<Config>,
+        num_settled: u64,
+        block_num: u64,
+    ) -> Result<bool, JobError> {
+        let Some(previous_num) = num_settled.checked_sub(1) else {
+            return Ok(false);
+        };
 
-        match last_settled_block_number {
-            Some(block_num) => {
-                let block_status = if block_num == expected_last_block_number {
-                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
-                    SettlementVerificationStatus::Verified
-                } else {
-                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job_id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
-                    SettlementVerificationStatus::Rejected(format!(
-                        "Last settle bock expected was {} but found {}",
-                        expected_last_block_number, block_num
-                    ))
-                };
-                // Update batch status
-                match config.layer() {
-                    Layer::L2 => {
-                        config
-                            .database()
-                            .update_aggregator_batch_status_by_index(batch_index, AggregatorBatchStatus::Completed)
-                            .await?;
-                    }
-                    Layer::L3 => {
-                        config
-                            .database()
-                            .update_snos_batch_status_by_index(batch_index, SnosBatchStatus::Completed)
-                            .await?;
-                    }
-                }
-                Ok(block_status.into())
+        let Some(previous_last_block_number) =
+            Self::get_optional_expected_last_block_number(config, previous_num).await?
+        else {
+            return Ok(false);
+        };
+
+        Ok(block_num == previous_last_block_number)
+    }
+
+    async fn get_optional_expected_last_block_number(
+        config: &Arc<Config>,
+        num_settled: u64,
+    ) -> Result<Option<u64>, JobError> {
+        match config.layer() {
+            Layer::L2 => {
+                let batches = config
+                    .database()
+                    .get_aggregator_batches(AggregatorBatchDbQuery {
+                        indexes: Some(vec![num_settled]),
+                        ..Default::default()
+                    })
+                    .await?;
+                Ok(batches.first().map(|batch| batch.end_block))
             }
-            None => {
-                panic!("Incorrect state after settling blocks")
+            Layer::L3 => {
+                let batches = config
+                    .database()
+                    .get_snos_batches(SnosBatchDbQuery { indexes: Some(vec![num_settled]), ..Default::default() })
+                    .await?;
+                Ok(batches.first().map(|batch| batch.end_block))
             }
         }
+    }
+
+    async fn mark_batch_completed(config: &Arc<Config>, batch_index: u64) -> Result<(), JobError> {
+        match config.layer() {
+            Layer::L2 => {
+                config
+                    .database()
+                    .update_aggregator_batch_status_by_index(batch_index, AggregatorBatchStatus::Completed)
+                    .await?;
+            }
+            Layer::L3 => {
+                config.database().update_snos_batch_status_by_index(batch_index, SnosBatchStatus::Completed).await?;
+            }
+        }
+        Ok(())
     }
 
     #[cfg(feature = "testing")]
@@ -380,7 +506,7 @@ impl StateUpdateJobHandler {
         to_settle_num: u64,
         nonce: u64,
         artifacts: StateUpdateArtifacts,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         match config.layer() {
             Layer::L2 => self.update_state_for_l2s(config, nonce, artifacts).await,
             Layer::L3 => {
@@ -405,15 +531,19 @@ impl StateUpdateJobHandler {
         config: Arc<Config>,
         nonce: u64,
         artifacts: StateUpdateArtifacts,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         // Get the snos settlement client
         let settlement_client = config.settlement_client();
 
         // Update state with blobs
-        settlement_client
+        let result = settlement_client
             .update_state_with_blobs(artifacts.program_output, artifacts.blob_data, nonce)
             .await
-            .map_err(|e| JobError::Other(OtherError(e)))
+            .map_err(|e| JobError::Other(OtherError(e)))?;
+
+        let tx_attempts = Self::convert_tx_attempts(result.attempts);
+
+        Ok(StateUpdateProcessingResult { tx_hash: result.tx_hash, tx_nonce: Some(nonce), tx_attempts })
     }
 
     /// Update the state for the corresponding block using the settlement layer.
@@ -425,7 +555,7 @@ impl StateUpdateJobHandler {
         _nonce: u64,
         _program_output: Vec<[u8; 32]>,
         _blob_data: Vec<Vec<u8>>,
-    ) -> Result<String, JobError> {
+    ) -> Result<StateUpdateProcessingResult, JobError> {
         let settlement_client = config.settlement_client();
 
         // NOTE: State updates are performed using call data, even when the KZG DA flag is enabled.
@@ -476,7 +606,11 @@ impl StateUpdateJobHandler {
             Err(StateUpdateError::UseKZGDaError { block_no })?
         };
 
-        Ok(last_tx_hash_executed)
+        Ok(StateUpdateProcessingResult {
+            tx_hash: last_tx_hash_executed,
+            tx_nonce: Some(_nonce),
+            tx_attempts: Vec::new(),
+        })
     }
 }
 

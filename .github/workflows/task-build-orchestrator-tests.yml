@@ -10,6 +10,9 @@ on:
         description: "Hash of the archived orchestrator test binaries"
         value: ${{ jobs.build-orchestrator-tests.outputs.orchestrator-tests-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-orchestrator-tests:
     runs-on: blacksmith-8vcpu-ubuntu-2204

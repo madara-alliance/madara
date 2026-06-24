@@ -17,6 +17,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   test-js:
     runs-on: blacksmith-4vcpu-ubuntu-2204

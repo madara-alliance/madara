@@ -25,6 +25,9 @@ on:
         description: "Hash of the built binary"
         value: ${{ jobs.build-binary.outputs.binary-hash }}
 
+permissions:
+  contents: read
+
 jobs:
   build-binary:
     runs-on: blacksmith-8vcpu-ubuntu-2204

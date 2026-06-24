@@ -95,6 +95,28 @@ impl Default for SettlementContext {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StateUpdateTxAttemptStatus {
+    Finalized,
+    Replaced,
+    TimedOut,
+    RejectedUnderpriced,
+    SubmissionFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StateUpdateTxAttempt {
+    #[serde(default)]
+    pub attempt_no: u64,
+    #[serde(default)]
+    pub tx_hash: Option<String>,
+    pub nonce: u64,
+    pub gas_multiplier: String,
+    pub status: StateUpdateTxAttemptStatus,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 /// Metadata specific to aggregator job
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
@@ -219,6 +241,12 @@ pub struct StateUpdateMetadata {
     // Job-populated fields
     /// Transaction hash for the state update
     pub tx_hash: Option<String>,
+    /// Nonce used by the final state update transaction attempt.
+    #[serde(default)]
+    pub tx_nonce: Option<u64>,
+    /// Attempt history for Ethereum blob state update transactions.
+    #[serde(default)]
+    pub tx_attempts: Vec<StateUpdateTxAttempt>,
 
     pub context: SettlementContext,
 

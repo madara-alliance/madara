@@ -5,6 +5,9 @@ name: Task - Integration Tests and Coverage (Orchestrator)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   test-orchestrator:
     runs-on: blacksmith-8vcpu-ubuntu-2204
