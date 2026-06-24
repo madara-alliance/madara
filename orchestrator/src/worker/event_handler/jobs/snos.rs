@@ -185,6 +185,7 @@ impl JobHandlerTrait for SnosJobHandler {
             metadata.snos_total_processing_time_ms = Some(snos_timing.total_processing_time_ms);
             metadata.snos_rpc_wait_time_ms = Some(snos_timing.rpc_wait_time_ms);
             metadata.snos_execution_time_ms = Some(snos_timing.execution_time_ms);
+            metadata.snos_rpc_calls_by_method = Some(snos_timing.rpc_calls_by_method.clone());
         }
 
         debug!("Storing SNOS outputs");

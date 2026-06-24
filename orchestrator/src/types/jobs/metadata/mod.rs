@@ -1,6 +1,7 @@
 use crate::types::error::TypeError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Common metadata fields shared across all job types.
 ///
@@ -224,6 +225,9 @@ pub struct SnosMetadata {
     /// Wall-clock time SNOS spent on local execution/processing outside RPC waits.
     #[serde(default)]
     pub snos_execution_time_ms: Option<u64>,
+    /// RPC calls SNOS made grouped by method name, including a `total` entry.
+    #[serde(default)]
+    pub snos_rpc_calls_by_method: Option<HashMap<String, u64>>,
 }
 
 /// Metadata specific to state update jobs.
