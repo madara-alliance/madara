@@ -6557,7 +6557,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8425,7 +8425,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9379,12 +9379,12 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "paste",
  "primitive-types 0.12.2",
  "proc-macro2",
@@ -9527,12 +9527,12 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "proptest",
  "proptest-derive",
  "rstest 0.26.1",
@@ -9562,7 +9562,7 @@ dependencies = [
  "mc-telemetry",
  "mp-class",
  "mp-convert",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "rstest 0.18.2",
  "serde",
  "serde_json",
@@ -9606,12 +9606,12 @@ dependencies = [
  "mp-transactions",
  "mp-utils",
  "num-traits",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "proptest",
  "rand 0.8.5",
  "rayon",
@@ -9662,12 +9662,12 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "proptest",
  "proptest-derive",
  "rstest 0.26.1",
@@ -9737,12 +9737,12 @@ dependencies = [
  "mp-rpc",
  "mp-state-update",
  "mp-transactions",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "rstest 0.26.1",
  "serde_json",
  "starknet-types-core 0.2.4",
@@ -9780,7 +9780,7 @@ dependencies = [
  "mp-rpc",
  "mp-transactions",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "reqwest 0.12.26",
  "rstest 0.26.1",
  "serde",
@@ -9889,12 +9889,12 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "proptest",
  "proptest-derive",
  "proptest-state-machine",
@@ -9984,12 +9984,12 @@ dependencies = [
  "mp-receipt",
  "mp-transactions",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "rand 0.8.5",
  "regex",
  "rstest 0.26.1",
@@ -10066,12 +10066,12 @@ dependencies = [
  "mp-transactions",
  "mp-utils",
  "num-traits",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "rayon",
  "regex",
  "rstest 0.26.1",
@@ -10095,12 +10095,12 @@ dependencies = [
  "async-trait",
  "console",
  "mp-utils",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "serde_json",
  "sysinfo",
  "time",
@@ -10504,12 +10504,12 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "num-traits",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "primitive-types 0.12.2",
  "rayon",
  "reqwest 0.12.26",
@@ -10734,12 +10734,12 @@ dependencies = [
  "async-trait",
  "crypto-bigint 0.5.5",
  "futures",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "paste",
  "rand 0.8.5",
  "rayon",
@@ -10851,7 +10851,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11122,12 +11122,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "js-sys",
+ "pin-project-lite",
+ "thiserror 2.0.17",
+ "tracing",
+]
+
+[[package]]
 name = "opentelemetry-appender-tracing"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e68f63eca5fad47e570e00e893094fc17be959c80c79a7d6ec1abdd5ae6ffc16"
 dependencies = [
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "tracing",
  "tracing-core",
  "tracing-subscriber",
@@ -11142,7 +11156,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "http 1.4.0",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "reqwest 0.12.26",
 ]
 
@@ -11153,10 +11167,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbee664a43e07615731afc539ca60c6d9f1a9425e25ca09c57bc36c87c55852b"
 dependencies = [
  "http 1.4.0",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-http",
  "opentelemetry-proto",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.30.0",
  "prost 0.13.5",
  "reqwest 0.12.26",
  "thiserror 2.0.17",
@@ -11171,8 +11185,8 @@ version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e046fd7660710fe5a05e8748e70d9058dc15c94ba914e7c4faa7c728f0e8ddc"
 dependencies = [
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.30.0",
+ "opentelemetry_sdk 0.30.0",
  "prost 0.13.5",
  "tonic 0.13.1",
 ]
@@ -11190,8 +11204,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "447191061af41c3943e082ea359ab8b64ff27d6d34d30d327df309ddef1eef6f"
 dependencies = [
  "chrono",
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.30.0",
+ "opentelemetry_sdk 0.30.0",
 ]
 
 [[package]]
@@ -11203,10 +11217,26 @@ dependencies = [
  "futures-channel",
  "futures-executor",
  "futures-util",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "percent-encoding",
  "rand 0.9.2",
  "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b59f80e1ac4d5ff7a2db8fb6c80badb7f0f3f858211fba08dd9aaec750894f9"
+dependencies = [
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "opentelemetry 0.32.0",
+ "percent-encoding",
+ "portable-atomic 1.11.1",
+ "rand 0.9.2",
  "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
@@ -11268,11 +11298,11 @@ dependencies = [
  "num-traits",
  "omniqueue",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "orchestrator-aggregator-runner",
  "orchestrator-atlantic-service",
  "orchestrator-da-client-interface",
@@ -11344,7 +11374,7 @@ dependencies = [
  "hex",
  "httpmock 0.8.2",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "orchestrator-gps-fact-checker",
  "orchestrator-prover-client-interface",
  "orchestrator-utils",
@@ -11383,11 +11413,11 @@ dependencies = [
  "color-eyre",
  "dotenvy",
  "mockall 0.13.1",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "orchestrator-da-client-interface",
  "orchestrator-utils",
  "reqwest 0.12.26",
@@ -11419,11 +11449,11 @@ dependencies = [
  "lazy_static",
  "log",
  "mockall 0.13.1",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "orchestrator-settlement-client-interface",
  "orchestrator-utils",
  "reqwest 0.12.26",
@@ -11454,11 +11484,11 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "num-bigint",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "orchestrator-utils",
  "serde",
  "starknet-rust",
@@ -11480,7 +11510,7 @@ dependencies = [
  "bytes",
  "hex",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "orchestrator-gps-fact-checker",
  "orchestrator-prover-client-interface",
  "orchestrator-utils",
@@ -11534,7 +11564,7 @@ dependencies = [
  "hex",
  "httpmock 0.8.2",
  "once_cell",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "orchestrator-gps-fact-checker",
  "orchestrator-prover-client-interface",
  "orchestrator-utils",
@@ -11581,11 +11611,11 @@ dependencies = [
  "lazy_static",
  "log",
  "mockall 0.13.1",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "orchestrator-settlement-client-interface",
  "orchestrator-utils",
  "reqwest 0.12.26",
@@ -11619,12 +11649,12 @@ dependencies = [
  "flate2",
  "hex",
  "httpmock 0.8.2",
- "opentelemetry",
+ "opentelemetry 0.30.0",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
- "opentelemetry_sdk",
+ "opentelemetry_sdk 0.32.1",
  "reqwest 0.12.26",
  "rstest 0.26.1",
  "serde",
@@ -12568,7 +12598,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.1",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -13351,7 +13381,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -13492,7 +13522,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15276,7 +15306,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15296,7 +15326,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15937,8 +15967,8 @@ checksum = "ddcf5959f39507d0d04d6413119c04f33b623f4f951ebcbdddddfad2d0623a9c"
 dependencies = [
  "js-sys",
  "once_cell",
- "opentelemetry",
- "opentelemetry_sdk",
+ "opentelemetry 0.30.0",
+ "opentelemetry_sdk 0.30.0",
  "smallvec",
  "tracing",
  "tracing-core",
