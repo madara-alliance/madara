@@ -7836,7 +7836,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -9338,7 +9338,7 @@ dependencies = [
  "http 1.4.0",
  "http-body-util",
  "httpmock 0.7.0",
- "hyper 0.14.32",
+ "hyper 1.8.1",
  "hyper-tls 0.6.0",
  "hyper-util",
  "indoc 2.0.7",
@@ -11252,7 +11252,7 @@ dependencies = [
  "generate-pie",
  "hex",
  "httpmock 0.8.2",
- "hyper 0.14.32",
+ "hyper 1.8.1",
  "indexmap 2.13.1",
  "itertools 0.14.0",
  "jemallocator",
@@ -16698,7 +16698,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

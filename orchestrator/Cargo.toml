@@ -121,7 +121,7 @@ tracing-subscriber = { workspace = true, features = [
 
 anyhow = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "1.8", features = ["full"] }
 indexmap = "2.6.0"
 jemallocator = "0.5.4"
 num-integer = "0.1.46"
@@ -137,7 +137,7 @@ with_sqs = ["omniqueue"]
 testing = ["orchestrator-ethereum-settlement-client/testing"]
 
 [dev-dependencies]
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "1.8", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 mockito = "1.6.1"
