@@ -68,9 +68,6 @@ pub enum EthereumError {
 
     #[error("Starknet Felt parse error: {0}")]
     FeltParseError(String),
-
-    #[error("Configured Madara fee token {configured:#x} does not match deployed L2 fee token {deployed:#x}")]
-    FeeTokenMismatch { configured: starknet::core::types::Felt, deployed: starknet::core::types::Felt },
 }
 
 impl From<EthereumError> for BaseLayerError {

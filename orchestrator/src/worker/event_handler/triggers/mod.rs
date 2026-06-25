@@ -15,19 +15,6 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
 use std::sync::Arc;
 
-const MAX_FAILED_JOB_DETAILS: usize = 8;
-const MAX_FAILURE_REASON_CHARS: usize = 240;
-
-fn truncate_failure_reason(reason: &str) -> String {
-    let mut chars = reason.chars();
-    let truncated: String = chars.by_ref().take(MAX_FAILURE_REASON_CHARS).collect();
-    if chars.next().is_some() {
-        format!("{truncated}...")
-    } else {
-        truncated
-    }
-}
-
 /// Pure helper that computes the buffer slots available for new job creation
 /// given the current `[oldest-incomplete, latest]` window.
 ///
@@ -117,25 +104,6 @@ pub trait JobTrigger: Send + Sync {
             // Group jobs by status to provide accurate logging
             let failed_count = failed_jobs.iter().filter(|j| j.status == JobStatus::Failed).count();
             let timeout_count = failed_jobs.iter().filter(|j| j.status == JobStatus::VerificationTimeout).count();
-            let shown_failed_jobs = failed_jobs.len().min(MAX_FAILED_JOB_DETAILS);
-            let failed_job_details = failed_jobs
-                .iter()
-                .take(MAX_FAILED_JOB_DETAILS)
-                .map(|job| {
-                    let failure_reason = job
-                        .metadata
-                        .common
-                        .failure_reason
-                        .as_deref()
-                        .map(truncate_failure_reason)
-                        .unwrap_or_else(|| "none".to_string());
-                    format!(
-                        "job_type={:?}, internal_id={}, job_id={}, status={:?}, failure_reason={}",
-                        job.job_type, job.internal_id, job.id, job.status, failure_reason
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" | ");
 
             let status_summary = match (failed_count > 0, timeout_count > 0) {
                 (true, true) => format!("{} Failed, {} VerificationTimeout", failed_count, timeout_count),
@@ -145,9 +113,6 @@ pub trait JobTrigger: Send + Sync {
             };
 
             tracing::warn!(
-                failed_job_details = %failed_job_details,
-                shown_failed_jobs = shown_failed_jobs,
-                total_failed_jobs = failed_jobs.len(),
                 "There are {} jobs in the DB ({}). Not creating new jobs to prevent inconsistencies (existing jobs will be processed). Please manually fix the failed jobs before continuing!",
                 failed_jobs.len(),
                 status_summary

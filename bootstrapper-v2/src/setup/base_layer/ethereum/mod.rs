@@ -417,26 +417,28 @@ impl BaseLayerSetupTrait for EthereumSetup {
         madara_setup.insert_address(crate::setup::madara::DeployedContract::L2FeeToken, l2_fee_token);
         madara_setup.save_madara_addresses(madara_addresses_path).map_err(|e| BaseLayerError::Internal(Box::new(e)))?;
 
-        // Step 4: Ensure the configured native fee token is the token deployed by bridge enrollment.
-        // SNOS computes the config hash from the chain config, and Blockifier charges v3 fees from
-        // the same native token address.
-        let configured_fee_token = Felt::from_hex(&self.config_hash_config.madara_fee_token).map_err(|e| {
-            BaseLayerError::Internal(Box::new(EthereumError::FeltParseError(format!(
-                "Failed to parse configured Madara fee token '{}': {}",
-                self.config_hash_config.madara_fee_token, e
-            ))))
-        })?;
-        if l2_fee_token != configured_fee_token {
-            return Err(BaseLayerError::Internal(Box::new(EthereumError::FeeTokenMismatch {
-                configured: configured_fee_token,
-                deployed: l2_fee_token,
-            })));
-        }
+        // Step 4: Determine which fee token to use for config hash
+        // The config hash on the CoreContract must match what SNOS computes.
+        // SNOS uses native_fee_token_address from the chain config (madara.yaml),
+        // not the deployed fee token address.
+        let fee_token_for_config_hash =
+            if let Ok(configured_fee_token) = Felt::from_hex(&self.config_hash_config.madara_fee_token) {
+                if l2_fee_token != configured_fee_token {
+                    log::warn!(
+                        "Fee token mismatch: configured={:#x}, deployed={:#x}. Using configured token for config hash.",
+                        configured_fee_token,
+                        l2_fee_token
+                    );
+                }
+                configured_fee_token
+            } else {
+                l2_fee_token
+            };
 
         // Step 5: Update config hash on CoreContract via Factory
         // Factory is the Starknet governor (set during CoreContract deployment)
         self.update_config_hash(
-            &format!("{:#x}", configured_fee_token),
+            &format!("{:#x}", fee_token_for_config_hash),
             &base_addresses.addresses.core_contract,
             base_layer_factory_address,
         )
