@@ -39,6 +39,17 @@ impl RpcMetrics {
         [KeyValue::new("method", method.to_string()), KeyValue::new("success", success.to_string())]
     }
 
+    pub(crate) fn on_call_method(&self, method: &str) {
+        self.calls_started.add(1, &Self::call_started_labels(method));
+    }
+
+    pub(crate) fn on_response_method(&self, method: &str, success: bool, now: Instant) {
+        let millis = now.elapsed().as_millis();
+
+        self.calls_time.record(millis as f64, &Self::call_started_labels(method));
+        self.calls_finished.add(1, &Self::call_completed_labels(method, success));
+    }
+
     /// Create an instance of metrics
     pub fn register() -> anyhow::Result<Self> {
         let meter = global::meter_with_scope(
@@ -114,12 +125,12 @@ impl RpcMetrics {
             req.method_name(),
             req.params(),
         );
-        self.calls_started.add(1, &Self::call_started_labels(req.method_name()));
+        self.on_call_method(req.method_name());
     }
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
         tracing::trace!(target: "rpc_metrics", "[{transport_label}] on_response started_at={:?}", now);
-        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_result());
+        tracing::trace!(target: "rpc_metrics::extra", "[{transport_label}] result={}", rp.as_json());
 
         let millis = now.elapsed().as_millis();
         tracing::debug!(
@@ -129,10 +140,7 @@ impl RpcMetrics {
             millis,
         );
 
-        let labels = Self::call_completed_labels(req.method_name(), rp.is_success());
-
-        self.calls_time.record(millis as f64, &Self::call_started_labels(req.method_name()));
-        self.calls_finished.add(1, &labels);
+        self.on_response_method(req.method_name(), rp.is_success(), now);
     }
 }
 

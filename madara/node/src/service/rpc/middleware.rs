@@ -1,9 +1,11 @@
 //! JSON-RPC specific middleware.
 
-use anyhow::Context;
-use futures::future::{BoxFuture, FutureExt};
-use jsonrpsee::server::middleware::rpc::RpcServiceT;
+use jsonrpsee::{
+    server::middleware::rpc::{Batch, BatchEntry, BatchEntryErr, Notification, RpcServiceT},
+    MethodResponse,
+};
 use mp_chain_config::RpcVersion;
+use std::future::Future;
 use std::time::Instant;
 
 pub use super::metrics::Metrics;
@@ -44,13 +46,22 @@ pub struct RpcMiddlewareServiceMetrics<S> {
     metrics: Metrics,
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceMetrics<S>
+impl<S> RpcServiceT for RpcMiddlewareServiceMetrics<S>
 where
-    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+    S: Send
+        + Sync
+        + Clone
+        + RpcServiceT<
+            MethodResponse = MethodResponse,
+            NotificationResponse = MethodResponse,
+            BatchResponse = MethodResponse,
+        > + 'static,
 {
-    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
+    type MethodResponse = MethodResponse;
+    type NotificationResponse = MethodResponse;
+    type BatchResponse = MethodResponse;
 
-    fn call(&self, req: jsonrpsee::types::Request<'a>) -> Self::Future {
+    fn call<'a>(&self, req: jsonrpsee::types::Request<'a>) -> impl Future<Output = Self::MethodResponse> + Send + 'a {
         let inner = self.inner.clone();
         let metrics = self.metrics.clone();
 
@@ -68,7 +79,7 @@ where
 
             let method = req.method_name();
             let status = rp.as_error_code().unwrap_or(200) as i64;
-            let res_len = rp.as_result().len() as u64;
+            let res_len = rp.as_json().get().len() as u64;
             let response_time = now.elapsed().as_micros();
 
             tracing::info!(
@@ -83,14 +94,58 @@ where
             tracing::trace!(
                 target: "rpc_raw_response",
                 "{:?}",
-                rp.as_result()
+                rp.as_json()
             );
 
             metrics.on_response(&req, &rp, now);
 
             rp
         }
-        .boxed()
+    }
+
+    fn batch<'a>(&self, batch: Batch<'a>) -> impl Future<Output = Self::BatchResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        let metrics = self.metrics.clone();
+
+        async move {
+            let now = std::time::Instant::now();
+            let methods = batch
+                .iter()
+                .filter_map(|entry| entry.as_ref().ok().map(BatchEntry::method_name))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+
+            for method in &methods {
+                metrics.inner.on_call_method(method);
+            }
+
+            let rp = inner.batch(batch).await;
+
+            for method in &methods {
+                metrics.inner.on_response_method(method, rp.is_success(), now);
+            }
+
+            rp
+        }
+    }
+
+    fn notification<'a>(
+        &self,
+        notification: Notification<'a>,
+    ) -> impl Future<Output = Self::NotificationResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        let metrics = self.metrics.clone();
+
+        async move {
+            let now = std::time::Instant::now();
+            let method = notification.method_name().to_owned();
+
+            metrics.inner.on_call_method(&method);
+            let rp = inner.notification(notification).await;
+            metrics.inner.on_response_method(&method, rp.is_success(), now);
+
+            rp
+        }
     }
 }
 
@@ -107,56 +162,109 @@ impl<S> RpcMiddlewareServiceVersion<S> {
     }
 }
 
-impl<'a, S> RpcServiceT<'a> for RpcMiddlewareServiceVersion<S>
+impl<S> RpcServiceT for RpcMiddlewareServiceVersion<S>
 where
-    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+    S: Send
+        + Sync
+        + Clone
+        + RpcServiceT<
+            MethodResponse = MethodResponse,
+            NotificationResponse = MethodResponse,
+            BatchResponse = MethodResponse,
+        > + 'static,
 {
-    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
+    type MethodResponse = MethodResponse;
+    type NotificationResponse = MethodResponse;
+    type BatchResponse = MethodResponse;
 
-    fn call(&self, mut req: jsonrpsee::types::Request<'a>) -> Self::Future {
+    fn call<'a>(
+        &self,
+        mut req: jsonrpsee::types::Request<'a>,
+    ) -> impl Future<Output = Self::MethodResponse> + Send + 'a {
         let inner = self.inner.clone();
         let path = self.path.clone();
         let version_default = self.version_default;
 
         async move {
-            if req.method == "rpc_methods" {
-                return inner.call(req).await;
+            if let Err(error) = rewrite_method(&mut req.method, &path, version_default) {
+                return MethodResponse::error(req.id(), error);
             }
-
-            let version = match RpcVersion::from_request_path(&path, version_default)
-                .map(|v| v.name())
-                .context("Failed to get request path")
-            {
-                Ok(version) => version,
-                Err(_) => {
-                    return jsonrpsee::MethodResponse::error(
-                        req.id,
-                        jsonrpsee::types::ErrorObject::owned(
-                            jsonrpsee::types::error::PARSE_ERROR_CODE,
-                            jsonrpsee::types::error::PARSE_ERROR_MSG,
-                            None::<()>,
-                        ),
-                    )
-                }
-            };
-
-            let Some((namespace, method)) = req.method.split_once('_') else {
-                return jsonrpsee::MethodResponse::error(
-                    req.id(),
-                    jsonrpsee::types::ErrorObject::owned(
-                        jsonrpsee::types::error::METHOD_NOT_FOUND_CODE,
-                        jsonrpsee::types::error::METHOD_NOT_FOUND_MSG,
-                        Some(req.method_name()),
-                    ),
-                );
-            };
-
-            let method = method.replacen(&format!("{version}_"), "", 1);
-            let method_new = format!("{namespace}_{version}_{method}");
-            req.method = jsonrpsee::core::Cow::from(method_new);
 
             inner.call(req).await
         }
-        .boxed()
     }
+
+    fn batch<'a>(&self, mut batch: Batch<'a>) -> impl Future<Output = Self::BatchResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        let path = self.path.clone();
+        let version_default = self.version_default;
+
+        async move {
+            for batch_entry in batch.iter_mut() {
+                let error = match batch_entry {
+                    Ok(entry) => match entry {
+                        BatchEntry::Call(req) => {
+                            rewrite_method(&mut req.method, &path, version_default).err().map(|error| (req.id(), error))
+                        }
+                        BatchEntry::Notification(notification) => {
+                            let _ = rewrite_method(&mut notification.method, &path, version_default);
+                            None
+                        }
+                    },
+                    Err(_) => None,
+                };
+
+                if let Some((id, error)) = error {
+                    *batch_entry = Err(BatchEntryErr::new(id, error));
+                }
+            }
+
+            inner.batch(batch).await
+        }
+    }
+
+    fn notification<'a>(
+        &self,
+        mut notification: Notification<'a>,
+    ) -> impl Future<Output = Self::NotificationResponse> + Send + 'a {
+        let inner = self.inner.clone();
+        let path = self.path.clone();
+        let version_default = self.version_default;
+
+        async move {
+            let _ = rewrite_method(&mut notification.method, &path, version_default);
+            inner.notification(notification).await
+        }
+    }
+}
+
+fn rewrite_method(
+    method: &mut jsonrpsee::core::Cow<'_, str>,
+    path: &str,
+    version_default: RpcVersion,
+) -> Result<(), jsonrpsee::types::ErrorObject<'static>> {
+    if method.as_ref() == "rpc_methods" {
+        return Ok(());
+    }
+
+    let version = RpcVersion::from_request_path(path, version_default).map(|v| v.name()).map_err(|_| {
+        jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::PARSE_ERROR_CODE,
+            jsonrpsee::types::error::PARSE_ERROR_MSG,
+            None::<()>,
+        )
+    })?;
+
+    let Some((namespace, method_name)) = method.split_once('_') else {
+        return Err(jsonrpsee::types::ErrorObject::owned(
+            jsonrpsee::types::error::METHOD_NOT_FOUND_CODE,
+            jsonrpsee::types::error::METHOD_NOT_FOUND_MSG,
+            Some(method.to_string()),
+        ));
+    };
+
+    let method_name = method_name.replacen(&format!("{version}_"), "", 1);
+    *method = jsonrpsee::core::Cow::from(format!("{namespace}_{version}_{method_name}"));
+
+    Ok(())
 }

@@ -26,7 +26,8 @@ impl MadaraStatusRpcApiV0_1_0Server for Starknet {
 
         while !self.ctx.is_cancelled() {
             let now = unix_now();
-            let msg = jsonrpsee::SubscriptionMessage::from_json(&now)
+            let msg = serde_json::value::to_raw_value(&now)
+                .map(jsonrpsee::SubscriptionMessage::from)
                 .or_else_internal_server_error(|| format!("Failed to create response message at unix time {now}"))?;
             sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
 

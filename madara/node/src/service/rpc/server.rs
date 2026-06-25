@@ -5,6 +5,7 @@ use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
+use jsonrpsee::server::middleware::rpc::RpcServiceBuilder;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
 use mc_rpc::Starknet;
 use mp_chain_config::RpcVersion;
@@ -85,7 +86,7 @@ pub async fn start_server(
         .option_layer(host_filtering(cors.is_some(), local_addr))
         .layer(try_into_cors(cors.as_ref())?);
 
-    let builder = jsonrpsee::server::Server::builder()
+    let server_config = jsonrpsee::server::ServerConfig::builder()
         .max_request_body_size(max_payload_in_mib.saturating_mul(MiB))
         .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
@@ -93,8 +94,10 @@ pub async fn start_server(
         .enable_ws_ping(ping_config)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)
-        .set_http_middleware(http_middleware)
-        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
+        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16))
+        .build();
+
+    let builder = jsonrpsee::server::Server::builder().set_config(server_config).set_http_middleware(http_middleware);
 
     let cfg = PerConnection {
         methods,
@@ -102,20 +105,28 @@ pub async fn start_server(
         metrics,
         service_builder: builder.to_service_builder(),
     };
-    let ctx1 = ctx.clone();
+    let mut connections = tokio::task::JoinSet::new();
 
-    let make_service = hyper::service::make_service_fn(move |_| {
+    tracing::info!(
+        "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
+        local_addr.to_string(),
+        config.rpc_version_default,
+        format_cors(cors.as_ref()),
+        format_rpc_versions(&supported_versions),
+    );
+
+    while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
+        let (stream, _) = res.context("Accepting RPC connection")?;
         let cfg = cfg.clone();
-        let ctx1 = ctx1.clone();
+        let stop_handle_for_service = cfg.stop_handle.clone();
+        let ctx_for_service = ctx.clone();
+        let mut ctx_for_shutdown = ctx.clone();
         let starknet = Arc::clone(&starknet);
 
-        async move {
-            let cfg = cfg.clone();
-            let starknet = Arc::clone(&starknet);
-
-            Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
+        connections.spawn(async move {
+            let service = tower::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
-                let ctx1 = ctx1.clone();
+                let ctx1 = ctx_for_service.clone();
                 let starknet = Arc::clone(&starknet);
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
@@ -123,7 +134,7 @@ pub async fn start_server(
                 let path = req.uri().path().to_string();
                 let metrics_layer = RpcMiddlewareLayerMetrics::new(Metrics::new(metrics, transport_label));
 
-                let rpc_middleware = jsonrpsee::server::RpcServiceBuilder::new()
+                let rpc_middleware = RpcServiceBuilder::new()
                     .layer_fn(move |service| {
                         RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
                     })
@@ -133,25 +144,21 @@ pub async fn start_server(
 
                 async move {
                     if ctx1.is_cancelled() {
-                        Ok(hyper::Response::builder()
-                            .status(hyper::StatusCode::GONE)
-                            .body(hyper::Body::from("GONE"))?)
+                        Ok::<_, Infallible>(text_response(http::StatusCode::GONE, "GONE"))
                     } else if req.uri().path() == "/health" {
-                        Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
+                        Ok::<_, Infallible>(text_response(http::StatusCode::OK, "OK"))
                     } else if req.uri().path() == "/ready" {
                         let sync_status = syncing(&starknet);
                         match sync_status {
                             Ok(sync_status) => match sync_status {
-                                SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()
-                                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
-                                    .body(hyper::Body::from("SYNCING"))?),
-                                SyncingStatus::NotSyncing => Ok(hyper::Response::builder()
-                                    .status(hyper::StatusCode::OK)
-                                    .body(hyper::Body::from("OK"))?),
+                                SyncingStatus::Syncing(_) => {
+                                    Ok(text_response(http::StatusCode::SERVICE_UNAVAILABLE, "SYNCING"))
+                                }
+                                SyncingStatus::NotSyncing => Ok(text_response(http::StatusCode::OK, "OK")),
                             },
-                            Err(_) => Ok(hyper::Response::builder()
-                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(hyper::Body::from("INTERNAL_SERVER_ERROR"))?),
+                            Err(_) => {
+                                Ok(text_response(http::StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR"))
+                            }
                         }
                     } else {
                         if is_websocket {
@@ -168,31 +175,40 @@ pub async fn start_server(
                             });
                         }
 
-                        svc.call(req).await
+                        match svc.call(req).await {
+                            Ok(response) => Ok(response),
+                            Err(error) => {
+                                tracing::error!("Error handling RPC request: {error:#}");
+                                Ok(text_response(http::StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR"))
+                            }
+                        }
                     }
                 }
-            }))
+            });
+
+            let stopped = async move {
+                ctx_for_shutdown.run_until_cancelled(stop_handle_for_service.shutdown()).await;
+            };
+
+            if let Err(err) = jsonrpsee::server::serve_with_graceful_shutdown(stream, service, stopped).await {
+                tracing::error!("Error serving RPC connection: {err:#}");
+            }
+        });
+    }
+
+    while let Some(res) = connections.join_next().await {
+        if let Err(error) = res {
+            tracing::error!("RPC connection task failed: {error:#}");
         }
-    });
+    }
 
-    let server = hyper::Server::from_tcp(listener.into_std()?)
-        .with_context(|| format!("Creating hyper server at: {addr}"))?
-        .serve(make_service);
+    Ok(())
+}
 
-    tracing::info!(
-        "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
-        local_addr.to_string(),
-        config.rpc_version_default,
-        format_cors(cors.as_ref()),
-        format_rpc_versions(&supported_versions),
-    );
-
-    server
-        .with_graceful_shutdown(async {
-            ctx.run_until_cancelled(stop_handle.shutdown()).await;
-        })
-        .await
-        .context("Running rpc server")
+fn text_response(status: http::StatusCode, body: &'static str) -> jsonrpsee::server::HttpResponse {
+    let mut response = http::Response::new(jsonrpsee::server::HttpBody::from(body));
+    *response.status_mut() = status;
+    response
 }
 
 // Copied from https://github.com/paritytech/polkadot-sdk/blob/a0aefc6b233ace0a82a8631d67b6854e6aeb014b/substrate/client/rpc-servers/src/utils.rs#L192
@@ -252,7 +268,7 @@ pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
     available_methods.sort();
 
     rpc_api
-        .register_method("rpc_methods", move |_, _| {
+        .register_method("rpc_methods", move |_, _, _| {
             serde_json::json!({
                 "methods": available_methods,
             })
@@ -266,7 +282,7 @@ pub(crate) fn try_into_cors(maybe_cors: Option<&Vec<String>>) -> anyhow::Result<
     if let Some(cors) = maybe_cors {
         let mut list = Vec::new();
         for origin in cors {
-            list.push(hyper::header::HeaderValue::from_str(origin)?);
+            list.push(http::header::HeaderValue::from_str(origin)?);
         }
         Ok(tower_http::cors::CorsLayer::new().allow_origin(tower_http::cors::AllowOrigin::list(list)))
     } else {

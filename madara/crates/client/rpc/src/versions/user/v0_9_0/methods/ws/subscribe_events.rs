@@ -69,7 +69,7 @@ async fn send_event(
 ) -> Result<(), StarknetWsApiError> {
     let event = EmittedEvent::from(event);
     let item = super::SubscriptionItem::new(sink.subscription_id(), event);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let msg = serde_json::value::to_raw_value(&item).map(jsonrpsee::SubscriptionMessage::from)
         .or_internal_server_error("Failed to create response message")?;
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
 }
