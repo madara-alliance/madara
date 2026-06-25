@@ -19,9 +19,10 @@ use std::io::Error as IoError;
 
 use crate::error::madara::MadaraError;
 
-// E2E runs with fee charging disabled, but v3 transactions still need resource
-// amounts high enough for sequencer execution and SNOS replay. Keep prices at
-// zero so Starknet OS also treats these transactions as no-fee.
+// E2E runs with fee charging disabled during bootstrap, but v3 transactions
+// still need resource amounts high enough for sequencer execution and SNOS
+// replay. Keep prices at zero so fee-free bootstrap transactions remain
+// explicit in the signed transaction data.
 pub const BOOTSTRAPPER_L1_GAS: u64 = 220_000;
 pub const BOOTSTRAPPER_L2_GAS: u64 = 6_000_000_000;
 pub const BOOTSTRAPPER_L1_DATA_GAS: u64 = 60_000;

@@ -34,9 +34,9 @@ use crate::tests::setup::setup_chain;
 const E2E_L1_GAS: u64 = 220_000;
 const E2E_L2_GAS: u64 = 6_000_000_000;
 const E2E_L1_DATA_GAS: u64 = 60_000;
-const E2E_L1_GAS_PRICE: u128 = 0;
-const E2E_L2_GAS_PRICE: u128 = 0;
-const E2E_L1_DATA_GAS_PRICE: u128 = 0;
+const E2E_L1_GAS_PRICE: u128 = 1;
+const E2E_L2_GAS_PRICE: u128 = 37_500;
+const E2E_L1_DATA_GAS_PRICE: u128 = 1;
 
 // Define the ERC20Token contract interface
 sol! {
@@ -223,7 +223,7 @@ async fn test_erc20_deposit_flow(
     println!("Initial ERC20 L2 balance: {}", initial_l2_balance);
 
     // Execute L1 deposit
-    let deposit_amount = U256::from(10u64);
+    let deposit_amount = U256::from(1_000_000_000_000_000_000u64);
     execute_erc20_l1_deposit(l1_context, deposit_amount, test_config, addresses).await?;
 
     // Wait for message processing

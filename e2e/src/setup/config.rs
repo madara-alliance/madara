@@ -409,7 +409,6 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", madara_config.rpc_endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
-            .env_var("SNOS_DISABLE_FEE_CHARGE", "true")
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
@@ -447,6 +446,7 @@ impl SetupConfigBuilder {
             .builder()
             .database_path(get_database_path(test_name, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
+            .charge_fee(true)
             .build();
 
         let pathfinder_config = PathfinderConfigBuilder::new()
