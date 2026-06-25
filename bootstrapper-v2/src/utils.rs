@@ -20,13 +20,14 @@ use std::io::Error as IoError;
 use crate::error::madara::MadaraError;
 
 // E2E runs with fee charging disabled, but v3 transactions still need resource
-// bounds high enough for sequencer execution and SNOS replay.
+// amounts high enough for sequencer execution and SNOS replay. Keep prices at
+// zero so Starknet OS also treats these transactions as no-fee.
 pub const BOOTSTRAPPER_L1_GAS: u64 = 220_000;
 pub const BOOTSTRAPPER_L2_GAS: u64 = 6_000_000_000;
 pub const BOOTSTRAPPER_L1_DATA_GAS: u64 = 60_000;
-pub const BOOTSTRAPPER_L1_GAS_PRICE: u128 = 1;
-pub const BOOTSTRAPPER_L2_GAS_PRICE: u128 = 25_000;
-pub const BOOTSTRAPPER_L1_DATA_GAS_PRICE: u128 = 1;
+pub const BOOTSTRAPPER_L1_GAS_PRICE: u128 = 0;
+pub const BOOTSTRAPPER_L2_GAS_PRICE: u128 = 0;
+pub const BOOTSTRAPPER_L1_DATA_GAS_PRICE: u128 = 0;
 
 /// Read a JSON file and deserialize it into the given type.
 pub fn read_json_file<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, MadaraError> {

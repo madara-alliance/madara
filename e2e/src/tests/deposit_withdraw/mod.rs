@@ -34,9 +34,9 @@ use crate::tests::setup::setup_chain;
 const E2E_L1_GAS: u64 = 220_000;
 const E2E_L2_GAS: u64 = 6_000_000_000;
 const E2E_L1_DATA_GAS: u64 = 60_000;
-const E2E_L1_GAS_PRICE: u128 = 1;
-const E2E_L2_GAS_PRICE: u128 = 25_000;
-const E2E_L1_DATA_GAS_PRICE: u128 = 1;
+const E2E_L1_GAS_PRICE: u128 = 0;
+const E2E_L2_GAS_PRICE: u128 = 0;
+const E2E_L1_DATA_GAS_PRICE: u128 = 0;
 
 // Define the ERC20Token contract interface
 sol! {
