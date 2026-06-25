@@ -5,11 +5,7 @@ pub mod job_routes;
 pub mod jobs_by_status;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::worker::initialize_worker;
-use axum::http::StatusCode;
-use hyper::body::Buf;
-use hyper::{Body, Request};
 use rstest::*;
-use std::io::Read;
 use tokio_util::sync::CancellationToken;
 
 #[rstest]
@@ -20,18 +16,11 @@ async fn test_health_endpoint() {
     let services = TestConfigBuilder::new().configure_api_server(ConfigType::Actual).build().await;
 
     let addr = services.api_server_address.unwrap();
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().uri(format!("http://{}/health", addr)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/health", addr)).await.unwrap();
 
-    assert_eq!(response.status().as_str(), StatusCode::OK.as_str());
+    assert_eq!(response.status(), 200);
 
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let mut buf = String::new();
-    let res = body.reader().read_to_string(&mut buf).unwrap();
-    assert_eq!(res, 2);
+    assert_eq!(response.text().await.unwrap().len(), 2);
 }
 
 /// This test case will make sure that the consumers are initialized correctly.

@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::{Duration, SubsecRound, Utc};
-use hyper::{Body, Request};
 use rstest::*;
 use uuid::Uuid;
 
@@ -146,20 +145,10 @@ async fn test_get_block_settlement_status_for_batched_block(#[future] setup_bloc
     config.database().create_job(aggregator_job.clone()).await.unwrap();
     config.database().create_job(state_transition_job.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/blocks/settlement-status/{}", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/blocks/settlement-status/{}", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<BlockSettlementStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<BlockSettlementStatusResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     assert_eq!(
@@ -214,20 +203,10 @@ async fn test_get_block_batch_mapping_legacy_route(#[future] setup_blocks_server
     config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
     config.database().create_snos_batch(snos_batch).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/blocks/batch-for-block/{}", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/blocks/batch-for-block/{}", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<BlockStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<BlockStatusResponse> = response.json().await.unwrap();
 
     assert_eq!(response_body.data.expect("missing legacy batch mapping payload").batch_number, aggregator_batch.index);
 }
@@ -252,20 +231,10 @@ async fn test_get_block_settlement_status_without_aggregator_uses_job_status(
 
     config.database().create_job(snos_job.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/blocks/settlement-status/{}", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/blocks/settlement-status/{}", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<BlockSettlementStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<BlockSettlementStatusResponse> = response.json().await.unwrap();
 
     let data = response_body.data.expect("missing settlement status payload");
     let snos_batch = data.snos_batch.expect("missing snos batch response");
@@ -309,20 +278,10 @@ async fn test_get_block_settlement_status_without_aggregator_prefers_snos_batch_
     config.database().create_snos_batch(snos_batch.clone()).await.unwrap();
     config.database().create_job(snos_job.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/blocks/settlement-status/{}", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/blocks/settlement-status/{}", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<BlockSettlementStatusResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<BlockSettlementStatusResponse> = response.json().await.unwrap();
 
     let data = response_body.data.expect("missing settlement status payload");
     let returned_snos_batch = data.snos_batch.expect("missing snos batch response");

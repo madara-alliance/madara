@@ -3,7 +3,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use hyper::{Body, Request};
 use mockall::predicate::eq;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::*;
@@ -62,26 +61,18 @@ async fn test_trigger_process_job(#[case] is_priority: bool, #[future] setup_tri
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!(
-                    "http://{}/jobs/{}/process{}",
-                    addr,
-                    job_id,
-                    if is_priority { "?priority=true" } else { "" }
-                ))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!(
+        "http://{}/jobs/{}/process{}",
+        addr,
+        job_id,
+        if is_priority { "?priority=true" } else { "" }
+    ))
+    .await
+    .unwrap();
 
     // Verify response status and message
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
+    let response: ApiResponse = response.json().await.unwrap();
     assert!(response.success);
     assert_eq!(
         response.message,
@@ -143,25 +134,17 @@ async fn test_trigger_verify_job(#[case] is_priority: bool, #[future] setup_trig
     let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(job_type.clone())).times(1).returning(move |_| Arc::clone(&job_handler));
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!(
-                    "http://{}/jobs/{}/verify{}",
-                    addr,
-                    job_id,
-                    if is_priority { "?priority=true" } else { "" }
-                ))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!(
+        "http://{}/jobs/{}/verify{}",
+        addr,
+        job_id,
+        if is_priority { "?priority=true" } else { "" }
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
+    let response: ApiResponse = response.json().await.unwrap();
     assert!(response.success);
     assert_eq!(
         response.message,
@@ -211,25 +194,17 @@ async fn test_trigger_retry_job_when_failed(
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!(
-                    "http://{}/jobs/{}/retry{}",
-                    addr,
-                    job_id,
-                    if is_priority { "?priority=true" } else { "" }
-                ))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!(
+        "http://{}/jobs/{}/retry{}",
+        addr,
+        job_id,
+        if is_priority { "?priority=true" } else { "" }
+    ))
+    .await
+    .unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
+    let response: ApiResponse = response.json().await.unwrap();
     assert!(response.success);
     assert_eq!(
         response.message,
@@ -271,11 +246,7 @@ async fn test_trigger_retry_job_not_allowed(
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().uri(format!("http://{}/jobs/{}/retry", addr, job_id)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/jobs/{}/retry", addr, job_id)).await.unwrap();
 
     // Verify request was rejected
     assert_eq!(response.status(), 400);
@@ -328,21 +299,10 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     let other_block_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number + 10);
     config.database().create_job(other_block_job).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/jobs/block/{}/status", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/jobs/block/{}/status", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
-        serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
@@ -367,21 +327,10 @@ async fn test_get_job_status_by_block_number_not_found(#[future] setup_trigger: 
     let other_block_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number + 10);
     config.database().create_job(other_block_job).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/jobs/block/{}/status", addr, block_number))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/jobs/block/{}/status", addr, block_number)).await.unwrap();
 
     assert_eq!(response.status(), 200); // Endpoint itself is found, just no data for this block
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
-        serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
