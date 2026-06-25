@@ -13,7 +13,10 @@ use starknet::{
 };
 use std::sync::Arc;
 
-use crate::utils::wait_for_transaction;
+use crate::utils::{
+    wait_for_transaction, BOOTSTRAPPER_L1_DATA_GAS, BOOTSTRAPPER_L1_DATA_GAS_PRICE, BOOTSTRAPPER_L1_GAS,
+    BOOTSTRAPPER_L1_GAS_PRICE, BOOTSTRAPPER_L2_GAS, BOOTSTRAPPER_L2_GAS_PRICE,
+};
 
 pub struct BootstrapAccount<'a> {
     // Bootstrap account used to make the first declaration
@@ -64,9 +67,12 @@ impl<'a> BootstrapAccount<'a> {
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
+            .l1_gas(BOOTSTRAPPER_L1_GAS)
+            .l1_gas_price(BOOTSTRAPPER_L1_GAS_PRICE)
+            .l2_gas(BOOTSTRAPPER_L2_GAS)
+            .l2_gas_price(BOOTSTRAPPER_L2_GAS_PRICE)
+            .l1_data_gas(BOOTSTRAPPER_L1_DATA_GAS)
+            .l1_data_gas_price(BOOTSTRAPPER_L1_DATA_GAS_PRICE)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
@@ -107,7 +113,16 @@ impl<'a> BootstrapAccount<'a> {
             OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider).await?;
 
         // Deploy the account using the factory
-        let deploy_result = account_factory.deploy_v3(salt).l1_gas(0).l2_gas(0).l1_data_gas(0).send().await?;
+        let deploy_result = account_factory
+            .deploy_v3(salt)
+            .l1_gas(BOOTSTRAPPER_L1_GAS)
+            .l1_gas_price(BOOTSTRAPPER_L1_GAS_PRICE)
+            .l2_gas(BOOTSTRAPPER_L2_GAS)
+            .l2_gas_price(BOOTSTRAPPER_L2_GAS_PRICE)
+            .l1_data_gas(BOOTSTRAPPER_L1_DATA_GAS)
+            .l1_data_gas_price(BOOTSTRAPPER_L1_DATA_GAS_PRICE)
+            .send()
+            .await?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");

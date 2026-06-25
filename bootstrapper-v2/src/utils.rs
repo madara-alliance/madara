@@ -19,6 +19,15 @@ use std::io::Error as IoError;
 
 use crate::error::madara::MadaraError;
 
+// E2E runs with fee charging disabled, but v3 transactions still need resource
+// bounds high enough for sequencer execution and SNOS replay.
+pub const BOOTSTRAPPER_L1_GAS: u64 = 220_000;
+pub const BOOTSTRAPPER_L2_GAS: u64 = 6_000_000_000;
+pub const BOOTSTRAPPER_L1_DATA_GAS: u64 = 60_000;
+pub const BOOTSTRAPPER_L1_GAS_PRICE: u128 = 1;
+pub const BOOTSTRAPPER_L2_GAS_PRICE: u128 = 25_000;
+pub const BOOTSTRAPPER_L1_DATA_GAS_PRICE: u128 = 1;
+
 /// Read a JSON file and deserialize it into the given type.
 pub fn read_json_file<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, MadaraError> {
     let file = std::fs::File::open(path).map_err(|e| MadaraError::FailedToOpenFile(e, path.to_string()))?;
@@ -139,9 +148,12 @@ pub async fn declare_contract(
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(BOOTSTRAPPER_L1_GAS)
+        .l1_gas_price(BOOTSTRAPPER_L1_GAS_PRICE)
+        .l2_gas(BOOTSTRAPPER_L2_GAS)
+        .l2_gas_price(BOOTSTRAPPER_L2_GAS_PRICE)
+        .l1_data_gas(BOOTSTRAPPER_L1_DATA_GAS)
+        .l1_data_gas_price(BOOTSTRAPPER_L1_DATA_GAS_PRICE)
         .send()
         .await?;
     wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await?;
@@ -153,7 +165,16 @@ pub async fn execute_v3(
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     calls: &Vec<Call>,
 ) -> Result<InvokeTransactionResult, MadaraError> {
-    let txn_res = account.execute_v3(calls.clone()).l1_gas(0).l2_gas(0).l1_data_gas(0).send().await?;
+    let txn_res = account
+        .execute_v3(calls.clone())
+        .l1_gas(BOOTSTRAPPER_L1_GAS)
+        .l1_gas_price(BOOTSTRAPPER_L1_GAS_PRICE)
+        .l2_gas(BOOTSTRAPPER_L2_GAS)
+        .l2_gas_price(BOOTSTRAPPER_L2_GAS_PRICE)
+        .l1_data_gas(BOOTSTRAPPER_L1_DATA_GAS)
+        .l1_data_gas_price(BOOTSTRAPPER_L1_DATA_GAS_PRICE)
+        .send()
+        .await?;
 
     wait_for_transaction(
         account.provider(),
