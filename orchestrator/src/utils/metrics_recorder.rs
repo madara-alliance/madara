@@ -5,6 +5,7 @@ use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::KeyValue;
 use std::time::Instant;
 
+use crate::core::config::StarknetVersion;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -464,6 +465,14 @@ impl MetricsRecorder {
     pub fn record_snos_job_processing_time(duration_seconds: f64) {
         let attributes = [KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun))];
         ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
+    }
+
+    pub fn record_snos_batch_blocks(num_blocks: u64, starknet_version: StarknetVersion) {
+        let attributes = [
+            KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+            KeyValue::new("starknet_version", starknet_version.to_string()),
+        ];
+        ORCHESTRATOR_METRICS.snos_batch_blocks.record(num_blocks as f64, &attributes);
     }
 
     pub fn record_snos_rpc_fallback(job: &JobItem) {
