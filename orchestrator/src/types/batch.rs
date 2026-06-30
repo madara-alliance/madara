@@ -146,6 +146,10 @@ pub struct AggregatorBatch {
     /// Length of vector of felts representing the compressed blob data for the batch
     pub blob_len: usize,
 
+    /// Conservative upper bound for the aggregator bootloader input size.
+    #[serde(default)]
+    pub aggregator_input_size_upper_bound: usize,
+
     /// Builtin weights for the batch. We decide when to close a batch based on this.
     pub builtin_weights: AggregatorBatchWeights,
 
@@ -206,6 +210,7 @@ impl AggregatorBatch {
         start_block: u64,
         bucket_id: Option<String>,
         blob_len: usize,
+        aggregator_input_size_upper_bound: usize,
         builtin_weights: AggregatorBatchWeights,
         starknet_version: StarknetVersion,
     ) -> Self {
@@ -218,6 +223,7 @@ impl AggregatorBatch {
             squashed_state_updates_path: Self::get_state_update_file_path(index),
             blob_path: Self::get_blob_dir_path(index),
             blob_len,
+            aggregator_input_size_upper_bound,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
@@ -232,6 +238,7 @@ impl AggregatorBatch {
         &self,
         end_block: u64,
         blob_len: usize,
+        aggregator_input_size_upper_bound: usize,
         weights: AggregatorBatchWeights,
         status: Option<AggregatorBatchStatus>,
     ) -> AggregatorBatch {
@@ -239,6 +246,7 @@ impl AggregatorBatch {
         updated_batch.end_block = end_block;
         updated_batch.num_blocks = end_block - updated_batch.start_block + 1;
         updated_batch.blob_len = blob_len;
+        updated_batch.aggregator_input_size_upper_bound = aggregator_input_size_upper_bound;
         updated_batch.builtin_weights = weights;
         if let Some(status) = status {
             updated_batch.status = status;
