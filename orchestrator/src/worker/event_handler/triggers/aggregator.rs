@@ -87,7 +87,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
-                    bucket_id: Some(batch.bucket_id),
+                    bucket_id: batch.bucket_id.clone(),
                     download_proof: if config.params.store_audit_artifacts {
                         Some(get_batch_artifact_file(batch.index, PROOF_FILE_NAME))
                     } else {

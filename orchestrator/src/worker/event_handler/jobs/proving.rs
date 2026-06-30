@@ -5,12 +5,12 @@ use orchestrator_prover_client_interface::{CreateJobInfo, Task, TaskStatus, Task
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::core::config::Config;
+use crate::core::config::{Config, ProverKind};
 use crate::error::job::proving::ProvingError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
+use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
@@ -18,6 +18,21 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use tracing::{debug, error, info, warn};
 
 pub struct ProvingJobHandler;
+
+pub(crate) fn proving_job_tracking_id(
+    prover_kind: ProverKind,
+    job_id: uuid::Uuid,
+    snos_fact: Option<String>,
+) -> Result<String, JobError> {
+    match prover_kind {
+        ProverKind::Atlantic => Ok(job_id.to_string()),
+        ProverKind::Sharp | ProverKind::Mock => snos_fact.ok_or_else(|| {
+            JobError::Other(OtherError(eyre!(
+                "SNOS fact missing in SNOS job metadata for deterministic proof tracking"
+            )))
+        }),
+    }
+}
 
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
@@ -36,6 +51,25 @@ impl JobHandlerTrait for ProvingJobHandler {
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to ProvingMetadata");
         })?;
+        let dedup_id = match config.prover_kind() {
+            ProverKind::Atlantic => proving_job_tracking_id(ProverKind::Atlantic, job.id, None)?,
+            ProverKind::Sharp | ProverKind::Mock => {
+                let snos_job = config
+                    .database()
+                    .get_job_by_internal_id_and_type(internal_id, &JobType::SnosRun)
+                    .await?
+                    .ok_or_else(|| {
+                        JobError::Other(OtherError(eyre!(
+                            "SNOS job not found for proof creation job internal_id {}",
+                            internal_id
+                        )))
+                    })?;
+                let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().inspect_err(|e| {
+                    error!(error = %e, "Failed to convert SNOS metadata for proof creation tracking");
+                })?;
+                proving_job_tracking_id(config.prover_kind(), job.id, snos_metadata.snos_fact)?
+            }
+        };
 
         // Get the input path from metadata
         let input_path = match proving_metadata.input_path {
@@ -71,7 +105,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                 bucket_id: proving_metadata.bucket_id,
                 bucket_job_index: proving_metadata.bucket_job_index,
                 num_steps: proving_metadata.n_steps,
-                dedup_id: job.id.to_string(),
+                dedup_id,
             }))
             .await
             .inspect_err(|e| {

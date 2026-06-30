@@ -5,7 +5,7 @@ use std::path::Path;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use httpmock::prelude::*;
-use mockall::predicate::eq;
+use mockall::predicate::{always, eq};
 use orchestrator_prover_client_interface::{MockProverClient, TaskStatus};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::super::common::default_job_item;
 use crate::core::client::storage::MockStorageClient;
+use crate::core::config::ProverKind;
 use crate::tests::config::TestConfigBuilder;
 use crate::types::constant::CAIRO_PIE_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
@@ -22,6 +23,7 @@ use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::proving::proving_job_tracking_id;
 use crate::worker::event_handler::jobs::proving::ProvingJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 
@@ -68,7 +70,13 @@ async fn test_process_job() {
     let server = MockServer::start();
     let mut prover_client = MockProverClient::new();
 
-    prover_client.expect_submit_task().times(1).returning(|_| Ok("task_id".to_string()));
+    prover_client.expect_submit_task().with(always()).times(1).returning(|task| match task {
+        orchestrator_prover_client_interface::Task::CreateJob(info) => {
+            assert_eq!(info.dedup_id, "00000000-0000-0000-0000-000000000000");
+            Ok("task_id".to_string())
+        }
+        other => panic!("unexpected task submitted: {:?}", std::mem::discriminant(&other)),
+    });
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
@@ -94,7 +102,6 @@ async fn test_process_job() {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
-            ensure_on_chain_registration: Some("fact".to_string()),
             ..Default::default()
         }),
     };
@@ -119,4 +126,28 @@ async fn test_process_job() {
             .unwrap(),
         "task_id".to_string()
     );
+}
+
+#[test]
+fn test_tracking_id_uses_job_uuid_for_atlantic() {
+    let job_id = Uuid::nil();
+    let tracking_id = proving_job_tracking_id(ProverKind::Atlantic, job_id, None).unwrap();
+    assert_eq!(tracking_id, job_id.to_string());
+}
+
+#[test]
+fn test_tracking_id_uses_fact_hash_for_sharp_and_mock() {
+    let sharp_tracking_id =
+        proving_job_tracking_id(ProverKind::Sharp, Uuid::nil(), Some("0xfeedface".to_string())).unwrap();
+    let mock_tracking_id =
+        proving_job_tracking_id(ProverKind::Mock, Uuid::nil(), Some("0xfeedface".to_string())).unwrap();
+
+    assert_eq!(sharp_tracking_id, "0xfeedface");
+    assert_eq!(mock_tracking_id, "0xfeedface");
+}
+
+#[test]
+fn test_tracking_id_requires_snos_fact_for_sharp_and_mock() {
+    assert!(proving_job_tracking_id(ProverKind::Sharp, Uuid::nil(), None).is_err());
+    assert!(proving_job_tracking_id(ProverKind::Mock, Uuid::nil(), None).is_err());
 }

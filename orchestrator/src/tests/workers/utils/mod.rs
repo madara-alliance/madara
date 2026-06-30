@@ -214,13 +214,11 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
     let uuid = Uuid::new_v4();
     let block_number = id as u64;
 
-    // Create proving metadata with the SNOS fact
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number,
             input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
-            ensure_on_chain_registration: Some(format!("0x{:064x}", block_number)), // Add the SNOS fact
             ..Default::default()
         }),
     };
