@@ -3,6 +3,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use blockifier::bouncer::BouncerWeights;
@@ -405,6 +406,9 @@ impl NonEmptySnosState {
     ///
     /// Returns a new state with the batch status set to Closed
     pub fn close(&mut self) {
+        if !self.batch.status.is_closed() {
+            MetricsRecorder::record_snos_batch_blocks(self.batch.num_blocks, self.batch.starknet_version);
+        }
         self.batch.status = SnosBatchStatus::Closed;
     }
 }
