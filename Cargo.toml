@@ -189,7 +189,7 @@ reqwest = { version = "0.12.7", features = [
   "stream",
 ] }
 url = { version = "2.4", features = ["serde"] }
-bson = "2"
+bson = "3"
 
 # Async
 tokio = { version = "1.47", features = ["signal", "rt", "macros"] }
