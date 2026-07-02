@@ -103,8 +103,9 @@ impl StorageDiffs {
 // We allow ourselves to lie about the contract_address. This is because we want the UDC and the two ERC20 contracts to have well known addresses on every chain.
 
 /// Universal Deployer Contract.
-const UDC_CLASS_DEFINITION: &[u8] =
-    include_bytes!("../../../../../build-artifacts/cairo_artifacts/madara_contracts_UDC.json");
+const UDC_CLASS_DEFINITION: &[u8] = include_bytes!(
+    "../../../../../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json"
+);
 pub const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
@@ -132,7 +133,7 @@ pub struct ChainGenesisDescription {
 impl ChainGenesisDescription {
     #[tracing::instrument(fields(module = "ChainGenesisDescription"))]
     pub fn base_config() -> anyhow::Result<Self> {
-        let udc_class = InitiallyDeclaredClass::new_legacy(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
+        let udc_class = InitiallyDeclaredClass::new_sierra(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
             InitiallyDeclaredClass::new_sierra(ERC20_CLASS_DEFINITION).context("Failed to add ERC20 class")?;
         Ok(Self {
@@ -488,6 +489,34 @@ mod tests {
         };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
+    }
+
+    #[test]
+    fn test_base_config_declares_udc_as_sierra() {
+        let genesis = ChainGenesisDescription::base_config().unwrap();
+        let (block, classes) = genesis.into_block(&ChainConfig::madara_devnet()).unwrap();
+
+        let udc_class_hash = block
+            .state_diff
+            .deployed_contracts
+            .iter()
+            .find(|contract| contract.address == UDC_CONTRACT_ADDRESS)
+            .map(|contract| contract.class_hash)
+            .expect("UDC should be deployed in devnet genesis");
+
+        let udc_declaration = block
+            .state_diff
+            .declared_classes
+            .iter()
+            .find(|class| class.class_hash == udc_class_hash)
+            .expect("UDC should be declared as a Sierra class in devnet genesis");
+
+        assert!(block.state_diff.old_declared_contracts.is_empty());
+        assert_ne!(udc_declaration.compiled_class_hash, Felt::ZERO);
+        assert_matches!(
+            classes.iter().find(|class| class.class_hash == udc_class_hash).map(|class| &class.class_info),
+            Some(ClassInfo::Sierra(info)) if info.compiled_class_hash_v2 == Some(udc_declaration.compiled_class_hash)
+        );
     }
 
     #[rstest]
