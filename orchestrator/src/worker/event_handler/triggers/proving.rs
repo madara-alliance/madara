@@ -1,4 +1,4 @@
-use crate::core::config::Config;
+use crate::core::config::{Config, ProverKind};
 use crate::types::constant::{ORCHESTRATOR_VERSION, PROOF_FILE_NAME};
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
@@ -39,40 +39,60 @@ impl JobTrigger for ProvingJobTrigger {
                 e
             })?;
 
-            let (download_proof, snos_fact, bucket_id, bucket_job_index) = match config.layer() {
+            let (download_proof, ensure_on_chain_registration, bucket_id, bucket_job_index) = match config.layer() {
                 Layer::L2 => {
-                    // Set the bucket_id and bucket_job_index for Applicative Recursion
-                    match config.database().get_aggregator_batch_for_block(snos_metadata.start_block).await? {
-                        Some(batch) => {
-                            match config.database().get_start_snos_batch_for_aggregator(batch.index).await? {
+                    let (bucket_id, bucket_job_index) = match config.prover_kind() {
+                        ProverKind::Atlantic => {
+                            match config.database().get_aggregator_batch_for_block(snos_metadata.start_block).await? {
+                                Some(batch) => {
+                                    let bucket_id = match batch.bucket_id.clone() {
+                                        Some(bucket_id) => bucket_id,
+                                        None => {
+                                            warn!(
+                                                job_id = snos_job.internal_id,
+                                                batch_index = batch.index,
+                                                "Atlantic aggregator batch is missing bucket_id. Skipping for now."
+                                            );
+                                            continue;
+                                        }
+                                    };
+
+                                    match config.database().get_start_snos_batch_for_aggregator(batch.index).await? {
+                                        None => {
+                                            warn!(
+                                            job_id = snos_job.internal_id,
+                                            "Failed to fetch first SNOS job for Aggregator batch {}. Skipping for now.",
+                                            batch.index
+                                        );
+                                            continue;
+                                        }
+                                        Some(start_snos_batch) => (
+                                            Some(bucket_id),
+                                            Some(snos_metadata.snos_batch_index - start_snos_batch.index + 1),
+                                        ),
+                                    }
+                                }
                                 None => {
-                                    warn!(
-                                        job_id = snos_job.internal_id,
-                                        "Failed to fetch first SNOS job for Aggregator batch {}. Skipping for now.",
-                                        batch.index
-                                    );
+                                    warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.start_block);
                                     continue;
                                 }
-                                Some(start_snos_batch) => (
-                                    if config.params.store_audit_artifacts {
-                                        Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME))
-                                    } else {
-                                        None
-                                    },
-                                    None, // We don't check the on-chain registration of snos fact when using AR
-                                    Some(batch.bucket_id),
-                                    Some(snos_metadata.snos_batch_index - start_snos_batch.index + 1),
-                                ),
                             }
                         }
-                        None => {
-                            warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.start_block);
-                            continue;
-                        }
-                    }
+                        ProverKind::Sharp | ProverKind::Mock => (None, None),
+                    };
+
+                    (
+                        if config.params.store_audit_artifacts {
+                            Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME))
+                        } else {
+                            None
+                        },
+                        None, // L2 child proofs are not individually cross-checked on-chain.
+                        bucket_id,
+                        bucket_job_index,
+                    )
                 }
                 Layer::L3 => {
-                    // Set the snos_fact and path to download proof
                     let snos_fact = match &snos_metadata.snos_fact {
                         Some(fact) => fact.clone(),
                         None => {
@@ -94,9 +114,9 @@ impl JobTrigger for ProvingJobTrigger {
                     // Set a download path if needed
                     download_proof,
                     // Set SNOS fact for on-chain verification
-                    ensure_on_chain_registration: snos_fact,
+                    ensure_on_chain_registration,
                     n_steps: snos_metadata.snos_n_steps,
-                    // Set the bucket_id and bucket_job_index for Applicative Recursion
+                    // Set Atlantic bucket metadata for L2 applicative recursion when needed
                     bucket_id,
                     bucket_job_index,
                 }),

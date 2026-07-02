@@ -26,12 +26,13 @@ pub enum AggregatorBatchStatus {
     Open,
     /// Batch is closed and no new blocks can be added to it
     Closed,
-    /// Batch can be processed by the aggregator job
-    /// This means that all the child jobs completed by the prover client, and we can close the bucket
+    /// Batch can be processed by the aggregator job.
+    /// This means all child proofs are ready, so we can submit aggregation:
+    /// close the Atlantic bucket, or run local aggregation for SHARP / Mock.
     PendingAggregatorRun,
-    /// Batch is closed, and we are waiting for SUCCESS from the prover client for the bucket ID
+    /// Aggregation has been submitted, and we are waiting for prover-side success.
     PendingAggregatorVerification,
-    /// Bucket is verified and is ready for state update
+    /// Aggregation is verified and ready for state update.
     ReadyForStateUpdate,
     /// Batch processing is complete and state update is done
     Completed,
@@ -106,9 +107,10 @@ pub struct AggregatorBatch {
     /// Used for ordering and referencing batches
     pub index: u64,
 
-    /// Bucket ID for the batch, received from the prover client
-    /// Used to track the batch in the proving system
-    pub bucket_id: String,
+    /// Atlantic bucket ID for the batch.
+    /// `None` for provers without a bucket concept (SHARP, Mock).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_id: Option<String>,
 
     /// Path to the squashed state updates file
     /// This is done for optimization so we don't have to create a new squashed
@@ -194,7 +196,7 @@ impl AggregatorBatch {
     /// * `start_block` - Starting block number for the batch
     /// * `squashed_state_updates_path` - Path to store squashed state updates
     /// * `blob_path` - Path to store blob data
-    /// * `bucket_id` - Identifier from the prover client
+    /// * `bucket_id` - Atlantic bucket identifier from the prover client, if applicable
     ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
@@ -202,7 +204,7 @@ impl AggregatorBatch {
     pub fn new(
         index: u64,
         start_block: u64,
-        bucket_id: String,
+        bucket_id: Option<String>,
         blob_len: usize,
         builtin_weights: AggregatorBatchWeights,
         starknet_version: StarknetVersion,

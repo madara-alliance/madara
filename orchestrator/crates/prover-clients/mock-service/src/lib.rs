@@ -19,10 +19,10 @@ use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
 use orchestrator_gps_fact_checker::{FactCheckerError, FactRegistrar};
 use orchestrator_prover_client_interface::{
-    AggregationArtifacts, ApplicativeJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+    AggregationArtifacts, ApplicativeJobInfo, CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus,
+    TaskType,
 };
 use url::Url;
-use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct MockValidatedArgs {
@@ -70,12 +70,14 @@ impl ProverClient for MockProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
     async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         match task {
-            // Child proving jobs are a no-op under Mock: return a synthetic id that
-            // `get_task_status(Job, ..)` unconditionally reports as Succeeded.
-            Task::CreateJob(_) => Ok(Uuid::new_v4().to_string()),
+            // Child proving jobs are a no-op under Mock. Return the caller-provided
+            // tracking key so the stored external_id stays deterministic.
+            Task::CreateJob(CreateJobInfo { dedup_id, .. }) => Ok(dedup_id),
 
-            // Mock does not maintain remote bucket state; any unique id is fine.
-            Task::CreateBucket => Ok(Uuid::new_v4().to_string()),
+            Task::CreateBucket => Err(ProverClientError::TaskInvalid(
+                "Mock prover does not support bucket creation. Aggregator batching should skip CreateBucket."
+                    .to_string(),
+            )),
 
             Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
                 "Mock prover does not support bucket-based aggregation; use RunAggregationWithPie.".to_string(),

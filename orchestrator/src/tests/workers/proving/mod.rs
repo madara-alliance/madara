@@ -54,7 +54,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     db.expect_get_aggregator_batch_for_block().returning(|_| {
         Ok(Some(AggregatorBatch {
             index: 1,
-            bucket_id: String::from("ABCD1234"),
+            bucket_id: Some(String::from("ABCD1234")),
             start_block: 0,
             ..Default::default()
         }))

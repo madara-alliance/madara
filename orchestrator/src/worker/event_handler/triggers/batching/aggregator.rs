@@ -1,7 +1,7 @@
 use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
-use crate::core::config::{Config, ConfigParam, StarknetVersion, SUPPORTED_STARKNET_VERSION};
+use crate::core::config::{Config, ConfigParam, ProverKind, StarknetVersion, SUPPORTED_STARKNET_VERSION};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
@@ -316,15 +316,20 @@ impl AggregatorHandler {
             "Fetched Starknet version for new batch"
         );
 
-        // Start a new bucket
-        let bucket_id = self.config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
-            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-            JobError::Other(OtherError(eyre!(
-                "Prover Client Error: Failed to submit create bucket task to prover client, {}",
-                e
-            )))
-        })?;
-        debug!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
+        let bucket_id = match self.config.prover_kind() {
+            ProverKind::Atlantic => {
+                let bucket_id = self.config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
+                    error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+                    JobError::Other(OtherError(eyre!(
+                        "Prover Client Error: Failed to submit create bucket task to prover client, {}",
+                        e
+                    )))
+                })?;
+                debug!(index = %index, bucket_id = %bucket_id, "Created new Atlantic bucket successfully");
+                Some(bucket_id)
+            }
+            ProverKind::Sharp | ProverKind::Mock => None,
+        };
 
         // Getting the builtin weights for the start_block and adding it in the DB
         let weights = AggregatorBatchWeights::from(
@@ -336,7 +341,7 @@ impl AggregatorHandler {
             .await?,
         );
 
-        let batch = AggregatorBatch::new(index, start_block, bucket_id.clone(), blob_len, weights, starknet_version);
+        let batch = AggregatorBatch::new(index, start_block, bucket_id, blob_len, weights, starknet_version);
 
         // Record batch creation count
         let attributes = [
@@ -576,7 +581,7 @@ mod tests {
             id: uuid::Uuid::new_v4(),
             index: 1,
             orchestrator_version,
-            bucket_id: "test_bucket".to_string(),
+            bucket_id: Some("test_bucket".to_string()),
             squashed_state_updates_path: "test/path.json".to_string(),
             blob_path: "test/blob".to_string(),
             starknet_version: version,

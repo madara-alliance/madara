@@ -255,7 +255,7 @@ async fn test_process_job_l2_with_da_segment(
         Ok(vec![AggregatorBatch::new(
             batch_index,
             end_block + 1,
-            String::from(""),
+            Some(String::from("")),
             256,
             AggregatorBatchWeights::default(),
             StarknetVersion::V0_14_1,
@@ -326,7 +326,7 @@ fn test_aggregator_batch(index: u64, start_block: u64, end_block: u64) -> Aggreg
     AggregatorBatch::new(
         index,
         start_block,
-        String::new(),
+        Some(String::new()),
         256,
         AggregatorBatchWeights::default(),
         StarknetVersion::V0_14_1,

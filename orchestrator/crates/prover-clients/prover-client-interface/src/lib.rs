@@ -51,6 +51,8 @@ pub struct CreateJobInfo {
     pub bucket_id: Option<String>,
     pub bucket_job_index: Option<u64>,
     pub num_steps: Option<usize>,
+    /// Caller-provided tracking key for the child proof job.
+    /// Atlantic uses it for idempotency lookup; SHARP uses it as the cairo job key.
     pub dedup_id: String,
 }
 
@@ -79,7 +81,7 @@ pub struct AggregationArtifacts {
 pub enum Task {
     /// Submit a child CairoPIE for proving.
     CreateJob(CreateJobInfo),
-    /// Create a new bucket (Atlantic) or generate a local tracking ID (SHARP / Mock).
+    /// Create a new Atlantic bucket.
     CreateBucket,
     /// Trigger aggregation for a batch.
     ///

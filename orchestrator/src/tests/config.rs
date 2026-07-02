@@ -6,7 +6,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam};
+use crate::core::config::{Config, ConfigParam, ProverKind};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
@@ -118,6 +118,8 @@ pub struct TestConfigBuilder {
     da_client_type: ConfigType,
     /// The service that produces proof and registers it on chain
     prover_client_type: ConfigType,
+    /// Which prover backend the Config should expose
+    prover_kind: Option<ProverKind>,
     /// Settlement client
     settlement_client_type: ConfigType,
 
@@ -199,6 +201,7 @@ impl TestConfigBuilder {
             starknet_client_type: ConfigType::default(),
             da_client_type: ConfigType::default(),
             prover_client_type: ConfigType::default(),
+            prover_kind: None,
             settlement_client_type: ConfigType::default(),
             database_type: ConfigType::default(),
             lock_type: ConfigType::default(),
@@ -236,6 +239,11 @@ impl TestConfigBuilder {
 
     pub fn configure_prover_client(mut self, prover_client_type: ConfigType) -> TestConfigBuilder {
         self.prover_client_type = prover_client_type;
+        self
+    }
+
+    pub fn configure_prover_kind(mut self, prover_kind: ProverKind) -> TestConfigBuilder {
+        self.prover_kind = Some(prover_kind);
         self
     }
 
@@ -309,6 +317,7 @@ impl TestConfigBuilder {
             alerts_type,
             da_client_type,
             prover_client_type,
+            prover_kind,
             settlement_client_type,
             database_type,
             lock_type,
@@ -390,6 +399,7 @@ impl TestConfigBuilder {
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
+            prover_kind.unwrap_or(ProverKind::Atlantic),
             params.orchestrator_params,
             chain_details,
             starknet_client.clone(),

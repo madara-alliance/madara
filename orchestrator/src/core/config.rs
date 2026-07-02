@@ -230,6 +230,7 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn new(
         layer: Layer,
+        prover_kind: ProverKind,
         params: ConfigParam,
         chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
@@ -246,7 +247,7 @@ impl Config {
     ) -> Self {
         Self {
             layer,
-            prover_kind: ProverKind::Atlantic,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client,
