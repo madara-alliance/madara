@@ -116,7 +116,7 @@ starknet-signers = { package = "starknet-rust-signers", version = "0.19.0-rc.2" 
 starknet-macros = { package = "starknet-rust-macros", version = "0.19.0-rc.2" }
 starknet = { package = "starknet-rust", version = "0.19.0-rc.2" }
 
-starknet-types-core = { version = "0.2.4", default-features = false, features = [
+starknet-types-core = { version = "1.0.0", default-features = false, features = [
   "hash",
   "serde",
 ] }
