@@ -92,6 +92,7 @@ pub trait MadaraWriteRpcApi {
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 
     /// Flush transactions from the mempool using an admin-only filter.
+    /// Only available when unsafe RPC methods are enabled.
     /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
     /// Nonce-range flushing is surgical: it removes only matching transactions. If that creates an
     /// account nonce gap, higher nonces remain pending so the missing nonce can be resubmitted.
