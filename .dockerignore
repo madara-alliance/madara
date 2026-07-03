@@ -29,6 +29,8 @@ Thumbs.db
 # Bootstrapper (exclude compiled output, but keep build-artifacts)
 **/out/**
 !build-artifacts/bootstrapper/solidity/out/**
+!build-artifacts/bootstrapper/cairo/target/
+!build-artifacts/bootstrapper/cairo/target/**
 bootstrapper-v2/contracts/ethereum/cache/
 bootstrapper-v2/contracts/ethereum/.vscode/
 bootstrapper-v2/contracts/ethereum/.github/
