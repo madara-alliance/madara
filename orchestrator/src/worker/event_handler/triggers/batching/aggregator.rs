@@ -8,6 +8,7 @@ use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatc
 use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
@@ -96,6 +97,10 @@ impl AggregatorStateHandler {
             .database()
             .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
             .await?;
+        MetricsRecorder::record_aggregator_input_size_upper_bound(
+            &state.batch.status.to_string(),
+            state.batch.aggregator_input_size_upper_bound,
+        );
 
         // Update state update and blob in storage
         self.config

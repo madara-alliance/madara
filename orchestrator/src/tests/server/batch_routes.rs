@@ -142,6 +142,7 @@ async fn test_query_aggregator_batches_closed_filter_returns_latest_closed(
     let mut latest_closed_batch = build_batch(12, 120, 139);
     latest_closed_batch.status = AggregatorBatchStatus::ReadyForStateUpdate;
     latest_closed_batch.blob_len = 888;
+    latest_closed_batch.aggregator_input_size_upper_bound = 123_456;
 
     let mut open_batch = build_batch(13, 140, 149);
     open_batch.status = AggregatorBatchStatus::Open;
@@ -174,6 +175,7 @@ async fn test_query_aggregator_batches_closed_filter_returns_latest_closed(
     assert_eq!(batch.batch.index, latest_closed_batch.index);
     assert_eq!(batch.batch.start_block, latest_closed_batch.start_block);
     assert_eq!(batch.batch.end_block, latest_closed_batch.end_block);
+    assert_eq!(batch.batch.aggregator_input_size_upper_bound, latest_closed_batch.aggregator_input_size_upper_bound);
     assert_eq!(batch.batch.status, latest_closed_batch.status);
     assert_eq!(batch.blob_len, latest_closed_batch.blob_len);
 }

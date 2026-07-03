@@ -215,6 +215,8 @@ pub struct SettlementAggregatorBatchResponse {
     pub index: u64,
     pub start_block: u64,
     pub end_block: u64,
+    #[serde(default)]
+    pub aggregator_input_size_upper_bound: usize,
     pub status: AggregatorBatchStatus,
     #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
@@ -284,6 +286,7 @@ impl From<&AggregatorBatch> for SettlementAggregatorBatchResponse {
             index: batch.index,
             start_block: batch.start_block,
             end_block: batch.end_block,
+            aggregator_input_size_upper_bound: batch.aggregator_input_size_upper_bound,
             status: batch.status.clone(),
             created_at: batch.created_at,
             updated_at: batch.updated_at,
@@ -307,5 +310,47 @@ impl From<&SnosBatch> for SnosBatchDetailsResponse {
 impl From<&AggregatorBatch> for AggregatorBatchDetailsResponse {
     fn from(batch: &AggregatorBatch) -> Self {
         Self { batch: batch.into(), blob_len: batch.blob_len }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::StarknetVersion;
+    use crate::types::batch::AggregatorBatchWeights;
+    use serde_json::json;
+
+    #[test]
+    fn aggregator_batch_response_includes_input_size_upper_bound() {
+        let mut batch = AggregatorBatch::new(
+            7,
+            100,
+            None,
+            256,
+            123_456,
+            AggregatorBatchWeights::new(10, 20),
+            StarknetVersion::V0_14_2,
+        );
+        batch.end_block = 109;
+        batch.status = AggregatorBatchStatus::Closed;
+
+        let response = SettlementAggregatorBatchResponse::from(&batch);
+
+        assert_eq!(response.aggregator_input_size_upper_bound, 123_456);
+    }
+
+    #[test]
+    fn aggregator_batch_response_deserializes_without_input_size_upper_bound() {
+        let response: SettlementAggregatorBatchResponse = serde_json::from_value(json!({
+            "index": 7,
+            "start_block": 100,
+            "end_block": 109,
+            "status": "Closed",
+            "created_at": 1_700_000_000,
+            "updated_at": 1_700_000_010
+        }))
+        .unwrap();
+
+        assert_eq!(response.aggregator_input_size_upper_bound, 0);
     }
 }
