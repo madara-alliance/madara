@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
+use crate::types::jobs::WorkerTriggerType;
 use crate::types::priority_slot::{
     take_from_processing_slot_if_matches, take_from_verification_slot_if_matches, PriorityJobSlot,
 };
@@ -282,7 +283,7 @@ impl EventWorker {
         parsed_message: &ParsedMessage,
     ) -> EventSystemResult<()> {
         if let Err(ref error) = result {
-            let (_error_context, consumption_error) = match parsed_message {
+            let (error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
                     tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
@@ -303,6 +304,16 @@ impl EventWorker {
                     )
                 }
             };
+
+            if let ParsedMessage::WorkerTrigger(msg) = parsed_message {
+                if msg.worker == WorkerTriggerType::AggregatorBatching {
+                    let alert_message = aggregator_batching_failure_alert_message(&error_context);
+                    match self.config.alerts().send_message(alert_message).await {
+                        Ok(()) => info!("SNS alert sent successfully for AggregatorBatching worker failure"),
+                        Err(e) => error!(error = ?e, "Failed to send SNS alert for AggregatorBatching worker failure"),
+                    }
+                }
+            }
 
             message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
@@ -515,6 +526,15 @@ fn should_check_priority_slot(queue_type: &QueueType) -> bool {
     )
 }
 
+fn aggregator_batching_failure_alert_message(error_context: &str) -> String {
+    format!(
+        "[CRITICAL] AggregatorBatching worker failed\n\n\
+         {error_context}\n\n\
+         The AggregatorBatching worker failed while handling a worker trigger. \
+         Check orchestrator logs for the full spantrace and retry context."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,5 +557,13 @@ mod tests {
         // Job verification queues should check priority slot
         assert!(should_check_priority_slot(&QueueType::SnosJobVerification));
         assert!(should_check_priority_slot(&QueueType::ProvingJobVerification));
+    }
+
+    #[test]
+    fn aggregator_batching_failure_alert_message_contains_searchable_context() {
+        let message = aggregator_batching_failure_alert_message("Worker AggregatorBatching handling failed: boom");
+
+        assert!(message.contains("[CRITICAL] AggregatorBatching worker failed"));
+        assert!(message.contains("Worker AggregatorBatching handling failed: boom"));
     }
 }
