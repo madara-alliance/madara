@@ -62,14 +62,15 @@ impl AggregatorStateHandler {
         }
     }
 
-    /// Save the given state in DB and Storage
+    /// Save the given state in Storage and DB
     ///
-    /// 1. Update or Create doc in DB
-    /// 2. Update or Create the blob and other assets in Storage
+    /// 1. Update or Create the blob and other assets in Storage
+    /// 2. Update or Create doc in DB
     ///
     /// IMPORTANT:
     /// 1. Assuming all the details are already updated in state
-    /// 2. Not making database and storage updates atomically. It might happen that one fails and the other passes
+    /// 2. Not making database and storage updates atomically. Storage is written first so failures don't leave DB rows
+    ///    pointing at missing objects.
     pub async fn save_batch_state(&self, state: &NonEmptyAggregatorState) -> Result<(), JobError> {
         info!(batch=?state.batch, "Saving aggregator batch state");
         // Compressing the state update into vector of felts
@@ -82,12 +83,6 @@ impl AggregatorStateHandler {
             self.config.batch_rpc_client(),
         )
         .await?;
-
-        // Update batch status in the database
-        self.config
-            .database()
-            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
-            .await?;
 
         // Update state update and blob in storage
         self.config
@@ -104,6 +99,12 @@ impl AggregatorStateHandler {
                 )
                 .await?;
         }
+
+        // Update batch status in the database only after all required storage artifacts exist.
+        self.config
+            .database()
+            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
+            .await?;
 
         Ok(())
     }
@@ -547,6 +548,9 @@ async fn compress_state_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::client::database::MockDatabaseClient;
+    use crate::core::client::storage::{MockStorageClient, StorageError};
+    use crate::tests::config::TestConfigBuilder;
     use chrono::{DateTime, Duration, Utc};
     use starknet_core::types::StateDiff;
 
@@ -623,6 +627,40 @@ mod tests {
             3600,                                          // max_batch_time_seconds (1 hour)
             100,                                           // empty block's proving gas
         )
+    }
+
+    #[tokio::test]
+    async fn test_save_batch_state_does_not_update_db_when_state_update_upload_fails() {
+        let mut database = MockDatabaseClient::new();
+        database.expect_update_or_create_aggregator_batch().times(0);
+
+        let mut storage = MockStorageClient::new();
+        storage
+            .expect_put_data()
+            .times(1)
+            .withf(|_, key| key == "test/path.json")
+            .returning(|_, _| Err(StorageError::ObjectStreamError("upload failed".to_string())));
+
+        let services = TestConfigBuilder::new()
+            .configure_database(database.into())
+            .configure_storage_client(storage.into())
+            .configure_prover_kind(ProverKind::Mock)
+            .build()
+            .await;
+
+        let batch = create_test_batch(
+            1,
+            AggregatorBatchStatus::Open,
+            StarknetVersion::V0_13_2,
+            AggregatorBatchWeights::new(100, 100),
+            Utc::now(),
+        );
+        let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+        let state_handler = AggregatorStateHandler::from_config(&services.config);
+
+        let result = state_handler.save_batch_state(&state).await;
+
+        assert!(result.is_err(), "storage failure should make save_batch_state fail");
     }
 
     mod check_block_sync_tests {
