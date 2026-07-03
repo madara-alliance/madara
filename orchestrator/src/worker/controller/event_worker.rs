@@ -213,9 +213,13 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         match job_state {
             JobState::Processing => {
-                JobHandlerService::process_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                JobHandlerService::process_job_with_shutdown(
+                    queue_message.id,
+                    self.config.clone(),
+                    self.cancellation_token.clone(),
+                )
+                .await
+                .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
             }
             JobState::Verification => {
                 JobHandlerService::verify_job(queue_message.id, self.config.clone())

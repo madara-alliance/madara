@@ -5,6 +5,7 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::core::client::database::{AggregatorBatchDbQuery, SnosBatchDbQuery};
@@ -168,6 +169,14 @@ impl JobHandlerService {
     /// timeout is shorter, messages may become visible again before the healing timeout expires,
     /// leading to duplicate processing attempts that get incorrectly treated as stale jobs.
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+        Self::process_job_with_shutdown(id, config, CancellationToken::new()).await
+    }
+
+    pub async fn process_job_with_shutdown(
+        id: Uuid,
+        config: Arc<Config>,
+        shutdown_token: CancellationToken,
+    ) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id;
@@ -287,6 +296,11 @@ impl JobHandlerService {
             return Ok(());
         }
 
+        if shutdown_token.is_cancelled() {
+            warn!(job_id = ?id, job_type = ?job.job_type, "Shutdown requested before processing lock was acquired");
+            return Err(Self::shutdown_processing_error(id));
+        }
+
         // Save original status so retryable processing failures can restore the job to the
         // pre-processing state and let SQS own the retry lifecycle.
         let original_status = job.status.clone();
@@ -330,8 +344,50 @@ impl JobHandlerService {
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
 
-        let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
-        {
+        enum ProcessingOutcome<T> {
+            Completed(T),
+            Shutdown,
+        }
+
+        let processing_result = {
+            let processing = AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind();
+            tokio::pin!(processing);
+
+            tokio::select! {
+                result = &mut processing => ProcessingOutcome::Completed(result),
+                _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
+            }
+        };
+
+        let processing_result = match processing_result {
+            ProcessingOutcome::Completed(result) => result,
+            ProcessingOutcome::Shutdown => {
+                let reason = format!(
+                    "Processing attempt {} interrupted by orchestrator shutdown",
+                    job.metadata.common.process_attempt_no
+                );
+                let shutdown_error = Self::shutdown_processing_error(id);
+
+                warn!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    internal_id = %job.internal_id,
+                    status = ?original_status,
+                    "Shutdown requested while processing job, restoring job state for SQS retry"
+                );
+                workload.finish_error();
+                return Err(Self::reset_job_for_sqs_retry(
+                    &mut job,
+                    config.clone(),
+                    original_status,
+                    reason,
+                    shutdown_error,
+                )
+                .await);
+            }
+        };
+
+        let external_id = match processing_result {
             Ok(Ok(external_id)) => {
                 Span::current().record("external_id", format!("{:?}", external_id).as_str());
                 // Add the time of processing to the metadata.
@@ -467,6 +523,10 @@ impl JobHandlerService {
         workload.finish_success();
 
         Ok(())
+    }
+
+    fn shutdown_processing_error(id: Uuid) -> JobError {
+        JobError::Other(OtherError::from(format!("Job {id} processing interrupted by orchestrator shutdown")))
     }
 
     async fn reset_job_for_sqs_retry(
