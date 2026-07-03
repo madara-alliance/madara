@@ -354,6 +354,8 @@ impl JobHandlerService {
             tokio::pin!(processing);
 
             tokio::select! {
+                biased;
+
                 result = &mut processing => ProcessingOutcome::Completed(result),
                 _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
             }
