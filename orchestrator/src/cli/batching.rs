@@ -1,3 +1,4 @@
+use crate::types::constant::DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT;
 use clap::Args;
 
 /// Parameters used to configure the batching.
@@ -43,6 +44,10 @@ pub struct BatchingCliArgs {
     /// Maximum number of SNOS batches that can be children of one aggregator batch.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH", long, default_value = "50")]
     pub max_snos_batches_per_aggregator_batch: u64,
+
+    /// Maximum aggregator bootloader input size in field elements.
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_AGGREGATOR_INPUT_SIZE", long, default_value_t = DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT)]
+    pub max_aggregator_input_size: usize,
 
     /// Default proving gas to use for empty blocks.
     /// Empty blocks return zero proving_gas from the bouncer weights API, but every block

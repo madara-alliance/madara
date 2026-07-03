@@ -1,5 +1,7 @@
 use crate::core::config::StarknetVersion;
-use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file};
+use crate::types::constant::{
+    get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file, DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT,
+};
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
@@ -147,7 +149,7 @@ pub struct AggregatorBatch {
     pub blob_len: usize,
 
     /// Conservative upper bound for the aggregator bootloader input size.
-    #[serde(default)]
+    #[serde(default = "default_aggregator_input_size_upper_bound")]
     pub aggregator_input_size_upper_bound: usize,
 
     /// Builtin weights for the batch. We decide when to close a batch based on this.
@@ -164,6 +166,10 @@ pub struct AggregatorBatch {
     /// Timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_aggregator_input_size_upper_bound() -> usize {
+    DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT
 }
 
 impl AggregatorBatchWeights {

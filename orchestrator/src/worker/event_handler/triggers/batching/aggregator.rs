@@ -25,8 +25,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
-const MAX_AGGREGATOR_INPUT_SIZE: usize = 800_000;
-
 const AGGREGATOR_N_TASKS_WORDS: usize = 1;
 const AGGREGATOR_CHILD_WRAPPER_WORDS: usize = 2;
 const SNOS_OUTPUT_FIXED_WORDS: usize = 14;
@@ -60,19 +58,12 @@ impl AggregatorStateHandler {
 
     pub async fn load_batch_state(&self) -> Result<AggregatorState, JobError> {
         let batch = self.config.database().get_latest_aggregator_batch().await?;
-        if let Some(mut batch) = batch {
+        if let Some(batch) = batch {
             if batch.status.is_closed() {
                 return Ok(Empty(EmptyAggregatorState { index: batch.index + 1 }));
             }
             let state_update_bytes = self.config.storage().get_data(&batch.squashed_state_updates_path).await?;
             let blob: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
-            if batch.aggregator_input_size_upper_bound == 0 {
-                warn!(
-                    batch_index = %batch.index,
-                    "Loaded open aggregator batch without aggregator input size; closing it before adding more blocks"
-                );
-                batch.aggregator_input_size_upper_bound = MAX_AGGREGATOR_INPUT_SIZE;
-            }
             Ok(NonEmpty(NonEmptyAggregatorState::new(batch, blob)))
         } else {
             Ok(Empty(EmptyAggregatorState::new(1)))
@@ -132,6 +123,7 @@ pub struct AggregatorBatchConfig {
     pub max_batch_builtin_weights: AggregatorBatchWeights,
     pub max_batch_time_seconds: u64,
     pub empty_block_proving_gas: u64,
+    pub max_aggregator_input_size: usize,
 }
 
 impl AggregatorBatchConfig {
@@ -142,6 +134,7 @@ impl AggregatorBatchConfig {
             max_batch_builtin_weights: config.aggregator_batch_weights_limit.clone(),
             max_batch_time_seconds: config.batching_config.max_batch_time_seconds,
             empty_block_proving_gas: config.batching_config.default_empty_block_proving_gas,
+            max_aggregator_input_size: config.batching_config.max_aggregator_input_size,
         }
     }
 
@@ -153,6 +146,7 @@ impl AggregatorBatchConfig {
         max_batch_builtin_weights: AggregatorBatchWeights,
         max_batch_time_seconds: u64,
         empty_block_proving_gas: u64,
+        max_aggregator_input_size: usize,
     ) -> Self {
         Self {
             max_blob_size,
@@ -160,6 +154,7 @@ impl AggregatorBatchConfig {
             max_batch_builtin_weights,
             max_batch_time_seconds,
             empty_block_proving_gas,
+            max_aggregator_input_size,
         }
     }
 }
@@ -198,7 +193,7 @@ impl AggregatorHandler {
         }
 
         match state {
-            Empty(ref empty_state) => {
+            Empty(empty_state) => {
                 // Get state update for the current block
                 let current_state_update = self
                     .config
@@ -209,6 +204,28 @@ impl AggregatorHandler {
 
                 match current_state_update {
                     Update(state_update) => {
+                        let block_weights = AggregatorBatchWeights::from(
+                            &get_block_builtin_weights(
+                                block_num,
+                                self.config.madara_feeder_gateway_client(),
+                                self.batch_config.empty_block_proving_gas,
+                            )
+                            .await?,
+                        );
+                        let aggregator_input_size_upper_bound = initial_aggregator_input_size_upper_bound(
+                            &state_update,
+                            block_weights.message_segment_length,
+                        )?;
+                        if aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size {
+                            warn!(
+                                block_num = %block_num,
+                                aggregator_input_size_upper_bound = %aggregator_input_size_upper_bound,
+                                max_aggregator_input_size = %self.batch_config.max_aggregator_input_size,
+                                "Stopping before oversized block while aggregator batch state is empty"
+                            );
+                            return Ok(BlockProcessingResult::NotBatched(Empty(empty_state)));
+                        }
+
                         let compressed_state_update = compress_state_update(
                             &state_update,
                             block_num.saturating_sub(1),
@@ -230,7 +247,7 @@ impl AggregatorHandler {
                     }
                     PreConfirmedUpdate(_) => {
                         info!("Skipping batching for block {} as it is still pending", block_num);
-                        Ok(BlockProcessingResult::NotBatched(state))
+                        Ok(BlockProcessingResult::NotBatched(Empty(empty_state)))
                     }
                 }
             }
@@ -302,12 +319,13 @@ impl AggregatorHandler {
                             &state_update,
                             block_weights.message_segment_length,
                         )?;
-                        if single_block_aggregator_input_size_upper_bound > MAX_AGGREGATOR_INPUT_SIZE {
+                        if single_block_aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size
+                        {
                             warn!(
                                 batch_index = %state.batch.index,
                                 block_num = %block_num,
                                 aggregator_input_size_upper_bound = %single_block_aggregator_input_size_upper_bound,
-                                max_aggregator_input_size = %MAX_AGGREGATOR_INPUT_SIZE,
+                                max_aggregator_input_size = %self.batch_config.max_aggregator_input_size,
                                 "Closing current aggregator batch and stopping before oversized next block"
                             );
                             return Ok(BlockProcessingResult::NotBatched(NonEmpty(state)));
@@ -366,12 +384,12 @@ impl AggregatorHandler {
 
         let aggregator_input_size_upper_bound =
             initial_aggregator_input_size_upper_bound(state_update, weights.message_segment_length)?;
-        if aggregator_input_size_upper_bound > MAX_AGGREGATOR_INPUT_SIZE {
+        if aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size {
             return Err(JobError::Other(OtherError(eyre!(
                 "Block {} aggregator input size upper bound {} exceeds the maximum allowed size {}",
                 start_block,
                 aggregator_input_size_upper_bound,
-                MAX_AGGREGATOR_INPUT_SIZE
+                self.batch_config.max_aggregator_input_size
             ))));
         }
 
@@ -525,12 +543,12 @@ impl NonEmptyAggregatorState {
                     block_num
                 )))
             })?;
-        if aggregator_input_size_upper_bound > MAX_AGGREGATOR_INPUT_SIZE {
+        if aggregator_input_size_upper_bound > batch_limits.max_aggregator_input_size {
             debug!(
                 batch_index = %self.batch.index,
                 block_num = %block_num,
                 aggregator_input_size_upper_bound = %aggregator_input_size_upper_bound,
-                max_aggregator_input_size = %MAX_AGGREGATOR_INPUT_SIZE,
+                max_aggregator_input_size = %batch_limits.max_aggregator_input_size,
                 "Closing aggregator batch"
             );
             return Ok(None);
@@ -614,6 +632,17 @@ fn aggregator_child_input_size_upper_bound(
         .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator child input size upper bound underflow"))))
 }
 
+/// Conservative aggregator input size upper bound in felts.
+///
+/// Formula:
+/// `n_tasks + n_children * (child_wrapper_words + snos_output_fixed_words) + message_segment_length
+/// + modified_contracts * full_contract_header_words
+/// + storage_updates * full_storage_update_words
+/// + declared_classes * full_class_update_words`.
+///
+/// This intentionally counts each child's full output shape instead of trying to model squashing
+/// savings, so the guard closes batches before the aggregator bootloader input can exceed the
+/// configured limit.
 fn aggregator_input_size_from_counts(
     n_children: usize,
     message_segment_length: usize,
@@ -704,6 +733,8 @@ mod tests {
     use chrono::{DateTime, Duration, Utc};
     use starknet_core::types::StateDiff;
 
+    const TEST_MAX_AGGREGATOR_INPUT_SIZE: usize = 1_000;
+
     /// Helper to create a test batch with configurable parameters
     fn create_test_batch(
         num_blocks: u64,
@@ -777,6 +808,7 @@ mod tests {
             AggregatorBatchWeights::new(1_000_000, 10000), // max weights
             3600,                                          // max_batch_time_seconds (1 hour)
             100,                                           // empty block's proving gas
+            TEST_MAX_AGGREGATOR_INPUT_SIZE,
         )
     }
 
@@ -785,6 +817,7 @@ mod tests {
         use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
         use blockifier::bouncer::BouncerWeights;
         use httpmock::MockServer;
+        use rstest::rstest;
         use serde_json::json;
         use starknet_api::execution_resources::GasAmount;
         use starknet_core::types::{
@@ -794,11 +827,27 @@ mod tests {
         };
         use url::Url;
 
-        #[test]
-        fn test_batch_922_formula_matches_observed_failure() {
-            let input_size = aggregator_input_size_from_counts(110, 0, 451, 287_339, 0).unwrap();
+        #[rstest]
+        #[case(110, 0, 451, 287_339, 0, 866_484)]
+        #[case(1, 7, 4, 3, 4, 69)]
+        fn test_aggregator_input_size_formula(
+            #[case] n_children: usize,
+            #[case] message_segment_length: usize,
+            #[case] modified_contracts: usize,
+            #[case] storage_updates: usize,
+            #[case] declared_classes: usize,
+            #[case] expected: usize,
+        ) {
+            let input_size = aggregator_input_size_from_counts(
+                n_children,
+                message_segment_length,
+                modified_contracts,
+                storage_updates,
+                declared_classes,
+            )
+            .unwrap();
 
-            assert_eq!(input_size, 866_484);
+            assert_eq!(input_size, expected);
         }
 
         #[test]
@@ -838,11 +887,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_process_block_closes_current_batch_when_next_block_alone_exceeds_input_limit() {
-            if std::env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").is_err() {
-                std::env::set_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", "http://localhost:8545");
-            }
-
+        async fn test_include_block_stops_without_bucket_when_empty_batch_exceeds_input_limit() {
             let server = MockServer::start();
             let block_num = 6;
             let provider_url = format!("http://localhost:{}", server.port());
@@ -854,7 +899,7 @@ mod tests {
                 then.status(200).body(
                     serde_json::to_vec(&json!({
                         "jsonrpc": "2.0",
-                        "result": test_block_with_version(block_num, "0.13.2"),
+                        "result": test_block_with_version(block_num, "0.14.2"),
                         "id": 1
                     }))
                     .unwrap(),
@@ -882,36 +927,21 @@ mod tests {
             let services = TestConfigBuilder::new()
                 .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(Url::parse(&provider_url).unwrap())))
                 .configure_madara_feeder_gateway_url(&provider_url)
-                .configure_prover_kind(ProverKind::Sharp)
                 .build()
                 .await;
 
             let handler = AggregatorHandler::new(services.config, create_test_limits());
-            let mut batch = create_test_batch(
-                block_num,
-                AggregatorBatchStatus::Open,
-                StarknetVersion::V0_13_2,
-                AggregatorBatchWeights::new(100, 100),
-                Utc::now(),
-            );
-            batch.aggregator_input_size_upper_bound = MAX_AGGREGATOR_INPUT_SIZE - 10;
-            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let state = Empty(EmptyAggregatorState::new(1));
 
-            let result = handler.process_block(block_num, state).await.unwrap();
+            let result = handler.include_block(block_num, state).await.unwrap();
 
-            match result {
-                BlockProcessingResult::NotBatched(NonEmpty(state)) => {
-                    assert_eq!(state.batch.status, AggregatorBatchStatus::Closed);
-                    assert_eq!(state.batch.end_block, block_num - 1);
-                }
-                _ => panic!("expected oversized next block to close current batch and stop"),
-            }
+            assert!(matches!(result, BlockProcessingResult::NotBatched(Empty(_))));
         }
 
         fn oversized_bouncer_weights() -> BouncerWeights {
             BouncerWeights {
                 l1_gas: 1,
-                message_segment_length: MAX_AGGREGATOR_INPUT_SIZE,
+                message_segment_length: TEST_MAX_AGGREGATOR_INPUT_SIZE,
                 n_events: 0,
                 n_txs: 0,
                 state_diff_size: 0,
@@ -956,7 +986,7 @@ mod tests {
             let batch = create_test_batch(
                 5,
                 AggregatorBatchStatus::Closed,
-                StarknetVersion::V0_13_2,
+                StarknetVersion::V0_14_2,
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
@@ -974,7 +1004,7 @@ mod tests {
             let batch = create_test_batch(
                 5,
                 AggregatorBatchStatus::Open,
-                StarknetVersion::V0_13_2,
+                StarknetVersion::V0_14_2,
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
@@ -1175,7 +1205,7 @@ mod tests {
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
-            batch.aggregator_input_size_upper_bound = MAX_AGGREGATOR_INPUT_SIZE - 10;
+            batch.aggregator_input_size_upper_bound = TEST_MAX_AGGREGATOR_INPUT_SIZE - 10;
             let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
             let limits = create_test_limits();
             let block_state_update = create_test_state_update();
@@ -1187,7 +1217,7 @@ mod tests {
                     6,
                     &block_state_update,
                     &block_weights,
-                    StarknetVersion::V0_13_2,
+                    StarknetVersion::V0_14_2,
                     &limits,
                     &batch_client,
                 )
@@ -1330,8 +1360,14 @@ mod tests {
 
         #[test]
         fn test_limits_new_for_test() {
-            let limits =
-                AggregatorBatchConfig::new_for_test(5000, 20, AggregatorBatchWeights::new(100, 200), 7200, 100);
+            let limits = AggregatorBatchConfig::new_for_test(
+                5000,
+                20,
+                AggregatorBatchWeights::new(100, 200),
+                7200,
+                100,
+                750_000,
+            );
 
             assert_eq!(limits.max_blob_size, 5000);
             assert_eq!(limits.max_batch_size, 20);
@@ -1339,6 +1375,7 @@ mod tests {
             assert_eq!(limits.max_batch_builtin_weights.message_segment_length, 200);
             assert_eq!(limits.max_batch_time_seconds, 7200);
             assert_eq!(limits.empty_block_proving_gas, 100);
+            assert_eq!(limits.max_aggregator_input_size, 750_000);
         }
     }
 }

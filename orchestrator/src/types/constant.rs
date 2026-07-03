@@ -15,6 +15,7 @@ pub use crate::types::storage_layout::{
 pub const BLOB_LEN: usize = 4096;
 pub const MAX_BLOBS: usize = 6; // TODO: This should be configurable via ENV or config file
 pub const MAX_BLOB_SIZE: usize = BLOB_LEN * MAX_BLOBS; // This represents the maximum size of data that you can use in a single transaction
+pub const DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT: usize = 750_000;
 
 pub const BOOT_LOADER_PROGRAM_CONTRACT: &str = "0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07";
 
