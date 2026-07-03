@@ -257,6 +257,7 @@ async fn test_process_job_l2_with_da_segment(
             end_block + 1,
             Some(String::from("")),
             256,
+            1,
             AggregatorBatchWeights::default(),
             StarknetVersion::V0_14_1,
         )])
@@ -328,10 +329,11 @@ fn test_aggregator_batch(index: u64, start_block: u64, end_block: u64) -> Aggreg
         start_block,
         Some(String::new()),
         256,
+        1,
         AggregatorBatchWeights::default(),
         StarknetVersion::V0_14_1,
     )
-    .update(end_block, 256, AggregatorBatchWeights::default(), None)
+    .update(end_block, 256, 1, AggregatorBatchWeights::default(), None)
 }
 
 async fn state_transition_job_for_batch(batch_index: u64) -> crate::types::jobs::job_item::JobItem {

@@ -67,6 +67,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             end_block: 3,
             num_blocks: 4,
             blob_len: 0,
+            aggregator_input_size_upper_bound: 1,
             squashed_state_updates_path: get_batch_state_update_file(1),
             created_at: chrono::Utc::now(),
             starknet_version: StarknetVersion::V0_13_2,

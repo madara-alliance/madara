@@ -11,7 +11,7 @@ use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
 use crate::types::batch::AggregatorBatchWeights;
-use crate::types::constant::BLOB_LEN;
+use crate::types::constant::{BLOB_LEN, DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT};
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
 use crate::types::params::da::DAConfig;
@@ -782,6 +782,12 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             "50",
         )
         .parse::<u64>()
+        .unwrap(),
+        max_aggregator_input_size: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MAX_AGGREGATOR_INPUT_SIZE",
+            &DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT.to_string(),
+        )
+        .parse::<usize>()
         .unwrap(),
         max_num_blobs,
         blob_size_buffer,

@@ -67,6 +67,7 @@ pub struct OrchestratorMetrics {
     pub aggregator_local_run_duration: Gauge<f64>,
     pub aggregator_local_run_total: Counter<f64>,
     pub aggregator_child_count: Gauge<f64>,
+    pub aggregator_input_size_upper_bound: Gauge<f64>,
     /// Failures per stage of `run_and_submit_with_local_aggregation`, labeled
     /// by `prover`, `stage` (load_children/run_aggregator/fact_hash/
     /// store_artifacts/submit_prover), and bounded `error_type`.
@@ -397,6 +398,13 @@ impl Metrics for OrchestratorMetrics {
             "children".to_string(),
         );
 
+        let aggregator_input_size_upper_bound = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_input_size_upper_bound".to_string(),
+            "Conservative upper bound for the aggregator bootloader input size".to_string(),
+            "felts".to_string(),
+        );
+
         let aggregator_local_run_failures_total = register_counter_metric_instrument(
             &orchestrator_meter,
             "aggregator_local_run_failures_total".to_string(),
@@ -517,6 +525,7 @@ impl Metrics for OrchestratorMetrics {
             aggregator_local_run_duration,
             aggregator_local_run_total,
             aggregator_child_count,
+            aggregator_input_size_upper_bound,
             aggregator_local_run_failures_total,
             aggregator_program_output_bytes,
             aggregator_da_segment_bytes,

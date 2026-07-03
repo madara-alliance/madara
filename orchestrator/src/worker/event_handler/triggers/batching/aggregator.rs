@@ -8,6 +8,7 @@ use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatc
 use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
@@ -21,8 +22,16 @@ use starknet::providers::Provider;
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use starknet_core::types::{BlockId, StateUpdate};
 use starknet_types_core::felt::Felt;
+use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+const AGGREGATOR_N_TASKS_WORDS: usize = 1;
+const AGGREGATOR_CHILD_WRAPPER_WORDS: usize = 2;
+const SNOS_OUTPUT_FIXED_WORDS: usize = 14;
+const SNOS_FULL_CONTRACT_HEADER_WORDS: usize = 6;
+const SNOS_FULL_STORAGE_UPDATE_WORDS: usize = 3;
+const SNOS_FULL_CLASS_UPDATE_WORDS: usize = 3;
 
 #[allow(clippy::large_enum_variant)]
 pub enum AggregatorState {
@@ -88,6 +97,10 @@ impl AggregatorStateHandler {
             .database()
             .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
             .await?;
+        MetricsRecorder::record_aggregator_input_size_upper_bound(
+            &state.batch.status.to_string(),
+            state.batch.aggregator_input_size_upper_bound,
+        );
 
         // Update state update and blob in storage
         self.config
@@ -115,6 +128,7 @@ pub struct AggregatorBatchConfig {
     pub max_batch_builtin_weights: AggregatorBatchWeights,
     pub max_batch_time_seconds: u64,
     pub empty_block_proving_gas: u64,
+    pub max_aggregator_input_size: usize,
 }
 
 impl AggregatorBatchConfig {
@@ -125,6 +139,7 @@ impl AggregatorBatchConfig {
             max_batch_builtin_weights: config.aggregator_batch_weights_limit.clone(),
             max_batch_time_seconds: config.batching_config.max_batch_time_seconds,
             empty_block_proving_gas: config.batching_config.default_empty_block_proving_gas,
+            max_aggregator_input_size: config.batching_config.max_aggregator_input_size,
         }
     }
 
@@ -136,6 +151,7 @@ impl AggregatorBatchConfig {
         max_batch_builtin_weights: AggregatorBatchWeights,
         max_batch_time_seconds: u64,
         empty_block_proving_gas: u64,
+        max_aggregator_input_size: usize,
     ) -> Self {
         Self {
             max_blob_size,
@@ -143,6 +159,7 @@ impl AggregatorBatchConfig {
             max_batch_builtin_weights,
             max_batch_time_seconds,
             empty_block_proving_gas,
+            max_aggregator_input_size,
         }
     }
 }
@@ -181,7 +198,7 @@ impl AggregatorHandler {
         }
 
         match state {
-            Empty(ref empty_state) => {
+            Empty(empty_state) => {
                 // Get state update for the current block
                 let current_state_update = self
                     .config
@@ -192,6 +209,28 @@ impl AggregatorHandler {
 
                 match current_state_update {
                     Update(state_update) => {
+                        let block_weights = AggregatorBatchWeights::from(
+                            &get_block_builtin_weights(
+                                block_num,
+                                self.config.madara_feeder_gateway_client(),
+                                self.batch_config.empty_block_proving_gas,
+                            )
+                            .await?,
+                        );
+                        let aggregator_input_size_upper_bound = initial_aggregator_input_size_upper_bound(
+                            &state_update,
+                            block_weights.message_segment_length,
+                        )?;
+                        if aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size {
+                            warn!(
+                                block_num = %block_num,
+                                aggregator_input_size_upper_bound = %aggregator_input_size_upper_bound,
+                                max_aggregator_input_size = %self.batch_config.max_aggregator_input_size,
+                                "Stopping before oversized block while aggregator batch state is empty"
+                            );
+                            return Ok(BlockProcessingResult::NotBatched(Empty(empty_state)));
+                        }
+
                         let compressed_state_update = compress_state_update(
                             &state_update,
                             block_num.saturating_sub(1),
@@ -200,15 +239,20 @@ impl AggregatorHandler {
                         )
                         .await?;
                         let new_state = NonEmptyAggregatorState::new(
-                            self.start_aggregator_batch(empty_state.index, block_num, compressed_state_update.len())
-                                .await?,
+                            self.start_aggregator_batch(
+                                empty_state.index,
+                                block_num,
+                                compressed_state_update.len(),
+                                &state_update,
+                            )
+                            .await?,
                             state_update,
                         );
                         Ok(BlockProcessingResult::Accumulated(new_state))
                     }
                     PreConfirmedUpdate(_) => {
                         info!("Skipping batching for block {} as it is still pending", block_num);
-                        Ok(BlockProcessingResult::NotBatched(state))
+                        Ok(BlockProcessingResult::NotBatched(Empty(empty_state)))
                     }
                 }
             }
@@ -276,6 +320,21 @@ impl AggregatorHandler {
                     None => {
                         // Can't add the given block in this batch
                         state.close();
+                        let single_block_aggregator_input_size_upper_bound = initial_aggregator_input_size_upper_bound(
+                            &state_update,
+                            block_weights.message_segment_length,
+                        )?;
+                        if single_block_aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size
+                        {
+                            warn!(
+                                batch_index = %state.batch.index,
+                                block_num = %block_num,
+                                aggregator_input_size_upper_bound = %single_block_aggregator_input_size_upper_bound,
+                                max_aggregator_input_size = %self.batch_config.max_aggregator_input_size,
+                                "Closing current aggregator batch and stopping before oversized next block"
+                            );
+                            return Ok(BlockProcessingResult::NotBatched(NonEmpty(state)));
+                        }
 
                         let blob_len = compress_state_update(
                             &state_update,
@@ -286,7 +345,8 @@ impl AggregatorHandler {
                         .await?
                         .len();
                         let new_state = NonEmpty(NonEmptyAggregatorState::new(
-                            self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len).await?,
+                            self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len, &state_update)
+                                .await?,
                             state_update,
                         ));
                         Ok(BlockProcessingResult::BatchCompleted { completed_state: state, new_state })
@@ -305,6 +365,7 @@ impl AggregatorHandler {
         index: u64,
         start_block: u64,
         blob_len: usize,
+        state_update: &StateUpdate,
     ) -> Result<AggregatorBatch, JobError> {
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
@@ -315,6 +376,27 @@ impl AggregatorHandler {
             starknet_version = %starknet_version,
             "Fetched Starknet version for new batch"
         );
+
+        // Getting the builtin weights for the start_block and adding it in the DB
+        let weights = AggregatorBatchWeights::from(
+            &get_block_builtin_weights(
+                start_block,
+                self.config.madara_feeder_gateway_client(),
+                self.batch_config.empty_block_proving_gas,
+            )
+            .await?,
+        );
+
+        let aggregator_input_size_upper_bound =
+            initial_aggregator_input_size_upper_bound(state_update, weights.message_segment_length)?;
+        if aggregator_input_size_upper_bound > self.batch_config.max_aggregator_input_size {
+            return Err(JobError::Other(OtherError(eyre!(
+                "Block {} aggregator input size upper bound {} exceeds the maximum allowed size {}",
+                start_block,
+                aggregator_input_size_upper_bound,
+                self.batch_config.max_aggregator_input_size
+            ))));
+        }
 
         let bucket_id = match self.config.prover_kind() {
             ProverKind::Atlantic => {
@@ -331,17 +413,15 @@ impl AggregatorHandler {
             ProverKind::Sharp | ProverKind::Mock => None,
         };
 
-        // Getting the builtin weights for the start_block and adding it in the DB
-        let weights = AggregatorBatchWeights::from(
-            &get_block_builtin_weights(
-                start_block,
-                self.config.madara_feeder_gateway_client(),
-                self.batch_config.empty_block_proving_gas,
-            )
-            .await?,
+        let batch = AggregatorBatch::new(
+            index,
+            start_block,
+            bucket_id,
+            blob_len,
+            aggregator_input_size_upper_bound,
+            weights,
+            starknet_version,
         );
-
-        let batch = AggregatorBatch::new(index, start_block, bucket_id, blob_len, weights, starknet_version);
 
         // Record batch creation count
         let attributes = [
@@ -455,6 +535,30 @@ impl NonEmptyAggregatorState {
         batch_limits: &AggregatorBatchConfig,
         batch_client: &BatchRpcClient,
     ) -> Result<Option<Self>, JobError> {
+        let block_aggregator_input_size_upper_bound =
+            aggregator_child_input_size_upper_bound(block_state_update, block_weights.message_segment_length)?;
+        let aggregator_input_size_upper_bound = self
+            .batch
+            .aggregator_input_size_upper_bound
+            .checked_add(block_aggregator_input_size_upper_bound)
+            .ok_or_else(|| {
+                JobError::Other(OtherError(eyre!(
+                    "Aggregator input size upper bound overflow for batch {} while adding block {}",
+                    self.batch.index,
+                    block_num
+                )))
+            })?;
+        if aggregator_input_size_upper_bound > batch_limits.max_aggregator_input_size {
+            debug!(
+                batch_index = %self.batch.index,
+                block_num = %block_num,
+                aggregator_input_size_upper_bound = %aggregator_input_size_upper_bound,
+                max_aggregator_input_size = %batch_limits.max_aggregator_input_size,
+                "Closing aggregator batch"
+            );
+            return Ok(None);
+        }
+
         // Perform synchronous checks first
         let check_result = self.check_block_sync(block_weights, block_version, batch_limits);
         let combined_weights = match check_result {
@@ -499,7 +603,7 @@ impl NonEmptyAggregatorState {
         }
 
         Ok(Some(NonEmptyAggregatorState {
-            batch: self.batch.update(block_num, blob_len, combined_weights, None),
+            batch: self.batch.update(block_num, blob_len, aggregator_input_size_upper_bound, combined_weights, None),
             blob: squashed_state_update,
         }))
     }
@@ -513,6 +617,90 @@ impl AggregatorHandler {
     pub fn new(config: Arc<Config>, batch_config: AggregatorBatchConfig) -> AggregatorHandler {
         AggregatorHandler { config, batch_config }
     }
+}
+
+fn initial_aggregator_input_size_upper_bound(
+    state_update: &StateUpdate,
+    message_segment_length: usize,
+) -> Result<usize, JobError> {
+    let (modified_contracts, storage_updates, declared_classes) = state_update_full_output_counts(state_update);
+    aggregator_input_size_from_counts(1, message_segment_length, modified_contracts, storage_updates, declared_classes)
+}
+
+fn aggregator_child_input_size_upper_bound(
+    state_update: &StateUpdate,
+    message_segment_length: usize,
+) -> Result<usize, JobError> {
+    let (modified_contracts, storage_updates, declared_classes) = state_update_full_output_counts(state_update);
+    aggregator_input_size_from_counts(1, message_segment_length, modified_contracts, storage_updates, declared_classes)?
+        .checked_sub(AGGREGATOR_N_TASKS_WORDS)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator child input size upper bound underflow"))))
+}
+
+/// Conservative aggregator input size upper bound in felts.
+///
+/// Formula:
+/// `n_tasks + n_children * (child_wrapper_words + snos_output_fixed_words) + message_segment_length
+/// + modified_contracts * full_contract_header_words
+/// + storage_updates * full_storage_update_words
+/// + declared_classes * full_class_update_words`.
+///
+/// This intentionally counts each child's full output shape instead of trying to model squashing
+/// savings, so the guard closes batches before the aggregator bootloader input can exceed the
+/// configured limit.
+fn aggregator_input_size_from_counts(
+    n_children: usize,
+    message_segment_length: usize,
+    modified_contracts: usize,
+    storage_updates: usize,
+    declared_classes: usize,
+) -> Result<usize, JobError> {
+    let per_child_fixed_words = SNOS_OUTPUT_FIXED_WORDS
+        .checked_add(AGGREGATOR_CHILD_WRAPPER_WORDS)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator per-child fixed size overflow"))))?;
+    let fixed_words = per_child_fixed_words
+        .checked_mul(n_children)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator fixed input size overflow"))))?;
+    let contract_words = modified_contracts
+        .checked_mul(SNOS_FULL_CONTRACT_HEADER_WORDS)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator contract input size overflow"))))?;
+    let storage_words = storage_updates
+        .checked_mul(SNOS_FULL_STORAGE_UPDATE_WORDS)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator storage input size overflow"))))?;
+    let class_words = declared_classes
+        .checked_mul(SNOS_FULL_CLASS_UPDATE_WORDS)
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator class input size overflow"))))?;
+
+    AGGREGATOR_N_TASKS_WORDS
+        .checked_add(fixed_words)
+        .and_then(|size| size.checked_add(message_segment_length))
+        .and_then(|size| size.checked_add(contract_words))
+        .and_then(|size| size.checked_add(storage_words))
+        .and_then(|size| size.checked_add(class_words))
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Aggregator input size overflow"))))
+}
+
+fn state_update_full_output_counts(state_update: &StateUpdate) -> (usize, usize, usize) {
+    let state_diff = &state_update.state_diff;
+    let storage_updates = state_diff.storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>();
+    let modified_contracts = count_modified_contracts(state_update);
+    let declared_classes = state_diff.declared_classes.len()
+        + state_diff.deprecated_declared_classes.len()
+        + state_diff.migrated_compiled_classes.as_ref().map_or(0, Vec::len);
+
+    (modified_contracts, storage_updates, declared_classes)
+}
+
+fn count_modified_contracts(state_update: &StateUpdate) -> usize {
+    let state_diff = &state_update.state_diff;
+    let mut contracts = HashSet::new();
+
+    contracts.extend(state_diff.storage_diffs.iter().map(|diff| diff.address));
+    contracts.extend(state_diff.nonces.iter().map(|nonce| nonce.contract_address));
+    contracts.extend(state_diff.deployed_contracts.iter().map(|contract| contract.address));
+    contracts.extend(state_diff.replaced_classes.iter().map(|class| class.contract_address));
+
+    contracts.len()
 }
 
 // ------ Helper method to compress state update ------
@@ -549,6 +737,8 @@ mod tests {
     use super::*;
     use chrono::{DateTime, Duration, Utc};
     use starknet_core::types::StateDiff;
+
+    const TEST_MAX_AGGREGATOR_INPUT_SIZE: usize = 1_000;
 
     /// Helper to create a test batch with configurable parameters
     fn create_test_batch(
@@ -589,6 +779,7 @@ mod tests {
             end_block: num_blocks.saturating_sub(1),
             num_blocks,
             blob_len: 100,
+            aggregator_input_size_upper_bound: 1,
             builtin_weights: weights,
             status,
             created_at,
@@ -622,7 +813,174 @@ mod tests {
             AggregatorBatchWeights::new(1_000_000, 10000), // max weights
             3600,                                          // max_batch_time_seconds (1 hour)
             100,                                           // empty block's proving gas
+            TEST_MAX_AGGREGATOR_INPUT_SIZE,
         )
+    }
+
+    mod aggregator_input_size_tests {
+        use super::*;
+        use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
+        use blockifier::bouncer::BouncerWeights;
+        use httpmock::MockServer;
+        use rstest::rstest;
+        use serde_json::json;
+        use starknet_api::execution_resources::GasAmount;
+        use starknet_core::types::{
+            BlockStatus, BlockWithTxHashes, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem,
+            L1DataAvailabilityMode, MigratedCompiledClassItem, NonceUpdate, ReplacedClassItem, ResourcePrice,
+            StorageEntry,
+        };
+        use url::Url;
+
+        #[rstest]
+        #[case(110, 0, 451, 287_339, 0, 866_484)]
+        #[case(1, 7, 4, 3, 4, 69)]
+        fn test_aggregator_input_size_formula(
+            #[case] n_children: usize,
+            #[case] message_segment_length: usize,
+            #[case] modified_contracts: usize,
+            #[case] storage_updates: usize,
+            #[case] declared_classes: usize,
+            #[case] expected: usize,
+        ) {
+            let input_size = aggregator_input_size_from_counts(
+                n_children,
+                message_segment_length,
+                modified_contracts,
+                storage_updates,
+                declared_classes,
+            )
+            .unwrap();
+
+            assert_eq!(input_size, expected);
+        }
+
+        #[test]
+        fn test_state_update_full_output_size_counts_all_terms() {
+            let mut state_update = create_test_state_update();
+            state_update.state_diff.storage_diffs = vec![
+                ContractStorageDiffItem {
+                    address: Felt::from(1),
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::from(10), value: Felt::from(11) },
+                        StorageEntry { key: Felt::from(12), value: Felt::from(13) },
+                    ],
+                },
+                ContractStorageDiffItem {
+                    address: Felt::from(2),
+                    storage_entries: vec![StorageEntry { key: Felt::from(20), value: Felt::from(21) }],
+                },
+            ];
+            state_update.state_diff.nonces =
+                vec![NonceUpdate { contract_address: Felt::from(3), nonce: Felt::from(30) }];
+            state_update.state_diff.deployed_contracts =
+                vec![DeployedContractItem { address: Felt::from(4), class_hash: Felt::from(40) }];
+            state_update.state_diff.replaced_classes =
+                vec![ReplacedClassItem { contract_address: Felt::from(2), class_hash: Felt::from(200) }];
+            state_update.state_diff.declared_classes = vec![
+                DeclaredClassItem { class_hash: Felt::from(50), compiled_class_hash: Felt::from(51) },
+                DeclaredClassItem { class_hash: Felt::from(52), compiled_class_hash: Felt::from(53) },
+            ];
+            state_update.state_diff.deprecated_declared_classes = vec![Felt::from(60)];
+            state_update.state_diff.migrated_compiled_classes = Some(vec![MigratedCompiledClassItem {
+                class_hash: Felt::from(70),
+                compiled_class_hash: Felt::from(71),
+            }]);
+
+            assert_eq!(aggregator_child_input_size_upper_bound(&state_update, 7).unwrap(), 68);
+            assert_eq!(initial_aggregator_input_size_upper_bound(&state_update, 7).unwrap(), 69);
+        }
+
+        #[tokio::test]
+        async fn test_include_block_stops_without_bucket_when_empty_batch_exceeds_input_limit() {
+            let server = MockServer::start();
+            let block_num = 6;
+            let provider_url = format!("http://localhost:{}", server.port());
+
+            server.mock(|when, then| {
+                when.path("/")
+                    .body_includes("starknet_getBlockWithTxHashes")
+                    .body_includes(format!(r#""block_number":{}"#, block_num));
+                then.status(200).body(
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0",
+                        "result": test_block_with_version(block_num, "0.14.2"),
+                        "id": 1
+                    }))
+                    .unwrap(),
+                );
+            });
+
+            let block_state_update = create_test_state_update();
+            server.mock(|when, then| {
+                when.path("/").body_includes("starknet_getStateUpdate");
+                then.status(200).body(
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0",
+                        "result": block_state_update,
+                        "id": 1
+                    }))
+                    .unwrap(),
+                );
+            });
+
+            server.mock(|when, then| {
+                when.path("/feeder_gateway/get_block_bouncer_weights");
+                then.status(200).body(serde_json::to_vec(&oversized_bouncer_weights()).unwrap());
+            });
+
+            let services = TestConfigBuilder::new()
+                .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(Url::parse(&provider_url).unwrap())))
+                .configure_madara_feeder_gateway_url(&provider_url)
+                .build()
+                .await;
+
+            let handler = AggregatorHandler::new(services.config, create_test_limits());
+            let state = Empty(EmptyAggregatorState::new(1));
+
+            let result = handler.include_block(block_num, state).await.unwrap();
+
+            assert!(matches!(result, BlockProcessingResult::NotBatched(Empty(_))));
+        }
+
+        fn oversized_bouncer_weights() -> BouncerWeights {
+            BouncerWeights {
+                l1_gas: 1,
+                message_segment_length: TEST_MAX_AGGREGATOR_INPUT_SIZE,
+                n_events: 0,
+                n_txs: 0,
+                state_diff_size: 0,
+                sierra_gas: GasAmount(0),
+                proving_gas: GasAmount(1),
+                receipt_l2_gas: GasAmount(0),
+            }
+        }
+
+        fn test_block_with_version(block_num: u64, starknet_version: &str) -> serde_json::Value {
+            serde_json::to_value(BlockWithTxHashes {
+                status: BlockStatus::AcceptedOnL1,
+                block_hash: Default::default(),
+                parent_hash: Default::default(),
+                block_number: block_num,
+                new_root: Default::default(),
+                timestamp: 0,
+                sequencer_address: Default::default(),
+                l1_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+                l2_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+                l1_da_mode: L1DataAvailabilityMode::Blob,
+                starknet_version: starknet_version.to_string(),
+                event_commitment: Default::default(),
+                transaction_commitment: Default::default(),
+                receipt_commitment: Default::default(),
+                state_diff_commitment: Default::default(),
+                event_count: 0,
+                transaction_count: 0,
+                state_diff_length: 0,
+                transactions: vec![],
+            })
+            .unwrap()
+        }
     }
 
     mod check_block_sync_tests {
@@ -633,7 +991,7 @@ mod tests {
             let batch = create_test_batch(
                 5,
                 AggregatorBatchStatus::Closed,
-                StarknetVersion::V0_13_2,
+                StarknetVersion::V0_14_2,
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
@@ -651,7 +1009,7 @@ mod tests {
             let batch = create_test_batch(
                 5,
                 AggregatorBatchStatus::Open,
-                StarknetVersion::V0_13_2,
+                StarknetVersion::V0_14_2,
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
@@ -843,6 +1201,37 @@ mod tests {
             assert!(matches!(result, BatchCheckResult::CanAdd(_)));
         }
 
+        #[tokio::test]
+        async fn test_checked_add_block_closes_when_accumulated_aggregator_input_size_exceeds_limit() {
+            let mut batch = create_test_batch(
+                5,
+                AggregatorBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                AggregatorBatchWeights::new(100, 100),
+                Utc::now(),
+            );
+            batch.aggregator_input_size_upper_bound = TEST_MAX_AGGREGATOR_INPUT_SIZE - 10;
+            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let limits = create_test_limits();
+            let block_state_update = create_test_state_update();
+            let block_weights = AggregatorBatchWeights::new(100, 0);
+            let batch_client = BatchRpcClient::with_defaults(url::Url::parse("http://localhost:0").unwrap());
+
+            let result = state
+                .checked_add_block_with_limits(
+                    6,
+                    &block_state_update,
+                    &block_weights,
+                    StarknetVersion::V0_14_2,
+                    &limits,
+                    &batch_client,
+                )
+                .await
+                .unwrap();
+
+            assert!(result.is_none());
+        }
+
         #[test]
         fn test_just_over_weight_limit_returns_weight_limit_exceeded() {
             let batch = create_test_batch(
@@ -976,8 +1365,14 @@ mod tests {
 
         #[test]
         fn test_limits_new_for_test() {
-            let limits =
-                AggregatorBatchConfig::new_for_test(5000, 20, AggregatorBatchWeights::new(100, 200), 7200, 100);
+            let limits = AggregatorBatchConfig::new_for_test(
+                5000,
+                20,
+                AggregatorBatchWeights::new(100, 200),
+                7200,
+                100,
+                750_000,
+            );
 
             assert_eq!(limits.max_blob_size, 5000);
             assert_eq!(limits.max_batch_size, 20);
@@ -985,6 +1380,7 @@ mod tests {
             assert_eq!(limits.max_batch_builtin_weights.message_segment_length, 200);
             assert_eq!(limits.max_batch_time_seconds, 7200);
             assert_eq!(limits.empty_block_proving_gas, 100);
+            assert_eq!(limits.max_aggregator_input_size, 750_000);
         }
     }
 }

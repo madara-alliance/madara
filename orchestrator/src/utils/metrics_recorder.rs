@@ -622,6 +622,12 @@ impl MetricsRecorder {
             .record(count as f64, &[KeyValue::new("prover", prover.to_string())]);
     }
 
+    pub fn record_aggregator_input_size_upper_bound(status: &str, input_size: usize) {
+        ORCHESTRATOR_METRICS
+            .aggregator_input_size_upper_bound
+            .record(input_size as f64, &[KeyValue::new("status", status.to_string())]);
+    }
+
     pub fn record_aggregator_failure(prover: &str, stage: &str, error_type: &str) {
         ORCHESTRATOR_METRICS.aggregator_local_run_failures_total.add(
             1.0,
