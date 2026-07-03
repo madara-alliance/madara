@@ -553,6 +553,7 @@ mod tests {
     use crate::tests::config::TestConfigBuilder;
     use chrono::{DateTime, Duration, Utc};
     use starknet_core::types::StateDiff;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Helper to create a test batch with configurable parameters
     fn create_test_batch(
@@ -661,6 +662,52 @@ mod tests {
         let result = state_handler.save_batch_state(&state).await;
 
         assert!(result.is_err(), "storage failure should make save_batch_state fail");
+    }
+
+    #[tokio::test]
+    async fn test_save_batch_state_does_not_update_db_when_blob_upload_fails() {
+        let mut database = MockDatabaseClient::new();
+        database.expect_update_or_create_aggregator_batch().times(0);
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let storage_call_count = call_count.clone();
+        let mut storage = MockStorageClient::new();
+        storage.expect_put_data().times(2).returning(move |_, key| {
+            let call_index = storage_call_count.fetch_add(1, Ordering::SeqCst);
+            match call_index {
+                0 => {
+                    assert_eq!(key, "test/path.json");
+                    Ok(())
+                }
+                1 => {
+                    assert_eq!(key, AggregatorBatch::get_blob_file_path(1, 1));
+                    Err(StorageError::ObjectStreamError("blob upload failed".to_string()))
+                }
+                _ => unreachable!("save_batch_state should stop after the first blob upload failure"),
+            }
+        });
+
+        let services = TestConfigBuilder::new()
+            .configure_database(database.into())
+            .configure_storage_client(storage.into())
+            .configure_prover_kind(ProverKind::Mock)
+            .build()
+            .await;
+
+        let batch = create_test_batch(
+            1,
+            AggregatorBatchStatus::Open,
+            StarknetVersion::V0_13_2,
+            AggregatorBatchWeights::new(100, 100),
+            Utc::now(),
+        );
+        let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+        let state_handler = AggregatorStateHandler::from_config(&services.config);
+
+        let result = state_handler.save_batch_state(&state).await;
+
+        assert!(result.is_err(), "blob upload failure should make save_batch_state fail");
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
     }
 
     mod check_block_sync_tests {
