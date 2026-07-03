@@ -569,7 +569,13 @@ mod tests {
 
         let err = rpc.flush_mempool_txns(FlushMempoolTxnsParams { all: true, ..Default::default() }).await.unwrap_err();
 
-        assert_eq!(err.message(), "This method requires the --rpc-unsafe flag to be enabled");
+        assert_eq!(err.code(), 63);
+        assert_eq!(err.message(), "An unexpected error occurred");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(err.data().expect("error data should be present").get())
+                .expect("error data should be valid JSON"),
+            serde_json::json!("This method requires the --rpc-unsafe flag to be enabled")
+        );
         assert_eq!(
             mempool
                 .snapshot_transaction_hashes_matching(0, usize::MAX, false, |_| true)
