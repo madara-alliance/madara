@@ -446,6 +446,7 @@ impl SetupConfigBuilder {
             .builder()
             .database_path(get_database_path(test_name, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
+            .charge_fee(true)
             .build();
 
         let pathfinder_config = PathfinderConfigBuilder::new()
