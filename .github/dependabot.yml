@@ -4,4 +4,4 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly" # can be `daily` or `monthly` also
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
