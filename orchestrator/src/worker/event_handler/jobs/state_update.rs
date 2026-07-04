@@ -110,15 +110,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
-            // Get the artifacts for the block/batch
-            let snos_output =
-                match fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await {
-                    Ok(snos_output) => Some(snos_output),
-                    Err(err) => {
-                        debug!("failed to fetch snos output, proceeding without it: {}", err);
-                        None
-                    }
-                };
+            let snos_output = match config.layer() {
+                Layer::L2 => None,
+                Layer::L3 => {
+                    Some(fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await?)
+                }
+            };
             let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
             let blob_data = match config.layer() {
                 // For L2, use DA segment from prover (encrypted/compressed state diff)

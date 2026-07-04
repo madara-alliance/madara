@@ -219,7 +219,7 @@ async fn test_process_job_l2_with_da_segment(
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_path: None, // Not used for L2 batch settlement
+            snos_output_path: Some(get_batch_artifact_file(batch_index, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(program_output_key),
             blob_data_path: None, // Not used for L2 with DA segments
             da_segment_path: Some(da_segment_key),

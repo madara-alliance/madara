@@ -51,6 +51,7 @@ async fn update_state_worker_first_block() {
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_layer(Layer::L2)
         .build()
         .await;
 
@@ -71,6 +72,7 @@ async fn update_state_worker_first_block() {
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
     assert_eq!(data.to_settle, 1);
+    assert_eq!(state_metadata.snos_output_path, None);
 }
 
 #[rstest]
