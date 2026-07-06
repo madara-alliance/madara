@@ -849,7 +849,7 @@ impl DatabaseClient for MongoDbClient {
         job_a_status: JobStatus,
         job_b_type: JobType,
         orchestrator_version: Option<String>,
-        min_internal_id: Option<u64>,
+        min_internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         // Convert enums to Bson strings
@@ -865,12 +865,10 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             match_filter.insert("metadata.common.orchestrator_version", version.as_str());
         }
-        if let Some(min_internal_id) = min_internal_id {
-            // If the caller somehow passes a value Mongo cannot represent as i64,
-            // fall back to the broad scan instead of filtering out real work.
-            let min_internal_id = i64::try_from(min_internal_id).unwrap_or(0);
-            match_filter.insert("internal_id", doc! { "$gte": min_internal_id });
-        }
+        // If the caller somehow passes a value Mongo cannot represent as i64,
+        // fall back to the broad scan instead of filtering out real work.
+        let min_internal_id = i64::try_from(min_internal_id).unwrap_or(0);
+        match_filter.insert("internal_id", doc! { "$gte": min_internal_id });
 
         // Construct the aggregation pipeline
         let pipeline = vec![
@@ -1483,7 +1481,7 @@ impl DatabaseClient for MongoDbClient {
         snos_batch_status: SnosBatchStatus,
         limit: u64,
         orchestrator_version: Option<String>,
-        min_index: Option<u64>,
+        min_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
@@ -1498,12 +1496,10 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             match_filter.insert("orchestrator_version", version.as_str());
         }
-        if let Some(min_index) = min_index {
-            // If the caller somehow passes a value Mongo cannot represent as i64,
-            // fall back to the broad scan instead of filtering out real work.
-            let min_index = i64::try_from(min_index).unwrap_or(0);
-            match_filter.insert("index", doc! { "$gte": min_index });
-        }
+        // If the caller somehow passes a value Mongo cannot represent as i64,
+        // fall back to the broad scan instead of filtering out real work.
+        let min_index = i64::try_from(min_index).unwrap_or(0);
+        match_filter.insert("index", doc! { "$gte": min_index });
 
         // Construct the aggregation pipeline
         let pipeline = vec![

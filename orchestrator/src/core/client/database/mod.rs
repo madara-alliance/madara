@@ -129,13 +129,14 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_a_status` - Status of the first job
     /// * `job_b_type` - Type of the successor job to check for
     /// * `orchestrator_version` - Optional orchestrator version filter
+    /// * `min_internal_id` - Inclusive lower bound, or 0 for an unbounded scan
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
         orchestrator_version: Option<String>,
-        min_internal_id: Option<u64>,
+        min_internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get jobs after a specific internal id by job type
@@ -246,6 +247,7 @@ pub trait DatabaseClient: Send + Sync {
     /// * `snos_batch_status` - Status of SNOS batches to check (typically Closed)
     /// * `limit` - Maximum number of batches to return
     /// * `orchestrator_version` - Optional orchestrator version filter
+    /// * `min_index` - Inclusive lower bound, or 0 for an unbounded scan
     ///
     /// # Returns
     /// Vector of SNOS batches that don't have corresponding SNOS jobs (in any status)
@@ -254,7 +256,7 @@ pub trait DatabaseClient: Send + Sync {
         snos_batch_status: SnosBatchStatus,
         limit: u64,
         orchestrator_version: Option<String>,
-        min_index: Option<u64>,
+        min_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update or create a SNOS batch

@@ -113,7 +113,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
 
     // Test without version filter
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, 0)
         .await
         .unwrap();
 
@@ -134,7 +134,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobStatus::Completed,
             JobType::ProofCreation,
             Some(current_version),
-            None,
+            0,
         )
         .await
         .unwrap();
@@ -153,7 +153,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
             JobStatus::Completed,
             JobType::ProofCreation,
             Some("old-version".to_string()),
-            None,
+            0,
         )
         .await
         .unwrap();
@@ -187,7 +187,7 @@ async fn database_get_jobs_without_successor_returns_missing_jobs_oldest_first()
     }
 
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, None)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, 0)
         .await
         .unwrap();
 
@@ -208,7 +208,7 @@ async fn database_get_jobs_without_successor_respects_min_internal_id() {
     database_client.create_job(build_job_item(JobType::SnosRun, JobStatus::Completed, 3)).await.unwrap();
 
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, Some(2))
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None, 2)
         .await
         .unwrap();
 
@@ -808,7 +808,7 @@ async fn test_get_snos_batches_without_jobs() {
 
     // Test without version filter - should return batches 2 and 3 (no jobs)
     let batches_without_jobs =
-        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None, None).await.unwrap();
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None, 0).await.unwrap();
     assert_eq!(batches_without_jobs.len(), 2);
     assert!(batches_without_jobs.iter().any(|b| b.index == 2));
     assert!(batches_without_jobs.iter().any(|b| b.index == 3));
@@ -816,7 +816,7 @@ async fn test_get_snos_batches_without_jobs() {
     // Test with current version filter - should only return batch 2
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
     let current_version_batches = database_client
-        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some(current_version), None)
+        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some(current_version), 0)
         .await
         .unwrap();
     assert_eq!(current_version_batches.len(), 1);
@@ -824,7 +824,7 @@ async fn test_get_snos_batches_without_jobs() {
 
     // Test with old version filter - should only return batch 3
     let old_version_batches = database_client
-        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some("old-version".to_string()), None)
+        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some("old-version".to_string()), 0)
         .await
         .unwrap();
     assert_eq!(old_version_batches.len(), 1);
@@ -845,7 +845,7 @@ async fn test_get_snos_batches_without_jobs_respects_min_index() {
     }
 
     let batches_without_jobs =
-        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None, Some(2)).await.unwrap();
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None, 2).await.unwrap();
 
     let returned_ids: Vec<u64> = batches_without_jobs.iter().map(|batch| batch.index).collect();
     assert_eq!(returned_ids, vec![2, 3]);
@@ -871,9 +871,9 @@ async fn test_get_snos_batches_without_jobs_returns_oldest_missing_across_large_
     }
 
     let oldest_missing_batch =
-        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 1, None, None).await.unwrap();
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 1, None, 0).await.unwrap();
     let first_two_missing_batches =
-        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 2, None, None).await.unwrap();
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 2, None, 0).await.unwrap();
 
     assert_eq!(oldest_missing_batch.len(), 1);
     assert_eq!(oldest_missing_batch[0].index, 1, "Expected the oldest missing batch overall");

@@ -90,7 +90,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             *job_type == JobType::SnosRun
                 && *job_status == JobStatus::Completed
                 && *successor_type == JobType::ProofCreation
-                && min_internal_id.is_none()
+                && *min_internal_id == 0
         })
         .returning(move |_, _, _, _, _| Ok(snos_jobs.clone()));
 

@@ -54,7 +54,7 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version, min_index| {
-            matches!(job_status, SnosBatchStatus::Closed) && *limit == 39 && min_index.is_none()
+            matches!(job_status, SnosBatchStatus::Closed) && *limit == 39 && *min_index == 0
         })
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();
@@ -173,7 +173,7 @@ async fn test_create_snos_job_for_existing_batch(
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version, min_index| {
-            matches!(job_status, SnosBatchStatus::Closed) && *limit == 39 && min_index.is_none()
+            matches!(job_status, SnosBatchStatus::Closed) && *limit == 39 && *min_index == 0
         })
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();

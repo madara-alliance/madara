@@ -7,7 +7,9 @@ use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetad
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::{calculate_jobs_to_create, first_unsettled_snos_batch_index, JobTrigger};
+use crate::worker::event_handler::triggers::{
+    calculate_jobs_to_create, first_unsettled_snos_batch_index_or_zero, JobTrigger,
+};
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Result};
 use opentelemetry::KeyValue;
@@ -60,7 +62,7 @@ impl JobTrigger for SnosJobTrigger {
 
         info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);
 
-        let min_snos_batch_index = first_unsettled_snos_batch_index(&config).await?;
+        let min_snos_batch_index_or_zero = first_unsettled_snos_batch_index_or_zero(&config).await?;
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
         for snos_batch in config
@@ -69,7 +71,7 @@ impl JobTrigger for SnosJobTrigger {
                 SnosBatchStatus::Closed,
                 max_jobs_to_create,
                 Some(ORCHESTRATOR_VERSION.to_string()),
-                min_snos_batch_index,
+                min_snos_batch_index_or_zero,
             )
             .await?
         {

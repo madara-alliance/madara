@@ -82,7 +82,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                             JobStatus::Completed,
                             JobType::StateTransition,
                             Some(ORCHESTRATOR_VERSION.to_string()),
-                            None,
+                            0,
                         )
                         .await?,
                     None,
