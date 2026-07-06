@@ -866,7 +866,9 @@ impl DatabaseClient for MongoDbClient {
             match_filter.insert("metadata.common.orchestrator_version", version.as_str());
         }
         if let Some(min_internal_id) = min_internal_id {
-            let min_internal_id = i64::try_from(min_internal_id).unwrap_or(i64::MAX);
+            // If the caller somehow passes a value Mongo cannot represent as i64,
+            // fall back to the broad scan instead of filtering out real work.
+            let min_internal_id = i64::try_from(min_internal_id).unwrap_or(0);
             match_filter.insert("internal_id", doc! { "$gte": min_internal_id });
         }
 
@@ -1497,7 +1499,9 @@ impl DatabaseClient for MongoDbClient {
             match_filter.insert("orchestrator_version", version.as_str());
         }
         if let Some(min_index) = min_index {
-            let min_index = i64::try_from(min_index).unwrap_or(i64::MAX);
+            // If the caller somehow passes a value Mongo cannot represent as i64,
+            // fall back to the broad scan instead of filtering out real work.
+            let min_index = i64::try_from(min_index).unwrap_or(0);
             match_filter.insert("index", doc! { "$gte": min_index });
         }
 
