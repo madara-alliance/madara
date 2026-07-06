@@ -11,8 +11,10 @@ pub(crate) mod update_state;
 
 use crate::core::config::Config;
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::types::jobs::metadata::{SettlementContext, StateUpdateMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
+use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
 
 /// Pure helper that computes the buffer slots available for new job creation
@@ -66,6 +68,35 @@ pub(crate) async fn calculate_jobs_to_create(
         .map(|j| j.internal_id);
 
     Ok(compute_buffer_slots(latest, oldest_incomplete, buffer_size))
+}
+
+pub(crate) async fn first_unsettled_snos_batch_index(config: &Arc<Config>) -> color_eyre::Result<Option<u64>> {
+    let Some(state_transition_job) = config.database().get_latest_job_by_type(JobType::StateTransition, None).await?
+    else {
+        return Ok(None);
+    };
+
+    if state_transition_job.status != JobStatus::Completed {
+        return Ok(None);
+    }
+
+    let state_metadata: StateUpdateMetadata = state_transition_job.metadata.specific.try_into()?;
+    let last_settled = match state_metadata.context {
+        SettlementContext::Block(block) => block.to_settle,
+        SettlementContext::Batch(batch) => batch.to_settle,
+    };
+
+    match config.layer() {
+        Layer::L2 => Ok(Some(
+            config
+                .database()
+                .get_snos_batches_by_aggregator_index(last_settled.saturating_add(1))
+                .await?
+                .first()
+                .map_or(i64::MAX as u64, |batch| batch.index),
+        )),
+        Layer::L3 => Ok(Some(last_settled.saturating_add(1))),
+    }
 }
 
 #[async_trait]

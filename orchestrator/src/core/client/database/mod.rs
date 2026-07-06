@@ -135,6 +135,7 @@ pub trait DatabaseClient: Send + Sync {
         job_a_status: JobStatus,
         job_b_type: JobType,
         orchestrator_version: Option<String>,
+        min_internal_id: Option<u64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get jobs after a specific internal id by job type
@@ -253,6 +254,7 @@ pub trait DatabaseClient: Send + Sync {
         snos_batch_status: SnosBatchStatus,
         limit: u64,
         orchestrator_version: Option<String>,
+        min_index: Option<u64>,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update or create a SNOS batch
