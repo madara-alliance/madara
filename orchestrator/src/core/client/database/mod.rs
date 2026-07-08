@@ -122,6 +122,19 @@ pub trait DatabaseClient: Send + Sync {
         orchestrator_version: Option<String>,
     ) -> Result<Option<JobItem>, DatabaseError>;
 
+    /// Get the latest job of a specific type and status
+    ///
+    /// # Arguments
+    /// * `job_type` - The type of job to search for
+    /// * `job_status` - The status of job to search for
+    /// * `orchestrator_version` - Optional orchestrator version filter
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+        orchestrator_version: Option<String>,
+    ) -> Result<Option<JobItem>, DatabaseError>;
+
     /// Get jobs without a successor
     ///
     /// # Arguments

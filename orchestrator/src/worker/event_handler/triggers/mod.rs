@@ -78,14 +78,13 @@ pub(crate) async fn calculate_jobs_to_create(
 /// broad scan. The high sentinel is reserved for the confirmed caught-up case,
 /// where scanning history would only rediscover already-settled work.
 pub(crate) async fn first_unsettled_snos_batch_index_or_zero(config: &Arc<Config>) -> color_eyre::Result<u64> {
-    let Some(state_transition_job) = config.database().get_latest_job_by_type(JobType::StateTransition, None).await?
+    let Some(state_transition_job) = config
+        .database()
+        .get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed, None)
+        .await?
     else {
         return Ok(0);
     };
-
-    if state_transition_job.status != JobStatus::Completed {
-        return Ok(0);
-    }
 
     let state_metadata: StateUpdateMetadata = state_transition_job.metadata.specific.try_into()?;
     match (config.layer(), state_metadata.context) {
@@ -215,9 +214,9 @@ mod tests {
         });
 
         database
-            .expect_get_latest_job_by_type()
-            .with(eq(JobType::StateTransition), eq(None))
-            .returning(move |_, _| Ok(Some(state_transition_job.clone())));
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
         database
             .expect_get_snos_batches_by_aggregator_index()
             .with(eq(8))
@@ -239,9 +238,9 @@ mod tests {
         });
 
         database
-            .expect_get_latest_job_by_type()
-            .with(eq(JobType::StateTransition), eq(None))
-            .returning(move |_, _| Ok(Some(state_transition_job.clone())));
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
         database.expect_get_snos_batches_by_aggregator_index().with(eq(8)).returning(|_| Ok(vec![]));
 
         let services =
@@ -259,9 +258,9 @@ mod tests {
         let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 100);
 
         database
-            .expect_get_latest_job_by_type()
-            .with(eq(JobType::StateTransition), eq(None))
-            .returning(move |_, _| Ok(Some(state_transition_job.clone())));
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
         database.expect_get_snos_batches_by_aggregator_index().times(0);
         database.expect_get_block_batch_lookup().with(eq(101)).returning(|_| {
             Ok(Some(BlockBatchLookup {
@@ -284,9 +283,9 @@ mod tests {
         let mut database = MockDatabaseClient::new();
 
         database
-            .expect_get_latest_job_by_type()
-            .with(eq(JobType::StateTransition), eq(None))
-            .returning(move |_, _| Ok(None));
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(None));
 
         let services =
             TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
@@ -300,9 +299,9 @@ mod tests {
         let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 100);
 
         database
-            .expect_get_latest_job_by_type()
-            .with(eq(JobType::StateTransition), eq(None))
-            .returning(move |_, _| Ok(Some(state_transition_job.clone())));
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
         database.expect_get_snos_batches_by_aggregator_index().times(0);
         database.expect_get_block_batch_lookup().with(eq(101)).returning(|_| Ok(None));
 

@@ -826,6 +826,50 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+        orchestrator_version: Option<String>,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        let mut match_filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": bson::to_bson(&job_status)?,
+        };
+
+        if let Some(version) = &orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
+
+        let pipeline = vec![
+            doc! {
+                "$match": match_filter,
+            },
+            doc! {
+                "$sort": {
+                    "internal_id": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+        ];
+
+        debug!("Fetching latest job by type and status");
+
+        let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+        let duration = start.elapsed();
+
+        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
+
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     /// Function to get jobs that don't have a successor job.
     ///
     /// `job_a_type`: Type of job that we need to get that doesn't have any successor.

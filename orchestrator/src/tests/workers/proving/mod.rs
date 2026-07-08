@@ -81,7 +81,9 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .returning(move |_| Ok(Some(SnosBatch { index: i, ..Default::default() })));
     }
 
-    db.expect_get_latest_job_by_type().with(eq(JobType::StateTransition), eq(None)).returning(move |_, _| Ok(None));
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+        .returning(move |_, _, _| Ok(None));
 
     // Mock db call for getting successful SNOS jobs without successor
     db.expect_get_jobs_without_successor()

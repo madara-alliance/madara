@@ -244,6 +244,29 @@ async fn database_get_last_successful_job_by_type_works() {
     assert_eq!(last_successful_job, job_vec[2], "Expected job assertion failed");
 }
 
+/// Test for `get_latest_job_by_type_and_status` operation in database trait.
+#[rstest]
+#[tokio::test]
+async fn database_get_latest_job_by_type_and_status_skips_newer_jobs_with_other_statuses() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    let completed_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 7);
+    let newer_in_progress_job = build_job_item(JobType::StateTransition, JobStatus::LockedForProcessing, 8);
+
+    database_client.create_job(completed_job.clone()).await.unwrap();
+    database_client.create_job(newer_in_progress_job).await.unwrap();
+
+    let latest_completed = database_client
+        .get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed, None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(latest_completed, completed_job);
+}
+
 /// Test for `get_oldest_job_by_type_excluding_statuses` operation in database trait.
 /// Creates jobs with different statuses and verifies the method returns the oldest job
 /// whose status is not in the excluded list.

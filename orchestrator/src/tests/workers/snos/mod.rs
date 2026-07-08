@@ -50,7 +50,9 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
         .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(Some(ORCHESTRATOR_VERSION.to_string())))
         .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
-    db.expect_get_latest_job_by_type().with(eq(JobType::StateTransition), eq(None)).returning(move |_, _| Ok(None));
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+        .returning(move |_, _, _| Ok(None));
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version, min_index| {
@@ -169,7 +171,9 @@ async fn test_create_snos_job_for_existing_batch(
         .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(Some(ORCHESTRATOR_VERSION.to_string())))
         .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
-    db.expect_get_latest_job_by_type().with(eq(JobType::StateTransition), eq(None)).returning(move |_, _| Ok(None));
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+        .returning(move |_, _, _| Ok(None));
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version, min_index| {
