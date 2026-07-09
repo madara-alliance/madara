@@ -6,7 +6,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::JobTrigger;
+use crate::worker::event_handler::triggers::{first_unsettled_snos_batch_index_or_zero, JobTrigger};
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
@@ -20,6 +20,7 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
+        let min_snos_batch_index_or_zero = first_unsettled_snos_batch_index_or_zero(&config).await?;
         let successful_snos_jobs = config
             .database()
             .get_jobs_without_successor(
@@ -27,6 +28,7 @@ impl JobTrigger for ProvingJobTrigger {
                 JobStatus::Completed,
                 JobType::ProofCreation,
                 Some(ORCHESTRATOR_VERSION.to_string()),
+                min_snos_batch_index_or_zero,
             )
             .await?;
 

@@ -81,15 +81,20 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
             .returning(move |_| Ok(Some(SnosBatch { index: i, ..Default::default() })));
     }
 
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+        .returning(move |_, _, _| Ok(None));
+
     // Mock db call for getting successful SNOS jobs without successor
     db.expect_get_jobs_without_successor()
         .times(1)
-        .withf(|job_type, job_status, successor_type, _orchestrator_version| {
+        .withf(|job_type, job_status, successor_type, _orchestrator_version, min_internal_id| {
             *job_type == JobType::SnosRun
                 && *job_status == JobStatus::Completed
                 && *successor_type == JobType::ProofCreation
+                && *min_internal_id == 0
         })
-        .returning(move |_, _, _, _| Ok(snos_jobs.clone()));
+        .returning(move |_, _, _, _, _| Ok(snos_jobs.clone()));
 
     let expected_proving_jobs = if incomplete_runs { 4 } else { 5 };
     db.expect_get_snos_batches()

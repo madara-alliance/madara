@@ -826,6 +826,50 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+        orchestrator_version: Option<String>,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        let mut match_filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": bson::to_bson(&job_status)?,
+        };
+
+        if let Some(version) = &orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
+
+        let pipeline = vec![
+            doc! {
+                "$match": match_filter,
+            },
+            doc! {
+                "$sort": {
+                    "internal_id": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+        ];
+
+        debug!("Fetching latest job by type and status");
+
+        let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+        let duration = start.elapsed();
+
+        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
+
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     /// Function to get jobs that don't have a successor job.
     ///
     /// `job_a_type`: Type of job that we need to get that doesn't have any successor.
@@ -849,6 +893,7 @@ impl DatabaseClient for MongoDbClient {
         job_a_status: JobStatus,
         job_b_type: JobType,
         orchestrator_version: Option<String>,
+        min_internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         // Convert enums to Bson strings
@@ -864,6 +909,10 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             match_filter.insert("metadata.common.orchestrator_version", version.as_str());
         }
+        // If the caller somehow passes a value Mongo cannot represent as i64,
+        // fall back to the broad scan instead of filtering out real work.
+        let min_internal_id = i64::try_from(min_internal_id).unwrap_or(0);
+        match_filter.insert("internal_id", doc! { "$gte": min_internal_id });
 
         // Construct the aggregation pipeline
         let pipeline = vec![
@@ -1476,6 +1525,7 @@ impl DatabaseClient for MongoDbClient {
         snos_batch_status: SnosBatchStatus,
         limit: u64,
         orchestrator_version: Option<String>,
+        min_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
@@ -1490,6 +1540,10 @@ impl DatabaseClient for MongoDbClient {
         if let Some(version) = &orchestrator_version {
             match_filter.insert("orchestrator_version", version.as_str());
         }
+        // If the caller somehow passes a value Mongo cannot represent as i64,
+        // fall back to the broad scan instead of filtering out real work.
+        let min_index = i64::try_from(min_index).unwrap_or(0);
+        match_filter.insert("index", doc! { "$gte": min_index });
 
         // Construct the aggregation pipeline
         let pipeline = vec![

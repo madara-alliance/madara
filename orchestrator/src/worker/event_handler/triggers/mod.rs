@@ -11,9 +11,13 @@ pub(crate) mod update_state;
 
 use crate::core::config::Config;
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::types::jobs::metadata::{SettlementContext, StateUpdateMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
+use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
+
+const NO_UNSETTLED_SNOS_BATCH_INDEX: u64 = i64::MAX as u64;
 
 /// Pure helper that computes the buffer slots available for new job creation
 /// given the current `[oldest-incomplete, latest]` window.
@@ -66,6 +70,41 @@ pub(crate) async fn calculate_jobs_to_create(
         .map(|j| j.internal_id);
 
     Ok(compute_buffer_slots(latest, oldest_incomplete, buffer_size))
+}
+
+/// Returns the first SNOS batch index that may still need downstream work.
+///
+/// Missing or untrusted watermarks fall back to `0`, which preserves the old
+/// broad scan. The high sentinel is reserved for the confirmed caught-up case,
+/// where scanning history would only rediscover already-settled work.
+pub(crate) async fn first_unsettled_snos_batch_index_or_zero(config: &Arc<Config>) -> color_eyre::Result<u64> {
+    let Some(state_transition_job) = config
+        .database()
+        .get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed, None)
+        .await?
+    else {
+        return Ok(0);
+    };
+
+    let state_metadata: StateUpdateMetadata = state_transition_job.metadata.specific.try_into()?;
+    match (config.layer(), state_metadata.context) {
+        (Layer::L2, SettlementContext::Batch(batch)) => {
+            let snos_batches =
+                config.database().get_snos_batches_by_aggregator_index(batch.to_settle.saturating_add(1)).await?;
+
+            // No SNOS batch exists for the next aggregator batch yet, so the
+            // pipeline is caught up; use a high lower bound to avoid scanning history.
+            Ok(snos_batches.first().map_or(NO_UNSETTLED_SNOS_BATCH_INDEX, |batch| batch.index))
+        }
+        (Layer::L2, SettlementContext::Block(block)) => Ok(config
+            .database()
+            .get_block_batch_lookup(block.to_settle.saturating_add(1))
+            .await?
+            .and_then(|lookup| lookup.snos_batch_index)
+            .unwrap_or(0)),
+        (Layer::L3, SettlementContext::Block(block)) => Ok(block.to_settle.saturating_add(1)),
+        (Layer::L3, SettlementContext::Batch(batch)) => Ok(batch.to_settle.saturating_add(1)),
+    }
 }
 
 #[async_trait]
@@ -126,7 +165,18 @@ pub trait JobTrigger: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_buffer_slots;
+    use super::{compute_buffer_slots, first_unsettled_snos_batch_index_or_zero, NO_UNSETTLED_SNOS_BATCH_INDEX};
+    use crate::core::client::database::MockDatabaseClient;
+    use crate::tests::config::TestConfigBuilder;
+    use crate::tests::utils::build_job_item;
+    use crate::types::batch::{BlockBatchLookup, SnosBatch};
+    use crate::types::jobs::metadata::{
+        JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+    };
+    use crate::types::jobs::types::{JobStatus, JobType};
+    use chrono::{SubsecRound, Utc};
+    use mockall::predicate::eq;
+    use orchestrator_utils::layer::Layer;
     use rstest::rstest;
 
     #[rstest]
@@ -152,5 +202,112 @@ mod tests {
         #[case] expected: u64,
     ) {
         assert_eq!(compute_buffer_slots(latest, oldest_incomplete, buffer_size), expected);
+    }
+
+    #[tokio::test]
+    async fn first_unsettled_snos_batch_index_or_zero_returns_l2_batch_watermark() {
+        let mut database = MockDatabaseClient::new();
+        let mut state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 7);
+        state_transition_job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            context: SettlementContext::Batch(SettlementContextData { to_settle: 7, last_failed: None }),
+            ..Default::default()
+        });
+
+        database
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
+        database
+            .expect_get_snos_batches_by_aggregator_index()
+            .with(eq(8))
+            .returning(|_| Ok(vec![SnosBatch { index: 42, aggregator_batch_index: Some(8), ..Default::default() }]));
+
+        let services =
+            TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
+
+        assert_eq!(first_unsettled_snos_batch_index_or_zero(&services.config).await.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn first_unsettled_snos_batch_index_or_zero_returns_sentinel_when_l2_batch_is_caught_up() {
+        let mut database = MockDatabaseClient::new();
+        let mut state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 7);
+        state_transition_job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            context: SettlementContext::Batch(SettlementContextData { to_settle: 7, last_failed: None }),
+            ..Default::default()
+        });
+
+        database
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
+        database.expect_get_snos_batches_by_aggregator_index().with(eq(8)).returning(|_| Ok(vec![]));
+
+        let services =
+            TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
+
+        assert_eq!(
+            first_unsettled_snos_batch_index_or_zero(&services.config).await.unwrap(),
+            NO_UNSETTLED_SNOS_BATCH_INDEX
+        );
+    }
+
+    #[tokio::test]
+    async fn first_unsettled_snos_batch_index_or_zero_maps_l2_block_watermark() {
+        let mut database = MockDatabaseClient::new();
+        let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 100);
+
+        database
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
+        database.expect_get_snos_batches_by_aggregator_index().times(0);
+        database.expect_get_block_batch_lookup().with(eq(101)).returning(|_| {
+            Ok(Some(BlockBatchLookup {
+                block_number: 101,
+                snos_batch_index: Some(55),
+                aggregator_batch_index: Some(9),
+                created_at: None,
+                updated_at: Utc::now().round_subsecs(0),
+            }))
+        });
+
+        let services =
+            TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
+
+        assert_eq!(first_unsettled_snos_batch_index_or_zero(&services.config).await.unwrap(), 55);
+    }
+
+    #[tokio::test]
+    async fn first_unsettled_snos_batch_index_or_zero_returns_zero_without_state_transition() {
+        let mut database = MockDatabaseClient::new();
+
+        database
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(None));
+
+        let services =
+            TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
+
+        assert_eq!(first_unsettled_snos_batch_index_or_zero(&services.config).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn first_unsettled_snos_batch_index_or_zero_returns_zero_when_l2_block_lookup_is_missing() {
+        let mut database = MockDatabaseClient::new();
+        let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 100);
+
+        database
+            .expect_get_latest_job_by_type_and_status()
+            .with(eq(JobType::StateTransition), eq(JobStatus::Completed), eq(None))
+            .returning(move |_, _, _| Ok(Some(state_transition_job.clone())));
+        database.expect_get_snos_batches_by_aggregator_index().times(0);
+        database.expect_get_block_batch_lookup().with(eq(101)).returning(|_| Ok(None));
+
+        let services =
+            TestConfigBuilder::new().configure_database(database.into()).configure_layer(Layer::L2).build().await;
+
+        assert_eq!(first_unsettled_snos_batch_index_or_zero(&services.config).await.unwrap(), 0);
     }
 }
