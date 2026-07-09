@@ -144,11 +144,16 @@ impl InnerSQS {
     }
 }
 
-/// SQS client with queue URL caching.
+/// SQS client with queue URL and consumer caching.
 ///
 /// Queue URLs are cached per QueueType to avoid redundant GetQueueUrl API calls.
 /// - For ARN-based identifiers: URLs are computed directly without any API call
 /// - For Name-based identifiers: URLs are fetched once and cached
+///
+/// Consumers are cached per QueueType to reuse the underlying AWS SDK client and
+/// its HTTP connection pool across message consumptions. This avoids per-message
+/// STS credential fetches and cold TCP+TLS connection setup that can intermittently
+/// fail with `SdkError::DispatchFailure`.
 #[derive(Clone)]
 pub struct SQS {
     pub inner: InnerSQS,
@@ -156,6 +161,10 @@ pub struct SQS {
     /// Cache for queue URLs, keyed by QueueType.
     /// Each entry is lazily initialized on first use.
     queue_url_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>,
+    /// Cache for SQS consumers, keyed by QueueType.
+    /// Reusing consumers avoids creating a new AWS SDK client (and fresh STS
+    /// credential fetch) on every message consumption.
+    consumer_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<SqsConsumer>>>>>,
 }
 
 impl SQS {
@@ -187,6 +196,7 @@ impl SQS {
             inner: InnerSQS::new(&latest_aws_config),
             queue_template_identifier: args.queue_template_identifier.clone(),
             queue_url_cache: Arc::new(RwLock::new(HashMap::new())),
+            consumer_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -229,6 +239,45 @@ impl SQS {
             .await?;
 
         Ok(url.clone())
+    }
+
+    /// Get a cached consumer `Arc` for the given queue type.
+    ///
+    /// Consumers are lazily created on first use and then reused. This ensures the
+    /// underlying AWS SDK client (and its HTTP connection pool / STS credentials)
+    /// are shared across all message consumptions for the same queue type, avoiding
+    /// the per-message overhead of `aws_config::load_from_env()` + `Client::new()`.
+    ///
+    /// Returns the `Arc<OnceCell<SqsConsumer>>` so the caller can hold a reference
+    /// to the consumer without lifetime issues (SqsConsumer does not implement Clone).
+    async fn get_cached_consumer_cell(&self, queue_type: &QueueType) -> Result<Arc<OnceCell<SqsConsumer>>, QueueError> {
+        // Fast path: check if cell already exists and is initialized
+        {
+            let cache = self.consumer_cache.read().await;
+            if let Some(cell) = cache.get(queue_type) {
+                if cell.get().is_some() {
+                    return Ok(cell.clone());
+                }
+            }
+        }
+
+        // Slow path: get or create the OnceCell for this queue type
+        let cell = {
+            let mut cache = self.consumer_cache.write().await;
+            cache.entry(queue_type.clone()).or_insert_with(|| Arc::new(OnceCell::new())).clone()
+        };
+
+        // Initialize the cell if not already done
+        cell.get_or_try_init(|| async {
+            let queue_url = self.get_or_resolve_queue_url(queue_type).await?;
+            let consumer = SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false })
+                .build_consumer()
+                .await?;
+            Ok::<_, QueueError>(consumer)
+        })
+        .await?;
+
+        Ok(cell)
     }
 
     pub fn client(&self) -> &Client {
@@ -501,7 +550,8 @@ impl QueueClient for SQS {
 
             return Err(omniqueue::QueueError::NoData.into());
         }
-        let consumer = self.get_consumer(queue.clone()).await?;
+        let consumer_cell = self.get_cached_consumer_cell(&queue).await?;
+        let consumer = consumer_cell.get().expect("consumer cell was just initialized");
         let delivery = consumer.wrap_message(messages_vec.first().unwrap());
 
         Ok(delivery)
