@@ -9344,6 +9344,7 @@ dependencies = [
  "indoc 2.0.7",
  "ip_network",
  "itertools 0.14.0",
+ "jemallocator",
  "jsonrpsee",
  "lazy_static",
  "librocksdb-sys",
