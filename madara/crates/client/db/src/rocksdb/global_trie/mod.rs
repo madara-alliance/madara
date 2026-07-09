@@ -15,6 +15,16 @@ mod contracts;
 /// Timing information from contract trie operations
 #[derive(Debug, Clone, Default)]
 pub struct ContractTrieTimings {
+    /// Time to insert storage diffs into contract storage tries
+    pub storage_insert: Duration,
+    /// Time to compute touched contract storage roots
+    pub storage_root: Duration,
+    /// Time to compute updated contract state leaf hashes
+    pub leaf_hash: Duration,
+    /// Time to insert updated contract leaves into the global contract trie
+    pub trie_insert: Duration,
+    /// Time to compute the global contract trie root
+    pub trie_root_hash: Duration,
     /// Time to commit contract storage trie
     pub storage_commit: Duration,
     /// Time to commit contract trie

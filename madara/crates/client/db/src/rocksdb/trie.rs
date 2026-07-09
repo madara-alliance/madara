@@ -280,11 +280,7 @@ impl BonsaiDatabase for BonsaiDB {
     }
 
     #[tracing::instrument(skip(self, key, batch))]
-    fn remove_untracked(
-        &mut self,
-        key: &DatabaseKey,
-        batch: &mut Self::Batch,
-    ) -> Result<(), Self::DatabaseError> {
+    fn remove_untracked(&mut self, key: &DatabaseKey, batch: &mut Self::Batch) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Removing untracked from RocksDB: {:?}", key);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
         batch.delete_cf(&handle, key.as_slice());
@@ -414,11 +410,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         Ok(None)
     }
 
-    fn remove_untracked(
-        &mut self,
-        key: &DatabaseKey,
-        _batch: &mut Self::Batch,
-    ) -> Result<(), Self::DatabaseError> {
+    fn remove_untracked(&mut self, key: &DatabaseKey, _batch: &mut Self::Batch) -> Result<(), Self::DatabaseError> {
         self.changed.insert(to_changed_key(key), None);
         Ok(())
     }

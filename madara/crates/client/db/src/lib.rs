@@ -175,6 +175,16 @@ pub struct CloseBlockTimings {
     pub merklization: Duration,
     /// Time to compute contract trie root (parallel with class trie)
     pub contract_trie_root: Duration,
+    /// Time to insert storage diffs into contract storage tries
+    pub contract_storage_insert: Duration,
+    /// Time to compute touched contract storage roots
+    pub contract_storage_root: Duration,
+    /// Time to compute updated contract state leaf hashes
+    pub contract_leaf_hash: Duration,
+    /// Time to insert updated contract leaves into the global contract trie
+    pub contract_trie_insert: Duration,
+    /// Time to compute the global contract trie root
+    pub contract_trie_root_hash: Duration,
     /// Time to compute class trie root (parallel with contract trie)
     pub class_trie_root: Duration,
     /// Time to commit contract storage trie
@@ -949,6 +959,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Record merklization timings
         timings.merklization = merklization_duration;
         timings.contract_trie_root = contract_trie_root_duration;
+        timings.contract_storage_insert = contract_trie_timings.storage_insert;
+        timings.contract_storage_root = contract_trie_timings.storage_root;
+        timings.contract_leaf_hash = contract_trie_timings.leaf_hash;
+        timings.contract_trie_insert = contract_trie_timings.trie_insert;
+        timings.contract_trie_root_hash = contract_trie_timings.trie_root_hash;
         timings.class_trie_root = class_trie_root_duration;
         timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
         timings.contract_trie_commit = contract_trie_timings.trie_commit;

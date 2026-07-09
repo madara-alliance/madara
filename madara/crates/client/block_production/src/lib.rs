@@ -893,6 +893,8 @@ impl BlockProductionTask {
         let declared_classes_count = state_diff.declared_classes.len();
         let deployed_contracts_count = state_diff.deployed_contracts.len();
         let storage_diffs_count = state_diff.storage_diffs.len();
+        let storage_entries_count =
+            state_diff.storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>();
         let nonce_updates_count = state_diff.nonces.len();
         let state_diff_len = state_diff.len();
         let consumed_l1_nonces_count = state.consumed_core_contract_nonces.len();
@@ -966,6 +968,7 @@ impl BlockProductionTask {
             declared_classes = declared_classes_count,
             deployed_contracts = deployed_contracts_count,
             storage_diffs = storage_diffs_count,
+            storage_entries = storage_entries_count,
             nonce_updates = nonce_updates_count,
             consumed_l1_nonces = consumed_l1_nonces_count,
             // Bouncer weights
@@ -979,6 +982,11 @@ impl BlockProductionTask {
             commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
             merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
             contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
+            contract_storage_insert_ms = timings.contract_storage_insert.as_secs_f64() * 1000.0,
+            contract_storage_root_ms = timings.contract_storage_root.as_secs_f64() * 1000.0,
+            contract_leaf_hash_ms = timings.contract_leaf_hash.as_secs_f64() * 1000.0,
+            contract_trie_insert_ms = timings.contract_trie_insert.as_secs_f64() * 1000.0,
+            contract_trie_root_hash_ms = timings.contract_trie_root_hash.as_secs_f64() * 1000.0,
             class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
             contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
             contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
