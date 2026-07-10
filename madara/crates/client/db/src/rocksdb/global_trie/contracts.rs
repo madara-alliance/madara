@@ -116,19 +116,18 @@ pub fn contract_trie_root_staged(
         );
 
         let storage_insert_start = Instant::now();
-        let storage_updates = storage_diffs.iter().map(|ContractStorageDiffItem { address, storage_entries }| {
+        for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
             let address_bytes = address.to_bytes_be();
             let entries = storage_entries.iter().map(|StorageEntry { key, value }| {
                 let key_bytes = key.to_bytes_be();
                 let bv: BitVec<u8, Msb0> = key_bytes.as_bits()[5..].to_owned();
                 (bv, *value)
             });
+            contract_storage_trie
+                .insert_many_owned_assume_changed(&address_bytes, entries)
+                .map_err(WrappedBonsaiError)?;
             contract_leafs.insert(*address, Default::default());
-            (bonsai_trie::ByteVec::from_slice(&address_bytes), entries)
-        });
-        contract_storage_trie
-            .insert_many_by_identifier_owned_assume_changed(storage_updates)
-            .map_err(WrappedBonsaiError)?;
+        }
         timings.storage_insert = storage_insert_start.elapsed();
     }
 
