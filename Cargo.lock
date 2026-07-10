@@ -3073,7 +3073,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/madara-alliance/bonsai-trie?rev=81bf5ab70efb177fb62bb77e70f9a5bb7dec9403#81bf5ab70efb177fb62bb77e70f9a5bb7dec9403"
+source = "git+https://github.com/madara-alliance/bonsai-trie?rev=361fb3c25809ff857468740bc8f43436750628b8#361fb3c25809ff857468740bc8f43436750628b8"
 dependencies = [
  "bitvec",
  "derive_more 0.99.20",
