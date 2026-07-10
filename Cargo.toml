@@ -61,7 +61,7 @@ rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
 
 # Bonsai trie dependencies
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", rev = "a1a07d093b704d31a39d9601d49943bc2374463e", features = [
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", rev = "4d4e3f1dfc0b4b7071b6f9dfe46ce5ba2794db85", features = [
   "std",
 ] }
 
