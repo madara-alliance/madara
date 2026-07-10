@@ -141,7 +141,9 @@ pub fn contract_trie_root_staged(
                 let bv: BitVec<u8, Msb0> = key_bytes.as_bits()[5..].to_owned();
                 (bv, value)
             });
-            contract_storage_trie.insert_many_owned(&address_bytes, entries).map_err(WrappedBonsaiError)?;
+            contract_storage_trie
+                .insert_many_owned_assume_changed(&address_bytes, entries)
+                .map_err(WrappedBonsaiError)?;
         }
     }
     timings.storage_insert = storage_insert_start.elapsed();
@@ -199,7 +201,7 @@ pub fn contract_trie_root_staged(
     let mut leaf_hashes: Vec<([u8; 32], BitVec<u8, Msb0>, Felt)> = leaf_hashes;
     leaf_hashes.sort_unstable_by_key(|(bytes, _, _)| *bytes);
     contract_trie
-        .insert_many_owned(
+        .insert_many_owned_assume_changed(
             super::bonsai_identifier::CONTRACT,
             leaf_hashes.into_iter().map(|(_, key, value)| (key, value)),
         )
