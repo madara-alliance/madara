@@ -117,10 +117,11 @@ pub fn contract_trie_root_staged(
 
         let storage_insert_start = Instant::now();
         for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
+            let address_bytes = address.to_bytes_be();
             for StorageEntry { key, value } in storage_entries {
                 let bytes = key.to_bytes_be();
                 let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-                contract_storage_trie.insert(&address.to_bytes_be(), &bv, value).map_err(WrappedBonsaiError)?;
+                contract_storage_trie.insert_owned(&address_bytes, bv, value).map_err(WrappedBonsaiError)?;
             }
             contract_leafs.insert(*address, Default::default());
         }
