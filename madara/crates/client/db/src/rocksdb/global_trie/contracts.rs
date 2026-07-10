@@ -10,7 +10,7 @@ use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::time::Instant;
 
 #[derive(Debug, Default)]
@@ -103,22 +103,6 @@ pub fn contract_trie_root_staged(
         ResetCachedStorageTrieOnDrop { backend: backend.clone(), cache_generation: None, armed: true };
     let cache_generation;
 
-    let storage_insert_start = Instant::now();
-    let mut grouped_storage_diffs: BTreeMap<[u8; 32], (Felt, BTreeMap<[u8; 32], Felt>)> = BTreeMap::new();
-    let mut raw_storage_entries = 0usize;
-    for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
-        contract_leafs.insert(*address, Default::default());
-
-        let address_bytes = address.to_bytes_be();
-        let (_, entries) = grouped_storage_diffs.entry(address_bytes).or_insert_with(|| (*address, BTreeMap::new()));
-
-        for StorageEntry { key, value } in storage_entries {
-            raw_storage_entries += 1;
-            entries.insert(key.to_bytes_be(), *value);
-        }
-    }
-    let deduped_storage_entries = grouped_storage_diffs.values().map(|(_, entries)| entries.len()).sum::<usize>();
-
     {
         let mut contract_storage_trie =
             cached_contract_storage_trie.write().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -126,27 +110,26 @@ pub fn contract_trie_root_staged(
         reset_cached_trie.cache_generation = Some(cache_generation);
 
         tracing::debug!(
-            touched_contracts = grouped_storage_diffs.len(),
-            raw_storage_entries,
-            deduped_storage_entries,
+            touched_contracts = storage_diffs.len(),
+            storage_diff_entries = storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>(),
             "contract_storage_trie using cached frontier",
         );
 
-        for (address_bytes, (_, storage_entries)) in grouped_storage_diffs {
-            if storage_entries.is_empty() {
-                continue;
-            }
-
-            let entries = storage_entries.into_iter().map(|(key_bytes, value)| {
+        let storage_insert_start = Instant::now();
+        for ContractStorageDiffItem { address, storage_entries } in storage_diffs {
+            let address_bytes = address.to_bytes_be();
+            let entries = storage_entries.iter().map(|StorageEntry { key, value }| {
+                let key_bytes = key.to_bytes_be();
                 let bv: BitVec<u8, Msb0> = key_bytes.as_bits()[5..].to_owned();
-                (bv, value)
+                (bv, *value)
             });
             contract_storage_trie
                 .insert_many_owned_assume_changed(&address_bytes, entries)
                 .map_err(WrappedBonsaiError)?;
+            contract_leafs.insert(*address, Default::default());
         }
+        timings.storage_insert = storage_insert_start.elapsed();
     }
-    timings.storage_insert = storage_insert_start.elapsed();
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
