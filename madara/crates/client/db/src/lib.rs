@@ -155,6 +155,7 @@ pub mod tests;
 pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
+use bonsai_trie::BulkInsertStats;
 pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
@@ -177,6 +178,8 @@ pub struct CloseBlockTimings {
     pub contract_trie_root: Duration,
     /// Time to insert storage diffs into contract storage tries
     pub contract_storage_insert: Duration,
+    /// Internal stats from inserting storage diffs into contract storage tries
+    pub contract_storage_insert_stats: BulkInsertStats,
     /// Time to compute touched contract storage roots
     pub contract_storage_root: Duration,
     /// Time to compute updated contract state leaf hashes
@@ -960,6 +963,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         timings.merklization = merklization_duration;
         timings.contract_trie_root = contract_trie_root_duration;
         timings.contract_storage_insert = contract_trie_timings.storage_insert;
+        timings.contract_storage_insert_stats = contract_trie_timings.storage_insert_stats;
         timings.contract_storage_root = contract_trie_timings.storage_root;
         timings.contract_leaf_hash = contract_trie_timings.leaf_hash;
         timings.contract_trie_insert = contract_trie_timings.trie_insert;

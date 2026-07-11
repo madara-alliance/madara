@@ -944,6 +944,7 @@ impl BlockProductionTask {
         // Emit structured log event for Loki querying (close_block_complete)
         // All timing values converted to milliseconds for human-readability
         let timings = &db_result.timings;
+        let storage_insert_stats = &timings.contract_storage_insert_stats;
         let exec_stats = &state.accumulated_stats;
         tracing::info!(
             target: "close_block",
@@ -983,6 +984,20 @@ impl BlockProductionTask {
             merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
             contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
             contract_storage_insert_ms = timings.contract_storage_insert.as_secs_f64() * 1000.0,
+            contract_storage_insert_input_entries = storage_insert_stats.input_entries,
+            contract_storage_insert_prepared_entries = storage_insert_stats.prepared_entries,
+            contract_storage_insert_duplicate_entries = storage_insert_stats.duplicate_entries,
+            contract_storage_insert_db_node_loads = storage_insert_stats.db_node_loads,
+            contract_storage_insert_in_memory_node_hits = storage_insert_stats.in_memory_node_hits,
+            contract_storage_insert_loaded_handles = storage_insert_stats.loaded_handles,
+            contract_storage_insert_updated_binary_nodes = storage_insert_stats.updated_binary_nodes,
+            contract_storage_insert_updated_edge_nodes = storage_insert_stats.updated_edge_nodes,
+            contract_storage_insert_split_edge_nodes = storage_insert_stats.split_edge_nodes,
+            contract_storage_insert_built_binary_nodes = storage_insert_stats.built_binary_nodes,
+            contract_storage_insert_built_edge_nodes = storage_insert_stats.built_edge_nodes,
+            contract_storage_insert_leaf_updates = storage_insert_stats.leaf_updates,
+            contract_storage_insert_max_range_entries = storage_insert_stats.max_range_entries,
+            contract_storage_insert_max_build_depth = storage_insert_stats.max_build_depth,
             contract_storage_root_ms = timings.contract_storage_root.as_secs_f64() * 1000.0,
             contract_leaf_hash_ms = timings.contract_leaf_hash.as_secs_f64() * 1000.0,
             contract_trie_insert_ms = timings.contract_trie_insert.as_secs_f64() * 1000.0,

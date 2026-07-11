@@ -1,6 +1,7 @@
 use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
+use bonsai_trie::BulkInsertStats;
 use mp_chain_config::StarknetVersion;
 use mp_state_update::StateDiff;
 use starknet_types_core::{
@@ -17,6 +18,8 @@ mod contracts;
 pub struct ContractTrieTimings {
     /// Time to insert storage diffs into contract storage tries
     pub storage_insert: Duration,
+    /// Internal stats from inserting storage diffs into contract storage tries
+    pub storage_insert_stats: BulkInsertStats,
     /// Time to compute touched contract storage roots
     pub storage_root: Duration,
     /// Time to compute updated contract state leaf hashes

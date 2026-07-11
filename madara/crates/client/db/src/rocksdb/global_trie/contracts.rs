@@ -123,9 +123,10 @@ pub fn contract_trie_root_staged(
                 let bv: BitVec<u8, Msb0> = key_bytes.as_bits()[5..].to_owned();
                 (bv, *value)
             });
-            contract_storage_trie
-                .insert_many_owned_assume_changed(&address_bytes, entries)
+            let stats = contract_storage_trie
+                .insert_many_owned_assume_changed_with_stats(&address_bytes, entries)
                 .map_err(WrappedBonsaiError)?;
+            timings.storage_insert_stats.merge(stats);
             contract_leafs.insert(*address, Default::default());
         }
         timings.storage_insert = storage_insert_start.elapsed();
