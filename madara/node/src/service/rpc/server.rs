@@ -93,8 +93,7 @@ pub async fn start_server(
         .enable_ws_ping(ping_config)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)
-        .set_http_middleware(http_middleware)
-        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
+        .set_http_middleware(http_middleware);
 
     let cfg = PerConnection {
         methods,
