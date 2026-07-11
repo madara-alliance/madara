@@ -987,6 +987,8 @@ impl BlockProductionTask {
             contract_storage_insert_input_entries = storage_insert_stats.input_entries,
             contract_storage_insert_prepared_entries = storage_insert_stats.prepared_entries,
             contract_storage_insert_duplicate_entries = storage_insert_stats.duplicate_entries,
+            contract_storage_insert_retained_nodes_before = storage_insert_stats.retained_nodes_before,
+            contract_storage_insert_retained_nodes_after = storage_insert_stats.retained_nodes_after,
             contract_storage_insert_db_node_loads = storage_insert_stats.db_node_loads,
             contract_storage_insert_in_memory_node_hits = storage_insert_stats.in_memory_node_hits,
             contract_storage_insert_loaded_handles = storage_insert_stats.loaded_handles,
