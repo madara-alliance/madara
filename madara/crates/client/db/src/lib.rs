@@ -1286,16 +1286,16 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             })
             .transpose()?;
         let (new_tip_block_n, new_tip_block_hash) = self.db.revert_to(new_tip_block_hash)?;
-
-        if new_tip_block_n == previous_latest_confirmed_block_n {
-            return Ok((new_tip_block_n, new_tip_block_hash));
-        }
-
         let refreshed_chain_tip = ChainTip::from_storage(self.db.get_chain_tip()?);
         ensure!(
             refreshed_chain_tip.latest_confirmed_block_n() == Some(new_tip_block_n),
             "Refreshed chain tip cache ({refreshed_chain_tip:?}) does not match reverted block_n={new_tip_block_n}",
         );
+
+        if refreshed_chain_tip == previous_tip {
+            return Ok((new_tip_block_n, new_tip_block_hash));
+        }
+
         self.chain_tip.send_replace(refreshed_chain_tip.clone());
 
         let stored_l1_confirmed = self.db.get_confirmed_on_l1_tip()?;
@@ -1307,23 +1307,25 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             self.latest_l1_confirmed.send_replace(clamped_l1_confirmed);
         }
 
-        let notification = ReorgNotification {
-            previous_head: ReorgHead {
-                tip: previous_tip,
-                latest_confirmed_block_n: previous_latest_confirmed_block_n,
-                latest_confirmed_block_hash: previous_latest_confirmed_block_hash,
-            },
-            new_head: ReorgHead {
-                tip: refreshed_chain_tip,
-                latest_confirmed_block_n: new_tip_block_n,
-                latest_confirmed_block_hash: new_tip_block_hash,
-            },
-            first_reverted_block_n: first_reverted_block_n
-                .ok_or_else(|| anyhow::anyhow!("Missing first reverted block number for reorg notification"))?,
-            first_reverted_block_hash: first_reverted_block_hash
-                .ok_or_else(|| anyhow::anyhow!("Missing first reverted block hash for reorg notification"))?,
-        };
-        let _ = self.reorg_notifications.send(notification);
+        if let (Some(first_reverted_block_n), Some(first_reverted_block_hash)) =
+            (first_reverted_block_n, first_reverted_block_hash)
+        {
+            let notification = ReorgNotification {
+                previous_head: ReorgHead {
+                    tip: previous_tip,
+                    latest_confirmed_block_n: previous_latest_confirmed_block_n,
+                    latest_confirmed_block_hash: previous_latest_confirmed_block_hash,
+                },
+                new_head: ReorgHead {
+                    tip: refreshed_chain_tip,
+                    latest_confirmed_block_n: new_tip_block_n,
+                    latest_confirmed_block_hash: new_tip_block_hash,
+                },
+                first_reverted_block_n,
+                first_reverted_block_hash,
+            };
+            let _ = self.reorg_notifications.send(notification);
+        }
 
         Ok((new_tip_block_n, new_tip_block_hash))
     }

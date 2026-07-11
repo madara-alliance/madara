@@ -196,9 +196,11 @@ mod test {
         let chain_config = Arc::new(ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
         let watcher = TestNewTransactionsWatcher::new();
+        let provider = Arc::new(TestTransactionProvider);
         let mut starknet = Starknet::new(
             backend,
-            Arc::new(TestTransactionProvider),
+            provider.clone(),
+            provider,
             Default::default(),
             None,
             ServiceContext::new_for_testing(),

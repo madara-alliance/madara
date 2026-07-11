@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use crate::preconfirmed::PreconfirmedBlock;
 use crate::{test_utils::add_test_block, ChainTip, MadaraBackend, MadaraStorageRead, ReorgHead, ReorgNotification};
+use mp_block::header::PreconfirmedHeader;
 use mp_chain_config::ChainConfig;
 use std::{sync::Arc, time::Duration};
 
@@ -91,4 +93,31 @@ async fn revert_to_current_tip_does_not_emit_reorg_notification() {
     let recv = tokio::time::timeout(Duration::from_millis(100), reorgs.recv()).await;
     assert!(recv.is_err(), "No reorg notification should be emitted when the tip is unchanged");
     assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+}
+
+#[tokio::test]
+async fn revert_clears_preconfirmed_tip_when_confirmed_height_is_unchanged() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+    let block_0_hash = add_test_block(&backend, 0, vec![]);
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+        .expect("Preconfirmed block should be stored");
+
+    let mut chain_tip_watch = backend.watch_chain_tip();
+    assert!(backend.has_preconfirmed_block(), "Expected a preconfirmed tip before revert");
+
+    let (new_tip_n, new_tip_hash) = backend.revert_to(&block_0_hash).expect("Revert should clear the preconfirmed tip");
+
+    assert_eq!(new_tip_n, 0);
+    assert_eq!(new_tip_hash, block_0_hash);
+    assert!(!backend.has_preconfirmed_block(), "Expected the preconfirmed tip to be cleared");
+    assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+    assert_eq!(&*backend.chain_tip.borrow(), &ChainTip::Confirmed(0));
+
+    let updated_tip = tokio::time::timeout(Duration::from_secs(1), chain_tip_watch.recv())
+        .await
+        .expect("Chain tip watcher should observe the preconfirmed-tip removal");
+    assert!(matches!(updated_tip, ChainTip::Confirmed(0)));
 }

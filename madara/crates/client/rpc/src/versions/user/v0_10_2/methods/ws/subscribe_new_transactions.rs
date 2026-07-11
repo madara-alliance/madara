@@ -43,7 +43,7 @@ async fn subscribe_new_transactions_inner(
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
     let allowed_statuses =
         finality_status.unwrap_or_else(|| vec![TxnStatusWithoutL1::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
-    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
+    let sender_address = crate::normalize_sender_address_filter(sender_address);
     let include_proof_facts = tags.as_ref().is_some_and(|tags| tags.contains(&SubscriptionTag::IncludeProofFacts));
     let mut emitted = HashSet::<(Felt, TxnStatusWithoutL1)>::new();
 
@@ -145,14 +145,60 @@ async fn subscribe_new_transactions_inner(
             }
             block_view = heads.next_block_view() => {
                 if block_view.is_confirmed() {
-                    send_confirmed_block_transactions(
+                    let block_number = block_view.block_number();
+                    if let Some(reorgs) = reorgs.as_mut() {
+                        match crate::resolve_live_confirmed_head(
+                            &starknet.backend,
+                            reorgs,
+                            block_number,
+                            super::missed_reorg_notifications_error(),
+                        )? {
+                            crate::LiveConfirmedHeadResolution::Block(_) => {}
+                            crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
+                                super::send_reorg_notification(&sink, &reorg).await?;
+                                emitted.clear();
+                                heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+                                heads.set_start_from(reorg.first_reverted_block_n);
+                                current_preconfirmed = starknet
+                                    .backend
+                                    .block_view_on_preconfirmed_or_fake()
+                                    .or_internal_server_error("SubscribeNewTransactions failed to refresh preconfirmed block view after reorg")?;
+                                current_preconfirmed.refresh_with_candidates();
+                                continue;
+                            }
+                            crate::LiveConfirmedHeadResolution::RetryBackfill => {
+                                heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+                                heads.set_start_from(block_number);
+                                current_preconfirmed = starknet
+                                    .backend
+                                    .block_view_on_preconfirmed_or_fake()
+                                    .or_internal_server_error("SubscribeNewTransactions failed to refresh preconfirmed block view")?;
+                                current_preconfirmed.refresh_with_candidates();
+                                continue;
+                            }
+                        }
+                    }
+                    let mut live_reorgs = reorgs.as_mut();
+                    if let Some(reorg) = send_confirmed_block_transactions(
                         &sink,
                         &block_view,
                         sender_address.as_ref(),
+                        &mut live_reorgs,
                         &allowed_statuses,
                         include_proof_facts,
                         &mut emitted,
-                    ).await?;
+                    ).await? {
+                        super::send_reorg_notification(&sink, &reorg).await?;
+                        emitted.clear();
+                        heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+                        heads.set_start_from(reorg.first_reverted_block_n);
+                        current_preconfirmed = starknet
+                            .backend
+                            .block_view_on_preconfirmed_or_fake()
+                            .or_internal_server_error("SubscribeNewTransactions failed to refresh preconfirmed block view after reorg")?;
+                        current_preconfirmed.refresh_with_candidates();
+                        continue;
+                    }
                     current_preconfirmed = starknet
                         .backend
                         .block_view_on_preconfirmed_or_fake()
@@ -223,18 +269,27 @@ async fn send_confirmed_block_transactions(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     block_view: &mc_db::MadaraBlockView,
     sender_address: Option<&HashSet<Felt>>,
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
     allowed_statuses: &HashSet<TxnStatusWithoutL1>,
     include_proof_facts: bool,
     emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
-) -> Result<(), crate::errors::StarknetWsApiError> {
+) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&TxnStatusWithoutL1::AcceptedOnL2) {
-        return Ok(());
+        return Ok(None);
     }
 
-    for tx in block_view
+    let transactions = block_view
         .get_executed_transactions(..)
-        .or_internal_server_error("SubscribeNewTransactions failed to retrieve confirmed block transactions")?
-    {
+        .or_internal_server_error("SubscribeNewTransactions failed to retrieve confirmed block transactions")?;
+
+    if let Some(reorg) = take_pending_reorg(reorgs)? {
+        return Ok(Some(reorg));
+    }
+
+    for tx in transactions {
+        if let Some(reorg) = take_pending_reorg(reorgs)? {
+            return Ok(Some(reorg));
+        }
         send_executed_transaction(
             sink,
             &tx,
@@ -247,7 +302,7 @@ async fn send_confirmed_block_transactions(
         .await?;
     }
 
-    Ok(())
+    Ok(None)
 }
 
 async fn send_validated_transaction(
@@ -260,7 +315,7 @@ async fn send_validated_transaction(
     emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     if !allowed_statuses.contains(&status)
-        || !sender_address.is_none_or(|addresses| addresses.contains(&tx.contract_address))
+        || !sender_address.is_none_or(|addresses| addresses.is_empty() || addresses.contains(&tx.contract_address))
         || !mark_emitted(emitted, tx.hash, &status)
     {
         return Ok(());
@@ -330,6 +385,9 @@ fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<
     let Some(sender_address) = sender_address else {
         return true;
     };
+    if sender_address.is_empty() {
+        return true;
+    }
 
     match transaction {
         Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
@@ -337,6 +395,15 @@ fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<
         Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
         Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
         Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
+    }
+}
+
+fn take_pending_reorg(
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
+    match reorgs.as_deref_mut() {
+        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
+        None => Ok(None),
     }
 }
 

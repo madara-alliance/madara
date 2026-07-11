@@ -802,7 +802,7 @@ use mc_mempool::{
 use mc_submit_tx::SubmitTransaction;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc};
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -855,6 +855,15 @@ pub trait NewTransactionsWatch: Send {
 
 pub trait NewTransactionsWatcher: Send + Sync {
     fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>>;
+}
+
+pub(crate) fn normalize_sender_address_filter(
+    sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
+) -> Option<HashSet<starknet_types_core::felt::Felt>> {
+    sender_address.and_then(|addresses| {
+        let addresses = addresses.into_iter().collect::<HashSet<_>>();
+        (!addresses.is_empty()).then_some(addresses)
+    })
 }
 
 impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
@@ -1166,6 +1175,18 @@ pub(crate) enum LiveConfirmedHeadResolution {
     RetryBackfill,
 }
 
+pub(crate) fn try_recv_live_reorg(
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
+    missed_reorg_error: errors::StarknetWsApiError,
+) -> Result<Option<mc_db::ReorgNotification>, errors::StarknetWsApiError> {
+    match reorgs.try_recv() {
+        Ok(reorg) => Ok(Some(reorg)),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => Err(missed_reorg_error),
+        Err(tokio::sync::broadcast::error::TryRecvError::Closed) => Err(errors::StarknetWsApiError::Internal),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty) => Ok(None),
+    }
+}
+
 pub(crate) fn resolve_live_confirmed_head(
     backend: &std::sync::Arc<mc_db::MadaraBackend>,
     reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
@@ -1174,13 +1195,8 @@ pub(crate) fn resolve_live_confirmed_head(
 ) -> Result<LiveConfirmedHeadResolution, errors::StarknetWsApiError> {
     use crate::errors::ErrorExtWs;
 
-    match reorgs.try_recv() {
-        Ok(reorg) => return Ok(LiveConfirmedHeadResolution::Reorg(reorg)),
-        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => return Err(missed_reorg_error),
-        Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
-            return Err(errors::StarknetWsApiError::Internal);
-        }
-        Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+    if let Some(reorg) = try_recv_live_reorg(reorgs, missed_reorg_error)? {
+        return Ok(LiveConfirmedHeadResolution::Reorg(reorg));
     }
 
     let Some(block_view) = backend.block_view_on_confirmed(next_block_n) else {
@@ -1206,11 +1222,13 @@ impl Drop for WsSubscriptionGuard {
 
 #[cfg(test)]
 mod test {
-    use super::{resolve_live_confirmed_head, LiveConfirmedHeadResolution, WsSubscriptionHandle};
+    use super::{
+        normalize_sender_address_filter, resolve_live_confirmed_head, LiveConfirmedHeadResolution, WsSubscriptionHandle,
+    };
     use crate::{errors::StarknetWsApiError, test_utils::rpc_test_setup};
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use starknet_types_core::felt::Felt;
-    use std::sync::Arc;
+    use std::{collections::HashSet, sync::Arc};
 
     fn add_block_at(backend: &Arc<mc_db::MadaraBackend>, n: u64) -> Felt {
         backend
@@ -1262,6 +1280,16 @@ mod test {
             LiveConfirmedHeadResolution::Block(_) => panic!("Expected missing block to retry backfill"),
             LiveConfirmedHeadResolution::Reorg(_) => panic!("Expected missing block without reorg to retry backfill"),
         }
+    }
+
+    #[test]
+    fn normalize_sender_address_filter_treats_empty_as_unfiltered() {
+        assert_eq!(normalize_sender_address_filter(None), None);
+        assert_eq!(normalize_sender_address_filter(Some(vec![])), None);
+        assert_eq!(
+            normalize_sender_address_filter(Some(vec![Felt::ONE, Felt::ONE, Felt::TWO])),
+            Some(HashSet::from([Felt::ONE, Felt::TWO]))
+        );
     }
 
     #[tokio::test]

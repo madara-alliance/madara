@@ -41,7 +41,7 @@ async fn subscribe_new_transaction_receipts_inner(
 
     let allowed_finality_status =
         finality_status.unwrap_or_else(|| vec![FinalityStatus::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
-    let sender_address = sender_address.map(|addresses| addresses.into_iter().collect::<HashSet<_>>());
+    let sender_address = crate::normalize_sender_address_filter(sender_address);
 
     let mut block_stream = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
     let mut reorgs = emit_reorg_notifications.then(|| starknet.backend.subscribe_reorgs());
@@ -74,7 +74,41 @@ async fn subscribe_new_transaction_receipts_inner(
             block_view = block_stream.next_block_view() => block_view,
         };
 
-        send_block_receipts(&sink, &allowed_finality_status, sender_address.as_ref(), block_view).await?;
+        if block_view.is_confirmed() {
+            let block_number = block_view.block_number();
+            if let Some(reorgs) = reorgs.as_mut() {
+                match crate::resolve_live_confirmed_head(
+                    &starknet.backend,
+                    reorgs,
+                    block_number,
+                    super::missed_reorg_notifications_error(),
+                )? {
+                    crate::LiveConfirmedHeadResolution::Block(_) => {}
+                    crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
+                        super::send_reorg_notification(&sink, &reorg).await?;
+                        block_stream = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+                        block_stream.set_start_from(reorg.first_reverted_block_n);
+                        continue;
+                    }
+                    crate::LiveConfirmedHeadResolution::RetryBackfill => {
+                        block_stream = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+                        block_stream.set_start_from(block_number);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        let mut live_reorgs = if block_view.is_confirmed() { reorgs.as_mut() } else { None };
+        if let Some(reorg) =
+            send_block_receipts(&sink, &allowed_finality_status, sender_address.as_ref(), &mut live_reorgs, block_view)
+                .await?
+        {
+            super::send_reorg_notification(&sink, &reorg).await?;
+            block_stream = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+            block_stream.set_start_from(reorg.first_reverted_block_n);
+            continue;
+        }
     }
 }
 
@@ -82,10 +116,11 @@ async fn send_block_receipts(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     allowed_finality_status: &HashSet<FinalityStatus>,
     sender_address: Option<&HashSet<Felt>>,
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
     block_view: mc_db::MadaraBlockView,
-) -> Result<(), crate::errors::StarknetWsApiError> {
+) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
     let (finality_status, block_hash) = match block_view.as_confirmed() {
-        Some(confirmed) if confirmed.is_on_l1() => return Ok(()),
+        Some(confirmed) if confirmed.is_on_l1() => return Ok(None),
         Some(confirmed) => (
             FinalityStatus::AcceptedOnL2,
             Some(
@@ -101,14 +136,22 @@ async fn send_block_receipts(
     };
 
     if !allowed_finality_status.contains(&finality_status) {
-        return Ok(());
+        return Ok(None);
     }
 
     let block_number = block_view.block_number();
-    for tx in block_view
+    let transactions = block_view
         .get_executed_transactions(..)
-        .or_internal_server_error("SubscribeNewTransactionReceipts failed to retrieve block transactions")?
-    {
+        .or_internal_server_error("SubscribeNewTransactionReceipts failed to retrieve block transactions")?;
+
+    if let Some(reorg) = take_pending_reorg(reorgs)? {
+        return Ok(Some(reorg));
+    }
+
+    for tx in transactions {
+        if let Some(reorg) = take_pending_reorg(reorgs)? {
+            return Ok(Some(reorg));
+        }
         if !transaction_matches_sender(&tx.transaction, sender_address) {
             continue;
         }
@@ -131,13 +174,16 @@ async fn send_block_receipts(
             .or_internal_server_error("SubscribeNewTransactionReceipts failed to respond to websocket request")?;
     }
 
-    Ok(())
+    Ok(None)
 }
 
 fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<&HashSet<Felt>>) -> bool {
     let Some(sender_address) = sender_address else {
         return true;
     };
+    if sender_address.is_empty() {
+        return true;
+    }
 
     match transaction {
         Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
@@ -145,6 +191,15 @@ fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<
         Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
         Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
         Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
+    }
+}
+
+fn take_pending_reorg(
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
+    match reorgs.as_deref_mut() {
+        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
+        None => Ok(None),
     }
 }
 

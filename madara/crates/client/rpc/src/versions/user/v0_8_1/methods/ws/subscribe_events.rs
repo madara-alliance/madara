@@ -76,7 +76,14 @@ pub async fn subscribe_events(
             if ctx.is_cancelled() {
                 return Err(crate::errors::StarknetWsApiError::Internal);
             }
-            send_block_events(starknet, &sink, &from_address, &keys, next_block_n).await?;
+            let mut live_reorgs = Some(&mut reorgs);
+            if let Some(reorg) =
+                send_block_events(starknet, &sink, &from_address, &keys, &mut live_reorgs, next_block_n).await?
+            {
+                super::send_reorg_notification(&sink, &reorg).await?;
+                next_block_n = reorg.first_reverted_block_n;
+                continue 'backfill;
+            }
             next_block_n = next_block_n.saturating_add(1);
         }
 
@@ -106,7 +113,32 @@ pub async fn subscribe_events(
             };
 
             let block_n = block_n.expect("Confirmed block subscription should always yield a confirmed block number");
-            send_block_events(starknet, &sink, &from_address, &keys, block_n).await?;
+            match crate::resolve_live_confirmed_head(
+                &starknet.backend,
+                &mut reorgs,
+                block_n,
+                super::missed_reorg_notifications_error(),
+            )? {
+                crate::LiveConfirmedHeadResolution::Block(_) => {
+                    let mut live_reorgs = Some(&mut reorgs);
+                    if let Some(reorg) =
+                        send_block_events(starknet, &sink, &from_address, &keys, &mut live_reorgs, block_n).await?
+                    {
+                        super::send_reorg_notification(&sink, &reorg).await?;
+                        next_block_n = reorg.first_reverted_block_n;
+                        continue 'backfill;
+                    }
+                }
+                crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
+                    super::send_reorg_notification(&sink, &reorg).await?;
+                    next_block_n = reorg.first_reverted_block_n;
+                    continue 'backfill;
+                }
+                crate::LiveConfirmedHeadResolution::RetryBackfill => {
+                    next_block_n = block_n;
+                    continue 'backfill;
+                }
+            }
         }
     }
 }
@@ -125,8 +157,9 @@ async fn send_block_events(
     sink: &jsonrpsee::server::SubscriptionSink,
     from_address: &Option<Felt>,
     keys: &Option<Vec<Vec<Felt>>>,
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
     block_n: u64,
-) -> Result<(), StarknetWsApiError> {
+) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
     let events = starknet
         .backend
         .view_on_latest()
@@ -141,11 +174,27 @@ async fn send_block_events(
         .context("Error getting filtered events")
         .or_internal_server_error("Failed to retrieve events")?;
 
+    if let Some(reorg) = take_pending_reorg(reorgs)? {
+        return Ok(Some(reorg));
+    }
+
     for event in events {
+        if let Some(reorg) = take_pending_reorg(reorgs)? {
+            return Ok(Some(reorg));
+        }
         send_event(event, sink).await?;
     }
 
-    Ok(())
+    Ok(None)
+}
+
+fn take_pending_reorg(
+    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
+    match reorgs.as_deref_mut() {
+        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
+        None => Ok(None),
+    }
 }
 
 async fn send_event(

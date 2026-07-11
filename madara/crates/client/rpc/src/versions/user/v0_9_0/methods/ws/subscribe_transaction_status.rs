@@ -146,9 +146,11 @@ mod test {
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
         let backend_for_rpc = backend.clone();
         let watcher = TestTxStatusWatcher::new();
+        let provider = Arc::new(TestTransactionProvider);
         let mut starknet = Starknet::new(
             backend_for_rpc,
-            Arc::new(TestTransactionProvider),
+            provider.clone(),
+            provider,
             Default::default(),
             None,
             ServiceContext::new_for_testing(),
