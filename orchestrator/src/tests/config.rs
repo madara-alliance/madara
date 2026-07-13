@@ -739,6 +739,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         ethereum_finality_retry_wait_in_secs: 60u64,
         ethereum_tx_confirmation_timeout_secs: 300,
         ethereum_max_fee_bumps: 2,
+        ethereum_l2_state_update_max_fee_wei: 100_000_000_000_000_000,
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 

@@ -7,7 +7,7 @@ use alloy::consensus::{SignableTransaction, Signed, TxEip4844, TxEip4844Variant,
 #[cfg(not(feature = "testing"))]
 use alloy::eips::eip2718::Encodable2718;
 use alloy::eips::eip2930::AccessList;
-use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB};
 use alloy::eips::eip7594::BlobTransactionSidecarVariant;
 use alloy::hex;
 use alloy::network::{Ethereum, EthereumWallet};
@@ -50,6 +50,8 @@ use tracing::{debug, info};
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
 
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
+/// Default maximum signed liability for one L2 Ethereum state-update transaction (0.1 ETH).
+pub const DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI: u128 = 100_000_000_000_000_000;
 pub const N_BLOBS_OFFSET: usize = 11;
 pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
 pub const Y_LOW_POINT_OFFSET: usize = 11;
@@ -70,6 +72,8 @@ const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
+// Keep aligned with the L2 state-update batching limit in orchestrator/src/types/constant.rs.
+const MAX_BLOBS_PER_STATE_UPDATE: u64 = 6;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
@@ -183,6 +187,8 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub ethereum_max_fee_bumps: u64,
 
+    pub ethereum_l2_state_update_max_fee_wei: u128,
+
     pub disable_peerdas: bool,
 }
 
@@ -196,6 +202,7 @@ pub struct EthereumSettlementClient {
     tx_finality_retry_wait_in_seconds: u64,
     tx_confirmation_timeout_seconds: u64,
     max_fee_bumps: u64,
+    l2_state_update_max_fee_wei: u128,
     disable_peerdas: bool,
 }
 
@@ -226,6 +233,7 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
             tx_confirmation_timeout_seconds: settlement_cfg.ethereum_tx_confirmation_timeout_secs,
             max_fee_bumps: settlement_cfg.ethereum_max_fee_bumps,
+            l2_state_update_max_fee_wei: settlement_cfg.ethereum_l2_state_update_max_fee_wei,
             disable_peerdas: settlement_cfg.disable_peerdas,
         }
     }
@@ -255,6 +263,7 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: 10,
             tx_confirmation_timeout_seconds: 300,
             max_fee_bumps: 2,
+            l2_state_update_max_fee_wei: DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
             disable_peerdas: true,
         }
     }
@@ -742,6 +751,8 @@ impl EthereumSettlementClient {
         let estimate_mul_factor = if replacement_fee_floor.is_some() { GAS_PRICE_MULTIPLIER_START } else { mul_factor };
         let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
         let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
+        let max_total_fee_wei =
+            Self::ensure_l2_state_update_fee_within_cap(fee_caps, self.l2_state_update_max_fee_wei)?;
         debug!(
             nonce = nonce,
             gas_multiplier = %mul_factor,
@@ -749,6 +760,8 @@ impl EthereumSettlementClient {
             max_fee_per_gas = fee_caps.max_fee_per_gas,
             max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
             max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
+            max_total_fee_wei = %max_total_fee_wei,
+            max_total_fee_cap_wei = self.l2_state_update_max_fee_wei,
             replacement_fee_floor = ?replacement_fee_floor,
             "Resolved state update transaction fee caps"
         );
@@ -815,6 +828,20 @@ impl EthereumSettlementClient {
             max_priority_fee_per_gas: left.max_priority_fee_per_gas.max(right.max_priority_fee_per_gas),
             max_fee_per_blob_gas: left.max_fee_per_blob_gas.max(right.max_fee_per_blob_gas),
         }
+    }
+
+    fn ensure_l2_state_update_fee_within_cap(fee_caps: StateUpdateFeeCaps, max_fee_wei: u128) -> Result<U256> {
+        let execution_fee = U256::from(GAS_LIMIT_STATE_UPDATE) * U256::from(fee_caps.max_fee_per_gas);
+        let blob_fee = U256::from(MAX_BLOBS_PER_STATE_UPDATE)
+            * U256::from(DATA_GAS_PER_BLOB)
+            * U256::from(fee_caps.max_fee_per_blob_gas);
+        let total_fee = execution_fee + blob_fee;
+
+        if total_fee > U256::from(max_fee_wei) {
+            bail!("L2 state update maximum fee {} wei exceeds configured hard cap {} wei", total_fee, max_fee_wei);
+        }
+
+        Ok(total_fee)
     }
 
     /// Method to send blob transaction (standard EIP4844)
@@ -920,5 +947,32 @@ mod gas_multiplier_tests {
     fn test_fee_bump_policy_stops_after_max_bumps() {
         let result = calculate_next_fee_bump_mul_factor(4.4, 2, 2);
         assert!(result.is_none(), "Expected None when fee bump budget is exhausted");
+    }
+}
+
+#[cfg(test)]
+mod fee_cap_tests {
+    use super::*;
+
+    #[test]
+    fn l2_state_update_fee_cap_is_inclusive_and_assumes_six_blobs() {
+        let fee_caps = StateUpdateFeeCaps {
+            max_fee_per_gas: 1,
+            // Priority fee is already included in max_fee_per_gas.
+            max_priority_fee_per_gas: u128::MAX,
+            max_fee_per_blob_gas: 1,
+        };
+        let expected_fee =
+            U256::from(GAS_LIMIT_STATE_UPDATE) + U256::from(MAX_BLOBS_PER_STATE_UPDATE) * U256::from(DATA_GAS_PER_BLOB);
+        let exact_cap = expected_fee.to::<u128>();
+
+        assert_eq!(
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, exact_cap).unwrap(),
+            expected_fee
+        );
+
+        let error =
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, exact_cap - 1).unwrap_err();
+        assert!(error.to_string().contains("exceeds configured hard cap"));
     }
 }
