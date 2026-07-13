@@ -42,7 +42,8 @@ pub struct EthereumSettlementCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS", long, default_value = "2")]
     pub ethereum_max_fee_bumps: u64,
 
-    /// Maximum total fee in wei for an L2 Ethereum state-update transaction, including six blobs.
+    /// Maximum signed fee liability in wei for an L2 Ethereum state-update transaction, including six blobs.
+    /// The conservative default can reject settlements during high-fee periods; raise it when liveness takes priority.
     #[arg(
         env = "MADARA_ORCHESTRATOR_ETHEREUM_L2_STATE_UPDATE_MAX_FEE_WEI",
         long,

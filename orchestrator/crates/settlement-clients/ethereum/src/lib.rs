@@ -22,7 +22,7 @@ use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{
     SettlementClient, SettlementVerificationStatus, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
-    StateUpdateTxError, StateUpdateTxResult,
+    StateUpdateTxError, StateUpdateTxResult, MAX_BLOBS_PER_STATE_UPDATE,
 };
 #[cfg(feature = "testing")]
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -50,7 +50,8 @@ use tracing::{debug, info};
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
 
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
-/// Default maximum signed liability for one L2 Ethereum state-update transaction (0.01 ETH).
+/// Conservative default maximum signed liability for one L2 Ethereum state-update transaction (0.01 ETH).
+/// Operators prioritizing settlement liveness during high-fee periods should override this value.
 pub const DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI: u128 = 10_000_000_000_000_000;
 pub const N_BLOBS_OFFSET: usize = 11;
 pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
@@ -72,8 +73,6 @@ const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
-// Keep aligned with the L2 state-update batching limit in orchestrator/src/types/constant.rs.
-const MAX_BLOBS_PER_STATE_UPDATE: u64 = 6;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
@@ -838,7 +837,11 @@ impl EthereumSettlementClient {
         let total_fee = execution_fee + blob_fee;
 
         if total_fee > U256::from(max_fee_wei) {
-            bail!("L2 state update maximum fee {} wei exceeds configured hard cap {} wei", total_fee, max_fee_wei);
+            bail!(
+                "L2 state update signed fee liability {} wei exceeds configured hard cap {} wei",
+                total_fee,
+                max_fee_wei
+            );
         }
 
         Ok(total_fee)

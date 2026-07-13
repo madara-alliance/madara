@@ -5,6 +5,7 @@ use mockall::predicate::*;
 use std::fmt;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
+pub const MAX_BLOBS_PER_STATE_UPDATE: u64 = 6;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettlementVerificationStatus {

@@ -31,7 +31,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
-use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
+use orchestrator_ethereum_settlement_client::{EthereumSettlementValidatedArgs, DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI};
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
@@ -739,7 +739,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         ethereum_finality_retry_wait_in_secs: 60u64,
         ethereum_tx_confirmation_timeout_secs: 300,
         ethereum_max_fee_bumps: 2,
-        ethereum_l2_state_update_max_fee_wei: 10_000_000_000_000_000,
+        ethereum_l2_state_update_max_fee_wei: DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
