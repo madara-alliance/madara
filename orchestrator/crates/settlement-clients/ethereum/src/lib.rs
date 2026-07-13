@@ -161,6 +161,20 @@ fn state_update_tx_error(
     }
 }
 
+fn state_update_replacement_preparation_error(
+    attempts: &[StateUpdateTxAttempt],
+    timeout_seconds: u64,
+    error: &color_eyre::Report,
+) -> StateUpdateTxError {
+    StateUpdateTxError {
+        message: format!(
+            "State update replacement preparation failed after a prior transaction attempt. The existing transaction will be reconciled on job retry.\nPreparation failure: {error}\nFee attempts:\n{}",
+            format_tx_attempts(attempts, timeout_seconds)
+        ),
+        attempts: attempts.to_vec(),
+    }
+}
+
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
     pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
@@ -389,7 +403,7 @@ impl SettlementClient for EthereumSettlementClient {
             );
 
             let replacement_fee_floor = previous_fee_caps.map(Self::replacement_fee_floor);
-            let prepared_transaction = self
+            let prepared_transaction = match self
                 .create_transaction(
                     program_output.clone(),
                     state_diff.clone(),
@@ -397,7 +411,19 @@ impl SettlementClient for EthereumSettlementClient {
                     gas_multiplier,
                     replacement_fee_floor,
                 )
-                .await?;
+                .await
+            {
+                Result::Ok(transaction) => transaction,
+                Result::Err(error) if attempts.is_empty() => return Err(error),
+                Result::Err(error) => {
+                    return Err(state_update_replacement_preparation_error(
+                        &attempts,
+                        self.tx_confirmation_timeout_seconds,
+                        &error,
+                    )
+                    .into());
+                }
+            };
             let attempted_fee_caps = prepared_transaction.fee_caps;
             previous_fee_caps = Some(attempted_fee_caps);
 
@@ -977,5 +1003,25 @@ mod fee_cap_tests {
         let error =
             EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, exact_cap - 1).unwrap_err();
         assert!(error.to_string().contains("exceeds configured hard cap"));
+    }
+
+    #[test]
+    fn replacement_preparation_error_preserves_pending_attempt_for_job_retry() {
+        let attempts = vec![StateUpdateTxAttempt {
+            attempt_no: 1,
+            tx_hash: Some("0xabc".to_string()),
+            nonce: 7,
+            gas_multiplier: GAS_PRICE_MULTIPLIER_START,
+            status: StateUpdateTxAttemptStatus::TimedOut,
+            error: None,
+        }];
+
+        let source = eyre!("signed fee liability exceeds configured hard cap");
+        let error = state_update_replacement_preparation_error(&attempts, 300, &source);
+
+        assert_eq!(error.attempts, attempts);
+        assert!(error.message.contains("reconciled on job retry"));
+        assert!(error.message.contains("0xabc"));
+        assert!(error.message.contains("signed fee liability exceeds configured hard cap"));
     }
 }
