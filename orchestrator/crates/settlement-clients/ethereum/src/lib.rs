@@ -50,8 +50,8 @@ use tracing::{debug, info};
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
 
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
-/// Default maximum signed liability for one L2 Ethereum state-update transaction (0.1 ETH).
-pub const DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI: u128 = 100_000_000_000_000_000;
+/// Default maximum signed liability for one L2 Ethereum state-update transaction (0.01 ETH).
+pub const DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI: u128 = 10_000_000_000_000_000;
 pub const N_BLOBS_OFFSET: usize = 11;
 pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
 pub const Y_LOW_POINT_OFFSET: usize = 11;
