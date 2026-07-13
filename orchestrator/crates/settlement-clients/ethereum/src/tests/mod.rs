@@ -156,6 +156,11 @@ mod settlement_client_tests {
 
     use orchestrator_utils::test_utils::setup_test_data;
 
+    // TODO(Mohit, 2026-07-13): Update these state-update integration tests. Their generated fee
+    // estimates, including authoritative Ethereum values at the pinned historical block, exceed
+    // the 0.01 ETH production cap and currently require a test-only higher cap.
+    const STATE_UPDATE_TEST_MAX_FEE_WEI: u128 = u128::MAX;
+
     fn get_program_output_from_file(file_path: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
         let file = File::open(file_path)?;
         let reader = BufReader::new(file);
@@ -213,7 +218,7 @@ mod settlement_client_tests {
             ethereum_finality_retry_wait_in_secs: 10,
             ethereum_tx_confirmation_timeout_secs: 300,
             ethereum_max_fee_bumps: 2,
-            ethereum_l2_state_update_max_fee_wei: crate::DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
+            ethereum_l2_state_update_max_fee_wei: STATE_UPDATE_TEST_MAX_FEE_WEI,
             disable_peerdas: true,
         };
 
@@ -224,6 +229,7 @@ mod settlement_client_tests {
             *contract.address(),
             ethereum_settlement_params.ethereum_rpc_url,
             None,
+            ethereum_settlement_params.ethereum_l2_state_update_max_fee_wei,
         );
 
         // Getting latest nonce after deployment
@@ -298,7 +304,7 @@ mod settlement_client_tests {
             ethereum_finality_retry_wait_in_secs: 60u64,
             ethereum_tx_confirmation_timeout_secs: 300,
             ethereum_max_fee_bumps: 2,
-            ethereum_l2_state_update_max_fee_wei: crate::DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
+            ethereum_l2_state_update_max_fee_wei: STATE_UPDATE_TEST_MAX_FEE_WEI,
             disable_peerdas: false, // for tests, default to sepolia/testnet behavior
         };
 
@@ -307,6 +313,7 @@ mod settlement_client_tests {
             ethereum_settlement_params.l1_core_contract_address,
             ethereum_settlement_params.ethereum_rpc_url,
             Some(ethereum_settlement_params.starknet_operator_address),
+            ethereum_settlement_params.ethereum_l2_state_update_max_fee_wei,
         );
 
         // let nonce = ethereum_settlement_client.get_nonce().await.expect("Unable to fetch nonce");
@@ -384,6 +391,7 @@ mod settlement_client_tests {
             ethereum_settlement_params.l1_core_contract_address,
             ethereum_settlement_params.ethereum_rpc_url,
             None,
+            ethereum_settlement_params.ethereum_l2_state_update_max_fee_wei,
         );
         assert_eq!(
             ethereum_settlement_client.get_last_settled_block().await.expect("Could not get last settled block."),

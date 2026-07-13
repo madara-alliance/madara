@@ -257,6 +257,7 @@ impl EthereumSettlementClient {
         core_contract_address: Address,
         rpc_url: Url,
         impersonate_account: Option<Address>,
+        l2_state_update_max_fee_wei: u128,
     ) -> Self {
         let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
@@ -276,7 +277,7 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: 10,
             tx_confirmation_timeout_seconds: 300,
             max_fee_bumps: 2,
-            l2_state_update_max_fee_wei: DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
+            l2_state_update_max_fee_wei,
             disable_peerdas: true,
         }
     }
