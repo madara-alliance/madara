@@ -40,9 +40,31 @@ pub struct EventWorker {
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
+const QUEUE_ACK_RETRY_DELAY: Duration = Duration::from_millis(500);
 
 fn format_error_context(error: &impl Error) -> String {
     DisplayErrorContext(error).to_string()
+}
+
+async fn ack_message_with_retry(message: &Delivery) -> Result<(), ConsumptionError> {
+    if let Err(first_error) = message.ack().await {
+        let first_error = format_queue_ack_error(&first_error.0);
+        warn!(error = %first_error, "Failed to ACK message, retrying once");
+
+        sleep(QUEUE_ACK_RETRY_DELAY).await;
+
+        if let Err(second_error) = message.ack().await {
+            let second_error = format_queue_ack_error(&second_error.0);
+            error!(
+                first_error = %first_error,
+                error = %second_error,
+                "Failed to ACK message after retry"
+            );
+            return Err(ConsumptionError::FailedToAcknowledgeMessage(second_error));
+        }
+    }
+
+    Ok(())
 }
 
 impl EventWorker {
@@ -326,7 +348,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_queue_ack_error(&e.0)))?;
+        ack_message_with_retry(&message).await?;
         Ok(())
     }
 
@@ -409,7 +431,7 @@ impl EventWorker {
                         // ACK/NACK the priority delivery after processing
                         match &result {
                             Ok(_) => {
-                                if let Err(e) = delivery.ack().await {
+                                if let Err(e) = ack_message_with_retry(&delivery).await {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }
