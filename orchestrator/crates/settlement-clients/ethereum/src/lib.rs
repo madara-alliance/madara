@@ -3,16 +3,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::consensus::{SignableTransaction, Signed, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar};
+use alloy::consensus::{BlockHeader, SignableTransaction, Signed, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar};
 #[cfg(not(feature = "testing"))]
 use alloy::eips::eip2718::Encodable2718;
 use alloy::eips::eip2930::AccessList;
 use alloy::eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB};
 use alloy::eips::eip7594::BlobTransactionSidecarVariant;
+use alloy::eips::BlockNumberOrTag;
 use alloy::hex;
-use alloy::network::{Ethereum, EthereumWallet};
+use alloy::network::{BlockResponse, Ethereum, EthereumWallet};
 use alloy::primitives::{Address, Bytes, B256, I256, U256};
-use alloy::providers::utils::{Eip1559Estimation, Eip1559Estimator};
 use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
@@ -413,13 +413,7 @@ impl SettlementClient for EthereumSettlementClient {
 
             let replacement_fee_floor = previous_fee_caps.map(Self::replacement_fee_floor);
             let prepared_transaction = match self
-                .create_transaction(
-                    program_output.clone(),
-                    state_diff.clone(),
-                    nonce,
-                    gas_multiplier,
-                    replacement_fee_floor,
-                )
+                .create_transaction(program_output.clone(), state_diff.clone(), nonce, replacement_fee_floor)
                 .await
             {
                 Result::Ok(transaction) => transaction,
@@ -769,7 +763,6 @@ impl EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
-        mul_factor: f64,
         replacement_fee_floor: Option<StateUpdateFeeCaps>,
     ) -> Result<PreparedStateUpdateTransaction> {
         // Prepare the sidecar based on the chain ID
@@ -779,18 +772,14 @@ impl EthereumSettlementClient {
         // replacements target the same pending transaction.
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
-        // For replacement transactions, the multiplier applies to the previously attempted fee
-        // caps through `replacement_fee_floor`. The fresh network estimate is kept at the normal
-        // safety margin so replacements do not overpay by multiplying both paths.
-        let estimate_mul_factor = if replacement_fee_floor.is_some() { GAS_PRICE_MULTIPLIER_START } else { mul_factor };
-        let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
+        // Fresh network caps always use the normal safety margin. Replacements take their
+        // component-wise maximum with the 2.1x floor calculated from the previous signed caps.
+        let fee_caps = self.get_gas_price_estimates().await?;
         let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
         let max_total_fee_wei =
             Self::ensure_l2_state_update_fee_within_cap(fee_caps, state_diff.len(), self.l2_state_update_max_fee_wei)?;
         debug!(
             nonce = nonce,
-            gas_multiplier = %mul_factor,
-            estimate_multiplier = %estimate_mul_factor,
             max_fee_per_gas = fee_caps.max_fee_per_gas,
             max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
             max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
@@ -826,36 +815,30 @@ impl EthereumSettlementClient {
         Ok(PreparedStateUpdateTransaction { tx_envelope: variant.into_signed(signature), fee_caps })
     }
 
-    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<StateUpdateFeeCaps> {
-        let eip1559_est = self
+    async fn get_gas_price_estimates(&self) -> Result<StateUpdateFeeCaps> {
+        let base_fee_per_gas = self
             .provider
-            .estimate_eip1559_fees_with(Eip1559Estimator::new(move |base_fee_per_gas, _| {
-                Self::eip1559_fee_caps(base_fee_per_gas, mul_factor)
-            }))
-            .await?;
-
-        let max_fee_per_blob_gas = Self::add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or_else(|| eyre!("Latest Ethereum block not found"))?
+            .header()
+            .base_fee_per_gas()
+            .ok_or_else(|| eyre!("Latest Ethereum block does not contain an EIP-1559 base fee"))?;
 
         Ok(StateUpdateFeeCaps {
-            max_fee_per_gas: eip1559_est.max_fee_per_gas,
-            max_priority_fee_per_gas: eip1559_est.max_priority_fee_per_gas,
-            max_fee_per_blob_gas,
+            max_fee_per_gas: Self::initial_max_fee_per_gas(u128::from(base_fee_per_gas)),
+            max_priority_fee_per_gas: INITIAL_MAX_PRIORITY_FEE_PER_GAS,
+            max_fee_per_blob_gas: Self::add_safety_margin(self.provider.get_blob_base_fee().await?),
         })
     }
 
-    fn eip1559_fee_caps(base_fee_per_gas: u128, base_fee_safety_multiplier: f64) -> Eip1559Estimation {
-        let max_base_fee_per_gas =
-            Self::add_safety_margin(base_fee_per_gas.saturating_mul(2), base_fee_safety_multiplier);
-
-        Eip1559Estimation {
-            max_fee_per_gas: max_base_fee_per_gas.saturating_add(INITIAL_MAX_PRIORITY_FEE_PER_GAS),
-            max_priority_fee_per_gas: INITIAL_MAX_PRIORITY_FEE_PER_GAS,
-        }
+    fn initial_max_fee_per_gas(base_fee_per_gas: u128) -> u128 {
+        Self::add_safety_margin(base_fee_per_gas.saturating_mul(2)).saturating_add(INITIAL_MAX_PRIORITY_FEE_PER_GAS)
     }
 
     // Add a safety margin to the gas price to handle fluctuations.
-    fn add_safety_margin(value: u128, mul_factor: f64) -> u128 {
-        (value as f64 * mul_factor).ceil() as u128
+    fn add_safety_margin(value: u128) -> u128 {
+        (value as f64 * GAS_PRICE_MULTIPLIER_START).ceil() as u128
     }
 
     fn replacement_fee_floor(previous_fee_caps: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
@@ -1014,10 +997,8 @@ mod priority_fee_tests {
     use super::*;
 
     #[test]
-    fn eip1559_fee_caps_buffer_base_fee_and_fix_initial_priority_fee() {
-        let fee_caps = EthereumSettlementClient::eip1559_fee_caps(1_000_000_000, GAS_PRICE_MULTIPLIER_START);
-
-        assert_eq!((fee_caps.max_fee_per_gas, fee_caps.max_priority_fee_per_gas), (2_400_000_000, 200_000_000));
+    fn initial_max_fee_per_gas_buffers_base_and_adds_fixed_priority() {
+        assert_eq!(EthereumSettlementClient::initial_max_fee_per_gas(1_000_000_000), 2_400_000_000);
     }
 
     #[test]
