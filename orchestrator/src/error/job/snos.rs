@@ -1,3 +1,4 @@
+use crate::core::client::storage::StorageError;
 use crate::error::job::fact::FactError;
 use crate::error::other::OtherError;
 use blockifier::blockifier::transaction_executor::TransactionExecutorError;
@@ -17,17 +18,29 @@ pub enum SnosError {
 
     #[error("Could not serialize the Cairo Pie (snos job #{internal_id:?}): {message}")]
     CairoPieUnserializable { internal_id: u64, message: String },
-    #[error("Could not store the Cairo Pie (snos job #{internal_id:?}): {message}")]
-    CairoPieUnstorable { internal_id: u64, message: String },
+    #[error("Could not store the Cairo Pie (snos job #{internal_id:?}): {source}")]
+    CairoPieUnstorable {
+        internal_id: u64,
+        #[source]
+        source: StorageError,
+    },
 
     #[error("Could not serialize the Snos Output (snos job #{internal_id:?}): {message}")]
     SnosOutputUnserializable { internal_id: u64, message: String },
     #[error("Could not serialize the Program Output (snos job #{internal_id:?}): {message}")]
     ProgramOutputUnserializable { internal_id: u64, message: String },
-    #[error("Could not store the Snos output (snos job #{internal_id:?}): {message}")]
-    SnosOutputUnstorable { internal_id: u64, message: String },
-    #[error("Could not store the Program output (snos job #{internal_id:?}): {message}")]
-    ProgramOutputUnstorable { internal_id: u64, message: String },
+    #[error("Could not store the Snos output (snos job #{internal_id:?}): {source}")]
+    SnosOutputUnstorable {
+        internal_id: u64,
+        #[source]
+        source: StorageError,
+    },
+    #[error("Could not store the Program output (snos job #{internal_id:?}): {source}")]
+    ProgramOutputUnstorable {
+        internal_id: u64,
+        #[source]
+        source: StorageError,
+    },
 
     #[error("Error while running SNOS (snos job #{internal_id:?}): {source}")]
     SnosExecutionError {

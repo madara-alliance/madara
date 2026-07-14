@@ -187,8 +187,7 @@ impl EventWorker {
         let workload = MetricsRecorder::start_worker_trigger_workload(&worker_message.worker);
         worker_handler
             .run_worker_if_enabled(self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+            .await?;
         workload.finish_success();
         Ok(())
     }
@@ -203,9 +202,7 @@ impl EventWorker {
     /// # Errors
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_job_failure(&self, queue_message: &JobQueueMessage) -> EventSystemResult<()> {
-        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone()).await?;
         Ok(())
     }
 
@@ -222,14 +219,10 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         match job_state {
             JobState::Processing => {
-                JobHandlerService::process_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                JobHandlerService::process_job(queue_message.id, self.config.clone()).await?;
             }
             JobState::Verification => {
-                JobHandlerService::verify_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                JobHandlerService::verify_job(queue_message.id, self.config.clone()).await?;
             }
         }
         Ok(())
@@ -294,21 +287,23 @@ impl EventWorker {
             let (error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
-                    tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
+                    let error_msg = format_error_context(error);
+                    tracing::error!(worker = ?worker, error = %error_msg, "Failed to handle worker trigger");
                     (
-                        format!("Worker {worker:?} handling failed: {error}"),
+                        format!("Worker {worker:?} handling failed: {error_msg}"),
                         ConsumptionError::FailedToSpawnWorker {
                             worker_trigger_type: worker.clone(),
-                            error_msg: error.to_string(),
+                            error_msg,
                         },
                     )
                 }
                 ParsedMessage::JobQueue(msg) => {
                     let job_id = &msg.id;
-                    tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
+                    let error_msg = format_error_context(error);
+                    tracing::error!(job_id = ?job_id, error = %error_msg, "Failed to handle job");
                     (
-                        format!("Job {job_id:?} handling failed: {error}"),
-                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
+                        format!("Job {job_id:?} handling failed: {error_msg}"),
+                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg },
                     )
                 }
             };
