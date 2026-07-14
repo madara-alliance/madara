@@ -12,6 +12,7 @@ use alloy::eips::eip7594::BlobTransactionSidecarVariant;
 use alloy::hex;
 use alloy::network::{Ethereum, EthereumWallet};
 use alloy::primitives::{Address, Bytes, B256, I256, U256};
+use alloy::providers::utils::{Eip1559Estimation, Eip1559Estimator};
 use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
@@ -73,6 +74,8 @@ const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
+// Same-nonce replacement floors increase this initial 0.2 Gwei tip to 0.42 and 0.882 Gwei.
+const INITIAL_MAX_PRIORITY_FEE_PER_GAS: u128 = 200_000_000;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
@@ -819,17 +822,33 @@ impl EthereumSettlementClient {
     }
 
     async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<StateUpdateFeeCaps> {
-        let eip1559_est = self.provider.estimate_eip1559_fees().await?;
+        let eip1559_est = self
+            .provider
+            .estimate_eip1559_fees_with(Eip1559Estimator::new(move |base_fee_per_gas, _| {
+                Self::eip1559_fee_caps(base_fee_per_gas, mul_factor)
+            }))
+            .await?;
 
-        let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
-        let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
-        let max_fee_per_blob_gas: u128 = self.add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
+        let max_fee_per_blob_gas = Self::add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
 
-        Ok(StateUpdateFeeCaps { max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas })
+        Ok(StateUpdateFeeCaps {
+            max_fee_per_gas: eip1559_est.max_fee_per_gas,
+            max_priority_fee_per_gas: eip1559_est.max_priority_fee_per_gas,
+            max_fee_per_blob_gas,
+        })
     }
 
-    // add a safety margin to the gas price to handle fluctuations
-    fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
+    fn eip1559_fee_caps(base_fee_per_gas: u128, mul_factor: f64) -> Eip1559Estimation {
+        let max_base_fee_per_gas = Self::add_safety_margin(base_fee_per_gas.saturating_mul(2), mul_factor);
+
+        Eip1559Estimation {
+            max_fee_per_gas: max_base_fee_per_gas.saturating_add(INITIAL_MAX_PRIORITY_FEE_PER_GAS),
+            max_priority_fee_per_gas: INITIAL_MAX_PRIORITY_FEE_PER_GAS,
+        }
+    }
+
+    // Add a safety margin to the gas price to handle fluctuations.
+    fn add_safety_margin(value: u128, mul_factor: f64) -> u128 {
         (value as f64 * mul_factor).ceil() as u128
     }
 
@@ -977,6 +996,27 @@ mod gas_multiplier_tests {
     fn test_fee_bump_policy_stops_after_max_bumps() {
         let result = calculate_next_fee_bump_mul_factor(4.4, 2, 2);
         assert!(result.is_none(), "Expected None when fee bump budget is exhausted");
+    }
+}
+
+#[cfg(test)]
+mod priority_fee_tests {
+    use super::*;
+
+    #[test]
+    fn eip1559_fee_caps_buffer_base_fee_and_fix_initial_priority_fee() {
+        let fee_caps = EthereumSettlementClient::eip1559_fee_caps(1_000_000_000, GAS_PRICE_MULTIPLIER_START);
+
+        assert_eq!((fee_caps.max_fee_per_gas, fee_caps.max_priority_fee_per_gas), (2_400_000_000, 200_000_000));
+    }
+
+    #[test]
+    fn priority_fee_replacements_follow_fixed_policy() {
+        let first = INITIAL_MAX_PRIORITY_FEE_PER_GAS;
+        let second = EthereumSettlementClient::replacement_fee_cap_floor(first);
+        let third = EthereumSettlementClient::replacement_fee_cap_floor(second);
+
+        assert_eq!([first, second, third], [200_000_000, 420_000_000, 882_000_000]);
     }
 }
 
