@@ -19,6 +19,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OnceCell, RwLock};
 
+type QueueUrlCache = Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>;
+type SqsConsumerCache = Arc<RwLock<HashMap<QueueType, Arc<OnceCell<Arc<SqsConsumer>>>>>>;
+
 #[derive(Clone)]
 pub struct InnerSQS(Client);
 
@@ -155,10 +158,10 @@ pub struct SQS {
     queue_template_identifier: AWSResourceIdentifier,
     /// Cache for queue URLs, keyed by QueueType.
     /// Each entry is lazily initialized on first use.
-    queue_url_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>,
+    queue_url_cache: QueueUrlCache,
     /// Cache for OmniQueue consumers, keyed by QueueType.
     /// Reusing consumers avoids rebuilding AWS SDK config/client state for every received message.
-    consumer_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<Arc<SqsConsumer>>>>>>,
+    consumer_cache: SqsConsumerCache,
 }
 
 impl SQS {
