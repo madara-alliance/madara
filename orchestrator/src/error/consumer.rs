@@ -1,5 +1,6 @@
 use crate::error::other::OtherError;
 use crate::types::jobs::WorkerTriggerType;
+use aws_sdk_sqs::error::DisplayErrorContext;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -28,4 +29,8 @@ pub enum ConsumptionError {
 
     #[error("Queue Type not found: {0}")]
     QueueNotFound(String),
+}
+
+pub fn format_queue_ack_error(error: &omniqueue::QueueError) -> String {
+    DisplayErrorContext(error).to_string()
 }
