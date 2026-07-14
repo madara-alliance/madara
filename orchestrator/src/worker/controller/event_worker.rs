@@ -46,15 +46,15 @@ fn format_error_context(error: &impl Error) -> String {
     DisplayErrorContext(error).to_string()
 }
 
-async fn ack_message_with_retry(message: &Delivery) -> Result<(), ConsumptionError> {
-    if let Err(first_error) = message.ack().await {
-        let first_error = format_queue_ack_error(&first_error.0);
+async fn ack_message_with_retry(message: Delivery) -> Result<(), ConsumptionError> {
+    if let Err((first_error, message)) = message.ack().await {
+        let first_error = format_queue_ack_error(&first_error);
         warn!(error = %first_error, "Failed to ACK message, retrying once");
 
         sleep(QUEUE_ACK_RETRY_DELAY).await;
 
-        if let Err(second_error) = message.ack().await {
-            let second_error = format_queue_ack_error(&second_error.0);
+        if let Err((second_error, _message)) = message.ack().await {
+            let second_error = format_queue_ack_error(&second_error);
             error!(
                 first_error = %first_error,
                 error = %second_error,
@@ -207,9 +207,7 @@ impl EventWorker {
         let worker_handler =
             JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
         let workload = MetricsRecorder::start_worker_trigger_workload(&worker_message.worker);
-        worker_handler
-            .run_worker_if_enabled(self.config.clone())
-            .await?;
+        worker_handler.run_worker_if_enabled(self.config.clone()).await.map_err(OtherError::from)?;
         workload.finish_success();
         Ok(())
     }
@@ -313,10 +311,7 @@ impl EventWorker {
                     tracing::error!(worker = ?worker, error = %error_msg, "Failed to handle worker trigger");
                     (
                         format!("Worker {worker:?} handling failed: {error_msg}"),
-                        ConsumptionError::FailedToSpawnWorker {
-                            worker_trigger_type: worker.clone(),
-                            error_msg,
-                        },
+                        ConsumptionError::FailedToSpawnWorker { worker_trigger_type: worker.clone(), error_msg },
                     )
                 }
                 ParsedMessage::JobQueue(msg) => {
@@ -348,7 +343,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        ack_message_with_retry(&message).await?;
+        ack_message_with_retry(message).await?;
         Ok(())
     }
 
@@ -431,7 +426,7 @@ impl EventWorker {
                         // ACK/NACK the priority delivery after processing
                         match &result {
                             Ok(_) => {
-                                if let Err(e) = ack_message_with_retry(&delivery).await {
+                                if let Err(e) = ack_message_with_retry(delivery).await {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }

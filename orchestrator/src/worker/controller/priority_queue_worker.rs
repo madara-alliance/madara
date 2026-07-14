@@ -251,13 +251,19 @@ impl PriorityQueueWorker {
             Ok(Some(job)) => job,
             Ok(None) => {
                 warn!("PQ Worker ({}): Job {} not found, ACKing message", self.action, parsed_msg.id);
-                delivery.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_queue_ack_error(&e.0)))?;
+                delivery
+                    .ack()
+                    .await
+                    .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_queue_ack_error(&e.0)))?;
                 return Ok(());
             }
             Err(e) => {
                 error!("PQ Worker ({}): Database error fetching job {}: {:?}", self.action, parsed_msg.id, e);
                 // NACK to retry later
-                delivery.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
+                delivery
+                    .nack()
+                    .await
+                    .map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
                 return Ok(());
             }
         };
