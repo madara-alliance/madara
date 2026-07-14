@@ -23,7 +23,7 @@ use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{
     SettlementClient, SettlementVerificationStatus, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
-    StateUpdateTxError, StateUpdateTxResult, MAX_BLOBS_PER_STATE_UPDATE,
+    StateUpdateTxError, StateUpdateTxResult,
 };
 #[cfg(feature = "testing")]
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -74,7 +74,7 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // - Replacement: apply a 2.1x floor to every previously signed fee cap, then take
 //   the component-wise maximum with a fresh 1.1x network estimate. With the default
 //   two replacements, priority progresses 0.2 -> 0.42 -> 0.882 Gwei.
-// - Before signing, the execution and six-blob liabilities must fit the configured total cap.
+// - Before signing, the execution and actual blob liabilities must fit the configured total cap.
 // The replacement count is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
@@ -786,7 +786,7 @@ impl EthereumSettlementClient {
         let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
         let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
         let max_total_fee_wei =
-            Self::ensure_l2_state_update_fee_within_cap(fee_caps, self.l2_state_update_max_fee_wei)?;
+            Self::ensure_l2_state_update_fee_within_cap(fee_caps, state_diff.len(), self.l2_state_update_max_fee_wei)?;
         debug!(
             nonce = nonce,
             gas_multiplier = %mul_factor,
@@ -881,11 +881,15 @@ impl EthereumSettlementClient {
         }
     }
 
-    fn ensure_l2_state_update_fee_within_cap(fee_caps: StateUpdateFeeCaps, max_fee_wei: u128) -> Result<U256> {
+    fn ensure_l2_state_update_fee_within_cap(
+        fee_caps: StateUpdateFeeCaps,
+        blob_count: usize,
+        max_fee_wei: u128,
+    ) -> Result<U256> {
+        // EIP-1559 max_fee_per_gas already includes both base and priority fees.
         let execution_fee = U256::from(GAS_LIMIT_STATE_UPDATE) * U256::from(fee_caps.max_fee_per_gas);
-        let blob_fee = U256::from(MAX_BLOBS_PER_STATE_UPDATE)
-            * U256::from(DATA_GAS_PER_BLOB)
-            * U256::from(fee_caps.max_fee_per_blob_gas);
+        let blob_fee =
+            U256::from(blob_count) * U256::from(DATA_GAS_PER_BLOB) * U256::from(fee_caps.max_fee_per_blob_gas);
         let total_fee = execution_fee + blob_fee;
 
         if total_fee > U256::from(max_fee_wei) {
@@ -1031,24 +1035,25 @@ mod fee_cap_tests {
     use super::*;
 
     #[test]
-    fn l2_state_update_fee_cap_is_inclusive_and_assumes_six_blobs() {
+    fn l2_state_update_fee_cap_is_inclusive_and_uses_actual_blob_count() {
+        let blob_count = 2;
         let fee_caps = StateUpdateFeeCaps {
             max_fee_per_gas: 1,
             // Priority fee is already included in max_fee_per_gas.
             max_priority_fee_per_gas: u128::MAX,
             max_fee_per_blob_gas: 1,
         };
-        let expected_fee =
-            U256::from(GAS_LIMIT_STATE_UPDATE) + U256::from(MAX_BLOBS_PER_STATE_UPDATE) * U256::from(DATA_GAS_PER_BLOB);
+        let expected_fee = U256::from(GAS_LIMIT_STATE_UPDATE) + U256::from(blob_count) * U256::from(DATA_GAS_PER_BLOB);
         let exact_cap = expected_fee.to::<u128>();
 
         assert_eq!(
-            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, exact_cap).unwrap(),
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, blob_count, exact_cap).unwrap(),
             expected_fee
         );
 
         let error =
-            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, exact_cap - 1).unwrap_err();
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, blob_count, exact_cap - 1)
+                .unwrap_err();
         assert!(error.to_string().contains("exceeds configured hard cap"));
     }
 
