@@ -68,13 +68,18 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
 // See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
 // See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
-// With 1.1x start, 2.0x increment, and the default max of 2 fee bumps: 1.1 -> 2.2 -> 4.4.
-// The number of replacements is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
+// EIP-4844 state-update fee policy:
+// - Attempt 1: priority = 0.2 Gwei, max execution = ceil(2 * base * 1.1) + priority,
+//   and max blob = ceil(blob base * 1.1).
+// - Replacement: apply a 2.1x floor to every previously signed fee cap, then take
+//   the component-wise maximum with a fresh 1.1x network estimate. With the default
+//   two replacements, priority progresses 0.2 -> 0.42 -> 0.882 Gwei.
+// - Before signing, the execution and six-blob liabilities must fit the configured total cap.
+// The replacement count is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
-// Same-nonce replacement floors increase this initial 0.2 Gwei tip to 0.42 and 0.882 Gwei.
 const INITIAL_MAX_PRIORITY_FEE_PER_GAS: u128 = 200_000_000;
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
@@ -838,8 +843,9 @@ impl EthereumSettlementClient {
         })
     }
 
-    fn eip1559_fee_caps(base_fee_per_gas: u128, mul_factor: f64) -> Eip1559Estimation {
-        let max_base_fee_per_gas = Self::add_safety_margin(base_fee_per_gas.saturating_mul(2), mul_factor);
+    fn eip1559_fee_caps(base_fee_per_gas: u128, base_fee_safety_multiplier: f64) -> Eip1559Estimation {
+        let max_base_fee_per_gas =
+            Self::add_safety_margin(base_fee_per_gas.saturating_mul(2), base_fee_safety_multiplier);
 
         Eip1559Estimation {
             max_fee_per_gas: max_base_fee_per_gas.saturating_add(INITIAL_MAX_PRIORITY_FEE_PER_GAS),
