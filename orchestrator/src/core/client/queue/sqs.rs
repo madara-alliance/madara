@@ -156,6 +156,9 @@ pub struct SQS {
     /// Cache for queue URLs, keyed by QueueType.
     /// Each entry is lazily initialized on first use.
     queue_url_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>,
+    /// Cache for OmniQueue consumers, keyed by QueueType.
+    /// Reusing consumers avoids rebuilding AWS SDK config/client state for every received message.
+    consumer_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<Arc<SqsConsumer>>>>>>,
 }
 
 impl SQS {
@@ -187,6 +190,7 @@ impl SQS {
             inner: InnerSQS::new(&latest_aws_config),
             queue_template_identifier: args.queue_template_identifier.clone(),
             queue_url_cache: Arc::new(RwLock::new(HashMap::new())),
+            consumer_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -233,6 +237,26 @@ impl SQS {
 
     pub fn client(&self) -> &Client {
         self.inner.client()
+    }
+
+    async fn get_or_create_consumer(&self, queue: &QueueType) -> Result<Arc<SqsConsumer>, QueueError> {
+        {
+            let cache = self.consumer_cache.read().await;
+            if let Some(cell) = cache.get(queue) {
+                if let Some(consumer) = cell.get() {
+                    return Ok(consumer.clone());
+                }
+            }
+        }
+
+        let cell = {
+            let mut cache = self.consumer_cache.write().await;
+            cache.entry(queue.clone()).or_insert_with(|| Arc::new(OnceCell::new())).clone()
+        };
+
+        let consumer = cell.get_or_try_init(|| async { self.get_consumer(queue.clone()).await.map(Arc::new) }).await?;
+
+        Ok(consumer.clone())
     }
 
     /// Returns the number of queue URLs currently cached.
@@ -501,7 +525,7 @@ impl QueueClient for SQS {
 
             return Err(omniqueue::QueueError::NoData.into());
         }
-        let consumer = self.get_consumer(queue.clone()).await?;
+        let consumer = self.get_or_create_consumer(&queue).await?;
         let delivery = consumer.wrap_message(messages_vec.first().unwrap());
 
         Ok(delivery)
