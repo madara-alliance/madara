@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::error::consumer::format_queue_ack_error;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
 use crate::types::jobs::WorkerTriggerType;
@@ -12,8 +13,10 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
+use aws_sdk_sqs::error::DisplayErrorContext;
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
+use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
@@ -37,6 +40,10 @@ pub struct EventWorker {
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
+
+fn format_error_context(error: &impl Error) -> String {
+    DisplayErrorContext(error).to_string()
+}
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -137,12 +144,13 @@ impl EventWorker {
                     continue;
                 }
                 Err(e) => {
+                    let error_msg = format_error_context(&e);
                     error!(
                         queue = ?self.queue_type,
-                        error = %e,
+                        error = %error_msg,
                         "Failed to consume message from queue"
                     );
-                    return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?;
+                    return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg })?;
                 }
             }
         }
@@ -315,7 +323,7 @@ impl EventWorker {
                 }
             }
 
-            message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+            message.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -323,7 +331,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_queue_ack_error(&e.0)))?;
         Ok(())
     }
 
