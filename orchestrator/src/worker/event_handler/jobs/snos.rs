@@ -266,7 +266,7 @@ impl SnosJobHandler {
             data_storage
                 .put_data(cairo_pie_zip_bytes, cairo_pie_key)
                 .await
-                .map_err(|e| SnosError::CairoPieUnstorable { internal_id, message: e.to_string() })?;
+                .map_err(|source| SnosError::CairoPieUnstorable { internal_id, source })?;
         }
 
         // Store SNOS Output
@@ -276,7 +276,7 @@ impl SnosJobHandler {
             data_storage
                 .put_data(snos_output_json.into(), snos_output_key)
                 .await
-                .map_err(|e| SnosError::SnosOutputUnstorable { internal_id, message: e.to_string() })?;
+                .map_err(|source| SnosError::SnosOutputUnstorable { internal_id, source })?;
         }
 
         // Store Program Output
@@ -287,7 +287,7 @@ impl SnosJobHandler {
             data_storage
                 .put_data(encoded_data.into(), program_output_key)
                 .await
-                .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id, message: e.to_string() })?;
+                .map_err(|source| SnosError::ProgramOutputUnstorable { internal_id, source })?;
         }
 
         Ok(())
