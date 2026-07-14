@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::error::consumer::format_queue_ack_error;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
 use crate::types::jobs::WorkerTriggerType;
@@ -12,8 +13,10 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
+use aws_sdk_sqs::error::DisplayErrorContext;
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
+use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
@@ -37,6 +40,32 @@ pub struct EventWorker {
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
+const QUEUE_ACK_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+fn format_error_context(error: &impl Error) -> String {
+    DisplayErrorContext(error).to_string()
+}
+
+async fn ack_message_with_retry(message: Delivery) -> Result<(), ConsumptionError> {
+    if let Err((first_error, message)) = message.ack().await {
+        let first_error = format_queue_ack_error(&first_error);
+        warn!(error = %first_error, "Failed to ACK message, retrying once");
+
+        sleep(QUEUE_ACK_RETRY_DELAY).await;
+
+        if let Err((second_error, _message)) = message.ack().await {
+            let second_error = format_queue_ack_error(&second_error);
+            error!(
+                first_error = %first_error,
+                error = %second_error,
+                "Failed to ACK message after retry"
+            );
+            return Err(ConsumptionError::FailedToAcknowledgeMessage(second_error));
+        }
+    }
+
+    Ok(())
+}
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -137,12 +166,13 @@ impl EventWorker {
                     continue;
                 }
                 Err(e) => {
+                    let error_msg = format_error_context(&e);
                     error!(
                         queue = ?self.queue_type,
-                        error = %e,
+                        error = %error_msg,
                         "Failed to consume message from queue"
                     );
-                    return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?;
+                    return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg })?;
                 }
             }
         }
@@ -177,10 +207,7 @@ impl EventWorker {
         let worker_handler =
             JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
         let workload = MetricsRecorder::start_worker_trigger_workload(&worker_message.worker);
-        worker_handler
-            .run_worker_if_enabled(self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+        worker_handler.run_worker_if_enabled(self.config.clone()).await.map_err(OtherError::from)?;
         workload.finish_success();
         Ok(())
     }
@@ -195,9 +222,7 @@ impl EventWorker {
     /// # Errors
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_job_failure(&self, queue_message: &JobQueueMessage) -> EventSystemResult<()> {
-        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone()).await?;
         Ok(())
     }
 
@@ -214,14 +239,10 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         match job_state {
             JobState::Processing => {
-                JobHandlerService::process_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                JobHandlerService::process_job(queue_message.id, self.config.clone()).await?;
             }
             JobState::Verification => {
-                JobHandlerService::verify_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                JobHandlerService::verify_job(queue_message.id, self.config.clone()).await?;
             }
         }
         Ok(())
@@ -286,21 +307,20 @@ impl EventWorker {
             let (error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
-                    tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
+                    let error_msg = format_error_context(error);
+                    tracing::error!(worker = ?worker, error = %error_msg, "Failed to handle worker trigger");
                     (
-                        format!("Worker {worker:?} handling failed: {error}"),
-                        ConsumptionError::FailedToSpawnWorker {
-                            worker_trigger_type: worker.clone(),
-                            error_msg: error.to_string(),
-                        },
+                        format!("Worker {worker:?} handling failed: {error_msg}"),
+                        ConsumptionError::FailedToSpawnWorker { worker_trigger_type: worker.clone(), error_msg },
                     )
                 }
                 ParsedMessage::JobQueue(msg) => {
                     let job_id = &msg.id;
-                    tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
+                    let error_msg = format_error_context(error);
+                    tracing::error!(job_id = ?job_id, error = %error_msg, "Failed to handle job");
                     (
-                        format!("Job {job_id:?} handling failed: {error}"),
-                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
+                        format!("Job {job_id:?} handling failed: {error_msg}"),
+                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg },
                     )
                 }
             };
@@ -315,7 +335,7 @@ impl EventWorker {
                 }
             }
 
-            message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+            message.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -323,7 +343,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+        ack_message_with_retry(message).await?;
         Ok(())
     }
 
@@ -406,7 +426,7 @@ impl EventWorker {
                         // ACK/NACK the priority delivery after processing
                         match &result {
                             Ok(_) => {
-                                if let Err(e) = delivery.ack().await {
+                                if let Err(e) = ack_message_with_retry(delivery).await {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }

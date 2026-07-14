@@ -3,6 +3,7 @@ use crate::core::client::database::DatabaseError;
 use crate::core::client::queue::QueueError;
 use crate::core::client::storage::StorageError;
 use crate::core::error::OrchestratorCoreError;
+use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::error::ConsumptionError;
 use crate::types::jobs::WorkerTriggerType;
@@ -30,6 +31,9 @@ pub enum EventSystemError {
 
     #[error("Database error: {0}")]
     DatabaseCoreError(#[from] DatabaseError),
+
+    #[error("Job error: {0}")]
+    JobError(#[from] JobError),
 
     #[error("Orchestrator Core Error: {0}")]
     OrchestratorCoreError(#[from] OrchestratorCoreError),
