@@ -81,9 +81,9 @@ const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump require
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
 const INITIAL_MAX_PRIORITY_FEE_PER_GAS: u128 = 200_000_000;
-/// we noticed Starknet uses the same limit on the mainnet
-/// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
-const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
+/// Fixed limit with headroom over the 1,050,798 gas maximum observed in StarkWare
+/// `updateStateKzgDA` transactions during the 90 days ending 2026-07-14.
+const GAS_LIMIT_STATE_UPDATE: u64 = 1_500_000;
 
 #[derive(Clone, Copy, Debug)]
 struct StateUpdateFeeCaps {
@@ -1014,6 +1014,11 @@ mod priority_fee_tests {
 #[cfg(test)]
 mod fee_cap_tests {
     use super::*;
+
+    #[test]
+    fn state_update_gas_limit_has_observed_usage_headroom() {
+        assert_eq!(GAS_LIMIT_STATE_UPDATE, 1_500_000);
+    }
 
     #[test]
     fn l2_state_update_fee_cap_is_inclusive_and_uses_actual_blob_count() {
