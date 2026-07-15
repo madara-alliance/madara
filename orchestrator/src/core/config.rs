@@ -521,6 +521,7 @@ impl Config {
                         ethereum_settlement_params.l1_core_contract_address,
                         ethereum_settlement_params.ethereum_rpc_url.clone(),
                         Some(ethereum_settlement_params.starknet_operator_address),
+                        ethereum_settlement_params.ethereum_l2_state_update_max_fee_wei,
                     )))
                 }
             }

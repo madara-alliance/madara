@@ -85,6 +85,9 @@ impl TryFrom<RunCmd> for SettlementConfig {
                         .ethereum_settlement_args
                         .ethereum_tx_confirmation_timeout_secs,
                     ethereum_max_fee_bumps: run_cmd.ethereum_settlement_args.ethereum_max_fee_bumps,
+                    ethereum_l2_state_update_max_fee_wei: run_cmd
+                        .ethereum_settlement_args
+                        .ethereum_l2_state_update_max_fee_wei,
                     disable_peerdas: run_cmd.ethereum_settlement_args.disable_peerdas,
                 };
                 Ok(Self::Ethereum(ethereum_params))

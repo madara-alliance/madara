@@ -1,4 +1,5 @@
 use clap::Args;
+use orchestrator_ethereum_settlement_client::DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
@@ -40,6 +41,15 @@ pub struct EthereumSettlementCliArgs {
     /// Maximum number of same-nonce fee-bump replacements for a state-update transaction.
     #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS", long, default_value = "2")]
     pub ethereum_max_fee_bumps: u64,
+
+    /// Maximum signed fee liability in wei for an L2 Ethereum state-update transaction, including six blobs.
+    /// The conservative default can reject settlements during high-fee periods; raise it when liveness takes priority.
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_ETHEREUM_L2_STATE_UPDATE_MAX_FEE_WEI",
+        long,
+        default_value_t = DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI
+    )]
+    pub ethereum_l2_state_update_max_fee_wei: u128,
 
     /// Disable PeerDAS (PeerDAS is a feature introduced in Fusaka upgrade which changes the way we settle on Ethereum).
     /// https://ethereum.org/roadmap/fusaka
