@@ -16,7 +16,7 @@
 
 use crate::core::client::queue::QueueError;
 use crate::core::config::Config;
-use crate::error::consumer::format_queue_ack_error;
+use crate::error::consumer::format_error_context;
 use crate::error::event::EventSystemResult;
 use crate::error::ConsumptionError;
 use crate::types::priority_slot::{
@@ -254,16 +254,13 @@ impl PriorityQueueWorker {
                 delivery
                     .ack()
                     .await
-                    .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_queue_ack_error(&e.0)))?;
+                    .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(format_error_context(&e.0)))?;
                 return Ok(());
             }
             Err(e) => {
                 error!("PQ Worker ({}): Database error fetching job {}: {:?}", self.action, parsed_msg.id, e);
                 // NACK to retry later
-                delivery
-                    .nack()
-                    .await
-                    .map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
+                delivery.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_error_context(&e.0)))?;
                 return Ok(());
             }
         };

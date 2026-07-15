@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::error::consumer::format_queue_ack_error;
+use crate::error::consumer::format_error_context;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
 use crate::types::jobs::WorkerTriggerType;
@@ -13,10 +13,8 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
-use aws_sdk_sqs::error::DisplayErrorContext;
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
-use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
@@ -42,19 +40,15 @@ const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
 const QUEUE_ACK_RETRY_DELAY: Duration = Duration::from_millis(500);
 
-fn format_error_context(error: &impl Error) -> String {
-    DisplayErrorContext(error).to_string()
-}
-
 async fn ack_message_with_retry(message: Delivery) -> Result<(), ConsumptionError> {
     if let Err((first_error, message)) = message.ack().await {
-        let first_error = format_queue_ack_error(&first_error);
+        let first_error = format_error_context(&first_error);
         warn!(error = %first_error, "Failed to ACK message, retrying once");
 
         sleep(QUEUE_ACK_RETRY_DELAY).await;
 
         if let Err((second_error, _message)) = message.ack().await {
-            let second_error = format_queue_ack_error(&second_error);
+            let second_error = format_error_context(&second_error);
             error!(
                 first_error = %first_error,
                 error = %second_error,
@@ -335,7 +329,7 @@ impl EventWorker {
                 }
             }
 
-            message.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_queue_ack_error(&e.0)))?;
+            message.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_error_context(&e.0)))?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
