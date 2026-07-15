@@ -10,6 +10,7 @@ use crate::types::queue::JobAction;
 use crate::types::queue::{JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::utils::metrics_recorder::MetricsRecorder;
+use crate::worker::controller::delivery_retry::{ack_delivery_with_retry, nack_delivery_with_retry};
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
@@ -38,28 +39,6 @@ pub struct EventWorker {
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
 const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
-const QUEUE_ACK_RETRY_DELAY: Duration = Duration::from_millis(500);
-
-async fn ack_message_with_retry(message: Delivery) -> Result<(), ConsumptionError> {
-    if let Err((first_error, message)) = message.ack().await {
-        let first_error = format_error_context(&first_error);
-        warn!(error = %first_error, "Failed to ACK message, retrying once");
-
-        sleep(QUEUE_ACK_RETRY_DELAY).await;
-
-        if let Err((second_error, _message)) = message.ack().await {
-            let second_error = format_error_context(&second_error);
-            error!(
-                first_error = %first_error,
-                error = %second_error,
-                "Failed to ACK message after retry"
-            );
-            return Err(ConsumptionError::FailedToAcknowledgeMessage(second_error));
-        }
-    }
-
-    Ok(())
-}
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -329,7 +308,7 @@ impl EventWorker {
                 }
             }
 
-            message.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(format_error_context(&e.0)))?;
+            nack_delivery_with_retry(message).await?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -337,7 +316,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        ack_message_with_retry(message).await?;
+        ack_delivery_with_retry(message).await?;
         Ok(())
     }
 
@@ -420,12 +399,12 @@ impl EventWorker {
                         // ACK/NACK the priority delivery after processing
                         match &result {
                             Ok(_) => {
-                                if let Err(e) = ack_message_with_retry(delivery).await {
+                                if let Err(e) = ack_delivery_with_retry(delivery).await {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }
                             Err(_) => {
-                                if let Err(e) = delivery.nack().await {
+                                if let Err(e) = nack_delivery_with_retry(delivery).await {
                                     error!("Failed to NACK priority message: {:?}", e);
                                 }
                             }
