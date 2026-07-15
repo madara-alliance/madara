@@ -368,7 +368,7 @@ impl AggregatorJobHandler {
             .storage()
             .put_data(encoded_data.into(), storage_path)
             .await
-            .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id: batch_index, message: e.to_string() })?;
+            .map_err(|source| SnosError::ProgramOutputUnstorable { internal_id: batch_index, source })?;
         Ok(())
     }
 

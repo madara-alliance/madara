@@ -17,7 +17,6 @@
 use crate::core::client::queue::QueueError;
 use crate::core::config::Config;
 use crate::error::event::EventSystemResult;
-use crate::error::ConsumptionError;
 use crate::types::priority_slot::{
     clear_stale_from_processing_slot, clear_stale_from_verification_slot, is_processing_slot_empty,
     is_verification_slot_empty, place_in_processing_slot, place_in_verification_slot, PriorityJobSlot,
@@ -26,6 +25,7 @@ use crate::types::queue::QueueType;
 use crate::types::queue_control::{
     PRIORITY_SLOT_CHECK_INTERVAL, PRIORITY_SLOT_STALENESS_TIMEOUT_SECS, PRIORITY_SLOT_WAIT_TIMEOUT,
 };
+use crate::worker::controller::delivery_retry::{ack_delivery_with_retry, nack_delivery_with_retry};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 use crate::worker::traits::message::MessageParser;
 use omniqueue::Delivery;
@@ -172,7 +172,7 @@ impl PriorityQueueWorker {
             // Check and clear stale messages
             if let Some(stale_delivery) = self.clear_stale_if_needed(PRIORITY_SLOT_STALENESS_TIMEOUT_SECS).await {
                 warn!("PQ Worker ({}): Cleared stale message from slot, NACKing", self.action);
-                if let Err(e) = stale_delivery.nack().await {
+                if let Err(e) = nack_delivery_with_retry(stale_delivery).await {
                     error!("PQ Worker ({}): Failed to NACK stale delivery: {:?}", self.action, e);
                 }
             }
@@ -236,7 +236,7 @@ impl PriorityQueueWorker {
             Err(e) => {
                 error!("PQ Worker ({}): Failed to parse message: {:?}", self.action, e);
                 // ACK malformed messages to prevent infinite retries
-                if let Err(ack_err) = delivery.ack().await {
+                if let Err(ack_err) = ack_delivery_with_retry(delivery).await {
                     error!("PQ Worker ({}): Failed to ACK malformed message: {:?}", self.action, ack_err);
                 }
                 return Ok(());
@@ -250,13 +250,13 @@ impl PriorityQueueWorker {
             Ok(Some(job)) => job,
             Ok(None) => {
                 warn!("PQ Worker ({}): Job {} not found, ACKing message", self.action, parsed_msg.id);
-                delivery.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+                ack_delivery_with_retry(delivery).await?;
                 return Ok(());
             }
             Err(e) => {
                 error!("PQ Worker ({}): Database error fetching job {}: {:?}", self.action, parsed_msg.id, e);
                 // NACK to retry later
-                delivery.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(e.0.to_string()))?;
+                nack_delivery_with_retry(delivery).await?;
                 return Ok(());
             }
         };

@@ -1,5 +1,7 @@
 use crate::error::other::OtherError;
 use crate::types::jobs::WorkerTriggerType;
+use aws_sdk_sqs::error::DisplayErrorContext;
+use std::error::Error as StdError;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -28,4 +30,8 @@ pub enum ConsumptionError {
 
     #[error("Queue Type not found: {0}")]
     QueueNotFound(String),
+}
+
+pub fn format_error_context(error: &impl StdError) -> String {
+    DisplayErrorContext(error).to_string()
 }
