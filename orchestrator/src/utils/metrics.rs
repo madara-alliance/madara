@@ -75,6 +75,8 @@ pub struct OrchestratorMetrics {
     pub aggregator_program_output_bytes: Gauge<f64>,
     pub aggregator_da_segment_bytes: Gauge<f64>,
     pub aggregator_pie_zip_bytes: Gauge<f64>,
+    pub aggregator_batching_batch_number: Gauge<f64>,
+    pub aggregator_batching_duration_seconds: Histogram<f64>,
     // Storage cleanup metrics
     pub cleanup_runs_total: Counter<f64>,
     pub cleanup_jobs_attempted: Counter<f64>,
@@ -433,6 +435,20 @@ impl Metrics for OrchestratorMetrics {
             "bytes".to_string(),
         );
 
+        let aggregator_batching_batch_number = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_batching_batch_number".to_string(),
+            "Latest aggregator batch number handled by the batching worker".to_string(),
+            "batch".to_string(),
+        );
+
+        let aggregator_batching_duration_seconds = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_batching_duration_seconds".to_string(),
+            "Duration of aggregator batching worker runs".to_string(),
+            "s".to_string(),
+        );
+
         // Storage cleanup metrics
         let cleanup_runs_total = register_counter_metric_instrument(
             &orchestrator_meter,
@@ -530,6 +546,8 @@ impl Metrics for OrchestratorMetrics {
             aggregator_program_output_bytes,
             aggregator_da_segment_bytes,
             aggregator_pie_zip_bytes,
+            aggregator_batching_batch_number,
+            aggregator_batching_duration_seconds,
             job_status_tracker,
             atlantic_api_call_duration,
             atlantic_api_calls_total,
