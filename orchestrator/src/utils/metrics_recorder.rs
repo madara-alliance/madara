@@ -650,6 +650,14 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.aggregator_da_segment_bytes.record(da_segment_bytes as f64, &attrs);
         ORCHESTRATOR_METRICS.aggregator_pie_zip_bytes.record(pie_zip_bytes as f64, &attrs);
     }
+
+    pub fn record_aggregator_batching_duration(duration_seconds: f64) {
+        ORCHESTRATOR_METRICS.aggregator_batching_duration_seconds.record(duration_seconds, &[]);
+    }
+
+    pub fn record_aggregator_batching_batch_number(batch_number: u64) {
+        ORCHESTRATOR_METRICS.aggregator_batching_batch_number.record(batch_number as f64, &[]);
+    }
 }
 
 #[cfg(test)]
