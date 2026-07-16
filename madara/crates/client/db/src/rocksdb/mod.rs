@@ -1,4 +1,5 @@
 use crate::{
+    metrics::metrics,
     preconfirmed::PreconfirmedExecutedTransaction,
     prelude::*,
     rocksdb::{
@@ -26,13 +27,14 @@ use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use opentelemetry::KeyValue;
 use rocksdb::Options as RocksDBOptions;
 use rocksdb::{
     BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, IteratorMode, MultiThreaded,
     WriteOptions,
 };
 use starknet_types_core::hash::StarkHash;
-use std::{fmt, path::Path, sync::Arc};
+use std::{fmt, path::Path, sync::Arc, time::Instant};
 
 mod backup;
 mod blocks;
@@ -245,21 +247,41 @@ fn trie_revert_action(latest_log_block_n: Option<u64>, target_block_n: u64) -> T
     }
 }
 
+fn record_trie_revert(trie_name: &str, outcome: &'static str, started_at: Instant, revisions: Option<u64>) {
+    let attributes = [KeyValue::new("trie", trie_name.replace(' ', "_")), KeyValue::new("outcome", outcome)];
+    metrics().bonsai_trie_revert_operations.add(1, &attributes);
+    metrics().bonsai_trie_revert_duration.record(started_at.elapsed().as_secs_f64(), &attributes);
+    if let Some(revisions) = revisions {
+        metrics().bonsai_trie_revert_revisions.record(revisions, &attributes);
+    }
+}
+
 fn revert_single_trie<H: StarkHash + Send + Sync>(
     trie_name: &str,
     trie: &mut trie::GlobalTrie<H>,
     latest_log_block_n: Option<u64>,
     target_block_n: u64,
 ) -> anyhow::Result<bool> {
+    let started_at = Instant::now();
     match trie_revert_action(latest_log_block_n, target_block_n) {
         TrieRevertAction::Revert { current, target } => {
             tracing::debug!("🌳 REORG: Reverting {trie_name} trie from trie_head={} to target={}", current, target);
-            trie.revert_to(BasicId::new(target), BasicId::new(current))
-                .map_err(|e| anyhow::anyhow!("Failed to revert {trie_name} trie: {e:?}"))?;
+            let revisions = current.saturating_sub(target);
+            let result = trie
+                .revert_to(BasicId::new(target), BasicId::new(current))
+                .map_err(|e| anyhow::anyhow!("Failed to revert {trie_name} trie: {e:?}"));
+            record_trie_revert(
+                trie_name,
+                if result.is_ok() { "success" } else { "error" },
+                started_at,
+                Some(revisions),
+            );
+            result?;
             tracing::info!("✅ REORG: {trie_name} trie reverted successfully");
             Ok(true)
         }
         TrieRevertAction::AlreadyAtTarget(current) => {
+            record_trie_revert(trie_name, "already_at_target", started_at, None);
             tracing::info!(
                 "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} already matches target={}",
                 current,
@@ -268,6 +290,7 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
             Ok(false)
         }
         TrieRevertAction::OlderThanTarget { current, target } => {
+            record_trie_revert(trie_name, "older_than_target", started_at, None);
             tracing::info!(
                 "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} is older than target={}",
                 current,
@@ -276,6 +299,7 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
             Ok(false)
         }
         TrieRevertAction::Missing => {
+            record_trie_revert(trie_name, "missing", started_at, None);
             tracing::info!("🌳 REORG: Skipping {trie_name} trie revert because it has no persisted trie logs");
             Ok(false)
         }

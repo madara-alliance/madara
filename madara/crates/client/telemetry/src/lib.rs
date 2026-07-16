@@ -335,17 +335,46 @@ pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
 pub trait HistogramType<T> {
     /// Registers a new OTEL [Histogram] to the node metrics.
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<T>;
+
+    /// Registers a new OTEL [Histogram] with instrument-specific bucket boundaries.
+    fn register_histogram_with_boundaries(
+        meter: &Meter,
+        name: String,
+        description: String,
+        unit: String,
+        boundaries: Vec<f64>,
+    ) -> Histogram<T>;
 }
 
 impl HistogramType<f64> for f64 {
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<f64> {
         meter.f64_histogram(name).with_description(description).with_unit(unit).build()
     }
+
+    fn register_histogram_with_boundaries(
+        meter: &Meter,
+        name: String,
+        description: String,
+        unit: String,
+        boundaries: Vec<f64>,
+    ) -> Histogram<f64> {
+        meter.f64_histogram(name).with_description(description).with_unit(unit).with_boundaries(boundaries).build()
+    }
 }
 
 impl HistogramType<u64> for u64 {
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<u64> {
         meter.u64_histogram(name).with_description(description).with_unit(unit).build()
+    }
+
+    fn register_histogram_with_boundaries(
+        meter: &Meter,
+        name: String,
+        description: String,
+        unit: String,
+        boundaries: Vec<f64>,
+    ) -> Histogram<u64> {
+        meter.u64_histogram(name).with_description(description).with_unit(unit).with_boundaries(boundaries).build()
     }
 }
 
@@ -356,4 +385,14 @@ pub fn register_histogram_metric_instrument<T: HistogramType<T> + Display>(
     unit: String,
 ) -> Histogram<T> {
     T::register_histogram(crate_meter, instrument_name, desc, unit)
+}
+
+pub fn register_histogram_metric_instrument_with_boundaries<T: HistogramType<T> + Display>(
+    crate_meter: &Meter,
+    instrument_name: String,
+    desc: String,
+    unit: String,
+    boundaries: Vec<f64>,
+) -> Histogram<T> {
+    T::register_histogram_with_boundaries(crate_meter, instrument_name, desc, unit, boundaries)
 }
