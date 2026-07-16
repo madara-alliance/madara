@@ -104,6 +104,15 @@ fn trie_log_revision(prefix: &DatabaseKey) -> Option<u64> {
     Some(u64::from_be_bytes(revision))
 }
 
+fn prefix_prune_outcome(scan_error: bool, write_succeeded: bool) -> &'static str {
+    match (scan_error, write_succeeded) {
+        (false, true) => "success",
+        (true, true) => "scan_error",
+        (false, false) => "write_error",
+        (true, false) => "scan_and_write_error",
+    }
+}
+
 struct PrefixPruneObservation {
     column: &'static str,
     revision: Option<u64>,
@@ -116,13 +125,7 @@ struct PrefixPruneObservation {
 
 impl PrefixPruneObservation {
     fn record(self, write_succeeded: bool) {
-        let outcome = if !write_succeeded {
-            "write_error"
-        } else if self.scan_error {
-            "scan_error"
-        } else {
-            "success"
-        };
+        let outcome = prefix_prune_outcome(self.scan_error, write_succeeded);
         let attributes = [
             KeyValue::new("column", self.column),
             KeyValue::new("strategy", "point_delete"),
@@ -423,6 +426,14 @@ mod tests {
         assert_eq!(trie_log_revision(&DatabaseKey::TrieLog(&revision)), Some(42));
         assert_eq!(trie_log_revision(&DatabaseKey::Trie(&revision)), None);
         assert_eq!(trie_log_revision(&DatabaseKey::TrieLog(&revision[..7])), None);
+    }
+
+    #[test]
+    fn prefix_prune_outcome_preserves_scan_and_write_failures() {
+        assert_eq!(prefix_prune_outcome(false, true), "success");
+        assert_eq!(prefix_prune_outcome(true, true), "scan_error");
+        assert_eq!(prefix_prune_outcome(false, false), "write_error");
+        assert_eq!(prefix_prune_outcome(true, false), "scan_and_write_error");
     }
 
     #[test]
