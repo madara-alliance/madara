@@ -2539,11 +2539,7 @@
               },
               {
                 "color": "yellow",
-                "value": 34359738368
-              },
-              {
-                "color": "red",
-                "value": 68719476736
+                "value": 4294967296
               }
             ]
           },
@@ -2558,6 +2554,7 @@
         "y": 71
       },
       "id": 72,
+      "description": "Worst selected pod's synthetic `column=\"total\"` backlog. Yellow at the current 4 GiB global warning threshold; per-column RocksDB soft/hard limits are shown in the focused compaction dashboard.",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -2579,7 +2576,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column=\"total\"})",
           "legendFormat": "Pending Compaction",
           "refId": "A"
         }
@@ -2983,11 +2980,7 @@
               },
               {
                 "color": "yellow",
-                "value": 34359738368
-              },
-              {
-                "color": "red",
-                "value": 68719476736
+                "value": 4294967296
               }
             ]
           },
@@ -3003,7 +2996,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#C4162A",
+                  "fixedColor": "#FF9830",
                   "mode": "fixed"
                 }
               }
@@ -3039,7 +3032,7 @@
         "y": 76
       },
       "id": 77,
-      "description": "Monitors compaction backlog and memtable data size.\n\n**Pending Compaction Thresholds:**\n- Yellow line (32 GiB): Warning - compaction falling behind\n- Red line (64 GiB): Critical - risk of write stalls\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
+      "description": "Monitors database-wide compaction backlog and memtable data size.\n\n**Pending Compaction:**\n- Uses only the synthetic `column=\"total\"` series; summing it with per-column series double-counts backlog\n- Yellow line (4 GiB): current global warning alert\n- RocksDB's 6/12 GiB soft/hard limits apply per column family, not to this total\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
       "options": {
         "legend": {
           "calcs": [
@@ -3062,7 +3055,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column=\"total\"})",
           "legendFormat": "Pending Compaction",
           "refId": "A"
         },

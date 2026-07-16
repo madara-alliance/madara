@@ -88,7 +88,7 @@ The OpenTelemetry Collector acts as a central hub for collecting and exporting t
 
 ## Dashboards
 
-The monitoring stack includes 7 dashboards organized in two folders.
+The monitoring stack includes 8 dashboards organized in two folders.
 
 ### Madara Dashboards
 
@@ -106,6 +106,14 @@ Comprehensive view of block production and storage:
 **UID:** `madara-fullnode`
 
 Fullnode-specific metrics and performance data.
+
+#### 3. Madara RocksDB & Bonsai Compaction
+
+**UID:** `madara-bonsai-compaction`
+
+Importable, focused view of database compaction pressure across all column
+families, detailed Bonsai log pressure, prefix-pruning distributions, RocksDB
+throughput and stalls, snapshots, and rare trie-revert activity.
 
 ### Orchestrator Dashboards
 
@@ -202,8 +210,9 @@ observability/
     │       └── dashboards.yml      # Dashboard provider config
     ├── dashboards/
     │   ├── Madara/
-    │   │   ├── madara-overview.json    # Block production & storage
-    │   │   └── madara-fullnode.json    # Fullnode metrics
+    │   │   ├── madara-overview.json           # Block production & storage
+    │   │   ├── madara-fullnode.json           # Fullnode metrics
+    │   │   └── madara-bonsai-compaction.json  # RocksDB & Bonsai compaction
     │   └── Orchestrator/
     │       ├── grafana_orchestrator_full_view.json
     │       ├── grafana_orchestrator_v1.json
