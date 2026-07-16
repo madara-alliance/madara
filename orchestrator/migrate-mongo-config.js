@@ -1,10 +1,29 @@
 // In this file you can configure migrate-mongo
 
+const fs = require("node:fs");
+
+// Mirror the Rust orchestrator's resolve_secret_from_file()
+// (see crates/utils/src/env_utils.rs): if `${name}_FILE` is set, read the
+// secret from that mounted file (K8s CSI Secrets Store Driver pattern). The
+// file value takes precedence over the direct env var; an empty file is an
+// error. Reading from a tmpfs file keeps the connection string out of
+// /proc/<pid>/environ, crash dumps, and `kubectl describe pod`. Backward
+// compatible: falls back to the plain env var when `${name}_FILE` is unset.
+function resolveSecretFromFile(name) {
+  const filePath = process.env[`${name}_FILE`];
+  if (!filePath) return process.env[name];
+  const value = fs.readFileSync(filePath, "utf8").trim();
+  if (!value) {
+    throw new Error(`Secret file '${filePath}' (set via ${name}_FILE) is empty`);
+  }
+  return value;
+}
+
 const config = {
   mongodb: {
     // TODO Change (or review) the url to your MongoDB:
     url:
-      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL ||
+      resolveSecretFromFile("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL") ||
       "mongodb://localhost:27017",
 
     // TODO Change this to your database name:
