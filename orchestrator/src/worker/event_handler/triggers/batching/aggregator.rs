@@ -20,10 +20,11 @@ use opentelemetry::KeyValue;
 use orchestrator_prover_client_interface::Task;
 use starknet::providers::Provider;
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
-use starknet_core::types::{BlockId, StateUpdate};
+use starknet_core::types::{BlockId, MaybePreConfirmedStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 const AGGREGATOR_N_TASKS_WORDS: usize = 1;
@@ -80,10 +81,12 @@ impl AggregatorStateHandler {
     /// 1. Assuming all the details are already updated in state
     /// 2. Not making database and storage updates atomically. It might happen that one fails and the other passes
     pub async fn save_batch_state(&self, state: &NonEmptyAggregatorState) -> Result<(), JobError> {
+        let save_started_at = Instant::now();
         info!(batch=?state.batch, "Saving aggregator batch state");
         // Compressing the state update into vector of felts
         // Doing this first since this is dependent on external RPC => Higher chances of failure
         // i.e. if this fails, we won't update anything in our state and prevent data inconsistency
+        let compress_started_at = Instant::now();
         let compressed_state_update = compress_state_update(
             &state.blob,
             state.batch.end_block,
@@ -91,6 +94,13 @@ impl AggregatorStateHandler {
             self.config.batch_rpc_client(),
         )
         .await?;
+        info!(
+            batch_index = %state.batch.index,
+            end_block = %state.batch.end_block,
+            blob_len = compressed_state_update.len(),
+            duration_ms = %compress_started_at.elapsed().as_millis(),
+            "Compressed aggregator batch state for save"
+        );
 
         // Update batch status in the database
         self.config
@@ -109,14 +119,15 @@ impl AggregatorStateHandler {
             .await?;
         let blobs = convert_felt_vec_to_blob_data(&compressed_state_update)?;
         for (i, blob) in blobs.iter().enumerate() {
-            self.config
-                .storage()
-                .put_data(
-                    biguint_vec_to_u8_vec(blob.as_slice()).into(),
-                    &AggregatorBatch::get_blob_file_path(state.batch.index, i as u64 + 1),
-                )
-                .await?;
+            let path = AggregatorBatch::get_blob_file_path(state.batch.index, i as u64 + 1);
+            self.config.storage().put_data(biguint_vec_to_u8_vec(blob.as_slice()).into(), &path).await?;
         }
+        info!(
+            batch_index = %state.batch.index,
+            blob_count = blobs.len(),
+            duration_ms = %save_started_at.elapsed().as_millis(),
+            "Saved aggregator batch state"
+        );
 
         Ok(())
     }
@@ -175,9 +186,13 @@ impl AggregatorHandler {
         block_num: u64,
         state: AggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
-        info!("Including block {} in aggregator batch", block_num);
+        let state_kind = match &state {
+            Empty(_) => "empty",
+            NonEmpty(_) => "non_empty",
+        };
+        info!(block_num, state = state_kind, "Including block in aggregator batch");
         // Fetch Starknet version for the current block
-        let current_block_starknet_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        let current_block_starknet_version = self.fetch_block_version(block_num, "include_block").await?;
 
         // Check if block's Starknet version is supported (applies to all states)
         if !current_block_starknet_version.is_supported() {
@@ -200,23 +215,11 @@ impl AggregatorHandler {
         match state {
             Empty(empty_state) => {
                 // Get state update for the current block
-                let current_state_update = self
-                    .config
-                    .madara_rpc_client()
-                    .get_state_update(BlockId::Number(block_num))
-                    .await
-                    .map_err(|e| JobError::ProviderError(e.to_string()))?;
+                let current_state_update = self.fetch_state_update(block_num, "empty_state").await?;
 
                 match current_state_update {
                     Update(state_update) => {
-                        let block_weights = AggregatorBatchWeights::from(
-                            &get_block_builtin_weights(
-                                block_num,
-                                self.config.madara_feeder_gateway_client(),
-                                self.batch_config.empty_block_proving_gas,
-                            )
-                            .await?,
-                        );
+                        let block_weights = self.fetch_block_weights(block_num, "empty_state").await?;
                         let aggregator_input_size_upper_bound = initial_aggregator_input_size_upper_bound(
                             &state_update,
                             block_weights.message_segment_length,
@@ -260,6 +263,78 @@ impl AggregatorHandler {
         }
     }
 
+    async fn fetch_block_version(&self, block_num: u64, operation: &str) -> Result<StarknetVersion, JobError> {
+        let started_at = Instant::now();
+        let version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        info!(
+            block_num,
+            operation,
+            version = %version,
+            duration_ms = %started_at.elapsed().as_millis(),
+            "Fetched aggregator block Starknet version"
+        );
+        Ok(version)
+    }
+
+    async fn fetch_block_weights(&self, block_num: u64, operation: &str) -> Result<AggregatorBatchWeights, JobError> {
+        let started_at = Instant::now();
+        let weights = AggregatorBatchWeights::from(
+            &get_block_builtin_weights(
+                block_num,
+                self.config.madara_feeder_gateway_client(),
+                self.batch_config.empty_block_proving_gas,
+            )
+            .await?,
+        );
+        info!(
+            block_num,
+            operation,
+            l1_gas = %weights.l1_gas,
+            message_segment_length = %weights.message_segment_length,
+            duration_ms = %started_at.elapsed().as_millis(),
+            "Fetched aggregator block bouncer weights"
+        );
+        Ok(weights)
+    }
+
+    async fn fetch_state_update(
+        &self,
+        block_num: u64,
+        operation: &str,
+    ) -> Result<MaybePreConfirmedStateUpdate, JobError> {
+        let started_at = Instant::now();
+        let update = self
+            .config
+            .madara_rpc_client()
+            .get_state_update(BlockId::Number(block_num))
+            .await
+            .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        match &update {
+            Update(state_update) => {
+                let (modified_contracts, storage_updates, declared_classes) =
+                    state_update_full_output_counts(state_update);
+                info!(
+                    block_num,
+                    operation,
+                    modified_contracts,
+                    storage_updates,
+                    declared_classes,
+                    duration_ms = %started_at.elapsed().as_millis(),
+                    "Fetched aggregator state update"
+                );
+            }
+            PreConfirmedUpdate(_) => {
+                info!(
+                    block_num,
+                    operation,
+                    duration_ms = %started_at.elapsed().as_millis(),
+                    "Fetched pre-confirmed aggregator state update"
+                );
+            }
+        }
+        Ok(update)
+    }
+
     async fn process_block(
         &self,
         block_num: u64,
@@ -278,25 +353,13 @@ impl AggregatorHandler {
         }
 
         // Fetch block weights for the current block
-        let block_weights = AggregatorBatchWeights::from(
-            &get_block_builtin_weights(
-                block_num,
-                self.config.madara_feeder_gateway_client(),
-                self.batch_config.empty_block_proving_gas,
-            )
-            .await?,
-        );
+        let block_weights = self.fetch_block_weights(block_num, "non_empty_state").await?;
 
         // Fetch Starknet version of the current block
-        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        let block_version = self.fetch_block_version(block_num, "non_empty_state").await?;
 
         // Get the state update for the block
-        let block_state_update = self
-            .config
-            .madara_rpc_client()
-            .get_state_update(BlockId::Number(block_num))
-            .await
-            .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let block_state_update = self.fetch_state_update(block_num, "non_empty_state").await?;
 
         match block_state_update {
             Update(state_update) => {
@@ -369,23 +432,10 @@ impl AggregatorHandler {
     ) -> Result<AggregatorBatch, JobError> {
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
-        let starknet_version = get_block_version(start_block, self.config.madara_rpc_client()).await?;
-        debug!(
-            index = %index,
-            start_block = %start_block,
-            starknet_version = %starknet_version,
-            "Fetched Starknet version for new batch"
-        );
+        let starknet_version = self.fetch_block_version(start_block, "start_aggregator_batch").await?;
 
         // Getting the builtin weights for the start_block and adding it in the DB
-        let weights = AggregatorBatchWeights::from(
-            &get_block_builtin_weights(
-                start_block,
-                self.config.madara_feeder_gateway_client(),
-                self.batch_config.empty_block_proving_gas,
-            )
-            .await?,
-        );
+        let weights = self.fetch_block_weights(start_block, "start_aggregator_batch").await?;
 
         let aggregator_input_size_upper_bound =
             initial_aggregator_input_size_upper_bound(state_update, weights.message_segment_length)?;
@@ -469,6 +519,10 @@ pub enum BatchCheckResult {
 impl NonEmptyAggregatorState {
     pub fn new(batch: AggregatorBatch, blob: StateUpdate) -> Self {
         Self { batch, blob }
+    }
+
+    pub fn batch_index(&self) -> u64 {
+        self.batch.index
     }
 
     /// Check if a block can be added to this batch based on synchronous conditions.
@@ -576,13 +630,23 @@ impl NonEmptyAggregatorState {
 
         // Check compressed state update is within limits (async)
         // Squash state updates
-        let squashed_state_update = squash(
-            vec![&self.blob, block_state_update],
-            if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) },
-            batch_client,
-        )
-        .await?;
+        let pre_range_block = if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) };
+        let squash_started_at = Instant::now();
+        let squashed_state_update = squash(vec![&self.blob, block_state_update], pre_range_block, batch_client).await?;
+        let (squashed_modified_contracts, squashed_storage_updates, squashed_declared_classes) =
+            state_update_full_output_counts(&squashed_state_update);
+        info!(
+            batch_index = %self.batch.index,
+            block_num,
+            ?pre_range_block,
+            modified_contracts = squashed_modified_contracts,
+            storage_updates = squashed_storage_updates,
+            declared_classes = squashed_declared_classes,
+            duration_ms = %squash_started_at.elapsed().as_millis(),
+            "Squashed aggregator state updates"
+        );
         // Compress the squashed state update
+        let compress_started_at = Instant::now();
         let compressed_state_update = compress_state_update(
             &squashed_state_update,
             block_num.saturating_sub(1),
@@ -590,6 +654,13 @@ impl NonEmptyAggregatorState {
             batch_client,
         )
         .await?;
+        info!(
+            batch_index = %self.batch.index,
+            block_num,
+            blob_len = compressed_state_update.len(),
+            duration_ms = %compress_started_at.elapsed().as_millis(),
+            "Compressed squashed aggregator state update"
+        );
         let blob_len = compressed_state_update.len();
         if blob_len > batch_limits.max_blob_size {
             debug!(
@@ -712,11 +783,19 @@ async fn compress_state_update(
     madara_version: StarknetVersion,
     batch_client: &BatchRpcClient,
 ) -> Result<Vec<Felt>, JobError> {
+    let started_at = Instant::now();
     // Perform stateful compression if needed
     let state_update = if madara_version >= StarknetVersion::V0_13_4 {
-        crate::compression::stateful::compress(blob, end_block, batch_client)
+        let stateful_started_at = Instant::now();
+        let state_update = crate::compression::stateful::compress(blob, end_block, batch_client)
             .await
-            .map_err(|err| JobError::Other(OtherError(err)))?
+            .map_err(|err| JobError::Other(OtherError(err)))?;
+        info!(
+            end_block,
+            duration_ms = %stateful_started_at.elapsed().as_millis(),
+            "Applied stateful compression to aggregator state update"
+        );
+        state_update
     } else {
         blob.clone()
     };
@@ -725,11 +804,18 @@ async fn compress_state_update(
     let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
 
     // Perform stateless compression if needed
-    if madara_version >= StarknetVersion::V0_13_3 {
-        crate::compression::stateless::compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
+    let compressed = if madara_version >= StarknetVersion::V0_13_3 {
+        crate::compression::stateless::compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))?
     } else {
-        Ok(vec_felts)
-    }
+        vec_felts
+    };
+    info!(
+        end_block,
+        felt_count = compressed.len(),
+        duration_ms = %started_at.elapsed().as_millis(),
+        "Compressed aggregator state update"
+    );
+    Ok(compressed)
 }
 
 #[cfg(test)]

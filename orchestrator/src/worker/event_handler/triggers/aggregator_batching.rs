@@ -1,6 +1,7 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::triggers::batching::aggregator::{
     AggregatorBatchConfig, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
@@ -10,6 +11,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, error, info};
 
 pub const AGGREGATOR_BATCHING_WORKER_KEY: &str = "AggregatorBatchingWorker";
@@ -20,6 +22,7 @@ pub struct AggregatorBatchingTrigger;
 impl JobTrigger for AggregatorBatchingTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         // Trying to acquire lock on Aggregator Batching Worker
+        let worker_started_at = Instant::now();
         match config
             .lock()
             .acquire_lock(
@@ -32,12 +35,20 @@ impl JobTrigger for AggregatorBatchingTrigger {
         {
             Ok(_) => {
                 // Lock acquired successfully
-                debug!("{} acquired lock", AGGREGATOR_BATCHING_WORKER_KEY);
+                info!(
+                    lock_key = AGGREGATOR_BATCHING_WORKER_KEY,
+                    lock_duration_seconds = config.params.batching_config.batching_worker_lock_duration,
+                    "Aggregator batching worker acquired lock"
+                );
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                debug!("{} failed to acquire lock, returning safely: {}", AGGREGATOR_BATCHING_WORKER_KEY, err);
+                info!(
+                    lock_key = AGGREGATOR_BATCHING_WORKER_KEY,
+                    error = %err,
+                    "Aggregator batching worker failed to acquire lock, returning safely"
+                );
                 return Ok(());
             }
         }
@@ -48,12 +59,13 @@ impl JobTrigger for AggregatorBatchingTrigger {
         let state_handler = AggregatorStateHandler::from_config(&config);
 
         // Execute the main work and capture the result
+        let mut batch_number = None;
         let result = async {
             let (start_block, end_block) = self.calculate_range(&config).await?;
 
             // If there are no blocks to process, return early
             if start_block > end_block {
-                debug!("No Aggregator blocks to process: start_block ({}) > end_block ({})", start_block, end_block);
+                info!(start_block, end_block, "No Aggregator blocks to process");
                 return Ok(());
             }
 
@@ -63,6 +75,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
             let mut replay_bounds_error: Option<replay_bounds::ReplayBoundsError> = None;
 
             for block_num in start_block..=end_block {
+                let block_started_at = Instant::now();
                 if let Some(ref_client) = config.replay_bounds_client() {
                     if let Err(e) =
                         replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
@@ -73,19 +86,30 @@ impl JobTrigger for AggregatorBatchingTrigger {
                     }
                 }
 
-                match batching_handler.include_block(block_num, state).await? {
+                let block_result = match batching_handler.include_block(block_num, state).await? {
                     BlockProcessingResult::Accumulated(updated_state) => {
                         state = AggregatorState::NonEmpty(updated_state);
+                        "accumulated"
                     }
                     BlockProcessingResult::BatchCompleted { completed_state, new_state } => {
+                        batch_number = Some(completed_state.batch_index());
                         state_handler.save_batch_state(&completed_state).await?;
                         state = new_state;
+                        "batch_completed"
                     }
                     BlockProcessingResult::NotBatched(current_state) => {
                         state = current_state;
-                        // Since this block wasn't able to get batches, we shouldn't move forward
-                        break;
+                        "not_batched"
                     }
+                };
+                info!(
+                    block_num,
+                    duration_ms = %block_started_at.elapsed().as_millis(),
+                    result = block_result,
+                    "Aggregator batching worker finished block"
+                );
+                if block_result == "not_batched" {
+                    break;
                 }
             }
 
@@ -93,6 +117,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
             match state {
                 AggregatorState::Empty(_) => {}
                 AggregatorState::NonEmpty(state) => {
+                    batch_number = Some(state.batch_index());
                     state_handler.save_batch_state(&state).await?;
                 }
             }
@@ -106,15 +131,38 @@ impl JobTrigger for AggregatorBatchingTrigger {
         .await;
 
         // Always release the lock, regardless of whether work succeeded or failed
-        if let Err(e) = config.lock().release_lock(AGGREGATOR_BATCHING_WORKER_KEY, None).await {
-            error!("Failed to release {} lock: {}", AGGREGATOR_BATCHING_WORKER_KEY, e);
-            // If work succeeded but lock release failed, return the lock release error
-            if result.is_ok() {
-                return Err(e.into());
-            }
-            // If work failed, we still want to return the original work error
+        let release_started_at = Instant::now();
+        info!(lock_key = AGGREGATOR_BATCHING_WORKER_KEY, "Aggregator batching worker releasing lock");
+        let release_result = config.lock().release_lock(AGGREGATOR_BATCHING_WORKER_KEY, None).await;
+        if let Err(e) = &release_result {
+            error!(
+                lock_key = AGGREGATOR_BATCHING_WORKER_KEY,
+                duration_ms = %release_started_at.elapsed().as_millis(),
+                "Failed to release {} lock: {}",
+                AGGREGATOR_BATCHING_WORKER_KEY,
+                e
+            );
+        } else {
+            info!(
+                lock_key = AGGREGATOR_BATCHING_WORKER_KEY,
+                duration_ms = %release_started_at.elapsed().as_millis(),
+                worker_duration_ms = %worker_started_at.elapsed().as_millis(),
+                "Aggregator batching worker released lock"
+            );
         }
 
+        MetricsRecorder::record_aggregator_batching_duration(worker_started_at.elapsed().as_secs_f64());
+        if let Some(batch_number) = batch_number {
+            MetricsRecorder::record_aggregator_batching_batch_number(batch_number);
+        }
+
+        // If work succeeded but lock release failed, return the lock release error.
+        if result.is_ok() {
+            if let Err(e) = release_result {
+                return Err(e.into());
+            }
+        }
+        // If work failed, return the original work error even if lock release also failed.
         result
     }
 }
