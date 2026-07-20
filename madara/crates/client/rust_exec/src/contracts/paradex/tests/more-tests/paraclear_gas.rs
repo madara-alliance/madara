@@ -1,3 +1,5 @@
+#![allow(clippy::identity_op, clippy::too_many_arguments)]
+
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
@@ -11,7 +13,6 @@ use super::super::fixtures::{
     set_spot_asset_direct, set_token_balance, set_token_balance_amount_only, set_token_name, short_str, SCALE,
 };
 
-#[allow(clippy::too_many_arguments)]
 fn setup_spot_env(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -105,7 +106,7 @@ fn test_spot_trade_gas_consumed_nonzero() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x8101);

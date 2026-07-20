@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
@@ -8,7 +10,6 @@ use starknet_types_core::felt::Felt;
 
 use super::super::fixtures::{addr, felt, i128_to_felt, SCALE};
 
-#[allow(clippy::too_many_arguments)]
 fn build_trade(
     maker: ContractAddress,
     taker: ContractAddress,

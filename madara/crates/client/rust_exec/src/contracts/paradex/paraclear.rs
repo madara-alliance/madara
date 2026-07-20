@@ -1,8 +1,10 @@
 //! Paraclear contract (settle_trade_v3) - incremental implementation.
+#![allow(clippy::too_many_arguments)]
 
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::context::ExecutionContext;
@@ -507,28 +509,6 @@ pub fn execute_with_timestamp<S: StateReader>(
         }
     }
 
-    if let Some(delegate) = read_market_delegate(&mut ctx, state, contract, trade.maker_order.market)? {
-        let class_hash = state
-            .get_class_hash_at(delegate)
-            .map_err(|e| ExecutionError::ExecutionFailed(e.to_string()))?
-            .ok_or_else(|| ExecutionError::ExecutionFailed("delegate contract not deployed".to_string()))?;
-        if !crate::contracts::ContractRegistry::supports_class_hash(class_hash) {
-            return Err(ExecutionError::ExecutionFailed("delegate contract unsupported".to_string()));
-        }
-        if let Some(result) = crate::contracts::ContractRegistry::execute_with_timestamp(
-            state,
-            delegate,
-            class_hash,
-            selector,
-            calldata,
-            contract,
-            block_timestamp,
-        ) {
-            return result;
-        }
-        return Err(ExecutionError::ExecutionFailed("delegate contract unsupported".to_string()));
-    }
-
     // Resolve dependencies.
     let assets_manager_address = read_contract_address(&mut ctx, state, contract, *layout::ASSETS_MANAGER_BASE)?;
     let oracle_address =
@@ -551,6 +531,11 @@ pub fn execute_with_timestamp<S: StateReader>(
 
     enforce_max_assets_per_account(&mut ctx, state, contract, &trade)?;
 
+    if !trade_support_fee_v2(&trade) {
+        ctx.fail("Trade must support fee v2".to_string());
+        return Ok(ctx.build_result());
+    }
+
     // Fetch settlement token price (needed by both spot/perp flows).
     let settlement_token_price =
         oracle::read_settlement_token_price(&mut ctx, state, oracle_address, oracle_settlement_key())?;
@@ -558,13 +543,9 @@ pub fn execute_with_timestamp<S: StateReader>(
         return Err(ExecutionError::ExecutionFailed("settlement_token_price is zero".to_string()));
     }
 
-    // Read insurance fund address (exempt from risk checks, matching Cairo).
-    let insurance_fund_address =
-        ContractAddress(ctx.storage_read(state, contract, *layout::PARACLEAR_LIQUIDATION_INSURANCE_FUND_BASE)?);
-
     // Dispatch by asset kind.
     if asset_kind == assets_manager::asset_kind_spot() {
-        settle_spot(state, contract, &trade, settlement_token_price, caller, insurance_fund_address, &mut ctx)?;
+        settle_spot(state, contract, &trade, settlement_token_price, caller, &mut ctx)?;
     } else {
         settle_perpetual(
             state,
@@ -574,7 +555,6 @@ pub fn execute_with_timestamp<S: StateReader>(
             oracle_address,
             asset_kind,
             caller,
-            insurance_fund_address,
             &mut ctx,
         )?;
     }
@@ -585,14 +565,12 @@ pub fn execute_with_timestamp<S: StateReader>(
     Ok(ctx.build_result())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn settle_spot<S: StateReader>(
     state: &S,
     contract: ContractAddress,
     trade: &TradeRequestV3,
     settlement_token_price: Felt,
     caller: ContractAddress,
-    insurance_fund_address: ContractAddress,
     ctx: &mut ExecutionContext,
 ) -> Result<(), ExecutionError> {
     time_inner(InnerTimingField::SettleSpot, || {
@@ -651,65 +629,108 @@ fn settle_spot<S: StateReader>(
         let maker_updated_settlement = maker_settlement_before + maker_quote_delta;
         let taker_updated_settlement = taker_settlement_before + taker_quote_delta;
 
-        let (maker_fee, maker_referrer, maker_fee_commission) = get_trade_fee_and_referral_commission(
-            base_fee_spot(ctx, state, contract, trade, true, &maker_state.fee_rates)?,
-            read_account_referral(ctx, state, contract, trade.maker_order.account)?,
-        )?;
-        let (taker_fee, taker_referrer, taker_fee_commission) = get_trade_fee_and_referral_commission(
-            base_fee_spot(ctx, state, contract, trade, false, &taker_state.fee_rates)?,
-            read_account_referral(ctx, state, contract, trade.taker_order.account)?,
-        )?;
+        let maker_fee = base_fee_spot(ctx, state, contract, trade, true, &maker_state.fee_rates)?;
+        let taker_fee = base_fee_spot(ctx, state, contract, trade, false, &taker_state.fee_rates)?;
         let maker_fee_settlement = div_128_scaled(maker_fee, settlement_token_price_i128)?;
-        let maker_fee_commission_settlement = div_128_scaled(maker_fee_commission, settlement_token_price_i128)?;
         let taker_fee_settlement = div_128_scaled(taker_fee, settlement_token_price_i128)?;
-        let taker_fee_commission_settlement = div_128_scaled(taker_fee_commission, settlement_token_price_i128)?;
-
-        // Ignore health check for insurance fund (matching Cairo).
-        if trade.maker_order.account != insurance_fund_address
-            && is_risky_after_trade_loaded(
-                ctx,
-                state,
-                contract,
-                trade.maker_order.account,
-                settlement_token_address,
-                RiskOverrides::spot(
-                    spot_asset.token_address,
-                    maker_base_before,
-                    maker_base_before + maker_base_delta,
-                    maker_updated_settlement,
-                ),
-                maker_fee,
-                maker_state.clone(),
+        let maker_fee_token = fee_token_override(&trade.maker_order.order_category, settlement_token_address);
+        let taker_fee_token = fee_token_override(&trade.taker_order.order_category, settlement_token_address);
+        let maker_uses_fee_token = maker_fee_token.is_some();
+        let taker_uses_fee_token = taker_fee_token.is_some();
+        let fee_token_address = resolve_fee_token_address(maker_fee_token, taker_fee_token)?;
+        let fee_token_price_i128 = if let Some(token_address) = fee_token_address {
+            Some(resolve_fee_token_price(token_address, maker_fee_token, taker_fee_token, &maker_state, &taker_state)?)
+        } else {
+            None
+        };
+        let maker_fee_token_deduction = if maker_uses_fee_token {
+            div_128_scaled(
+                maker_fee_settlement,
+                fee_token_price_i128
+                    .ok_or_else(|| ExecutionError::ExecutionFailed("missing fee token price".to_string()))?,
             )?
-        {
+        } else {
+            0
+        };
+        let taker_fee_token_deduction = if taker_uses_fee_token {
+            div_128_scaled(
+                taker_fee_settlement,
+                fee_token_price_i128
+                    .ok_or_else(|| ExecutionError::ExecutionFailed("missing fee token price".to_string()))?,
+            )?
+        } else {
+            0
+        };
+
+        if is_risky_after_trade_loaded(
+            ctx,
+            state,
+            contract,
+            trade.maker_order.account,
+            settlement_token_address,
+            RiskOverrides::spot(
+                spot_asset.token_address,
+                maker_base_before,
+                maker_base_before + maker_base_delta,
+                maker_updated_settlement,
+            ),
+            maker_fee,
+            maker_state.clone(),
+        )? {
             emit_settle_trade_failed(ctx, ErrorCodes::trade_order_risky(), Errors::trade_order_risky_maker(), trade);
             ctx.set_retdata(vec![Felt::ZERO]);
             ctx.fail("maker risky".to_string());
             return Ok(());
         }
 
-        // Ignore health check for insurance fund (matching Cairo).
-        if trade.taker_order.account != insurance_fund_address
-            && is_risky_after_trade_loaded(
-                ctx,
-                state,
-                contract,
-                trade.taker_order.account,
-                settlement_token_address,
-                RiskOverrides::spot(
-                    spot_asset.token_address,
-                    taker_base_before,
-                    taker_base_before + taker_base_delta,
-                    taker_updated_settlement,
-                ),
-                taker_fee,
-                taker_state.clone(),
-            )?
-        {
+        if is_risky_after_trade_loaded(
+            ctx,
+            state,
+            contract,
+            trade.taker_order.account,
+            settlement_token_address,
+            RiskOverrides::spot(
+                spot_asset.token_address,
+                taker_base_before,
+                taker_base_before + taker_base_delta,
+                taker_updated_settlement,
+            ),
+            taker_fee,
+            taker_state.clone(),
+        )? {
             emit_settle_trade_failed(ctx, ErrorCodes::trade_order_risky(), Errors::trade_order_risky_taker(), trade);
             ctx.set_retdata(vec![Felt::ZERO]);
             ctx.fail("taker risky".to_string());
             return Ok(());
+        }
+
+        if let Some(token_address) = fee_token_address {
+            if maker_fee_token_deduction != 0
+                && token_amount_from_state(&maker_state, token_address) < maker_fee_token_deduction
+            {
+                emit_settle_trade_failed(
+                    ctx,
+                    ErrorCodes::trade_maker_not_enough_fee_token(),
+                    Errors::trade_maker_not_enough_fee_token(),
+                    trade,
+                );
+                ctx.set_retdata(vec![Felt::ZERO]);
+                ctx.fail("maker not enough fee token".to_string());
+                return Ok(());
+            }
+            if taker_fee_token_deduction != 0
+                && token_amount_from_state(&taker_state, token_address) < taker_fee_token_deduction
+            {
+                emit_settle_trade_failed(
+                    ctx,
+                    ErrorCodes::trade_taker_not_enough_fee_token(),
+                    Errors::trade_taker_not_enough_fee_token(),
+                    trade,
+                );
+                ctx.set_retdata(vec![Felt::ZERO]);
+                ctx.fail("taker not enough fee token".to_string());
+                return Ok(());
+            }
         }
 
         update_token_balance(
@@ -745,24 +766,31 @@ fn settle_spot<S: StateReader>(
             maker_quote_delta,
         )?;
 
-        let (_maker_after_fee, _taker_after_fee) = fee_payments(
+        let (maker_after_fee, taker_after_fee) = fee_payments(
             ctx,
             state,
             contract,
             caller,
             trade.id,
             settlement_token_address,
-            trade.maker_order.account,
-            maker_updated_settlement,
-            maker_fee_settlement,
-            maker_referrer,
-            maker_fee_commission_settlement,
-            trade.taker_order.account,
-            taker_updated_settlement,
-            taker_fee_settlement,
-            taker_referrer,
-            taker_fee_commission_settlement,
-            settlement_token_price_i128,
+            fee_token_address,
+            fee_token_price_i128,
+            FeePaymentSide {
+                account: trade.maker_order.account,
+                settlement_after_trade: maker_updated_settlement,
+                fee_in_settlement: maker_fee_settlement,
+                fee_token_deduction: maker_fee_token_deduction,
+                payment_token_address: maker_fee_token.unwrap_or(settlement_token_address),
+                pays_in_fee_token: maker_uses_fee_token,
+            },
+            FeePaymentSide {
+                account: trade.taker_order.account,
+                settlement_after_trade: taker_updated_settlement,
+                fee_in_settlement: taker_fee_settlement,
+                fee_token_deduction: taker_fee_token_deduction,
+                payment_token_address: taker_fee_token.unwrap_or(settlement_token_address),
+                pays_in_fee_token: taker_uses_fee_token,
+            },
         )?;
 
         emit_token_balance_update(
@@ -782,13 +810,12 @@ fn settle_spot<S: StateReader>(
             Felt::ZERO,
         );
 
-        // Emit pre-fee settlement balance (matching Cairo's updated_amount).
         emit_token_balance_update(
             ctx,
             trade.maker_order.account,
             settlement_token_address,
             i128_to_felt(maker_settlement_before),
-            i128_to_felt(maker_updated_settlement),
+            i128_to_felt(maker_after_fee),
             Felt::ZERO,
         );
         emit_token_balance_update(
@@ -796,7 +823,7 @@ fn settle_spot<S: StateReader>(
             trade.taker_order.account,
             settlement_token_address,
             i128_to_felt(taker_settlement_before),
-            i128_to_felt(taker_updated_settlement),
+            i128_to_felt(taker_after_fee),
             Felt::ZERO,
         );
 
@@ -806,7 +833,6 @@ fn settle_spot<S: StateReader>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn settle_perpetual<S: StateReader>(
     state: &S,
     contract: ContractAddress,
@@ -815,7 +841,6 @@ fn settle_perpetual<S: StateReader>(
     oracle_address: ContractAddress,
     asset_kind: Felt,
     caller: ContractAddress,
-    insurance_fund_address: ContractAddress,
     ctx: &mut ExecutionContext,
 ) -> Result<(), ExecutionError> {
     time_inner(InnerTimingField::SettlePerpetual, || {
@@ -850,21 +875,38 @@ fn settle_perpetual<S: StateReader>(
             load_account_state_for_risk(ctx, state, contract, trade.maker_order.account, settlement_token_address)?;
         let taker_state =
             load_account_state_for_risk(ctx, state, contract, trade.taker_order.account, settlement_token_address)?;
-        let (maker_fee, maker_referrer, maker_fee_commission, taker_fee, taker_referrer, taker_fee_commission) = {
-            let (maker_fee, maker_referrer, maker_fee_commission) = get_trade_fee_and_referral_commission(
-                base_fee_perp(ctx, state, contract, trade, true, mode, asset_kind, &maker_state.fee_rates)?,
-                read_account_referral(ctx, state, contract, trade.maker_order.account)?,
-            )?;
-            let (taker_fee, taker_referrer, taker_fee_commission) = get_trade_fee_and_referral_commission(
-                base_fee_perp(ctx, state, contract, trade, false, mode, asset_kind, &taker_state.fee_rates)?,
-                read_account_referral(ctx, state, contract, trade.taker_order.account)?,
-            )?;
-            (maker_fee, maker_referrer, maker_fee_commission, taker_fee, taker_referrer, taker_fee_commission)
-        };
+        let maker_fee = base_fee_perp(ctx, state, contract, trade, true, mode, asset_kind, &maker_state.fee_rates)?;
+        let taker_fee = base_fee_perp(ctx, state, contract, trade, false, mode, asset_kind, &taker_state.fee_rates)?;
         let maker_fee_settlement = div_128_scaled(maker_fee, settlement_price_i128)?;
-        let maker_fee_commission_settlement = div_128_scaled(maker_fee_commission, settlement_price_i128)?;
         let taker_fee_settlement = div_128_scaled(taker_fee, settlement_price_i128)?;
-        let taker_fee_commission_settlement = div_128_scaled(taker_fee_commission, settlement_price_i128)?;
+        let maker_fee_token = fee_token_override(&trade.maker_order.order_category, settlement_token_address);
+        let taker_fee_token = fee_token_override(&trade.taker_order.order_category, settlement_token_address);
+        let maker_uses_fee_token = maker_fee_token.is_some();
+        let taker_uses_fee_token = taker_fee_token.is_some();
+        let fee_token_address = resolve_fee_token_address(maker_fee_token, taker_fee_token)?;
+        let fee_token_price_i128 = if let Some(token_address) = fee_token_address {
+            Some(resolve_fee_token_price(token_address, maker_fee_token, taker_fee_token, &maker_state, &taker_state)?)
+        } else {
+            None
+        };
+        let maker_fee_token_deduction = if maker_uses_fee_token {
+            div_128_scaled(
+                maker_fee_settlement,
+                fee_token_price_i128
+                    .ok_or_else(|| ExecutionError::ExecutionFailed("missing fee token price".to_string()))?,
+            )?
+        } else {
+            0
+        };
+        let taker_fee_token_deduction = if taker_uses_fee_token {
+            div_128_scaled(
+                taker_fee_settlement,
+                fee_token_price_i128
+                    .ok_or_else(|| ExecutionError::ExecutionFailed("missing fee token price".to_string()))?,
+            )?
+        } else {
+            0
+        };
 
         let (mut maker_balance, mut taker_balance) =
             { (perp_balance_from_state(&maker_state, market), perp_balance_from_state(&taker_state, market)) };
@@ -949,26 +991,23 @@ fn settle_perpetual<S: StateReader>(
         let taker_settlement_after = taker_settlement_before + taker_realized_funding + taker_realized_pnl;
 
         {
-            // Ignore health check for insurance fund (matching Cairo).
-            if trade.maker_order.account != insurance_fund_address
-                && is_risky_after_trade_loaded(
-                    ctx,
-                    state,
-                    contract,
-                    trade.maker_order.account,
-                    settlement_token_address,
-                    RiskOverrides::perp(
-                        market,
-                        felt_to_i128(maker_balance.amount)?,
-                        felt_to_i128(maker_updated.amount)?,
-                        maker_updated.cost,
-                        maker_updated.cached_funding,
-                        maker_settlement_after,
-                    ),
-                    maker_fee,
-                    maker_state.clone(),
-                )?
-            {
+            if is_risky_after_trade_loaded(
+                ctx,
+                state,
+                contract,
+                trade.maker_order.account,
+                settlement_token_address,
+                RiskOverrides::perp(
+                    market,
+                    felt_to_i128(maker_balance.amount)?,
+                    felt_to_i128(maker_updated.amount)?,
+                    maker_updated.cost,
+                    maker_updated.cached_funding,
+                    maker_settlement_after,
+                ),
+                maker_fee,
+                maker_state.clone(),
+            )? {
                 emit_settle_trade_failed(
                     ctx,
                     ErrorCodes::trade_order_risky(),
@@ -980,26 +1019,23 @@ fn settle_perpetual<S: StateReader>(
                 return Ok(());
             }
 
-            // Ignore health check for insurance fund (matching Cairo).
-            if trade.taker_order.account != insurance_fund_address
-                && is_risky_after_trade_loaded(
-                    ctx,
-                    state,
-                    contract,
-                    trade.taker_order.account,
-                    settlement_token_address,
-                    RiskOverrides::perp(
-                        market,
-                        felt_to_i128(taker_balance.amount)?,
-                        felt_to_i128(taker_updated.amount)?,
-                        taker_updated.cost,
-                        taker_updated.cached_funding,
-                        taker_settlement_after,
-                    ),
-                    taker_fee,
-                    taker_state.clone(),
-                )?
-            {
+            if is_risky_after_trade_loaded(
+                ctx,
+                state,
+                contract,
+                trade.taker_order.account,
+                settlement_token_address,
+                RiskOverrides::perp(
+                    market,
+                    felt_to_i128(taker_balance.amount)?,
+                    felt_to_i128(taker_updated.amount)?,
+                    taker_updated.cost,
+                    taker_updated.cached_funding,
+                    taker_settlement_after,
+                ),
+                taker_fee,
+                taker_state.clone(),
+            )? {
                 emit_settle_trade_failed(
                     ctx,
                     ErrorCodes::trade_order_risky(),
@@ -1008,6 +1044,35 @@ fn settle_perpetual<S: StateReader>(
                 );
                 ctx.set_retdata(vec![Felt::ZERO]);
                 ctx.fail("taker risky".to_string());
+                return Ok(());
+            }
+        }
+
+        if let Some(token_address) = fee_token_address {
+            if maker_fee_token_deduction != 0
+                && token_amount_from_state(&maker_state, token_address) < maker_fee_token_deduction
+            {
+                emit_settle_trade_failed(
+                    ctx,
+                    ErrorCodes::trade_maker_not_enough_fee_token(),
+                    Errors::trade_maker_not_enough_fee_token(),
+                    trade,
+                );
+                ctx.set_retdata(vec![Felt::ZERO]);
+                ctx.fail("maker not enough fee token".to_string());
+                return Ok(());
+            }
+            if taker_fee_token_deduction != 0
+                && token_amount_from_state(&taker_state, token_address) < taker_fee_token_deduction
+            {
+                emit_settle_trade_failed(
+                    ctx,
+                    ErrorCodes::trade_taker_not_enough_fee_token(),
+                    Errors::trade_taker_not_enough_fee_token(),
+                    trade,
+                );
+                ctx.set_retdata(vec![Felt::ZERO]);
+                ctx.fail("taker not enough fee token".to_string());
                 return Ok(());
             }
         }
@@ -1055,7 +1120,7 @@ fn settle_perpetual<S: StateReader>(
             )?;
         }
 
-        let (_maker_after_fee, _taker_after_fee) = {
+        let (maker_after_fee, taker_after_fee) = {
             fee_payments(
                 ctx,
                 state,
@@ -1063,17 +1128,24 @@ fn settle_perpetual<S: StateReader>(
                 caller,
                 trade.id,
                 settlement_token_address,
-                trade.maker_order.account,
-                maker_settlement_after,
-                maker_fee_settlement,
-                maker_referrer,
-                maker_fee_commission_settlement,
-                trade.taker_order.account,
-                taker_settlement_after,
-                taker_fee_settlement,
-                taker_referrer,
-                taker_fee_commission_settlement,
-                settlement_price_i128,
+                fee_token_address,
+                fee_token_price_i128,
+                FeePaymentSide {
+                    account: trade.maker_order.account,
+                    settlement_after_trade: maker_settlement_after,
+                    fee_in_settlement: maker_fee_settlement,
+                    fee_token_deduction: maker_fee_token_deduction,
+                    payment_token_address: maker_fee_token.unwrap_or(settlement_token_address),
+                    pays_in_fee_token: maker_uses_fee_token,
+                },
+                FeePaymentSide {
+                    account: trade.taker_order.account,
+                    settlement_after_trade: taker_settlement_after,
+                    fee_in_settlement: taker_fee_settlement,
+                    fee_token_deduction: taker_fee_token_deduction,
+                    payment_token_address: taker_fee_token.unwrap_or(settlement_token_address),
+                    pays_in_fee_token: taker_uses_fee_token,
+                },
             )?
         };
 
@@ -1112,13 +1184,12 @@ fn settle_perpetual<S: StateReader>(
                 settlement_token_price,
             );
 
-            // Emit pre-fee settlement balance (matching Cairo's updated_amount).
             emit_token_balance_update(
                 ctx,
                 trade.maker_order.account,
                 settlement_token_address,
                 i128_to_felt(maker_settlement_before),
-                i128_to_felt(maker_settlement_after),
+                i128_to_felt(maker_after_fee),
                 Felt::ZERO,
             );
             emit_token_balance_update(
@@ -1126,7 +1197,7 @@ fn settle_perpetual<S: StateReader>(
                 trade.taker_order.account,
                 settlement_token_address,
                 i128_to_felt(taker_settlement_before),
-                i128_to_felt(taker_settlement_after),
+                i128_to_felt(taker_after_fee),
                 Felt::ZERO,
             );
 
@@ -1230,8 +1301,8 @@ pub fn encode_order_category_for_test(cat: &OrderCategory) -> Vec<Felt> {
     encode_order_category(cat)
 }
 
-#[cfg(any(test, feature = "testing"))]
-pub fn perp_map_key_for_test(mode: u8, name: &str, key: Felt) -> StorageKey {
+#[cfg(test)]
+pub(crate) fn perp_map_key_for_test(mode: u8, name: &str, key: Felt) -> StorageKey {
     let mode = match mode {
         0 => PerpStorageMode::LegacyPedersen,
         1 => PerpStorageMode::LegacyPoseidon,
@@ -1315,7 +1386,6 @@ pub(crate) fn read_perpetual_balance_fields_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn upsert_perpetual_balance_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1367,7 +1437,6 @@ pub(crate) fn remove_perpetual_balance_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn upsert_total_realized_pnl_and_funding_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1406,7 +1475,6 @@ pub(crate) fn apply_referral_discount_for_test(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn is_risky_after_trade_spot_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1431,7 +1499,6 @@ pub(crate) fn is_risky_after_trade_spot_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn is_risky_after_trade_perp_for_test<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -1494,7 +1561,6 @@ pub(crate) fn unrealized_funding_pnl_for_test(
     amount: i128,
     cached_funding: i128,
     funding_index: i128,
-    settlement_token_price: i128,
 ) -> Result<i128, ExecutionError> {
     let balance = PerpetualBalance {
         market: Felt::ZERO,
@@ -1504,7 +1570,7 @@ pub(crate) fn unrealized_funding_pnl_for_test(
         prev: Felt::ZERO,
         next: Felt::ZERO,
     };
-    unrealized_funding_pnl(&balance, funding_index, settlement_token_price)
+    unrealized_funding_pnl(&balance, funding_index, MULTIPLIER)
 }
 
 #[cfg(test)]
@@ -1528,6 +1594,9 @@ pub(crate) fn get_asset_value_for_test(token_amounts: &[i128], token_prices: &[i
         perp_prices: Vec::new(),
         perp_funding_indices: Vec::new(),
         perp_imf_base: Vec::new(),
+        perp_option_assets: Vec::new(),
+        spot_prices: HashMap::new(),
+        option_margin_params: HashMap::new(),
         perp_fee_provision_rate: Vec::new(),
         perp_asset_kinds: Vec::new(),
         fee_rates: FeeRatesLite::zero(),
@@ -1540,7 +1609,6 @@ pub(crate) fn get_asset_value_for_test(token_amounts: &[i128], token_prices: &[i
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn margin_requirement_and_total_upnl_for_test(
     token_amounts: &[i128],
     token_prices: &[i128],
@@ -1603,7 +1671,13 @@ pub(crate) fn margin_requirement_and_total_upnl_for_test(
         perp_prices: perp_prices.to_vec(),
         perp_funding_indices: perp_funding_indices.to_vec(),
         perp_imf_base: perp_imf_base.to_vec(),
-        perp_fee_provision_rate: perp_fee_provision_rate.to_vec(),
+        perp_option_assets: vec![None; perp_amounts.len()],
+        spot_prices: HashMap::new(),
+        option_margin_params: HashMap::new(),
+        perp_fee_provision_rate: perp_fee_provision_rate
+            .iter()
+            .map(|rate| FeeWithCapLite { fee: rate.unwrap_or(0), fee_cap: 0, fee_floor: 0 })
+            .collect(),
         perp_asset_kinds: vec![assets_manager::asset_kind_future(); perp_amounts.len()],
         fee_rates: FeeRatesLite::from_taker(fee_rate_taker),
         referral: AccountReferralLite { referrer, fee_commission, fee_discount },
@@ -1734,7 +1808,6 @@ pub(crate) fn read_max_pending_transfer_executions_for_test<S: StateReader>(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_pending_transfer_for_test<S: StateReader>(
     state: &S,
     ctx: &mut ExecutionContext,
@@ -1823,6 +1896,23 @@ fn decode_order_category(input: &[Felt]) -> Result<(OrderCategory, &[Felt]), Exe
             let (fee_floor, rest) = take_felt(rest)?;
             Ok((OrderCategory::Dynamic(FeeWithCapRequest { fee, fee_cap, fee_floor }), rest))
         }
+        5 => {
+            let (fee, rest) = take_felt(rest)?;
+            let (fee_cap, rest) = take_felt(rest)?;
+            let (fee_floor, rest) = take_felt(rest)?;
+            let (fee_token, rest) = take_felt(rest)?;
+            Ok((
+                OrderCategory::DynamicWithToken(
+                    crate::contracts::paradex_codegen::paraclear_types::FeeWithCapRequestV2 {
+                        fee,
+                        fee_cap,
+                        fee_floor,
+                        fee_token: ContractAddress(fee_token),
+                    },
+                ),
+                rest,
+            ))
+        }
         _ => Err(ExecutionError::ExecutionFailed("invalid OrderCategory tag".to_string())),
     }
 }
@@ -1869,7 +1959,7 @@ fn read_contract_address<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
     contract: ContractAddress,
-    key: StorageKey,
+    key: crate::types::StorageKey,
 ) -> Result<ContractAddress, ExecutionError> {
     let value = ctx.storage_read(state, contract, key)?;
     Ok(ContractAddress(value))
@@ -1888,9 +1978,6 @@ fn get_asset_kind<S: StateReader>(
     if is_perpetual_future_supported(ctx, state, contract, market)? {
         return Ok(assets_manager::asset_kind_future());
     }
-    if is_perpetual_option_supported(ctx, state, contract, market)? {
-        return Ok(assets_manager::asset_kind_option());
-    }
     assets_manager::get_asset_kind(ctx, state, assets_manager, market)
 }
 
@@ -1907,29 +1994,6 @@ fn is_perpetual_future_supported<S: StateReader>(
     Ok(stored_market == market)
 }
 
-fn is_perpetual_option_supported<S: StateReader>(
-    ctx: &mut ExecutionContext,
-    state: &S,
-    contract: ContractAddress,
-    market: Felt,
-) -> Result<bool, ExecutionError> {
-    let base = *paraclear_layout::PERPETUAL_OPTION_BASE;
-    let candidates = [
-        ("substorage", storage_key_for_substorage_map_poseidon(base, "perpetual_option_asset", market)),
-        ("substorage_add", storage_key_for_substorage_map_poseidon_add(base, "perpetual_option_asset", market)),
-        ("substorage_hash", storage_key_for_substorage_map_poseidon_hash(base, "perpetual_option_asset", market)),
-        ("legacy_pedersen", storage_key_for_map("perpetual_option_asset", market)),
-        ("legacy_poseidon", storage_key_for_map_poseidon("perpetual_option_asset", market)),
-    ];
-    for (_, key) in candidates {
-        let stored_market = ctx.storage_read(state, contract, key)?;
-        if stored_market == market {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 fn oracle_settlement_key() -> Felt {
     crate::storage::short_string_to_felt("USDC")
 }
@@ -1943,15 +2007,6 @@ fn read_settlement_token_address<S: StateReader>(
     let base = *layout::PARACLEAR_SETTLEMENT_TOKEN_ASSET_BASE;
     let token_address = ctx.storage_read(state, contract, storage_key_with_offset(base, 4))?;
     Ok(ContractAddress(token_address))
-}
-
-fn read_market_delegate<S: StateReader>(
-    ctx: &mut ExecutionContext,
-    state: &S,
-    contract: ContractAddress,
-    market: Felt,
-) -> Result<Option<ContractAddress>, ExecutionError> {
-    resolve_market_delegate_address(ctx, state, contract, market)
 }
 
 fn resolve_market_delegate_address<S: StateReader>(
@@ -2090,6 +2145,7 @@ struct TokenBalanceLite {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct AccountReferralLite {
     referrer: ContractAddress,
     fee_commission: i128,
@@ -2156,6 +2212,46 @@ enum MarginMethodologyLite {
     PortfolioMargin,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct FeeWithCapLite {
+    fee: i128,
+    fee_cap: i128,
+    fee_floor: i128,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OptionAssetLite {
+    base_asset: Felt,
+    option_type: Felt,
+    strike: i128,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct OptionMarginParamsLite {
+    premium_multiplier: i128,
+    long_itm: i128,
+    short_itm: i128,
+    short_otm: i128,
+    short_put_cap: i128,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Default)]
+struct OptionCrossMarginParamsLite {
+    imf: OptionMarginParamsLite,
+    mmf: OptionMarginParamsLite,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FeePaymentSide {
+    account: ContractAddress,
+    settlement_after_trade: i128,
+    fee_in_settlement: i128,
+    fee_token_deduction: i128,
+    payment_token_address: ContractAddress,
+    pays_in_fee_token: bool,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct AccountStateLite {
@@ -2166,13 +2262,29 @@ pub(crate) struct AccountStateLite {
     perp_prices: Vec<i128>,
     perp_funding_indices: Vec<i128>,
     perp_imf_base: Vec<i128>,
-    perp_fee_provision_rate: Vec<Option<i128>>,
+    perp_option_assets: Vec<Option<OptionAssetLite>>,
+    spot_prices: HashMap<Felt, i128>,
+    option_margin_params: HashMap<(Felt, Felt), OptionCrossMarginParamsLite>,
+    perp_fee_provision_rate: Vec<FeeWithCapLite>,
     perp_asset_kinds: Vec<Felt>,
     fee_rates: FeeRatesLite,
     referral: AccountReferralLite,
     margin_methodology: MarginMethodologyLite,
     settlement_token_price: i128,
     perp_mmf_factor: i128,
+}
+
+#[derive(Clone, Debug, Default)]
+struct LoadedPerpStateLite {
+    balances: Vec<PerpetualBalance>,
+    prices: Vec<i128>,
+    funding_indices: Vec<i128>,
+    imf_base: Vec<i128>,
+    option_assets: Vec<Option<OptionAssetLite>>,
+    spot_prices: HashMap<Felt, i128>,
+    option_margin_params: HashMap<(Felt, Felt), OptionCrossMarginParamsLite>,
+    fee_provision_rates: Vec<FeeWithCapLite>,
+    asset_kinds: Vec<Felt>,
 }
 
 fn token_amount_from_state(state: &AccountStateLite, token_address: ContractAddress) -> i128 {
@@ -2402,7 +2514,6 @@ fn remove_perpetual_balance<S: StateReader>(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn upsert_total_realized_pnl_and_funding<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2579,6 +2690,14 @@ fn min_128(a: i128, b: i128) -> i128 {
     }
 }
 
+fn max_128(a: i128, b: i128) -> i128 {
+    if a >= b {
+        a
+    } else {
+        b
+    }
+}
+
 fn felt_to_i128(value: Felt) -> Result<i128, ExecutionError> {
     // Cairo i128 is stored as a felt in [-2^127, 2^127-1].
     // Negative values are represented as PRIME - |value|, and PRIME mod 2^128 == 1,
@@ -2603,7 +2722,6 @@ fn i128_to_felt(value: i128) -> Felt {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn is_risky_after_trade_from_state<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2659,12 +2777,6 @@ fn is_risky_after_trade_from_state<S: StateReader>(
             let price_i128 = read_perp_price_i128(ctx, state, oracle_address, market)?;
             let funding_i128 = read_funding_index_i128(ctx, state, oracle_address, market)?;
             let mode = resolve_perp_storage_mode(ctx, state, contract, market)?;
-            let asset_key = perp_asset_key(mode, market);
-            let imf = read_perpetual_imf_base_with_key(ctx, state, contract, asset_key)?;
-            let fee_config_key = perp_market_fee_config_v2_key(mode, market);
-            let max_fee_rate_key = perp_max_fee_rate_key(mode, market);
-            let fee_provision =
-                read_fee_provision_rate_with_keys(ctx, state, contract, fee_config_key, max_fee_rate_key)?;
             let asset_kind = get_asset_kind(ctx, state, contract, assets_manager_address, market)?;
             account_state.perp_balances.push(PerpetualBalance {
                 market,
@@ -2676,9 +2788,58 @@ fn is_risky_after_trade_from_state<S: StateReader>(
             });
             account_state.perp_prices.push(price_i128);
             account_state.perp_funding_indices.push(funding_i128);
-            account_state.perp_imf_base.push(imf);
-            account_state.perp_fee_provision_rate.push(fee_provision);
             account_state.perp_asset_kinds.push(asset_kind);
+            if asset_kind == assets_manager::asset_kind_future() {
+                let asset_key = perp_asset_key(mode, market);
+                let imf = read_perpetual_imf_base_with_key(ctx, state, contract, asset_key)?;
+                let fee = FeeWithCapLite {
+                    fee: assets_manager::get_market_fee_provision_rate(
+                        ctx,
+                        state,
+                        assets_manager_address,
+                        assets_manager::asset_kind_future(),
+                    )?,
+                    fee_cap: 0,
+                    fee_floor: 0,
+                };
+                account_state.perp_imf_base.push(imf);
+                account_state.perp_option_assets.push(None);
+                account_state.perp_fee_provision_rate.push(fee);
+            } else {
+                let option_asset = assets_manager::get_option_asset(ctx, state, assets_manager_address, market)?;
+                let option_asset_lite = OptionAssetLite {
+                    base_asset: option_asset.base_asset,
+                    option_type: option_asset.option_type,
+                    strike: felt_to_i128(option_asset.strike)?,
+                };
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    account_state.spot_prices.entry(option_asset.base_asset)
+                {
+                    entry.insert(read_perp_price_i128(ctx, state, oracle_address, option_asset.base_asset)?);
+                }
+                let cache_key = (asset_kind, option_asset.base_asset);
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    account_state.option_margin_params.entry(cache_key)
+                {
+                    let params = assets_manager::get_option_margin_params(
+                        ctx,
+                        state,
+                        assets_manager_address,
+                        asset_kind,
+                        option_asset.base_asset,
+                    )?;
+                    entry.insert(option_cross_margin_params_lite_from_assets(params)?);
+                }
+                let fee = fee_with_cap_lite_from_assets(assets_manager::get_option_fee_provision_rate(
+                    ctx,
+                    state,
+                    assets_manager_address,
+                    asset_kind,
+                )?)?;
+                account_state.perp_imf_base.push(0);
+                account_state.perp_option_assets.push(Some(option_asset_lite));
+                account_state.perp_fee_provision_rate.push(fee);
+            }
         }
     }
 
@@ -2690,10 +2851,11 @@ fn is_risky_after_trade_from_state<S: StateReader>(
         }
     }
 
+    let _ = trade_fee;
     let (margin_requirement, total_upnl) = margin_requirement_and_total_upnl(&account_state, true)?;
     let asset_value = get_asset_value(&account_state)?;
     let account_value = asset_value + total_upnl;
-    let free_balance = account_value - margin_requirement - trade_fee;
+    let free_balance = account_value - margin_requirement;
     if free_balance >= 0 {
         return Ok(false);
     }
@@ -2713,7 +2875,6 @@ fn is_risky_after_trade_from_state<S: StateReader>(
     Ok(true)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn is_risky_after_trade_loaded<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2801,14 +2962,7 @@ fn load_account_state_for_risk<S: StateReader>(
         let perp_mode = resolve_perp_storage_mode_for_account(ctx, state, contract, account)?;
         let perp_mmf_factor = felt_to_i128(ctx.storage_read(state, contract, perp_mmf_factor_key(perp_mode))?)?;
 
-        let (
-            perp_balances,
-            perp_prices,
-            perp_funding_indices,
-            perp_imf_base,
-            perp_fee_provision_rate,
-            perp_asset_kinds,
-        ) = load_perp_balances_and_prices(
+        let perp_state = load_perp_balances_and_prices(
             ctx,
             state,
             contract,
@@ -2822,12 +2976,15 @@ fn load_account_state_for_risk<S: StateReader>(
             token_balances,
             token_prices,
             settlement_token_index: settlement_index,
-            perp_balances,
-            perp_prices,
-            perp_funding_indices,
-            perp_imf_base,
-            perp_fee_provision_rate,
-            perp_asset_kinds,
+            perp_balances: perp_state.balances,
+            perp_prices: perp_state.prices,
+            perp_funding_indices: perp_state.funding_indices,
+            perp_imf_base: perp_state.imf_base,
+            perp_option_assets: perp_state.option_assets,
+            spot_prices: perp_state.spot_prices,
+            option_margin_params: perp_state.option_margin_params,
+            perp_fee_provision_rate: perp_state.fee_provision_rates,
+            perp_asset_kinds: perp_state.asset_kinds,
             fee_rates,
             referral,
             margin_methodology,
@@ -2859,7 +3016,6 @@ fn load_token_balances<S: StateReader>(
     })
 }
 
-#[allow(clippy::type_complexity)]
 fn load_perp_balances_and_prices<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -2868,17 +3024,13 @@ fn load_perp_balances_and_prices<S: StateReader>(
     mode: PerpStorageMode,
     oracle_address: ContractAddress,
     assets_manager_address: ContractAddress,
-) -> Result<(Vec<PerpetualBalance>, Vec<i128>, Vec<i128>, Vec<i128>, Vec<Option<i128>>, Vec<Felt>), ExecutionError> {
+) -> Result<LoadedPerpStateLite, ExecutionError> {
     time_inner(InnerTimingField::LoadPerpBalancesAndPrices, || {
-        let mut balances = Vec::new();
-        let mut prices = Vec::new();
-        let mut funding = Vec::new();
-        let mut imf_base = Vec::new();
-        let mut fee_provision = Vec::new();
-        let mut asset_kinds = Vec::new();
-        let mut perp_asset_keys: std::collections::HashMap<Felt, StorageKey> = std::collections::HashMap::new();
-        let mut fee_config_keys: std::collections::HashMap<Felt, StorageKey> = std::collections::HashMap::new();
-        let mut max_fee_rate_keys: std::collections::HashMap<Felt, StorageKey> = std::collections::HashMap::new();
+        let mut loaded = LoadedPerpStateLite::default();
+        let mut perp_asset_keys: HashMap<Felt, StorageKey> = HashMap::new();
+        let mut future_provision_rate: Option<FeeWithCapLite> = None;
+        let mut perp_option_provision_rate: Option<FeeWithCapLite> = None;
+        let mut dated_option_provision_rate: Option<FeeWithCapLite> = None;
 
         let tail_key = perp_balance_tail_key(mode, account);
         let inner =
@@ -2890,34 +3042,103 @@ fn load_perp_balances_and_prices<S: StateReader>(
             } else {
                 read_perpetual_balance(ctx, state, contract, account, current, mode)?
             };
-            balances.push(balance.clone());
+            loaded.balances.push(balance.clone());
 
             let price_i128 = read_perp_price_i128(ctx, state, oracle_address, current)?;
-            prices.push(price_i128);
+            loaded.prices.push(price_i128);
             let funding_i128 = read_funding_index_i128(ctx, state, oracle_address, current)?;
-            funding.push(funding_i128);
+            loaded.funding_indices.push(funding_i128);
 
             let asset_key = *perp_asset_keys.entry(current).or_insert_with(|| perp_asset_key(mode, current));
-            let imf = read_perpetual_imf_base_with_key(ctx, state, contract, asset_key)?;
-            imf_base.push(imf);
+            let asset_kind = get_asset_kind(ctx, state, contract, assets_manager_address, current)?;
+            loaded.asset_kinds.push(asset_kind);
 
-            let fee_config_key =
-                *fee_config_keys.entry(current).or_insert_with(|| perp_market_fee_config_v2_key(mode, current));
-            let max_fee_rate_key =
-                *max_fee_rate_keys.entry(current).or_insert_with(|| perp_max_fee_rate_key(mode, current));
-            fee_provision.push(read_fee_provision_rate_with_keys(
-                ctx,
-                state,
-                contract,
-                fee_config_key,
-                max_fee_rate_key,
-            )?);
-            asset_kinds.push(get_asset_kind(ctx, state, contract, assets_manager_address, current)?);
+            if asset_kind == assets_manager::asset_kind_future() {
+                let imf = read_perpetual_imf_base_with_key(ctx, state, contract, asset_key)?;
+                loaded.imf_base.push(imf);
+                loaded.option_assets.push(None);
+                let fee = match future_provision_rate {
+                    Some(rate) => rate,
+                    None => {
+                        let rate = FeeWithCapLite {
+                            fee: assets_manager::get_market_fee_provision_rate(
+                                ctx,
+                                state,
+                                assets_manager_address,
+                                assets_manager::asset_kind_future(),
+                            )?,
+                            fee_cap: 0,
+                            fee_floor: 0,
+                        };
+                        future_provision_rate = Some(rate);
+                        rate
+                    }
+                };
+                loaded.fee_provision_rates.push(fee);
+            } else {
+                loaded.imf_base.push(0);
+                let option_asset = assets_manager::get_option_asset(ctx, state, assets_manager_address, current)?;
+                let option_asset_lite = OptionAssetLite {
+                    base_asset: option_asset.base_asset,
+                    option_type: option_asset.option_type,
+                    strike: felt_to_i128(option_asset.strike)?,
+                };
+                loaded.option_assets.push(Some(option_asset_lite));
+
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    loaded.spot_prices.entry(option_asset.base_asset)
+                {
+                    entry.insert(read_perp_price_i128(ctx, state, oracle_address, option_asset.base_asset)?);
+                }
+
+                let cache_key = (asset_kind, option_asset.base_asset);
+                if let std::collections::hash_map::Entry::Vacant(entry) = loaded.option_margin_params.entry(cache_key) {
+                    let params = assets_manager::get_option_margin_params(
+                        ctx,
+                        state,
+                        assets_manager_address,
+                        asset_kind,
+                        option_asset.base_asset,
+                    )?;
+                    entry.insert(option_cross_margin_params_lite_from_assets(params)?);
+                }
+
+                let fee = if asset_kind == assets_manager::asset_kind_dated_option() {
+                    match dated_option_provision_rate {
+                        Some(rate) => rate,
+                        None => {
+                            let rate = fee_with_cap_lite_from_assets(assets_manager::get_option_fee_provision_rate(
+                                ctx,
+                                state,
+                                assets_manager_address,
+                                assets_manager::asset_kind_dated_option(),
+                            )?)?;
+                            dated_option_provision_rate = Some(rate);
+                            rate
+                        }
+                    }
+                } else {
+                    match perp_option_provision_rate {
+                        Some(rate) => rate,
+                        None => {
+                            let rate = fee_with_cap_lite_from_assets(assets_manager::get_option_fee_provision_rate(
+                                ctx,
+                                state,
+                                assets_manager_address,
+                                assets_manager::asset_kind_option(),
+                            )?)?;
+                            perp_option_provision_rate = Some(rate);
+                            rate
+                        }
+                    }
+                };
+                loaded.fee_provision_rates.push(fee);
+            }
 
             // Offset 4 is used as the list pointer in traversal; reuse the already-read value.
             current = balance.prev;
         }
-        Ok((balances, prices, funding, imf_base, fee_provision, asset_kinds))
+        Ok(loaded)
     })
 }
 
@@ -2961,6 +3182,7 @@ fn read_fee_provision_rate<S: StateReader>(
     Ok(Some(felt_to_i128(rate)?))
 }
 
+#[allow(dead_code)]
 fn read_fee_provision_rate_with_keys<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3097,24 +3319,47 @@ fn margin_requirement_and_total_upnl(
                     total_upnl += unrealized_pnl(balance, mark_price, settlement_price)?;
                     total_upnl += unrealized_funding_pnl(balance, funding_index, settlement_price)?;
 
-                    let current_value_abs = abs_128(get_value(balance, mark_price)?);
-                    let margin_fraction = state.perp_imf_base[i];
-                    let margin = mul_128_scaled(current_value_abs, margin_fraction)?;
+                    let margin = if state.perp_asset_kinds.get(i) == Some(&assets_manager::asset_kind_future()) {
+                        let current_value_abs = abs_128(get_value(balance, mark_price)?);
+                        let margin_fraction = state.perp_imf_base[i];
+                        mul_128_scaled(current_value_abs, margin_fraction)?
+                    } else {
+                        let Some(option_asset) = state.perp_option_assets.get(i).and_then(|asset| *asset) else {
+                            return Err(ExecutionError::ExecutionFailed("missing option asset data".to_string()));
+                        };
+                        let asset_kind = state.perp_asset_kinds[i];
+                        let Some(spot_price) = state.spot_prices.get(&option_asset.base_asset).copied() else {
+                            return Err(ExecutionError::ExecutionFailed("missing option spot price".to_string()));
+                        };
+                        let Some(params) =
+                            state.option_margin_params.get(&(asset_kind, option_asset.base_asset)).copied()
+                        else {
+                            return Err(ExecutionError::ExecutionFailed("missing option margin params".to_string()));
+                        };
+                        option_margin_requirement(
+                            felt_to_i128(balance.amount)?,
+                            option_asset,
+                            params.imf,
+                            mark_price,
+                            spot_price,
+                        )?
+                    };
                     margin_requirement += margin;
 
                     let abs_amount = abs_128(felt_to_i128(balance.amount)?);
-                    let fee_rate = state.perp_fee_provision_rate.get(i).and_then(|v| *v).unwrap_or_else(|| {
-                        let kind =
-                            state.perp_asset_kinds.get(i).copied().unwrap_or_else(assets_manager::asset_kind_future);
-                        if kind == assets_manager::asset_kind_option() {
-                            state.fee_rates.options.taker
-                        } else {
-                            state.fee_rates.futures.taker
-                        }
-                    });
-                    let base_fee = mul3_128_scaled(abs_amount, mark_price, fee_rate)?;
-                    let fee_after_discount = apply_referral_discount(base_fee, &state.referral)?;
-                    margin_requirement += fee_after_discount;
+                    let fee_config = state.perp_fee_provision_rate.get(i).copied().unwrap_or_default();
+                    let base_fee = if state.perp_asset_kinds.get(i) == Some(&assets_manager::asset_kind_future()) {
+                        mul3_128_scaled(abs_amount, mark_price, fee_config.fee)?
+                    } else {
+                        let Some(option_asset) = state.perp_option_assets.get(i).and_then(|asset| *asset) else {
+                            return Err(ExecutionError::ExecutionFailed("missing option asset data".to_string()));
+                        };
+                        let Some(spot_price) = state.spot_prices.get(&option_asset.base_asset).copied() else {
+                            return Err(ExecutionError::ExecutionFailed("missing option spot price".to_string()));
+                        };
+                        option_calculate_fee(option_asset, abs_amount, mark_price, spot_price, fee_config)?
+                    };
+                    margin_requirement += base_fee;
                 }
             }
             MarginMethodologyLite::PortfolioMargin => {
@@ -3143,6 +3388,7 @@ fn margin_requirement_and_total_upnl(
     })
 }
 
+#[allow(dead_code)]
 fn apply_referral_discount(fee: i128, referral: &AccountReferralLite) -> Result<i128, ExecutionError> {
     if fee < 0 {
         return Ok(fee);
@@ -3180,9 +3426,8 @@ fn unrealized_funding_pnl(
     let cached_funding = felt_to_i128(balance.cached_funding)?;
     let funding_diff = cached_funding - funding_index;
     let amount = felt_to_i128(balance.amount)?;
-    let pnl = mul_128_scaled(funding_diff, amount)?;
-    // Convert from USDC to USD (matching Cairo's unrealized_funding_pnl)
-    mul_128_scaled(pnl, settlement_token_price)
+    let funding_in_settlement = mul_128_scaled(funding_diff, amount)?;
+    mul_128_scaled(funding_in_settlement, settlement_token_price)
 }
 
 const MULTIPLIER: i128 = 100_000_000;
@@ -3218,6 +3463,70 @@ fn div_128_scaled(a: i128, b: i128) -> Result<i128, ExecutionError> {
     Ok(prod / b)
 }
 
+fn option_margin_fraction(
+    position_amount: i128,
+    asset: OptionAssetLite,
+    params: OptionMarginParamsLite,
+    mark_price: i128,
+    spot_price: i128,
+) -> Result<i128, ExecutionError> {
+    if position_amount >= 0 {
+        return Ok(min_128(
+            mul_128_scaled(params.premium_multiplier, mark_price)?,
+            mul_128_scaled(params.long_itm, spot_price)?,
+        ));
+    }
+
+    let otm_amount = if is_put_option(asset.option_type) {
+        max_128(0, spot_price - asset.strike)
+    } else {
+        max_128(0, asset.strike - spot_price)
+    };
+    let margin = max_128(
+        mul_128_scaled(params.short_itm, spot_price)? - otm_amount,
+        mul_128_scaled(params.short_otm, spot_price)?,
+    );
+    if is_put_option(asset.option_type) {
+        Ok(min_128(margin, mul_128_scaled(params.short_put_cap, asset.strike)?))
+    } else {
+        Ok(margin)
+    }
+}
+
+fn option_margin_requirement(
+    position_amount: i128,
+    asset: OptionAssetLite,
+    params: OptionMarginParamsLite,
+    mark_price: i128,
+    spot_price: i128,
+) -> Result<i128, ExecutionError> {
+    let margin_fraction = option_margin_fraction(position_amount, asset, params, mark_price, spot_price)?;
+    mul_128_scaled(margin_fraction, abs_128(position_amount))
+}
+
+fn option_calculate_fee(
+    asset: OptionAssetLite,
+    trade_size: i128,
+    trade_price: i128,
+    spot_price: i128,
+    fee_with_cap: FeeWithCapLite,
+) -> Result<i128, ExecutionError> {
+    let base_fee = mul_128_scaled(spot_price, fee_with_cap.fee)?;
+    let clamped = if base_fee > 0 {
+        let fee_cap = mul_128_scaled(trade_price, fee_with_cap.fee_cap)?;
+        min_128(base_fee, fee_cap)
+    } else {
+        let fee_floor = mul_128_scaled(trade_price, fee_with_cap.fee_floor)?;
+        max_128(base_fee, fee_floor)
+    };
+    let _ = asset;
+    mul_128_scaled(trade_size, clamped)
+}
+
+fn is_put_option(option_type: Felt) -> bool {
+    option_type == Felt::from(2u64)
+}
+
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
 struct MarketFeeConfigLite {
@@ -3230,6 +3539,7 @@ struct MarketFeeConfigLite {
     taker_interactive: i128,
 }
 
+#[allow(dead_code)]
 fn trade_support_fee_v2(trade: &TradeRequestV3) -> bool {
     !matches!(trade.maker_order.order_category, OrderCategory::Unspecified)
         && !matches!(trade.taker_order.order_category, OrderCategory::Unspecified)
@@ -3243,23 +3553,30 @@ fn base_fee_spot<S: StateReader>(
     is_maker: bool,
     fee_rates: &FeeRatesLite,
 ) -> Result<i128, ExecutionError> {
+    let _ = fee_rates;
     let trade_size = felt_to_i128(trade.size)?;
     let trade_price = felt_to_i128(trade.price)?;
-    let market_mode = resolve_perp_storage_mode(ctx, state, contract, trade.maker_order.market)?;
-    let use_fee_v2 = trade_support_fee_v2(trade)
-        && read_market_fee_config(ctx, state, contract, trade.maker_order.market, market_mode)?.is_some();
-    let fee_rate = if use_fee_v2 {
-        match if is_maker { &trade.maker_order.order_category } else { &trade.taker_order.order_category } {
-            OrderCategory::Dynamic(fee) => felt_to_i128(fee.fee)?,
-            _ => fee_rate_for_spot(fee_rates, is_maker),
+    let order_category = if is_maker { &trade.maker_order.order_category } else { &trade.taker_order.order_category };
+    let fee_rate = match order_category {
+        OrderCategory::Dynamic(fee) => felt_to_i128(fee.fee)?,
+        OrderCategory::DynamicWithToken(fee) => felt_to_i128(fee.fee)?,
+        OrderCategory::API | OrderCategory::RPI | OrderCategory::Interactive => {
+            let assets_manager_address = read_contract_address(ctx, state, contract, *layout::ASSETS_MANAGER_BASE)?;
+            assets_manager::get_market_fee_by_category(
+                ctx,
+                state,
+                assets_manager_address,
+                assets_manager::asset_kind_spot(),
+                trade.maker_order.market,
+                fee_category_for_order(order_category),
+                is_maker,
+            )?
         }
-    } else {
-        fee_rate_for_spot(fee_rates, is_maker)
+        OrderCategory::Unspecified => fee_rate_for_spot(fee_rates, is_maker),
     };
     mul3_128_scaled(trade_size, trade_price, fee_rate)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn base_fee_perp<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3270,23 +3587,73 @@ fn base_fee_perp<S: StateReader>(
     asset_kind: Felt,
     fee_rates: &FeeRatesLite,
 ) -> Result<i128, ExecutionError> {
+    let _ = mode;
+    let _ = fee_rates;
     let trade_size = felt_to_i128(trade.size)?;
     let trade_price = felt_to_i128(trade.price)?;
-    let fee_rate = if trade_support_fee_v2(trade) {
-        fee_rate_v2_for_order(
-            ctx,
-            state,
-            contract,
-            trade.maker_order.market,
-            if is_maker { &trade.maker_order.order_category } else { &trade.taker_order.order_category },
-            is_maker,
-            mode,
-        )?
-        .unwrap_or(fee_rate_for_perp(fee_rates, is_maker, asset_kind))
-    } else {
-        fee_rate_for_perp(fee_rates, is_maker, asset_kind)
+    let order_category = if is_maker { &trade.maker_order.order_category } else { &trade.taker_order.order_category };
+    let assets_manager_address = read_contract_address(ctx, state, contract, *layout::ASSETS_MANAGER_BASE)?;
+
+    if asset_kind == assets_manager::asset_kind_future() {
+        let fee_rate = match order_category {
+            OrderCategory::Dynamic(fee) => felt_to_i128(fee.fee)?,
+            OrderCategory::DynamicWithToken(fee) => felt_to_i128(fee.fee)?,
+            OrderCategory::API | OrderCategory::RPI | OrderCategory::Interactive => {
+                assets_manager::get_market_fee_by_category(
+                    ctx,
+                    state,
+                    assets_manager_address,
+                    asset_kind,
+                    trade.maker_order.market,
+                    fee_category_for_order(order_category),
+                    is_maker,
+                )?
+            }
+            OrderCategory::Unspecified => fee_rate_for_perp(fee_rates, is_maker, asset_kind),
+        };
+        return mul3_128_scaled(trade_size, trade_price, fee_rate);
+    }
+
+    let option_asset = assets_manager::get_option_asset(ctx, state, assets_manager_address, trade.maker_order.market)?;
+    let oracle_address = read_contract_address(ctx, state, contract, *layout::PARACLEAR_ORACLE_CONTRACT_ADDRESS_BASE)?;
+    let spot_price = read_perp_price_i128(ctx, state, oracle_address, option_asset.base_asset)?;
+    let fee_with_cap = match order_category {
+        OrderCategory::Dynamic(fee) => FeeWithCapLite {
+            fee: felt_to_i128(fee.fee)?,
+            fee_cap: felt_to_i128(fee.fee_cap)?,
+            fee_floor: felt_to_i128(fee.fee_floor)?,
+        },
+        OrderCategory::DynamicWithToken(fee) => FeeWithCapLite {
+            fee: felt_to_i128(fee.fee)?,
+            fee_cap: felt_to_i128(fee.fee_cap)?,
+            fee_floor: felt_to_i128(fee.fee_floor)?,
+        },
+        OrderCategory::API | OrderCategory::RPI | OrderCategory::Interactive => {
+            fee_with_cap_lite_from_assets(assets_manager::get_base_asset_option_fee_by_category(
+                ctx,
+                state,
+                assets_manager_address,
+                asset_kind,
+                option_asset.base_asset,
+                fee_category_for_order(order_category),
+                is_maker,
+            )?)?
+        }
+        OrderCategory::Unspecified => {
+            FeeWithCapLite { fee: fee_rate_for_perp(fee_rates, is_maker, asset_kind), fee_cap: 0, fee_floor: 0 }
+        }
     };
-    mul3_128_scaled(trade_size, trade_price, fee_rate)
+    option_calculate_fee(
+        OptionAssetLite {
+            base_asset: option_asset.base_asset,
+            option_type: option_asset.option_type,
+            strike: felt_to_i128(option_asset.strike)?,
+        },
+        trade_size,
+        trade_price,
+        spot_price,
+        fee_with_cap,
+    )
 }
 
 fn fee_rate_for_spot(fee_rates: &FeeRatesLite, is_maker: bool) -> i128 {
@@ -3298,7 +3665,13 @@ fn fee_rate_for_spot(fee_rates: &FeeRatesLite, is_maker: bool) -> i128 {
 }
 
 fn fee_rate_for_perp(fee_rates: &FeeRatesLite, is_maker: bool, asset_kind: Felt) -> i128 {
-    let rate = if asset_kind == assets_manager::asset_kind_option() { fee_rates.options } else { fee_rates.futures };
+    let rate = if asset_kind == assets_manager::asset_kind_option()
+        || asset_kind == assets_manager::asset_kind_dated_option()
+    {
+        fee_rates.options
+    } else {
+        fee_rates.futures
+    };
     if is_maker {
         rate.maker
     } else {
@@ -3306,6 +3679,98 @@ fn fee_rate_for_perp(fee_rates: &FeeRatesLite, is_maker: bool, asset_kind: Felt)
     }
 }
 
+fn fee_category_for_order(
+    category: &OrderCategory,
+) -> crate::contracts::paradex_codegen::assets_manager_types::FeeCategory {
+    match category {
+        OrderCategory::API => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::API,
+        OrderCategory::RPI => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::RPI,
+        OrderCategory::Interactive => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::Interactive,
+        _ => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::Unspecified,
+    }
+}
+
+fn fee_with_cap_lite_from_assets(
+    fee: crate::contracts::paradex_codegen::assets_manager_types::FeeWithCap,
+) -> Result<FeeWithCapLite, ExecutionError> {
+    Ok(FeeWithCapLite {
+        fee: felt_to_i128(fee.fee)?,
+        fee_cap: felt_to_i128(fee.fee_cap)?,
+        fee_floor: felt_to_i128(fee.fee_floor)?,
+    })
+}
+
+fn option_margin_params_lite_from_assets(
+    params: crate::contracts::paradex_codegen::assets_manager_types::OptionMarginParams,
+) -> Result<OptionMarginParamsLite, ExecutionError> {
+    Ok(OptionMarginParamsLite {
+        premium_multiplier: felt_to_i128(params.premium_multiplier)?,
+        long_itm: felt_to_i128(params.long_itm)?,
+        short_itm: felt_to_i128(params.short_itm)?,
+        short_otm: felt_to_i128(params.short_otm)?,
+        short_put_cap: felt_to_i128(params.short_put_cap)?,
+    })
+}
+
+fn option_cross_margin_params_lite_from_assets(
+    params: crate::contracts::paradex_codegen::assets_manager_types::OptionCrossMarginParams,
+) -> Result<OptionCrossMarginParamsLite, ExecutionError> {
+    Ok(OptionCrossMarginParamsLite {
+        imf: option_margin_params_lite_from_assets(params.imf)?,
+        mmf: option_margin_params_lite_from_assets(params.mmf)?,
+    })
+}
+
+fn fee_token_override(category: &OrderCategory, settlement_token_address: ContractAddress) -> Option<ContractAddress> {
+    match category {
+        OrderCategory::DynamicWithToken(req)
+            if req.fee_token.0 != Felt::ZERO && req.fee_token != settlement_token_address =>
+        {
+            Some(req.fee_token)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_fee_token_address(
+    maker_fee_token: Option<ContractAddress>,
+    taker_fee_token: Option<ContractAddress>,
+) -> Result<Option<ContractAddress>, ExecutionError> {
+    match (maker_fee_token, taker_fee_token) {
+        (Some(maker), Some(taker)) if maker != taker => {
+            Err(ExecutionError::ExecutionFailed("mismatched fee token".to_string()))
+        }
+        (Some(token), _) | (_, Some(token)) => Ok(Some(token)),
+        (None, None) => Ok(None),
+    }
+}
+
+fn token_price_from_state(state: &AccountStateLite, token_address: ContractAddress) -> Option<i128> {
+    state
+        .token_balances
+        .iter()
+        .position(|balance| balance.token_address == token_address)
+        .and_then(|idx| state.token_prices.get(idx).copied())
+}
+
+fn resolve_fee_token_price(
+    fee_token_address: ContractAddress,
+    maker_fee_token: Option<ContractAddress>,
+    taker_fee_token: Option<ContractAddress>,
+    maker_state: &AccountStateLite,
+    taker_state: &AccountStateLite,
+) -> Result<i128, ExecutionError> {
+    let price = if maker_fee_token == Some(fee_token_address) {
+        token_price_from_state(maker_state, fee_token_address)
+    } else if taker_fee_token == Some(fee_token_address) {
+        token_price_from_state(taker_state, fee_token_address)
+    } else {
+        None
+    };
+    price.ok_or_else(|| ExecutionError::ExecutionFailed("fee token not found in account balances".to_string()))
+}
+
+#[allow(dead_code)]
 fn read_market_fee_config<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3335,6 +3800,7 @@ fn read_market_fee_config<S: StateReader>(
     }))
 }
 
+#[allow(dead_code)]
 fn fee_rate_v2_for_order<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3378,6 +3844,7 @@ fn fee_rate_v2_for_order<S: StateReader>(
     Ok(Some(rate))
 }
 
+#[allow(dead_code)]
 fn get_trade_fee_and_referral_commission(
     fee: i128,
     referral: AccountReferralLite,
@@ -3414,7 +3881,6 @@ fn read_max_pending_transfer_executions<S: StateReader>(
     felt_to_u64(value)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn add_pending_transfer<S: StateReader>(
     state: &S,
     ctx: &mut ExecutionContext,
@@ -3441,7 +3907,6 @@ fn add_pending_transfer<S: StateReader>(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn fee_payments<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
@@ -3449,88 +3914,120 @@ fn fee_payments<S: StateReader>(
     caller: ContractAddress,
     trade_id: Felt,
     settlement_token_address: ContractAddress,
-    maker_account: ContractAddress,
-    maker_settlement_after_trade: i128,
-    maker_fee_settlement: i128,
-    maker_referrer: ContractAddress,
-    maker_fee_commission_settlement: i128,
-    taker_account: ContractAddress,
-    taker_settlement_after_trade: i128,
-    taker_fee_settlement: i128,
-    taker_referrer: ContractAddress,
-    taker_fee_commission_settlement: i128,
-    _settlement_token_price: i128,
+    fee_token_address: Option<ContractAddress>,
+    fee_token_price: Option<i128>,
+    maker: FeePaymentSide,
+    taker: FeePaymentSide,
 ) -> Result<(i128, i128), ExecutionError> {
-    let maker_after_fee = maker_settlement_after_trade - maker_fee_settlement;
-    let taker_after_fee = taker_settlement_after_trade - taker_fee_settlement;
+    let maker_after_fee =
+        maker.settlement_after_trade - if maker.pays_in_fee_token { 0 } else { maker.fee_in_settlement };
+    let taker_after_fee =
+        taker.settlement_after_trade - if taker.pays_in_fee_token { 0 } else { taker.fee_in_settlement };
 
-    update_token_balance(ctx, state, contract, maker_account, settlement_token_address, -maker_fee_settlement)?;
-    update_token_balance(ctx, state, contract, taker_account, settlement_token_address, -taker_fee_settlement)?;
+    if !maker.pays_in_fee_token {
+        update_token_balance(ctx, state, contract, maker.account, settlement_token_address, -maker.fee_in_settlement)?;
+    }
+    if !taker.pays_in_fee_token {
+        update_token_balance(ctx, state, contract, taker.account, settlement_token_address, -taker.fee_in_settlement)?;
+    }
 
     let pending_transfers_enabled = read_max_pending_transfer_executions(state, ctx, contract)? > 0;
-
-    if maker_fee_commission_settlement != 0 {
-        if pending_transfers_enabled {
-            add_pending_transfer(
-                state,
-                ctx,
-                contract,
-                caller,
-                trade_id,
-                maker_referrer,
-                settlement_token_address,
-                maker_fee_commission_settlement,
-            )?;
-        } else {
-            update_token_balance(
-                ctx,
-                state,
-                contract,
-                maker_referrer,
-                settlement_token_address,
-                maker_fee_commission_settlement,
-            )?;
-        }
-        emit_fee_share(ctx, maker_referrer, maker_fee_commission_settlement);
-    }
-
-    if taker_fee_commission_settlement != 0 {
-        if pending_transfers_enabled {
-            add_pending_transfer(
-                state,
-                ctx,
-                contract,
-                caller,
-                trade_id,
-                taker_referrer,
-                settlement_token_address,
-                taker_fee_commission_settlement,
-            )?;
-        } else {
-            update_token_balance(
-                ctx,
-                state,
-                contract,
-                taker_referrer,
-                settlement_token_address,
-                taker_fee_commission_settlement,
-            )?;
-        }
-        emit_fee_share(ctx, taker_referrer, taker_fee_commission_settlement);
-    }
 
     let fee_share_account =
         ContractAddress(ctx.storage_read(state, contract, *layout::PARACLEAR_FEE_SHARE_ACCOUNT_ADDRESS_BASE)?);
     let fee_share_percentage =
         felt_to_i128(ctx.storage_read(state, contract, *layout::PARACLEAR_FEE_SHARE_PERCENTAGE_BASE)?)?;
 
-    let total_fee =
-        maker_fee_settlement + taker_fee_settlement - maker_fee_commission_settlement - taker_fee_commission_settlement;
+    let total_fee = maker.fee_in_settlement + taker.fee_in_settlement;
     let mut fee_credited_to_account_fee = total_fee;
+    let mut total_fee_share_in_settlement = 0;
 
     if fee_share_account.0 != Felt::ZERO && fee_share_percentage != 0 {
         let fee_share_amount = mul_128_scaled(total_fee, fee_share_percentage)?;
         fee_credited_to_account_fee -= fee_share_amount;
+        total_fee_share_in_settlement = fee_share_amount;
+    }
+
+    if let Some(fee_token_address) = fee_token_address {
+        let fee_token_price =
+            fee_token_price.ok_or_else(|| ExecutionError::ExecutionFailed("missing fee token price".to_string()))?;
+        let total_fee_token_in_settlement = (if maker.pays_in_fee_token { maker.fee_in_settlement } else { 0 })
+            + (if taker.pays_in_fee_token { taker.fee_in_settlement } else { 0 });
+        let fee_token_share_in_settlement = if fee_share_account.0 != Felt::ZERO && fee_share_percentage != 0 {
+            mul_128_scaled(total_fee_token_in_settlement, fee_share_percentage)?
+        } else {
+            0
+        };
+        let fee_token_credit_in_settlement = total_fee_token_in_settlement - fee_token_share_in_settlement;
+        fee_credited_to_account_fee -= fee_token_credit_in_settlement;
+        total_fee_share_in_settlement -= fee_token_share_in_settlement;
+
+        let fee_token_credit_in_fee_token = div_128_scaled(fee_token_credit_in_settlement, fee_token_price)?;
+        let fee_token_share_in_fee_token = div_128_scaled(fee_token_share_in_settlement, fee_token_price)?;
+
+        if maker.fee_token_deduction != 0 {
+            update_token_balance(ctx, state, contract, maker.account, fee_token_address, -maker.fee_token_deduction)?;
+        }
+        if taker.fee_token_deduction != 0 {
+            update_token_balance(ctx, state, contract, taker.account, fee_token_address, -taker.fee_token_deduction)?;
+        }
+
+        if fee_token_credit_in_fee_token != 0 {
+            let fee_account =
+                ContractAddress(ctx.storage_read(state, contract, *layout::PARACLEAR_FEE_ACCOUNT_ADDRESS_BASE)?);
+            if pending_transfers_enabled {
+                add_pending_transfer(
+                    state,
+                    ctx,
+                    contract,
+                    caller,
+                    trade_id,
+                    fee_account,
+                    fee_token_address,
+                    fee_token_credit_in_fee_token,
+                )?;
+            } else {
+                update_token_balance(
+                    ctx,
+                    state,
+                    contract,
+                    fee_account,
+                    fee_token_address,
+                    fee_token_credit_in_fee_token,
+                )?;
+            }
+        }
+
+        if fee_token_share_in_fee_token != 0 {
+            if pending_transfers_enabled {
+                add_pending_transfer(
+                    state,
+                    ctx,
+                    contract,
+                    caller,
+                    trade_id,
+                    fee_share_account,
+                    fee_token_address,
+                    fee_token_share_in_fee_token,
+                )?;
+            } else {
+                update_token_balance(
+                    ctx,
+                    state,
+                    contract,
+                    fee_share_account,
+                    fee_token_address,
+                    fee_token_share_in_fee_token,
+                )?;
+            }
+        }
+
+        if fee_token_share_in_fee_token != 0 {
+            emit_fee_share_v2(ctx, fee_share_account, fee_token_share_in_fee_token, fee_token_address);
+        }
+    }
+
+    if total_fee_share_in_settlement != 0 {
         if pending_transfers_enabled {
             add_pending_transfer(
                 state,
@@ -3540,12 +4037,19 @@ fn fee_payments<S: StateReader>(
                 trade_id,
                 fee_share_account,
                 settlement_token_address,
-                fee_share_amount,
+                total_fee_share_in_settlement,
             )?;
         } else {
-            update_token_balance(ctx, state, contract, fee_share_account, settlement_token_address, fee_share_amount)?;
+            update_token_balance(
+                ctx,
+                state,
+                contract,
+                fee_share_account,
+                settlement_token_address,
+                total_fee_share_in_settlement,
+            )?;
         }
-        emit_fee_share(ctx, fee_share_account, fee_share_amount);
+        emit_fee_share_v2(ctx, fee_share_account, total_fee_share_in_settlement, settlement_token_address);
     }
 
     if fee_credited_to_account_fee < 0 {
@@ -3569,7 +4073,18 @@ fn fee_payments<S: StateReader>(
         update_token_balance(ctx, state, contract, fee_account, settlement_token_address, fee_credited_to_account_fee)?;
     }
 
-    emit_fee_events(ctx, maker_account, taker_account, maker_fee_settlement, taker_fee_settlement);
+    emit_fee_v2(
+        ctx,
+        maker.account,
+        if maker.pays_in_fee_token { maker.fee_token_deduction } else { maker.fee_in_settlement },
+        maker.payment_token_address,
+    );
+    emit_fee_v2(
+        ctx,
+        taker.account,
+        if taker.pays_in_fee_token { taker.fee_token_deduction } else { taker.fee_in_settlement },
+        taker.payment_token_address,
+    );
 
     Ok((maker_after_fee, taker_after_fee))
 }
@@ -3586,7 +4101,6 @@ fn emit_token_balance_update(
     ctx.emit_event(vec![selector], vec![account.0, token_address.0, prev_amount, updated_amount, is_liquidation]);
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_perpetual_balance_update(
     ctx: &mut ExecutionContext,
     account: ContractAddress,
@@ -3629,21 +4143,19 @@ fn emit_trade_settled(ctx: &mut ExecutionContext, trade_id: Felt, market: Felt, 
     ctx.emit_event(vec![selector], vec![trade_id, market, price, size]);
 }
 
-fn emit_fee_events(
-    ctx: &mut ExecutionContext,
-    maker: ContractAddress,
-    taker: ContractAddress,
-    maker_fee: i128,
-    taker_fee: i128,
-) {
-    let selector = event_selector("Fee");
-    ctx.emit_event(vec![selector], vec![maker.0, i128_to_felt(maker_fee)]);
-    ctx.emit_event(vec![selector], vec![taker.0, i128_to_felt(taker_fee)]);
+fn emit_fee_v2(ctx: &mut ExecutionContext, account: ContractAddress, fee: i128, fee_token_address: ContractAddress) {
+    let selector = event_selector("FeeV2");
+    ctx.emit_event(vec![selector], vec![account.0, i128_to_felt(fee), fee_token_address.0]);
 }
 
-fn emit_fee_share(ctx: &mut ExecutionContext, account: ContractAddress, fee: i128) {
-    let selector = event_selector("FeeShare");
-    ctx.emit_event(vec![selector], vec![account.0, i128_to_felt(fee)]);
+fn emit_fee_share_v2(
+    ctx: &mut ExecutionContext,
+    account: ContractAddress,
+    fee: i128,
+    fee_token_address: ContractAddress,
+) {
+    let selector = event_selector("FeeShareV2");
+    ctx.emit_event(vec![selector], vec![account.0, i128_to_felt(fee), fee_token_address.0]);
 }
 
 fn emit_settle_trade_failed(ctx: &mut ExecutionContext, error_code: Felt, error_message: Felt, trade: &TradeRequestV3) {
@@ -3683,6 +4195,9 @@ fn encode_order_category(cat: &OrderCategory) -> Vec<Felt> {
         OrderCategory::RPI => vec![Felt::from(2u64)],
         OrderCategory::Interactive => vec![Felt::from(3u64)],
         OrderCategory::Dynamic(fee) => vec![Felt::from(4u64), fee.fee, fee.fee_cap, fee.fee_floor],
+        OrderCategory::DynamicWithToken(fee) => {
+            vec![Felt::from(5u64), fee.fee, fee.fee_cap, fee.fee_floor, fee.fee_token.0]
+        }
     }
 }
 
@@ -3750,6 +4265,12 @@ mod ErrorCodes {
     pub fn trade_taker_not_enough_balance() -> Felt {
         Felt::from(1009u64)
     }
+    pub fn trade_maker_not_enough_fee_token() -> Felt {
+        Felt::from(1012u64)
+    }
+    pub fn trade_taker_not_enough_fee_token() -> Felt {
+        Felt::from(1013u64)
+    }
 }
 
 #[allow(non_snake_case, dead_code)]
@@ -3812,6 +4333,12 @@ mod Errors {
     pub fn trade_taker_not_enough_balance() -> Felt {
         crate::storage::short_string_to_felt("Trade: taker not enough balance")
     }
+    pub fn trade_maker_not_enough_fee_token() -> Felt {
+        crate::storage::short_string_to_felt("Trade: maker insuff fee token")
+    }
+    pub fn trade_taker_not_enough_fee_token() -> Felt {
+        crate::storage::short_string_to_felt("Trade: taker insuff fee token")
+    }
 }
 
 fn buy_side() -> Felt {
@@ -3821,9 +4348,6 @@ fn buy_side() -> Felt {
 fn sell_side() -> Felt {
     Felt::from(2u64)
 }
-
-// ── Test-only wrappers for internal math/utility functions ──────────────────
-// These follow the same pattern as decode_order_v3_for_test (line 1182).
 
 #[cfg(any(test, feature = "testing"))]
 #[allow(dead_code)]

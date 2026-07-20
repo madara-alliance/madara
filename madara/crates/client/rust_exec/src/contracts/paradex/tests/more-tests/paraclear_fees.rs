@@ -3,7 +3,10 @@ use crate::contracts::paradex_codegen::paraclear_types::OrderCategory;
 use crate::state::mock::MockStateReader;
 use crate::storage::storage_key_with_offset;
 
-use super::super::fixtures::{addr, dynamic_fee_request, felt, sample_trade, set_storage};
+use super::super::fixtures::{
+    addr, dynamic_fee_request, felt, sample_trade, set_account_fee_rate_spot, set_future_asset_direct,
+    set_paraclear_dependencies, set_storage,
+};
 
 #[test]
 fn test_trade_support_fee_v2_dynamic_true() {
@@ -189,12 +192,7 @@ fn test_base_fee_spot_maker() {
     let contract = addr(0x9000);
 
     let trade = trade_with_size_price(2 * SCALE, 3 * SCALE);
-    let maker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_spot_key(
-        trade.maker_order.account.0,
-    );
-    set_storage(&mut state, contract, maker_base, felt(1));
-    set_storage(&mut state, contract, storage_key_with_offset(maker_base, 1), felt((4 * SCALE) as u64));
-    set_storage(&mut state, contract, storage_key_with_offset(maker_base, 2), felt((5 * SCALE) as u64));
+    set_account_fee_rate_spot(&mut state, contract, trade.maker_order.account, 4 * SCALE, 5 * SCALE);
 
     let mut ctx = crate::ExecutionContext::new();
     let fee = paraclear::base_fee_spot_for_test(&mut ctx, &state, contract, &trade, true).expect("fee");
@@ -207,12 +205,7 @@ fn test_base_fee_spot_taker() {
     let contract = addr(0x9001);
 
     let trade = trade_with_size_price(2 * SCALE, 3 * SCALE);
-    let taker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_spot_key(
-        trade.taker_order.account.0,
-    );
-    set_storage(&mut state, contract, taker_base, felt(1));
-    set_storage(&mut state, contract, storage_key_with_offset(taker_base, 1), felt((4 * SCALE) as u64));
-    set_storage(&mut state, contract, storage_key_with_offset(taker_base, 2), felt((5 * SCALE) as u64));
+    set_account_fee_rate_spot(&mut state, contract, trade.taker_order.account, 4 * SCALE, 5 * SCALE);
 
     let mut ctx = crate::ExecutionContext::new();
     let fee = paraclear::base_fee_spot_for_test(&mut ctx, &state, contract, &trade, false).expect("fee");
@@ -223,8 +216,23 @@ fn test_base_fee_spot_taker() {
 fn test_base_fee_perp_maker() {
     let mut state = MockStateReader::new();
     let contract = addr(0x9002);
+    let assets_manager = addr(0x9004);
+    let oracle = addr(0x9005);
 
     let trade = trade_with_size_price(2 * SCALE, 3 * SCALE);
+    set_paraclear_dependencies(&mut state, contract, assets_manager, oracle);
+    set_future_asset_direct(
+        &mut state,
+        assets_manager,
+        trade.maker_order.market,
+        felt(0x1),
+        felt(0x2),
+        felt(1),
+        felt(0),
+        felt(0),
+        felt(0),
+        felt(0),
+    );
     let maker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_key(
         trade.maker_order.account.0,
     );
@@ -241,8 +249,23 @@ fn test_base_fee_perp_maker() {
 fn test_base_fee_perp_taker() {
     let mut state = MockStateReader::new();
     let contract = addr(0x9003);
+    let assets_manager = addr(0x9006);
+    let oracle = addr(0x9007);
 
     let trade = trade_with_size_price(2 * SCALE, 3 * SCALE);
+    set_paraclear_dependencies(&mut state, contract, assets_manager, oracle);
+    set_future_asset_direct(
+        &mut state,
+        assets_manager,
+        trade.maker_order.market,
+        felt(0x1),
+        felt(0x2),
+        felt(1),
+        felt(0),
+        felt(0),
+        felt(0),
+        felt(0),
+    );
     let taker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_key(
         trade.taker_order.account.0,
     );

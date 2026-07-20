@@ -54,7 +54,7 @@ fn test_market_delegate_none_runs_local() {
 }
 
 #[test]
-fn test_market_delegate_missing_class_hash_fails() {
+fn test_market_delegate_missing_class_hash_is_ignored() {
     let mut state = MockStateReader::new();
     let contract = addr(0x701);
     let market = felt(0xabc);
@@ -67,12 +67,13 @@ fn test_market_delegate_missing_class_hash_fails() {
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
     let selector = function_selector("settle_trade_v3");
 
-    let err = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).unwrap_err();
-    assert!(format!("{err}").contains("delegate contract not deployed"));
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+    assert_eq!(result.call_result.retdata, vec![felt(0)]);
+    assert_eq!(result.call_result.events[0].keys, vec![event_selector("SettleTradeFailedV3")]);
 }
 
 #[test]
-fn test_market_delegate_unsupported_contract_fails() {
+fn test_market_delegate_unsupported_contract_is_ignored() {
     let mut state = MockStateReader::new();
     let contract = addr(0x702);
     let market = felt(0xabc);
@@ -81,13 +82,14 @@ fn test_market_delegate_unsupported_contract_fails() {
     let key = paraclear_layout::Paraclear_market_delegate_key(market);
     set_storage(&mut state, contract, key, delegate.0);
 
-    // Set class hash for delegate, but leave env unset so registry won't support it.
+    // Set class hash for delegate to make sure the local implementation ignores it.
     state.set_class_hash(delegate, felt(0xdeadbeef));
 
     let trade = sample_trade(market);
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
     let selector = function_selector("settle_trade_v3");
 
-    let err = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).unwrap_err();
-    assert!(format!("{err}").contains("delegate contract unsupported"));
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+    assert_eq!(result.call_result.retdata, vec![felt(0)]);
+    assert_eq!(result.call_result.events[0].keys, vec![event_selector("SettleTradeFailedV3")]);
 }

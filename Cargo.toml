@@ -2,6 +2,7 @@
 members = [
   "madara",
   "madara/crates/client/rust_exec",
+  "madara/crates/client/rust_exec/tools/paradex_codegen",
   "orchestrator",
   "e2e",
   "e2e-tests",

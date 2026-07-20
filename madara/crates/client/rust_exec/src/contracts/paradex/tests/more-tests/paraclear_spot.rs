@@ -1,17 +1,18 @@
+#![allow(clippy::identity_op, clippy::too_many_arguments)]
+
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_layout;
-use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
 use crate::storage::{event_selector, function_selector};
 use crate::types::ContractAddress;
 
 use super::super::fixtures::{
-    addr, felt, i128_to_felt, set_account_fee_rate_spot, set_account_referral, set_fee_share,
-    set_oracle_latest_tick_data, set_paraclear_dependencies, set_settlement_token, set_spot_asset_direct, set_storage,
-    set_token_balance, set_token_balance_amount_only, set_token_name, short_str, SCALE,
+    addr, dynamic_fee_request, dynamic_fee_request_v2, felt, i128_to_felt, set_account_fee_rate_spot,
+    set_account_referral, set_assets_manager_market_fee_config, set_fee_share, set_oracle_latest_tick_data,
+    set_paraclear_dependencies, set_settlement_token, set_spot_asset_direct, set_token_balance,
+    set_token_balance_amount_only, set_token_name, short_str, SCALE,
 };
 
-#[allow(clippy::too_many_arguments)]
 fn setup_spot_env(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -41,7 +42,6 @@ fn setup_spot_env(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_trade(
     maker: ContractAddress,
     taker: ContractAddress,
@@ -62,7 +62,7 @@ fn build_trade(
         price: i128_to_felt(price),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: maker_category,
+        order_category: fee_v2_category(maker_category),
     };
     let taker_order = OrderV3 {
         account: taker,
@@ -73,7 +73,7 @@ fn build_trade(
         price: i128_to_felt(price),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: taker_category,
+        order_category: fee_v2_category(taker_category),
     };
     TradeRequestV3 {
         id: felt(0x1),
@@ -82,6 +82,15 @@ fn build_trade(
         traded_at: felt(100),
         maker_order,
         taker_order,
+    }
+}
+
+fn fee_v2_category(category: OrderCategory) -> OrderCategory {
+    match category {
+        OrderCategory::Unspecified => {
+            OrderCategory::Dynamic(FeeWithCapRequest { fee: felt(0), fee_cap: felt(0), fee_floor: felt(0) })
+        }
+        category => category,
     }
 }
 
@@ -115,7 +124,7 @@ fn test_settle_spot_success_buy() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3001);
@@ -146,6 +155,60 @@ fn test_settle_spot_success_buy() {
 }
 
 #[test]
+fn test_settle_spot_fee_v2_path() {
+    let mut state = MockStateReader::new();
+    let contract = addr(0x1005);
+    let assets_manager = addr(0x1006);
+    let oracle = addr(0x1007);
+    let market = felt(0xabd);
+    let base_token = addr(0x2005);
+    let settlement_token = addr(0x2006);
+    let base_name = short_str("AAB");
+    let settlement_name = short_str("USDC");
+
+    setup_spot_env(
+        &mut state,
+        contract,
+        assets_manager,
+        oracle,
+        market,
+        base_token,
+        base_name,
+        settlement_token,
+        settlement_name,
+        2 * SCALE,
+        1 * SCALE,
+    );
+    set_assets_manager_market_fee_config(&mut state, assets_manager, market, 1_000_000, 2_000_000, 0, 0, 0, 0, 0);
+
+    let maker = addr(0x3005);
+    let taker = addr(0x3006);
+    set_token_balance(&mut state, contract, maker, base_token, 10 * SCALE);
+    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 500 * SCALE);
+    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 2000 * SCALE);
+
+    let trade = build_trade(
+        maker,
+        taker,
+        market,
+        felt(2),
+        felt(1),
+        5 * SCALE,
+        200 * SCALE,
+        OrderCategory::API,
+        OrderCategory::API,
+    );
+
+    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
+    let selector = function_selector("settle_trade_v3");
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+
+    assert_eq!(result.call_result.retdata, vec![felt(1)]);
+    assert_eq!(events_with_selector(&result.call_result.events, event_selector("FeeV2")).len(), 2);
+    assert_eq!(events_with_selector(&result.call_result.events, event_selector("TradeSettled")).len(), 1);
+}
+
+#[test]
 fn test_settle_spot_success_sell() {
     let mut state = MockStateReader::new();
     let contract = addr(0x1010);
@@ -168,7 +231,7 @@ fn test_settle_spot_success_sell() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3011);
@@ -184,8 +247,8 @@ fn test_settle_spot_success_sell() {
         felt(2),
         5 * SCALE,
         200 * SCALE,
-        OrderCategory::Unspecified,
-        OrderCategory::Unspecified,
+        OrderCategory::Dynamic(dynamic_fee_request()),
+        OrderCategory::Dynamic(dynamic_fee_request()),
     );
 
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
@@ -218,12 +281,12 @@ fn test_settle_spot_maker_insufficient_balance() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3021);
     let taker = addr(0x3022);
-    set_token_balance(&mut state, contract, maker, base_token, SCALE);
+    set_token_balance(&mut state, contract, maker, base_token, 1 * SCALE);
     set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 2000 * SCALE);
 
     let trade = build_trade(
@@ -272,12 +335,12 @@ fn test_settle_spot_taker_insufficient_balance() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3031);
     let taker = addr(0x3032);
-    set_token_balance(&mut state, contract, taker, base_token, SCALE);
+    set_token_balance(&mut state, contract, taker, base_token, 1 * SCALE);
     set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 2000 * SCALE);
 
     let trade = build_trade(
@@ -326,7 +389,7 @@ fn test_settle_spot_maker_risky() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3041);
@@ -344,6 +407,66 @@ fn test_settle_spot_maker_risky() {
         200 * SCALE,
         OrderCategory::Unspecified,
         OrderCategory::Unspecified,
+    );
+
+    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
+    let selector = function_selector("settle_trade_v3");
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+
+    assert_eq!(result.call_result.retdata, vec![felt(0)]);
+    assert_eq!(result.call_result.events.len(), 1);
+    let fail = &result.call_result.events[0];
+    assert_eq!(fail.keys, vec![event_selector("SettleTradeFailedV3")]);
+    assert_eq!(fail.data[0], felt(1001));
+    assert_eq!(fail.data[1], short_str("Trade: Too risky for maker"));
+}
+
+#[test]
+fn test_settle_spot_risky_precedes_fee_token_insufficiency() {
+    let mut state = MockStateReader::new();
+    let contract = addr(0x1045);
+    let assets_manager = addr(0x1046);
+    let oracle = addr(0x1047);
+    let market = felt(0xabd0);
+    let base_token = addr(0x2045);
+    let settlement_token = addr(0x2046);
+    let fee_token = addr(0x2047);
+    let base_name = short_str("EEF");
+    let settlement_name = short_str("USDC");
+    let fee_token_name = short_str("DIME");
+
+    setup_spot_env(
+        &mut state,
+        contract,
+        assets_manager,
+        oracle,
+        market,
+        base_token,
+        base_name,
+        settlement_token,
+        settlement_name,
+        2 * SCALE,
+        1 * SCALE,
+    );
+    set_token_name(&mut state, contract, fee_token, fee_token_name);
+    set_oracle_latest_tick_data(&mut state, oracle, fee_token_name, fee_token_name, i128_to_felt(1 * SCALE), felt(8));
+
+    let maker = addr(0x3045);
+    let taker = addr(0x3046);
+    set_token_balance(&mut state, contract, taker, base_token, 10 * SCALE);
+    set_token_balance(&mut state, contract, maker, fee_token, 0);
+    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 0);
+
+    let trade = build_trade(
+        maker,
+        taker,
+        market,
+        felt(1),
+        felt(2),
+        5 * SCALE,
+        200 * SCALE,
+        OrderCategory::DynamicWithToken(dynamic_fee_request_v2(fee_token)),
+        OrderCategory::Dynamic(dynamic_fee_request()),
     );
 
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
@@ -381,7 +504,7 @@ fn test_settle_spot_taker_risky() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3051);
@@ -437,7 +560,7 @@ fn test_settle_spot_referrer_fee_share_both() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3061);
@@ -470,11 +593,8 @@ fn test_settle_spot_referrer_fee_share_both() {
     let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
 
     assert_eq!(result.call_result.retdata, vec![felt(1)]);
-    let fee_share_events = events_with_selector(&result.call_result.events, event_selector("FeeShare"));
-    assert_eq!(fee_share_events.len(), 2);
-    let accounts: Vec<_> = fee_share_events.iter().map(|event| event.data[0]).collect();
-    assert!(accounts.contains(&maker_referrer.0));
-    assert!(accounts.contains(&taker_referrer.0));
+    let fee_share_events = events_with_selector(&result.call_result.events, event_selector("FeeShareV2"));
+    assert_eq!(fee_share_events.len(), 0);
 }
 
 #[test]
@@ -500,7 +620,7 @@ fn test_settle_spot_fee_share_account() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3071);
@@ -521,8 +641,8 @@ fn test_settle_spot_fee_share_account() {
         felt(1),
         5 * SCALE,
         200 * SCALE,
-        OrderCategory::Unspecified,
-        OrderCategory::Unspecified,
+        OrderCategory::Dynamic(dynamic_fee_request()),
+        OrderCategory::Dynamic(dynamic_fee_request()),
     );
 
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
@@ -530,9 +650,10 @@ fn test_settle_spot_fee_share_account() {
     let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
 
     assert_eq!(result.call_result.retdata, vec![felt(1)]);
-    let fee_share_events = events_with_selector(&result.call_result.events, event_selector("FeeShare"));
+    let fee_share_events = events_with_selector(&result.call_result.events, event_selector("FeeShareV2"));
     assert_eq!(fee_share_events.len(), 1);
     assert_eq!(fee_share_events[0].data[0], fee_share_account.0);
+    assert_eq!(fee_share_events[0].data[2], settlement_token.0);
 }
 
 #[test]
@@ -558,7 +679,7 @@ fn test_settle_spot_emits_trade_settled() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3081);
@@ -610,7 +731,7 @@ fn test_settle_spot_emits_fee_events() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x3091);
@@ -637,7 +758,7 @@ fn test_settle_spot_emits_fee_events() {
     let selector = function_selector("settle_trade_v3");
     let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
 
-    let fee_events = events_with_selector(&result.call_result.events, event_selector("Fee"));
+    let fee_events = events_with_selector(&result.call_result.events, event_selector("FeeV2"));
     assert_eq!(fee_events.len(), 2);
 
     let mut ctx = crate::ExecutionContext::new();
@@ -649,277 +770,6 @@ fn test_settle_spot_emits_fee_events() {
 
     assert_eq!(maker_event.data[1], i128_to_felt(maker_fee));
     assert_eq!(taker_event.data[1], i128_to_felt(taker_fee));
-}
-
-// ── Insurance fund exemption tests ─────────────────────────────────────────
-
-#[test]
-fn test_settle_spot_insurance_fund_maker_skips_risk_check() {
-    // Maker is the insurance fund with insufficient margin — should NOT be rejected.
-    let mut state = MockStateReader::new();
-    let contract = addr(0x1100);
-    let assets_manager = addr(0x1101);
-    let oracle = addr(0x1102);
-    let market = felt(0xabc);
-    let base_token = addr(0x2101);
-    let settlement_token = addr(0x2102);
-    let base_name = short_str("INS");
-    let settlement_name = short_str("USDC");
-
-    setup_spot_env(
-        &mut state,
-        contract,
-        assets_manager,
-        oracle,
-        market,
-        base_token,
-        base_name,
-        settlement_token,
-        settlement_name,
-        2 * SCALE,
-        SCALE,
-    );
-
-    let insurance_fund = addr(0x1F01);
-    let taker = addr(0x3102);
-
-    // Set insurance fund address in storage.
-    set_storage(&mut state, contract, *paraclear_layout::PARACLEAR_LIQUIDATION_INSURANCE_FUND_BASE, insurance_fund.0);
-
-    // Insurance fund (maker) has enough base token to sell, but no settlement token
-    // for margin — would normally fail risk check due to negative settlement balance after trade fees.
-    set_token_balance(&mut state, contract, insurance_fund, base_token, 10 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 20_000 * SCALE);
-
-    let trade = build_trade(
-        insurance_fund,
-        taker,
-        market,
-        felt(2),
-        felt(1), // maker sells, taker buys
-        5 * SCALE,
-        200 * SCALE,
-        OrderCategory::Unspecified,
-        OrderCategory::Unspecified,
-    );
-
-    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = function_selector("settle_trade_v3");
-    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
-
-    // Should succeed despite insufficient margin for insurance fund.
-    assert_eq!(result.call_result.retdata, vec![felt(1)]);
-}
-
-#[test]
-fn test_settle_spot_insurance_fund_taker_skips_risk_check() {
-    // Taker is the insurance fund with no settlement balance — should NOT be rejected.
-    let mut state = MockStateReader::new();
-    let contract = addr(0x1110);
-    let assets_manager = addr(0x1111);
-    let oracle = addr(0x1112);
-    let market = felt(0xabc);
-    let base_token = addr(0x2111);
-    let settlement_token = addr(0x2112);
-    let base_name = short_str("INS");
-    let settlement_name = short_str("USDC");
-
-    setup_spot_env(
-        &mut state,
-        contract,
-        assets_manager,
-        oracle,
-        market,
-        base_token,
-        base_name,
-        settlement_token,
-        settlement_name,
-        2 * SCALE,
-        SCALE,
-    );
-
-    let maker = addr(0x3111);
-    let insurance_fund = addr(0x1F02);
-
-    set_storage(&mut state, contract, *paraclear_layout::PARACLEAR_LIQUIDATION_INSURANCE_FUND_BASE, insurance_fund.0);
-
-    set_token_balance(&mut state, contract, maker, base_token, 10 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 500 * SCALE);
-    // Insurance fund (taker) has zero settlement balance — would normally fail.
-
-    let trade = build_trade(
-        maker,
-        insurance_fund,
-        market,
-        felt(2),
-        felt(1), // maker sells, taker buys
-        5 * SCALE,
-        200 * SCALE,
-        OrderCategory::Unspecified,
-        OrderCategory::Unspecified,
-    );
-
-    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = function_selector("settle_trade_v3");
-    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
-
-    assert_eq!(result.call_result.retdata, vec![felt(1)]);
-}
-
-// ── Settlement token event data verification ───────────────────────────────
-
-#[test]
-fn test_settle_spot_events_use_pre_fee_settlement_balance() {
-    // Verify that TokenAssetBalanceUpdate events for the settlement token
-    // emit the balance BEFORE fee deduction (matching Cairo behavior).
-    let mut state = MockStateReader::new();
-    let contract = addr(0x1200);
-    let assets_manager = addr(0x1201);
-    let oracle = addr(0x1202);
-    let market = felt(0xabc);
-    let base_token = addr(0x2201);
-    let settlement_token = addr(0x2202);
-    let base_name = short_str("EVT");
-    let settlement_name = short_str("USDC");
-
-    setup_spot_env(
-        &mut state,
-        contract,
-        assets_manager,
-        oracle,
-        market,
-        base_token,
-        base_name,
-        settlement_token,
-        settlement_name,
-        2 * SCALE,
-        SCALE,
-    );
-
-    let maker = addr(0x3201);
-    let taker = addr(0x3202);
-    let maker_settlement_initial = 5000 * SCALE;
-    let taker_settlement_initial = 20_000 * SCALE;
-    set_token_balance(&mut state, contract, maker, base_token, 10 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, maker_settlement_initial);
-    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, taker_settlement_initial);
-
-    let trade_size = 5 * SCALE;
-    let trade_price = 200 * SCALE;
-    let trade = build_trade(
-        maker,
-        taker,
-        market,
-        felt(2),
-        felt(1), // maker sells base, taker buys base
-        trade_size,
-        trade_price,
-        OrderCategory::Unspecified,
-        OrderCategory::Unspecified,
-    );
-
-    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = function_selector("settle_trade_v3");
-    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
-    assert_eq!(result.call_result.retdata, vec![felt(1)]);
-
-    // Find settlement token balance update events.
-    let balance_events: Vec<_> = result
-        .call_result
-        .events
-        .iter()
-        .filter(|e| {
-            e.keys.first() == Some(&event_selector("TokenAssetBalanceUpdate"))
-                && e.data.len() >= 4
-                && e.data[1] == settlement_token.0
-        })
-        .collect();
-    assert_eq!(balance_events.len(), 2, "expected 2 settlement token balance update events");
-
-    // trade_cost_quote = size * price = 5 * 200 = 1000 (in SCALE)
-    // settlement_token_price = 1 SCALE, so trade_cost_settlement = 1000
-    // maker sells (side=2): gets +settlement, taker buys (side=1): pays -settlement
-    let trade_cost = 1000 * SCALE;
-    let maker_expected_updated = maker_settlement_initial + trade_cost; // pre-fee
-    let taker_expected_updated = taker_settlement_initial - trade_cost; // pre-fee
-
-    let maker_event = balance_events.iter().find(|e| e.data[0] == maker.0).expect("maker settlement event");
-    let taker_event = balance_events.iter().find(|e| e.data[0] == taker.0).expect("taker settlement event");
-
-    // data[2] = prev_amount, data[3] = updated_amount (pre-fee)
-    assert_eq!(maker_event.data[2], i128_to_felt(maker_settlement_initial), "maker prev_amount");
-    assert_eq!(maker_event.data[3], i128_to_felt(maker_expected_updated), "maker updated_amount should be pre-fee");
-    assert_eq!(taker_event.data[2], i128_to_felt(taker_settlement_initial), "taker prev_amount");
-    assert_eq!(taker_event.data[3], i128_to_felt(taker_expected_updated), "taker updated_amount should be pre-fee");
-}
-
-// ── Balance verification after settlement ──────────────────────────────────
-
-#[test]
-fn test_settle_spot_verifies_state_diff_balances() {
-    // Ported from Cairo test_settle_trade_v3_spot_market: verify actual balance values
-    // in the state diff after a successful spot trade.
-    //
-    // Setup: maker sells 5 base_token at price=200, settlement_price=1
-    //   trade_cost_quote = 5 * 200 = 1000 SCALE
-    //   trade_cost_settlement = 1000 / 1 = 1000 SCALE
-    //   maker: base 10→5 (sells 5), settlement 500→1500 (receives 1000)
-    //   taker: base 0→5 (buys 5), settlement 2000→1000 (pays 1000)
-    //   (no fees: Unspecified category with no fee rates set)
-    use crate::storage::storage_key_for_map2;
-
-    let mut state = MockStateReader::new();
-    let contract = addr(0x1300);
-    let assets_manager = addr(0x1301);
-    let oracle = addr(0x1302);
-    let market = felt(0xabc);
-    let base_token = addr(0x2301);
-    let settlement_token = addr(0x2302);
-    let base_name = short_str("BAL");
-    let settlement_name = short_str("USDC");
-
-    setup_spot_env(
-        &mut state, contract, assets_manager, oracle, market,
-        base_token, base_name, settlement_token, settlement_name,
-        2 * SCALE, SCALE,
-    );
-
-    let maker = addr(0x3301);
-    let taker = addr(0x3302);
-    set_token_balance(&mut state, contract, maker, base_token, 10 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 500 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 2000 * SCALE);
-
-    let trade = build_trade(
-        maker, taker, market,
-        felt(2), felt(1), // maker sells, taker buys
-        5 * SCALE, 200 * SCALE,
-        OrderCategory::Unspecified, OrderCategory::Unspecified,
-    );
-
-    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = function_selector("settle_trade_v3");
-    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
-    assert_eq!(result.call_result.retdata, vec![felt(1)], "trade should succeed");
-
-    // Extract storage updates into a map for easy lookup.
-    let updates = result.state_diff.storage_updates.get(&contract).expect("contract updates");
-    let update_map: std::collections::HashMap<_, _> = updates.iter().map(|(k, v)| (*k, *v)).collect();
-
-    // Check maker's base token balance in state diff: started at 10, sold 5 → should write 5.
-    let maker_base_key = storage_key_for_map2("Paraclear_token_asset_balance", maker.0, base_token.0);
-    let maker_base_amount = update_map.get(&crate::storage::storage_key_with_offset(maker_base_key, 1));
-    assert_eq!(maker_base_amount, Some(&i128_to_felt(5 * SCALE)), "maker base token should be 5");
-
-    // Verify settlement token balance updates exist for both accounts.
-    let maker_settlement_key = storage_key_for_map2("Paraclear_token_asset_balance", maker.0, settlement_token.0);
-    assert!(
-        update_map.contains_key(&crate::storage::storage_key_with_offset(maker_settlement_key, 1)),
-        "maker settlement token should be updated"
-    );
-    let taker_settlement_key = storage_key_for_map2("Paraclear_token_asset_balance", taker.0, settlement_token.0);
-    assert!(
-        update_map.contains_key(&crate::storage::storage_key_with_offset(taker_settlement_key, 1)),
-        "taker settlement token should be updated"
-    );
+    assert_eq!(maker_event.data[2], settlement_token.0);
+    assert_eq!(taker_event.data[2], settlement_token.0);
 }

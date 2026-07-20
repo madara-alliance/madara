@@ -1,16 +1,19 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::too_many_arguments)]
 
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex_codegen::account_component_layout as account_layout;
+use crate::contracts::paradex_codegen::assets_manager_layout;
 use crate::contracts::paradex_codegen::paraclear_layout;
-use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex_codegen::paraclear_types::{
+    FeeWithCapRequest, FeeWithCapRequestV2, OrderCategory, OrderV3, TradeRequestV3,
+};
 use crate::contracts::paradex_codegen::token_component_layout as token_layout;
 use crate::state::mock::MockStateReader;
 use crate::storage::{
     short_string_to_felt, storage_key_for_map, storage_key_for_map2, storage_key_for_map_poseidon,
     storage_key_for_substorage_map_poseidon, storage_key_for_substorage_map_poseidon_add,
-    storage_key_for_substorage_map_poseidon_hash, storage_key_with_offset,
+    storage_key_for_substorage_map_poseidon_hash, storage_key_for_substorage_var_poseidon, storage_key_with_offset,
 };
 use crate::types::{ContractAddress, StorageKey};
 
@@ -67,7 +70,6 @@ pub fn set_spot_asset_substorage(
     set_storage(state, contract, storage_key_with_offset(base, 3), quote_asset);
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn set_future_asset_direct(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -91,7 +93,6 @@ pub fn set_future_asset_direct(
     set_storage(state, contract, storage_key_with_offset(base, 7), imf_shift);
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn set_option_asset_direct(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -102,13 +103,14 @@ pub fn set_option_asset_direct(
     option_type: Felt,
     strike: Felt,
 ) {
-    let base = storage_key_for_map_poseidon("perpetual_option_asset", market);
+    let base = storage_key_for_map_poseidon("option_asset", market);
     set_storage(state, contract, base, market);
     set_storage(state, contract, storage_key_with_offset(base, 1), base_asset);
     set_storage(state, contract, storage_key_with_offset(base, 2), quote_asset);
     set_storage(state, contract, storage_key_with_offset(base, 3), tick_size);
     set_storage(state, contract, storage_key_with_offset(base, 4), option_type);
     set_storage(state, contract, storage_key_with_offset(base, 5), strike);
+    set_storage(state, contract, storage_key_with_offset(base, 6), Felt::ZERO);
 }
 
 pub fn set_future_asset_substorage_add(
@@ -130,7 +132,7 @@ pub fn set_option_asset_substorage_hash(
     market: Felt,
     base_asset: Felt,
 ) {
-    let base = storage_key_for_substorage_map_poseidon_hash(base_key, "perpetual_option_asset", market);
+    let base = storage_key_for_substorage_map_poseidon_hash(base_key, "option_asset", market);
     set_storage(state, contract, base, market);
     set_storage(state, contract, storage_key_with_offset(base, 1), base_asset);
 }
@@ -229,10 +231,14 @@ pub fn set_account_fee_rate_spot(
     maker_rate: i128,
     taker_rate: i128,
 ) {
-    let base = account_layout::Paraclear_account_fee_rate_spot_key(account.0);
-    set_storage(state, contract, base, Felt::ONE);
-    set_storage(state, contract, storage_key_with_offset(base, 1), i128_to_felt(maker_rate));
-    set_storage(state, contract, storage_key_with_offset(base, 2), i128_to_felt(taker_rate));
+    for base in [
+        account_layout::Paraclear_account_fee_rate_spot_key(account.0),
+        storage_key_for_map("Paraclear_account_fee_rate_spot", account.0),
+    ] {
+        set_storage(state, contract, base, Felt::ONE);
+        set_storage(state, contract, storage_key_with_offset(base, 1), i128_to_felt(maker_rate));
+        set_storage(state, contract, storage_key_with_offset(base, 2), i128_to_felt(taker_rate));
+    }
 }
 
 pub fn set_account_fee_rate_future(
@@ -277,6 +283,53 @@ pub fn set_fee_share(
     );
 }
 
+pub fn set_assets_manager_market_fee_config(
+    state: &mut MockStateReader,
+    contract: ContractAddress,
+    market: Felt,
+    maker_api: i128,
+    taker_api: i128,
+    maker_rpi: i128,
+    taker_rpi: i128,
+    maker_interactive: i128,
+    taker_interactive: i128,
+    max_fee_rate: i128,
+) {
+    let base = storage_key_for_substorage_map_poseidon(*assets_manager_layout::FEE_BASE, "market_fee_config", market);
+    set_storage(state, contract, base, Felt::ONE);
+    set_storage(state, contract, storage_key_with_offset(base, 1), i128_to_felt(maker_api));
+    set_storage(state, contract, storage_key_with_offset(base, 2), i128_to_felt(taker_api));
+    set_storage(state, contract, storage_key_with_offset(base, 3), i128_to_felt(maker_rpi));
+    set_storage(state, contract, storage_key_with_offset(base, 4), i128_to_felt(taker_rpi));
+    set_storage(state, contract, storage_key_with_offset(base, 5), i128_to_felt(maker_interactive));
+    set_storage(state, contract, storage_key_with_offset(base, 6), i128_to_felt(taker_interactive));
+    set_storage(state, contract, storage_key_with_offset(base, 7), i128_to_felt(max_fee_rate));
+}
+
+pub fn set_assets_manager_global_market_fee_config(
+    state: &mut MockStateReader,
+    contract: ContractAddress,
+    kind: Felt,
+    maker_api: i128,
+    taker_api: i128,
+    maker_rpi: i128,
+    taker_rpi: i128,
+    maker_interactive: i128,
+    taker_interactive: i128,
+    max_fee_rate: i128,
+) {
+    let name = if kind == short_str("SPOT") { "global_spot_fee_config" } else { "global_future_fee_config" };
+    let base = storage_key_for_substorage_var_poseidon(*assets_manager_layout::FEE_BASE, name);
+    set_storage(state, contract, base, Felt::ONE);
+    set_storage(state, contract, storage_key_with_offset(base, 1), i128_to_felt(maker_api));
+    set_storage(state, contract, storage_key_with_offset(base, 2), i128_to_felt(taker_api));
+    set_storage(state, contract, storage_key_with_offset(base, 3), i128_to_felt(maker_rpi));
+    set_storage(state, contract, storage_key_with_offset(base, 4), i128_to_felt(taker_rpi));
+    set_storage(state, contract, storage_key_with_offset(base, 5), i128_to_felt(maker_interactive));
+    set_storage(state, contract, storage_key_with_offset(base, 6), i128_to_felt(taker_interactive));
+    set_storage(state, contract, storage_key_with_offset(base, 7), i128_to_felt(max_fee_rate));
+}
+
 pub fn sample_order(category: OrderCategory) -> OrderV3 {
     OrderV3 {
         account: addr(0x1111),
@@ -309,6 +362,9 @@ pub fn encode_order_category_for_test(cat: &OrderCategory) -> Vec<Felt> {
         OrderCategory::RPI => vec![felt(2)],
         OrderCategory::Interactive => vec![felt(3)],
         OrderCategory::Dynamic(fee) => vec![felt(4), fee.fee, fee.fee_cap, fee.fee_floor],
+        OrderCategory::DynamicWithToken(fee) => {
+            vec![felt(5), fee.fee, fee.fee_cap, fee.fee_floor, fee.fee_token.0]
+        }
     }
 }
 
@@ -335,4 +391,8 @@ pub fn encode_trade_request_v3_for_test(trade: &TradeRequestV3) -> Vec<Felt> {
 
 pub fn dynamic_fee_request() -> FeeWithCapRequest {
     FeeWithCapRequest { fee: felt(7), fee_cap: felt(8), fee_floor: felt(9) }
+}
+
+pub fn dynamic_fee_request_v2(fee_token: ContractAddress) -> FeeWithCapRequestV2 {
+    FeeWithCapRequestV2 { fee: felt(7), fee_cap: felt(8), fee_floor: felt(9), fee_token }
 }

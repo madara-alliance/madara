@@ -18,7 +18,8 @@ fn test_read_settlement_token_address() {
 
     // Change underlying storage after cache.
     set_storage(&mut state, contract, storage_key_with_offset(base, 4), addr(0x2).0);
-    let second = paraclear::read_settlement_token_address_for_test(&mut ctx, &state, contract).expect("address");
+    let mut fresh_ctx = crate::ExecutionContext::new();
+    let second = paraclear::read_settlement_token_address_for_test(&mut fresh_ctx, &state, contract).expect("address");
     assert_eq!(second, addr(0x2));
 }
 
@@ -34,7 +35,8 @@ fn test_read_settlement_token_name() {
     assert_eq!(first, short_str("USDC"));
 
     set_storage(&mut state, contract, storage_key_with_offset(base, 5), short_str("WETH"));
-    let second = paraclear::read_settlement_token_name_for_test(&mut ctx, &state, contract).expect("name");
+    let mut fresh_ctx = crate::ExecutionContext::new();
+    let second = paraclear::read_settlement_token_name_for_test(&mut fresh_ctx, &state, contract).expect("name");
     assert_eq!(second, short_str("WETH"));
 }
 
@@ -52,13 +54,16 @@ fn test_read_settlement_token_price() {
 
     // Change underlying storage after cache.
     set_oracle_latest_tick_data(&mut state, oracle, usdc, usdc, felt(0x200), felt(8));
-    let second = paraclear::read_settlement_token_price_for_test(&mut ctx, &state, oracle, usdc).expect("price");
+    let mut fresh_ctx = crate::ExecutionContext::new();
+    let second = paraclear::read_settlement_token_price_for_test(&mut fresh_ctx, &state, oracle, usdc).expect("price");
     assert_eq!(second, felt(0x200));
 }
 
 #[test]
 fn test_read_settlement_token_price_zero_errors() {
-    use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+    use crate::contracts::paradex_codegen::paraclear_types::{
+        FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3,
+    };
 
     let mut state = MockStateReader::new();
     let contract = addr(0x603);
@@ -93,7 +98,11 @@ fn test_read_settlement_token_price_zero_errors() {
         price: felt(100),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: OrderCategory::Unspecified,
+        order_category: OrderCategory::Dynamic(FeeWithCapRequest {
+            fee: felt(0),
+            fee_cap: felt(0),
+            fee_floor: felt(0),
+        }),
     };
     let taker_order = OrderV3 {
         account: addr(0x11),
@@ -104,7 +113,11 @@ fn test_read_settlement_token_price_zero_errors() {
         price: felt(100),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: OrderCategory::Unspecified,
+        order_category: OrderCategory::Dynamic(FeeWithCapRequest {
+            fee: felt(0),
+            fee_cap: felt(0),
+            fee_floor: felt(0),
+        }),
     };
     let trade = TradeRequestV3 {
         id: felt(0x1),
@@ -133,7 +146,8 @@ fn test_read_contract_address() {
     assert_eq!(first, addr(0xaa));
 
     set_storage(&mut state, contract, key, addr(0xbb).0);
-    let second = paraclear::read_contract_address_for_test(&mut ctx, &state, contract, key).expect("address");
+    let mut fresh_ctx = crate::ExecutionContext::new();
+    let second = paraclear::read_contract_address_for_test(&mut fresh_ctx, &state, contract, key).expect("address");
     assert_eq!(second, addr(0xbb));
 }
 

@@ -1,5 +1,7 @@
+#![allow(clippy::identity_op, clippy::too_many_arguments)]
+
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
 use crate::storage::{event_selector, function_selector};
 use crate::types::{ContractAddress, Event};
@@ -11,7 +13,6 @@ use super::super::fixtures::{
     set_spot_asset_direct, set_token_balance, set_token_balance_amount_only, set_token_name, short_str, SCALE,
 };
 
-#[allow(clippy::too_many_arguments)]
 fn setup_spot_env(
     state: &mut MockStateReader,
     contract: ContractAddress,
@@ -41,7 +42,6 @@ fn setup_spot_env(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_trade(
     maker: ContractAddress,
     taker: ContractAddress,
@@ -62,7 +62,7 @@ fn build_trade(
         price: i128_to_felt(price),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: maker_category,
+        order_category: fee_v2_category(maker_category),
     };
     let taker_order = OrderV3 {
         account: taker,
@@ -73,7 +73,7 @@ fn build_trade(
         price: i128_to_felt(price),
         signature_timestamp: felt(10),
         is_reduce_only: false,
-        order_category: taker_category,
+        order_category: fee_v2_category(taker_category),
     };
     TradeRequestV3 {
         id: felt(0x1),
@@ -82,6 +82,15 @@ fn build_trade(
         traded_at: felt(100),
         maker_order,
         taker_order,
+    }
+}
+
+fn fee_v2_category(category: OrderCategory) -> OrderCategory {
+    match category {
+        OrderCategory::Unspecified => {
+            OrderCategory::Dynamic(FeeWithCapRequest { fee: felt(0), fee_cap: felt(0), fee_floor: felt(0) })
+        }
+        category => category,
     }
 }
 
@@ -112,7 +121,7 @@ fn test_spot_event_ordering_basic() {
         settlement_token,
         settlement_name,
         2 * SCALE,
-        SCALE,
+        1 * SCALE,
     );
 
     let maker = addr(0x6001);
@@ -141,8 +150,8 @@ fn test_spot_event_ordering_basic() {
 
     let selectors = event_selectors(&result.call_result.events);
     let expected = vec![
-        event_selector("Fee"),
-        event_selector("Fee"),
+        event_selector("FeeV2"),
+        event_selector("FeeV2"),
         event_selector("TokenAssetBalanceUpdate"),
         event_selector("TokenAssetBalanceUpdate"),
         event_selector("TokenAssetBalanceUpdate"),

@@ -299,14 +299,11 @@ mod tests {
             ..Default::default()
         });
 
-        let selector = crate::storage::function_selector("set_prices_and_funding_snapshot");
+        let selector = crate::storage::function_selector("get_value");
         assert!(oracle::supports_selector(selector));
         assert!(ContractRegistry::supports_class_hash(oracle_class_hash));
         assert!(ContractRegistry::supports_function(oracle_class_hash, selector));
-        assert_eq!(
-            ContractRegistry::get_function_name(oracle_class_hash, selector),
-            Some("set_prices_and_funding_snapshot".to_string())
-        );
+        assert_eq!(ContractRegistry::get_function_name(oracle_class_hash, selector), Some("get_value".to_string()));
 
         let state = MockStateReader::new();
         let result = ContractRegistry::execute_with_timestamp(

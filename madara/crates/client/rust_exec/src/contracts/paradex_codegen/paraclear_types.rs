@@ -19,6 +19,14 @@ pub struct FeeWithCapRequest {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct FeeWithCapRequestV2 {
+    pub fee: Felt,
+    pub fee_cap: Felt,
+    pub fee_floor: Felt,
+    pub fee_token: ContractAddress,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct OrderV3 {
     pub account: ContractAddress,
     pub market: Felt,
@@ -149,12 +157,19 @@ pub struct AccountReferral {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum BridgeAction {
+    Added,
+    Removed,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum OrderCategory {
     Unspecified,
     API,
     RPI,
     Interactive,
     Dynamic(FeeWithCapRequest),
+    DynamicWithToken(FeeWithCapRequestV2),
 }
 
 #[derive(Clone, Debug, PartialEq)]

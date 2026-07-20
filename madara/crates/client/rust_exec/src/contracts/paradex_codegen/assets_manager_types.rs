@@ -53,20 +53,63 @@ pub struct MarketFeeConfigRequest {
     pub taker_rpi: Felt,
     pub maker_interactive: Felt,
     pub taker_interactive: Felt,
+    pub max_fee_rate: Option<Felt>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PerpetualOptionAsset {
+pub struct MarketFeeConfig {
+    pub exists: bool,
+    pub maker_api: Felt,
+    pub taker_api: Felt,
+    pub maker_rpi: Felt,
+    pub taker_rpi: Felt,
+    pub maker_interactive: Felt,
+    pub taker_interactive: Felt,
+    pub max_fee_rate: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeeWithCap {
+    pub fee: Felt,
+    pub fee_cap: Felt,
+    pub fee_floor: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OptionMarketFeeConfig {
+    pub exists: bool,
+    pub maker_api: FeeWithCap,
+    pub taker_api: FeeWithCap,
+    pub maker_rpi: FeeWithCap,
+    pub taker_rpi: FeeWithCap,
+    pub maker_interactive: FeeWithCap,
+    pub taker_interactive: FeeWithCap,
+    pub max_fee_rate: FeeWithCap,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OptionMarketFeeConfigRequest {
+    pub maker_api: FeeWithCap,
+    pub taker_api: FeeWithCap,
+    pub maker_rpi: FeeWithCap,
+    pub taker_rpi: FeeWithCap,
+    pub maker_interactive: FeeWithCap,
+    pub taker_interactive: FeeWithCap,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OptionAsset {
     pub market: Felt,
     pub base_asset: Felt,
     pub quote_asset: Felt,
     pub tick_size: Felt,
     pub option_type: Felt,
     pub strike: Felt,
+    pub expiry_time: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PerpetualOptionMarginParams {
+pub struct OptionMarginParams {
     pub premium_multiplier: Felt,
     pub long_itm: Felt,
     pub short_itm: Felt,
@@ -75,7 +118,15 @@ pub struct PerpetualOptionMarginParams {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct PerpetualOptionCrossMarginParams {
-    pub imf: PerpetualOptionMarginParams,
-    pub mmf: PerpetualOptionMarginParams,
+pub struct OptionCrossMarginParams {
+    pub imf: OptionMarginParams,
+    pub mmf: OptionMarginParams,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FeeCategory {
+    Unspecified,
+    API,
+    RPI,
+    Interactive,
 }

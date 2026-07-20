@@ -21,3 +21,16 @@ pub static FUTURE_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable
 pub static OPTION_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("option"));
 
 pub static SPOT_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("spot"));
+
+pub static FEE_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("fee"));
+
+pub static ASSET_MIN_SIZE_INCREMENT_BASE: Lazy<StorageKey> =
+    Lazy::new(|| storage_key_for_variable("asset_min_size_increment"));
+pub fn asset_min_size_increment_key(k: Felt) -> StorageKey {
+    storage_key_for_map_poseidon("asset_min_size_increment", k)
+}
+
+pub static ASSET_KIND_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("asset_kind"));
+pub fn asset_kind_key(k: Felt) -> StorageKey {
+    storage_key_for_map_poseidon("asset_kind", k)
+}

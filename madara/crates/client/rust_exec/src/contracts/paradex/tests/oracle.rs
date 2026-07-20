@@ -76,5 +76,5 @@ fn test_version() {
 
     let selector = function_selector("get_version");
     let result = oracle::execute(&state, contract, selector, &[], ContractAddress(Felt::ZERO)).expect("execute");
-    assert_eq!(result.call_result.retdata, vec![short_string_to_felt("1.0.7")]);
+    assert_eq!(result.call_result.retdata, vec![short_string_to_felt("1.0.9")]);
 }
