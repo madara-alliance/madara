@@ -439,7 +439,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 5
       },
@@ -467,7 +467,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"} > 0",
+          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"}",
           "legendFormat": "{{pod}} / {{column}}",
           "range": true,
           "refId": "A"
@@ -536,8 +536,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 5
       },
       "id": 8,
@@ -571,6 +571,114 @@
         }
       ],
       "title": "L0 files by column family",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Filesystem operations per second issued by the selected Madara container, broken out by block device and direction. Use this to correlate compaction pressure with volume I/O activity.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod, device) (rate(container_fs_reads_total{namespace=~\"$namespace\", pod=~\"$pod\", container=\"madara\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}} read {{device}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (pod, device) (rate(container_fs_writes_total{namespace=~\"$namespace\", pod=~\"$pod\", container=\"madara\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}} write {{device}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Madara volume IOPS",
       "type": "timeseries"
     },
     {
@@ -2194,7 +2302,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(db_bytes_written_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by (pod) (rate(db_bytes_written{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "{{pod}} app writes",
           "range": true,
           "refId": "A"
@@ -2205,7 +2313,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by (pod) (rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "{{pod}} flush writes",
           "range": true,
           "refId": "B"
@@ -2216,7 +2324,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(db_compact_read_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by (pod) (rate(db_compact_read_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "{{pod}} compact reads",
           "range": true,
           "refId": "C"
@@ -2227,7 +2335,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by (pod) (rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "{{pod}} compact writes",
           "range": true,
           "refId": "D"
@@ -2432,7 +2540,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum by (pod) (rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / clamp_min(sum by (pod) (rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])), 1)",
+          "expr": "sum by (pod) (rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / clamp_min(sum by (pod) (rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])), 1)",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -2529,7 +2637,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(db_stall_micros_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) / 1e6",
+          "expr": "rate(db_stall_micros{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) / 1e6",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -2626,7 +2734,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) / clamp_min(rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) + rate(db_block_cache_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]), 1)",
+          "expr": "rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) / clamp_min(rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]) + rate(db_block_cache_miss{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]), 1)",
           "legendFormat": "{{pod}}",
           "range": true,
           "refId": "A"
@@ -2723,7 +2831,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(db_keys_written_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
+          "expr": "rate(db_keys_written{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
           "legendFormat": "{{pod}} written",
           "range": true,
           "refId": "A"
@@ -2734,7 +2842,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "rate(db_keys_updated_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
+          "expr": "rate(db_keys_updated{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
           "legendFormat": "{{pod}} updated",
           "range": true,
           "refId": "B"

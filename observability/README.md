@@ -113,7 +113,8 @@ Fullnode-specific metrics and performance data.
 
 Importable, focused view of database compaction pressure across all column
 families, detailed Bonsai log pressure, prefix-pruning distributions, RocksDB
-throughput and stalls, snapshots, and rare trie-revert activity.
+throughput and stalls, Madara volume IOPS, snapshots, and rare trie-revert
+activity.
 
 ### Orchestrator Dashboards
 
