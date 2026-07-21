@@ -105,7 +105,9 @@ pub async fn state_update_worker(
                         "L1 state sync failed with an unexpected error: {e:#}, reconnecting in {reconnect_delay:?}"
                     );
                 }
-                tokio::time::sleep(reconnect_delay).await;
+                if ctx.run_until_cancelled(tokio::time::sleep(reconnect_delay)).await.is_none() {
+                    return Ok(());
+                }
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
             }
         }
