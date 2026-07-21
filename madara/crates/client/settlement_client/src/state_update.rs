@@ -78,6 +78,7 @@ pub async fn state_update_worker(
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
     loop {
+        let session_start = std::time::Instant::now();
         match ctx
             .run_until_cancelled(try_sync_once(
                 &settlement_client,
@@ -90,12 +91,23 @@ pub async fn state_update_worker(
         {
             None => return Ok(()),         // Service shutdown
             Some(Ok(())) => return Ok(()), // Clean exit
-            Some(Err(e)) if e.is_recoverable() => {
-                tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
+            // This worker only observes L1 confirmations: an outage degrades finality
+            // reporting but is never unsafe, so every error is retried rather than
+            // aborting the node (which a returned Err would do via the ServiceMonitor).
+            Some(Err(e)) => {
+                if session_start.elapsed() >= RECONNECT_MAX_DELAY {
+                    reconnect_delay = RECONNECT_BASE_DELAY;
+                }
+                if e.is_recoverable() {
+                    tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
+                } else {
+                    tracing::error!(
+                        "L1 state sync failed with an unexpected error: {e:#}, reconnecting in {reconnect_delay:?}"
+                    );
+                }
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
             }
-            Some(Err(e)) => return Err(e), // Non-recoverable
         }
     }
 }
@@ -186,5 +198,53 @@ mod state_update_worker_tests {
         // #100 (initial, session 1) → #200 (event) → reconnect → #101 (initial,
         // session 2): the last head proves the fresh subscription was used.
         assert_eq!(l1_head_rx.borrow().as_ref().and_then(|s| s.block_number), Some(101));
+    }
+
+    /// The worker must retry even on errors that are not classified recoverable:
+    /// a transient RPC failure surfacing through an unclassified path previously
+    /// propagated out of the worker and took down the whole node via the
+    /// ServiceMonitor.
+    #[tokio::test(start_paused = true)]
+    async fn worker_retries_after_unclassified_error() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_metrics = Arc::new(L1BlockMetrics::register().expect("metrics should register"));
+        let ctx = ServiceContext::new_for_testing();
+        let (l1_head_tx, l1_head_rx) = tokio::sync::watch::channel(None);
+
+        let sessions = Arc::new(AtomicUsize::new(0));
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_current_core_contract_state().times(2).returning({
+            let sessions = Arc::clone(&sessions);
+            move || match sessions.fetch_add(1, Ordering::SeqCst) {
+                0 => Err(SettlementClientError::Other("transient failure on an unclassified path".to_string())),
+                _ => Ok(StateUpdate { block_number: Some(100), global_root: Felt::ZERO, block_hash: Felt::ZERO }),
+            }
+        });
+        mock.expect_listen_for_update_state_events().times(1).returning(|_ctx, _worker| Ok(()));
+
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            state_update_worker(backend, Arc::new(mock), ctx, l1_head_tx, block_metrics),
+        )
+        .await
+        .expect("worker should not hang after an unclassified error")
+        .expect("worker should exit cleanly after the second session");
+
+        assert_eq!(l1_head_rx.borrow().as_ref().and_then(|s| s.block_number), Some(100));
+    }
+
+    #[test]
+    fn transport_failures_in_contract_calls_are_recoverable() {
+        use crate::eth::error::EthereumClientError;
+        use crate::starknet::error::StarknetClientError;
+
+        assert!(SettlementClientError::from(EthereumClientError::Contract(
+            "Failed to get state root: transport error".to_string()
+        ))
+        .is_recoverable());
+        assert!(SettlementClientError::from(StarknetClientError::StateInitialization {
+            message: "Failed to get state: transport error".to_string()
+        })
+        .is_recoverable());
     }
 }

@@ -49,7 +49,15 @@ impl From<StarknetError> for StarknetClientError {
 impl StarknetClientError {
     /// Returns true if the error is recoverable (network/connection issues).
     /// These are transient errors that should be retried with backoff.
+    /// `StateInitialization` is included because the `get_state` call maps its
+    /// transport failures to it, so at runtime it is usually an RPC outage.
     pub fn is_recoverable(&self) -> bool {
-        matches!(self, Self::Provider(_) | Self::EventSubscription { .. } | Self::NetworkConnection { .. })
+        matches!(
+            self,
+            Self::Provider(_)
+                | Self::EventSubscription { .. }
+                | Self::NetworkConnection { .. }
+                | Self::StateInitialization { .. }
+        )
     }
 }
