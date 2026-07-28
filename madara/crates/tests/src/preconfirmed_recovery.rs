@@ -328,3 +328,38 @@ async fn preconfirmed_recovery_mempool(#[case] no_mempool_saving: bool, #[case] 
 
     shutdown(&mut node, ShutdownKind::Graceful);
 }
+
+/// Mempool recovery with block production enabled after restart.
+///
+/// This proves the full saved-mempool path:
+/// - txs are accepted while block production is disabled, so they stay Received.
+/// - the node restarts with the same DB and mempool saving enabled.
+/// - block production is enabled on restart and consumes the recovered txs.
+/// - both txs are eventually confirmed.
+#[rstest]
+#[case::graceful(ShutdownKind::Graceful)]
+#[case::ungraceful(ShutdownKind::Ungraceful)]
+#[tokio::test]
+async fn preconfirmed_recovery_mempool_executes_after_restart(#[case] shutdown_kind: ShutdownKind) {
+    let builder = MadaraCmdBuilder::new().args(devnet_args("5min", true)).env(env_pairs(false, false));
+
+    let mut node = start_node(builder.clone()).await;
+
+    let (tx_success, tx_revert) = submit_success_and_revert_txs(&node).await;
+
+    wait_for_status_received(&node, tx_success).await;
+    wait_for_status_received(&node, tx_revert).await;
+
+    shutdown(&mut node, shutdown_kind);
+    drop(node);
+
+    let mut node = start_node(builder.args(devnet_args("500ms", false))).await;
+
+    let receipt_success = wait_for_confirmed_receipt(&node, tx_success).await;
+    assert_eq!(receipt_success.receipt.execution_result(), &ExecutionResult::Succeeded);
+
+    let receipt_revert = wait_for_confirmed_receipt(&node, tx_revert).await;
+    assert!(matches!(receipt_revert.receipt.execution_result(), ExecutionResult::Reverted { .. }));
+
+    shutdown(&mut node, ShutdownKind::Graceful);
+}
