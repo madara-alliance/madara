@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use crate::errors::ErrorExtWs;
 use mc_db::subscription::SubscribeNewBlocksTag;
 use mp_rpc::v0_10_2::{FinalityStatus, TxnFinalityStatus, TxnReceiptWithBlockInfo};
-use mp_transactions::Transaction;
 use starknet_types_core::felt::Felt;
 
 pub async fn subscribe_new_transaction_receipts_with_reorg(
@@ -121,7 +120,7 @@ async fn send_block_receipts(
         if let Some(reorg) = take_pending_reorg(reorgs)? {
             return Ok(Some(reorg));
         }
-        if !transaction_matches_sender(&tx.transaction, sender_address) {
+        if !crate::transaction_matches_sender(&tx.transaction, sender_address) {
             continue;
         }
 
@@ -144,23 +143,6 @@ async fn send_block_receipts(
     }
 
     Ok(None)
-}
-
-fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<&HashSet<Felt>>) -> bool {
-    let Some(sender_address) = sender_address else {
-        return true;
-    };
-    if sender_address.is_empty() {
-        return true;
-    }
-
-    match transaction {
-        Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
-        Transaction::L1Handler(inner) => sender_address.contains(&inner.contract_address),
-        Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
-        Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
-        Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
-    }
 }
 
 fn take_pending_reorg(

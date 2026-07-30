@@ -1,7 +1,7 @@
 use crate::errors::ErrorExtWs;
 use mc_db::subscription::SubscribeNewBlocksTag;
 use mp_rpc::v0_9_0::{TxnStatusWithoutL1, TxnWithHash, TxnWithHashAndStatus};
-use mp_transactions::{validated::ValidatedTransaction, Transaction};
+use mp_transactions::validated::ValidatedTransaction;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashSet, future::pending, sync::Arc};
 
@@ -327,7 +327,7 @@ async fn send_executed_transaction(
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let tx_hash = *tx.receipt.transaction_hash();
     if !allowed_statuses.contains(&status)
-        || !transaction_matches_sender(&tx.transaction, sender_address)
+        || !crate::transaction_matches_sender(&tx.transaction, sender_address)
         || !mark_emitted(emitted, tx_hash, &status)
     {
         return Ok(());
@@ -358,23 +358,6 @@ async fn send_transaction_item(
 
 fn mark_emitted(emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {
     emitted.insert((tx_hash, status.clone()))
-}
-
-fn transaction_matches_sender(transaction: &Transaction, sender_address: Option<&HashSet<Felt>>) -> bool {
-    let Some(sender_address) = sender_address else {
-        return true;
-    };
-    if sender_address.is_empty() {
-        return true;
-    }
-
-    match transaction {
-        Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
-        Transaction::L1Handler(inner) => sender_address.contains(&inner.contract_address),
-        Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
-        Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
-        Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
-    }
 }
 
 fn take_pending_reorg(

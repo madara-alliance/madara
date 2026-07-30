@@ -165,14 +165,7 @@ mod test {
     ) -> jsonrpsee::core::client::Subscription<Value> {
         let mut params = ObjectParams::new();
         params.insert("block_id", block_id).expect("Building subscribeNewHeads params");
-        SubscriptionClientT::subscribe(
-            client,
-            "starknet_V0_10_2_subscribeNewHeads",
-            params,
-            "starknet_V0_10_2_unsubscribe",
-        )
-        .await
-        .expect("starknet_V0_10_2_subscribeNewHeads")
+        raw_subscribe(client, "starknet_V0_10_2_subscribeNewHeads", params).await
     }
 
     async fn raw_subscribe_transaction_status(
@@ -181,27 +174,21 @@ mod test {
     ) -> jsonrpsee::core::client::Subscription<Value> {
         let mut params = ObjectParams::new();
         params.insert("transaction_hash", transaction_hash).expect("Building subscribeTransactionStatus params");
-        SubscriptionClientT::subscribe(
-            client,
-            "starknet_V0_10_2_subscribeTransactionStatus",
-            params,
-            "starknet_V0_10_2_unsubscribe",
-        )
-        .await
-        .expect("starknet_V0_10_2_subscribeTransactionStatus")
+        raw_subscribe(client, "starknet_V0_10_2_subscribeTransactionStatus", params).await
     }
 
     async fn raw_subscribe_new_transaction_receipts(
         client: &jsonrpsee::ws_client::WsClient,
     ) -> jsonrpsee::core::client::Subscription<Value> {
-        SubscriptionClientT::subscribe(
-            client,
-            "starknet_V0_10_2_subscribeNewTransactionReceipts",
-            ObjectParams::new(),
-            "starknet_V0_10_2_unsubscribe",
-        )
-        .await
-        .expect("starknet_V0_10_2_subscribeNewTransactionReceipts")
+        raw_subscribe(client, "starknet_V0_10_2_subscribeNewTransactionReceipts", ObjectParams::new()).await
+    }
+
+    async fn raw_subscribe(
+        client: &jsonrpsee::ws_client::WsClient,
+        method: &'static str,
+        params: ObjectParams,
+    ) -> jsonrpsee::core::client::Subscription<Value> {
+        SubscriptionClientT::subscribe(client, method, params, "starknet_V0_10_2_unsubscribe").await.expect(method)
     }
 
     #[tokio::test]
@@ -443,45 +430,21 @@ mod test {
             .await
             .expect("Failed subscription");
 
-        watcher.set_status(Some(crate::TxStatusSnapshot::Received));
-        let first = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for received status")
-            .expect("Subscription closed unexpectedly")
-            .expect("Failed to retrieve received status");
-        assert_eq!(first.result, mp_rpc::v0_10_2::TxnStatus::Received);
-
-        watcher.set_status(Some(crate::TxStatusSnapshot::Candidate));
-        let second = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for candidate status")
-            .expect("Subscription closed unexpectedly")
-            .expect("Failed to retrieve candidate status");
-        assert_eq!(second.result, mp_rpc::v0_10_2::TxnStatus::Candidate);
-
-        watcher.set_status(Some(crate::TxStatusSnapshot::PreConfirmed));
-        let third = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for pre-confirmed status")
-            .expect("Subscription closed unexpectedly")
-            .expect("Failed to retrieve pre-confirmed status");
-        assert_eq!(third.result, mp_rpc::v0_10_2::TxnStatus::PreConfirmed);
-
-        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
-        let fourth = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for L2 status")
-            .expect("Subscription closed unexpectedly")
-            .expect("Failed to retrieve L2 status");
-        assert_eq!(fourth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2);
-
-        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL1));
-        let fifth = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for L1 status")
-            .expect("Subscription closed unexpectedly")
-            .expect("Failed to retrieve L1 status");
-        assert_eq!(fifth.result, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1);
+        for (snapshot, expected) in [
+            (crate::TxStatusSnapshot::Received, mp_rpc::v0_10_2::TxnStatus::Received),
+            (crate::TxStatusSnapshot::Candidate, mp_rpc::v0_10_2::TxnStatus::Candidate),
+            (crate::TxStatusSnapshot::PreConfirmed, mp_rpc::v0_10_2::TxnStatus::PreConfirmed),
+            (crate::TxStatusSnapshot::AcceptedOnL2, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2),
+            (crate::TxStatusSnapshot::AcceptedOnL1, mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1),
+        ] {
+            watcher.set_status(Some(snapshot));
+            let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+                .await
+                .expect("Timed out waiting for status")
+                .expect("Subscription closed unexpectedly")
+                .expect("Failed to retrieve status");
+            assert_eq!(item.result, expected);
+        }
     }
 
     #[tokio::test]

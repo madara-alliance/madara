@@ -799,8 +799,8 @@ use mc_db::MadaraBackend;
 use mc_mempool::{
     Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus, WatchTransactionStatus,
 };
-use mc_submit_tx::SubmitTransaction;
-use mp_transactions::validated::ValidatedTransaction;
+use mc_submit_tx::{SubmitTransaction, TransactionLookup};
+use mp_transactions::{validated::ValidatedTransaction, Transaction};
 use mp_utils::service::ServiceContext;
 use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc};
 
@@ -864,6 +864,26 @@ pub(crate) fn normalize_sender_address_filter(
         let addresses = addresses.into_iter().collect::<HashSet<_>>();
         (!addresses.is_empty()).then_some(addresses)
     })
+}
+
+pub(crate) fn transaction_matches_sender(
+    transaction: &Transaction,
+    sender_address: Option<&HashSet<starknet_types_core::felt::Felt>>,
+) -> bool {
+    let Some(sender_address) = sender_address else {
+        return true;
+    };
+    if sender_address.is_empty() {
+        return true;
+    }
+
+    match transaction {
+        Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
+        Transaction::L1Handler(inner) => sender_address.contains(&inner.contract_address),
+        Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
+        Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
+        Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
+    }
 }
 
 fn tx_status_snapshot(status: Option<MempoolTransactionStatus>) -> Option<TxStatusSnapshot> {
