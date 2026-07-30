@@ -7,7 +7,7 @@ use mp_rpc::v0_10_2::{AddressFilter, BlockId, BlockTag, EmittedEvent, FinalitySt
 use starknet_types_core::felt::Felt;
 use std::collections::HashSet;
 
-use super::BLOCK_PAST_LIMIT;
+use super::{ADDRESS_FILTER_LIMIT, BLOCK_PAST_LIMIT};
 
 #[derive(Debug, Clone, Default)]
 struct AddressSubscriptionFilter {
@@ -49,6 +49,11 @@ pub async fn subscribe_events(
     block_id: Option<BlockId>,
     finality_status: Option<FinalityStatus>,
 ) -> Result<(), StarknetWsApiError> {
+    if let Err(err) = validate_address_filter(&from_address) {
+        subscription_sink.reject(err).await;
+        return Ok(());
+    }
+
     if let Err(err) = validate_keys(&keys) {
         subscription_sink.reject(err).await;
         return Ok(());
@@ -194,6 +199,15 @@ pub async fn subscribe_events(
             }
         }
     }
+}
+
+fn validate_address_filter(from_address: &Option<AddressFilter>) -> Result<(), StarknetWsApiError> {
+    if matches!(from_address, Some(AddressFilter::Multiple(addresses)) if addresses.len() as u64 > ADDRESS_FILTER_LIMIT)
+    {
+        return Err(StarknetWsApiError::TooManyAddressesInFilter);
+    }
+
+    Ok(())
 }
 
 fn validate_keys(keys: &Option<Vec<Vec<Felt>>>) -> Result<(), StarknetWsApiError> {
@@ -448,6 +462,26 @@ mod test {
             .expect("Failed to retrieve event");
 
         assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+    }
+
+    #[tokio::test]
+    async fn subscribe_events_rejects_too_many_addresses_v0_10_2() {
+        let (_backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let size = super::ADDRESS_FILTER_LIMIT as usize + 1;
+        let err = client
+            .subscribe_events(Some(AddressFilter::Multiple(vec![Felt::ZERO; size])), None, None, None)
+            .await
+            .expect_err("Subscription should fail");
+
+        assert_matches!(
+            err,
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyAddressesInFilter.into());
+            }
+        );
     }
 
     #[tokio::test]

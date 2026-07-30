@@ -8,7 +8,13 @@
 //!
 //! [api.rs]: super::super::super::api
 
-pub async fn starknet_unsubscribe(starknet: &crate::Starknet, subscription_id: u64) -> crate::StarknetRpcResult<bool> {
+pub async fn starknet_unsubscribe(
+    starknet: &crate::Starknet,
+    subscription_id: String,
+) -> crate::StarknetRpcResult<bool> {
+    let subscription_id =
+        subscription_id.parse::<u64>().map_err(|_| crate::StarknetRpcApiError::InvalidSubscriptionId)?;
+
     if starknet.ws_handles.subscription_close(subscription_id).await {
         Ok(true)
     } else {
@@ -55,7 +61,7 @@ mod test {
     #[rstest::rstest]
     async fn starknet_unsubscribe_err(_logs: (), starknet: crate::Starknet) {
         assert_eq!(
-            super::starknet_unsubscribe(&starknet, 0).await,
+            super::starknet_unsubscribe(&starknet, "0".into()).await,
             Err(crate::StarknetRpcApiError::InvalidSubscriptionId)
         )
     }

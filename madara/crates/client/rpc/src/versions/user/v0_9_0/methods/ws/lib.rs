@@ -11,7 +11,6 @@ use super::subscribe_new_transactions::*;
 use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
-// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
 #[allow(unused)]
 impl StarknetWsRpcApiV0_9_0Server for crate::Starknet {
     async fn subscribe_new_heads(
@@ -60,7 +59,7 @@ impl StarknetWsRpcApiV0_9_0Server for crate::Starknet {
             .await?)
     }
 
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {
+    async fn starknet_unsubscribe(&self, subscription_id: String) -> jsonrpsee::core::RpcResult<bool> {
         Ok(starknet_unsubscribe(self, subscription_id).await?)
     }
 }
