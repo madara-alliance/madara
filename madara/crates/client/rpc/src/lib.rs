@@ -1001,6 +1001,15 @@ impl Starknet {
     pub fn set_new_transactions_watcher(&mut self, watcher: Option<Arc<dyn NewTransactionsWatcher>>) {
         self.new_transactions_watcher = watcher;
     }
+
+    pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
+        self.mempool = Some(mempool);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_ws_subscription_count(&self) -> usize {
+        self.ws_handles.handles.len()
+    }
 }
 
 /// Returns the RpcModule merged with all the supported RPC versions.

@@ -153,7 +153,11 @@ mod test {
     }
 
     async fn start_server(starknet: Starknet) -> (jsonrpsee::server::ServerHandle, String) {
-        let server = jsonrpsee::server::Server::builder().build(SERVER_ADDR).await.expect("Starting server");
+        let server = jsonrpsee::server::Server::builder()
+            .max_connections(1_024)
+            .build(SERVER_ADDR)
+            .await
+            .expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
         let handle = server.start(StarknetWsRpcApiV0_10_2Server::into_rpc(starknet));
         (handle, server_url)
@@ -374,6 +378,84 @@ mod test {
             serde_json::from_value(next).expect("Failed to deserialize replacement head");
 
         assert_eq!(item.result, replacement_head);
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_heads_many_clients_slow_reader_and_cleanup_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let starknet_for_assert = starknet.clone();
+        let (_handle, server_url) = start_server(starknet).await;
+        add_block_at(&backend, 0);
+
+        let mut next_block = 1;
+        for count in [5, 50, 100, 500] {
+            let mut subscribers = Vec::with_capacity(count);
+            for _ in 0..count {
+                let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+                let sub =
+                    StarknetWsRpcApiV0_10_2Client::subscribe_new_heads(&client, Some(BlockId::Number(next_block)))
+                        .await
+                        .expect("starknet_subscribeNewHeads");
+                subscribers.push((client, sub));
+            }
+            wait_for_active_subscriptions(&starknet_for_assert, count).await;
+
+            let first = add_block_at(&backend, next_block);
+            let second = add_block_at(&backend, next_block + 1);
+            next_block += 2;
+
+            let mut subscription_ids = Vec::with_capacity(count);
+            for (_, sub) in subscribers.iter_mut().take(count - 1) {
+                subscription_ids.push(expect_next_head(sub, &first).await);
+                let _ = expect_next_head(sub, &second).await;
+            }
+            subscription_ids
+                .push(expect_next_head(&mut subscribers.last_mut().expect("slow subscriber").1, &first).await);
+            let _ = expect_next_head(&mut subscribers.last_mut().expect("slow subscriber").1, &second).await;
+
+            let unsubscribe_count = count / 2;
+            for (idx, (client, _)) in subscribers.iter().take(unsubscribe_count).enumerate() {
+                StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(client, subscription_ids[idx].clone())
+                    .await
+                    .expect("Failed to close subscription");
+            }
+            wait_for_active_subscriptions(&starknet_for_assert, count - unsubscribe_count).await;
+
+            let third = add_block_at(&backend, next_block);
+            next_block += 1;
+            for (_, sub) in subscribers.iter_mut().skip(unsubscribe_count) {
+                let _ = expect_next_head(sub, &third).await;
+            }
+
+            drop(subscribers);
+            wait_for_active_subscriptions(&starknet_for_assert, 0).await;
+        }
+    }
+
+    async fn wait_for_active_subscriptions(starknet: &Starknet, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if starknet.active_ws_subscription_count() == expected {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Timed out waiting for websocket subscription cleanup");
+    }
+
+    async fn expect_next_head(
+        sub: &mut jsonrpsee::core::client::Subscription<SubscriptionItem<mp_rpc::v0_10_2::BlockHeader>>,
+        expected: &mp_rpc::v0_10_2::BlockHeader,
+    ) -> String {
+        let item = tokio::time::timeout(Duration::from_secs(10), sub.next())
+            .await
+            .expect("Timed out waiting for block header")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve block header");
+        assert_eq!(item.result, *expected);
+        item.subscription_id
     }
 
     #[tokio::test]
