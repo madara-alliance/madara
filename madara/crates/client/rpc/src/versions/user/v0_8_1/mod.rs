@@ -11,53 +11,7 @@ use mp_rpc::v0_8_1::{
 };
 use starknet_types_core::felt::Felt;
 
-type SubscriptionItemPendingTxs = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
-type SubscriptionItemEvents = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::EmittedEvent>;
-type SubscriptionItemNewHeads = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::BlockHeader>;
-type SubscriptionItemTransactionStatus = methods::ws::SubscriptionItem<mp_rpc::v0_8_1::NewTxnStatus>;
-
 pub mod methods;
-
-#[versioned_rpc("V0_8_1", "starknet")]
-pub trait StarknetWsRpcApi {
-    #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = SubscriptionItemNewHeads, param_kind = map)]
-    async fn subscribe_new_heads(&self, block: BlockId) -> jsonrpsee::core::SubscriptionResult;
-
-    #[subscription(
-        name = "subscribeEvents",
-        unsubscribe = "unsubscribeEvents",
-        item = SubscriptionItemEvents,
-        param_kind = map
-    )]
-    async fn subscribe_events(
-        &self,
-        from_address: Option<Felt>,
-        keys: Option<Vec<Vec<Felt>>>,
-        block: Option<BlockId>,
-    ) -> jsonrpsee::core::SubscriptionResult;
-
-    #[subscription(
-        name = "subscribeTransactionStatus",
-        unsubscribe = "unsubscribeTransactionStatus",
-        item = SubscriptionItemTransactionStatus,
-        param_kind = map
-    )]
-    async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
-
-    #[subscription(
-        name = "subscribePendingTransactions",
-        unsubscribe = "unsubscribePendingTransactions",
-        item = SubscriptionItemPendingTxs,
-        param_kind = map
-    )]
-    async fn subscribe_pending_transactions(
-        &self,
-        transaction_details: bool,
-        sender_address: Vec<starknet_types_core::felt::Felt>,
-    ) -> jsonrpsee::core::SubscriptionResult;
-    #[method(name = "unsubscribe")]
-    async fn starknet_unsubscribe(&self, subscription_id: u64) -> RpcResult<bool>;
-}
 
 #[versioned_rpc("V0_8_1", "starknet")]
 pub trait StarknetReadRpcApi {
