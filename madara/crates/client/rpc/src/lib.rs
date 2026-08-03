@@ -918,7 +918,10 @@ impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
 
     fn recv(&mut self) -> Pin<Box<dyn Future<Output = TxStatusWatchUpdate> + Send + '_>> {
         Box::pin(async move {
-            TxStatusWatchUpdate::Status(tx_status_snapshot(WatchTransactionStatus::recv(self).await.clone()))
+            WatchTransactionStatus::recv(self)
+                .await
+                .map(|status| TxStatusWatchUpdate::Status(tx_status_snapshot(status.clone())))
+                .unwrap_or(TxStatusWatchUpdate::Closed)
         })
     }
 }

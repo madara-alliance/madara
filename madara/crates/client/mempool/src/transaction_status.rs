@@ -62,10 +62,13 @@ impl<D: MadaraStorageRead> WatchTransactionStatus<D> {
     pub fn refresh(&mut self) {
         self.current_value = self.subscription.borrow_and_update().clone();
     }
-    pub async fn recv(&mut self) -> &Option<TransactionStatus> {
-        self.subscription.changed().await;
+    pub async fn recv(&mut self) -> Option<&Option<TransactionStatus>> {
+        if !self.subscription.changed().await {
+            return None;
+        }
+
         self.current_value = self.subscription.borrow_and_update().clone();
-        &self.current_value
+        Some(&self.current_value)
     }
 }
 

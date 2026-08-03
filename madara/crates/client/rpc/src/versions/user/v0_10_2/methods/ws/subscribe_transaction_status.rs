@@ -4,7 +4,7 @@ pub async fn subscribe_transaction_status(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     transaction_hash: mp_convert::Felt,
-) -> Result<(), crate::errors::StarknetWsApiError> {
+) -> jsonrpsee::core::SubscriptionResult {
     let sink = subscription_sink
         .accept()
         .await
@@ -56,7 +56,7 @@ pub async fn subscribe_transaction_status(
                     "SubscribeTransactionStatus failed to parse string subscription id",
                 )
                 .await?;
-                return Err(crate::errors::StarknetWsApiError::Internal);
+                return Err("SubscribeTransactionStatus transaction status watcher closed".into());
             }
         }
     }
