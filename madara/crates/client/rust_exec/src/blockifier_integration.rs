@@ -908,7 +908,7 @@ fn execute_full_invoke_transaction<S: StateReader>(
     let nonce = tx.nonce();
     let nonce_value = nonce.0;
 
-    let fee_type = FeeType::Eth;
+    let fee_type = FeeType::Strk;
     let resource_bounds = ResourceBounds::default();
 
     let rust_tx = RustInvokeTransaction {
@@ -979,7 +979,7 @@ fn execute_full_invoke_transaction<S: StateReader>(
         duration: rust_exec_duration,
         sender_address,
         tx_hash,
-        fee_token_address: block_context.chain_info().fee_token_addresses.eth_fee_token_address.to_felt(),
+        fee_token_address: block_context.chain_info().fee_token_addresses.strk_fee_token_address.to_felt(),
         validate_call_info: rust_result.validate_call_info.clone(),
         fee_transfer_call_info: rust_result.fee_transfer_call_info.clone(),
         fee_amount: rust_result.actual_fee,

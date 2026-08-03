@@ -529,6 +529,12 @@ pub fn execute_with_timestamp<S: StateReader>(
         return Ok(ctx.build_result());
     }
 
+    if asset_kind != assets_manager::asset_kind_spot() {
+        let mode = resolve_perp_storage_mode(&mut ctx, state, contract, trade.maker_order.market)?;
+        ensure_perpetual_balance(&mut ctx, state, contract, trade.maker_order.account, trade.maker_order.market, mode)?;
+        ensure_perpetual_balance(&mut ctx, state, contract, trade.taker_order.account, trade.maker_order.market, mode)?;
+    }
+
     enforce_max_assets_per_account(&mut ctx, state, contract, &trade)?;
 
     if !trade_support_fee_v2(&trade) {
@@ -1414,6 +1420,26 @@ pub(crate) fn upsert_perpetual_balance_for_test<S: StateReader>(
         next: Felt::ZERO,
     };
     upsert_perpetual_balance(ctx, state, contract, account, market, &balance, mode)
+}
+
+#[cfg(test)]
+pub(crate) fn ensure_perpetual_balance_for_test<S: StateReader>(
+    ctx: &mut ExecutionContext,
+    state: &S,
+    contract: ContractAddress,
+    account: ContractAddress,
+    market: Felt,
+    mode: u8,
+) -> Result<(), ExecutionError> {
+    let mode = match mode {
+        0 => PerpStorageMode::LegacyPedersen,
+        1 => PerpStorageMode::LegacyPoseidon,
+        2 => PerpStorageMode::Substorage,
+        3 => PerpStorageMode::SubstorageAdd,
+        4 => PerpStorageMode::SubstorageHash,
+        _ => PerpStorageMode::LegacyPedersen,
+    };
+    ensure_perpetual_balance(ctx, state, contract, account, market, mode)
 }
 
 #[cfg(test)]
@@ -2450,6 +2476,30 @@ fn upsert_perpetual_balance<S: StateReader>(
     ctx.storage_write(contract, storage_key_with_offset(base, 3), balance.cached_funding);
     ctx.storage_write(contract, storage_key_with_offset(base, 4), balance.prev);
     ctx.storage_write(contract, storage_key_with_offset(base, 5), balance.next);
+    Ok(())
+}
+
+fn ensure_perpetual_balance<S: StateReader>(
+    ctx: &mut ExecutionContext,
+    state: &S,
+    contract: ContractAddress,
+    account: ContractAddress,
+    market: Felt,
+    mode: PerpStorageMode,
+) -> Result<(), ExecutionError> {
+    let base = resolve_perp_balance_base(state, ctx, contract, account, market)?;
+    let stored_market = ctx.storage_read(state, contract, base)?;
+    if stored_market == Felt::ZERO {
+        let empty = PerpetualBalance {
+            market,
+            amount: Felt::ZERO,
+            cost: Felt::ZERO,
+            cached_funding: Felt::ZERO,
+            prev: Felt::ZERO,
+            next: Felt::ZERO,
+        };
+        create_perpetual_balance(ctx, state, contract, account, market, &empty, mode)?;
+    }
     Ok(())
 }
 

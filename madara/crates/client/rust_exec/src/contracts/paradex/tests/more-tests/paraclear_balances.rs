@@ -224,6 +224,35 @@ fn test_create_perpetual_balance_inserts_new() {
 }
 
 #[test]
+fn test_ensure_perpetual_balance_creates_empty_position() {
+    let mut state = MockStateReader::new();
+    let contract = addr(0x485);
+    let account = addr(0x486);
+    let market = felt(0x487);
+
+    let tail_key = storage_key_for_map("Paraclear_perpetual_asset_balance_tail", account.0);
+    set_storage(&mut state, contract, tail_key, felt(0));
+
+    let mut ctx = crate::ExecutionContext::new();
+    paraclear::ensure_perpetual_balance_for_test(&mut ctx, &state, contract, account, market, 0).expect("ensure");
+
+    let result = ctx.build_result();
+    let updates = result.state_diff.storage_updates.get(&contract).expect("updates");
+
+    let mut base_ctx = crate::ExecutionContext::new();
+    let base =
+        paraclear::resolve_perp_balance_base_for_test(&state, &mut base_ctx, contract, account, market).expect("base");
+
+    assert_eq!(updates.get(&base).copied(), Some(market));
+    assert_eq!(updates.get(&tail_key).copied(), Some(market));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 1)).copied(), None);
+    assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), None);
+    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), None);
+    assert_eq!(updates.get(&storage_key_with_offset(base, 4)).copied(), None);
+    assert_eq!(updates.get(&storage_key_with_offset(base, 5)).copied(), None);
+}
+
+#[test]
 fn test_upsert_perpetual_balance_updates_existing() {
     let mut state = MockStateReader::new();
     let contract = addr(0x490);
