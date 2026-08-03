@@ -581,14 +581,15 @@
 //! }
 //! ```
 //!
-//! ### WebSocket Methods (v0.8.0+)
+//! ### WebSocket Methods (v0.10.0+)
 //!
 //! WebSocket methods enable real-time subscriptions to blockchain events. These methods are
-//! accessible through the same port as HTTP RPC methods.
+//! accessible through the same port as HTTP RPC methods. WebSocket subscriptions are exposed only
+//! for RPC v0.10.0 and newer.
 //!
 //! #### `starknet_subscribeNewHeads`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_new_heads`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_heads`]
 //!
 //! Creates a subscription for new block headers.
 //!
@@ -605,7 +606,7 @@
 //!
 //! #### `starknet_subscribeEvents`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_events`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_events`]
 //!
 //! Creates a subscription for contract events.
 //!
@@ -624,7 +625,7 @@
 //!
 //! #### `starknet_subscribeTransactionStatus`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_transaction_status`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_transaction_status`]
 //!
 //! Creates a subscription for transaction status updates.
 //!
@@ -641,16 +642,15 @@
 //!
 //! #### Transaction Stream Subscriptions
 //!
-//! Madara supports different transaction-stream methods depending on the Starknet RPC version:
+//! Madara supports transaction-stream methods for v0.10.0 and newer:
 //!
-//! - `v0.8.1`: [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
-//! - `v0.9.0`: [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transactions`]
 //! - `v0.10.0`: [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transactions`]
+//! - `v0.10.2`: [`versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::subscribe_new_transactions`]
 //!
-//! `v0.9.0+` also supports receipt streaming through:
+//! Receipt streaming is exposed through:
 //!
-//! - [`versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::subscribe_new_transaction_receipts`]
 //! - [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transaction_receipts`]
+//! - [`versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::subscribe_new_transaction_receipts`]
 //!
 //! #### `starknet_unsubscribe`
 //!
@@ -1022,12 +1022,10 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
 
     rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWriteRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetTraceRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
 
     rpc_api.merge(versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetWriteRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetTraceRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
 
     rpc_api.merge(versions::user::v0_10_0::StarknetReadRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
