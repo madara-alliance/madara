@@ -31,6 +31,18 @@ use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, Orde
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Paraclear";
 
+/// Paradex Paraclear class hash for contracts version 1.25.1.
+pub const CLASS_HASH_1_25_1: Felt =
+    Felt::from_hex_unchecked("0x01ca07ce68892cff34e71bad6d29e526fcf59a8813e5371cb1fd306d38e7aee8");
+
+/// Paradex Paraclear class hash for contracts version 1.25.3.
+pub const CLASS_HASH_1_25_3: Felt =
+    Felt::from_hex_unchecked("0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a");
+
+pub fn supports_class_hash(class_hash: Felt) -> bool {
+    class_hash == CLASS_HASH_1_25_1 || class_hash == CLASS_HASH_1_25_3
+}
+
 // Precomputed storage map bases (sn_keccak) for hot paths.
 static PERP_BALANCE_BASE: Lazy<Felt> = Lazy::new(|| sn_keccak("Paraclear_perpetual_asset_balance".as_bytes()));
 static TOKEN_BALANCE_BASE: Lazy<Felt> = Lazy::new(|| sn_keccak("Paraclear_token_asset_balance".as_bytes()));

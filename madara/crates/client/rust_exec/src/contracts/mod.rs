@@ -80,10 +80,16 @@ impl ContractRegistry {
                 return Some(paraclear::NAME.to_string());
             }
         }
+        if paraclear::supports_class_hash(class_hash) {
+            return Some(paraclear::NAME.to_string());
+        }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
                 return Some("ParaclearOracle".to_string());
             }
+        }
+        if oracle::supports_class_hash(class_hash) {
+            return Some("ParaclearOracle".to_string());
         }
         if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
             if class_hash == assets_manager_hash {
@@ -112,10 +118,16 @@ impl ContractRegistry {
                 return paraclear::get_function_name(selector);
             }
         }
+        if paraclear::supports_class_hash(class_hash) {
+            return paraclear::get_function_name(selector);
+        }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
                 return oracle::get_function_name(selector);
             }
+        }
+        if oracle::supports_class_hash(class_hash) {
+            return oracle::get_function_name(selector);
         }
         if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
             if class_hash == assets_manager_hash {
@@ -152,10 +164,16 @@ impl ContractRegistry {
                 return true;
             }
         }
+        if paraclear::supports_class_hash(class_hash) {
+            return true;
+        }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
                 return true;
             }
+        }
+        if oracle::supports_class_hash(class_hash) {
+            return true;
         }
         if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
             if class_hash == assets_manager_hash {
@@ -182,10 +200,16 @@ impl ContractRegistry {
                 return paraclear::supports_selector(selector);
             }
         }
+        if paraclear::supports_class_hash(class_hash) {
+            return paraclear::supports_selector(selector);
+        }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
                 return oracle::supports_selector(selector);
             }
+        }
+        if oracle::supports_class_hash(class_hash) {
+            return oracle::supports_selector(selector);
         }
         if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
             if class_hash == assets_manager_hash {
@@ -246,10 +270,23 @@ impl ContractRegistry {
                 ));
             }
         }
+        if paraclear::supports_class_hash(class_hash) {
+            return Some(paraclear::execute_with_timestamp(
+                state,
+                contract_address,
+                selector,
+                calldata,
+                caller,
+                block_timestamp,
+            ));
+        }
         if let Some(oracle_hash) = config::paraclear_oracle_class_hash() {
             if class_hash == oracle_hash {
                 return Some(oracle::execute(state, contract_address, selector, calldata, caller));
             }
+        }
+        if oracle::supports_class_hash(class_hash) {
+            return Some(oracle::execute(state, contract_address, selector, calldata, caller));
         }
         if let Some(assets_manager_hash) = config::assets_manager_class_hash() {
             if class_hash == assets_manager_hash {
@@ -288,7 +325,10 @@ mod tests {
 
     use super::{config, ContractRegistry, ExecutionError};
     use crate::{
-        contracts::paradex::oracle, state::mock::MockStateReader, types::ContractAddress, RustExecRuntimeConfig,
+        contracts::paradex::{oracle, paraclear},
+        state::mock::MockStateReader,
+        types::ContractAddress,
+        RustExecRuntimeConfig,
     };
 
     #[test]
@@ -320,5 +360,50 @@ mod tests {
             result,
             Some(Err(ExecutionError::ExecutionFailed(message))) if message.contains("calldata underflow")
         ));
+    }
+
+    #[test]
+    fn known_paraclear_1_25_3_hash_dispatches_settle_trade_v3() {
+        let selector = crate::storage::function_selector("settle_trade_v3");
+
+        assert!(ContractRegistry::supports_class_hash(paraclear::CLASS_HASH_1_25_3));
+        assert!(ContractRegistry::supports_function(paraclear::CLASS_HASH_1_25_3, selector));
+        assert_eq!(ContractRegistry::get_contract_name(paraclear::CLASS_HASH_1_25_3), Some("Paraclear".to_string()));
+        assert_eq!(
+            ContractRegistry::get_function_name(paraclear::CLASS_HASH_1_25_3, selector),
+            Some("settle_trade_v3".to_string())
+        );
+
+        let state = MockStateReader::new();
+        let result = ContractRegistry::execute_with_timestamp(
+            &state,
+            ContractAddress(Felt::from_hex_unchecked("0x99")),
+            paraclear::CLASS_HASH_1_25_3,
+            selector,
+            &[],
+            ContractAddress(Felt::ZERO),
+            0,
+        );
+
+        assert!(matches!(
+            result,
+            Some(Err(ExecutionError::ExecutionFailed(message))) if message.contains("calldata underflow")
+        ));
+    }
+
+    #[test]
+    fn known_oracle_hash_is_shared_by_1_25_1_and_1_25_3() {
+        let selector = crate::storage::function_selector("get_value");
+
+        assert!(ContractRegistry::supports_class_hash(oracle::CLASS_HASH_1_25_1_AND_1_25_3));
+        assert!(ContractRegistry::supports_function(oracle::CLASS_HASH_1_25_1_AND_1_25_3, selector));
+        assert_eq!(
+            ContractRegistry::get_contract_name(oracle::CLASS_HASH_1_25_1_AND_1_25_3),
+            Some("ParaclearOracle".to_string())
+        );
+        assert_eq!(
+            ContractRegistry::get_function_name(oracle::CLASS_HASH_1_25_1_AND_1_25_3, selector),
+            Some("get_value".to_string())
+        );
     }
 }

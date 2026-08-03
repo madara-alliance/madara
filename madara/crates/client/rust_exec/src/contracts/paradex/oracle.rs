@@ -13,8 +13,16 @@ use crate::state::StateReader;
 use crate::storage::{function_selector, sn_keccak, storage_key_for_map_with_base_named, storage_key_with_offset};
 use crate::types::{ContractAddress, ExecutionResult, StorageKey};
 
+/// Paradex ParaclearOracle class hash for contracts versions 1.25.1 and 1.25.3.
+pub const CLASS_HASH_1_25_1_AND_1_25_3: Felt =
+    Felt::from_hex_unchecked("0x00049e91ccb24fcf4acec4a24896092d9387a97865dcb0e6f98503399564b452");
+
 static LATEST_TICK_DATA_BASE: Lazy<Felt> = Lazy::new(|| sn_keccak("latest_tick_data".as_bytes()));
 static FUNDING_INDEX_DATA_BASE: Lazy<Felt> = Lazy::new(|| sn_keccak("funding_index_data".as_bytes()));
+
+pub fn supports_class_hash(class_hash: Felt) -> bool {
+    class_hash == CLASS_HASH_1_25_1_AND_1_25_3
+}
 
 pub fn supports_selector(selector: Felt) -> bool {
     selector == get_value_selector()
