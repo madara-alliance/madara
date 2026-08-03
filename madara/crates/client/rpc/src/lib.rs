@@ -1063,33 +1063,27 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
 }
 
 struct WsSubscriptionHandle {
-    cancelled: std::sync::atomic::AtomicBool,
-    notify: tokio::sync::Notify,
+    cancelled: tokio::sync::watch::Sender<bool>,
 }
 
 impl WsSubscriptionHandle {
-    fn new() -> Self {
-        Self { cancelled: std::sync::atomic::AtomicBool::new(false), notify: tokio::sync::Notify::new() }
+    fn new() -> (Self, tokio::sync::watch::Receiver<bool>) {
+        let (cancelled, receiver) = tokio::sync::watch::channel(false);
+        (Self { cancelled }, receiver)
     }
 
     fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::Release);
-        // Wake currently-registered waiters and also leave a stored permit behind for the
-        // race where cancellation lands before a waiter has fully registered with `Notify`.
-        self.notify.notify_waiters();
-        self.notify.notify_one();
+        let _ = self.cancelled.send(true);
     }
 
+    #[cfg(test)]
     async fn cancelled(&self) {
-        if self.is_cancelled() {
-            return;
+        let mut cancelled = self.cancelled.subscribe();
+        while !*cancelled.borrow_and_update() {
+            if cancelled.changed().await.is_err() {
+                return;
+            }
         }
-
-        self.notify.notified().await;
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancelled.load(std::sync::atomic::Ordering::Acquire)
     }
 }
 
@@ -1140,12 +1134,13 @@ impl WsSubscribeHandles {
             }
         };
 
-        let handle = std::sync::Arc::new(WsSubscriptionHandle::new());
+        let (handle, cancelled) = WsSubscriptionHandle::new();
+        let handle = std::sync::Arc::new(handle);
         let map = std::sync::Arc::clone(&self.handles);
 
         self.handles.insert(id, std::sync::Arc::clone(&handle));
 
-        WsSubscriptionGuard { id, handle, map }
+        WsSubscriptionGuard { id, handle, cancelled, map }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
@@ -1163,6 +1158,7 @@ pub(crate) struct WsSubscriptionGuard {
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
     handle: std::sync::Arc<WsSubscriptionHandle>,
+    cancelled: tokio::sync::watch::Receiver<bool>,
     map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
@@ -1170,11 +1166,16 @@ impl WsSubscriptionGuard {
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
     pub async fn cancelled(&self) {
-        self.handle.cancelled().await
+        let mut cancelled = self.cancelled.clone();
+        while !*cancelled.borrow_and_update() {
+            if cancelled.changed().await.is_err() {
+                return;
+            }
+        }
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.handle.is_cancelled()
+        *self.cancelled.borrow()
     }
 }
 
@@ -1319,7 +1320,8 @@ mod test {
 
     #[tokio::test]
     async fn ws_subscription_handle_cancel_wakes_all_waiters() {
-        let handle = Arc::new(WsSubscriptionHandle::new());
+        let (handle, _cancelled) = WsSubscriptionHandle::new();
+        let handle = Arc::new(handle);
         let handle_1 = Arc::clone(&handle);
         let handle_2 = Arc::clone(&handle);
 
@@ -1339,7 +1341,7 @@ mod test {
 
     #[tokio::test]
     async fn ws_subscription_handle_cancelled_returns_immediately_after_cancel() {
-        let handle = WsSubscriptionHandle::new();
+        let (handle, _cancelled) = WsSubscriptionHandle::new();
         handle.cancel();
 
         tokio::time::timeout(std::time::Duration::from_secs(1), handle.cancelled())

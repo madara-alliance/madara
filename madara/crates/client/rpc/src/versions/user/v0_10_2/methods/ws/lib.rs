@@ -285,7 +285,7 @@ mod test {
             .await
             .expect("Failed to close subscription");
 
-        assert!(tokio::time::timeout(Duration::from_millis(100), sub.next()).await.is_err());
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -594,7 +594,7 @@ mod test {
         StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, subscription_id)
             .await
             .expect("Failed to close subscription");
-        assert!(tokio::time::timeout(Duration::from_millis(100), sub.next()).await.is_err());
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
