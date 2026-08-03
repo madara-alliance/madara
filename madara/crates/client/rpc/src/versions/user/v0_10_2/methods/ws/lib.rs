@@ -196,7 +196,14 @@ mod test {
     async fn raw_subscribe_new_transaction_receipts(
         client: &jsonrpsee::ws_client::WsClient,
     ) -> jsonrpsee::core::client::Subscription<Value> {
-        raw_subscribe(client, "starknet_V0_10_2_subscribeNewTransactionReceipts", ObjectParams::new()).await
+        raw_subscribe_new_transaction_receipts_with_params(client, ObjectParams::new()).await
+    }
+
+    async fn raw_subscribe_new_transaction_receipts_with_params(
+        client: &jsonrpsee::ws_client::WsClient,
+        params: ObjectParams,
+    ) -> jsonrpsee::core::client::Subscription<Value> {
+        raw_subscribe(client, "starknet_V0_10_2_subscribeNewTransactionReceipts", params).await
     }
 
     async fn raw_subscribe(
@@ -911,6 +918,57 @@ mod test {
                 block_hash: Some(new_block_hash),
                 block_number: 1,
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transaction_receipts_preconfirmed_reorg_wins_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let (block_0_hash, _block_0) = add_block_at_with_hash(&backend, 0);
+        let (block_1_hash, _block_1) = add_block_at_with_hash(&backend, 1);
+
+        let mut params = ObjectParams::new();
+        params.insert("finality_status", vec![FinalityStatus::PreConfirmed]).expect("Building receipt params");
+        let mut sub = raw_subscribe_new_transaction_receipts_with_params(&client, params).await;
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader {
+                    block_number: 2,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
+                },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: transaction_with_receipt(SENDER_ADDRESS, Felt::from_hex_unchecked("0x4646")),
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: None,
+                }],
+                vec![],
+            ))
+            .expect("Failed to store preconfirmed block");
+        backend.revert_to(&block_0_hash).expect("Revert should succeed");
+
+        let reorg = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for reorg notification")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve reorg notification");
+
+        assert_eq!(
+            reorg,
+            serde_json::to_value(mp_rpc::v0_10_2::ReorgData {
+                starting_block_hash: block_1_hash,
+                starting_block_number: 1,
+                ending_block_hash: block_1_hash,
+                ending_block_number: 1,
+            })
+            .expect("Failed to serialize expected reorg notification")
         );
     }
 

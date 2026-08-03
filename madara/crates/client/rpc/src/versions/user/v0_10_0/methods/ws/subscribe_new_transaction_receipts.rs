@@ -72,9 +72,8 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
             }
         }
 
-        let mut live_reorgs = block_view.is_confirmed().then_some(&mut reorgs);
         if let Some(reorg) =
-            send_block_receipts(&sink, &allowed_finality_status, sender_address.as_ref(), &mut live_reorgs, block_view)
+            send_block_receipts(&sink, &allowed_finality_status, sender_address.as_ref(), &mut reorgs, block_view)
                 .await?
         {
             super::send_reorg_notification(&sink, &reorg).await?;
@@ -89,7 +88,7 @@ async fn send_block_receipts(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     allowed_finality_status: &HashSet<FinalityStatus>,
     sender_address: Option<&HashSet<Felt>>,
-    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
     block_view: mc_db::MadaraBlockView,
 ) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
     let (finality_status, receipt_finality_status, block_hash) = match block_view.as_confirmed() {
@@ -146,10 +145,7 @@ async fn send_block_receipts(
 }
 
 fn take_pending_reorg(
-    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
 ) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
-    match reorgs.as_deref_mut() {
-        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
-        None => Ok(None),
-    }
+    crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error())
 }
