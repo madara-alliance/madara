@@ -96,7 +96,7 @@ pub async fn subscribe_events(
                 return Ok(());
             }
             if ctx.is_cancelled() {
-                return Err(crate::errors::StarknetWsApiError::Internal);
+                return Ok(());
             }
 
             match reorgs.try_recv() {
@@ -115,7 +115,7 @@ pub async fn subscribe_events(
             }
 
             if ctx.is_cancelled() {
-                return Err(crate::errors::StarknetWsApiError::Internal);
+                return Ok(());
             }
             let mut live_reorgs = Some(&mut reorgs);
             if let Some(reorg) = send_block_events(
@@ -158,7 +158,7 @@ pub async fn subscribe_events(
                     }
                 },
                 _ = sink.closed() => return Ok(()),
-                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+                _ = ctx.cancelled() => return Ok(()),
             };
 
             let block_number = block_view.block_number();

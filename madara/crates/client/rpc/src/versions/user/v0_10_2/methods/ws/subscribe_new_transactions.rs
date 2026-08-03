@@ -79,7 +79,7 @@ async fn subscribe_new_transactions_inner(
     loop {
         tokio::select! {
             _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+            _ = ctx.cancelled() => return Ok(()),
             received = async {
                 match &mut received_watch {
                     Some(watch) => watch.recv().await,

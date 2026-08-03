@@ -84,7 +84,7 @@ async fn next_update(
 
     tokio::select! {
         _ = sink.closed() => Ok(None),
-        _ = ctx.cancelled() => Err(crate::errors::StarknetWsApiError::Internal),
+        _ = ctx.cancelled() => Ok(None),
         reorg = reorgs.recv() => match reorg {
             Ok(reorg) => Ok(Some(SubscriptionUpdate::Reorg(reorg))),
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {

@@ -29,7 +29,7 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
     loop {
         let block_view = tokio::select! {
             _ = sink.closed() => return Ok(()),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+            _ = ctx.cancelled() => return Ok(()),
             reorg = reorgs.recv() => {
                 match reorg {
                     Ok(reorg) => {
