@@ -77,8 +77,9 @@ mod test {
     use super::*;
     use crate::{
         test_utils::{rpc_test_setup, TestTxStatusWatcher},
-        versions::user::v0_10_2::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server,
+        versions::user::{
+            v0_10_0::{StarknetWsRpcApiV0_10_0Client, StarknetWsRpcApiV0_10_0Server},
+            v0_10_2::{methods::ws::SubscriptionItem, StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server},
         },
         Starknet,
     };
@@ -160,6 +161,17 @@ mod test {
             .expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
         let handle = server.start(StarknetWsRpcApiV0_10_2Server::into_rpc(starknet));
+        (handle, server_url)
+    }
+
+    async fn start_server_v0_10_0(starknet: Starknet) -> (jsonrpsee::server::ServerHandle, String) {
+        let server = jsonrpsee::server::Server::builder()
+            .max_connections(1_024)
+            .build(SERVER_ADDR)
+            .await
+            .expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let handle = server.start(StarknetWsRpcApiV0_10_0Server::into_rpc(starknet));
         (handle, server_url)
     }
 
@@ -682,6 +694,103 @@ mod test {
                 block_number: 0,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transaction_receipts_l1_confirmed_block_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![FinalityStatus::AcceptedOnL2]),
+            Some(vec![SENDER_ADDRESS]),
+        )
+        .await
+        .expect("Failed subscription");
+
+        backend.set_latest_l1_confirmed(Some(0)).expect("Failed to set L1 confirmed block");
+        let transaction_hash = Felt::from_hex_unchecked("0x4444");
+        let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
+        let block_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions: vec![tx.clone()],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block")
+            .block_hash;
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for receipt")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve receipt");
+
+        assert_eq!(
+            item.result,
+            mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
+                transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::L1),
+                block_hash: Some(block_hash),
+                block_number: 0,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transaction_receipts_l1_confirmed_block_v0_10_0() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server_v0_10_0(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let mut sub = StarknetWsRpcApiV0_10_0Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![mp_rpc::v0_10_0::FinalityStatus::AcceptedOnL2]),
+            Some(vec![SENDER_ADDRESS]),
+        )
+        .await
+        .expect("Failed subscription");
+
+        backend.set_latest_l1_confirmed(Some(0)).expect("Failed to set L1 confirmed block");
+        let transaction_hash = Felt::from_hex_unchecked("0x4545");
+        let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
+        let block_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions: vec![tx.clone()],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block")
+            .block_hash;
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for receipt")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve receipt");
+
+        let item = serde_json::to_value(item).expect("Failed to serialize receipt item");
+        let expected = serde_json::to_value(mp_rpc::v0_10_0::TxnReceiptWithBlockInfo {
+            transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_0::TxnFinalityStatus::L1),
+            block_hash: Some(block_hash),
+            block_number: 0,
+        })
+        .expect("Failed to serialize expected receipt");
+
+        assert_eq!(item.get("result"), Some(&expected));
     }
 
     #[tokio::test]

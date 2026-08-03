@@ -87,20 +87,18 @@ async fn send_block_receipts(
     reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
     block_view: mc_db::MadaraBlockView,
 ) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
-    let (finality_status, block_hash) = match block_view.as_confirmed() {
-        Some(confirmed) if confirmed.is_on_l1() => return Ok(None),
-        Some(confirmed) => (
-            FinalityStatus::AcceptedOnL2,
-            Some(
-                confirmed
-                    .get_block_info()
-                    .or_internal_server_error(
-                        "SubscribeNewTransactionReceipts failed to retrieve confirmed block info",
-                    )?
-                    .block_hash,
-            ),
-        ),
-        None => (FinalityStatus::PreConfirmed, None),
+    let (finality_status, receipt_finality_status, block_hash) = match block_view.as_confirmed() {
+        Some(confirmed) => {
+            let block_hash = confirmed
+                .get_block_info()
+                .or_internal_server_error("SubscribeNewTransactionReceipts failed to retrieve confirmed block info")?
+                .block_hash;
+            let receipt_finality_status =
+                if confirmed.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
+
+            (FinalityStatus::AcceptedOnL2, receipt_finality_status, Some(block_hash))
+        }
+        None => (FinalityStatus::PreConfirmed, TxnFinalityStatus::PreConfirmed, None),
     };
 
     if !allowed_finality_status.contains(&finality_status) {
@@ -125,10 +123,7 @@ async fn send_block_receipts(
         }
 
         let tx_hash = *tx.receipt.transaction_hash();
-        let transaction_receipt = tx.receipt.to_rpc_v0_10(match finality_status {
-            FinalityStatus::PreConfirmed => TxnFinalityStatus::PreConfirmed,
-            FinalityStatus::AcceptedOnL2 => TxnFinalityStatus::L2,
-        });
+        let transaction_receipt = tx.receipt.to_rpc_v0_10(receipt_finality_status);
         let item = super::SubscriptionItem::new(
             sink.subscription_id(),
             TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number },
