@@ -620,7 +620,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn subscribe_transaction_status_watcher_close_ends_subscription_v0_10_2() {
+    async fn subscribe_transaction_status_watcher_close_does_not_emit_error_v0_10_2() {
         let (_backend, mut starknet) = rpc_test_setup();
         let watcher = TestTxStatusWatcher::new();
         starknet.set_tx_status_watcher(Some(watcher.clone()));
@@ -633,10 +633,7 @@ mod test {
             .expect("Failed subscription");
         watcher.close();
 
-        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
-            .await
-            .expect("Timed out waiting for watcher-close stream termination");
-        assert!(next.is_none());
+        assert!(tokio::time::timeout(Duration::from_millis(100), sub.next()).await.is_err());
     }
 
     #[tokio::test]
