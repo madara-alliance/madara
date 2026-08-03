@@ -832,9 +832,14 @@ pub enum TxStatusSnapshot {
     AcceptedOnL1,
 }
 
+pub enum TxStatusWatchUpdate {
+    Status(Option<TxStatusSnapshot>),
+    Closed,
+}
+
 pub trait TxStatusWatch: Send {
     fn take_current(&mut self) -> Option<TxStatusSnapshot>;
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>>;
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = TxStatusWatchUpdate> + Send + '_>>;
 }
 
 pub trait TxStatusWatcher: Send + Sync {
@@ -911,8 +916,10 @@ impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
         snapshot
     }
 
-    fn recv(&mut self) -> Pin<Box<dyn Future<Output = Option<TxStatusSnapshot>> + Send + '_>> {
-        Box::pin(async move { tx_status_snapshot(WatchTransactionStatus::recv(self).await.clone()) })
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = TxStatusWatchUpdate> + Send + '_>> {
+        Box::pin(async move {
+            TxStatusWatchUpdate::Status(tx_status_snapshot(WatchTransactionStatus::recv(self).await.clone()))
+        })
     }
 }
 

@@ -48,6 +48,7 @@ pub async fn subscribe_transaction_status(
                 }
             }
             SubscriptionUpdate::Reorg(reorg) => super::send_reorg_notification(&sink, &reorg).await?,
+            SubscriptionUpdate::NoStatus => {}
             SubscriptionUpdate::WatcherClosed => {
                 crate::close_ws_subscription(
                     starknet,
@@ -63,6 +64,7 @@ pub async fn subscribe_transaction_status(
 
 enum SubscriptionUpdate {
     Snapshot(crate::TxStatusSnapshot),
+    NoStatus,
     Reorg(mc_db::ReorgNotification),
     WatcherClosed,
 }
@@ -93,7 +95,11 @@ async fn next_update(
             }
         },
         next = watch.recv() => {
-            Ok(Some(next.map(SubscriptionUpdate::Snapshot).unwrap_or(SubscriptionUpdate::WatcherClosed)))
+            Ok(Some(match next {
+                crate::TxStatusWatchUpdate::Status(Some(snapshot)) => SubscriptionUpdate::Snapshot(snapshot),
+                crate::TxStatusWatchUpdate::Status(None) => SubscriptionUpdate::NoStatus,
+                crate::TxStatusWatchUpdate::Closed => SubscriptionUpdate::WatcherClosed,
+            }))
         },
     }
 }
