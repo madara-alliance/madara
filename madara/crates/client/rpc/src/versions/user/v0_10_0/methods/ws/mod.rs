@@ -1,6 +1,10 @@
 pub mod lib;
 pub mod starknet_unsubscribe;
+pub mod subscribe_events;
+pub mod subscribe_new_heads;
 pub mod subscribe_new_transaction_receipts;
+pub mod subscribe_new_transactions;
+pub mod subscribe_transaction_status;
 
 #[allow(unused)]
 const BLOCK_PAST_LIMIT: u64 = 1024;
@@ -50,5 +54,11 @@ pub async fn send_reorg_notification(
 pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {
     crate::errors::StarknetWsApiError::internal_server_error(
         "Missed reorg notifications; websocket subscription can no longer guarantee canonical state",
+    )
+}
+
+pub fn missed_received_transaction_notifications_error() -> crate::errors::StarknetWsApiError {
+    crate::errors::StarknetWsApiError::internal_server_error(
+        "Missed new-transaction notifications; websocket subscription can no longer guarantee received transaction updates",
     )
 }

@@ -2,11 +2,13 @@ use mp_rpc::v0_10_0::{BlockId, FinalityStatus, TxnStatusWithoutL1};
 use starknet_types_core::felt::Felt;
 
 use crate::versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server;
-use crate::versions::user::v0_9_0::methods::ws::subscribe_new_transactions::subscribe_new_transactions_with_reorg;
-use crate::versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server as V0_9_0Impl;
 
 use super::starknet_unsubscribe::*;
+use super::subscribe_events::*;
+use super::subscribe_new_heads::*;
 use super::subscribe_new_transaction_receipts::subscribe_new_transaction_receipts_with_reorg;
+use super::subscribe_new_transactions::subscribe_new_transactions_with_reorg;
+use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
 #[allow(unused)]
@@ -16,7 +18,7 @@ impl StarknetWsRpcApiV0_10_0Server for crate::Starknet {
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
         block: BlockId,
     ) -> jsonrpsee::core::SubscriptionResult {
-        V0_9_0Impl::subscribe_new_heads(self, subscription_sink, block).await
+        Ok(subscribe_new_heads(self, subscription_sink, block).await?)
     }
 
     async fn subscribe_events(
@@ -27,7 +29,7 @@ impl StarknetWsRpcApiV0_10_0Server for crate::Starknet {
         block: Option<BlockId>,
         finality_status: Option<FinalityStatus>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        V0_9_0Impl::subscribe_events(self, subscription_sink, from_address, keys, block, finality_status).await
+        Ok(subscribe_events(self, subscription_sink, from_address, keys, block, finality_status).await?)
     }
 
     async fn subscribe_transaction_status(
@@ -35,7 +37,7 @@ impl StarknetWsRpcApiV0_10_0Server for crate::Starknet {
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
         transaction_hash: Felt,
     ) -> jsonrpsee::core::SubscriptionResult {
-        V0_9_0Impl::subscribe_transaction_status(self, subscription_sink, transaction_hash).await
+        Ok(subscribe_transaction_status(self, subscription_sink, transaction_hash).await?)
     }
 
     async fn subscribe_new_transactions(
