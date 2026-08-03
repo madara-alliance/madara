@@ -27,6 +27,32 @@ fn merged_rpc_does_not_expose_legacy_ws_methods() {
     assert!(!methods.contains("starknet_V0_9_0_subscribePendingTransactions"));
 }
 
+#[tokio::test]
+async fn legacy_ws_methods_return_method_not_found() {
+    let (_, starknet) = rpc_test_setup();
+    let module = rpc_api_user(&starknet).expect("Building user RPC module");
+
+    for method in [
+        "starknet_V0_8_1_subscribeNewHeads",
+        "starknet_V0_8_1_subscribeEvents",
+        "starknet_V0_8_1_subscribeTransactionStatus",
+        "starknet_V0_8_1_subscribePendingTransactions",
+        "starknet_V0_8_1_unsubscribe",
+        "starknet_V0_9_0_subscribeNewHeads",
+        "starknet_V0_9_0_subscribeEvents",
+        "starknet_V0_9_0_subscribeTransactionStatus",
+        "starknet_V0_9_0_subscribeNewTransactions",
+        "starknet_V0_9_0_subscribeNewTransactionReceipts",
+        "starknet_V0_9_0_unsubscribe",
+    ] {
+        let request = format!(r#"{{"jsonrpc":"2.0","method":"{method}","id":1}}"#);
+        let (response, _) = module.raw_json_request(&request, 1).await.expect("Legacy WS method request");
+        let response: serde_json::Value = serde_json::from_str(&response).expect("Parsing JSON-RPC response");
+
+        assert_eq!(response["error"]["code"], -32601, "{method} should return method not found");
+    }
+}
+
 #[test]
 fn v0_10_0_ws_surface_uses_new_transaction_methods() {
     let (_, starknet) = rpc_test_setup();
