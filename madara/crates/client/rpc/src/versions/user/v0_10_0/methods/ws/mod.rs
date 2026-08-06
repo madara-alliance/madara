@@ -3,9 +3,6 @@ pub mod starknet_unsubscribe;
 pub mod subscribe_new_transaction_receipts;
 pub mod subscribe_new_transactions;
 
-#[allow(unused)]
-const BLOCK_PAST_LIMIT: u64 = 1024;
-#[allow(unused)]
 const ADDRESS_FILTER_LIMIT: u64 = 128;
 const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
 

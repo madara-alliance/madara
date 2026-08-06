@@ -1140,7 +1140,7 @@ impl WsSubscribeHandles {
 
         self.handles.insert(id, std::sync::Arc::clone(&handle));
 
-        WsSubscriptionGuard { id, handle, cancelled, map }
+        WsSubscriptionGuard { id, _handle: handle, cancelled, map }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
@@ -1155,16 +1155,13 @@ impl WsSubscribeHandles {
 
 pub(crate) struct WsSubscriptionGuard {
     id: u64,
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
-    handle: std::sync::Arc<WsSubscriptionHandle>,
+    // Keep the registered handle alive until this guard is dropped.
+    _handle: std::sync::Arc<WsSubscriptionHandle>,
     cancelled: tokio::sync::watch::Receiver<bool>,
     map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
 }
 
 impl WsSubscriptionGuard {
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
     pub async fn cancelled(&self) {
         let mut cancelled = self.cancelled.clone();
         while !*cancelled.borrow_and_update() {

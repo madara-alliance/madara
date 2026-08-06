@@ -9,6 +9,19 @@ use std::collections::HashSet;
 
 use super::{ADDRESS_FILTER_LIMIT, BLOCK_PAST_LIMIT};
 
+type ReorgStream = mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>;
+
+enum BackfillResult {
+    Restart,
+    Complete,
+    Closed,
+}
+
+enum LiveResult {
+    Restart,
+    Closed,
+}
+
 #[derive(Debug, Clone, Default)]
 struct AddressSubscriptionFilter {
     db_from_address: Option<Felt>,
@@ -64,139 +77,185 @@ pub async fn subscribe_events(
     let requested_finality = finality_status.unwrap_or_default();
     let address_filter = AddressSubscriptionFilter::new(from_address.as_ref());
     let mut reorgs = starknet.backend.subscribe_reorgs();
+    let mut next_block_n = initial_event_block_n(starknet, block_id)?;
 
-    let mut next_block_n = starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1));
-
-    if let Some(block_id) = block_id {
-        if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
-            return Err(StarknetWsApiError::Pending);
+    loop {
+        match backfill_events(
+            starknet,
+            &sink,
+            &ctx,
+            &address_filter,
+            &keys,
+            &mut reorgs,
+            &mut next_block_n,
+            &requested_finality,
+        )
+        .await?
+        {
+            BackfillResult::Restart => continue,
+            BackfillResult::Complete => {}
+            BackfillResult::Closed => return Ok(()),
         }
 
-        let view = match starknet.resolve_view_on(block_id) {
-            Ok(view) => view,
-            Err(crate::StarknetRpcApiError::BlockNotFound) => return Err(StarknetWsApiError::BlockNotFound),
-            Err(crate::StarknetRpcApiError::NoBlocks) => return Err(StarknetWsApiError::NoBlocks),
-            Err(err) => return Err(StarknetWsApiError::internal_server_error(err.to_string())),
-        };
-        let latest_block = starknet.backend.view_on_latest().latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
-        let block_n = view.latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
-
-        if block_n < latest_block.saturating_sub(BLOCK_PAST_LIMIT) {
-            return Err(StarknetWsApiError::TooManyBlocksBack);
+        match stream_live_events(
+            starknet,
+            &sink,
+            &ctx,
+            &address_filter,
+            &keys,
+            &mut reorgs,
+            &mut next_block_n,
+            &requested_finality,
+        )
+        .await?
+        {
+            LiveResult::Restart => continue,
+            LiveResult::Closed => return Ok(()),
         }
+    }
+}
 
-        next_block_n = block_n;
+fn initial_event_block_n(starknet: &crate::Starknet, block_id: Option<BlockId>) -> Result<u64, StarknetWsApiError> {
+    let Some(block_id) = block_id else {
+        return Ok(starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1)));
+    };
+
+    if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
+        return Err(StarknetWsApiError::Pending);
     }
 
-    'backfill: loop {
-        let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+    let view = match starknet.resolve_view_on(block_id) {
+        Ok(view) => view,
+        Err(crate::StarknetRpcApiError::BlockNotFound) => return Err(StarknetWsApiError::BlockNotFound),
+        Err(crate::StarknetRpcApiError::NoBlocks) => return Err(StarknetWsApiError::NoBlocks),
+        Err(err) => return Err(StarknetWsApiError::internal_server_error(err.to_string())),
+    };
+    let latest_block = starknet.backend.view_on_latest().latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
+    let block_n = view.latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
 
-        while backfill_to_block_n.is_some_and(|end_block_n| next_block_n <= end_block_n) {
-            if sink.is_closed() {
-                return Ok(());
-            }
-            if ctx.is_cancelled() {
-                return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
-            }
+    if block_n < latest_block.saturating_sub(BLOCK_PAST_LIMIT) {
+        return Err(StarknetWsApiError::TooManyBlocksBack);
+    }
 
-            match reorgs.try_recv() {
-                Ok(reorg) => {
-                    super::send_reorg_notification(&sink, &reorg).await?;
-                    next_block_n = reorg.first_reverted_block_n;
-                    continue 'backfill;
-                }
-                Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
-                    return Err(super::missed_reorg_notifications_error());
-                }
-                Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
-                    return Err(crate::errors::StarknetWsApiError::Internal);
-                }
-                Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
-            }
+    Ok(block_n)
+}
 
-            if ctx.is_cancelled() {
-                return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
-            }
-            let mut live_reorgs = Some(&mut reorgs);
-            if let Some(reorg) = send_block_events(
-                starknet,
-                &sink,
-                &address_filter,
-                &keys,
-                &mut live_reorgs,
-                next_block_n,
-                &requested_finality,
-            )
-            .await?
-            {
-                super::send_reorg_notification(&sink, &reorg).await?;
-                next_block_n = reorg.first_reverted_block_n;
-                continue 'backfill;
-            }
-            next_block_n = next_block_n.saturating_add(1);
+async fn backfill_events(
+    starknet: &crate::Starknet,
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+    ctx: &crate::WsSubscriptionGuard,
+    address_filter: &AddressSubscriptionFilter,
+    keys: &Option<Vec<Vec<Felt>>>,
+    reorgs: &mut ReorgStream,
+    next_block_n: &mut u64,
+    requested_finality: &FinalityStatus,
+) -> Result<BackfillResult, StarknetWsApiError> {
+    let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+
+    while backfill_to_block_n.is_some_and(|end_block_n| *next_block_n <= end_block_n) {
+        if sink.is_closed() {
+            return Ok(BackfillResult::Closed);
+        }
+        if ctx.is_cancelled() {
+            return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
         }
 
-        let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
-        heads.set_start_from(next_block_n);
+        match reorgs.try_recv() {
+            Ok(reorg) => {
+                super::send_reorg_notification(sink, &reorg).await?;
+                *next_block_n = reorg.first_reverted_block_n;
+                return Ok(BackfillResult::Restart);
+            }
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                return Err(super::missed_reorg_notifications_error());
+            }
+            Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                return Err(crate::errors::StarknetWsApiError::Internal);
+            }
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
+        }
 
-        loop {
-            let block_view = tokio::select! {
-                block_view = heads.next_block_view() => block_view,
-                reorg = reorgs.recv() => {
-                    match reorg {
-                        Ok(reorg) => {
-                            super::send_reorg_notification(&sink, &reorg).await?;
-                            next_block_n = reorg.first_reverted_block_n;
-                            continue 'backfill;
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                            return Err(super::missed_reorg_notifications_error());
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            return Err(crate::errors::StarknetWsApiError::Internal);
-                        }
-                    }
-                },
-                _ = sink.closed() => return Ok(()),
-                _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::SubscriptionClosed),
-            };
+        if ctx.is_cancelled() {
+            return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
+        }
+        let mut live_reorgs = Some(&mut *reorgs);
+        if let Some(reorg) =
+            send_block_events(starknet, sink, address_filter, keys, &mut live_reorgs, *next_block_n, requested_finality)
+                .await?
+        {
+            super::send_reorg_notification(sink, &reorg).await?;
+            *next_block_n = reorg.first_reverted_block_n;
+            return Ok(BackfillResult::Restart);
+        }
+        *next_block_n = (*next_block_n).saturating_add(1);
+    }
 
-            let block_number = block_view.block_number();
-            if block_view.is_confirmed() {
-                match crate::resolve_live_confirmed_head(
-                    &starknet.backend,
-                    &mut reorgs,
-                    block_number,
-                    super::missed_reorg_notifications_error(),
-                )? {
-                    crate::LiveConfirmedHeadResolution::Block(_) => {}
-                    crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
-                        super::send_reorg_notification(&sink, &reorg).await?;
-                        next_block_n = reorg.first_reverted_block_n;
-                        continue 'backfill;
+    Ok(BackfillResult::Complete)
+}
+
+async fn stream_live_events(
+    starknet: &crate::Starknet,
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+    ctx: &crate::WsSubscriptionGuard,
+    address_filter: &AddressSubscriptionFilter,
+    keys: &Option<Vec<Vec<Felt>>>,
+    reorgs: &mut ReorgStream,
+    next_block_n: &mut u64,
+    requested_finality: &FinalityStatus,
+) -> Result<LiveResult, StarknetWsApiError> {
+    let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
+    heads.set_start_from(*next_block_n);
+
+    loop {
+        let block_view = tokio::select! {
+            block_view = heads.next_block_view() => block_view,
+            reorg = reorgs.recv() => {
+                match reorg {
+                    Ok(reorg) => {
+                        super::send_reorg_notification(sink, &reorg).await?;
+                        *next_block_n = reorg.first_reverted_block_n;
+                        return Ok(LiveResult::Restart);
                     }
-                    crate::LiveConfirmedHeadResolution::RetryBackfill => {
-                        next_block_n = block_number;
-                        continue 'backfill;
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        return Err(super::missed_reorg_notifications_error());
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        return Err(crate::errors::StarknetWsApiError::Internal);
                     }
                 }
-            }
-            let mut live_reorgs = Some(&mut reorgs);
-            if let Some(reorg) = send_block_events(
-                starknet,
-                &sink,
-                &address_filter,
-                &keys,
-                &mut live_reorgs,
+            },
+            _ = sink.closed() => return Ok(LiveResult::Closed),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::SubscriptionClosed),
+        };
+
+        let block_number = block_view.block_number();
+        if block_view.is_confirmed() {
+            match crate::resolve_live_confirmed_head(
+                &starknet.backend,
+                reorgs,
                 block_number,
-                &requested_finality,
-            )
-            .await?
-            {
-                super::send_reorg_notification(&sink, &reorg).await?;
-                next_block_n = reorg.first_reverted_block_n;
-                continue 'backfill;
+                super::missed_reorg_notifications_error(),
+            )? {
+                crate::LiveConfirmedHeadResolution::Block(_) => {}
+                crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
+                    super::send_reorg_notification(sink, &reorg).await?;
+                    *next_block_n = reorg.first_reverted_block_n;
+                    return Ok(LiveResult::Restart);
+                }
+                crate::LiveConfirmedHeadResolution::RetryBackfill => {
+                    *next_block_n = block_number;
+                    return Ok(LiveResult::Restart);
+                }
             }
+        }
+        let mut live_reorgs = Some(&mut *reorgs);
+        if let Some(reorg) =
+            send_block_events(starknet, sink, address_filter, keys, &mut live_reorgs, block_number, requested_finality)
+                .await?
+        {
+            super::send_reorg_notification(sink, &reorg).await?;
+            *next_block_n = reorg.first_reverted_block_n;
+            return Ok(LiveResult::Restart);
         }
     }
 }
@@ -224,7 +283,7 @@ async fn send_block_events(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     address_filter: &AddressSubscriptionFilter,
     keys: &Option<Vec<Vec<Felt>>>,
-    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+    reorgs: &mut Option<&mut ReorgStream>,
     block_number: u64,
     requested_finality: &FinalityStatus,
 ) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
@@ -267,7 +326,7 @@ async fn send_block_events(
 }
 
 fn take_pending_reorg(
-    reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
+    reorgs: &mut Option<&mut ReorgStream>,
 ) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
     match reorgs.as_deref_mut() {
         Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
