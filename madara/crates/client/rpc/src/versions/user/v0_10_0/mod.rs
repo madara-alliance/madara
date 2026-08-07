@@ -141,7 +141,7 @@ type SubscriptionItemTransactionStatus = methods::ws::SubscriptionItem<mp_rpc::v
 #[versioned_rpc("V0_10_0", "starknet")]
 pub trait StarknetWsRpcApi {
     #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = SubscriptionItemNewHeads, param_kind = map)]
-    async fn subscribe_new_heads(&self, block: BlockId) -> jsonrpsee::core::SubscriptionResult;
+    async fn subscribe_new_heads(&self, block_id: Option<BlockId>) -> jsonrpsee::core::SubscriptionResult;
 
     #[subscription(
         name = "subscribeEvents",

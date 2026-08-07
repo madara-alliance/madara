@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use super::{ADDRESS_FILTER_LIMIT, BLOCK_PAST_LIMIT};
 
 type ReorgStream = mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>;
+type EventEmissionKey = (Felt, u64, TxnFinalityStatus);
 
 enum BackfillResult {
     Restart,
@@ -143,6 +144,7 @@ async fn backfill_events(
     state: &mut EventSubscriptionState<'_>,
 ) -> Result<BackfillResult, StarknetWsApiError> {
     let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
+    let mut emitted = HashSet::new();
 
     while backfill_to_block_n.is_some_and(|end_block_n| *state.next_block_n <= end_block_n) {
         if state.sink.is_closed() {
@@ -170,18 +172,8 @@ async fn backfill_events(
         if state.ctx.is_cancelled() {
             return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
         }
-        let mut live_reorgs = Some(&mut *state.reorgs);
-        if let Some(reorg) = send_block_events(
-            starknet,
-            state.sink,
-            state.address_filter,
-            state.keys,
-            &mut live_reorgs,
-            *state.next_block_n,
-            state.requested_finality,
-        )
-        .await?
-        {
+        let block_number = *state.next_block_n;
+        if let Some(reorg) = send_block_events(starknet, state, block_number, &mut emitted).await? {
             super::send_reorg_notification(state.sink, &reorg).await?;
             *state.next_block_n = reorg.first_reverted_block_n;
             return Ok(BackfillResult::Restart);
@@ -198,6 +190,11 @@ async fn stream_live_events(
 ) -> Result<LiveResult, StarknetWsApiError> {
     let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
     heads.set_start_from(*state.next_block_n);
+    let mut current_preconfirmed = starknet
+        .backend
+        .block_view_on_preconfirmed_or_fake()
+        .or_internal_server_error("SubscribeEvents failed to create preconfirmed block view")?;
+    let mut emitted = HashSet::new();
 
     loop {
         let block_view = tokio::select! {
@@ -216,6 +213,22 @@ async fn stream_live_events(
                         return Err(crate::errors::StarknetWsApiError::Internal);
                     }
                 }
+            },
+            _ = current_preconfirmed.wait_until_outdated() => {
+                current_preconfirmed.refresh();
+                if let Some(reorg) = send_block_events(
+                    starknet,
+                    state,
+                    current_preconfirmed.block_number(),
+                    &mut emitted,
+                )
+                .await?
+                {
+                    super::send_reorg_notification(state.sink, &reorg).await?;
+                    *state.next_block_n = reorg.first_reverted_block_n;
+                    return Ok(LiveResult::Restart);
+                }
+                continue;
             },
             _ = state.sink.closed() => return Ok(LiveResult::Closed),
             _ = state.ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::SubscriptionClosed),
@@ -241,21 +254,20 @@ async fn stream_live_events(
                 }
             }
         }
-        let mut live_reorgs = Some(&mut *state.reorgs);
-        if let Some(reorg) = send_block_events(
-            starknet,
-            state.sink,
-            state.address_filter,
-            state.keys,
-            &mut live_reorgs,
-            block_number,
-            state.requested_finality,
-        )
-        .await?
-        {
+        if let Some(reorg) = send_block_events(starknet, state, block_number, &mut emitted).await? {
             super::send_reorg_notification(state.sink, &reorg).await?;
             *state.next_block_n = reorg.first_reverted_block_n;
             return Ok(LiveResult::Restart);
+        }
+
+        if let Some(mut preconfirmed) = block_view.into_preconfirmed() {
+            preconfirmed.refresh();
+            current_preconfirmed = preconfirmed;
+        } else {
+            current_preconfirmed = starknet
+                .backend
+                .block_view_on_preconfirmed_or_fake()
+                .or_internal_server_error("SubscribeEvents failed to refresh preconfirmed block view")?;
         }
     }
 }
@@ -280,12 +292,9 @@ fn validate_keys(keys: &Option<Vec<Vec<Felt>>>) -> Result<(), StarknetWsApiError
 
 async fn send_block_events(
     starknet: &crate::Starknet,
-    sink: &jsonrpsee::core::server::SubscriptionSink,
-    address_filter: &AddressSubscriptionFilter,
-    keys: &Option<Vec<Vec<Felt>>>,
-    reorgs: &mut Option<&mut ReorgStream>,
+    state: &mut EventSubscriptionState<'_>,
     block_number: u64,
-    requested_finality: &FinalityStatus,
+    emitted: &mut HashSet<EventEmissionKey>,
 ) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
     let view = starknet.backend.view_on_latest();
     let latest_l1_confirmed_block_n = view.latest_l1_confirmed_block_n();
@@ -295,43 +304,41 @@ async fn send_block_events(
             start_block: block_number,
             start_event_index: 0,
             end_block: block_number,
-            from_address: address_filter.db_from_address(),
-            keys_pattern: keys.clone(),
+            from_address: state.address_filter.db_from_address(),
+            keys_pattern: state.keys.clone(),
             max_events: usize::MAX,
         })
         .context("Error getting filtered events")
         .or_internal_server_error("Failed to retrieve filtered events")?;
 
-    if let Some(reorg) = take_pending_reorg(reorgs)? {
+    if let Some(reorg) = take_pending_reorg(state.reorgs)? {
         return Ok(Some(reorg));
     }
 
     for event in events {
-        if let Some(reorg) = take_pending_reorg(reorgs)? {
+        if let Some(reorg) = take_pending_reorg(state.reorgs)? {
             return Ok(Some(reorg));
         }
-        if !address_filter.matches(&event) {
+        if !state.address_filter.matches(&event) {
             continue;
         }
 
         let finality_status = event_finality_status(&event, latest_l1_confirmed_block_n);
-        if !subscription_allows_finality(requested_finality, finality_status) {
+        if !subscription_allows_finality(state.requested_finality, finality_status) {
+            continue;
+        }
+        if !emitted.insert((event.transaction_hash, event.event_index_in_block, finality_status)) {
             continue;
         }
 
-        send_event(event, finality_status, sink).await?;
+        send_event(event, finality_status, state.sink).await?;
     }
 
     Ok(None)
 }
 
-fn take_pending_reorg(
-    reorgs: &mut Option<&mut ReorgStream>,
-) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
-    match reorgs.as_deref_mut() {
-        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error),
-        None => Ok(None),
-    }
+fn take_pending_reorg(reorgs: &mut ReorgStream) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
+    crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error)
 }
 
 fn subscription_allows_finality(requested_finality: &FinalityStatus, event_finality: TxnFinalityStatus) -> bool {
@@ -584,6 +591,52 @@ mod test {
         assert_eq!(item.result.finality_status, TxnFinalityStatus::PreConfirmed);
         assert!(item.result.emitted_event.block_number.is_none());
         assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+    }
+
+    #[tokio::test]
+    async fn subscribe_events_preconfirmed_append_emits_only_new_events_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: 0,
+                protocol_version: StarknetVersion::V0_13_2,
+                ..Default::default()
+            }))
+            .expect("Failed to create empty preconfirmed block");
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+        let mut sub = client
+            .subscribe_events(None, None, None, Some(FinalityStatus::PreConfirmed))
+            .await
+            .expect("Failed subscription");
+
+        let event_from_address = Felt::from_hex_unchecked("0x2345");
+        let first_hash = Felt::from_hex_unchecked("0x4646");
+        let second_hash = Felt::from_hex_unchecked("0x4747");
+        for transaction_hash in [first_hash, second_hash] {
+            let executed = vec![PreconfirmedExecutedTransaction {
+                transaction: transaction_with_event(event_from_address, transaction_hash, event_from_address),
+                state_diff: Default::default(),
+                declared_class: None,
+                arrived_at: Default::default(),
+                paid_fee_on_l1: None,
+            }];
+            backend
+                .write_access()
+                .append_to_preconfirmed(&executed, std::iter::empty())
+                .expect("Failed to append preconfirmed transaction");
+
+            let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+                .await
+                .expect("Timed out waiting for appended preconfirmed event")
+                .expect("Subscription closed unexpectedly")
+                .expect("Failed to retrieve event");
+
+            assert_eq!(item.result.finality_status, TxnFinalityStatus::PreConfirmed);
+            assert_eq!(item.result.emitted_event.transaction_hash, transaction_hash);
+        }
     }
 
     #[tokio::test]

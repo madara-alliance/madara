@@ -1,13 +1,12 @@
 use mp_rpc::v0_10_2::{BlockId, BlockTag, FinalityStatus, SubscriptionTag, TxnStatusWithoutL1};
 use starknet_types_core::felt::Felt;
 
-use crate::errors::StarknetWsApiError;
+use crate::versions::user::v0_10_0::methods::ws::starknet_unsubscribe::starknet_unsubscribe;
+use crate::versions::user::v0_10_0::methods::ws::subscribe_new_transaction_receipts::subscribe_new_transaction_receipts_with_reorg;
 use crate::versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server;
 
-use super::starknet_unsubscribe::*;
 use super::subscribe_events::subscribe_events;
 use super::subscribe_new_heads::subscribe_new_heads;
-use super::subscribe_new_transaction_receipts::subscribe_new_transaction_receipts_with_reorg;
 use super::subscribe_new_transactions::subscribe_new_transactions_with_reorg;
 use super::subscribe_transaction_status::subscribe_transaction_status;
 
@@ -58,11 +57,6 @@ impl StarknetWsRpcApiV0_10_2Server for crate::Starknet {
         finality_status: Option<Vec<FinalityStatus>>,
         sender_address: Option<Vec<Felt>>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        if sender_address.as_ref().map_or(0, Vec::len) as u64 > super::ADDRESS_FILTER_LIMIT {
-            subscription_sink.reject(StarknetWsApiError::TooManyAddressesInFilter).await;
-            return Ok(());
-        }
-
         Ok(subscribe_new_transaction_receipts_with_reorg(self, subscription_sink, finality_status, sender_address)
             .await?)
     }
@@ -232,6 +226,27 @@ mod test {
             .expect("Waiting for block header");
 
         assert_eq!(next.result, expected);
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_heads_defaults_to_latest_when_block_id_missing_v0_10_0() {
+        let (backend, starknet) = rpc_test_setup();
+        let expected = add_block_at(&backend, 0);
+        let (_handle, server_url) = start_server_v0_10_0(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut sub = StarknetWsRpcApiV0_10_0Client::subscribe_new_heads(&client, None)
+            .await
+            .expect("starknet_subscribeNewHeads");
+
+        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for block header")
+            .expect("Waiting for block header")
+            .expect("Waiting for block header");
+
+        let item = serde_json::to_value(next).expect("Serializing v0.10.0 header item");
+        assert_eq!(item.get("result"), Some(&serde_json::to_value(expected).expect("Serializing expected header")));
     }
 
     #[tokio::test]

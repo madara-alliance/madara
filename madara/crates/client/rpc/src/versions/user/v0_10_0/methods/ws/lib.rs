@@ -1,4 +1,4 @@
-use mp_rpc::v0_10_0::{BlockId, FinalityStatus, TxnStatusWithoutL1};
+use mp_rpc::v0_10_0::{BlockId, BlockTag, FinalityStatus, TxnStatusWithoutL1};
 use starknet_types_core::felt::Felt;
 
 use crate::versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server;
@@ -18,9 +18,10 @@ impl StarknetWsRpcApiV0_10_0Server for crate::Starknet {
     async fn subscribe_new_heads(
         &self,
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
-        block: BlockId,
+        block_id: Option<BlockId>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_new_heads_v0_10_2(self, subscription_sink, block).await?)
+        Ok(subscribe_new_heads_v0_10_2(self, subscription_sink, block_id.unwrap_or(BlockId::Tag(BlockTag::Latest)))
+            .await?)
     }
 
     async fn subscribe_events(
