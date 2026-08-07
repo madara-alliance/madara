@@ -11,7 +11,6 @@ const NEW_HEADS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewHeads";
 const EVENTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionEvents";
 const TRANSACTION_STATUS_NOTIFICATION_METHOD: &str = "starknet_subscriptionTransactionStatus";
 const NEW_TRANSACTION_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransaction";
-const NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransactionReceipts";
 
 #[derive(serde::Serialize)]
 struct StarknetSubscriptionNotification<'a, T> {
@@ -101,7 +100,6 @@ mod tests {
         assert_eq!(EVENTS_NOTIFICATION_METHOD, "starknet_subscriptionEvents");
         assert_eq!(TRANSACTION_STATUS_NOTIFICATION_METHOD, "starknet_subscriptionTransactionStatus");
         assert_eq!(NEW_TRANSACTION_NOTIFICATION_METHOD, "starknet_subscriptionNewTransaction");
-        assert_eq!(NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD, "starknet_subscriptionNewTransactionReceipts");
         assert_eq!(REORG_NOTIFICATION_METHOD, "starknet_subscriptionReorg");
 
         let result = json!({ "block_hash": "0x1" });
