@@ -23,6 +23,10 @@ pub const RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS: u64 = 60 * 60;
 /// is allowed to keep in memory per connection.
 pub const RPC_DEFAULT_MESSAGE_CAPACITY_PER_CONN: u32 = 64;
 
+const fn default_rpc_ws_inactive_timeout_secs() -> u64 {
+    RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cors {
     /// All hosts allowed.
@@ -130,6 +134,7 @@ pub struct RpcParams {
         value_name = "SECONDS",
         default_value_t = RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS
     )]
+    #[serde(default = "default_rpc_ws_inactive_timeout_secs")]
     pub rpc_ws_inactive_timeout_secs: u64,
 
     /// The maximum number of messages that can be kept in memory at a given time, per connection.
