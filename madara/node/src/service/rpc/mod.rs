@@ -28,6 +28,7 @@ pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
+    transaction_lookup_provider: MakeTransactionLookupSwitch,
     tx_status_watcher: Option<Arc<Mempool>>,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
@@ -40,12 +41,14 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
         tx_status_watcher: Option<Arc<Mempool>>,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::User,
@@ -58,6 +61,7 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
         tx_status_watcher: Option<Arc<Mempool>>,
         block_prod_handle: BlockProductionHandle,
         mempool: Arc<Mempool>,
@@ -66,6 +70,7 @@ impl RpcService {
             config,
             backend,
             submit_tx_provider,
+            transaction_lookup_provider,
             tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::Admin,
@@ -81,6 +86,7 @@ impl Service for RpcService {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
+        let transaction_lookup_provider = self.transaction_lookup_provider.clone();
         let tx_status_watcher = self.tx_status_watcher.clone();
         let rpc_type = self.rpc_type.clone();
 

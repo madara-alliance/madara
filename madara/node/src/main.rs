@@ -416,6 +416,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.rpc_params.clone(),
         backend.clone(),
         tx_submit.clone(),
+        tx_lookup.clone(),
         Some(service_mempool.mempool()),
     );
 
@@ -425,6 +426,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.rpc_params.clone(),
         backend.clone(),
         tx_submit.clone(),
+        tx_lookup.clone(),
         Some(service_mempool.mempool()),
         service_block_production.handle(),
         service_mempool.mempool(),
