@@ -637,15 +637,6 @@ pub(crate) mod tests {
         )
     }
 
-    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
-        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
-    }
-
-    fn write_invalid_saved_mempool_tx(backend: &mc_db::MadaraBackend) {
-        let cf = backend.db.inner_db().cf_handle("mempool_transactions").expect("mempool column should exist");
-        backend.db.inner_db().put_cf(&cf, b"invalid-key", b"invalid-value").expect("writing invalid row should work");
-    }
-
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
