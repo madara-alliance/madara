@@ -2,13 +2,15 @@
 
 ## Summary
 
-Validate the PR 1012 websocket implementation against a real Madara devnet Docker image, not only unit tests. The target image for the current head is expected to be:
+Validate the PR 1012 websocket implementation against a real Madara devnet Docker image, not only unit tests.
+The target image for the current head is expected to be:
 
 ```text
 ghcr.io/madara-alliance/madara:manual-f02ede1
 ```
 
-Run Madara in devnet mode with a 10-second block time, submit live STRK transfers between two predeployed accounts, and verify websocket behavior for all supported v0.10.x subscription methods.
+Run Madara in devnet mode with a 10-second block time, submit live STRK transfers between two predeployed
+accounts, and verify websocket behavior for all supported v0.10.x subscription methods.
 
 ## Devnet Harness
 
@@ -86,7 +88,8 @@ docker run -d --platform linux/amd64 \
   - verify at least one expected frame per active client
   - unsubscribe half
   - verify remaining clients continue and unsubscribed clients stop
-- Run a slow-reader check where one client stays connected without reading frames for several blocks while other clients continue receiving frames.
+- Run a slow-reader check where one client stays connected without reading frames for several blocks while other clients
+  continue receiving frames.
 
 ## Acceptance Criteria
 
