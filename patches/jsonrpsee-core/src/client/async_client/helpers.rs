@@ -98,6 +98,14 @@ pub(crate) fn process_subscription_response(
 	response: SubscriptionResponse<JsonValue>,
 ) -> Result<(), Option<SubscriptionId<'static>>> {
 	let sub_id = response.params.subscription.into_owned();
+	process_subscription_response_from_parts(manager, sub_id, response.params.result)
+}
+
+pub(crate) fn process_subscription_response_from_parts(
+	manager: &mut RequestManager,
+	sub_id: SubscriptionId<'static>,
+	result: JsonValue,
+) -> Result<(), Option<SubscriptionId<'static>>> {
 	let request_id = match manager.get_request_id_by_subscription_id(&sub_id) {
 		Some(request_id) => request_id,
 		None => {
@@ -107,7 +115,7 @@ pub(crate) fn process_subscription_response(
 	};
 
 	match manager.as_subscription_mut(&request_id) {
-		Some(send_back_sink) => match send_back_sink.try_send(response.params.result) {
+		Some(send_back_sink) => match send_back_sink.try_send(result) {
 			Ok(()) => Ok(()),
 			Err(err) => {
 				tracing::debug!(target: LOG_TARGET, "Dropping subscription {:?} error: {:?}", sub_id, err);

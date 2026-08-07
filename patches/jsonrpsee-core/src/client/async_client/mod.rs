@@ -46,9 +46,9 @@ use std::borrow::Cow as StdCow;
 use core::time::Duration;
 use helpers::{
 	build_unsubscribe_message, call_with_timeout, process_batch_response, process_notification,
-	process_single_response, process_subscription_response, stop_subscription,
+	process_single_response, process_subscription_response, process_subscription_response_from_parts, stop_subscription,
 };
-use jsonrpsee_types::{InvalidRequestId, ResponseSuccess, TwoPointZero};
+use jsonrpsee_types::{InvalidRequestId, ResponseSuccess, SubscriptionId, TwoPointZero};
 use manager::RequestManager;
 use std::sync::Arc;
 
@@ -64,6 +64,13 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
 
 use self::utils::{InactivityCheck, IntervalStream};
+
+fn starknet_subscription_parts(params: &serde_json::Value) -> Option<(SubscriptionId<'static>, serde_json::Value)> {
+	let params = params.as_object()?;
+	let subscription_id = SubscriptionId::try_from(params.get("subscription_id")?.clone()).ok()?;
+	let result = params.get("result")?.clone();
+	Some((subscription_id, result))
+}
 
 use super::{generate_batch_id_range, FrontToBack, IdKind, RequestIdManager};
 
@@ -141,7 +148,7 @@ impl ThreadSafeRequestManager {
 		Self::default()
 	}
 
-	pub(crate) fn lock(&self) -> std::sync::MutexGuard<RequestManager> {
+	pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, RequestManager> {
 		self.0.lock().expect(NOT_POISONED)
 	}
 }
@@ -730,7 +737,15 @@ fn handle_backend_messages<R: TransportReceiverT>(
 				}
 				// Incoming Notification
 				else if let Ok(notif) = serde_json::from_slice::<Notification<_>>(raw) {
-					process_notification(&mut manager.lock(), notif);
+					if let Some((sub_id, result)) = starknet_subscription_parts(&notif.params) {
+						match process_subscription_response_from_parts(&mut manager.lock(), sub_id, result) {
+							Ok(()) => {}
+							Err(Some(sub_id)) => return Ok(vec![FrontToBack::SubscriptionClosed(sub_id)]),
+							Err(None) => process_notification(&mut manager.lock(), notif),
+						}
+					} else {
+						process_notification(&mut manager.lock(), notif);
+					}
 				} else {
 					return Err(unparse_error(raw));
 				}
@@ -768,7 +783,15 @@ fn handle_backend_messages<R: TransportReceiverT>(
 							process_subscription_close_response(&mut manager.lock(), response);
 						} else if let Ok(notif) = serde_json::from_str::<Notification<_>>(r.get()) {
 							got_notif = true;
-							process_notification(&mut manager.lock(), notif);
+							if let Some((sub_id, result)) = starknet_subscription_parts(&notif.params) {
+								match process_subscription_response_from_parts(&mut manager.lock(), sub_id, result) {
+									Ok(()) => {}
+									Err(None) => process_notification(&mut manager.lock(), notif),
+									Err(Some(sub_id)) => messages.push(FrontToBack::SubscriptionClosed(sub_id)),
+								}
+							} else {
+								process_notification(&mut manager.lock(), notif);
+							}
 						} else {
 							return Err(unparse_error(raw));
 						};

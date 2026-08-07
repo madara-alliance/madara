@@ -145,6 +145,7 @@ impl SubscriptionMessage {
 		Ok(Self::from_complete_message(json))
 	}
 
+	/// Create a subscription message from an already serialized JSON-RPC notification.
 	pub fn from_complete_message(msg: String) -> Self {
 		SubscriptionMessage(SubscriptionMessageInner::Complete(msg))
 	}
@@ -429,7 +430,7 @@ impl Subscription {
 	}
 
 	/// Get the subscription ID
-	pub fn subscription_id(&self) -> &SubscriptionId {
+	pub fn subscription_id(&self) -> &SubscriptionId<'_> {
 		&self.sub_id
 	}
 
