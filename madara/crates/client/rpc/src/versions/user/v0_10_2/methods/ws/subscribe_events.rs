@@ -28,6 +28,16 @@ struct AddressSubscriptionFilter {
     allowed_addresses: Option<HashSet<Felt>>,
 }
 
+struct EventSubscriptionState<'a> {
+    sink: &'a jsonrpsee::core::server::SubscriptionSink,
+    ctx: &'a crate::WsSubscriptionGuard,
+    address_filter: &'a AddressSubscriptionFilter,
+    keys: &'a Option<Vec<Vec<Felt>>>,
+    reorgs: &'a mut ReorgStream,
+    next_block_n: &'a mut u64,
+    requested_finality: &'a FinalityStatus,
+}
+
 impl AddressSubscriptionFilter {
     fn new(address_filter: Option<&AddressFilter>) -> Self {
         let allowed_addresses = address_filter.and_then(AddressFilter::to_set);
@@ -80,35 +90,23 @@ pub async fn subscribe_events(
     let mut next_block_n = initial_event_block_n(starknet, block_id)?;
 
     loop {
-        match backfill_events(
-            starknet,
-            &sink,
-            &ctx,
-            &address_filter,
-            &keys,
-            &mut reorgs,
-            &mut next_block_n,
-            &requested_finality,
-        )
-        .await?
-        {
+        let mut state = EventSubscriptionState {
+            sink: &sink,
+            ctx: &ctx,
+            address_filter: &address_filter,
+            keys: &keys,
+            reorgs: &mut reorgs,
+            next_block_n: &mut next_block_n,
+            requested_finality: &requested_finality,
+        };
+
+        match backfill_events(starknet, &mut state).await? {
             BackfillResult::Restart => continue,
             BackfillResult::Complete => {}
             BackfillResult::Closed => return Ok(()),
         }
 
-        match stream_live_events(
-            starknet,
-            &sink,
-            &ctx,
-            &address_filter,
-            &keys,
-            &mut reorgs,
-            &mut next_block_n,
-            &requested_finality,
-        )
-        .await?
-        {
+        match stream_live_events(starknet, &mut state).await? {
             LiveResult::Restart => continue,
             LiveResult::Closed => return Ok(()),
         }
@@ -142,28 +140,22 @@ fn initial_event_block_n(starknet: &crate::Starknet, block_id: Option<BlockId>) 
 
 async fn backfill_events(
     starknet: &crate::Starknet,
-    sink: &jsonrpsee::core::server::SubscriptionSink,
-    ctx: &crate::WsSubscriptionGuard,
-    address_filter: &AddressSubscriptionFilter,
-    keys: &Option<Vec<Vec<Felt>>>,
-    reorgs: &mut ReorgStream,
-    next_block_n: &mut u64,
-    requested_finality: &FinalityStatus,
+    state: &mut EventSubscriptionState<'_>,
 ) -> Result<BackfillResult, StarknetWsApiError> {
     let backfill_to_block_n = starknet.backend.view_on_latest().latest_block_n();
 
-    while backfill_to_block_n.is_some_and(|end_block_n| *next_block_n <= end_block_n) {
-        if sink.is_closed() {
+    while backfill_to_block_n.is_some_and(|end_block_n| *state.next_block_n <= end_block_n) {
+        if state.sink.is_closed() {
             return Ok(BackfillResult::Closed);
         }
-        if ctx.is_cancelled() {
+        if state.ctx.is_cancelled() {
             return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
         }
 
-        match reorgs.try_recv() {
+        match state.reorgs.try_recv() {
             Ok(reorg) => {
-                super::send_reorg_notification(sink, &reorg).await?;
-                *next_block_n = reorg.first_reverted_block_n;
+                super::send_reorg_notification(state.sink, &reorg).await?;
+                *state.next_block_n = reorg.first_reverted_block_n;
                 return Ok(BackfillResult::Restart);
             }
             Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
@@ -175,19 +167,26 @@ async fn backfill_events(
             Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {}
         }
 
-        if ctx.is_cancelled() {
+        if state.ctx.is_cancelled() {
             return Err(crate::errors::StarknetWsApiError::SubscriptionClosed);
         }
-        let mut live_reorgs = Some(&mut *reorgs);
-        if let Some(reorg) =
-            send_block_events(starknet, sink, address_filter, keys, &mut live_reorgs, *next_block_n, requested_finality)
-                .await?
+        let mut live_reorgs = Some(&mut *state.reorgs);
+        if let Some(reorg) = send_block_events(
+            starknet,
+            state.sink,
+            state.address_filter,
+            state.keys,
+            &mut live_reorgs,
+            *state.next_block_n,
+            state.requested_finality,
+        )
+        .await?
         {
-            super::send_reorg_notification(sink, &reorg).await?;
-            *next_block_n = reorg.first_reverted_block_n;
+            super::send_reorg_notification(state.sink, &reorg).await?;
+            *state.next_block_n = reorg.first_reverted_block_n;
             return Ok(BackfillResult::Restart);
         }
-        *next_block_n = (*next_block_n).saturating_add(1);
+        *state.next_block_n = (*state.next_block_n).saturating_add(1);
     }
 
     Ok(BackfillResult::Complete)
@@ -195,25 +194,19 @@ async fn backfill_events(
 
 async fn stream_live_events(
     starknet: &crate::Starknet,
-    sink: &jsonrpsee::core::server::SubscriptionSink,
-    ctx: &crate::WsSubscriptionGuard,
-    address_filter: &AddressSubscriptionFilter,
-    keys: &Option<Vec<Vec<Felt>>>,
-    reorgs: &mut ReorgStream,
-    next_block_n: &mut u64,
-    requested_finality: &FinalityStatus,
+    state: &mut EventSubscriptionState<'_>,
 ) -> Result<LiveResult, StarknetWsApiError> {
     let mut heads = starknet.backend.subscribe_new_heads(SubscribeNewBlocksTag::Preconfirmed);
-    heads.set_start_from(*next_block_n);
+    heads.set_start_from(*state.next_block_n);
 
     loop {
         let block_view = tokio::select! {
             block_view = heads.next_block_view() => block_view,
-            reorg = reorgs.recv() => {
+            reorg = state.reorgs.recv() => {
                 match reorg {
                     Ok(reorg) => {
-                        super::send_reorg_notification(sink, &reorg).await?;
-                        *next_block_n = reorg.first_reverted_block_n;
+                        super::send_reorg_notification(state.sink, &reorg).await?;
+                        *state.next_block_n = reorg.first_reverted_block_n;
                         return Ok(LiveResult::Restart);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
@@ -224,37 +217,44 @@ async fn stream_live_events(
                     }
                 }
             },
-            _ = sink.closed() => return Ok(LiveResult::Closed),
-            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::SubscriptionClosed),
+            _ = state.sink.closed() => return Ok(LiveResult::Closed),
+            _ = state.ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::SubscriptionClosed),
         };
 
         let block_number = block_view.block_number();
         if block_view.is_confirmed() {
             match crate::resolve_live_confirmed_head(
                 &starknet.backend,
-                reorgs,
+                &mut *state.reorgs,
                 block_number,
                 super::missed_reorg_notifications_error(),
             )? {
                 crate::LiveConfirmedHeadResolution::Block(_) => {}
                 crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
-                    super::send_reorg_notification(sink, &reorg).await?;
-                    *next_block_n = reorg.first_reverted_block_n;
+                    super::send_reorg_notification(state.sink, &reorg).await?;
+                    *state.next_block_n = reorg.first_reverted_block_n;
                     return Ok(LiveResult::Restart);
                 }
                 crate::LiveConfirmedHeadResolution::RetryBackfill => {
-                    *next_block_n = block_number;
+                    *state.next_block_n = block_number;
                     return Ok(LiveResult::Restart);
                 }
             }
         }
-        let mut live_reorgs = Some(&mut *reorgs);
-        if let Some(reorg) =
-            send_block_events(starknet, sink, address_filter, keys, &mut live_reorgs, block_number, requested_finality)
-                .await?
+        let mut live_reorgs = Some(&mut *state.reorgs);
+        if let Some(reorg) = send_block_events(
+            starknet,
+            state.sink,
+            state.address_filter,
+            state.keys,
+            &mut live_reorgs,
+            block_number,
+            state.requested_finality,
+        )
+        .await?
         {
-            super::send_reorg_notification(sink, &reorg).await?;
-            *next_block_n = reorg.first_reverted_block_n;
+            super::send_reorg_notification(state.sink, &reorg).await?;
+            *state.next_block_n = reorg.first_reverted_block_n;
             return Ok(LiveResult::Restart);
         }
     }
