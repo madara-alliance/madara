@@ -1,5 +1,7 @@
 // Re-export unchanged WebSocket types from v0.10.0
-pub use crate::v0_10_0::{EmittedEventWithFinality, FinalityStatus, ReorgData, TxnStatusWithoutL1};
+pub use crate::v0_10_0::{
+    EmittedEventWithFinality, FinalityStatus, NewTxnStatus, ReorgData, TxnStatusWithoutL1, WsTxnStatusResult,
+};
 
 use serde::{Deserialize, Serialize};
 
