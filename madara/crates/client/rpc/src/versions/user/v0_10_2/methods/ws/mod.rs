@@ -41,7 +41,16 @@ pub async fn send_starknet_subscription<T: serde::Serialize>(
 
     let json = starknet_subscription_json(sink.subscription_id(), method, result)?;
     let msg = jsonrpsee::SubscriptionMessage::from_complete_message(json);
-    sink.send(msg).await.or_internal_server_error("Failed to send websocket notification")
+    match sink.send(msg).await {
+        Ok(()) => {
+            crate::metrics::ws_metrics().record_notification_sent(method);
+            Ok(())
+        }
+        Err(err) => {
+            crate::metrics::ws_metrics().record_notification_send_failure(method);
+            Err(err).or_internal_server_error("Failed to send websocket notification")
+        }
+    }
 }
 
 fn starknet_subscription_json<T: serde::Serialize>(
@@ -72,7 +81,9 @@ pub async fn send_reorg_notification(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     reorg: &mc_db::ReorgNotification,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    send_starknet_subscription(sink, REORG_NOTIFICATION_METHOD, &reorg_data(reorg)).await
+    send_starknet_subscription(sink, REORG_NOTIFICATION_METHOD, &reorg_data(reorg)).await?;
+    crate::metrics::ws_metrics().record_reorg_notification_sent();
+    Ok(())
 }
 
 pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {

@@ -24,6 +24,7 @@ mc-exec = { workspace = true }
 mc-mempool = { workspace = true }
 mc-settlement-client = { workspace = true }
 mc-submit-tx = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -49,6 +50,7 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
 ] }
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

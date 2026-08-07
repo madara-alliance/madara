@@ -26,7 +26,9 @@ pub async fn send_reorg_notification(
         REORG_NOTIFICATION_METHOD,
         &reorg_data(reorg),
     )
-    .await
+    .await?;
+    crate::metrics::ws_metrics().record_reorg_notification_sent();
+    Ok(())
 }
 
 pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {

@@ -10,7 +10,8 @@ pub async fn subscribe_new_heads(
     block_id: BlockId,
 ) -> Result<(), StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let ctx =
+        starknet.ws_handles.subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_NEW_HEADS).await;
 
     let mut block_n = match block_id {
         BlockId::Number(block_n) => {
@@ -66,6 +67,7 @@ pub async fn subscribe_new_heads(
                     continue 'backfill;
                 }
                 Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                    crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_NEW_HEADS);
                     return Err(super::missed_reorg_notifications_error());
                 }
                 Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
@@ -107,6 +109,7 @@ pub async fn subscribe_new_heads(
                             continue 'backfill;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_NEW_HEADS);
                             return Err(super::missed_reorg_notifications_error());
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {

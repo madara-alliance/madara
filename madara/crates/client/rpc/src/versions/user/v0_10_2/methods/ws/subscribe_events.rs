@@ -84,7 +84,7 @@ pub async fn subscribe_events(
     }
 
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_EVENTS).await;
     let requested_finality = finality_status.unwrap_or_default();
     let address_filter = AddressSubscriptionFilter::new(from_address.as_ref());
     let mut reorgs = starknet.backend.subscribe_reorgs();
@@ -161,6 +161,7 @@ async fn backfill_events(
                 return Ok(BackfillResult::Restart);
             }
             Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {
+                crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_EVENTS);
                 return Err(super::missed_reorg_notifications_error());
             }
             Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
@@ -207,6 +208,7 @@ async fn stream_live_events(
                         return Ok(LiveResult::Restart);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_EVENTS);
                         return Err(super::missed_reorg_notifications_error());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {

@@ -792,6 +792,7 @@ pub mod versions;
 mod block_id;
 mod constants;
 mod errors;
+mod metrics;
 mod types;
 
 use jsonrpsee::RpcModule;
@@ -1135,16 +1136,24 @@ pub(crate) struct WsSubscribeHandles {
     /// [DashMap::entry]: dashmap::DashMap::entry
     /// [Arc]: std::sync::Arc
     handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    counts_by_method: std::sync::Arc<dashmap::DashMap<&'static str, u64>>,
 }
 
 impl WsSubscribeHandles {
     pub fn new() -> Self {
-        Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
+        Self {
+            handles: std::sync::Arc::new(dashmap::DashMap::new()),
+            counts_by_method: std::sync::Arc::new(dashmap::DashMap::new()),
+        }
     }
 
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
-    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
+    pub async fn subscription_register(
+        &self,
+        id: jsonrpsee::types::SubscriptionId<'static>,
+        method: &'static str,
+    ) -> WsSubscriptionGuard {
         let id = match id {
             jsonrpsee::types::SubscriptionId::Num(id) => id,
             jsonrpsee::types::SubscriptionId::Str(id) => {
@@ -1157,8 +1166,20 @@ impl WsSubscribeHandles {
         let map = std::sync::Arc::clone(&self.handles);
 
         self.handles.insert(id, std::sync::Arc::clone(&handle));
+        let method_count = self.increment_method_count(method);
+        let metrics = crate::metrics::ws_metrics();
+        metrics.record_subscription_opened(method);
+        metrics.record_active_subscriptions(self.handles.len() as u64);
+        metrics.record_active_subscriptions_for_method(method, method_count);
 
-        WsSubscriptionGuard { id, _handle: handle, cancelled, map }
+        WsSubscriptionGuard {
+            id,
+            method,
+            _handle: handle,
+            cancelled,
+            map,
+            counts_by_method: std::sync::Arc::clone(&self.counts_by_method),
+        }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
@@ -1169,14 +1190,22 @@ impl WsSubscribeHandles {
             false
         }
     }
+
+    fn increment_method_count(&self, method: &'static str) -> u64 {
+        let mut count = self.counts_by_method.entry(method).or_insert(0);
+        *count += 1;
+        *count
+    }
 }
 
 pub(crate) struct WsSubscriptionGuard {
     id: u64,
+    method: &'static str,
     // Keep the registered handle alive until this guard is dropped.
     _handle: std::sync::Arc<WsSubscriptionHandle>,
     cancelled: tokio::sync::watch::Receiver<bool>,
     map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    counts_by_method: std::sync::Arc<dashmap::DashMap<&'static str, u64>>,
 }
 
 impl WsSubscriptionGuard {
@@ -1258,6 +1287,17 @@ pub(crate) fn resolve_live_confirmed_head(
 impl Drop for WsSubscriptionGuard {
     fn drop(&mut self) {
         self.map.remove(&self.id);
+        let method_count = {
+            let Some(mut count) = self.counts_by_method.get_mut(self.method) else {
+                return;
+            };
+            *count = count.saturating_sub(1);
+            *count
+        };
+        let metrics = crate::metrics::ws_metrics();
+        metrics.record_subscription_closed(self.method);
+        metrics.record_active_subscriptions(self.map.len() as u64);
+        metrics.record_active_subscriptions_for_method(self.method, method_count);
     }
 }
 

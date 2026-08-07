@@ -17,7 +17,10 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
     }
 
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let ctx = starknet
+        .ws_handles
+        .subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_NEW_TRANSACTION_RECEIPTS)
+        .await;
 
     let allowed_finality_status =
         finality_status.unwrap_or_else(|| vec![FinalityStatus::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
@@ -49,6 +52,7 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_NEW_TRANSACTION_RECEIPTS);
                         return Err(super::missed_reorg_notifications_error());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {

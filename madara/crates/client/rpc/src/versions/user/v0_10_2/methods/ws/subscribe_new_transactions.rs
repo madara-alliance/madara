@@ -40,7 +40,10 @@ async fn subscribe_new_transactions_inner(
         return Ok(());
     };
 
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+    let ctx = starknet
+        .ws_handles
+        .subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_NEW_TRANSACTIONS)
+        .await;
     let allowed_statuses =
         finality_status.unwrap_or_else(|| vec![TxnStatusWithoutL1::AcceptedOnL2]).into_iter().collect::<HashSet<_>>();
     let sender_address = crate::normalize_sender_address_filter(sender_address);
@@ -102,6 +105,7 @@ async fn subscribe_new_transactions_inner(
                         received_watch = None;
                     }
                     Err(crate::NewTransactionsWatchError::Lagged) => {
+                        crate::metrics::record_lagged_new_transaction(crate::metrics::SUBSCRIBE_NEW_TRANSACTIONS);
                         return Err(super::missed_received_transaction_notifications_error());
                     }
                 }
@@ -125,6 +129,7 @@ async fn subscribe_new_transactions_inner(
                         current_preconfirmed.refresh_with_candidates();
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        crate::metrics::record_lagged_reorg(crate::metrics::SUBSCRIBE_NEW_TRANSACTIONS);
                         return Err(super::missed_reorg_notifications_error());
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
