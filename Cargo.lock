@@ -8660,6 +8660,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-core"
 version = "0.22.5"
+source = "git+https://github.com/madara-alliance/jsonrpsee?rev=137d7507c2cfea0f527093c5a38926b5b31ea9f0#137d7507c2cfea0f527093c5a38926b5b31ea9f0"
 dependencies = [
  "anyhow",
  "async-trait",
