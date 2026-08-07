@@ -8007,7 +8007,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8660,7 +8660,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-core"
 version = "0.22.5"
-source = "git+https://github.com/madara-alliance/jsonrpsee?rev=137d7507c2cfea0f527093c5a38926b5b31ea9f0#137d7507c2cfea0f527093c5a38926b5b31ea9f0"
+source = "git+https://github.com/madara-alliance/jsonrpsee?rev=52c76441b922b9d1c6b260fcb29d62e94a8ca57c#52c76441b922b9d1c6b260fcb29d62e94a8ca57c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8742,8 +8742,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-types"
 version = "0.22.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "150d6168405890a7a3231a3c74843f58b8959471f6df76078db2619ddee1d07d"
+source = "git+https://github.com/madara-alliance/jsonrpsee?rev=52c76441b922b9d1c6b260fcb29d62e94a8ca57c#52c76441b922b9d1c6b260fcb29d62e94a8ca57c"
 dependencies = [
  "anyhow",
  "beef",
@@ -12528,7 +12527,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.35",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -12566,7 +12565,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -16698,7 +16697,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
