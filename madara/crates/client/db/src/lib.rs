@@ -409,7 +409,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             reorg_notifications,
-            custom_header: Mutex::new(None),
+            custom_headers: Mutex::new(std::collections::HashMap::new()),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)

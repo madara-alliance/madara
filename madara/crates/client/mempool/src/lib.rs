@@ -144,7 +144,6 @@ mod transaction_status;
 
 pub use inner::*;
 pub use notify::MempoolWriteAccess;
-pub use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
 pub mod metrics;
 
