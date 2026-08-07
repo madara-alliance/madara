@@ -179,9 +179,11 @@ pub async fn start_server(
         .serve(make_service);
 
     tracing::info!(
-        "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
+        "📱 Running {name} server at http://{}/rpc/v{}/ (websocket=ws://{}/rpc/v{}/, allowed origins={}, supported versions={})",
         local_addr.to_string(),
-        config.rpc_version_default,
+        rpc_version_default,
+        local_addr.to_string(),
+        rpc_version_default,
         format_cors(cors.as_ref()),
         format_rpc_versions(&supported_versions),
     );
