@@ -90,6 +90,7 @@ pub async fn start_server(
         .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
         .max_subscriptions_per_connection(max_subs_per_conn)
+        .set_id_provider(mc_rpc::StarknetSubscriptionIdProvider::default())
         .enable_ws_ping(ping_config)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)

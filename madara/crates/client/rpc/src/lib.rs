@@ -802,9 +802,25 @@ use mc_mempool::{
 use mc_submit_tx::{SubmitTransaction, TransactionLookup};
 use mp_transactions::{validated::ValidatedTransaction, Transaction};
 use mp_utils::service::ServiceContext;
-use std::{collections::HashSet, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::HashSet,
+    future::Future,
+    pin::Pin,
+    sync::{atomic::AtomicU64, atomic::Ordering, Arc},
+};
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+
+#[derive(Debug, Default)]
+pub struct StarknetSubscriptionIdProvider {
+    next: AtomicU64,
+}
+
+impl jsonrpsee::server::IdProvider for StarknetSubscriptionIdProvider {
+    fn next_id(&self) -> jsonrpsee::types::SubscriptionId<'static> {
+        self.next.fetch_add(1, Ordering::Relaxed).to_string().into()
+    }
+}
 
 /// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
@@ -1131,8 +1147,8 @@ impl WsSubscribeHandles {
     pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
         let id = match id {
             jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
+            jsonrpsee::types::SubscriptionId::Str(id) => {
+                id.parse().expect("Starknet subscription ids should be numeric strings")
             }
         };
 

@@ -150,6 +150,7 @@ mod test {
     async fn start_server(starknet: Starknet) -> (jsonrpsee::server::ServerHandle, String) {
         let server = jsonrpsee::server::Server::builder()
             .max_connections(1_024)
+            .set_id_provider(crate::StarknetSubscriptionIdProvider::default())
             .build(SERVER_ADDR)
             .await
             .expect("Starting server");
@@ -161,6 +162,7 @@ mod test {
     async fn start_server_v0_10_0(starknet: Starknet) -> (jsonrpsee::server::ServerHandle, String) {
         let server = jsonrpsee::server::Server::builder()
             .max_connections(1_024)
+            .set_id_provider(crate::StarknetSubscriptionIdProvider::default())
             .build(SERVER_ADDR)
             .await
             .expect("Starting server");

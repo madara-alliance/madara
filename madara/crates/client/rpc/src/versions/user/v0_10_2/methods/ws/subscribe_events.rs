@@ -456,7 +456,11 @@ mod test {
     }
 
     async fn start_server(starknet: Starknet) -> (jsonrpsee::server::ServerHandle, String) {
-        let server = jsonrpsee::server::Server::builder().build(SERVER_ADDR).await.expect("Starting server");
+        let server = jsonrpsee::server::Server::builder()
+            .set_id_provider(crate::StarknetSubscriptionIdProvider::default())
+            .build(SERVER_ADDR)
+            .await
+            .expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
         let handle = server.start(StarknetWsRpcApiV0_10_2Server::into_rpc(starknet));
         (handle, server_url)
