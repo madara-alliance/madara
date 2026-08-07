@@ -156,6 +156,7 @@ impl Service for RpcService {
                     max_payload_in_mib: config.rpc_max_request_size,
                     max_payload_out_mib: config.rpc_max_response_size,
                     max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
+                    ws_inactive_timeout_secs: config.rpc_ws_inactive_timeout_secs,
                     message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
                     methods,
                     metrics,

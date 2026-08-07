@@ -808,6 +808,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{atomic::AtomicU64, atomic::Ordering, Arc},
+    time::Instant,
 };
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -1171,10 +1172,18 @@ impl WsSubscribeHandles {
         metrics.record_subscription_opened(method);
         metrics.record_active_subscriptions(self.handles.len() as u64);
         metrics.record_active_subscriptions_for_method(method, method_count);
+        tracing::info!(
+            "WS subscription opened: method={} subscription_id={} active_subscriptions={} active_method_subscriptions={}",
+            method,
+            id,
+            self.handles.len(),
+            method_count
+        );
 
         WsSubscriptionGuard {
             id,
             method,
+            opened_at: Instant::now(),
             _handle: handle,
             cancelled,
             map,
@@ -1184,9 +1193,14 @@ impl WsSubscribeHandles {
 
     pub async fn subscription_close(&self, id: u64) -> bool {
         if let Some((_, handle)) = self.handles.remove(&id) {
+            tracing::info!("WS subscription close requested: subscription_id={} reason=starknet_unsubscribe", id);
             handle.cancel();
             true
         } else {
+            tracing::warn!(
+                "WS subscription close requested for unknown subscription: subscription_id={} reason=starknet_unsubscribe",
+                id
+            );
             false
         }
     }
@@ -1201,6 +1215,7 @@ impl WsSubscribeHandles {
 pub(crate) struct WsSubscriptionGuard {
     id: u64,
     method: &'static str,
+    opened_at: Instant,
     // Keep the registered handle alive until this guard is dropped.
     _handle: std::sync::Arc<WsSubscriptionHandle>,
     cancelled: tokio::sync::watch::Receiver<bool>,
@@ -1287,17 +1302,26 @@ pub(crate) fn resolve_live_confirmed_head(
 impl Drop for WsSubscriptionGuard {
     fn drop(&mut self) {
         self.map.remove(&self.id);
-        let method_count = {
-            let Some(mut count) = self.counts_by_method.get_mut(self.method) else {
-                return;
-            };
+        let method_count = if let Some(mut count) = self.counts_by_method.get_mut(self.method) {
             *count = count.saturating_sub(1);
             *count
+        } else {
+            0
         };
+        let age = self.opened_at.elapsed();
         let metrics = crate::metrics::ws_metrics();
         metrics.record_subscription_closed(self.method);
+        metrics.record_subscription_duration(self.method, age.as_secs_f64());
         metrics.record_active_subscriptions(self.map.len() as u64);
         metrics.record_active_subscriptions_for_method(self.method, method_count);
+        tracing::info!(
+            "WS subscription closed: method={} subscription_id={} age_secs={} active_subscriptions={} active_method_subscriptions={}",
+            self.method,
+            self.id,
+            age.as_secs(),
+            self.map.len(),
+            method_count
+        );
     }
 }
 

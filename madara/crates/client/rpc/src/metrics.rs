@@ -1,5 +1,7 @@
-use mc_telemetry::{register_counter_metric_instrument, register_gauge_metric_instrument};
-use opentelemetry::metrics::{Counter, Gauge};
+use mc_telemetry::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 
 pub const SUBSCRIBE_NEW_HEADS: &str = "subscribeNewHeads";
@@ -21,6 +23,7 @@ pub struct WsMetrics {
     notification_send_failures: Counter<u64>,
     reorg_notifications_sent: Counter<u64>,
     lagged_notifications: Counter<u64>,
+    subscription_duration: Histogram<f64>,
 }
 
 impl WsMetrics {
@@ -80,6 +83,12 @@ impl WsMetrics {
                 "Websocket subscription notifications missed because a receiver lagged".to_string(),
                 "notification".to_string(),
             ),
+            subscription_duration: register_histogram_metric_instrument(
+                &meter,
+                "ws_subscription_duration_seconds".to_string(),
+                "Websocket subscription lifetime".to_string(),
+                "s".to_string(),
+            ),
         }
     }
 
@@ -113,6 +122,10 @@ impl WsMetrics {
 
     pub fn record_lagged_notification(&self, method: &'static str, source: &'static str) {
         self.lagged_notifications.add(1, &[method_label(method), KeyValue::new("source", source)]);
+    }
+
+    pub fn record_subscription_duration(&self, method: &'static str, duration_secs: f64) {
+        self.subscription_duration.record(duration_secs, &[method_label(method)]);
     }
 }
 
