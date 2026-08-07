@@ -146,7 +146,7 @@ async fn subscribe_new_transactions_inner(
                             &starknet.backend,
                             reorgs,
                             block_number,
-                            super::missed_reorg_notifications_error(),
+                            super::missed_reorg_notifications_error,
                         )? {
                             crate::LiveConfirmedHeadResolution::Block(_) => {}
                             crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
@@ -365,7 +365,7 @@ fn take_pending_reorg(
     reorgs: &mut Option<&mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>>,
 ) -> Result<Option<mc_db::ReorgNotification>, crate::errors::StarknetWsApiError> {
     match reorgs.as_deref_mut() {
-        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
+        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error),
         None => Ok(None),
     }
 }

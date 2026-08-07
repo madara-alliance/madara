@@ -853,6 +853,111 @@ mod test {
     }
 
     #[tokio::test]
+    async fn subscribe_new_transaction_receipts_preconfirmed_append_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: 0,
+                protocol_version: StarknetVersion::V0_13_2,
+                ..Default::default()
+            }))
+            .expect("Failed to create empty preconfirmed block");
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![FinalityStatus::PreConfirmed]),
+            Some(vec![SENDER_ADDRESS]),
+        )
+        .await
+        .expect("Failed subscription");
+
+        let transaction_hash = Felt::from_hex_unchecked("0x4747");
+        let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
+        let executed = vec![PreconfirmedExecutedTransaction {
+            transaction: tx.clone(),
+            state_diff: Default::default(),
+            declared_class: None,
+            arrived_at: Default::default(),
+            paid_fee_on_l1: None,
+        }];
+        backend
+            .write_access()
+            .append_to_preconfirmed(&executed, std::iter::empty())
+            .expect("Failed to append preconfirmed transaction");
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for appended preconfirmed receipt")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve receipt");
+
+        assert_eq!(
+            item.result,
+            mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
+                transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::PreConfirmed),
+                block_hash: None,
+                block_number: 0,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_transaction_receipts_preconfirmed_append_v0_10_0() {
+        let (backend, starknet) = rpc_test_setup();
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: 0,
+                protocol_version: StarknetVersion::V0_13_2,
+                ..Default::default()
+            }))
+            .expect("Failed to create empty preconfirmed block");
+
+        let (_handle, server_url) = start_server_v0_10_0(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+        let mut sub = StarknetWsRpcApiV0_10_0Client::subscribe_new_transaction_receipts(
+            &client,
+            Some(vec![mp_rpc::v0_10_0::FinalityStatus::PreConfirmed]),
+            Some(vec![SENDER_ADDRESS]),
+        )
+        .await
+        .expect("Failed subscription");
+
+        let transaction_hash = Felt::from_hex_unchecked("0x4848");
+        let tx = transaction_with_receipt(SENDER_ADDRESS, transaction_hash);
+        let executed = vec![PreconfirmedExecutedTransaction {
+            transaction: tx.clone(),
+            state_diff: Default::default(),
+            declared_class: None,
+            arrived_at: Default::default(),
+            paid_fee_on_l1: None,
+        }];
+        backend
+            .write_access()
+            .append_to_preconfirmed(&executed, std::iter::empty())
+            .expect("Failed to append preconfirmed transaction");
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for appended preconfirmed receipt")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve receipt");
+
+        let item = serde_json::to_value(item).expect("Failed to serialize receipt item");
+        let expected = serde_json::to_value(mp_rpc::v0_10_0::TxnReceiptWithBlockInfo {
+            transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_0::TxnFinalityStatus::PreConfirmed),
+            block_hash: None,
+            block_number: 0,
+        })
+        .expect("Failed to serialize expected receipt");
+
+        assert_eq!(item.get("result"), Some(&expected));
+    }
+
+    #[tokio::test]
     async fn subscribe_new_transaction_receipts_reorg_then_resume_v0_10_2() {
         let (backend, starknet) = rpc_test_setup();
         let (_handle, server_url) = start_server(starknet).await;

@@ -227,7 +227,7 @@ async fn stream_live_events(
                 &starknet.backend,
                 &mut *state.reorgs,
                 block_number,
-                super::missed_reorg_notifications_error(),
+                super::missed_reorg_notifications_error,
             )? {
                 crate::LiveConfirmedHeadResolution::Block(_) => {}
                 crate::LiveConfirmedHeadResolution::Reorg(reorg) => {
@@ -329,7 +329,7 @@ fn take_pending_reorg(
     reorgs: &mut Option<&mut ReorgStream>,
 ) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
     match reorgs.as_deref_mut() {
-        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error()),
+        Some(reorgs) => crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error),
         None => Ok(None),
     }
 }

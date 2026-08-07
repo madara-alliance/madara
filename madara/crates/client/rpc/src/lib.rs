@@ -1202,11 +1202,11 @@ pub(crate) enum LiveConfirmedHeadResolution {
 
 pub(crate) fn try_recv_live_reorg(
     reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
-    missed_reorg_error: errors::StarknetWsApiError,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
 ) -> Result<Option<mc_db::ReorgNotification>, errors::StarknetWsApiError> {
     match reorgs.try_recv() {
         Ok(reorg) => Ok(Some(reorg)),
-        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => Err(missed_reorg_error),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => Err(missed_reorg_error()),
         Err(tokio::sync::broadcast::error::TryRecvError::Closed) => Err(errors::StarknetWsApiError::Internal),
         Err(tokio::sync::broadcast::error::TryRecvError::Empty) => Ok(None),
     }
@@ -1216,7 +1216,7 @@ pub(crate) fn resolve_live_confirmed_head(
     backend: &std::sync::Arc<mc_db::MadaraBackend>,
     reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
     next_block_n: u64,
-    missed_reorg_error: errors::StarknetWsApiError,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
 ) -> Result<LiveConfirmedHeadResolution, errors::StarknetWsApiError> {
     use crate::errors::ErrorExtWs;
 
@@ -1281,7 +1281,7 @@ mod test {
 
         backend.revert_to(&block_0_hash).expect("Revert should succeed");
 
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, StarknetWsApiError::Internal)
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, || StarknetWsApiError::Internal)
             .expect("Reorg resolution should succeed")
         {
             LiveConfirmedHeadResolution::Reorg(reorg) => {
@@ -1298,7 +1298,7 @@ mod test {
         let (backend, _rpc) = rpc_test_setup();
         let mut reorgs = backend.subscribe_reorgs();
 
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, StarknetWsApiError::Internal)
+        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, || StarknetWsApiError::Internal)
             .expect("Missing block should not error")
         {
             LiveConfirmedHeadResolution::RetryBackfill => {}
