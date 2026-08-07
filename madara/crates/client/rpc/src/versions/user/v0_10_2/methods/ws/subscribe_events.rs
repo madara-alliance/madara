@@ -366,13 +366,8 @@ async fn send_event(
     sink: &jsonrpsee::core::server::SubscriptionSink,
 ) -> Result<(), StarknetWsApiError> {
     let emitted_event = EmittedEvent::from(event);
-    let item = super::SubscriptionItem::new(
-        sink.subscription_id(),
-        mp_rpc::v0_10_2::EmittedEventWithFinality { emitted_event, finality_status },
-    );
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
-        .or_internal_server_error("Failed to create response message")?;
-    sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
+    let item = mp_rpc::v0_10_2::EmittedEventWithFinality { emitted_event, finality_status };
+    super::send_starknet_subscription(sink, super::EVENTS_NOTIFICATION_METHOD, &item).await
 }
 
 #[cfg(test)]
@@ -506,8 +501,8 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -531,7 +526,7 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve event");
 
-        assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+        assert_eq!(item.emitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -592,9 +587,9 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::PreConfirmed);
-        assert!(item.result.emitted_event.block_number.is_none());
-        assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+        assert_eq!(item.finality_status, TxnFinalityStatus::PreConfirmed);
+        assert!(item.emitted_event.block_number.is_none());
+        assert_eq!(item.emitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -638,8 +633,8 @@ mod test {
                 .expect("Subscription closed unexpectedly")
                 .expect("Failed to retrieve event");
 
-            assert_eq!(item.result.finality_status, TxnFinalityStatus::PreConfirmed);
-            assert_eq!(item.result.emitted_event.transaction_hash, transaction_hash);
+            assert_eq!(item.finality_status, TxnFinalityStatus::PreConfirmed);
+            assert_eq!(item.emitted_event.transaction_hash, transaction_hash);
         }
     }
 
@@ -716,11 +711,11 @@ mod test {
             .expect("Timed out waiting for replacement event")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement event");
-        let item: super::super::SubscriptionItem<mp_rpc::v0_10_2::EmittedEventWithFinality> =
+        let item: mp_rpc::v0_10_2::EmittedEventWithFinality =
             serde_json::from_value(next).expect("Failed to deserialize event item");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.result.emitted_event.event.from_address, event_from_address);
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emitted_event.event.from_address, event_from_address);
     }
 
     #[tokio::test]
@@ -789,10 +784,10 @@ mod test {
             .expect("Timed out waiting for replacement event")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement event");
-        let item: super::super::SubscriptionItem<mp_rpc::v0_10_2::EmittedEventWithFinality> =
+        let item: mp_rpc::v0_10_2::EmittedEventWithFinality =
             serde_json::from_value(next).expect("Failed to deserialize replacement event");
 
-        assert_eq!(item.result.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.result.emitted_event.transaction_hash, replacement_tx_hash);
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emitted_event.transaction_hash, replacement_tx_hash);
     }
 }

@@ -146,14 +146,8 @@ pub async fn subscribe_new_heads(
 async fn send_block_header(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     block_info: mp_block::MadaraBlockInfo,
-    block_n: u64,
+    _block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
     let header: BlockHeader = block_info.to_rpc_v0_10();
-    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
-        .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
-
-    sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
-
-    Ok(())
+    super::send_starknet_subscription(sink, super::NEW_HEADS_NOTIFICATION_METHOD, &header).await
 }

@@ -348,13 +348,12 @@ async fn send_transaction_item(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     item: TxnWithHashAndStatus,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let tx_hash = item.transaction.transaction_hash;
-    let item = super::SubscriptionItem::new(sink.subscription_id(), item);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-        format!("SubscribeNewTransactions failed to create response for tx hash {tx_hash:#x}")
-    })?;
-
-    sink.send(msg).await.or_internal_server_error("SubscribeNewTransactions failed to respond to websocket request")
+    crate::versions::user::v0_10_2::methods::ws::send_starknet_subscription(
+        sink,
+        super::NEW_TRANSACTION_NOTIFICATION_METHOD,
+        &item,
+    )
+    .await
 }
 
 fn mark_emitted(emitted: &mut HashSet<(Felt, TxnStatusWithoutL1)>, tx_hash: Felt, status: &TxnStatusWithoutL1) -> bool {

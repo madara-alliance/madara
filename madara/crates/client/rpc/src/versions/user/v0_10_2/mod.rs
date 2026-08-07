@@ -172,11 +172,11 @@ pub trait StarknetReadRpcApi {
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
 }
 
-type SubscriptionItemEvents = methods::ws::SubscriptionItem<mp_rpc::v0_10_2::EmittedEventWithFinality>;
-type SubscriptionItemNewHeads = methods::ws::SubscriptionItem<mp_rpc::v0_10_2::BlockHeader>;
-type SubscriptionItemNewTransactions = methods::ws::SubscriptionItem<mp_rpc::v0_10_2::TxnWithHashAndStatus>;
-type SubscriptionItemNewTransactionReceipts = methods::ws::SubscriptionItem<mp_rpc::v0_10_2::TxnReceiptWithBlockInfo>;
-type SubscriptionItemTransactionStatus = methods::ws::SubscriptionItem<mp_rpc::v0_10_2::TxnStatus>;
+type SubscriptionItemEvents = mp_rpc::v0_10_2::EmittedEventWithFinality;
+type SubscriptionItemNewHeads = mp_rpc::v0_10_2::BlockHeader;
+type SubscriptionItemNewTransactions = mp_rpc::v0_10_2::TxnWithHashAndStatus;
+type SubscriptionItemNewTransactionReceipts = mp_rpc::v0_10_2::TxnReceiptWithBlockInfo;
+type SubscriptionItemTransactionStatus = mp_rpc::v0_10_2::NewTxnStatus;
 
 #[versioned_rpc("V0_10_2", "starknet")]
 pub trait StarknetWsRpcApi {

@@ -7,22 +7,57 @@ pub mod subscribe_transaction_status;
 const BLOCK_PAST_LIMIT: u64 = 1024;
 const ADDRESS_FILTER_LIMIT: u64 = 128;
 const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
+const NEW_HEADS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewHeads";
+const EVENTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionEvents";
+const TRANSACTION_STATUS_NOTIFICATION_METHOD: &str = "starknet_subscriptionTransactionStatus";
+const NEW_TRANSACTION_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransaction";
+const NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransactionReceipts";
 
-#[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
-pub struct SubscriptionItem<T> {
-    subscription_id: String,
-    result: T,
+#[derive(serde::Serialize)]
+struct StarknetSubscriptionNotification<'a, T> {
+    jsonrpc: &'static str,
+    method: &'static str,
+    params: StarknetSubscriptionParams<'a, T>,
 }
 
-impl<T> SubscriptionItem<T> {
-    pub fn new(subscription_id: jsonrpsee::types::SubscriptionId, result: T) -> Self {
-        let subscription_id = match subscription_id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
-            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
-        };
+#[derive(serde::Serialize)]
+struct StarknetSubscriptionParams<'a, T> {
+    subscription_id: String,
+    result: &'a T,
+}
 
-        Self { subscription_id, result }
+fn subscription_id_string(subscription_id: jsonrpsee::types::SubscriptionId<'_>) -> String {
+    match subscription_id {
+        jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
+        jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
     }
+}
+
+pub async fn send_starknet_subscription<T: serde::Serialize>(
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+    method: &'static str,
+    result: &T,
+) -> Result<(), crate::errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    let json = starknet_subscription_json(sink.subscription_id(), method, result)?;
+    let msg = jsonrpsee::SubscriptionMessage::from_complete_message(json);
+    sink.send(msg).await.or_internal_server_error("Failed to send websocket notification")
+}
+
+fn starknet_subscription_json<T: serde::Serialize>(
+    subscription_id: jsonrpsee::types::SubscriptionId<'_>,
+    method: &'static str,
+    result: &T,
+) -> Result<String, crate::errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    let notification = StarknetSubscriptionNotification {
+        jsonrpc: "2.0",
+        method,
+        params: StarknetSubscriptionParams { subscription_id: subscription_id_string(subscription_id), result },
+    };
+    serde_json::to_string(&notification).or_internal_server_error("Failed to create websocket notification")
 }
 
 pub fn reorg_data(reorg: &mc_db::ReorgNotification) -> mp_rpc::v0_10_2::ReorgData {
@@ -38,13 +73,7 @@ pub async fn send_reorg_notification(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     reorg: &mc_db::ReorgNotification,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    use crate::errors::ErrorExtWs;
-
-    let msg =
-        jsonrpsee::SubscriptionMessage::new(REORG_NOTIFICATION_METHOD, sink.subscription_id(), &reorg_data(reorg))
-            .or_else_internal_server_error(|| "Failed to create reorg websocket notification")?;
-
-    sink.send(msg).await.or_internal_server_error("Failed to send reorg websocket notification")
+    send_starknet_subscription(sink, REORG_NOTIFICATION_METHOD, &reorg_data(reorg)).await
 }
 
 pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {
@@ -57,4 +86,69 @@ pub fn missed_received_transaction_notifications_error() -> crate::errors::Stark
     crate::errors::StarknetWsApiError::internal_server_error(
         "Missed new-transaction notifications; websocket subscription can no longer guarantee received transaction updates",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonrpsee::types::SubscriptionId;
+    use serde_json::json;
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn starknet_subscription_json_matches_openrpc_envelope() {
+        assert_eq!(NEW_HEADS_NOTIFICATION_METHOD, "starknet_subscriptionNewHeads");
+        assert_eq!(EVENTS_NOTIFICATION_METHOD, "starknet_subscriptionEvents");
+        assert_eq!(TRANSACTION_STATUS_NOTIFICATION_METHOD, "starknet_subscriptionTransactionStatus");
+        assert_eq!(NEW_TRANSACTION_NOTIFICATION_METHOD, "starknet_subscriptionNewTransaction");
+        assert_eq!(NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD, "starknet_subscriptionNewTransactionReceipts");
+        assert_eq!(REORG_NOTIFICATION_METHOD, "starknet_subscriptionReorg");
+
+        let result = json!({ "block_hash": "0x1" });
+        let notification =
+            starknet_subscription_json(SubscriptionId::Str("42".into()), NEW_HEADS_NOTIFICATION_METHOD, &result)
+                .expect("serialize notification");
+        let notification: serde_json::Value = serde_json::from_str(&notification).expect("parse notification");
+
+        assert_eq!(notification["jsonrpc"], "2.0");
+        assert_eq!(notification["method"], "starknet_subscriptionNewHeads");
+        assert_eq!(notification["params"]["subscription_id"], "42");
+        assert_eq!(notification["params"]["result"], result);
+        assert!(notification["params"].get("subscription").is_none());
+    }
+
+    #[test]
+    fn websocket_result_types_match_openrpc_shapes() {
+        let event = mp_rpc::v0_10_2::EmittedEventWithFinality {
+            emitted_event: mp_rpc::v0_10_2::EmittedEvent {
+                event: mp_rpc::v0_10_2::Event {
+                    from_address: Felt::from_hex_unchecked("0x1"),
+                    event_content: mp_rpc::v0_10_2::EventContent { data: vec![], keys: vec![] },
+                },
+                block_hash: None,
+                block_number: None,
+                transaction_hash: Felt::from_hex_unchecked("0x2"),
+                transaction_index: 0,
+                event_index: 0,
+            },
+            finality_status: mp_rpc::v0_10_2::TxnFinalityStatus::PreConfirmed,
+        };
+        let event = serde_json::to_value(event).expect("serialize event");
+        assert_eq!(event["finality_status"], "PRE_CONFIRMED");
+        assert!(event.get("PRE_CONFIRMED").is_none());
+
+        let status = mp_rpc::v0_10_2::NewTxnStatus {
+            transaction_hash: Felt::from_hex_unchecked("0x3"),
+            status: mp_rpc::v0_10_2::WsTxnStatusResult {
+                execution_status: None,
+                finality_status: mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2,
+                failure_reason: None,
+            },
+        };
+        let status = serde_json::to_value(status).expect("serialize transaction status");
+        assert_eq!(status["transaction_hash"], "0x3");
+        assert_eq!(status["status"]["finality_status"], "ACCEPTED_ON_L2");
+        assert!(status["status"].get("execution_status").is_none());
+        assert!(status["status"].get("failure_reason").is_none());
+    }
 }

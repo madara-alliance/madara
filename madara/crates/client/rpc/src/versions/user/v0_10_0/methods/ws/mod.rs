@@ -5,23 +5,8 @@ pub mod subscribe_new_transactions;
 
 const ADDRESS_FILTER_LIMIT: u64 = 128;
 const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
-
-#[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
-pub struct SubscriptionItem<T> {
-    subscription_id: String,
-    result: T,
-}
-
-impl<T> SubscriptionItem<T> {
-    pub fn new(subscription_id: jsonrpsee::types::SubscriptionId, result: T) -> Self {
-        let subscription_id = match subscription_id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id.to_string(),
-            jsonrpsee::types::SubscriptionId::Str(id) => id.into_owned(),
-        };
-
-        Self { subscription_id, result }
-    }
-}
+const NEW_TRANSACTION_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransaction";
+const NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransactionReceipts";
 
 pub fn reorg_data(reorg: &mc_db::ReorgNotification) -> mp_rpc::v0_10_0::ReorgData {
     mp_rpc::v0_10_0::ReorgData {
@@ -36,13 +21,12 @@ pub async fn send_reorg_notification(
     sink: &jsonrpsee::core::server::SubscriptionSink,
     reorg: &mc_db::ReorgNotification,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    use crate::errors::ErrorExtWs;
-
-    let msg =
-        jsonrpsee::SubscriptionMessage::new(REORG_NOTIFICATION_METHOD, sink.subscription_id(), &reorg_data(reorg))
-            .or_else_internal_server_error(|| "Failed to create reorg websocket notification")?;
-
-    sink.send(msg).await.or_internal_server_error("Failed to send reorg websocket notification")
+    crate::versions::user::v0_10_2::methods::ws::send_starknet_subscription(
+        sink,
+        REORG_NOTIFICATION_METHOD,
+        &reorg_data(reorg),
+    )
+    .await
 }
 
 pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {

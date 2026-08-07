@@ -73,7 +73,7 @@ mod test {
         test_utils::{rpc_test_setup, TestTxStatusWatcher},
         versions::user::{
             v0_10_0::{StarknetWsRpcApiV0_10_0Client, StarknetWsRpcApiV0_10_0Server},
-            v0_10_2::{methods::ws::SubscriptionItem, StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server},
+            v0_10_2::{StarknetWsRpcApiV0_10_2Client, StarknetWsRpcApiV0_10_2Server},
         },
         Starknet,
     };
@@ -210,6 +210,17 @@ mod test {
         SubscriptionClientT::subscribe(client, method, params, "starknet_V0_10_2_unsubscribe").await.expect(method)
     }
 
+    fn expected_txn_status(finality_status: mp_rpc::v0_10_2::TxnStatus) -> mp_rpc::v0_10_2::NewTxnStatus {
+        mp_rpc::v0_10_2::NewTxnStatus {
+            transaction_hash: TX_HASH,
+            status: mp_rpc::v0_10_2::WsTxnStatusResult {
+                execution_status: None,
+                finality_status,
+                failure_reason: None,
+            },
+        }
+    }
+
     #[tokio::test]
     async fn subscribe_new_heads_defaults_to_latest_when_block_id_missing_v0_10_2() {
         let (backend, starknet) = rpc_test_setup();
@@ -227,7 +238,7 @@ mod test {
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert_eq!(next.result, expected);
+        assert_eq!(next, expected);
     }
 
     #[tokio::test]
@@ -248,7 +259,7 @@ mod test {
             .expect("Waiting for block header");
 
         let item = serde_json::to_value(next).expect("Serializing v0.10.0 header item");
-        assert_eq!(item.get("result"), Some(&serde_json::to_value(expected).expect("Serializing expected header")));
+        assert_eq!(item, serde_json::to_value(expected).expect("Serializing expected header"));
     }
 
     #[tokio::test]
@@ -270,7 +281,7 @@ mod test {
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert_eq!(next.result, expected);
+        assert_eq!(next, expected);
     }
 
     #[tokio::test]
@@ -297,19 +308,25 @@ mod test {
         let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_new_heads(&client, None)
             .await
             .expect("starknet_subscribeNewHeads");
-
-        let next = tokio::time::timeout(Duration::from_secs(5), sub.next())
+        tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
             .expect("Timed out waiting for block header")
             .expect("Waiting for block header")
             .expect("Waiting for block header");
 
-        assert!(next.subscription_id.parse::<u64>().is_ok(), "subscription_id should be a numeric string");
-        StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, next.subscription_id)
+        StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, "0".into())
             .await
             .expect("Failed to close subscription");
 
         assert!(sub.next().await.is_none());
+    }
+
+    #[test]
+    fn subscription_id_provider_returns_strings() {
+        use jsonrpsee::server::IdProvider;
+
+        let id = crate::StarknetSubscriptionIdProvider::default().next_id();
+        assert_matches!(id, jsonrpsee::types::SubscriptionId::Str(id) if id.parse::<u64>().is_ok());
     }
 
     #[tokio::test]
@@ -350,10 +367,10 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::BlockHeader> =
+        let item: mp_rpc::v0_10_2::BlockHeader =
             serde_json::from_value(next).expect("Failed to deserialize block header item");
 
-        assert_eq!(item.result, new_block_1);
+        assert_eq!(item, new_block_1);
     }
 
     #[tokio::test]
@@ -410,10 +427,10 @@ mod test {
             .expect("Timed out waiting for replacement head")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement head");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::BlockHeader> =
+        let item: mp_rpc::v0_10_2::BlockHeader =
             serde_json::from_value(next).expect("Failed to deserialize replacement head");
 
-        assert_eq!(item.result, replacement_head);
+        assert_eq!(item, replacement_head);
     }
 
     #[tokio::test]
@@ -440,21 +457,15 @@ mod test {
             let second = add_block_at(&backend, next_block + 1);
             next_block += 2;
 
-            let mut subscription_ids = Vec::with_capacity(count);
             for (_, sub) in subscribers.iter_mut().take(count - 1) {
-                subscription_ids.push(expect_next_head(sub, &first).await);
+                expect_next_head(sub, &first).await;
                 let _ = expect_next_head(sub, &second).await;
             }
-            subscription_ids
-                .push(expect_next_head(&mut subscribers.last_mut().expect("slow subscriber").1, &first).await);
+            expect_next_head(&mut subscribers.last_mut().expect("slow subscriber").1, &first).await;
             let _ = expect_next_head(&mut subscribers.last_mut().expect("slow subscriber").1, &second).await;
 
             let unsubscribe_count = count / 2;
-            for (idx, (client, _)) in subscribers.iter().take(unsubscribe_count).enumerate() {
-                StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(client, subscription_ids[idx].clone())
-                    .await
-                    .expect("Failed to close subscription");
-            }
+            drop(subscribers.drain(..unsubscribe_count));
             wait_for_active_subscriptions(&starknet_for_assert, count - unsubscribe_count).await;
 
             let third = add_block_at(&backend, next_block);
@@ -482,16 +493,15 @@ mod test {
     }
 
     async fn expect_next_head(
-        sub: &mut jsonrpsee::core::client::Subscription<SubscriptionItem<mp_rpc::v0_10_2::BlockHeader>>,
+        sub: &mut jsonrpsee::core::client::Subscription<mp_rpc::v0_10_2::BlockHeader>,
         expected: &mp_rpc::v0_10_2::BlockHeader,
-    ) -> String {
+    ) {
         let item = tokio::time::timeout(Duration::from_secs(10), sub.next())
             .await
             .expect("Timed out waiting for block header")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve block header");
-        assert_eq!(item.result, *expected);
-        item.subscription_id
+        assert_eq!(item, *expected);
     }
 
     #[tokio::test]
@@ -532,7 +542,7 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve status");
 
-        assert_eq!(item.result, mp_rpc::v0_10_2::TxnStatus::Received);
+        assert_eq!(item, expected_txn_status(mp_rpc::v0_10_2::TxnStatus::Received));
     }
 
     #[tokio::test]
@@ -561,7 +571,7 @@ mod test {
                 .expect("Timed out waiting for status")
                 .expect("Subscription closed unexpectedly")
                 .expect("Failed to retrieve status");
-            assert_eq!(item.result, expected);
+            assert_eq!(item, expected_txn_status(expected));
         }
     }
 
@@ -588,14 +598,15 @@ mod test {
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve status");
 
-        assert_eq!(item.result, mp_rpc::v0_10_2::TxnStatus::Received);
+        assert_eq!(item, expected_txn_status(mp_rpc::v0_10_2::TxnStatus::Received));
     }
 
     #[tokio::test]
-    async fn subscribe_transaction_status_unsubscribe_v0_10_2() {
+    async fn subscribe_transaction_status_cleanup_on_drop_v0_10_2() {
         let (_backend, mut starknet) = rpc_test_setup();
         let watcher = TestTxStatusWatcher::new();
         starknet.set_tx_status_watcher(Some(watcher.clone()));
+        let starknet_for_assert = starknet.clone();
 
         let (_handle, server_url) = start_server(starknet).await;
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
@@ -605,20 +616,16 @@ mod test {
             .expect("Failed subscription");
         watcher.set_status(Some(crate::TxStatusSnapshot::Received));
 
-        let subscription_id =
-            match tokio::time::timeout(Duration::from_secs(5), sub.next()).await.expect("Timed out waiting for status")
-            {
-                Some(Ok(SubscriptionItem { subscription_id, result: status })) => {
-                    assert_eq!(status, mp_rpc::v0_10_2::TxnStatus::Received);
-                    subscription_id
-                }
-                other => panic!("Unexpected subscription result: {other:?}"),
-            };
-
-        StarknetWsRpcApiV0_10_2Client::starknet_unsubscribe(&client, subscription_id)
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
-            .expect("Failed to close subscription");
-        assert!(sub.next().await.is_none());
+            .expect("Timed out waiting for status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve status");
+        assert_eq!(item, expected_txn_status(mp_rpc::v0_10_2::TxnStatus::Received));
+
+        drop(sub);
+        drop(client);
+        wait_for_active_subscriptions(&starknet_for_assert, 0).await;
     }
 
     #[tokio::test]
@@ -709,7 +716,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: transaction_with_receipt(SENDER_ADDRESS, transaction_hash)
                     .receipt
@@ -759,7 +766,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::L1),
                 block_hash: Some(block_hash),
@@ -814,7 +821,7 @@ mod test {
         })
         .expect("Failed to serialize expected receipt");
 
-        assert_eq!(item.get("result"), Some(&expected));
+        assert_eq!(item, expected);
     }
 
     #[tokio::test]
@@ -858,7 +865,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: transaction_with_receipt(SENDER_ADDRESS, transaction_hash)
                     .receipt
@@ -912,7 +919,7 @@ mod test {
             .expect("Failed to retrieve receipt");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::PreConfirmed),
                 block_hash: None,
@@ -971,7 +978,7 @@ mod test {
         })
         .expect("Failed to serialize expected receipt");
 
-        assert_eq!(item.get("result"), Some(&expected));
+        assert_eq!(item, expected);
     }
 
     #[tokio::test]
@@ -1030,11 +1037,11 @@ mod test {
             .expect("Timed out waiting for replacement receipt")
             .expect("Subscription closed unexpectedly")
             .expect("Failed to retrieve replacement receipt");
-        let item: SubscriptionItem<mp_rpc::v0_10_2::TxnReceiptWithBlockInfo> =
+        let item: mp_rpc::v0_10_2::TxnReceiptWithBlockInfo =
             serde_json::from_value(next).expect("Failed to deserialize replacement receipt item");
 
         assert_eq!(
-            item.result,
+            item,
             mp_rpc::v0_10_2::TxnReceiptWithBlockInfo {
                 transaction_receipt: tx.receipt.to_rpc_v0_10(mp_rpc::v0_10_2::TxnFinalityStatus::L2),
                 block_hash: Some(new_block_hash),

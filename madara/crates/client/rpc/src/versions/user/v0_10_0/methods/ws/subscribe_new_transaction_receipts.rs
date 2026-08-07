@@ -187,18 +187,17 @@ async fn send_block_receipts(
             continue;
         }
 
-        let transaction_receipt = tx.receipt.to_rpc_v0_10(receipt_finality_status);
-        let item = super::SubscriptionItem::new(
-            sink.subscription_id(),
-            TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number },
-        );
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
-            format!("SubscribeNewTransactionReceipts failed to create response for tx hash {tx_hash:#x}")
-        })?;
-
-        sink.send(msg)
-            .await
-            .or_internal_server_error("SubscribeNewTransactionReceipts failed to respond to websocket request")?;
+        let item = TxnReceiptWithBlockInfo {
+            transaction_receipt: tx.receipt.to_rpc_v0_10(receipt_finality_status),
+            block_hash,
+            block_number,
+        };
+        crate::versions::user::v0_10_2::methods::ws::send_starknet_subscription(
+            sink,
+            super::NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD,
+            &item,
+        )
+        .await?;
     }
 
     Ok(None)
