@@ -96,6 +96,7 @@ FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
 COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
+COPY patches patches
 
 # Setup Python virtual environment with sequencer requirements
 RUN python3.9 -m venv /app/sequencer_venv && \
