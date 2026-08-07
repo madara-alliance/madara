@@ -13,6 +13,7 @@ JSON-RPC library designed for async/await in Rust.
 Designed to be the successor to [ParityTech's JSONRPC crate](https://github.com/paritytech/jsonrpc/).
 
 ## Features
+
 - Client/server HTTP/HTTP2 support
 - Client/server WebSocket support
 - Client WASM support via web-sys
@@ -20,6 +21,7 @@ Designed to be the successor to [ParityTech's JSONRPC crate](https://github.com/
 - Middleware
 
 ## Documentation
+
 - [API Documentation](https://docs.rs/jsonrpsee)
 
 ## Examples
@@ -43,6 +45,7 @@ See [our tracking milestone](https://github.com/paritytech/jsonrpsee/milestone/2
 ## Users
 
 If your project uses `jsonrpsee` we would like to know. Please open a pull request and add your project to the list below:
+
 - [parity bridges common](https://github.com/paritytech/parity-bridges-common)
 - [remote externalities](https://github.com/paritytech/substrate/tree/master/utils/frame/remote-externalities)
 - [substrate](https://github.com/paritytech/substrate)
@@ -57,4 +60,5 @@ If your project uses `jsonrpsee` we would like to know. Please open a pull reque
 ## Benchmarks
 
 Daily benchmarks for jsonrpsee can be found:
+
 - Gitlab machine: <https://paritytech.github.io/jsonrpsee/bench/dev2>
