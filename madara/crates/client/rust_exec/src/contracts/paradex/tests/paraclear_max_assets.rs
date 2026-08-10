@@ -1,6 +1,6 @@
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_layout;
-use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex::schema::paraclear_layout;
+use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
 use crate::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
 

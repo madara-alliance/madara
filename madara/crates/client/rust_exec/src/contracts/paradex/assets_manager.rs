@@ -16,8 +16,8 @@ use crate::storage::{
 };
 use crate::types::{ContractAddress, ExecutionResult, StorageKey};
 
-use crate::contracts::paradex_codegen::assets_manager_layout;
-use crate::contracts::paradex_codegen::assets_manager_types::{
+use crate::contracts::paradex::schema::assets_manager_layout;
+use crate::contracts::paradex::schema::assets_manager_types::{
     FeeCategory, FeeWithCap, MarketFeeConfig, NamedToken, OptionAsset, OptionCrossMarginParams, OptionMarginParams,
     PerpetualAsset, PerpetualMarginParams, SpotAsset,
 };

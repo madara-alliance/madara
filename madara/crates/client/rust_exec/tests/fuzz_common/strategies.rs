@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 
 use mc_rust_exec::contracts::paradex::paraclear;
-use mc_rust_exec::contracts::paradex_codegen::paraclear_types::{
+use mc_rust_exec::contracts::paradex::schema::paraclear_types::{
     FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3,
 };
 use mc_rust_exec::types::ContractAddress;

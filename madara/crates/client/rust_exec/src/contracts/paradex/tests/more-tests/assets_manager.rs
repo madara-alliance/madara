@@ -1,7 +1,7 @@
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex::assets_manager;
-use crate::contracts::paradex_codegen::assets_manager_layout;
+use crate::contracts::paradex::schema::assets_manager_layout;
 use crate::state::mock::MockStateReader;
 use crate::storage::function_selector;
 

@@ -1,5 +1,5 @@
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_types::OrderCategory;
+use crate::contracts::paradex::schema::paraclear_types::OrderCategory;
 use crate::state::mock::MockStateReader;
 use crate::storage::storage_key_with_offset;
 
@@ -152,8 +152,8 @@ const SCALE: i128 = 100_000_000;
 fn trade_with_size_price(
     size: i128,
     price: i128,
-) -> crate::contracts::paradex_codegen::paraclear_types::TradeRequestV3 {
-    use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+) -> crate::contracts::paradex::schema::paraclear_types::TradeRequestV3 {
+    use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
     let maker_order = OrderV3 {
         account: addr(0x900),
         market: felt(0xabc),
@@ -233,7 +233,7 @@ fn test_base_fee_perp_maker() {
         felt(0),
         felt(0),
     );
-    let maker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_key(
+    let maker_base = crate::contracts::paradex::schema::account_component_layout::Paraclear_account_fee_rate_key(
         trade.maker_order.account.0,
     );
     set_storage(&mut state, contract, maker_base, felt(1));
@@ -266,7 +266,7 @@ fn test_base_fee_perp_taker() {
         felt(0),
         felt(0),
     );
-    let taker_base = crate::contracts::paradex_codegen::account_component_layout::Paraclear_account_fee_rate_key(
+    let taker_base = crate::contracts::paradex::schema::account_component_layout::Paraclear_account_fee_rate_key(
         trade.taker_order.account.0,
     );
     set_storage(&mut state, contract, taker_base, felt(1));

@@ -1,7 +1,7 @@
 //! Tests ported from Cairo test_paraclear_trades.cairo: input validation for settle_trade_v3.
 
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, TradeRequestV3};
+use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, TradeRequestV3};
 use crate::storage::function_selector;
 use starknet_types_core::felt::Felt;
 

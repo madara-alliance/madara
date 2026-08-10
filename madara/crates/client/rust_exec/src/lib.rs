@@ -21,6 +21,8 @@ pub mod verification;
 
 use starknet_types_core::felt::Felt;
 
+pub const SUPPORTED_CLASS_HASHES: &str = include_str!("contracts/paradex/class_hashes.json");
+
 pub use block_production::{execute_txns, RustDeferredReason, RustExecOutput, RustPhaseState};
 pub use config::{
     account_class_hash, assets_manager_class_hash, erc20_class_hash, initialize_runtime_config,

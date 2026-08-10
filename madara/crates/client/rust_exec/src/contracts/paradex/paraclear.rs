@@ -8,11 +8,11 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::context::ExecutionContext;
+use crate::contracts::paradex::schema::account_component_layout as account_layout;
+use crate::contracts::paradex::schema::paraclear_layout;
+use crate::contracts::paradex::schema::paraclear_layout as layout;
+use crate::contracts::paradex::schema::token_component_layout as token_layout;
 use crate::contracts::paradex::{assets_manager, oracle};
-use crate::contracts::paradex_codegen::account_component_layout as account_layout;
-use crate::contracts::paradex_codegen::paraclear_layout;
-use crate::contracts::paradex_codegen::paraclear_layout as layout;
-use crate::contracts::paradex_codegen::token_component_layout as token_layout;
 use crate::contracts::ExecutionError;
 use crate::state::StateReader;
 use crate::storage::{
@@ -26,7 +26,7 @@ use crate::storage::{
 };
 use crate::types::{ContractAddress, ExecutionResult, StorageKey};
 
-use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Paraclear";
@@ -1941,7 +1941,7 @@ fn decode_order_category(input: &[Felt]) -> Result<(OrderCategory, &[Felt]), Exe
             let (fee_token, rest) = take_felt(rest)?;
             Ok((
                 OrderCategory::DynamicWithToken(
-                    crate::contracts::paradex_codegen::paraclear_types::FeeWithCapRequestV2 {
+                    crate::contracts::paradex::schema::paraclear_types::FeeWithCapRequestV2 {
                         fee,
                         fee_cap,
                         fee_floor,
@@ -3743,17 +3743,17 @@ fn fee_rate_for_perp(fee_rates: &FeeRatesLite, is_maker: bool, asset_kind: Felt)
 
 fn fee_category_for_order(
     category: &OrderCategory,
-) -> crate::contracts::paradex_codegen::assets_manager_types::FeeCategory {
+) -> crate::contracts::paradex::schema::assets_manager_types::FeeCategory {
     match category {
-        OrderCategory::API => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::API,
-        OrderCategory::RPI => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::RPI,
-        OrderCategory::Interactive => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::Interactive,
-        _ => crate::contracts::paradex_codegen::assets_manager_types::FeeCategory::Unspecified,
+        OrderCategory::API => crate::contracts::paradex::schema::assets_manager_types::FeeCategory::API,
+        OrderCategory::RPI => crate::contracts::paradex::schema::assets_manager_types::FeeCategory::RPI,
+        OrderCategory::Interactive => crate::contracts::paradex::schema::assets_manager_types::FeeCategory::Interactive,
+        _ => crate::contracts::paradex::schema::assets_manager_types::FeeCategory::Unspecified,
     }
 }
 
 fn fee_with_cap_lite_from_assets(
-    fee: crate::contracts::paradex_codegen::assets_manager_types::FeeWithCap,
+    fee: crate::contracts::paradex::schema::assets_manager_types::FeeWithCap,
 ) -> Result<FeeWithCapLite, ExecutionError> {
     Ok(FeeWithCapLite {
         fee: felt_to_i128(fee.fee)?,
@@ -3763,7 +3763,7 @@ fn fee_with_cap_lite_from_assets(
 }
 
 fn option_margin_params_lite_from_assets(
-    params: crate::contracts::paradex_codegen::assets_manager_types::OptionMarginParams,
+    params: crate::contracts::paradex::schema::assets_manager_types::OptionMarginParams,
 ) -> Result<OptionMarginParamsLite, ExecutionError> {
     Ok(OptionMarginParamsLite {
         premium_multiplier: felt_to_i128(params.premium_multiplier)?,
@@ -3775,7 +3775,7 @@ fn option_margin_params_lite_from_assets(
 }
 
 fn option_cross_margin_params_lite_from_assets(
-    params: crate::contracts::paradex_codegen::assets_manager_types::OptionCrossMarginParams,
+    params: crate::contracts::paradex::schema::assets_manager_types::OptionCrossMarginParams,
 ) -> Result<OptionCrossMarginParamsLite, ExecutionError> {
     Ok(OptionCrossMarginParamsLite {
         imf: option_margin_params_lite_from_assets(params.imf)?,

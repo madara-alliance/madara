@@ -2,13 +2,13 @@
 
 use starknet_types_core::felt::Felt;
 
-use crate::contracts::paradex_codegen::account_component_layout as account_layout;
-use crate::contracts::paradex_codegen::assets_manager_layout;
-use crate::contracts::paradex_codegen::paraclear_layout;
-use crate::contracts::paradex_codegen::paraclear_types::{
+use crate::contracts::paradex::schema::account_component_layout as account_layout;
+use crate::contracts::paradex::schema::assets_manager_layout;
+use crate::contracts::paradex::schema::paraclear_layout;
+use crate::contracts::paradex::schema::paraclear_types::{
     FeeWithCapRequest, FeeWithCapRequestV2, OrderCategory, OrderV3, TradeRequestV3,
 };
-use crate::contracts::paradex_codegen::token_component_layout as token_layout;
+use crate::contracts::paradex::schema::token_component_layout as token_layout;
 use crate::state::mock::MockStateReader;
 use crate::storage::{
     short_string_to_felt, storage_key_for_map, storage_key_for_map2, storage_key_for_map_poseidon,

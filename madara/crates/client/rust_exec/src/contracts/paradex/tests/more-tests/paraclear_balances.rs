@@ -134,7 +134,7 @@ fn test_add_pending_transfer_writes() {
 
     // Ensure count starts at zero.
     let count_key =
-        crate::contracts::paradex_codegen::paraclear_layout::pending_transfer_count_by_executor_key(executor.0);
+        crate::contracts::paradex::schema::paraclear_layout::pending_transfer_count_by_executor_key(executor.0);
     set_storage(&mut state, contract, count_key, felt(0));
 
     let mut ctx = crate::ExecutionContext::new();
@@ -149,7 +149,7 @@ fn test_add_pending_transfer_writes() {
         map.insert(*key, *value);
     }
 
-    let base = crate::contracts::paradex_codegen::paraclear_layout::pending_transfers_key2(executor.0, felt(1));
+    let base = crate::contracts::paradex::schema::paraclear_layout::pending_transfers_key2(executor.0, felt(1));
     assert_eq!(map.get(&count_key).copied(), Some(felt(1)));
     assert_eq!(map.get(&base).copied(), Some(trade_id));
     assert_eq!(map.get(&storage_key_with_offset(base, 1)).copied(), Some(recipient.0));

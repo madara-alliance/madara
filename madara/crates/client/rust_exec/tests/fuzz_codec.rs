@@ -6,7 +6,7 @@
 mod fuzz_common;
 
 use mc_rust_exec::contracts::paradex::paraclear;
-use mc_rust_exec::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+use mc_rust_exec::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
 use mc_rust_exec::types::ContractAddress;
 use proptest::prelude::*;
 use starknet_types_core::felt::Felt;

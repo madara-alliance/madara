@@ -1,5 +1,5 @@
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_layout;
+use crate::contracts::paradex::schema::paraclear_layout;
 use crate::state::mock::MockStateReader;
 use crate::storage::{short_string_to_felt, storage_key_with_offset};
 
@@ -61,7 +61,7 @@ fn test_read_settlement_token_price() {
 
 #[test]
 fn test_read_settlement_token_price_zero_errors() {
-    use crate::contracts::paradex_codegen::paraclear_types::{
+    use crate::contracts::paradex::schema::paraclear_types::{
         FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3,
     };
 

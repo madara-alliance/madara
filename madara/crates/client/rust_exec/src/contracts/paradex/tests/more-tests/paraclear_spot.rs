@@ -1,7 +1,7 @@
 #![allow(clippy::identity_op, clippy::too_many_arguments)]
 
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
+use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 use crate::state::mock::MockStateReader;
 use crate::storage::{event_selector, function_selector};
 use crate::types::ContractAddress;

@@ -100,7 +100,7 @@ fn test_get_asset_kind_zero_market() {
 
 #[test]
 fn test_settle_trade_v3_not_supported_market() {
-    use crate::contracts::paradex_codegen::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
+    use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
     use crate::storage::event_selector;
 
     let state = MockStateReader::new();

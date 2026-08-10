@@ -6,8 +6,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::context::ExecutionContext;
-use crate::contracts::paradex_codegen::oracle_layout as layout;
-use crate::contracts::paradex_codegen::oracle_types::TickData;
+use crate::contracts::paradex::schema::oracle_layout as layout;
+use crate::contracts::paradex::schema::oracle_types::TickData;
 use crate::contracts::ExecutionError;
 use crate::state::StateReader;
 use crate::storage::{function_selector, sn_keccak, storage_key_for_map_with_base_named, storage_key_with_offset};

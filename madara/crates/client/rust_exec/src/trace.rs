@@ -8,8 +8,8 @@ use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
 use crate::contracts::account::functions::parse_calls;
+use crate::contracts::paradex::schema::{paraclear_layout, token_component_layout};
 use crate::contracts::paradex::{oracle, paraclear as paraclear_contract};
-use crate::contracts::paradex_codegen::{paraclear_layout, token_component_layout};
 use crate::gas::GasVector;
 use crate::storage::{function_selector, short_string_to_felt};
 use crate::types::{CallExecutionResult, ContractAddress, ExecutionResult, StateDiff};

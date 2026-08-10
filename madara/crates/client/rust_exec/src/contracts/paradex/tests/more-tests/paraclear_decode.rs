@@ -1,7 +1,7 @@
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex::paraclear;
-use crate::contracts::paradex_codegen::paraclear_types::OrderCategory;
+use crate::contracts::paradex::schema::paraclear_types::OrderCategory;
 
 use super::super::fixtures::{dynamic_fee_request, encode_trade_request_v3_for_test, sample_trade};
 

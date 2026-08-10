@@ -1,7 +1,7 @@
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex::oracle;
-use crate::contracts::paradex_codegen::oracle_layout;
+use crate::contracts::paradex::schema::oracle_layout;
 use crate::state::mock::MockStateReader;
 use crate::storage::{function_selector, short_string_to_felt};
 use crate::types::ContractAddress;

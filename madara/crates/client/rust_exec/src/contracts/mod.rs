@@ -13,7 +13,6 @@
 pub mod account;
 pub mod erc20;
 pub mod paradex;
-pub mod paradex_codegen;
 
 use starknet_types_core::felt::Felt;
 
