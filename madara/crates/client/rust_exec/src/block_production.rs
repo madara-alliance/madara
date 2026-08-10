@@ -16,13 +16,14 @@ use blockifier::blockifier::transaction_executor::{
     BLOCK_STATE_ACCESS_ERR,
 };
 use blockifier::bouncer::{get_tx_weights, BouncerWeights};
-use blockifier::execution::call_info::{BuiltinCounterMap, ExecutionSummary};
+use blockifier::execution::call_info::{CairoPrimitiveCounterMap, ExecutionSummary};
 use blockifier::fee::resources::TransactionResources;
 use blockifier::state::cached_state::StateChangesKeys;
 use blockifier::state::state_api::{StateReader as BlockifierStateReader, UpdatableState};
 use blockifier::transaction::transaction_execution::Transaction;
 
 use mp_convert::ToFelt;
+use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 
 use crate::blockifier_integration::{
@@ -74,9 +75,10 @@ fn rust_bouncer_delta<S: BlockifierStateReader>(
     bouncer: &blockifier::bouncer::Bouncer,
     tx_execution_summary: &ExecutionSummary,
     tx_state_changes_keys: &StateChangesKeys,
-    tx_builtin_counters: &BuiltinCounterMap,
+    tx_builtin_counters: &CairoPrimitiveCounterMap,
     tx_resources: &TransactionResources,
     versioned_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
+    receipt_l2_gas: GasAmount,
 ) -> TransactionExecutorResult<BouncerWeights> {
     let marginal_state_changes_keys = tx_state_changes_keys.difference(&bouncer.state_changes_keys);
     let already_executed_class_hashes = bouncer.get_executed_class_hashes();
@@ -94,6 +96,7 @@ fn rust_bouncer_delta<S: BlockifierStateReader>(
         versioned_constants,
         tx_builtin_counters,
         &bouncer.bouncer_config,
+        receipt_l2_gas,
     )
     .map_err(TransactionExecutorError::TransactionExecutionError)?;
 
@@ -292,6 +295,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                         &tx_builtin_counters,
                         &execution_info.receipt.resources,
                         executor.block_context.versioned_constants(),
+                        execution_info.receipt.gas.l2_gas,
                     )
                     .expect("failed to compute rust tx bouncer delta");
                     let projected_next = projected_current
@@ -318,6 +322,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                             &tx_builtin_counters,
                             &execution_info.receipt.resources,
                             executor.block_context.versioned_constants(),
+                            execution_info.receipt.gas.l2_gas,
                         )
                         .is_err()
                     {

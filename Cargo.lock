@@ -9359,6 +9359,7 @@ dependencies = [
  "mc-gateway-server",
  "mc-mempool",
  "mc-rpc",
+ "mc-rust-exec",
  "mc-settlement-client",
  "mc-submit-tx",
  "mc-sync",
@@ -9952,6 +9953,31 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mc-rust-exec"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "blockifier",
+ "indexmap 2.13.1",
+ "keccak 0.1.5",
+ "mc-rust-exec",
+ "mp-convert",
+ "num-bigint",
+ "num-traits",
+ "once_cell",
+ "proptest",
+ "rstest 0.26.1",
+ "serde",
+ "serde_json",
+ "sha3 0.12.0",
+ "starknet-rust-crypto 0.19.0-rc.2",
+ "starknet-types-core 0.2.4",
+ "starknet_api",
+ "thiserror 2.0.17",
+ "tracing",
 ]
 
 [[package]]
@@ -11708,6 +11734,16 @@ dependencies = [
  "serde_json",
  "starknet-types-core 0.2.4",
  "starknet_api",
+]
+
+[[package]]
+name = "paradex_codegen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
