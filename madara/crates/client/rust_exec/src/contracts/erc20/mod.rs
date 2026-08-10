@@ -5,6 +5,7 @@
 
 pub mod functions;
 pub mod layout;
+mod names;
 
 use starknet_types_core::felt::Felt;
 
@@ -14,20 +15,27 @@ use crate::core::state::StateReader;
 use crate::core::storage::function_selector;
 use crate::core::types::{CallExecutionResult, ContractAddress, ExecutionResult, StateDiff};
 
+pub(crate) use names::PRECOMPUTED_NAMES;
+
+const BALANCE_OF_INDEX: usize = 1;
+const TRANSFER_INDEX: usize = 2;
+const TRANSFER_FROM_INDEX: usize = 3;
+const TRANSFER_EVENT_INDEX: usize = 4;
+
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "ERC20";
 
 // Function selectors
 fn balance_of_selector() -> Felt {
-    function_selector("balance_of")
+    function_selector(PRECOMPUTED_NAMES[BALANCE_OF_INDEX])
 }
 
 fn transfer_selector() -> Felt {
-    function_selector("transfer")
+    function_selector(PRECOMPUTED_NAMES[TRANSFER_INDEX])
 }
 
 fn transfer_from_selector() -> Felt {
-    function_selector("transfer_from")
+    function_selector(PRECOMPUTED_NAMES[TRANSFER_FROM_INDEX])
 }
 
 /// Check if this contract supports a given function selector.
@@ -38,11 +46,11 @@ pub fn supports_selector(selector: Felt) -> bool {
 /// Get the human-readable function name for a selector.
 pub fn get_function_name(selector: Felt) -> Option<String> {
     if selector == balance_of_selector() {
-        Some("balance_of".to_string())
+        Some(PRECOMPUTED_NAMES[BALANCE_OF_INDEX].to_string())
     } else if selector == transfer_selector() {
-        Some("transfer".to_string())
+        Some(PRECOMPUTED_NAMES[TRANSFER_INDEX].to_string())
     } else if selector == transfer_from_selector() {
-        Some("transfer_from".to_string())
+        Some(PRECOMPUTED_NAMES[TRANSFER_FROM_INDEX].to_string())
     } else {
         None
     }
@@ -121,7 +129,11 @@ pub fn transfer_internal<S: StateReader>(
             // Transfer event
             crate::core::types::Event {
                 order: 0,
-                keys: vec![crate::core::storage::sn_keccak(b"Transfer"), from.0, to.0],
+                keys: vec![
+                    crate::core::storage::sn_keccak(PRECOMPUTED_NAMES[TRANSFER_EVENT_INDEX].as_bytes()),
+                    from.0,
+                    to.0,
+                ],
                 data: vec![Felt::from(amount), Felt::ZERO], // amount as u256
             },
         ],

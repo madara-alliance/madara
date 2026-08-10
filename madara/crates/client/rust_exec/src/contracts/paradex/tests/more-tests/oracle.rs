@@ -16,9 +16,11 @@ fn test_oracle_supports_selector_known() {
         function_selector("get_value"),
         function_selector("get_values_with_funding_indices"),
         function_selector("get_funding_index"),
+        function_selector("set_prices_and_funding_snapshot"),
         function_selector("get_latest_snapshot_id"),
         function_selector("decimals"),
         function_selector("get_version"),
+        function_selector("get_name"),
     ];
     for selector in selectors {
         assert!(oracle::supports_selector(selector));

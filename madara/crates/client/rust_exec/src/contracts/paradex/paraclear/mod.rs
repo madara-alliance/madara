@@ -1,6 +1,9 @@
 //! Paraclear contract (settle_trade_v3) - incremental implementation.
 #![allow(clippy::too_many_arguments)]
 
+mod names;
+mod selectors;
+
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 use std::cell::RefCell;
@@ -16,31 +19,30 @@ use crate::contracts::ExecutionError;
 use crate::core::context::ExecutionContext;
 use crate::core::state::StateReader;
 use crate::core::storage::{
-    event_selector, function_selector, pedersen_hash, sn_keccak, storage_key_for_map, storage_key_for_map2,
-    storage_key_for_map2_poseidon, storage_key_for_map2_with_base_named, storage_key_for_map_poseidon,
-    storage_key_for_map_with_base_named, storage_key_for_substorage_map2_poseidon,
-    storage_key_for_substorage_map2_poseidon_add, storage_key_for_substorage_map2_poseidon_hash,
-    storage_key_for_substorage_map_poseidon, storage_key_for_substorage_map_poseidon_add,
-    storage_key_for_substorage_map_poseidon_hash, storage_key_for_substorage_var_add,
-    storage_key_for_substorage_var_poseidon, storage_key_for_variable, storage_key_with_offset,
+    event_selector, pedersen_hash, sn_keccak, storage_key_for_map, storage_key_for_map2, storage_key_for_map2_poseidon,
+    storage_key_for_map2_with_base_named, storage_key_for_map_poseidon, storage_key_for_map_with_base_named,
+    storage_key_for_substorage_map2_poseidon, storage_key_for_substorage_map2_poseidon_add,
+    storage_key_for_substorage_map2_poseidon_hash, storage_key_for_substorage_map_poseidon,
+    storage_key_for_substorage_map_poseidon_add, storage_key_for_substorage_map_poseidon_hash,
+    storage_key_for_substorage_var_add, storage_key_for_substorage_var_poseidon, storage_key_for_variable,
+    storage_key_with_offset,
 };
 use crate::core::types::{ContractAddress, ExecutionResult, StorageKey};
 
 use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
+pub(crate) use names::PRECOMPUTED_NAMES;
+pub(crate) use selectors::FUNCTION_NAMES;
+use selectors::{get_function_name as selector_function_name, settle_trade_v3_selector};
 
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Paraclear";
 
-/// Paradex Paraclear class hash for contracts version 1.25.1.
-pub const CLASS_HASH_1_25_1: Felt =
-    Felt::from_hex_unchecked("0x01ca07ce68892cff34e71bad6d29e526fcf59a8813e5371cb1fd306d38e7aee8");
-
-/// Paradex Paraclear class hash for contracts version 1.25.3.
-pub const CLASS_HASH_1_25_3: Felt =
+/// Supported Paradex Paraclear class hash.
+pub const CLASS_HASH: Felt =
     Felt::from_hex_unchecked("0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a");
 
 pub fn supports_class_hash(class_hash: Felt) -> bool {
-    class_hash == CLASS_HASH_1_25_1 || class_hash == CLASS_HASH_1_25_3
+    class_hash == CLASS_HASH
 }
 
 // Precomputed storage map bases (sn_keccak) for hot paths.
@@ -463,20 +465,12 @@ fn perp_mmf_factor_key(mode: PerpStorageMode) -> StorageKey {
     perp_var_key(mode, "perpetual_futures_mmf_factor")
 }
 
-fn settle_trade_v3_selector() -> Felt {
-    function_selector("settle_trade_v3")
-}
-
 pub fn supports_selector(selector: Felt) -> bool {
     selector == settle_trade_v3_selector()
 }
 
 pub fn get_function_name(selector: Felt) -> Option<String> {
-    if selector == settle_trade_v3_selector() {
-        Some("settle_trade_v3".to_string())
-    } else {
-        None
-    }
+    selector_function_name(selector).map(str::to_string)
 }
 
 pub fn execute<S: StateReader>(

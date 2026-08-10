@@ -337,11 +337,14 @@ mod tests {
             ..Default::default()
         });
 
-        let selector = crate::core::storage::function_selector("get_value");
+        let selector = crate::core::storage::function_selector("set_prices_and_funding_snapshot");
         assert!(oracle::supports_selector(selector));
         assert!(ContractRegistry::supports_class_hash(oracle_class_hash));
         assert!(ContractRegistry::supports_function(oracle_class_hash, selector));
-        assert_eq!(ContractRegistry::get_function_name(oracle_class_hash, selector), Some("get_value".to_string()));
+        assert_eq!(
+            ContractRegistry::get_function_name(oracle_class_hash, selector),
+            Some("set_prices_and_funding_snapshot".to_string())
+        );
 
         let state = MockStateReader::new();
         let result = ContractRegistry::execute_with_timestamp(
@@ -361,14 +364,14 @@ mod tests {
     }
 
     #[test]
-    fn known_paraclear_1_25_3_hash_dispatches_settle_trade_v3() {
+    fn known_paraclear_hash_dispatches_settle_trade_v3() {
         let selector = crate::core::storage::function_selector("settle_trade_v3");
 
-        assert!(ContractRegistry::supports_class_hash(paraclear::CLASS_HASH_1_25_3));
-        assert!(ContractRegistry::supports_function(paraclear::CLASS_HASH_1_25_3, selector));
-        assert_eq!(ContractRegistry::get_contract_name(paraclear::CLASS_HASH_1_25_3), Some("Paraclear".to_string()));
+        assert!(ContractRegistry::supports_class_hash(paraclear::CLASS_HASH));
+        assert!(ContractRegistry::supports_function(paraclear::CLASS_HASH, selector));
+        assert_eq!(ContractRegistry::get_contract_name(paraclear::CLASS_HASH), Some("Paraclear".to_string()));
         assert_eq!(
-            ContractRegistry::get_function_name(paraclear::CLASS_HASH_1_25_3, selector),
+            ContractRegistry::get_function_name(paraclear::CLASS_HASH, selector),
             Some("settle_trade_v3".to_string())
         );
 
@@ -376,7 +379,7 @@ mod tests {
         let result = ContractRegistry::execute_with_timestamp(
             &state,
             ContractAddress(Felt::from_hex_unchecked("0x99")),
-            paraclear::CLASS_HASH_1_25_3,
+            paraclear::CLASS_HASH,
             selector,
             &[],
             ContractAddress(Felt::ZERO),
@@ -390,18 +393,15 @@ mod tests {
     }
 
     #[test]
-    fn known_oracle_hash_is_shared_by_1_25_1_and_1_25_3() {
-        let selector = crate::core::storage::function_selector("get_value");
+    fn known_oracle_hash_dispatches_set_prices_and_funding_snapshot() {
+        let selector = crate::core::storage::function_selector("set_prices_and_funding_snapshot");
 
-        assert!(ContractRegistry::supports_class_hash(oracle::CLASS_HASH_1_25_1_AND_1_25_3));
-        assert!(ContractRegistry::supports_function(oracle::CLASS_HASH_1_25_1_AND_1_25_3, selector));
+        assert!(ContractRegistry::supports_class_hash(oracle::CLASS_HASH));
+        assert!(ContractRegistry::supports_function(oracle::CLASS_HASH, selector));
+        assert_eq!(ContractRegistry::get_contract_name(oracle::CLASS_HASH), Some("ParaclearOracle".to_string()));
         assert_eq!(
-            ContractRegistry::get_contract_name(oracle::CLASS_HASH_1_25_1_AND_1_25_3),
-            Some("ParaclearOracle".to_string())
-        );
-        assert_eq!(
-            ContractRegistry::get_function_name(oracle::CLASS_HASH_1_25_1_AND_1_25_3, selector),
-            Some("get_value".to_string())
+            ContractRegistry::get_function_name(oracle::CLASS_HASH, selector),
+            Some("set_prices_and_funding_snapshot".to_string())
         );
     }
 }

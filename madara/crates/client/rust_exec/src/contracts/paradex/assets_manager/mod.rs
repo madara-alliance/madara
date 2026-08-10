@@ -1,5 +1,8 @@
 //! AssetsManager read-only helpers for Paraclear.
 
+mod names;
+mod selectors;
+
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 
@@ -7,10 +10,10 @@ use crate::contracts::ExecutionError;
 use crate::core::context::ExecutionContext;
 use crate::core::state::StateReader;
 use crate::core::storage::{
-    function_selector, short_string_to_felt, sn_keccak, storage_key_for_map_poseidon,
-    storage_key_for_map_poseidon_with_base_named, storage_key_for_substorage_map_poseidon,
-    storage_key_for_substorage_map_poseidon_add, storage_key_for_substorage_map_poseidon_add_with_var_named,
-    storage_key_for_substorage_map_poseidon_hash, storage_key_for_substorage_map_poseidon_hash_with_var_named,
+    short_string_to_felt, sn_keccak, storage_key_for_map_poseidon, storage_key_for_map_poseidon_with_base_named,
+    storage_key_for_substorage_map_poseidon, storage_key_for_substorage_map_poseidon_add,
+    storage_key_for_substorage_map_poseidon_add_with_var_named, storage_key_for_substorage_map_poseidon_hash,
+    storage_key_for_substorage_map_poseidon_hash_with_var_named,
     storage_key_for_substorage_map_poseidon_with_var_named, storage_key_for_substorage_var_add,
     storage_key_for_substorage_var_poseidon, storage_key_with_offset,
 };
@@ -22,32 +25,35 @@ use crate::contracts::paradex::schema::assets_manager_types::{
     PerpetualAsset, PerpetualMarginParams, SpotAsset,
 };
 
+pub(crate) use names::PRECOMPUTED_NAMES;
+pub(crate) use selectors::FUNCTION_NAMES;
+use selectors::{
+    get_asset_kind_selector, get_asset_min_size_increment_selector, get_base_token_asset_selector,
+    get_function_name as selector_function_name, get_name_selector, get_version_selector, take_felt,
+};
+
 pub const ASSET_KIND_UNSUPPORTED: Felt = Felt::ZERO;
 
-static SPOT_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("spot_asset".as_bytes()));
-static SPOT_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("spot.spot_asset".as_bytes()));
-static FUTURE_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("perpetual_future_asset".as_bytes()));
-static FUTURE_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("future.perpetual_future_asset".as_bytes()));
-static OPTION_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("option_asset".as_bytes()));
-static OPTION_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("option.option_asset".as_bytes()));
-static PERP_OPTION_MARGIN_PARAMS_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("perpetual_option_margin_params".as_bytes()));
-static PERP_OPTION_MARGIN_PARAMS_DOTTED_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("option.perpetual_option_margin_params".as_bytes()));
-static DATED_OPTION_MARGIN_PARAMS_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("dated_option_margin_params".as_bytes()));
-static DATED_OPTION_MARGIN_PARAMS_DOTTED_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("option.dated_option_margin_params".as_bytes()));
-static MARKET_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("market_fee_config".as_bytes()));
-static MARKET_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("fee.market_fee_config".as_bytes()));
-static BASE_ASSET_PERP_OPTION_FEE_CONFIG_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("base_asset_perpetual_option_fee_config".as_bytes()));
+static SPOT_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[0].as_bytes()));
+static SPOT_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[1].as_bytes()));
+static FUTURE_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[2].as_bytes()));
+static FUTURE_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[3].as_bytes()));
+static OPTION_ASSET_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[4].as_bytes()));
+static OPTION_ASSET_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[5].as_bytes()));
+static PERP_OPTION_MARGIN_PARAMS_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[6].as_bytes()));
+static PERP_OPTION_MARGIN_PARAMS_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[7].as_bytes()));
+static DATED_OPTION_MARGIN_PARAMS_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[8].as_bytes()));
+static DATED_OPTION_MARGIN_PARAMS_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[9].as_bytes()));
+static MARKET_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[10].as_bytes()));
+static MARKET_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[11].as_bytes()));
+static BASE_ASSET_PERP_OPTION_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[12].as_bytes()));
 static BASE_ASSET_PERP_OPTION_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("fee.base_asset_perpetual_option_fee_config".as_bytes()));
-static BASE_ASSET_DATED_OPTION_FEE_CONFIG_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("base_asset_dated_option_fee_config".as_bytes()));
+    Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[13].as_bytes()));
+static BASE_ASSET_DATED_OPTION_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[14].as_bytes()));
 static BASE_ASSET_DATED_OPTION_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> =
-    Lazy::new(|| sn_keccak("fee.base_asset_dated_option_fee_config".as_bytes()));
-static SETTLEMENT_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("settlement_fee_config".as_bytes()));
-static SETTLEMENT_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak("fee.settlement_fee_config".as_bytes()));
+    Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[15].as_bytes()));
+static SETTLEMENT_FEE_CONFIG_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[16].as_bytes()));
+static SETTLEMENT_FEE_CONFIG_DOTTED_VAR: Lazy<Felt> = Lazy::new(|| sn_keccak(PRECOMPUTED_NAMES[17].as_bytes()));
 
 pub fn supports_selector(selector: Felt) -> bool {
     selector == get_asset_kind_selector()
@@ -58,19 +64,7 @@ pub fn supports_selector(selector: Felt) -> bool {
 }
 
 pub fn get_function_name(selector: Felt) -> Option<String> {
-    if selector == get_asset_kind_selector() {
-        Some("get_asset_kind".to_string())
-    } else if selector == get_base_token_asset_selector() {
-        Some("get_base_token_asset".to_string())
-    } else if selector == get_asset_min_size_increment_selector() {
-        Some("get_asset_min_size_increment".to_string())
-    } else if selector == get_name_selector() {
-        Some("get_name".to_string())
-    } else if selector == get_version_selector() {
-        Some("get_version".to_string())
-    } else {
-        None
-    }
+    selector_function_name(selector).map(str::to_string)
 }
 
 pub fn execute<S: StateReader>(
@@ -748,33 +742,6 @@ fn felt_to_i128(value: Felt) -> Result<i128, ExecutionError> {
     let mut arr = [0u8; 16];
     arr.copy_from_slice(&neg_bytes[16..]);
     Ok(-i128::from_be_bytes(arr))
-}
-
-fn get_asset_kind_selector() -> Felt {
-    function_selector("get_asset_kind")
-}
-
-fn get_base_token_asset_selector() -> Felt {
-    function_selector("get_base_token_asset")
-}
-
-fn get_asset_min_size_increment_selector() -> Felt {
-    function_selector("get_asset_min_size_increment")
-}
-
-fn get_name_selector() -> Felt {
-    function_selector("get_name")
-}
-
-fn get_version_selector() -> Felt {
-    function_selector("get_version")
-}
-
-fn take_felt(input: &[Felt]) -> Result<Felt, ExecutionError> {
-    if input.is_empty() {
-        return Err(ExecutionError::ExecutionFailed("calldata underflow".to_string()));
-    }
-    Ok(input[0])
 }
 
 #[derive(Clone, Debug)]

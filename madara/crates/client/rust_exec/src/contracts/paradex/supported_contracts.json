@@ -1,0 +1,21 @@
+{
+  "Paraclear": {
+    "class_hash": "0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a",
+    "supported_functions": [
+      "settle_trade_v3"
+    ]
+  },
+  "Oracle": {
+    "class_hash": "0x00049e91ccb24fcf4acec4a24896092d9387a97865dcb0e6f98503399564b452",
+    "supported_functions": [
+      "get_value",
+      "get_values_with_funding_indices",
+      "get_funding_index",
+      "set_prices_and_funding_snapshot",
+      "get_latest_snapshot_id",
+      "decimals",
+      "get_name",
+      "get_version"
+    ]
+  }
+}

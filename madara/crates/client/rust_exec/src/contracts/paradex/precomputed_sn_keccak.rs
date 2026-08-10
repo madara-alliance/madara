@@ -15,6 +15,9 @@ use sha3::{Digest, Keccak256};
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
+use crate::contracts::paradex::{assets_manager, oracle, paraclear};
+use crate::contracts::{account, erc20};
+
 static PRECOMPUTED_SN_KECCAK_ENABLED: Lazy<bool> = Lazy::new(|| {
     let value = std::env::var("RUST_EXEC_PRECOMPUTED_SN_KECCAK").unwrap_or_default();
     if value.is_empty() {
@@ -23,51 +26,27 @@ static PRECOMPUTED_SN_KECCAK_ENABLED: Lazy<bool> = Lazy::new(|| {
     !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
 });
 
-const PRECOMPUTED_VALUES: &[&str] = &[
-    "ERC20_balances",
-    "Fee",
-    "Paraclear_account_fee_rate",
-    "Paraclear_account_referral",
-    "Paraclear_fee_account_address",
-    "Paraclear_fee_share_account_address",
-    "Paraclear_fee_share_percentage",
-    "Paraclear_global_fee_rate",
-    "Paraclear_market_delegate",
-    "Paraclear_oracle_contract_address",
-    "Paraclear_perpetual_asset",
-    "Paraclear_perpetual_asset_balance",
-    "Paraclear_perpetual_asset_balance_tail",
-    "Paraclear_settlement_token_asset",
-    "Paraclear_token_asset",
-    "Paraclear_token_asset_balance",
-    "Paraclear_token_asset_balance_tail",
-    "Paraclear_transfer_registry",
-    "PerpetualAssetBalanceUpdateV3",
-    "TokenAssetBalanceUpdate",
-    "TradeSettled",
-    "Transfer",
-    "__execute__",
-    "__validate__",
-    "__validate_deploy__",
-    "account_margin_methodology",
-    "assets_manager",
-    "decrement_pending_trade",
-    "funding_index_data",
-    "get_value",
-    "get_values_with_funding_indices",
-    "global_configuration",
-    "invariants_perpetual_asset_info",
-    "latest_tick_data",
-    "latest_updated_timestamp",
-    "perpetual_future_market_fee_config_v2",
-    "perpetual_futures_mmf_factor",
-    "settle_trade_v3",
-    "transfer",
-];
-
 static PRECOMPUTED_SN_KECCAK: Lazy<HashMap<&'static str, Felt>> = Lazy::new(|| {
-    let mut map = HashMap::with_capacity(PRECOMPUTED_VALUES.len());
-    for value in PRECOMPUTED_VALUES {
+    let mut map = HashMap::with_capacity(
+        account::PRECOMPUTED_NAMES.len()
+            + erc20::PRECOMPUTED_NAMES.len()
+            + assets_manager::FUNCTION_NAMES.len()
+            + assets_manager::PRECOMPUTED_NAMES.len()
+            + oracle::FUNCTION_NAMES.len()
+            + oracle::PRECOMPUTED_NAMES.len()
+            + paraclear::FUNCTION_NAMES.len()
+            + paraclear::PRECOMPUTED_NAMES.len(),
+    );
+    for value in account::PRECOMPUTED_NAMES
+        .iter()
+        .chain(erc20::PRECOMPUTED_NAMES)
+        .chain(assets_manager::FUNCTION_NAMES)
+        .chain(assets_manager::PRECOMPUTED_NAMES)
+        .chain(oracle::FUNCTION_NAMES)
+        .chain(oracle::PRECOMPUTED_NAMES)
+        .chain(paraclear::FUNCTION_NAMES)
+        .chain(paraclear::PRECOMPUTED_NAMES)
+    {
         map.insert(*value, compute_sn_keccak_bytes(value.as_bytes()));
     }
     map

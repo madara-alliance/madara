@@ -13,6 +13,7 @@
 
 pub mod functions;
 pub mod layout;
+mod names;
 
 use starknet_types_core::felt::Felt;
 
@@ -22,28 +23,36 @@ use crate::core::state::StateReader;
 use crate::core::storage::function_selector;
 use crate::core::types::{ContractAddress, ExecutionResult};
 
+pub(crate) use names::PRECOMPUTED_NAMES;
+
+const VALIDATE_INDEX: usize = 0;
+const EXECUTE_INDEX: usize = 1;
+const IS_VALID_SIGNATURE_INDEX: usize = 3;
+const GET_PUBLIC_KEY_INDEX: usize = 4;
+const SET_PUBLIC_KEY_INDEX: usize = 5;
+
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Account";
 
 // Function selectors
 fn validate_selector() -> Felt {
-    function_selector("__validate__")
+    function_selector(PRECOMPUTED_NAMES[VALIDATE_INDEX])
 }
 
 fn execute_selector() -> Felt {
-    function_selector("__execute__")
+    function_selector(PRECOMPUTED_NAMES[EXECUTE_INDEX])
 }
 
 fn is_valid_signature_selector() -> Felt {
-    function_selector("is_valid_signature")
+    function_selector(PRECOMPUTED_NAMES[IS_VALID_SIGNATURE_INDEX])
 }
 
 fn get_public_key_selector() -> Felt {
-    function_selector("get_public_key")
+    function_selector(PRECOMPUTED_NAMES[GET_PUBLIC_KEY_INDEX])
 }
 
 fn set_public_key_selector() -> Felt {
-    function_selector("set_public_key")
+    function_selector(PRECOMPUTED_NAMES[SET_PUBLIC_KEY_INDEX])
 }
 
 /// Check if this contract supports a given function selector.
@@ -58,15 +67,15 @@ pub fn supports_selector(selector: Felt) -> bool {
 /// Get the human-readable function name for a selector.
 pub fn get_function_name(selector: Felt) -> Option<String> {
     if selector == validate_selector() {
-        Some("__validate__".to_string())
+        Some(PRECOMPUTED_NAMES[VALIDATE_INDEX].to_string())
     } else if selector == execute_selector() {
-        Some("__execute__".to_string())
+        Some(PRECOMPUTED_NAMES[EXECUTE_INDEX].to_string())
     } else if selector == is_valid_signature_selector() {
-        Some("is_valid_signature".to_string())
+        Some(PRECOMPUTED_NAMES[IS_VALID_SIGNATURE_INDEX].to_string())
     } else if selector == get_public_key_selector() {
-        Some("get_public_key".to_string())
+        Some(PRECOMPUTED_NAMES[GET_PUBLIC_KEY_INDEX].to_string())
     } else if selector == set_public_key_selector() {
-        Some("set_public_key".to_string())
+        Some(PRECOMPUTED_NAMES[SET_PUBLIC_KEY_INDEX].to_string())
     } else {
         None
     }
