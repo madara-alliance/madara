@@ -103,6 +103,36 @@ fn state_diff_to_state_maps_converts_declared_classes() {
     assert_eq!(maps.compiled_class_hashes.get(&ch), Some(&starknet_api::core::CompiledClassHash(Felt::TWO)));
 }
 
+#[test]
+fn state_diff_mismatch_preview_uses_normalized_storage_json() {
+    use mp_state_update::{ContractStorageDiffItem, StorageEntry};
+
+    let rust_exec_diff = StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: Felt::from(0x47u64),
+            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::TWO }],
+        }],
+        ..Default::default()
+    };
+    let blockifier_diff = StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: Felt::from(0x47u64),
+            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::THREE }],
+        }],
+        ..Default::default()
+    };
+
+    let (count, preview) =
+        super::BlockProductionTask::storage_diff_mismatch_preview_json(&rust_exec_diff, &blockifier_diff, 16);
+
+    assert_eq!(count, 1);
+    assert_eq!(preview[0]["kind"], "value_mismatch");
+    assert_eq!(preview[0]["contract_address"], "0x47");
+    assert_eq!(preview[0]["storage_key"], "0x1");
+    assert_eq!(preview[0]["rust_exec_value"], "0x2");
+    assert_eq!(preview[0]["blockifier_value"], "0x3");
+}
+
 // ── C-009D: Canonicalization source selection tests ──────────────────────
 
 #[test]

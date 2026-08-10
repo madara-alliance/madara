@@ -644,14 +644,6 @@ impl BlockProductionTask {
         let decision = decide(&sd_comparison, &er_comparison);
         let compare_elapsed = compare_start.elapsed().as_secs_f64();
 
-        tracing::info!(
-            block_n,
-            decision = ?decision,
-            sd_x1 = ?sd_x1,
-            sd_x2 = ?reexec_result.state_diff,
-            "comparator_state_diff_full_dump"
-        );
-
         metrics.comparator_blocks_compared_total.add(1, &[]);
         metrics.comparator_compare_duration_seconds.record(compare_elapsed, &[]);
 
@@ -926,14 +918,6 @@ impl BlockProductionTask {
         let decision = decide(&sd_comparison, &er_comparison);
         let compare_elapsed = compare_start.elapsed().as_secs_f64();
 
-        tracing::info!(
-            block_n,
-            decision = ?decision,
-            sd_x1 = ?sd_x1,
-            sd_x2 = ?reexec_result.state_diff,
-            "comparator_state_diff_full_dump"
-        );
-
         // Emit metrics.
         self.metrics.comparator_blocks_compared_total.add(1, &[]);
         self.metrics.comparator_compare_duration_seconds.record(compare_elapsed, &[]);
@@ -1062,7 +1046,13 @@ impl BlockProductionTask {
         };
 
         let (storage_mismatch_count, storage_mismatch_preview) =
-            Self::storage_diff_mismatch_preview(rust_exec_diff, blockifier_diff, 16);
+            Self::storage_diff_mismatch_preview_json(rust_exec_diff, blockifier_diff, 16);
+        let summary = summary.to_string();
+        let storage_mismatch_preview =
+            serde_json::to_string(&storage_mismatch_preview).unwrap_or_else(|err| format!("json_error:{err}"));
+        let dump_path =
+            Self::write_state_diff_mismatch_dump(block_n, &summary, rust_exec_diff, blockifier_diff, 256)
+                .unwrap_or_else(|| "unavailable".to_owned());
         tracing::warn!(
             block_n,
             summary = %summary,
@@ -1072,7 +1062,17 @@ impl BlockProductionTask {
             blockifier_storage_entries = Self::storage_entry_count(blockifier_diff),
             storage_mismatch_count,
             storage_mismatch_preview = %storage_mismatch_preview,
-            "comparator_state_diff_mismatch_details"
+            dump_path = %dump_path,
+            "comparator_state_diff_mismatch_details block_n={} summary={} rust_exec_storage_contracts={} blockifier_storage_contracts={} rust_exec_storage_entries={} blockifier_storage_entries={} storage_mismatch_count={} storage_mismatch_preview={} dump_path={}",
+            block_n,
+            summary,
+            rust_exec_diff.storage_diffs.len(),
+            blockifier_diff.storage_diffs.len(),
+            Self::storage_entry_count(rust_exec_diff),
+            Self::storage_entry_count(blockifier_diff),
+            storage_mismatch_count,
+            storage_mismatch_preview,
+            dump_path
         );
     }
 
@@ -1080,11 +1080,11 @@ impl BlockProductionTask {
         diff.storage_diffs.iter().map(|item| item.storage_entries.len()).sum()
     }
 
-    fn storage_diff_mismatch_preview(
+    fn storage_diff_mismatch_preview_json(
         rust_exec_diff: &StateDiff,
         blockifier_diff: &StateDiff,
         preview_limit: usize,
-    ) -> (usize, String) {
+    ) -> (usize, Vec<serde_json::Value>) {
         let rust_exec_storage = Self::flatten_storage_diff(rust_exec_diff);
         let blockifier_storage = Self::flatten_storage_diff(blockifier_diff);
         let mut keys = std::collections::BTreeSet::new();
@@ -1102,17 +1102,30 @@ impl BlockProductionTask {
 
             mismatch_count += 1;
             if preview.len() < preview_limit {
-                preview.push(format!(
-                    "address={address:?} key={key:?} rust_exec={rust_exec_value:?} blockifier={blockifier_value:?}"
-                ));
+                let kind = match (rust_exec_value, blockifier_value) {
+                    (None, Some(_)) => "missing_in_rust_exec",
+                    (Some(_), None) => "extra_in_rust_exec",
+                    (Some(_), Some(_)) => "value_mismatch",
+                    (None, None) => unreachable!("mismatch key must exist in at least one diff"),
+                };
+                preview.push(serde_json::json!({
+                    "kind": kind,
+                    "contract_address": Self::felt_hex(address),
+                    "storage_key": Self::felt_hex(key),
+                    "rust_exec_value": rust_exec_value.map(|value| Self::felt_hex(*value)),
+                    "blockifier_value": blockifier_value.map(|value| Self::felt_hex(*value)),
+                }));
             }
         }
 
         if mismatch_count > preview.len() {
-            preview.push(format!("... {} more", mismatch_count - preview.len()));
+            preview.push(serde_json::json!({
+                "truncated": true,
+                "remaining": mismatch_count - preview.len(),
+            }));
         }
 
-        (mismatch_count, preview.join("; "))
+        (mismatch_count, preview)
     }
 
     fn flatten_storage_diff(diff: &StateDiff) -> BTreeMap<(Felt, Felt), Felt> {
@@ -1120,5 +1133,67 @@ impl BlockProductionTask {
             .iter()
             .flat_map(|item| item.storage_entries.iter().map(move |entry| ((item.address, entry.key), entry.value)))
             .collect()
+    }
+
+    fn write_state_diff_mismatch_dump(
+        block_n: u64,
+        summary: &str,
+        rust_exec_diff: &StateDiff,
+        blockifier_diff: &StateDiff,
+        full_mismatch_limit: usize,
+    ) -> Option<String> {
+        let (storage_mismatch_count, storage_mismatch_preview) =
+            Self::storage_diff_mismatch_preview_json(rust_exec_diff, blockifier_diff, full_mismatch_limit);
+        let path = format!("/tmp/madara-comparator-state-diff-mismatch-block-{block_n}.json");
+        let payload = serde_json::json!({
+            "block_n": block_n,
+            "summary": summary,
+            "storage_mismatch_count": storage_mismatch_count,
+            "storage_mismatch_preview": storage_mismatch_preview,
+            "rust_exec": {
+                "storage_contracts": rust_exec_diff.storage_diffs.len(),
+                "storage_entries": Self::storage_entry_count(rust_exec_diff),
+                "storage_diffs": Self::storage_diff_json_entries(rust_exec_diff),
+                "full_state_diff": rust_exec_diff,
+            },
+            "blockifier": {
+                "storage_contracts": blockifier_diff.storage_diffs.len(),
+                "storage_entries": Self::storage_entry_count(blockifier_diff),
+                "storage_diffs": Self::storage_diff_json_entries(blockifier_diff),
+                "full_state_diff": blockifier_diff,
+            },
+        });
+
+        let bytes = match serde_json::to_vec_pretty(&payload) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::warn!(block_n, error = %err, "comparator_state_diff_mismatch_dump_serialize_failed");
+                return None;
+            }
+        };
+
+        if let Err(err) = std::fs::write(&path, bytes) {
+            tracing::warn!(block_n, path = %path, error = %err, "comparator_state_diff_mismatch_dump_write_failed");
+            return None;
+        }
+
+        Some(path)
+    }
+
+    fn storage_diff_json_entries(diff: &StateDiff) -> Vec<serde_json::Value> {
+        Self::flatten_storage_diff(diff)
+            .into_iter()
+            .map(|((address, key), value)| {
+                serde_json::json!({
+                    "contract_address": Self::felt_hex(address),
+                    "storage_key": Self::felt_hex(key),
+                    "value": Self::felt_hex(value),
+                })
+            })
+            .collect()
+    }
+
+    fn felt_hex(value: Felt) -> String {
+        format!("0x{value:x}")
     }
 }
