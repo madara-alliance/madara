@@ -49,6 +49,7 @@ pub struct RustShadowExecutionResult {
 pub enum RustDeferredReason {
     Capacity,
     ResourceError,
+    UnsupportedOrFailed,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -278,6 +279,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                 let ctx_stats = storage_agg::snapshot();
                 log_storage_agg(tx_hash, &output.outcome, ctx_stats);
             }
+            let output_failed = output.output.is_err();
             if let Ok((execution_info, maps)) = output.output.as_mut() {
                 if options.update_bouncer {
                     let tx_state_changes_keys = maps.keys();
@@ -351,6 +353,9 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
             }
 
             results.push(output);
+            if output_failed {
+                break;
+            }
         }
 
         executor.block_state = Some(block_state);
@@ -463,14 +468,35 @@ pub fn execute_txns<S: BlockifierStateReader + Send + Sync + 'static>(
 ) -> RustExecOutput {
     initialize_runtime_config(runtime_cfg.clone());
 
-    let results = execute_txs_settle_trade_v3(executor, txs, execution_deadline, phase_state);
-    let executed_count = results.len();
-    let block_full = executed_count < txs.len();
+    let mut results = execute_txs_settle_trade_v3(executor, txs, execution_deadline, phase_state);
+    let (executed_count, block_full, deferred_reason) = classify_rust_results(&results, txs.len());
+    if matches!(deferred_reason, Some(RustDeferredReason::UnsupportedOrFailed)) {
+        results.truncate(executed_count);
+    }
 
-    RustExecOutput {
-        results,
-        executed_count,
-        block_full,
-        deferred_reason: block_full.then_some(RustDeferredReason::Capacity),
+    RustExecOutput { results, executed_count, block_full, deferred_reason }
+}
+
+fn classify_rust_results<T, E>(
+    results: &[Result<T, E>],
+    input_len: usize,
+) -> (usize, bool, Option<RustDeferredReason>) {
+    let executed_count = results.iter().take_while(|result| result.is_ok()).count();
+    if executed_count < results.len() {
+        return (executed_count, false, Some(RustDeferredReason::UnsupportedOrFailed));
+    }
+
+    let block_full = executed_count < input_len;
+    (executed_count, block_full, block_full.then_some(RustDeferredReason::Capacity))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_rust_results, RustDeferredReason};
+
+    #[test]
+    fn rust_result_classification_stops_before_first_error() {
+        let results = [Ok(()), Ok(()), Err(()), Ok(())];
+        assert_eq!(classify_rust_results(&results, 4), (2, false, Some(RustDeferredReason::UnsupportedOrFailed)));
     }
 }
