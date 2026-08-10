@@ -1,4 +1,4 @@
-use crate::{prelude::*, ChainTip};
+use crate::{chain_head::ChainHeadState, prelude::*};
 use futures::{stream, Stream};
 use std::sync::Arc;
 
@@ -97,24 +97,24 @@ impl<D: MadaraStorageRead> SubscribeNewL1Heads<D> {
 #[derive(Debug)]
 pub struct WatchChainTip<D: MadaraStorageRead> {
     _backend: Arc<MadaraBackend<D>>,
-    current_value: ChainTip,
-    subscription: tokio::sync::watch::Receiver<ChainTip>,
+    current_value: ChainHeadState,
+    subscription: tokio::sync::watch::Receiver<ChainHeadState>,
 }
 impl<D: MadaraStorageRead> WatchChainTip<D> {
     fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
-        let subscription = backend.chain_tip.subscribe();
-        let current_value = subscription.borrow().clone();
+        let subscription = backend.chain_head_state.subscribe();
+        let current_value = *subscription.borrow();
         Self { _backend: backend.clone(), current_value, subscription }
     }
-    pub fn current(&self) -> &ChainTip {
+    pub fn current(&self) -> &ChainHeadState {
         &self.current_value
     }
     pub fn refresh(&mut self) {
-        self.current_value = self.subscription.borrow_and_update().clone();
+        self.current_value = *self.subscription.borrow_and_update();
     }
-    pub async fn recv(&mut self) -> &ChainTip {
+    pub async fn recv(&mut self) -> &ChainHeadState {
         self.subscription.changed().await.expect("Channel closed");
-        self.current_value = self.subscription.borrow_and_update().clone();
+        self.current_value = *self.subscription.borrow_and_update();
         &self.current_value
     }
 }
@@ -139,39 +139,58 @@ pub struct SubscribeNewHeads<D: MadaraStorageRead> {
     backend: Arc<MadaraBackend<D>>,
     subscription: WatchChainTip<D>,
     tag: SubscribeNewBlocksTag,
-    current_value: ChainTip,
+    current_value: ChainHeadState,
+    internal: bool,
 }
 impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
-    fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag) -> Self {
+    fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag, internal: bool) -> Self {
         let subscription = WatchChainTip::new(backend);
-        let current_value = subscription.current_value.clone();
-        Self { backend: backend.clone(), current_value, subscription, tag }
+        let current_value = subscription.current_value;
+        Self { backend: backend.clone(), current_value, subscription, tag, internal }
+    }
+
+    fn preconfirmed_tip(&self, head: &ChainHeadState) -> Option<u64> {
+        if self.internal {
+            head.internal_preconfirmed_tip
+        } else {
+            head.external_preconfirmed_tip
+        }
     }
     pub fn set_start_from(&mut self, block_n: u64) {
         // We need to substract one
-        self.current_value = ChainTip::on_confirmed_block_n_or_empty(block_n.checked_sub(1))
+        self.current_value = ChainHeadState {
+            confirmed_tip: block_n.checked_sub(1),
+            external_preconfirmed_tip: None,
+            internal_preconfirmed_tip: None,
+        }
     }
-    pub fn current(&self) -> &ChainTip {
+    pub fn current(&self) -> &ChainHeadState {
         &self.current_value
     }
-    pub async fn next_head(&mut self) -> &ChainTip {
+    pub fn current_confirmed_block_n(&self) -> Option<u64> {
+        self.current_value.confirmed_tip
+    }
+    pub async fn next_head(&mut self) -> &ChainHeadState {
         loop {
             // Inclusive bound.
-            let next_block_to_return = self.current_value.latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
+            let next_block_to_return = self.current_value.confirmed_tip.map(|v| v + 1).unwrap_or(0);
             // Exclusive bound.
-            let highest_block_plus_one =
-                self.subscription.current().latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
+            let highest_block_plus_one = self.subscription.current().confirmed_tip.map(|v| v + 1).unwrap_or(0);
 
             if next_block_to_return < highest_block_plus_one {
-                self.current_value = ChainTip::on_confirmed_block_n_or_empty(Some(next_block_to_return));
+                self.current_value = ChainHeadState {
+                    confirmed_tip: Some(next_block_to_return),
+                    external_preconfirmed_tip: None,
+                    internal_preconfirmed_tip: None,
+                };
                 return &self.current_value;
             }
 
             if self.tag == SubscribeNewBlocksTag::Preconfirmed
-                && self.subscription.current().is_preconfirmed()
+                && self.preconfirmed_tip(self.subscription.current()).is_some()
                 && self.subscription.current() != &self.current_value
             {
-                self.current_value = self.subscription.current().clone();
+                self.current_value = *self.subscription.current();
                 return &self.current_value;
             }
 
@@ -181,7 +200,17 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
 
     /// Returns [`None`] for pre-genesis.
     pub fn current_block_view(&self) -> Option<MadaraBlockView<D>> {
-        self.backend.block_view_on_tip(self.current_value.clone())
+        if let Some(preconfirmed_tip) = self.preconfirmed_tip(&self.current_value) {
+            if self.current_value == *self.backend.chain_head_state.borrow() {
+                if self.internal {
+                    return self.backend.block_view_on_preconfirmed(preconfirmed_tip).map(Into::into);
+                }
+                return self.backend.block_view_on_latest();
+            }
+        }
+        self.current_value
+            .confirmed_tip
+            .and_then(|block_n| self.backend.block_view_on_confirmed(block_n).map(Into::into))
     }
     pub async fn next_block_view(&mut self) -> MadaraBlockView<D> {
         self.next_head().await;
@@ -210,6 +239,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
     pub fn subscribe_new_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
-        SubscribeNewHeads::new(self, tag)
+        SubscribeNewHeads::new(self, tag, false)
+    }
+
+    /// Subscribe to new blocks using the internal preconfirmed frontier.
+    pub fn subscribe_internal_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
+        SubscribeNewHeads::new(self, tag, true)
     }
 }

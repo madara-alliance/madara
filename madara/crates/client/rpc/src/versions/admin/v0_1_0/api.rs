@@ -1,11 +1,12 @@
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mc_block_production::fallback::types::ExecutionboxStatus;
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::{
-    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnsParams, MempoolTxnHashInfo,
-    MempoolTxnInfo,
+    BroadcastedDeclareTxnV0, GetMempoolTxnsParams, MempoolTxnHashInfo, MempoolTxnInfo, ReplayBlockBoundary,
+    ReplayBlockBoundaryStatus,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -77,7 +78,6 @@ pub trait MadaraWriteRpcApi {
     /// before mutating the DB state, and then exits the process so Kubernetes
     /// (or another supervisor) can restart cleanly.
     ///
-    /// Only available when unsafe RPC methods are enabled.
     #[method(name = "revertToAndShutdown")]
     async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
 
@@ -88,18 +88,42 @@ pub trait MadaraWriteRpcApi {
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
 
-    /// Sets custom headers to be used for the upcoming block.
-    /// Only available when unsafe RPC methods are enabled.
+    /// Sets custom headers to be used for a specific block number.
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 
-    /// Flush transactions from the mempool using an admin-only filter.
-    /// Only available when unsafe RPC methods are enabled.
-    /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
-    /// Nonce-range flushing is surgical: it removes only matching transactions. If that creates an
-    /// account nonce gap, higher nonces remain pending so the missing nonce can be resubmitted.
-    #[method(name = "flushMempoolTxns")]
-    async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
+    /// Sets replay block boundary metadata for a specific block.
+    ///
+    /// This metadata is consumed by replay-aware batching/execution to avoid crossing block
+    /// boundaries while transactions are sent asynchronously.
+    #[method(name = "setReplayBoundary")]
+    async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus>;
+
+    /// Returns replay boundary status for a given block, if a boundary is configured.
+    #[method(name = "getReplayBoundaryStatus")]
+    async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>>;
+}
+
+#[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraMempoolRpcApi {
+    /// Enable or disable intake of mempool transactions in block production mode.
+    ///
+    /// - `true`: consume transactions from mempool as usual.
+    /// - `false`: pause mempool intake while keeping bypass/L1 message paths active.
+    #[method(name = "setMempoolIntake")]
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()>;
+
+    /// Flush all currently queued mempool transactions for one processing wave.
+    ///
+    /// Intake automatically returns to paused once the mempool is drained.
+    #[method(name = "flushMempool")]
+    async fn flush_mempool(&self) -> RpcResult<()>;
+
+    /// Clear persisted saved-mempool rows from the backend DB.
+    ///
+    /// This does not clear the live in-memory mempool.
+    #[method(name = "clearSavedMempool")]
+    async fn clear_saved_mempool(&self) -> RpcResult<()>;
 }
 
 /// This is an admin method, so semver is different!
@@ -151,11 +175,32 @@ pub trait MadaraStatusRpcApi {
     async fn pulse(&self) -> jsonrpsee::core::SubscriptionResult;
 }
 
+/// ExecutionBox operational control methods (Step 6).
+/// Added to the existing admin endpoint; NOT exposed on cloud endpoint.
+#[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraExecutionBoxRpcApi {
+    /// Force-disable ExecutionBox, switching to blockifier-only mode immediately.
+    /// Idempotent if already in blockifier-only mode.
+    #[method(name = "executionboxDisable")]
+    async fn executionbox_disable(&self) -> RpcResult<()>;
+
+    /// Enable ExecutionBox (synchronous decision, no intent latch).
+    ///
+    /// Returns:
+    /// - `"enabled_now"` if switched to mixed mode successfully.
+    /// - `"already_mixed"` if already in mixed mode (idempotent success).
+    /// - Error with message `"replay_in_progress"` if startup recovery or replay backlog is active.
+    #[method(name = "executionboxEnable")]
+    async fn executionbox_enable(&self) -> RpcResult<String>;
+
+    /// Return current ExecutionBox status snapshot.
+    #[method(name = "executionboxStatus")]
+    async fn executionbox_status(&self) -> RpcResult<ExecutionboxStatus>;
+}
+
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraServicesRpcApi {
     /// Sets the status of one or more services
-    ///
-    /// Process-global services such as telemetry are intentionally excluded.
     ///
     /// # Returns
     ///

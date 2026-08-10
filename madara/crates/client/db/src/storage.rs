@@ -1,7 +1,7 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
 use crate::rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
-use crate::rocksdb::global_trie::{MerklizationTimings, StagedGlobalTries};
+use crate::rocksdb::global_trie::MerklizationTimings;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
@@ -10,7 +10,10 @@ use mp_chain_config::StarknetVersion;
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
-use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use mp_transactions::{
+    validated::{TxTimestamp, ValidatedTransaction},
+    L1HandlerTransactionWithFee,
+};
 use starknet_api::core::ChainId;
 
 #[derive(Debug, Clone)]
@@ -76,8 +79,8 @@ pub struct DevnetPredeployedContractAccount {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
-#[derive(Clone, Debug)]
-pub enum StorageChainTip {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageHeadProjection {
     /// Empty pre-genesis state.
     Empty,
     /// Latest block is closed.
@@ -86,7 +89,7 @@ pub enum StorageChainTip {
     Preconfirmed { header: PreconfirmedHeader, content: Vec<PreconfirmedExecutedTransaction> },
 }
 
-impl std::fmt::Display for StorageChainTip {
+impl std::fmt::Display for StorageHeadProjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Empty => write!(f, "empty state"),
@@ -102,6 +105,30 @@ impl std::fmt::Display for StorageChainTip {
 pub struct StoredChainInfo {
     pub chain_id: ChainId,
     pub chain_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaintedRebuildSession {
+    pub execution_epoch: u64,
+    pub anchor_block_n: u64,
+    pub next_block_n: u64,
+    pub tail_block_n: u64,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaintedRebuildCarryRow {
+    pub seq_no: u64,
+    pub tx: ValidatedTransaction,
+    pub declared_class: Option<ConvertedClass>,
+    pub arrived_at: TxTimestamp,
+    pub source_block_n: Option<u64>,
+    #[serde(default = "default_charge_fee_true")]
+    pub effective_charge_fee: bool,
+}
+
+fn default_charge_fee_true() -> bool {
+    true
 }
 
 /// Trait abstracting over the storage interface.
@@ -139,7 +166,12 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Meta
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
-    fn get_chain_tip(&self) -> Result<StorageChainTip>;
+    fn get_head_projection(&self) -> Result<StorageHeadProjection>;
+    fn get_preconfirmed_block_data(
+        &self,
+        block_n: u64,
+    ) -> Result<Option<(PreconfirmedHeader, Vec<PreconfirmedExecutedTransaction>)>>;
+    fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_external_db_retention_cursor(&self) -> Result<Option<u64>>;
@@ -150,6 +182,8 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         backend_chain_config: &mp_chain_config::ChainConfig,
     ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>>;
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>>;
+    fn get_tainted_rebuild_session(&self) -> Result<Option<TaintedRebuildSession>>;
+    fn get_tainted_rebuild_carry_rows(&self) -> Result<Vec<TaintedRebuildCarryRow>>;
 
     // L1 to L2 messages
 
@@ -190,8 +224,20 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
-    fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
+    fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()>;
+    fn append_preconfirmed_content(
+        &self,
+        block_n: u64,
+        start_tx_index: u64,
+        txs: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()>;
+    fn write_preconfirmed_header(&self, header: &PreconfirmedHeader) -> Result<()>;
+    fn replace_preconfirmed_content_for_block(
+        &self,
+        block_n: u64,
+        txs: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()>;
+    fn delete_preconfirmed_rows_up_to(&self, confirmed_tip: u64) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.
@@ -224,9 +270,20 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()>;
-    fn clear_runtime_exec_config(&self) -> Result<()>;
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
+    fn write_tainted_rebuild_session(&self, session: &TaintedRebuildSession) -> Result<()>;
+    fn replace_tainted_rebuild_carry_rows(&self, rows: &[TaintedRebuildCarryRow]) -> Result<()>;
+    fn clear_tainted_rebuild_session(&self) -> Result<()>;
+    fn clear_tainted_rebuild_carry_rows(&self) -> Result<()>;
+    fn stage_tainted_rebuild_preconfirmed_block(
+        &self,
+        header: &PreconfirmedHeader,
+        txs: &[PreconfirmedExecutedTransaction],
+        session: Option<&TaintedRebuildSession>,
+        carry_rows: &[TaintedRebuildCarryRow],
+    ) -> Result<()>;
 
+    fn clear_saved_mempool_transactions(&self) -> Result<()>;
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
     fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
@@ -234,22 +291,12 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Write a state diff to the global tries.
     /// Returns the new state root and timing information.
-    ///
-    /// `protocol_version` governs whether the `class_trie_root == 0` short-circuit applies
-    /// in state root computation (gated on `< 0.14.0`, matching pathfinder).
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
         protocol_version: StarknetVersion,
     ) -> Result<(Felt, MerklizationTimings)>;
-
-    fn compute_global_trie_staged(
-        &self,
-        state_diff: &StateDiff,
-        protocol_version: StarknetVersion,
-        block_number: u64,
-    ) -> Result<(Felt, StagedGlobalTries)>;
 
     fn flush(&self) -> Result<()>;
 

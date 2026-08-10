@@ -1,8 +1,11 @@
 #![cfg(test)]
 
+// TODO(heemankv): The mempool behavior exercised on this branch has been validated manually and is
+// working, but newer persistence/recovery paths still need stronger automated coverage here. Any
+// future mempool behavior change should land with explicit tests.
+
 use crate::{limits::MempoolLimitReached, tx::ScoreFunction, InnerMempool, InnerMempoolConfig, TxInsertionError};
 use assert_matches::assert_matches;
-use mp_chain_config::MempoolFullPolicy;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use proptest::strategy::Strategy;
@@ -65,7 +68,6 @@ impl From<TestTx> for ValidatedTransaction {
                         account_deployment_data: Default::default(),
                         nonce_data_availability_mode: Default::default(),
                         fee_data_availability_mode: Default::default(),
-                        proof_facts: Default::default(),
                     })
                 } else {
                     mp_transactions::InvokeTransaction::V1(mp_transactions::InvokeTransactionV1 {
@@ -203,7 +205,6 @@ pub fn fcfs_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Timestamp,
-        full_policy: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -219,7 +220,6 @@ pub fn tip_mempool(
 ) -> MempoolTester {
     MempoolTester::new(InnerMempoolConfig {
         score_function: ScoreFunction::Tip { min_tip_bump },
-        full_policy: MempoolFullPolicy::EvictLessDesirable,
         max_transactions,
         max_declare_transactions,
         ttl: Some(ttl),
@@ -753,60 +753,6 @@ fn test_eviction_fails_when_new_tx_has_worse_score(#[with(3)] mut fcfs_mempool: 
     assert_matches!(fcfs_mempool.insert_tx(tx2.clone(), felt!("0x1")), Ok(()));
     assert_matches!(fcfs_mempool.insert_tx(tx3.clone(), felt!("0x1")), Ok(()));
 
-    assert_matches!(
-        fcfs_mempool.insert_tx(new_tx, felt!("0x1")),
-        Err(TxInsertionError::Limit(MempoolLimitReached::MaxTransactions { max: 3 }))
-    );
-
-    assert_eq!(fcfs_mempool.transactions(), [tx1, tx2, tx3].into());
-}
-
-#[test]
-fn test_reject_new_full_policy_never_evicts_existing_transactions() {
-    let mut fcfs_mempool = MempoolTester::new(InnerMempoolConfig {
-        score_function: ScoreFunction::Timestamp,
-        full_policy: MempoolFullPolicy::RejectNew,
-        max_transactions: 3,
-        max_declare_transactions: Some(2),
-        ttl: Some(Duration::from_secs(20)),
-    });
-
-    let tx1 = TestTx {
-        nonce: felt!("0x3"),
-        contract_address: felt!("0x100"),
-        arrived_at: 1000,
-        tip: None,
-        tx_hash: felt!("0x100"),
-        is_declare: false,
-    };
-    let tx2 = TestTx {
-        nonce: felt!("0x4"),
-        contract_address: felt!("0x200"),
-        arrived_at: 2000,
-        tip: None,
-        tx_hash: felt!("0x200"),
-        is_declare: false,
-    };
-    let tx3 = TestTx {
-        nonce: felt!("0x5"),
-        contract_address: felt!("0x300"),
-        arrived_at: 3000,
-        tip: None,
-        tx_hash: felt!("0x300"),
-        is_declare: false,
-    };
-    let new_tx = TestTx {
-        nonce: felt!("0x2"),
-        contract_address: felt!("0x400"),
-        arrived_at: 500,
-        tip: None,
-        tx_hash: felt!("0x400"),
-        is_declare: false,
-    };
-
-    assert_matches!(fcfs_mempool.insert_tx(tx1.clone(), felt!("0x1")), Ok(()));
-    assert_matches!(fcfs_mempool.insert_tx(tx2.clone(), felt!("0x1")), Ok(()));
-    assert_matches!(fcfs_mempool.insert_tx(tx3.clone(), felt!("0x1")), Ok(()));
     assert_matches!(
         fcfs_mempool.insert_tx(new_tx, felt!("0x1")),
         Err(TxInsertionError::Limit(MempoolLimitReached::MaxTransactions { max: 3 }))

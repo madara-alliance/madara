@@ -101,6 +101,14 @@ impl AccountState {
         self.queued_txs.last_key_value().map(|kv| kv.1)
     }
 
+    pub fn first_queued_nonce(&self) -> Option<Nonce> {
+        self.queued_txs.first_key_value().map(|(nonce, _)| *nonce)
+    }
+
+    pub fn queued_len(&self) -> usize {
+        self.queued_txs.len()
+    }
+
     /// The eviction score of an account is based on the last queued transaction. This value is per-account,
     /// as when an account is chosen for eviction, its last queued transaction is removed and the eviction
     /// score is updated.
@@ -170,6 +178,12 @@ impl TxEntryForInsertion<'_> {
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
 pub struct Accounts {
     accounts: HashMap<ContractAddress, AccountState>,
+}
+
+impl Accounts {
+    pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {
+        self.accounts.keys()
+    }
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -396,6 +410,10 @@ impl Accounts {
     }
     pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&MempoolTransaction> {
         self.accounts.get(contract_address).and_then(|account| account.queued_txs.get(nonce))
+    }
+
+    pub fn get_account_state(&self, contract_address: &ContractAddress) -> Option<&AccountState> {
+        self.accounts.get(contract_address)
     }
 
     pub fn is_empty(&self) -> bool {

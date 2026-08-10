@@ -1,19 +1,18 @@
 use crate::inner::{
-    accounts::{AccountUpdate, Accounts},
+    accounts::{AccountStatus, AccountUpdate, Accounts},
     by_tx_hash_index::ByTxHashIndex,
     eviction::EvictionQueue,
     limits::{MempoolLimitReached, MempoolLimiter},
     ready_queue::ReadyQueue,
     timestamp_queue::TimestampQueue,
-    tx::{EvictionScore, MempoolTransaction, ScoreFunction, TxKey},
+    tx::{EvictionScore, MempoolTransaction, ScoreFunction},
 };
-use mp_chain_config::MempoolFullPolicy;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
 };
-use std::{collections::HashSet, fmt, time::Duration};
+use std::{fmt, time::Duration};
 
 pub(crate) mod accounts;
 pub(crate) mod by_tx_hash_index;
@@ -47,7 +46,6 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
-    pub full_policy: MempoolFullPolicy,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Option<Duration>,
@@ -115,10 +113,6 @@ impl InnerMempool {
         self.eviction_queue.check_invariants(&self.accounts);
     }
 
-    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
-        self.accounts.all_accounts().get(contract_address).map(|acc| &acc.current_nonce)
-    }
-
     pub fn account_nonces(&self) -> impl Iterator<Item = (&ContractAddress, &Nonce)> {
         self.accounts
             .all_accounts()
@@ -132,6 +126,23 @@ impl InnerMempool {
 }
 
 impl InnerMempool {
+    pub fn contract_addresses(&self) -> impl Iterator<Item = ContractAddress> + '_ {
+        self.accounts.contract_addresses().copied()
+    }
+
+    pub fn transactions_by_arrival(&self) -> impl Iterator<Item = &ValidatedTransaction> {
+        self.timestamp_queue.iter().filter_map(|tx_key| {
+            let tx = self.accounts.get_tx_by_key(tx_key);
+            if tx.is_none() {
+                tracing::warn!(
+                    target: "mempool",
+                    "Skipping stale timestamp queue key while iterating mempool: {tx_key:?}"
+                );
+            }
+            tx.map(|tx| &tx.inner)
+        })
+    }
+
     pub fn new(config: InnerMempoolConfig) -> Self {
         Self {
             limiter: MempoolLimiter::new(&config),
@@ -214,20 +225,15 @@ impl InnerMempool {
                 if !err.can_trigger_eviction_policy() {
                     return Err(err.into());
                 }
-                let made_room = match self.config.full_policy {
-                    MempoolFullPolicy::EvictLessDesirable => {
-                        let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
-                        tracing::debug!("Try make room via less-desirable eviction: {new_tx_eviction_score:?}");
-                        self.try_make_room_for_less_desirable_tx(&new_tx_eviction_score, removed_txs)
-                    }
-                    MempoolFullPolicy::RejectNew => false,
-                };
-                if !made_room {
-                    return Err(err.into());
+                // Try to make space by evicting less desirable transactions.
+                let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
+                tracing::debug!("Try make room: {new_tx_eviction_score:?}");
+                if !self.try_make_room_for(&new_tx_eviction_score, removed_txs) {
+                    return Err(err.into()); // Failed to make room
                 }
                 // We made room!
 
-                // Reborrow the insertion `entry`, as the eviction path had to borrow the account set mutably.
+                // Reborrow the insertion `entry`, as `try_make_room_for` had to borrow it mutably to make its modifications.
                 entry = self
                     .accounts
                     .tx_entry_for_insertion(&mempool_tx, account_nonce)
@@ -245,7 +251,7 @@ impl InnerMempool {
 
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
-    fn try_make_room_for_less_desirable_tx(
+    fn try_make_room_for(
         &mut self,
         new_tx: &EvictionScore,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
@@ -277,7 +283,25 @@ impl InnerMempool {
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) {
         tracing::debug!("Update account nonce {contract_address:?} {account_nonce:?}");
+        let previous_account_nonce =
+            self.accounts.get_account_state(contract_address).map(|account| account.current_nonce);
         let Some(account_update) = self.accounts.update_account_nonce(contract_address, account_nonce) else { return };
+        let account_state_after = self.accounts.get_account_state(contract_address);
+        let front_nonce_after = account_state_after.and_then(|account| account.first_queued_nonce());
+        let queued_len_after = account_state_after.map(|account| account.queued_len()).unwrap_or(0);
+        tracing::debug!(
+            "mempool_account_nonce_updated contract_address={contract_address:?} previous_account_nonce={previous_account_nonce:?} new_account_nonce={:?} previous_status={:?} new_status={:?} removed_txs={} front_nonce_after={front_nonce_after:?} queued_len_after={queued_len_after}",
+            account_update.account_data.account_nonce,
+            account_update.account_data.previous_status,
+            account_update.account_data.new_status,
+            account_update.removed_txs.len(),
+        );
+        if matches!(account_update.account_data.new_status, AccountStatus::Pending) {
+            tracing::warn!(
+                "mempool_account_pending_after_nonce_update contract_address={contract_address:?} account_nonce={:?} front_nonce_after={front_nonce_after:?} queued_len_after={queued_len_after}",
+                account_update.account_data.account_nonce,
+            );
+        }
         self.apply_update(account_update, removed_txs);
     }
 
@@ -331,80 +355,6 @@ impl InnerMempool {
         self.accounts.get_transaction(contract_address, nonce).map(|tx| &tx.inner)
     }
 
-    pub fn transactions_by_arrival(&self) -> impl Iterator<Item = &ValidatedTransaction> {
-        self.timestamp_queue.iter().filter_map(|tx_key| {
-            let tx = self.accounts.get_tx_by_key(tx_key);
-            if tx.is_none() {
-                tracing::warn!(
-                    target: "mempool",
-                    "Skipping stale timestamp queue key while iterating mempool: {tx_key:?}"
-                );
-            }
-            tx.map(|tx| &tx.inner)
-        })
-    }
-
-    pub fn remove_transactions_matching(
-        &mut self,
-        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
-        removed_txs: &mut impl Extend<ValidatedTransaction>,
-    ) {
-        let tx_keys = self
-            .timestamp_queue
-            .iter()
-            .filter_map(|tx_key| {
-                let Some(tx) = self.accounts.get_tx_by_key(tx_key) else {
-                    tracing::warn!(
-                        target: "mempool",
-                        "Skipping stale timestamp queue key while selecting mempool txs for removal: {tx_key:?}"
-                    );
-                    return None;
-                };
-                predicate(&tx.inner).then_some(*tx_key)
-            })
-            .collect::<Vec<_>>();
-
-        self.remove_transactions_by_keys(tx_keys, removed_txs);
-    }
-
-    pub fn remove_transactions_by_hashes(
-        &mut self,
-        tx_hashes: impl IntoIterator<Item = TransactionHash>,
-        removed_txs: &mut impl Extend<ValidatedTransaction>,
-    ) {
-        let tx_keys = tx_hashes
-            .into_iter()
-            .filter_map(|tx_hash| {
-                let tx_key = self.by_tx_hash.get(&tx_hash).copied();
-                if tx_key.is_none() {
-                    tracing::debug!(target: "mempool", "Skipping missing tx hash during mempool flush: {tx_hash:?}");
-                }
-                tx_key
-            })
-            .collect::<HashSet<_>>();
-
-        if tx_keys.is_empty() {
-            return;
-        }
-
-        self.remove_transactions_by_keys(tx_keys, removed_txs);
-    }
-
-    fn remove_transactions_by_keys(
-        &mut self,
-        tx_keys: impl IntoIterator<Item = TxKey>,
-        removed_txs: &mut impl Extend<ValidatedTransaction>,
-    ) {
-        for tx_key in tx_keys {
-            let Some(_) = self.accounts.get_tx_by_key(&tx_key) else {
-                tracing::warn!(target: "mempool", "Skipping stale mempool tx key during removal: {tx_key:?}");
-                continue;
-            };
-            let account_update = self.accounts.remove_tx(&tx_key);
-            self.apply_update(account_update, removed_txs);
-        }
-    }
-
     pub fn contains_tx_by_hash(&self, tx_hash: &TransactionHash) -> bool {
         self.by_tx_hash.contains(tx_hash)
     }
@@ -427,6 +377,10 @@ impl InnerMempool {
 
     pub fn num_accounts(&self) -> usize {
         self.accounts.num_accounts()
+    }
+
+    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.get_account_state(contract_address).map(|acc| &acc.current_nonce)
     }
 
     pub fn summary(&self) -> MempoolStateSummary {

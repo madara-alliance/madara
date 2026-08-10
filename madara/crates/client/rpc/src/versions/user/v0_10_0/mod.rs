@@ -217,4 +217,8 @@ pub trait StarknetTraceRpcApi {
     #[method(name = "traceTransaction")]
     /// Returns the execution trace of a transaction
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult>;
+
+    #[method(name = "traceTransactionRust")]
+    /// Returns the Rust execution result for a transaction.
+    async fn trace_transaction_rust(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult>;
 }

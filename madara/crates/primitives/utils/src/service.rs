@@ -377,8 +377,11 @@ pub enum MadaraServiceId {
     RpcAdmin,
     Gateway,
     Telemetry,
+    Analytics,
     Mempool,
     ExternalDb,
+    #[serde(skip)]
+    RpcCloud,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -394,8 +397,10 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::RpcAdmin => PowerOfTwo::P5,
             MadaraServiceId::Gateway => PowerOfTwo::P6,
             MadaraServiceId::Telemetry => PowerOfTwo::P7,
-            MadaraServiceId::Mempool => PowerOfTwo::P8,
-            MadaraServiceId::ExternalDb => PowerOfTwo::P9,
+            MadaraServiceId::Analytics => PowerOfTwo::P8,
+            MadaraServiceId::Mempool => PowerOfTwo::P9,
+            MadaraServiceId::ExternalDb => PowerOfTwo::P10,
+            MadaraServiceId::RpcCloud => PowerOfTwo::P11,
         }
     }
 }
@@ -413,8 +418,10 @@ impl Display for MadaraServiceId {
                 Self::BlockProduction => "block production",
                 Self::RpcUser => "rpc user",
                 Self::RpcAdmin => "rpc admin",
+                Self::RpcCloud => "rpc cloud",
                 Self::Gateway => "gateway",
                 Self::Telemetry => "telemetry",
+                Self::Analytics => "analytics",
                 Self::Mempool => "mempool",
                 Self::ExternalDb => "external db",
             }
@@ -450,8 +457,10 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P5 => Self::RpcAdmin,
             PowerOfTwo::P6 => Self::Gateway,
             PowerOfTwo::P7 => Self::Telemetry,
-            PowerOfTwo::P8 => Self::Mempool,
-            PowerOfTwo::P9 => Self::ExternalDb,
+            PowerOfTwo::P8 => Self::Analytics,
+            PowerOfTwo::P9 => Self::Mempool,
+            PowerOfTwo::P10 => Self::ExternalDb,
+            PowerOfTwo::P11 => Self::RpcCloud,
             _ => Self::Monitor, // Default fallback for unknown values
         }
     }
@@ -595,12 +604,7 @@ impl MadaraServiceMask {
     }
 
     fn active_set(&self) -> Vec<MadaraServiceId> {
-        // NOTE: keep this cursor in sync with the highest `MadaraServiceId`
-        // variant. Any new variant added after `ExternalDb` MUST update this
-        // start value, otherwise it will be silently omitted from the iteration
-        // (only used by `tracing::debug!` so the impact is incomplete debug
-        // output, but the bug is easy to miss).
-        let mut i = MadaraServiceId::ExternalDb.svc_id() as u64;
+        let mut i = MadaraServiceId::Telemetry.svc_id() as u64;
         let state = self.value();
         let mut set = Vec::with_capacity(SERVICE_COUNT_MAX);
 
@@ -1032,10 +1036,10 @@ pub struct ServiceTransport {
 ///     #[inline(always)]
 ///     fn svc_id(&self) -> PowerOfTwo {
 ///         match self {
-///             // PowerOfTwo::P0 up until PowerOfTwo::P9 are already in use by
+///             // PowerOfTwo::P0 up until PowerOfTwo::P7 are already in use by
 ///             // MadaraServiceId, you should not use them!
-///             Self::MyServiceA => PowerOfTwo::P10,
-///             Self::MyServiceB => PowerOfTwo::P11,
+///             Self::MyServiceA => PowerOfTwo::P8,
+///             Self::MyServiceB => PowerOfTwo::P9,
 ///         }
 ///     }
 /// }

@@ -1,4 +1,3 @@
-use super::mempool::matches_nonce_filter;
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -6,12 +5,12 @@ use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::{BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolNonceFilter};
+use mp_rpc::admin::{BroadcastedDeclareTxnV0, ReplayBlockBoundary, ReplayBlockBoundaryStatus};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -20,73 +19,6 @@ const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
 const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
 const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
-
-enum FlushMode {
-    All { nonce_filter: MempoolNonceFilter },
-    ContractAddress { contract_address: Felt, nonce_filter: MempoolNonceFilter },
-    TransactionHashes { transaction_hashes: Vec<Felt>, nonce_filter: MempoolNonceFilter },
-}
-
-fn invalid_flush_params(message: &'static str) -> jsonrpsee::types::ErrorObjectOwned {
-    jsonrpsee::types::ErrorObject::owned(jsonrpsee::types::ErrorCode::InvalidParams.code(), message, Some(()))
-}
-
-impl FlushMode {
-    fn from_params(params: FlushMempoolTxnsParams) -> RpcResult<Self> {
-        let nonce_filter = params.nonce_filter;
-        let using_all = params.all;
-        let using_contract_address = params.contract_address.is_some();
-        let using_transaction_hashes = params.transaction_hashes.as_ref().is_some_and(|hashes| !hashes.is_empty());
-        let using_nonce_filter = nonce_filter.nonce_after.is_some() || nonce_filter.nonce_before.is_some();
-
-        let selected_filters = [using_all, using_contract_address, using_transaction_hashes]
-            .into_iter()
-            .filter(|selected| *selected)
-            .count();
-        if selected_filters > 1 {
-            return Err(invalid_flush_params(
-                "Provide at most one base flush filter: all, contract_address, or transaction_hashes",
-            ));
-        }
-
-        if using_all {
-            return Ok(Self::All { nonce_filter });
-        }
-
-        if let Some(contract_address) = params.contract_address {
-            return Ok(Self::ContractAddress { contract_address, nonce_filter });
-        }
-
-        if using_transaction_hashes {
-            return Ok(Self::TransactionHashes {
-                transaction_hashes: params.transaction_hashes.unwrap_or_default(),
-                nonce_filter,
-            });
-        }
-
-        if using_nonce_filter {
-            return Err(invalid_flush_params(
-                "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes",
-            ));
-        }
-
-        Err(invalid_flush_params(
-            "Provide at least one base flush filter: all, contract_address, or transaction_hashes",
-        ))
-    }
-    fn matches(&self, transaction: &ValidatedTransaction) -> bool {
-        match self {
-            FlushMode::All { nonce_filter } => matches_nonce_filter(transaction, *nonce_filter),
-            FlushMode::ContractAddress { contract_address, nonce_filter } => {
-                transaction.sender_contract_address() == Some(*contract_address)
-                    && matches_nonce_filter(transaction, *nonce_filter)
-            }
-            FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
-                transaction_hashes.contains(&transaction.hash) && matches_nonce_filter(transaction, *nonce_filter)
-            }
-        }
-    }
-}
 
 fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
     tokio::spawn(async move {
@@ -160,13 +92,48 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
-        Ok(self
+        let tx_version = invoke_transaction.version();
+        let is_query = invoke_transaction.is_query();
+        let started = Instant::now();
+        let result = self
             .block_prod_handle
             .as_ref()
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .submit_invoke_transaction(invoke_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+            .await;
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+
+        match result {
+            Ok(result) => {
+                tracing::debug!(
+                    target: "rpc::admin",
+                    "bypass_add_invoke_transaction_completed transaction_hash={:?} tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                    result.transaction_hash,
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip
+                );
+                Ok(result)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "rpc::admin",
+                    "bypass_add_invoke_transaction_failed tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?} error={}",
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip,
+                    err
+                );
+                Err(StarknetRpcApiError::from(err).into())
+            }
+        }
     }
 
     /// Force close a block.
@@ -292,7 +259,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
 
-        // 3) Revert DB state, then refresh backend chain tip broadcast.
+        // 3) Revert DB state, then refresh backend head projection broadcast.
         tracing::info!(
             target: "rpc::admin",
             "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
@@ -301,14 +268,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
-        let fresh_chain_tip = self
-            .backend
-            .db
-            .get_chain_tip()
-            .context("Failed to get chain tip after revert")
+        self.backend
+            .refresh_head_projection_from_db()
+            .context("Failed to refresh head projection after revert")
             .map_err(StarknetRpcApiError::from)?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
 
@@ -325,7 +288,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(self
             .block_prod_handle
             .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .unwrap()
             .submit_l1_handler_transaction(l1_handler_message)
             .await
             .map_err(StarknetRpcApiError::from)?)
@@ -340,12 +303,23 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        self.backend.set_custom_header(custom_block_headers).map_err(StarknetRpcApiError::from)?;
-
+        let head = self.backend.chain_head_state();
+        tracing::debug!(
+            target: "rpc::admin",
+            "custom_block_header_set block_number={} timestamp={} expected_block_hash={:?} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            custom_block_headers.block_n,
+            custom_block_headers.timestamp,
+            custom_block_headers.expected_block_hash,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
+        );
+        self.backend.set_custom_header(custom_block_headers);
         Ok(())
     }
 
-    async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult> {
+    async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus> {
+        // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
                 error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
@@ -353,26 +327,49 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
-        let flush_mode = FlushMode::from_params(params)?;
-        let removed_transactions = match flush_mode {
-            FlushMode::TransactionHashes { transaction_hashes, nonce_filter } => {
-                if nonce_filter == MempoolNonceFilter::default() {
-                    mempool.flush_transactions_by_hashes(transaction_hashes).await
-                } else {
-                    mempool
-                        .flush_transactions_matching(|tx| {
-                            transaction_hashes.contains(&tx.hash) && matches_nonce_filter(tx, nonce_filter)
-                        })
-                        .await
-                }
-            }
-            flush_mode => mempool.flush_transactions_matching(|tx| flush_mode.matches(tx)).await,
-        };
+        if self.block_prod_handle.is_some() && !self.replay_mode_enabled {
+            tracing::warn!(
+                target: "rpc::admin",
+                block_number = replay_boundary.block_n,
+                expected_tx_count = replay_boundary.expected_tx_count,
+                "setReplayBoundary called while replay mode is disabled; the boundary will be stored but ignored by batcher and executor until Madara is started with --replay-mode"
+            );
+        }
 
-        Ok(FlushMempoolTxnsResult {
-            removed_transaction_hashes: removed_transactions.into_iter().map(|tx| tx.hash).collect(),
-        })
+        let started = Instant::now();
+        let status = self.backend.set_replay_boundary(replay_boundary.clone());
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+        tracing::debug!(
+            target: "rpc::admin",
+            "replay_boundary_set_rpc block_number={} expected_tx_count={} last_tx_hash={:?} dispatched_tx_count={} executed_tx_count={} boundary_met={} closed={} mismatch={:?} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            replay_boundary.block_n,
+            replay_boundary.expected_tx_count,
+            replay_boundary.last_tx_hash,
+            status.dispatched_tx_count,
+            status.executed_tx_count,
+            status.boundary_met,
+            status.closed,
+            status.mismatch,
+            elapsed_ms,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
+        );
+
+        Ok(status)
+    }
+
+    async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        Ok(self.backend.get_replay_boundary_status(block_n))
     }
 }
 
@@ -386,73 +383,16 @@ mod tests {
         test_utils::{add_test_block, l1_handler_tx_with_receipt},
         MadaraBackend,
     };
-    use mc_mempool::{Mempool, MempoolConfig};
-    use mp_block::header::{CustomHeader, GasPrices};
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
-    use mp_rpc::admin::{FlushMempoolTxnsParams, MempoolNonceFilter};
-    use mp_transactions::{
-        validated::{TxTimestamp, ValidatedTransaction},
-        InvokeTransaction, InvokeTransactionV1, L1HandlerTransaction, Transaction,
-    };
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
 
     fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
-        let provider = Arc::new(TestTransactionProvider);
-        let mut rpc = Starknet::new(backend, Arc::clone(&provider) as _, provider, Default::default(), None, ctx);
+        let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
         rpc.set_rpc_unsafe_enabled(true);
         rpc
-    }
-
-    fn make_starknet_with_mempool_and_unsafe(rpc_unsafe_enabled: bool) -> (Arc<Mempool>, Starknet) {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
-        let mut rpc = make_starknet(backend, ServiceContext::new_for_testing());
-        rpc.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
-        rpc.set_mempool(mempool.clone());
-        (mempool, rpc)
-    }
-
-    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
-        make_starknet_with_mempool_and_unsafe(true)
-    }
-
-    fn invoke_v1_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
-        ValidatedTransaction {
-            transaction: Transaction::Invoke(InvokeTransaction::V1(InvokeTransactionV1 {
-                sender_address: sender,
-                calldata: vec![Felt::from(10_u64)].into(),
-                max_fee: Felt::from(1_u64),
-                signature: vec![].into(),
-                nonce,
-            })),
-            paid_fee_on_l1: None,
-            contract_address: sender,
-            arrived_at: TxTimestamp(arrived_at),
-            declared_class: None,
-            hash,
-            charge_fee: true,
-        }
-    }
-
-    fn l1_handler_tx(contract_address: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
-        ValidatedTransaction {
-            transaction: Transaction::L1Handler(L1HandlerTransaction {
-                version: Felt::ZERO,
-                nonce: 0,
-                contract_address,
-                entry_point_selector: Felt::from(123_u64),
-                calldata: vec![Felt::from(10_u64)].into(),
-            }),
-            paid_fee_on_l1: Some(1),
-            contract_address,
-            arrived_at: TxTimestamp(arrived_at),
-            declared_class: None,
-            hash,
-            charge_fee: true,
-        }
     }
 
     #[tokio::test]
@@ -513,181 +453,5 @@ mod tests {
         assert_ne!(err.code(), 0);
         assert_eq!(backend.latest_confirmed_block_n(), Some(1));
         assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
-    }
-
-    #[tokio::test]
-    async fn set_block_header_updates_fake_preconfirmed_view() {
-        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        add_test_block(&backend, 0, vec![]);
-
-        let rpc = make_starknet(backend.clone(), ServiceContext::default());
-        let custom_header = CustomHeader {
-            block_n: 1,
-            timestamp: 1_234_567_890,
-            gas_prices: GasPrices {
-                eth_l1_gas_price: 11,
-                strk_l1_gas_price: 12,
-                eth_l1_data_gas_price: 21,
-                strk_l1_data_gas_price: 22,
-                eth_l2_gas_price: 31,
-                strk_l2_gas_price: 32,
-            },
-            expected_block_hash: Felt::from(0x1234_u64),
-        };
-
-        rpc.set_block_header(custom_header.clone()).await.expect("set block header should succeed");
-
-        let preconfirmed =
-            backend.block_view_on_preconfirmed_or_fake().expect("fake preconfirmed block should always be available");
-
-        assert_eq!(preconfirmed.block_number(), custom_header.block_n);
-        assert_eq!(preconfirmed.header().block_timestamp.0, custom_header.timestamp);
-        assert_eq!(preconfirmed.header().gas_prices, custom_header.gas_prices);
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_all_removes_everything() {
-        let (mempool, rpc) = make_starknet_with_mempool();
-        let base = TxTimestamp::now().0;
-        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), base);
-        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::ZERO, Felt::from(202_u64), base + 1_000);
-
-        mempool.accept_tx(tx1.clone()).await.unwrap();
-        mempool.accept_tx(tx2.clone()).await.unwrap();
-
-        let result = rpc.flush_mempool_txns(FlushMempoolTxnsParams { all: true, ..Default::default() }).await.unwrap();
-
-        assert_eq!(result.removed_transaction_hashes, vec![tx1.hash, tx2.hash]);
-        assert!(mempool.is_empty().await);
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_requires_unsafe_rpc() {
-        let (mempool, rpc) = make_starknet_with_mempool_and_unsafe(false);
-        let tx = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), TxTimestamp::now().0);
-        mempool.accept_tx(tx.clone()).await.unwrap();
-
-        let err = rpc.flush_mempool_txns(FlushMempoolTxnsParams { all: true, ..Default::default() }).await.unwrap_err();
-
-        assert_eq!(err.code(), 63);
-        assert_eq!(err.message(), "An unexpected error occurred");
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(err.data().expect("error data should be present").get())
-                .expect("error data should be valid JSON"),
-            serde_json::json!("This method requires the --rpc-unsafe flag to be enabled")
-        );
-        assert_eq!(
-            mempool
-                .snapshot_transaction_hashes_matching(0, usize::MAX, false, |_| true)
-                .await
-                .into_iter()
-                .map(|tx| tx.transaction_hash)
-                .collect::<Vec<_>>(),
-            vec![tx.hash]
-        );
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_by_sender_contract_address_filters_sender_side_only() {
-        let (mempool, rpc) = make_starknet_with_mempool();
-        let base = TxTimestamp::now().0;
-        let sender_match = invoke_v1_tx(Felt::from(77_u64), Felt::ZERO, Felt::from(701_u64), base);
-        let to_match_only = l1_handler_tx(Felt::from(99_u64), Felt::from(702_u64), base + 1_000);
-        let untouched = invoke_v1_tx(Felt::from(88_u64), Felt::ZERO, Felt::from(703_u64), base + 2_000);
-
-        mempool.accept_tx(sender_match.clone()).await.unwrap();
-        mempool.accept_tx(to_match_only.clone()).await.unwrap();
-        mempool.accept_tx(untouched.clone()).await.unwrap();
-
-        let result = rpc
-            .flush_mempool_txns(FlushMempoolTxnsParams {
-                contract_address: Some(Felt::from(77_u64)),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(result.removed_transaction_hashes, vec![sender_match.hash]);
-        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
-        assert_eq!(
-            remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(),
-            vec![to_match_only.hash, untouched.hash]
-        );
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_by_explicit_hashes_removes_only_requested_transactions() {
-        let (mempool, rpc) = make_starknet_with_mempool();
-        let base = TxTimestamp::now().0;
-        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(901_u64), base);
-        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::ZERO, Felt::from(902_u64), base + 1_000);
-        let tx3 = invoke_v1_tx(Felt::from(33_u64), Felt::ZERO, Felt::from(903_u64), base + 2_000);
-
-        mempool.accept_tx(tx1.clone()).await.unwrap();
-        mempool.accept_tx(tx2.clone()).await.unwrap();
-        mempool.accept_tx(tx3.clone()).await.unwrap();
-
-        let result = rpc
-            .flush_mempool_txns(FlushMempoolTxnsParams {
-                transaction_hashes: Some(vec![tx2.hash, Felt::from(999_u64)]),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
-        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
-        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_can_filter_by_nonce_range_when_all_is_explicit() {
-        let (mempool, rpc) = make_starknet_with_mempool();
-        let base = TxTimestamp::now().0;
-        let tx1 = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(1001_u64), base);
-        let tx2 = invoke_v1_tx(Felt::from(22_u64), Felt::from(2_u64), Felt::from(1002_u64), base + 1_000);
-        let tx3 = invoke_v1_tx(Felt::from(33_u64), Felt::from(4_u64), Felt::from(1003_u64), base + 2_000);
-
-        mempool.accept_tx(tx1.clone()).await.unwrap();
-        mempool.accept_tx(tx2.clone()).await.unwrap();
-        mempool.accept_tx(tx3.clone()).await.unwrap();
-
-        let result = rpc
-            .flush_mempool_txns(FlushMempoolTxnsParams {
-                all: true,
-                nonce_filter: MempoolNonceFilter {
-                    nonce_after: Some(Felt::from(1_u64)),
-                    nonce_before: Some(Felt::from(4_u64)),
-                },
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(result.removed_transaction_hashes, vec![tx2.hash]);
-        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
-        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![tx1.hash, tx3.hash]);
-    }
-
-    #[tokio::test]
-    async fn flush_mempool_txns_rejects_nonce_only_requests_without_base_filter() {
-        let (_, rpc) = make_starknet_with_mempool();
-
-        let err = rpc
-            .flush_mempool_txns(FlushMempoolTxnsParams {
-                nonce_filter: MempoolNonceFilter {
-                    nonce_after: Some(Felt::from(1_u64)),
-                    nonce_before: Some(Felt::from(4_u64)),
-                },
-                ..Default::default()
-            })
-            .await
-            .unwrap_err();
-
-        assert_eq!(err.code(), jsonrpsee::types::ErrorCode::InvalidParams.code());
-        assert_eq!(
-            err.message(),
-            "Nonce filters only narrow an explicit base flush filter: all, contract_address, or transaction_hashes"
-        );
     }
 }

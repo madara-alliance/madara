@@ -10,10 +10,12 @@ use simulate_transactions::simulate_transactions;
 use starknet_types_core::felt::Felt;
 use trace_block_transactions::trace_block_transactions;
 use trace_transaction::trace_transaction;
+use trace_transaction_rust::trace_transaction_rust;
 
 pub(crate) mod simulate_transactions;
 pub mod trace_block_transactions;
 pub(crate) mod trace_transaction;
+pub(crate) mod trace_transaction_rust;
 
 fn validate_trace_block_transactions_block_id(block_id: &BlockId) -> RpcResult<()> {
     if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
@@ -40,6 +42,10 @@ impl StarknetTraceRpcApiV0_9_0Server for Starknet {
 
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult> {
         Ok(trace_transaction(self, transaction_hash).await?)
+    }
+
+    async fn trace_transaction_rust(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult> {
+        Ok(trace_transaction_rust(self, transaction_hash).await?)
     }
 }
 

@@ -24,6 +24,11 @@ pub struct ValidatorParams {
     /// Disable mempool saving. Mempool transactions will not be saved. This can increase performance quite a lot.
     #[arg(env = "MADARA_NO_MEMPOOL_SAVING", long)]
     pub no_mempool_saving: bool,
+
+    /// Override whether saved mempool transactions are reloaded from DB on startup.
+    /// If unset, reload behavior mirrors mempool saving to preserve current semantics.
+    #[arg(env = "MADARA_MEMPOOL_RELOAD_FROM_DB", long)]
+    pub mempool_reload_from_db: Option<bool>,
 }
 
 impl ValidatorParams {

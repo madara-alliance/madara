@@ -32,6 +32,7 @@ assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
 criterion = { workspace = true }
+tempfile.workspace = true
 
 # Compile the test contracts in test cfg.
 m-cairo-test-contracts.workspace = true
@@ -45,6 +46,7 @@ testing = ["mc-db/testing", "mockall", "mc-settlement-client/testing"]
 mc-db.workspace = true
 mc-exec.workspace = true
 mc-mempool.workspace = true
+mc-rust-exec.workspace = true
 mc-settlement-client.workspace = true
 mc-submit-tx.workspace = true
 mc-telemetry.workspace = true
@@ -69,14 +71,16 @@ anyhow.workspace = true
 async-trait.workspace = true
 futures = { workspace = true }
 mockall = { workspace = true, optional = true }
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 
 # Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-  "grpc-tonic",
+  "tonic",
   "metrics",
   "logs",
 ] }

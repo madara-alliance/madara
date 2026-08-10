@@ -10,7 +10,7 @@ use blockifier::{
         state_api::{StateReader, StateResult},
     },
 };
-use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead};
+use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStateView, MadaraStorageRead};
 use mp_block::header::GasPrices;
 use mp_convert::Felt;
 use starknet_api::{
@@ -29,6 +29,18 @@ struct CacheByBlock {
     state_diff: StateMaps,
     classes: HashMap<ClassHash, ApiContractClass>,
     l1_to_l2_messages: HashSet<u64>,
+}
+
+/// An overlay representing a single accepted-but-unconfirmed block's state diff.
+/// Used to build synthetic parent state for re-execution under runahead.
+#[derive(Debug, Clone)]
+pub struct ReexecParentOverlay {
+    /// The block number this overlay represents.
+    pub block_n: u64,
+    /// The state diff in blockifier-compatible format.
+    pub state_diff: StateMaps,
+    /// Declared/compiled classes in this block (needed for get_compiled_class lookups).
+    pub classes: HashMap<ClassHash, ApiContractClass>,
 }
 
 mod read_cache_kind {
@@ -75,6 +87,104 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
             gas_prices,
             cached_states_by_block_n: Default::default(),
             read_cache: ExecutionReadCache::from_config(backend.execution_read_cache_config()),
+        })
+    }
+
+    /// Build a layered adapter for re-execution of target block `target_block_n`.
+    ///
+    /// Constructs a synthetic parent state from:
+    /// - DB-backed state at `confirmed_block_n` (or pre-genesis if None)
+    /// - Ordered overlay diffs for blocks between confirmed and target
+    ///
+    /// The overlays must be contiguous: if confirmed tip is C and target is X,
+    /// overlays must cover blocks C+1..X-1 (inclusive).
+    ///
+    /// After construction, `self.block_n() == target_block_n`.
+    pub fn new_for_reexec(
+        backend: Arc<MadaraBackend<D>>,
+        confirmed_block_n: Option<u64>,
+        target_block_n: u64,
+        overlays: Vec<ReexecParentOverlay>,
+    ) -> Result<Self, crate::Error> {
+        // Build the base view on the confirmed block (or pre-genesis).
+        let view = match confirmed_block_n {
+            Some(bn) => match backend.block_view_on_confirmed(bn) {
+                Some(block_view) => MadaraStateView::from(block_view),
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Confirmed block {} is not available in DB for re-execution adapter",
+                        bn
+                    )
+                    .into())
+                }
+            },
+            None => MadaraStateView::Empty(backend.clone()),
+        };
+
+        // Validate contiguity: overlays must cover [confirmed+1 .. target-1].
+        let expected_first = confirmed_block_n.map(|c| c + 1).unwrap_or(0);
+        let expected_count = target_block_n.saturating_sub(expected_first) as usize;
+
+        if overlays.len() != expected_count {
+            return Err(anyhow::anyhow!(
+                "Overlay contiguity violation: expected {} overlays (blocks {}..{}), got {}",
+                expected_count,
+                expected_first,
+                target_block_n.saturating_sub(1),
+                overlays.len(),
+            )
+            .into());
+        }
+
+        // Validate each overlay has the expected block number.
+        for (i, overlay) in overlays.iter().enumerate() {
+            let expected_bn = expected_first + i as u64;
+            if overlay.block_n != expected_bn {
+                return Err(anyhow::anyhow!(
+                    "Overlay contiguity gap: expected block {} at position {}, got block {}",
+                    expected_bn,
+                    i,
+                    overlay.block_n,
+                )
+                .into());
+            }
+        }
+
+        // Populate cached_states_by_block_n from overlays.
+        // StateReader::iter() checks front-to-back, so front must be the newest
+        // overlay (highest block_n) so that the most recent write wins.
+        let mut cached_states: VecDeque<CacheByBlock> = VecDeque::with_capacity(overlays.len());
+        for overlay in overlays.into_iter() {
+            cached_states.push_front(CacheByBlock {
+                block_n: overlay.block_n,
+                state_diff: overlay.state_diff,
+                classes: overlay.classes,
+                l1_to_l2_messages: HashSet::new(),
+            });
+        }
+
+        // Gas prices: fetch from backend (same as normal path). For re-execution the
+        // actual gas prices come from the BlockExecutionContext, so this is only needed
+        // to satisfy the struct field.
+        let l1_gas_quote =
+            backend.get_last_l1_gas_quote().context("No L1 gas quote available for re-execution adapter")?;
+        let gas_prices = if let Some(block_view) = view.block_view_on_latest_confirmed() {
+            let block_info = block_view.get_block_info()?;
+            backend.calculate_gas_prices(
+                &l1_gas_quote,
+                block_info.header.gas_prices.strk_l2_gas_price,
+                block_info.total_l2_gas_used,
+            )?
+        } else {
+            backend.calculate_gas_prices(&l1_gas_quote, 0, 0)?
+        };
+
+        Ok(Self {
+            inner: BlockifierStateAdapter::new(view, target_block_n),
+            gas_prices,
+            cached_states_by_block_n: cached_states,
+            // Re-execution does not use read cache (short-lived, no benefit).
+            read_cache: None,
         })
     }
 
@@ -493,5 +603,200 @@ mod tests {
         assert!(test_counters::READ_CACHE_HITS_TOTAL.load(Ordering::Relaxed) >= 1);
         assert!(test_counters::READ_CACHE_SIZE_RECORDS.load(Ordering::Relaxed) >= 1);
         assert!(test_counters::READ_CACHE_SIZE_LAST.load(Ordering::Relaxed) > 0);
+    }
+
+    // ── C-007D: new_for_reexec tests ─────────────────────────────────────────
+
+    use super::ReexecParentOverlay;
+
+    /// Helper to build a ReexecParentOverlay with a single storage entry.
+    fn make_overlay(block_n: u64, address: Felt, key: Felt, value: Felt) -> ReexecParentOverlay {
+        let mut state_diff = StateMaps::default();
+        state_diff.storage.insert((address.try_into().unwrap(), key.try_into().unwrap()), value);
+        ReexecParentOverlay { block_n, state_diff, classes: Default::default() }
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_no_overlays_targets_first_unconfirmed() {
+        // Confirmed base = block 0, no overlays → adapter targets block 1.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 1, vec![]).unwrap();
+        assert_eq!(adapter.block_n(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_no_overlays_pre_genesis_targets_block_0() {
+        // No confirmed base (pre-genesis), no overlays → targets block 0.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, None, 0, vec![]).unwrap();
+        assert_eq!(adapter.block_n(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_with_overlays_targets_correct_block() {
+        // Confirmed = block 0, overlays for block 1, 2 → adapter targets block 3.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let overlays =
+            vec![make_overlay(1, Felt::ONE, Felt::TWO, Felt::TWO), make_overlay(2, Felt::THREE, Felt::ONE, Felt::ONE)];
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 3, overlays).unwrap();
+        assert_eq!(adapter.block_n(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_overlay_state_readable() {
+        // Verify overlay state diffs are readable via StateReader.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let overlays = vec![make_overlay(1, Felt::ONE, Felt::TWO, Felt::from(42u64))];
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 2, overlays).unwrap();
+
+        // Value from overlay block 1
+        assert_eq!(
+            adapter.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::from(42u64)
+        );
+        // Value from confirmed DB block 0
+        assert_eq!(
+            adapter.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()).unwrap(),
+            Felt::THREE
+        );
+        // Unset value
+        assert_eq!(
+            adapter.get_storage_at(Felt::THREE.try_into().unwrap(), Felt::THREE.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_contiguity_too_few_overlays() {
+        // Confirmed = 0, target = 3, but only 1 overlay (block 1) → should fail.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let overlays = vec![make_overlay(1, Felt::ONE, Felt::TWO, Felt::TWO)];
+
+        let result = LayeredStateAdapter::new_for_reexec(backend, Some(0), 3, overlays);
+        let err = result.err().expect("should fail with contiguity error");
+        let err_msg = format!("{:#}", err);
+        assert!(err_msg.contains("contiguity"), "Expected contiguity error, got: {err_msg}");
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_contiguity_gap_in_block_numbers() {
+        // Confirmed = 0, target = 3, overlays for blocks [1, 3] (gap at 2) → should fail.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let overlays = vec![
+            make_overlay(1, Felt::ONE, Felt::TWO, Felt::TWO),
+            make_overlay(3, Felt::THREE, Felt::ONE, Felt::ONE), // gap: block 2 missing
+        ];
+
+        let result = LayeredStateAdapter::new_for_reexec(backend, Some(0), 3, overlays);
+        let err = result.err().expect("should fail with contiguity error");
+        let err_msg = format!("{:#}", err);
+        assert!(err_msg.contains("contiguity"), "Expected contiguity error, got: {err_msg}");
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_overlay_overrides_db_value() {
+        // Overlay for block 1 writes a different value to the same key as DB block 0.
+        // Adapter should return the overlay value (most recent wins).
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let overlays = vec![make_overlay(1, Felt::ONE, Felt::ONE, Felt::from(99u64))];
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 2, overlays).unwrap();
+        // Overlay value should win over DB value
+        assert_eq!(
+            adapter.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()).unwrap(),
+            Felt::from(99u64)
+        );
+    }
+
+    // ── C-007E/F tests ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_reexec_adapter_newest_overlay_wins_over_older() {
+        // C-007E regression: overlay block 1 writes K=10, overlay block 2 writes K=20.
+        // Synthetic parent for target block 3 must return 20 (newest wins).
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let key = Felt::from(0xABCu64);
+        let overlays = vec![
+            make_overlay(1, Felt::ONE, key, Felt::from(10u64)), // older: K=10
+            make_overlay(2, Felt::ONE, key, Felt::from(20u64)), // newer: K=20
+        ];
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 3, overlays).unwrap();
+        assert_eq!(adapter.block_n(), 3);
+
+        // Newest overlay (block 2) must win.
+        let value = adapter.get_storage_at(Felt::ONE.try_into().unwrap(), key.try_into().unwrap()).unwrap();
+        assert_eq!(value, Felt::from(20u64), "newest overlay must win over older overlay");
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_non_direct_child_empty_overlays_fails() {
+        // C-007F: confirmed=0, target=3, overlays=[] must fail (not direct child).
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let result = LayeredStateAdapter::new_for_reexec(backend, Some(0), 3, vec![]);
+        let err = result.err().expect("non-direct-child with empty overlays must fail");
+        let err_msg = format!("{:#}", err);
+        assert!(err_msg.contains("contiguity"), "Expected contiguity error, got: {err_msg}");
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_direct_child_empty_overlays_succeeds() {
+        // C-007F: confirmed=0, target=1, overlays=[] must succeed (direct child).
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, Some(0), 1, vec![]).unwrap();
+        assert_eq!(adapter.block_n(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_genesis_target_0_empty_overlays_succeeds() {
+        // C-007F: confirmed=None, target=0, overlays=[] must succeed (genesis).
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+
+        let adapter = LayeredStateAdapter::new_for_reexec(backend, None, 0, vec![]).unwrap();
+        assert_eq!(adapter.block_n(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reexec_adapter_genesis_non_direct_target_empty_overlays_fails() {
+        // C-007F: confirmed=None, target=2, overlays=[] must fail.
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
+
+        let result = LayeredStateAdapter::new_for_reexec(backend, None, 2, vec![]);
+        let err = result.err().expect("genesis non-direct-child with empty overlays must fail");
+        let err_msg = format!("{:#}", err);
+        assert!(err_msg.contains("contiguity"), "Expected contiguity error, got: {err_msg}");
     }
 }

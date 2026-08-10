@@ -137,7 +137,10 @@ impl PreconfirmedBlock {
     }
 
     /// Replaces all candidate transactions with the content of `replace_candidates`.
-    pub(crate) fn append(
+    ///
+    /// This modifies the content via the watch channel, notifying any subscribers
+    /// (e.g., chain watcher via `wait_until_outdated()`).
+    pub fn append(
         &self,
         executed: impl IntoIterator<Item = PreconfirmedExecutedTransaction>,
         replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
@@ -147,13 +150,6 @@ impl PreconfirmedBlock {
             block.append_executed(executed);
             block.append_candidates(replace_candidates)
         });
-    }
-
-    /// Clone the preconfirmed block while replacing only the header.
-    /// This preserves executed/candidate transactions when a replay lane updates the
-    /// canonical header metadata after the block already exists in memory.
-    pub fn clone_with_header(&self, header: PreconfirmedHeader) -> Self {
-        Self { header, content: tokio::sync::watch::Sender::new(self.content.borrow().clone()) }
     }
 
     /// Get the total number of transactions (executed + candidates) in this preconfirmed block.

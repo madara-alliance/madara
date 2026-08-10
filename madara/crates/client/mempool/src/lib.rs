@@ -124,15 +124,16 @@ use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use metrics::{ExternalDbOutboxMetrics, MempoolMetrics};
+use mp_convert::ToFelt;
 use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
-use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, sync::Arc};
 use topic_pubsub::TopicWatchPubsub;
+
 mod chain_watcher_task;
 mod inner;
 mod notify;
@@ -160,18 +161,24 @@ pub enum MempoolInsertionError {
 #[derive(Debug, Clone)]
 pub struct MempoolConfig {
     pub save_to_db: bool,
+    pub load_from_db: bool,
     pub external_outbox: ExternalOutboxConfig,
 }
 
 impl Default for MempoolConfig {
     fn default() -> Self {
-        Self { save_to_db: true, external_outbox: ExternalOutboxConfig::default() }
+        Self { save_to_db: true, load_from_db: true, external_outbox: ExternalOutboxConfig::default() }
     }
 }
 
 impl MempoolConfig {
     pub fn with_save_to_db(mut self, save_to_db: bool) -> Self {
         self.save_to_db = save_to_db;
+        self
+    }
+
+    pub fn with_load_from_db(mut self, load_from_db: bool) -> Self {
+        self.load_from_db = load_from_db;
         self
     }
 
@@ -240,23 +247,76 @@ impl<D: MadaraStorageRead> Mempool<D> {
             preconfirmed_transactions_statuses: Default::default(),
         }
     }
+
+    async fn snapshot_matching<R>(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
+        mut map_transaction: impl FnMut(&ValidatedTransaction, Option<Duration>) -> R,
+    ) -> Vec<R> {
+        if limit == 0 {
+            return Vec::new();
+        }
+
+        let now = TxTimestamp::now();
+        let ttl = self.ttl;
+        let lock = self.inner.read().await;
+
+        lock.transactions_by_arrival()
+            .filter(|transaction| predicate(transaction))
+            .skip(offset)
+            .take(limit)
+            .map(|transaction| {
+                let remaining_ttl = if include_ttl {
+                    ttl.map(|ttl| {
+                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
+                    })
+                } else {
+                    None
+                };
+                map_transaction(transaction, remaining_ttl)
+            })
+            .collect()
+    }
+
+    pub async fn snapshot_transactions_matching(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionSnapshot> {
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionSnapshot { transaction: transaction.clone(), remaining_ttl }
+        })
+        .await
+    }
+
+    pub async fn snapshot_transaction_hashes_matching(
+        &self,
+        offset: usize,
+        limit: usize,
+        include_ttl: bool,
+        predicate: impl FnMut(&ValidatedTransaction) -> bool,
+    ) -> Vec<MempoolTransactionHashSnapshot> {
+        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
+            MempoolTransactionHashSnapshot { transaction_hash: transaction.hash, remaining_ttl }
+        })
+        .await
+    }
 }
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
-        if !self.config.save_to_db {
-            // If saving is disabled, we don't want to read from db. Otherwise, if there are txs in the database, they will be re-inserted
-            // everytime we restart the node, but will never be removed from db once they're consumed.
+        if !self.config.load_from_db {
+            // Startup reload is configurable independently from saving so tests can preload a saved mempool fixture while
+            // still disabling new writes during the run.
             return Ok(());
         }
         for res in self.backend.get_saved_mempool_transactions() {
-            let tx = match res {
-                Ok(tx) => tx,
-                Err(err) => {
-                    tracing::warn!("Skipping saved mempool transaction that could not be loaded: {err:#}");
-                    continue;
-                }
-            };
+            let tx = res.context("Getting mempool transactions")?;
             let is_new_tx = false; // do not trigger metrics update and db update.
             if let Err(err) = self.add_tx(tx, is_new_tx).await {
                 match err {
@@ -265,6 +325,70 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             }
         }
+        self.reconcile_loaded_txs_with_chain_head().await?;
+        Ok(())
+    }
+
+    async fn reconcile_loaded_txs_with_chain_head(&self) -> Result<(), anyhow::Error> {
+        let contract_addresses = {
+            let guard = self.inner.read().await;
+            guard.contract_addresses().map(|address| address.to_felt()).collect::<Vec<_>>()
+        };
+        if contract_addresses.is_empty() {
+            return Ok(());
+        }
+
+        let head = self.backend.chain_head_state();
+        let confirmed_view = self.backend.view_on_latest_confirmed();
+        let mut nonce_updates = HashMap::with_capacity(contract_addresses.len());
+
+        let mut preconfirmed_nonce_overrides = HashMap::new();
+        if let Some(internal_preconfirmed_tip) = head.internal_preconfirmed_tip {
+            let start_block_n = head.confirmed_tip.map(|n| n.saturating_add(1)).unwrap_or(0);
+            for block_number in start_block_n..=internal_preconfirmed_tip {
+                let preconfirmed_view = self
+                    .backend
+                    .block_view_on_preconfirmed(block_number)
+                    .with_context(|| format!("Missing preconfirmed block #{block_number} during mempool startup"))?;
+                for executed_tx in preconfirmed_view.borrow_content().executed_transactions() {
+                    preconfirmed_nonce_overrides
+                        .extend(executed_tx.state_diff.nonces.iter().map(|(&addr, &nonce)| (addr, nonce)));
+                }
+            }
+        }
+
+        for contract_address in contract_addresses {
+            let account_nonce = preconfirmed_nonce_overrides
+                .get(&contract_address)
+                .copied()
+                .or(confirmed_view.get_contract_nonce(&contract_address)?)
+                .unwrap_or(Felt::ZERO);
+            nonce_updates.insert(contract_address, account_nonce);
+        }
+
+        self.update_account_nonces(nonce_updates).await
+    }
+
+    async fn update_account_nonces(&self, nonce_updates: HashMap<Felt, Felt>) -> Result<(), anyhow::Error> {
+        if nonce_updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        let summary = {
+            let mut guard = self.inner.write().await;
+            for (contract_address, account_nonce) in nonce_updates {
+                guard.update_account_nonce(
+                    &contract_address.try_into().context("Invalid contract address")?,
+                    &Nonce(account_nonce),
+                    &mut removed_txs,
+                );
+            }
+            guard.summary()
+        };
+        self.metrics.record_mempool_state(&summary);
+        self.on_txs_removed(&removed_txs);
+
         Ok(())
     }
 
@@ -359,7 +483,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         if removed.is_empty() {
             return;
         }
-        self.remove_saved_txs_by_hashes(removed.iter().map(|tx| tx.hash));
+        if self.config.save_to_db {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.hash)) {
+                tracing::error!("Could not remove mempool transactions from database: {err:#}");
+            }
+        }
 
         for tx in removed {
             if let dashmap::Entry::Occupied(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
@@ -367,14 +495,6 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     entry.remove();
                     self.watch_transaction_status.publish(&tx.hash, None);
                 }
-            }
-        }
-    }
-
-    fn remove_saved_txs_by_hashes(&self, tx_hashes: impl IntoIterator<Item = Felt>) {
-        if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_saved_mempool_transactions(tx_hashes) {
-                tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
         }
     }
@@ -429,108 +549,6 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.inner.read().await.is_empty()
     }
 
-    async fn snapshot_matching<R>(
-        &self,
-        offset: usize,
-        limit: usize,
-        include_ttl: bool,
-        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
-        mut map_transaction: impl FnMut(&ValidatedTransaction, Option<Duration>) -> R,
-    ) -> Vec<R> {
-        if limit == 0 {
-            return Vec::new();
-        }
-
-        let now = TxTimestamp::now();
-        let ttl = self.ttl;
-        let lock = self.inner.read().await;
-
-        lock.transactions_by_arrival()
-            .filter(|transaction| predicate(transaction))
-            .skip(offset)
-            .take(limit)
-            .map(|transaction| {
-                let remaining_ttl = if include_ttl {
-                    ttl.map(|ttl| {
-                        transaction.arrived_at.saturating_add(ttl).duration_since(now).unwrap_or(Duration::ZERO)
-                    })
-                } else {
-                    None
-                };
-                map_transaction(transaction, remaining_ttl)
-            })
-            .collect()
-    }
-
-    pub async fn snapshot_transactions_matching(
-        &self,
-        offset: usize,
-        limit: usize,
-        include_ttl: bool,
-        predicate: impl FnMut(&ValidatedTransaction) -> bool,
-    ) -> Vec<MempoolTransactionSnapshot> {
-        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
-            MempoolTransactionSnapshot { transaction: transaction.clone(), remaining_ttl }
-        })
-        .await
-    }
-
-    pub async fn snapshot_transaction_hashes_matching(
-        &self,
-        offset: usize,
-        limit: usize,
-        include_ttl: bool,
-        predicate: impl FnMut(&ValidatedTransaction) -> bool,
-    ) -> Vec<MempoolTransactionHashSnapshot> {
-        self.snapshot_matching(offset, limit, include_ttl, predicate, |transaction, remaining_ttl| {
-            MempoolTransactionHashSnapshot { transaction_hash: transaction.hash, remaining_ttl }
-        })
-        .await
-    }
-
-    /// Remove all matching transactions while holding a single inner write lock so selection and
-    /// removal observe the same mempool state.
-    ///
-    /// This intentionally removes only the transactions that match the predicate. If an operator
-    /// uses a nonce-based filter to remove a non-tail transaction from an account's nonce chain,
-    /// higher nonces for that account remain pending so the missing nonce can be resubmitted.
-    pub async fn flush_transactions_matching(
-        &self,
-        mut predicate: impl FnMut(&ValidatedTransaction) -> bool,
-    ) -> Vec<ValidatedTransaction> {
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        let summary = {
-            let mut lock = self.inner.write().await;
-            lock.remove_transactions_matching(|tx| predicate(tx), &mut removed_txs);
-            lock.summary()
-        };
-
-        self.metrics.record_mempool_state(&summary);
-        self.on_txs_removed(&removed_txs);
-        if !removed_txs.is_empty() {
-            tracing::info!("🔖 Flushed {} transactions from the mempool [{summary}]", removed_txs.len());
-        }
-
-        removed_txs.into_vec()
-    }
-
-    pub async fn flush_transactions_by_hashes(&self, transaction_hashes: Vec<Felt>) -> Vec<ValidatedTransaction> {
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        let summary = {
-            let mut lock = self.inner.write().await;
-            lock.remove_transactions_by_hashes(transaction_hashes.into_iter().map(TransactionHash), &mut removed_txs);
-            lock.summary()
-        };
-
-        self.metrics.record_mempool_state(&summary);
-        self.on_txs_removed(&removed_txs);
-        if !removed_txs.is_empty() {
-            tracing::info!("🔖 Flushed {} transactions from the mempool [{summary}]", removed_txs.len());
-        }
-
-        removed_txs.into_vec()
-    }
-
     pub async fn get_transaction<R>(
         &self,
         contract_address: Felt,
@@ -559,10 +577,31 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
 }
+
+fn tx_nonce_string(tx: &ValidatedTransaction) -> Option<String> {
+    match &tx.transaction {
+        mp_transactions::Transaction::Invoke(tx) => Some(format!("{:#x}", tx.nonce())),
+        mp_transactions::Transaction::Declare(tx) => Some(format!("{:#x}", tx.nonce())),
+        mp_transactions::Transaction::DeployAccount(tx) => Some(format!("{:#x}", tx.nonce())),
+        mp_transactions::Transaction::L1Handler(tx) => Some(format!("{:#x}", tx.nonce)),
+        mp_transactions::Transaction::Deploy(_) => None,
+    }
+}
+
 impl Iterator for MempoolConsumer {
     type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
-        self.lock.pop_next_ready()
+        let tx = self.lock.pop_next_ready();
+        if let Some(tx) = &tx {
+            tracing::debug!(
+                tx_hash = format!("{:#x}", tx.hash),
+                tx_nonce = tx_nonce_string(tx).as_deref().unwrap_or("-"),
+                contract_address = ?tx.contract_address,
+                summary_after = %self.lock.summary(),
+                "mempool_pop_next_ready"
+            );
+        }
+        tx
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         let n_ready = self.lock.ready_transactions();
@@ -572,7 +611,15 @@ impl Iterator for MempoolConsumer {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    // TODO(heemankv): The mempool behavior exercised on this branch has been validated manually
+    // and is working, but newer persistence/recovery paths still need stronger automated coverage
+    // here. Any future mempool behavior change should land with explicit tests.
     use super::*;
+    use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
+    use mp_block::{header::PreconfirmedHeader, TransactionWithReceipt};
+    use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
+    use mp_state_update::TransactionStateUpdate;
+    use mp_transactions::{InvokeTransaction, Transaction};
     use starknet_api::{core::ContractAddress, transaction::TransactionHash};
     use std::time::Duration;
 
@@ -609,7 +656,6 @@ pub(crate) mod tests {
                             fee_data_availability_mode: Default::default(),
                             paymaster_data: Default::default(),
                             account_deployment_data: Default::default(),
-                            proof_facts: Default::default(),
                         },
                     ),
                     tx_hash,
@@ -621,13 +667,37 @@ pub(crate) mod tests {
         )
     }
 
-    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
-        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
+    fn tx_account_with_nonce_and_hash(
+        template: &ValidatedTransaction,
+        nonce: Felt,
+        hash: Felt,
+    ) -> ValidatedTransaction {
+        let mut tx = template.clone();
+        tx.hash = hash;
+        match &mut tx.transaction {
+            Transaction::Invoke(InvokeTransaction::V3(inner)) => inner.nonce = nonce,
+            other => panic!("unexpected transaction variant for test: {other:?}"),
+        }
+        tx
     }
 
-    fn write_invalid_saved_mempool_tx(backend: &mc_db::MadaraBackend) {
-        let cf = backend.db.inner_db().cf_handle("mempool_transactions").expect("mempool column should exist");
-        backend.db.inner_db().put_cf(&cf, b"invalid-key", b"invalid-value").expect("writing invalid row should work");
+    fn executed_preconfirmed_tx(tx: &ValidatedTransaction, resulting_nonce: Felt) -> PreconfirmedExecutedTransaction {
+        PreconfirmedExecutedTransaction {
+            transaction: TransactionWithReceipt {
+                transaction: tx.transaction.clone(),
+                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                    transaction_hash: tx.hash,
+                    ..Default::default()
+                }),
+            },
+            state_diff: TransactionStateUpdate {
+                nonces: [(tx.contract_address, resulting_nonce)].into(),
+                ..Default::default()
+            },
+            declared_class: None,
+            arrived_at: tx.arrived_at,
+            paid_fee_on_l1: None,
+        }
     }
 
     #[rstest::rstest]
@@ -640,65 +710,6 @@ pub(crate) mod tests {
         assert_matches::assert_matches!(result, Ok(()));
 
         mempool.inner.read().await.check_invariants();
-    }
-
-    #[tokio::test]
-    async fn mempool_reject_new_policy_is_applied_from_chain_config() {
-        let mut chain_config = mp_chain_config::ChainConfig::madara_test();
-        chain_config.mempool_full_policy = mp_chain_config::MempoolFullPolicy::RejectNew;
-        chain_config.mempool_max_transactions = 1;
-        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(chain_config));
-        let mempool = Mempool::new(backend, MempoolConfig::default());
-        let base = TxTimestamp::now().0;
-
-        let mut first_tx = tx_account(CONTRACT_ADDRESS);
-        first_tx.arrived_at = TxTimestamp(base + 1_000);
-        first_tx.hash = Felt::from(1_u64);
-
-        let mut better_tx = tx_account(Felt::from(0x123_u64));
-        better_tx.arrived_at = TxTimestamp(base);
-        better_tx.hash = Felt::from(2_u64);
-
-        assert_matches::assert_matches!(mempool.accept_tx(first_tx.clone()).await, Ok(()));
-        assert_matches::assert_matches!(
-            mempool.accept_tx(better_tx).await,
-            Err(MempoolInsertionError::InnerMempool(TxInsertionError::Limit(_)))
-        );
-
-        let remaining = mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
-        assert_eq!(remaining.into_iter().map(|tx| tx.transaction.hash).collect::<Vec<_>>(), vec![first_tx.hash]);
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
-    #[tokio::test]
-    async fn mempool_accept_persists_and_remove_clears_saved_tx(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account: ValidatedTransaction,
-    ) {
-        let backend = backend.await;
-        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
-
-        assert_matches::assert_matches!(mempool.accept_tx(tx_account.clone()).await, Ok(()));
-        let saved = saved_mempool_txs(&backend);
-        assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0].hash, tx_account.hash);
-
-        mempool.on_txs_removed(std::slice::from_ref(&tx_account));
-
-        assert!(saved_mempool_txs(&backend).is_empty());
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
-    #[tokio::test]
-    async fn mempool_load_skips_invalid_saved_transaction(#[future] backend: Arc<mc_db::MadaraBackend>) {
-        let backend = backend.await;
-        write_invalid_saved_mempool_tx(&backend);
-        let mempool = Mempool::new(backend, MempoolConfig::default());
-
-        assert_matches::assert_matches!(mempool.load_txs_from_db().await, Ok(()));
-        assert!(mempool.is_empty().await);
     }
 
     /// This test makes sure that taking a transaction from the mempool works as
@@ -720,6 +731,114 @@ pub(crate) mod tests {
         assert!(mempool.is_empty().await, "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_startup_reconciles_loaded_txs_against_internal_preconfirmed_runahead(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+
+        let block_1_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ZERO, Felt::from(101u64));
+        let block_2_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ONE, Felt::from(102u64));
+        let stale_saved_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ONE, Felt::from(103u64));
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                [executed_preconfirmed_tx(&block_1_tx, Felt::ONE)],
+                [],
+            ))
+            .unwrap();
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 2, ..Default::default() },
+                [executed_preconfirmed_tx(&block_2_tx, Felt::from(2u64))],
+                [],
+            ))
+            .unwrap();
+
+        let head = backend.chain_head_state();
+        assert_eq!(head.confirmed_tip, Some(0));
+        assert_eq!(head.external_preconfirmed_tip, Some(1));
+        assert_eq!(head.internal_preconfirmed_tip, Some(2));
+
+        backend.write_saved_mempool_transaction(&stale_saved_tx).unwrap();
+        assert_eq!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(),
+            vec![stale_saved_tx.clone()]
+        );
+
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        mempool.load_txs_from_db().await.unwrap();
+
+        assert!(mempool.is_empty().await, "stale tx should be dropped during startup reconciliation");
+        assert!(
+            mempool.get_transaction(CONTRACT_ADDRESS, Felt::ONE, |tx| tx.hash).await.is_none(),
+            "stale nonce should not remain queued after startup"
+        );
+        assert!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap().is_empty(),
+            "removed txs must also be cleared from persisted mempool storage"
+        );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn nonce_updates_remove_stale_saved_mempool_transactions(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+
+        let queued_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ZERO, Felt::from(201u64));
+        mempool.accept_tx(queued_tx.clone()).await.unwrap();
+
+        assert_eq!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(),
+            vec![queued_tx.clone()]
+        );
+
+        mempool.update_account_nonces([(queued_tx.contract_address, Felt::ONE)].into()).await.unwrap();
+
+        assert!(mempool.is_empty().await, "nonce advancement should evict stale txs from the in-memory mempool");
+        assert!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap().is_empty(),
+            "nonce-based removals must also clear saved mempool storage"
+        );
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn startup_reload_can_be_enabled_even_when_new_mempool_saves_are_disabled(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        backend.write_saved_mempool_transaction(&tx_account).unwrap();
+
+        let config = MempoolConfig::default().with_save_to_db(false).with_load_from_db(true);
+        let mempool = Mempool::new(backend.clone(), config);
+        mempool.load_txs_from_db().await.unwrap();
+
+        assert_eq!(
+            mempool.get_transaction(tx_account.contract_address, Felt::ZERO, |tx| tx.hash).await,
+            Some(tx_account.hash),
+            "saved mempool tx should be reloaded into memory when startup reload is explicitly enabled"
+        );
+        assert_eq!(
+            backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(),
+            vec![tx_account.clone()],
+            "startup reload should not rewrite or delete the persisted mempool row by itself"
+        );
     }
 
     #[rstest::rstest]

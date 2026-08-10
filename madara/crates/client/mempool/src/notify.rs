@@ -47,7 +47,6 @@ impl MempoolInnerWithNotify {
                     MempoolMode::Timestamp => ScoreFunction::Timestamp,
                     MempoolMode::Tip => ScoreFunction::Tip { min_tip_bump: config.mempool_min_tip_bump },
                 },
-                full_policy: config.mempool_full_policy,
                 max_transactions: config.mempool_max_transactions,
                 max_declare_transactions: config.mempool_max_declare_transactions,
                 ttl: config.mempool_ttl,
@@ -96,6 +95,9 @@ impl MempoolInnerWithNotify {
 
 #[cfg(test)]
 mod tests {
+    // TODO(heemankv): The mempool behavior exercised on this branch has been validated manually
+    // and is working, but newer persistence/recovery paths still need stronger automated coverage
+    // here. Any future mempool behavior change should land with explicit tests.
     use super::*;
     use crate::tests::tx_account;
     use futures::FutureExt;

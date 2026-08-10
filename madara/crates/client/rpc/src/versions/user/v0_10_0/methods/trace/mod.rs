@@ -2,6 +2,7 @@ use crate::versions::user::v0_9_0::methods::trace::{
     simulate_transactions::simulate_transactions as simulate_transactions_v0_9,
     trace_block_transactions::trace_block_transactions as trace_block_transactions_v0_9,
     trace_transaction::trace_transaction as trace_transaction_v0_9,
+    trace_transaction_rust::trace_transaction_rust as trace_transaction_rust_v0_9,
 };
 use crate::{versions::user::v0_10_0::StarknetTraceRpcApiV0_10_0Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
@@ -40,6 +41,11 @@ impl StarknetTraceRpcApiV0_10_0Server for Starknet {
 
     async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult> {
         let v0_9_result = trace_transaction_v0_9(self, transaction_hash).await?;
+        Ok(v0_9_result.into())
+    }
+
+    async fn trace_transaction_rust(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult> {
+        let v0_9_result = trace_transaction_rust_v0_9(self, transaction_hash).await?;
         Ok(v0_9_result.into())
     }
 }

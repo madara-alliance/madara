@@ -1,3 +1,4 @@
+use crate::fallback::types::ExecutionMode;
 use anyhow::Context;
 use blockifier::{
     blockifier::transaction_executor::TransactionExecutor, state::state_api::State,
@@ -11,6 +12,7 @@ use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
+use std::collections::HashSet;
 use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
@@ -60,7 +62,7 @@ impl AddAssign for ExecutionStats {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub(crate) struct BatchToExecute {
     pub txs: Vec<Transaction>,
     pub additional_info: VecDeque<AdditionalTxInfo>,
@@ -117,7 +119,14 @@ impl FromIterator<(Transaction, AdditionalTxInfo)> for BatchToExecute {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+pub(crate) struct TaintedRebuildCarryTx {
+    pub tx: Transaction,
+    pub additional_info: AdditionalTxInfo,
+    pub source_block_n: Option<u64>,
+}
+
+#[derive(Debug, Default, Clone)]
 pub(crate) struct AdditionalTxInfo {
     pub declared_class: Option<ConvertedClass>,
     /// Earliest known timestamp for this transaction. Used for mempool re-insertion.
@@ -161,9 +170,9 @@ impl BlockExecutionContext {
         Ok(starknet_api::block::BlockInfo {
             block_number: starknet_api::block::BlockNumber(self.block_number),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
-            starknet_version: self.protocol_version.to_blockifier()?,
             sequencer_address: self.sequencer_address.try_into()?,
             gas_prices: (&self.gas_prices).into(),
+            starknet_version: self.protocol_version.to_blockifier()?,
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         })
     }
@@ -191,7 +200,6 @@ pub(crate) fn create_execution_context(
     block_n: u64,
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
-    block_start_time: SystemTime,
 ) -> anyhow::Result<BlockExecutionContext> {
     let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header(block_n) {
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
@@ -204,7 +212,7 @@ pub(crate) fn create_execution_context(
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
 
         let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
-        (block_start_time, gas_prices)
+        (SystemTime::now(), gas_prices)
     };
 
     Ok(BlockExecutionContext {
@@ -275,38 +283,151 @@ pub(crate) fn create_executor_with_block_n_min_10(
     Ok(executor)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 2: RustExec routing types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Configuration for routing transactions to RustExec vs Blockifier.
+/// Kept separate from ChainConfig per design doc 02 §Config placement.
+#[derive(Debug, Clone)]
+pub(crate) struct RustExecRoutingConfig {
+    /// Whitelisted sender addresses for RustExec routing.
+    pub executor_addresses: HashSet<Felt>,
+    /// Whitelisted call selectors for RustExec routing.
+    pub supported_selectors: HashSet<Felt>,
+    /// Whitelisted contract class hashes for RustExec routing.
+    pub supported_class_hashes: HashSet<Felt>,
+    /// Max RustExec txs per batcher cycle (default placeholder: 30).
+    pub rust_batch_size: usize,
+    /// Max Blockifier txs per batcher cycle (default placeholder: 10).
+    pub blockifier_batch_size: usize,
+}
+
+impl Default for RustExecRoutingConfig {
+    fn default() -> Self {
+        Self {
+            executor_addresses: HashSet::from([Felt::from_hex_unchecked(
+                "0x012aa6059457fc2d02240962a6573e051fa919632853e6ba70207d7cef6be4c3",
+            )]),
+            supported_selectors: HashSet::from([
+                Felt::from_hex_unchecked(
+                    "0x2b7b96e99d84791280de8fc7f8c89f911ca32ac738b79907fe65be82e18478c", // settle_trade_v3
+                ),
+                Felt::from_hex_unchecked(
+                    "0x023afe20cbd1d25f1c7967e386d568da30338747dc10f5b1ad54e7e839f7fa01", // set_prices_and_funding_snapshot
+                ),
+            ]),
+            supported_class_hashes: HashSet::from([
+                Felt::from_hex_unchecked("0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a"),
+                Felt::from_hex_unchecked("0x00049e91ccb24fcf4acec4a24896092d9387a97865dcb0e6f98503399564b452"),
+            ]),
+            rust_batch_size: 30,
+            blockifier_batch_size: 10,
+        }
+    }
+}
+
+pub(crate) fn build_rust_exec_runtime_config(
+    routing_cfg: &RustExecRoutingConfig,
+) -> mc_rust_exec::RustExecRuntimeConfig {
+    mc_rust_exec::RustExecRuntimeConfig {
+        supported_contract_class_hashes: routing_cfg.supported_class_hashes.clone(),
+        ..Default::default()
+    }
+}
+
+/// Per-call routing decision returned by the classifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RouteDecision {
+    Rust,
+    Blockifier(RouteFallbackReason),
+}
+
+/// Reason a transaction was routed to Blockifier instead of RustExec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RouteFallbackReason {
+    NotInvoke,
+    SenderNotExecutor,
+    SelectorNotSupported,
+    ClassHashLookupFailed,
+    ClassHashNotSupported,
+    MulticallPartiallySupported,
+}
+
+/// Dual-batch payload emitted by batcher each cycle.
+/// rust_batch is empty by construction when mode == BlockifierOnly.
+#[derive(Debug)]
+pub(crate) struct RoutedBatchToExecute {
+    pub rust_batch: BatchToExecute,
+    pub blockifier_batch: BatchToExecute,
+    /// Initial execution-frontier block number captured by the batcher when this routed
+    /// payload was built. The executor rebinds this to the authoritative block frontier
+    /// once the payload is actually accepted and whenever a deferred suffix rolls forward.
+    pub block_n: u64,
+    /// Execution mode captured by the batcher when this routed payload was built.
+    /// The executor uses this to normalize queued payloads across idle-boundary
+    /// mode changes before freezing the next block snapshot.
+    pub execution_mode: ExecutionMode,
+    /// Execution epoch captured by the batcher when this routed payload was built.
+    /// Used to recover stale in-flight routed batches after fallback.
+    pub execution_epoch: u64,
+}
+
+impl Default for RoutedBatchToExecute {
+    fn default() -> Self {
+        Self {
+            rust_batch: BatchToExecute::default(),
+            blockifier_batch: BatchToExecute::default(),
+            block_n: 0,
+            execution_mode: ExecutionMode::BlockifierOnly,
+            execution_epoch: 0,
+        }
+    }
+}
+
+impl RoutedBatchToExecute {
+    pub fn is_empty(&self) -> bool {
+        self.rust_batch.is_empty() && self.blockifier_batch.is_empty()
+    }
+    pub fn total_len(&self) -> usize {
+        self.rust_batch.len() + self.blockifier_batch.len()
+    }
+}
+
+/// Convenience conversion: all items go to `blockifier_batch`.
+/// Used by executor tests and other code that creates a single-branch payload.
+impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
+    fn from_iter<T: IntoIterator<Item = (Transaction, AdditionalTxInfo)>>(iter: T) -> Self {
+        let blockifier_batch = iter.into_iter().collect::<BatchToExecute>();
+        Self {
+            blockifier_batch,
+            rust_batch: BatchToExecute::default(),
+            block_n: 0,
+            execution_mode: ExecutionMode::BlockifierOnly,
+            execution_epoch: 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use rstest::rstest;
+    use std::collections::HashSet;
 
-    #[rstest]
-    #[case(StarknetVersion::V0_14_2, Some("0.14.2"))]
-    #[case(StarknetVersion::new(1, 2, 3, 4), None)]
-    fn block_execution_context_to_blockifier_keeps_protocol_version(
-        #[case] protocol_version: StarknetVersion,
-        #[case] expected: Option<&str>,
-    ) {
-        let exec_ctx = BlockExecutionContext {
-            block_number: 7,
-            sequencer_address: Felt::ONE,
-            block_timestamp: UNIX_EPOCH,
-            protocol_version,
-            gas_prices: GasPrices {
-                eth_l1_gas_price: 1,
-                strk_l1_gas_price: 2,
-                eth_l1_data_gas_price: 3,
-                strk_l1_data_gas_price: 4,
-                eth_l2_gas_price: 5,
-                strk_l2_gas_price: 6,
-            },
-            l1_da_mode: L1DataAvailabilityMode::Blob,
+    use starknet_types_core::felt::Felt;
+
+    use super::{build_rust_exec_runtime_config, RustExecRoutingConfig};
+
+    #[test]
+    fn runtime_config_carries_supported_rust_class_hashes() {
+        let class_hash_a = Felt::from_hex_unchecked("0x123");
+        let class_hash_b = Felt::from_hex_unchecked("0x456");
+        let routing_cfg = RustExecRoutingConfig {
+            supported_class_hashes: HashSet::from([class_hash_a, class_hash_b]),
+            ..Default::default()
         };
 
-        let block_info = exec_ctx.to_blockifier();
-        match expected {
-            Some(expected) => assert_eq!(block_info.unwrap().starknet_version.to_string(), expected),
-            None => assert!(block_info.is_err()),
-        }
+        let runtime_cfg = build_rust_exec_runtime_config(&routing_cfg);
+
+        assert_eq!(runtime_cfg.supported_contract_class_hashes, HashSet::from([class_hash_a, class_hash_b]));
     }
 }

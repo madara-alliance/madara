@@ -31,7 +31,21 @@ pub fn get_transaction_receipt(
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
     tracing::debug!("get tx receipt {transaction_hash:#x}");
     let view = starknet.backend.view_on_latest();
-    let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let res = match view.find_transaction_by_hash(&transaction_hash)? {
+        Some(res) => res,
+        None => {
+            tracing::warn!(
+                target: "mc_rpc",
+                event = "rpc_get_transaction_receipt_not_found",
+                tx_hash = format!("{transaction_hash:#x}"),
+                latest_visible_block = ?view.latest_block_n(),
+                latest_confirmed_block = ?view.latest_confirmed_block_n(),
+                has_preconfirmed_block = view.has_preconfirmed_block(),
+                "Transaction receipt lookup returned TxnHashNotFound"
+            );
+            return Err(StarknetRpcApiError::TxnHashNotFound);
+        }
+    };
     let transaction = res.get_transaction()?;
 
     let status = if res.block.is_preconfirmed() {

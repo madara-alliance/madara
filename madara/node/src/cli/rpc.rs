@@ -9,6 +9,8 @@ use std::str::FromStr;
 pub const RPC_DEFAULT_PORT: u16 = 9944;
 /// Default port for sensitive RPC methods
 pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
+/// Default port for the cloud (Paradex) RPC endpoint
+pub const RPC_DEFAULT_PORT_CLOUD: u16 = 9942;
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
 /// The default max request size in MiB.
@@ -92,10 +94,26 @@ pub struct RpcParams {
     pub rpc_admin_external: bool,
 
     /// Enables unsafe admin RPC methods. This includes dangerous methods like
-    /// `revertToAndShutdown` and `setCustomBlockHeader` that can modify the blockchain state.
+    /// `setMempoolIntake`, `revertToAndShutdown`, and `setCustomBlockHeader` that can modify
+    /// runtime or blockchain state.
     /// Use with extreme caution. Requires `--rpc-admin` to be enabled.
     #[arg(env = "MADARA_RPC_UNSAFE", long, default_value_t = false, requires = "rpc_admin")]
     pub rpc_unsafe: bool,
+
+    /// Enables the cloud (Paradex) RPC endpoint. This provides a private endpoint for
+    /// submitting already-validated transactions directly into the mempool, bypassing
+    /// full pre-validation. Listens on port 9942 by default.
+    #[arg(env = "MADARA_RPC_CLOUD", long, default_value_t = false)]
+    pub rpc_cloud: bool,
+
+    /// Exposes the cloud RPC endpoint on address 0.0.0.0. By default it listens
+    /// on localhost only.
+    #[arg(env = "MADARA_RPC_CLOUD_EXTERNAL", long, default_value_t = false)]
+    pub rpc_cloud_external: bool,
+
+    /// The RPC port to listen at for cloud (Paradex) RPC calls.
+    #[arg(env = "MADARA_RPC_CLOUD_PORT", long, value_name = "CLOUD PORT", default_value_t = RPC_DEFAULT_PORT_CLOUD)]
+    pub rpc_cloud_port: u16,
 
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in mebibytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MIB)]
@@ -216,6 +234,16 @@ impl RpcParams {
         };
 
         SocketAddr::new(listen_addr.into(), self.rpc_admin_port)
+    }
+
+    pub fn addr_cloud(&self) -> SocketAddr {
+        let listen_addr = if self.rpc_cloud_external {
+            Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
+        } else {
+            Ipv4Addr::LOCALHOST
+        };
+
+        SocketAddr::new(listen_addr.into(), self.rpc_cloud_port)
     }
 
     pub fn batch_config(&self) -> BatchRequestConfig {

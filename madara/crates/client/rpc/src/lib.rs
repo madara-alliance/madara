@@ -2,9 +2,8 @@
 //! interface for interacting with the Starknet node. This module implements the official Starknet
 //! JSON-RPC specification along with some Madara-specific extensions.
 //!
-//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`,
-//! `v0.10.0`, and `v0.10.2`, with methods accessible through port **9944** by default
-//! (configurable via `--rpc-port`). The RPC
+//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`, with
+//! methods accessible through port **9944** by default (configurable via `--rpc-port`). The RPC
 //! server supports both HTTP and WebSocket connections on the same port.
 //!
 //! ## Version Management
@@ -12,11 +11,10 @@
 //! RPC methods are versioned to ensure backward compatibility. To access methods from a specific
 //! version, append `/rpc/v.../` to your RPC url, where `v...` is your version code. For example:
 //!
-//! - Default (latest, currently v0.10.2): `http://localhost:9944/`
+//! - Default (v0.7.1): `http://localhost:9944/`
 //! - Version 0.8.1: `http://localhost:9944/rpc/v0_8_1/`
 //! - Version 0.9.0: `http://localhost:9944/rpc/v0_9_0/`
 //! - Version 0.10.0: `http://localhost:9944/rpc/v0_10_0/`
-//! - Version 0.10.2: `http://localhost:9944/rpc/v0_10_2/`
 //!
 //! ## Available Endpoints
 //!
@@ -802,9 +800,10 @@ mod types;
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
-use mc_submit_tx::{SubmitTransaction, TransactionLookup};
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
+use versions::cloud::v0_1_0::CloudRpcMetrics;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -825,6 +824,20 @@ impl Default for StorageProofConfig {
     }
 }
 
+#[derive(Clone)]
+struct NoopTransactionLookup;
+
+#[jsonrpsee::core::async_trait]
+impl TransactionLookup for NoopTransactionLookup {
+    async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
+        None
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        None
+    }
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
@@ -834,16 +847,40 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
     pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
+    /// Cloud endpoint: validated transaction provider (bypasses full pre-validation).
+    pub(crate) add_validated_transaction_provider: Option<Arc<dyn SubmitValidatedTransaction>>,
+    /// Cloud endpoint: whether to charge fee when submitting validated transactions.
+    pub(crate) cloud_charge_fee: bool,
+    /// Cloud endpoint: metrics (None when not serving cloud requests).
+    pub(crate) cloud_metrics: Option<Arc<CloudRpcMetrics>>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    pub(crate) replay_mode_enabled: bool,
 }
 
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
-        transaction_submitter: Arc<dyn SubmitTransaction>,
+        add_transaction_provider: Arc<dyn SubmitTransaction>,
+        storage_proof_config: StorageProofConfig,
+        block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+        ctx: ServiceContext,
+    ) -> Self {
+        Self::new_with_lookup(
+            backend,
+            add_transaction_provider,
+            Arc::new(NoopTransactionLookup),
+            storage_proof_config,
+            block_prod_handle,
+            ctx,
+        )
+    }
+
+    pub fn new_with_lookup(
+        backend: Arc<MadaraBackend>,
+        add_transaction_provider: Arc<dyn SubmitTransaction>,
         transaction_lookup: Arc<dyn TransactionLookup>,
         storage_proof_config: StorageProofConfig,
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
@@ -854,13 +891,17 @@ impl Starknet {
             backend,
             mempool: None,
             ws_handles,
-            transaction_submitter,
+            transaction_submitter: add_transaction_provider,
             transaction_lookup,
+            add_validated_transaction_provider: None,
+            cloud_charge_fee: true,
+            cloud_metrics: None,
             storage_proof_config,
             block_prod_handle,
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            replay_mode_enabled: false,
         }
     }
 
@@ -872,8 +913,24 @@ impl Starknet {
         self.rpc_unsafe_enabled = value;
     }
 
+    pub fn set_replay_mode_enabled(&mut self, value: bool) {
+        self.replay_mode_enabled = value;
+    }
+
+    pub fn set_add_validated_transaction_provider(&mut self, provider: Arc<dyn SubmitValidatedTransaction>) {
+        self.add_validated_transaction_provider = Some(provider);
+    }
+
     pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
         self.mempool = Some(mempool);
+    }
+
+    pub fn set_cloud_charge_fee(&mut self, value: bool) {
+        self.cloud_charge_fee = value;
+    }
+
+    pub fn set_cloud_metrics(&mut self, metrics: CloudRpcMetrics) {
+        self.cloud_metrics = Some(Arc::new(metrics));
     }
 }
 
@@ -900,11 +957,16 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetTraceRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
 
-    rpc_api.merge(versions::user::v0_10_2::StarknetReadRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_10_2::StarknetWriteRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    Ok(rpc_api)
+}
 
+/// Returns the RpcModule for the cloud (Paradex) endpoint.
+///
+/// Registers only the cloud-specific methods. The provider must be set on `starknet`
+/// via `set_add_validated_transaction_provider` before calling this function.
+pub fn rpc_api_cloud(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
+    let mut rpc_api = RpcModule::new(());
+    rpc_api.merge(versions::cloud::v0_1_0::ParadoxCloudWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     Ok(rpc_api)
 }
 
@@ -912,9 +974,13 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    if starknet.rpc_unsafe_enabled {
+        rpc_api.merge(versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    }
     rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraExecutionBoxRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

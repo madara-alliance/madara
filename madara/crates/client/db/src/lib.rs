@@ -116,30 +116,37 @@ use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
-use crate::storage::StorageChainTip;
+use crate::storage::StorageHeadProjection;
 use crate::storage::StoredChainInfo;
+use crate::storage::{TaintedRebuildCarryRow, TaintedRebuildSession};
 use crate::sync_status::SyncStatusCell;
+use chain_head::ChainHeadState;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::header::CustomHeader;
+use mp_block::header::PreconfirmedHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
 use mp_chain_config::ChainConfig;
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
+use mp_rpc::admin::{ReplayBlockBoundary, ReplayBlockBoundaryStatus};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
+use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 pub mod metrics;
 use metrics::metrics;
+pub mod chain_head;
+pub mod close_pipeline_contract;
 pub mod migration;
 mod prelude;
 pub mod storage;
@@ -159,7 +166,8 @@ pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
-    MadaraStorageWrite, StorageTxIndex,
+    MadaraStorageWrite, StorageTxIndex, TaintedRebuildCarryRow as StoredTaintedRebuildCarryRow,
+    TaintedRebuildSession as StoredTaintedRebuildSession,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
@@ -189,98 +197,153 @@ pub struct CloseBlockTimings {
     pub db_write_block_parts: Duration,
 }
 
-/// Current chain tip.
-#[derive(Default, Clone)]
-pub enum ChainTip {
-    /// Empty pre-genesis state. There are no blocks currently in the backend.
-    #[default]
-    Empty,
-    /// Latest block is a confirmed block.
-    Confirmed(/* block_number */ u64),
-    /// Latest block is a preconfirmed block.
-    Preconfirmed(Arc<PreconfirmedBlock>),
+#[derive(Debug, Clone)]
+struct ReplayBoundaryRuntime {
+    boundary: ReplayBlockBoundary,
+    dispatched_tx_count: u64,
+    executed_tx_count: u64,
+    last_executed_tx_hash: Option<Felt>,
+    reached_last_tx_hash: bool,
+    mismatch: Option<String>,
+    closed: bool,
 }
 
-// Use [`Arc::ptr_eq`] for quick equality check: we don't want to compare the content of the transactions
-// for the preconfirmed block case.
-impl PartialEq for ChainTip {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Empty, Self::Empty) => true,
-            (Self::Confirmed(l0), Self::Confirmed(r0)) => l0 == r0,
-            (Self::Preconfirmed(l0), Self::Preconfirmed(r0)) => Arc::ptr_eq(l0, r0),
-            _ => false,
+impl ReplayBoundaryRuntime {
+    fn from_boundary(
+        boundary: ReplayBlockBoundary,
+        seed_executed: u64,
+        seed_last_hash: Option<Felt>,
+        seed_reached_last_tx_hash: bool,
+    ) -> Self {
+        let mut this = Self {
+            boundary,
+            dispatched_tx_count: seed_executed,
+            executed_tx_count: seed_executed,
+            last_executed_tx_hash: seed_last_hash,
+            reached_last_tx_hash: seed_reached_last_tx_hash,
+            mismatch: None,
+            closed: false,
+        };
+        this.refresh_consistency_flags();
+        this
+    }
+
+    fn boundary_met(&self) -> bool {
+        self.executed_tx_count == self.boundary.expected_tx_count
+            && self.reached_last_tx_hash
+            && self.mismatch.is_none()
+    }
+
+    fn to_status(&self) -> ReplayBlockBoundaryStatus {
+        ReplayBlockBoundaryStatus {
+            block_n: self.boundary.block_n,
+            expected_tx_count: self.boundary.expected_tx_count,
+            dispatched_tx_count: self.dispatched_tx_count,
+            executed_tx_count: self.executed_tx_count,
+            last_executed_tx_hash: self.last_executed_tx_hash,
+            reached_last_tx_hash: self.reached_last_tx_hash,
+            boundary_met: self.boundary_met(),
+            closed: self.closed,
+            mismatch: self.mismatch.clone(),
+        }
+    }
+
+    fn refresh_consistency_flags(&mut self) {
+        if self.executed_tx_count > self.boundary.expected_tx_count {
+            self.set_mismatch_if_empty(format!(
+                "executed_tx_count={} exceeded expected_tx_count={}",
+                self.executed_tx_count, self.boundary.expected_tx_count
+            ));
+        }
+
+        if self.executed_tx_count == self.boundary.expected_tx_count && !self.reached_last_tx_hash {
+            self.set_mismatch_if_empty(format!(
+                "executed_tx_count reached expected count but boundary_last_tx_hash={:#x} was not observed",
+                self.boundary.last_tx_hash
+            ));
+        }
+    }
+
+    fn set_mismatch_if_empty(&mut self, message: String) {
+        if self.mismatch.is_none() {
+            self.mismatch = Some(message);
         }
     }
 }
-impl Eq for ChainTip {}
 
-impl fmt::Debug for ChainTip {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => write!(f, "Empty"),
-            Self::Confirmed(block_n) => write!(f, "Confirmed block_n={block_n}"),
-            Self::Preconfirmed(preconfirmed_block) => {
-                write!(f, "Preconfirmed block_n={}", preconfirmed_block.header.block_number)
-            }
-        }
+fn storage_tip_from_confirmed_or_empty(confirmed_tip: Option<u64>) -> StorageHeadProjection {
+    match confirmed_tip {
+        Some(block_n) => StorageHeadProjection::Confirmed(block_n),
+        None => StorageHeadProjection::Empty,
     }
 }
 
-impl ChainTip {
-    pub fn on_confirmed_block_n_or_empty(block_n: Option<u64>) -> Self {
-        match block_n {
-            Some(block_n) => Self::Confirmed(block_n),
-            None => Self::Empty,
+fn storage_tip_from_preconfirmed_block(block: &PreconfirmedBlock) -> StorageHeadProjection {
+    StorageHeadProjection::Preconfirmed {
+        header: block.header.clone(),
+        content: block.content.borrow().executed_transactions().cloned().collect(),
+    }
+}
+
+fn storage_tip_from_head_projection(
+    chain_head_state: ChainHeadState,
+    preconfirmed: Option<Arc<PreconfirmedBlock>>,
+) -> StorageHeadProjection {
+    if let Some(preconfirmed_tip) = chain_head_state.external_preconfirmed_tip {
+        if let Some(block) = preconfirmed.filter(|b| b.header.block_number == preconfirmed_tip) {
+            return storage_tip_from_preconfirmed_block(&block);
         }
     }
 
-    /// Latest block_n, which may be the pre-confirmed block.
-    pub fn block_n(&self) -> Option<u64> {
-        match self {
-            Self::Empty => None,
-            Self::Confirmed(block_n) => Some(*block_n),
-            Self::Preconfirmed(b) => Some(b.header.block_number),
-        }
-    }
-    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
-        match self {
-            Self::Empty => None,
-            Self::Preconfirmed(b) => b.header.block_number.checked_sub(1),
-            Self::Confirmed(block_n) => Some(*block_n),
-        }
-    }
-    pub fn is_preconfirmed(&self) -> bool {
-        matches!(self, Self::Preconfirmed(_))
-    }
-    pub fn as_preconfirmed(&self) -> Option<&Arc<PreconfirmedBlock>> {
-        match self {
-            Self::Preconfirmed(b) => Some(b),
-            _ => None,
-        }
+    storage_tip_from_confirmed_or_empty(chain_head_state.confirmed_tip)
+}
+
+type RuntimePreconfirmedBlocks = BTreeMap<u64, Arc<PreconfirmedBlock>>;
+
+fn runtime_preconfirmed_tip_block_n(preconfirmed: &RuntimePreconfirmedBlocks) -> Option<u64> {
+    preconfirmed.last_key_value().map(|(block_n, _)| *block_n)
+}
+
+fn runtime_preconfirmed_block(
+    preconfirmed: &RuntimePreconfirmedBlocks,
+    block_n: u64,
+) -> Option<Arc<PreconfirmedBlock>> {
+    preconfirmed.get(&block_n).cloned()
+}
+
+fn prune_runtime_preconfirmed_blocks(preconfirmed: &mut RuntimePreconfirmedBlocks, chain_head_state: ChainHeadState) {
+    if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+        preconfirmed.retain(|block_n, _| *block_n > confirmed_tip);
     }
 
-    /// Convert to the chain tip type for use in the storage backend. It is distinct from our the internal
-    /// ChainTip to hide implementation details from the storage implementation.
-    fn to_storage(&self) -> StorageChainTip {
-        match self {
-            Self::Empty => StorageChainTip::Empty,
-            Self::Confirmed(block_n) => StorageChainTip::Confirmed(*block_n),
-            Self::Preconfirmed(preconfirmed_block) => StorageChainTip::Preconfirmed {
-                header: preconfirmed_block.header.clone(),
-                content: preconfirmed_block.content.borrow().executed_transactions().cloned().collect(),
-            },
-        }
+    if let Some(internal_tip) = chain_head_state.internal_preconfirmed_tip {
+        preconfirmed.retain(|block_n, _| *block_n <= internal_tip);
+    } else {
+        preconfirmed.clear();
     }
-    pub fn from_storage(tip: StorageChainTip) -> Self {
-        match tip {
-            StorageChainTip::Empty => Self::Empty,
-            StorageChainTip::Confirmed(block_n) => Self::Confirmed(block_n),
-            StorageChainTip::Preconfirmed { header, content } => {
-                Self::Preconfirmed(PreconfirmedBlock::new_with_content(header, content, /* candidates */ []).into())
-            }
-        }
+}
+
+fn classify_chain_head_transition(previous: ChainHeadState, next: ChainHeadState) -> &'static str {
+    if previous == next {
+        return "unchanged";
     }
+
+    if next.confirmed_tip != previous.confirmed_tip {
+        if next.external_preconfirmed_tip.is_some() {
+            return "confirmed_advanced_with_external_preconfirmed";
+        }
+        return "confirmed_advanced_without_preconfirmed";
+    }
+
+    if next.external_preconfirmed_tip != previous.external_preconfirmed_tip {
+        return "external_preconfirmed_updated";
+    }
+
+    if next.internal_preconfirmed_tip != previous.internal_preconfirmed_tip {
+        return "internal_preconfirmed_updated";
+    }
+
+    "head_projection_updated"
 }
 
 /// Madara client database backend singleton.
@@ -295,7 +358,15 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 
-    pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
+    pub chain_head_state: tokio::sync::watch::Sender<ChainHeadState>,
+    /// Internal speculative preconfirmed blocks keyed by block number. Used by block
+    /// production internals, chain watcher, and mempool nonce tracking. May contain
+    /// speculative EB content that has not yet been comparator-approved.
+    pub preconfirmed_block_runtime: RwLock<RuntimePreconfirmedBlocks>,
+    /// External-visible preconfirmed block snapshot. Used by RPC, sync, and other
+    /// external consumers. Only updated after comparator promotion (C-012A).
+    /// In BlockifierOnly mode, tracks internal runtime (no comparator gate).
+    external_preconfirmed_block_runtime: tokio::sync::watch::Sender<Option<Arc<PreconfirmedBlock>>>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -310,18 +381,24 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
-    /// Custom headers used during block replay to ensure deterministic execution.
+    /// Custom header used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
-    /// from the original block to reproduce the expected block hash. These per-block
-    /// overrides are applied during transaction validation and execution, along with the
-    /// expected block hash to validate against after block creation.
+    /// from the original block to reproduce the expected block hash. This field stores
+    /// header overrides that are applied during transaction validation and execution,
+    /// along with the expected block hash to validate against after block creation.
     /// # Important Notes
-    /// - Custom headers are keyed by block number because replay can prepare future blocks ahead of time
+    /// - Custom header is different for each block and must be stored per block number
     /// - **Must verify** that the block number matches before use
-    /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
+    /// - **Must clear** after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
-    pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
+    pub custom_header: Mutex<BTreeMap<u64, CustomHeader>>,
+
+    /// Replay boundary metadata and runtime progress.
+    ///
+    /// This is in-memory only and keyed by block number. It is used when replay mode is enabled
+    /// by block production to prevent batch/executor from crossing source block boundaries.
+    replay_boundaries: Mutex<BTreeMap<u64, ReplayBoundaryRuntime>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -353,6 +430,33 @@ pub struct MadaraBackendConfig {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
+    fn log_confirmed_state_root_consistency(&self, context: &str, block_n: u64) -> Result<bool> {
+        let block_info = self.db.get_block_info(block_n)?.ok_or_else(|| {
+            anyhow::anyhow!("Missing block info while verifying confirmed state root for block #{block_n}")
+        })?;
+        let expected_root = block_info.header.global_state_root;
+        let actual_root = self.db.get_state_root_hash()?;
+        let matches = actual_root == expected_root;
+        tracing::info!(
+            "confirmed_state_root_consistency context={} block_number={} expected_root={:#x} actual_root={:#x} match={}",
+            context,
+            block_n,
+            expected_root,
+            actual_root,
+            matches
+        );
+        if !matches {
+            tracing::error!(
+                "confirmed_state_root_consistency_mismatch context={} block_number={} expected_root={:#x} actual_root={:#x}",
+                context,
+                block_n,
+                expected_root,
+                actual_root
+            );
+        }
+        Ok(matches)
+    }
+
     fn new_and_init(
         db: D,
         chain_config: Arc<ChainConfig>,
@@ -370,9 +474,12 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             cairo_native_config,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
-            chain_tip: tokio::sync::watch::Sender::new(Default::default()),
+            chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
+            preconfirmed_block_runtime: RwLock::new(BTreeMap::new()),
+            external_preconfirmed_block_runtime: tokio::sync::watch::Sender::new(None),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
-            custom_headers: Mutex::new(Default::default()),
+            custom_header: Mutex::new(BTreeMap::new()),
+            replay_boundaries: Mutex::new(BTreeMap::new()),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -398,18 +505,21 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             })?;
         }
 
-        // Init chain_tip and set starting block
-        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
-            StorageChainTip::Confirmed(starting_block)
+        // Initialize canonical chain head state.
+        let stored_tip = if let Some(starting_block) = self.starting_block {
+            StorageHeadProjection::Confirmed(starting_block)
         } else {
-            self.db.get_chain_tip()?
-        });
-        self.starting_block = chain_tip.latest_confirmed_block_n();
-        // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
+            self.db.get_head_projection()?
+        };
+        let (chain_head_state, preconfirmed) = self.build_runtime_head_projection(stored_tip)?;
+        self.starting_block = chain_head_state.confirmed_tip;
+        // On startup, remove all blocks past the head projection, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
-            chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
+            chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
-        self.chain_tip.send_replace(chain_tip);
+        // On init, external and internal are identical (DB is authoritative).
+        let external = preconfirmed.clone();
+        self.publish_head_projection(chain_head_state, preconfirmed, external)?;
 
         // Init L1 head
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
@@ -418,20 +528,20 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,
-    /// and do any other such thing. The backend chain_tip can only be modified through this.
+    /// and do any other such thing. The canonical chain head projection can only be modified through this.
     ///
     /// As a caller, you are responsible for ensuring the backend is not being concurrently
     /// modified in an unexpected way. In practice, this means:
     /// - You are allowed to use the `write_*` low-level functions to write block parts concurrently.
-    /// - You are not allowed to use the other functions to advance the chain tip
+    /// - You are not allowed to use the other functions to advance the head projection
     ///
     /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
     /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
     ///
-    /// In addition, all the associated functions need to be called in a rayon thread pool context. **Do not call
+    /// In addition, all of the associated functions need to be called in a rayon thread pool context. **Do not call
     /// them from the tokio pool!**
     // TODO: ensure exclusive access? all of these requirements could be checked relatively cheaply. There are also
-    // ways to make the aforementioned logic errors unrepresentable by designing the API a little better.
+    // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
     }
@@ -447,6 +557,198 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
+    fn replay_boundary_seed_from_preconfirmed(
+        &self,
+        block_n: u64,
+        boundary_last_tx_hash: Felt,
+    ) -> (u64, Option<Felt>, bool) {
+        if let Some(runtime_block) =
+            runtime_preconfirmed_block(&self.preconfirmed_block_runtime.read().expect("Poisoned lock"), block_n)
+        {
+            let guard = runtime_block.content.borrow();
+            let executed_tx_count = guard.n_executed() as u64;
+            let last_executed_tx_hash =
+                guard.executed_transactions().last().map(|tx| *tx.transaction.receipt.transaction_hash());
+            let reached_last_tx_hash = guard
+                .executed_transactions()
+                .any(|tx| *tx.transaction.receipt.transaction_hash() == boundary_last_tx_hash);
+            return (executed_tx_count, last_executed_tx_hash, reached_last_tx_hash);
+        }
+
+        match self.db.get_preconfirmed_block_data(block_n) {
+            Ok(Some((_header, content))) => {
+                let executed_tx_count = content.len() as u64;
+                let last_executed_tx_hash = content.last().map(|tx| *tx.transaction.receipt.transaction_hash());
+                let reached_last_tx_hash =
+                    content.iter().any(|tx| *tx.transaction.receipt.transaction_hash() == boundary_last_tx_hash);
+                (executed_tx_count, last_executed_tx_hash, reached_last_tx_hash)
+            }
+            Ok(None) => (0, None, false),
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to read preconfirmed data while seeding replay boundary for block #{block_n}: {err:#}"
+                );
+                (0, None, false)
+            }
+        }
+    }
+
+    pub fn set_replay_boundary(&self, boundary: ReplayBlockBoundary) -> ReplayBlockBoundaryStatus {
+        let (seed_executed, seed_last_hash, seed_reached_last_tx_hash) =
+            self.replay_boundary_seed_from_preconfirmed(boundary.block_n, boundary.last_tx_hash);
+        let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
+
+        if let Some(existing) = guard.get_mut(&boundary.block_n) {
+            if existing.boundary == boundary {
+                if seed_executed > existing.executed_tx_count {
+                    existing.executed_tx_count = seed_executed;
+                    existing.last_executed_tx_hash = seed_last_hash.or(existing.last_executed_tx_hash);
+                }
+                existing.dispatched_tx_count = existing.dispatched_tx_count.max(seed_executed);
+                if existing.last_executed_tx_hash.is_none() {
+                    existing.last_executed_tx_hash = seed_last_hash;
+                }
+                existing.reached_last_tx_hash = existing.reached_last_tx_hash
+                    || seed_reached_last_tx_hash
+                    || existing
+                        .last_executed_tx_hash
+                        .map(|hash| hash == existing.boundary.last_tx_hash)
+                        .unwrap_or(false);
+                existing.closed = false;
+                existing.refresh_consistency_flags();
+                let status = existing.to_status();
+                tracing::info!(
+                    "replay_boundary_set block_number={} expected_tx_count={} seeded_executed={} boundary_met={} closed={} mismatch={:?}",
+                    status.block_n,
+                    status.expected_tx_count,
+                    status.executed_tx_count,
+                    status.boundary_met,
+                    status.closed,
+                    status.mismatch
+                );
+                return status;
+            }
+
+            tracing::warn!(
+                "Replacing replay boundary for block #{} (old expected_tx_count={}, old_last_tx_hash={:#x}, new expected_tx_count={}, new_last_tx_hash={:#x})",
+                boundary.block_n,
+                existing.boundary.expected_tx_count,
+                existing.boundary.last_tx_hash,
+                boundary.expected_tx_count,
+                boundary.last_tx_hash
+            );
+        }
+
+        let runtime = ReplayBoundaryRuntime::from_boundary(
+            boundary.clone(),
+            seed_executed,
+            seed_last_hash,
+            seed_reached_last_tx_hash,
+        );
+        let status = runtime.to_status();
+        guard.insert(boundary.block_n, runtime);
+        tracing::info!(
+            "replay_boundary_set block_number={} expected_tx_count={} seeded_executed={} boundary_met={} closed={} mismatch={:?}",
+            status.block_n,
+            status.expected_tx_count,
+            status.executed_tx_count,
+            status.boundary_met,
+            status.closed,
+            status.mismatch
+        );
+        status
+    }
+
+    pub fn get_replay_boundary_status(&self, block_n: u64) -> Option<ReplayBlockBoundaryStatus> {
+        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(ReplayBoundaryRuntime::to_status)
+    }
+
+    pub fn replay_boundary_exists(&self, block_n: u64) -> bool {
+        self.replay_boundaries.lock().expect("Poisoned lock").contains_key(&block_n)
+    }
+
+    pub fn replay_boundary_remaining_execution_capacity(&self, block_n: u64) -> Option<u64> {
+        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(|entry| {
+            if entry.closed || entry.mismatch.is_some() {
+                0
+            } else {
+                entry.boundary.expected_tx_count.saturating_sub(entry.executed_tx_count)
+            }
+        })
+    }
+
+    pub fn replay_boundary_remaining_dispatch_capacity(&self, block_n: u64) -> Option<u64> {
+        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(|entry| {
+            if entry.closed || entry.mismatch.is_some() {
+                0
+            } else {
+                entry.boundary.expected_tx_count.saturating_sub(entry.dispatched_tx_count)
+            }
+        })
+    }
+
+    pub fn replay_boundary_is_met(&self, block_n: u64) -> Option<bool> {
+        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(ReplayBoundaryRuntime::boundary_met)
+    }
+
+    pub fn replay_boundary_record_dispatched(
+        &self,
+        block_n: u64,
+        dispatched_tx_count: u64,
+    ) -> Option<ReplayBlockBoundaryStatus> {
+        if dispatched_tx_count == 0 {
+            return self.get_replay_boundary_status(block_n);
+        }
+
+        let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
+        let entry = guard.get_mut(&block_n)?;
+        if entry.closed {
+            return Some(entry.to_status());
+        }
+
+        entry.dispatched_tx_count = entry.dispatched_tx_count.saturating_add(dispatched_tx_count);
+        if entry.dispatched_tx_count > entry.boundary.expected_tx_count {
+            entry.set_mismatch_if_empty(format!(
+                "dispatched_tx_count={} exceeded expected_tx_count={}",
+                entry.dispatched_tx_count, entry.boundary.expected_tx_count
+            ));
+        }
+        entry.refresh_consistency_flags();
+        Some(entry.to_status())
+    }
+
+    pub fn replay_boundary_record_executed_hashes(
+        &self,
+        block_n: u64,
+        tx_hashes: &[Felt],
+    ) -> Option<ReplayBlockBoundaryStatus> {
+        if tx_hashes.is_empty() {
+            return self.get_replay_boundary_status(block_n);
+        }
+
+        let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
+        let entry = guard.get_mut(&block_n)?;
+        for tx_hash in tx_hashes {
+            entry.executed_tx_count = entry.executed_tx_count.saturating_add(1);
+            if entry.dispatched_tx_count < entry.executed_tx_count {
+                entry.dispatched_tx_count = entry.executed_tx_count;
+            }
+            entry.last_executed_tx_hash = Some(*tx_hash);
+            if *tx_hash == entry.boundary.last_tx_hash {
+                entry.reached_last_tx_hash = true;
+            }
+            entry.refresh_consistency_flags();
+        }
+        Some(entry.to_status())
+    }
+
+    pub fn replay_boundary_mark_closed(&self, block_n: u64) -> Option<ReplayBlockBoundaryStatus> {
+        let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
+        let entry = guard.get_mut(&block_n)?;
+        entry.closed = true;
+        Some(entry.to_status())
+    }
+
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
     /// Must be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {
@@ -454,50 +756,23 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 }
 
-impl<D> MadaraBackend<D> {
+impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
-        self.custom_headers.lock().expect("Poisoned lock").get(&block_n).cloned()
+        self.get_custom_header_with_clear(block_n, false)
     }
 
-    pub fn take_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
-        self.custom_headers.lock().expect("Poisoned lock").remove(&block_n)
-    }
-
-    pub fn clear_custom_headers_through(&self, block_n: u64) -> usize {
-        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
-        let initial_len = guard.len();
-        guard.retain(|stored_block_n, _| *stored_block_n > block_n);
-        initial_len.saturating_sub(guard.len())
-    }
-}
-
-impl<D: MadaraStorage> MadaraBackend<D> {
-    pub fn set_custom_header(self: &Arc<Self>, custom_header: CustomHeader) -> Result<()> {
-        let chain_tip = self.chain_tip.borrow();
-        tracing::debug!(
-            target: "custom_header",
-            block_n = custom_header.block_n,
-            timestamp = custom_header.timestamp,
-            gas_prices = ?custom_header.gas_prices,
-            expected_block_hash = ?custom_header.expected_block_hash,
-            chain_tip = ?*chain_tip,
-            "storing custom header"
-        );
-        drop(chain_tip);
-
-        let mut guard = self.custom_headers.lock().expect("Poisoned lock");
-        if let Some(previous) = guard.insert(custom_header.block_n, custom_header.clone()) {
-            tracing::debug!(
-                target: "custom_header",
-                block_n = custom_header.block_n,
-                previous_timestamp = previous.timestamp,
-                previous_gas_prices = ?previous.gas_prices,
-                new_timestamp = custom_header.timestamp,
-                new_gas_prices = ?custom_header.gas_prices,
-                "replacing staged custom header for block"
-            );
+    pub fn get_custom_header_with_clear(&self, block_n: u64, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        if clear {
+            guard.remove(&block_n)
+        } else {
+            guard.get(&block_n).cloned()
         }
-        Ok(())
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        guard.insert(custom_header.block_n, custom_header);
     }
 }
 
@@ -518,13 +793,36 @@ impl MadaraBackend<RocksDBStorage> {
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
         // For tests, use default (disabled) Cairo Native config (no native execution)
         // Initialize compilation semaphore for tests (required even if native execution is disabled)
-        let builder = mc_class_exec::config::NativeConfig::builder();
+        let builder = NativeConfig::builder();
         let max_concurrent = builder.max_concurrent_compilations();
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
         let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);
+        Arc::new(backend)
+    }
+
+    /// Open a test backend at a specific directory path (no auto-cleanup).
+    /// Used for restart/recovery tests that need to reopen the same DB.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing_with_dir(
+        dir: &Path,
+        chain_config: Arc<ChainConfig>,
+        config: MadaraBackendConfig,
+    ) -> Arc<Self> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        let db = RocksDBStorage::open(dir, Default::default()).unwrap();
+        let builder = NativeConfig::builder();
+        let max_concurrent = builder.max_concurrent_compilations();
+        mc_class_exec::init_compilation_semaphore(max_concurrent);
+        let test_config = builder.build();
+        let cairo_native_config = Arc::new(test_config);
+        let backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
         Arc::new(backend)
     }
 
@@ -623,6 +921,28 @@ impl MadaraBackend<RocksDBStorage> {
 
         Ok(Arc::new(Self::new_and_init(db, chain_config, config, cairo_native_config)?))
     }
+
+    /// Append executed transactions to the internal runtime preconfirmed block AND persist
+    /// to block-scoped DB storage. Used for Mixed mode durability (per-batch DB persistence).
+    ///
+    /// This does NOT touch `external_preconfirmed` — that remains comparator-gated.
+    /// This does NOT modify the persisted head projection payload.
+    pub fn append_to_internal_preconfirmed_and_persist(
+        &self,
+        executed: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()> {
+        let block = self
+            .internal_preconfirmed_block()
+            .context("No internal preconfirmed block for speculative frontier update")?;
+
+        if self.config.save_preconfirmed {
+            let start_tx_index = block.content.borrow().n_executed();
+            self.db.append_preconfirmed_content(block.header.block_number, start_tx_index as u64, executed)?;
+        }
+
+        block.append(executed.iter().cloned(), iter::empty::<Arc<ValidatedTransaction>>());
+        Ok(())
+    }
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -639,22 +959,333 @@ pub struct AddFullBlockResult {
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
+    fn register_projection_violation(message: String) {
+        metrics().head_projection_violation_count.add(1, &[]);
+        #[cfg(test)]
+        metrics().head_projection_violation_count_test.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        tracing::error!(target: "db::chain_head_projection", "{message}");
+    }
+
+    fn load_preconfirmed_block_for_tip(
+        &self,
+        block_n: u64,
+        stored_tip: &StorageHeadProjection,
+    ) -> Result<Arc<PreconfirmedBlock>> {
+        // Block-scoped persisted data is authoritative when present.
+        // In Mixed mode, per-batch DB persistence writes block-scoped rows that may be
+        // fresher than the head projection (which is not updated during batch appends).
+        // `Some((header, content))` — even with empty content — means persisted data
+        // exists for this block and is the source of truth. Do NOT fall back to the
+        // head projection in that case; an empty content means "authoritative empty block
+        // body", not "missing, use shell from head projection".
+        if let Some((header, content)) = self.db.get_preconfirmed_block_data(block_n)? {
+            return Ok(Arc::new(PreconfirmedBlock::new_with_content(header, content, /* candidates */ [])));
+        }
+
+        // Block-scoped persisted data is missing (`None`). Fall back to head projection.
+        if let StorageHeadProjection::Preconfirmed { header, content } = stored_tip {
+            if header.block_number == block_n {
+                return Ok(Arc::new(PreconfirmedBlock::new_with_content(
+                    header.clone(),
+                    content.clone(),
+                    /* candidates */ [],
+                )));
+            }
+        }
+
+        bail!("No persisted preconfirmed block data or head projection for block #{block_n}");
+    }
+
+    /// Test-only accessor for `load_preconfirmed_block_for_tip`.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn load_preconfirmed_block_for_tip_test(
+        &self,
+        block_n: u64,
+        stored_tip: &StorageHeadProjection,
+    ) -> Result<Arc<PreconfirmedBlock>> {
+        self.load_preconfirmed_block_for_tip(block_n, stored_tip)
+    }
+
+    fn build_runtime_head_projection(
+        &self,
+        stored_tip: StorageHeadProjection,
+    ) -> Result<(ChainHeadState, Option<Arc<PreconfirmedBlock>>)> {
+        let mut chain_head_state = ChainHeadState::from_head_projection(&stored_tip);
+        let latest_preconfirmed_header_block_n = self.db.get_latest_preconfirmed_header_block_n()?;
+        let tainted_rebuild_active = self.db.get_tainted_rebuild_session()?.is_some_and(|session| session.active);
+
+        chain_head_state.internal_preconfirmed_tip = match (
+            chain_head_state.external_preconfirmed_tip,
+            latest_preconfirmed_header_block_n,
+        ) {
+            (None, None) => None,
+            (Some(external_tip), None) => Some(external_tip),
+            (Some(external_tip), Some(latest_header_tip)) => {
+                ensure!(
+                    latest_header_tip >= external_tip,
+                    "Latest persisted preconfirmed header tip ({latest_header_tip}) is behind external preconfirmed tip ({external_tip}). [stored_tip={stored_tip:?}]"
+                );
+                if tainted_rebuild_active {
+                    Some(external_tip)
+                } else {
+                    Some(latest_header_tip)
+                }
+            }
+            (None, Some(_latest_header_tip)) if tainted_rebuild_active => None,
+            (None, Some(latest_header_tip)) => {
+                bail!(
+                    "Found persisted preconfirmed header tip ({latest_header_tip}) while head projection has no external preconfirmed tip. [stored_tip={stored_tip:?}]"
+                );
+            }
+        };
+
+        let runtime_preconfirmed = if let Some(internal_tip) = chain_head_state.internal_preconfirmed_tip {
+            Some(self.load_preconfirmed_block_for_tip(internal_tip, &stored_tip)?)
+        } else {
+            None
+        };
+
+        Ok((chain_head_state, runtime_preconfirmed))
+    }
+
+    fn ensure_runtime_preconfirmed_alignment(
+        chain_head_state: ChainHeadState,
+        preconfirmed: &RuntimePreconfirmedBlocks,
+    ) -> Result<()> {
+        match chain_head_state.internal_preconfirmed_tip {
+            None if preconfirmed.is_empty() => Ok(()),
+            Some(expected) if preconfirmed.contains_key(&expected) => {
+                if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+                    ensure!(
+                        preconfirmed.keys().all(|block_n| *block_n > confirmed_tip),
+                        "Runtime preconfirmed blocks must be strictly above confirmed_tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                        confirmed_tip,
+                        preconfirmed.keys().copied().collect::<Vec<_>>()
+                    );
+                }
+                ensure!(
+                    preconfirmed.keys().all(|block_n| *block_n <= expected),
+                    "Runtime preconfirmed blocks must not be ahead of internal_preconfirmed_tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                    expected,
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
+                );
+                Ok(())
+            }
+            Some(expected) => {
+                let message = format!(
+                    "Runtime preconfirmed block is missing while head expects internal preconfirmed tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                    expected,
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
+                );
+                Self::register_projection_violation(message.clone());
+                bail!("{message}");
+            }
+            None => {
+                let message = format!(
+                    "Runtime preconfirmed blocks {:?} exist while head has no internal preconfirmed tip. [head={chain_head_state:?}]",
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
+                );
+                Self::register_projection_violation(message.clone());
+                bail!("{message}");
+            }
+        }
+    }
+
+    /// Ensure projected storage tip never gets ahead of canonical chain head state.
+    ///
+    /// Stale/lower confirmed values are allowed (lagging projection), but future/incompatible values are rejected.
+    fn ensure_tip_not_ahead_of_head_state(
+        chain_head_state: ChainHeadState,
+        projected_storage_tip: &StorageHeadProjection,
+    ) -> Result<()> {
+        match projected_storage_tip {
+            StorageHeadProjection::Empty => Ok(()),
+            StorageHeadProjection::Confirmed(block_n) => {
+                let is_allowed = chain_head_state.confirmed_tip.is_some_and(|confirmed| *block_n <= confirmed);
+                if !is_allowed {
+                    let message = format!(
+                        "Projected storage tip confirmed block_n={} is ahead of canonical head confirmed_tip={:?}. [head={chain_head_state:?}, tip={projected_storage_tip:?}]",
+                        block_n,
+                        chain_head_state.confirmed_tip
+                    );
+                    Self::register_projection_violation(message.clone());
+                    bail!("{message}");
+                }
+                Ok(())
+            }
+            StorageHeadProjection::Preconfirmed { header, .. } => {
+                let expected = chain_head_state.external_preconfirmed_tip;
+                if expected != Some(header.block_number) {
+                    let message = format!(
+                        "Projected storage tip preconfirmed block_n={} is incompatible with canonical head external_preconfirmed_tip={:?}. [head={chain_head_state:?}, tip={projected_storage_tip:?}]",
+                        header.block_number,
+                        expected
+                    );
+                    Self::register_projection_violation(message.clone());
+                    bail!("{message}");
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn publish_head_projection(
+        &self,
+        chain_head_state: ChainHeadState,
+        internal_preconfirmed: Option<Arc<PreconfirmedBlock>>,
+        external_preconfirmed: Option<Arc<PreconfirmedBlock>>,
+    ) -> Result<()> {
+        chain_head_state.validate_cross_field_invariants().map_err(|err| {
+            let message = err.to_string();
+            Self::register_projection_violation(message.clone());
+            anyhow::anyhow!(message)
+        })?;
+        let previous_head_state = *self.chain_head_state.borrow();
+        let current_runtime_preconfirmed = self.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        let previous_runtime_preconfirmed_block_n = runtime_preconfirmed_tip_block_n(&current_runtime_preconfirmed);
+
+        let mut next_runtime_preconfirmed = current_runtime_preconfirmed;
+        if let Some(block) = internal_preconfirmed {
+            next_runtime_preconfirmed.insert(block.header.block_number, block);
+        }
+        prune_runtime_preconfirmed_blocks(&mut next_runtime_preconfirmed, chain_head_state);
+
+        Self::ensure_runtime_preconfirmed_alignment(chain_head_state, &next_runtime_preconfirmed)?;
+        let projected_tip = storage_tip_from_head_projection(
+            chain_head_state,
+            chain_head_state.external_preconfirmed_tip.and_then(|block_n| {
+                external_preconfirmed
+                    .as_ref()
+                    .filter(|block| block.header.block_number == block_n)
+                    .cloned()
+                    .or_else(|| runtime_preconfirmed_block(&next_runtime_preconfirmed, block_n))
+            }),
+        );
+        Self::ensure_tip_not_ahead_of_head_state(chain_head_state, &projected_tip)?;
+
+        let next_runtime_preconfirmed_block_n = runtime_preconfirmed_tip_block_n(&next_runtime_preconfirmed);
+        let transition = classify_chain_head_transition(previous_head_state, chain_head_state);
+
+        tracing::info!(
+            target: "db::chain_head_projection",
+            transition,
+            previous_confirmed_tip = ?previous_head_state.confirmed_tip,
+            previous_external_preconfirmed_tip = ?previous_head_state.external_preconfirmed_tip,
+            previous_internal_preconfirmed_tip = ?previous_head_state.internal_preconfirmed_tip,
+            next_confirmed_tip = ?chain_head_state.confirmed_tip,
+            next_external_preconfirmed_tip = ?chain_head_state.external_preconfirmed_tip,
+            next_internal_preconfirmed_tip = ?chain_head_state.internal_preconfirmed_tip,
+            previous_runtime_preconfirmed_block_n = ?previous_runtime_preconfirmed_block_n,
+            next_runtime_preconfirmed_block_n = ?next_runtime_preconfirmed_block_n,
+            "chain_head_state_updated"
+        );
+        tracing::info!(
+            target: "db::chain_head_projection",
+            "chain_head_state_updated transition={} prev_confirmed={:?} prev_external_preconfirmed={:?} prev_internal_preconfirmed={:?} next_confirmed={:?} next_external_preconfirmed={:?} next_internal_preconfirmed={:?} prev_runtime_preconfirmed={:?} next_runtime_preconfirmed={:?}",
+            transition,
+            previous_head_state.confirmed_tip,
+            previous_head_state.external_preconfirmed_tip,
+            previous_head_state.internal_preconfirmed_tip,
+            chain_head_state.confirmed_tip,
+            chain_head_state.external_preconfirmed_tip,
+            chain_head_state.internal_preconfirmed_tip,
+            previous_runtime_preconfirmed_block_n,
+            next_runtime_preconfirmed_block_n
+        );
+
+        // Publish internal runtime preconfirmed first, then external, then head state.
+        // This narrows the window where readers can observe a new head with stale runtime preconfirmed.
+        *self.preconfirmed_block_runtime.write().expect("Poisoned lock") = next_runtime_preconfirmed;
+        self.external_preconfirmed_block_runtime.send_replace(external_preconfirmed);
+        self.chain_head_state.send_replace(chain_head_state);
+
+        Ok(())
+    }
+
+    /// Refresh in-memory head projection from persisted DB head projection.
+    ///
+    /// This is the canonical refresh path used by rpc/sync compatibility callsites after destructive DB operations.
+    pub fn refresh_head_projection_from_db(&self) -> Result<()> {
+        let (chain_head_state, preconfirmed) = self.build_runtime_head_projection(self.db.get_head_projection()?)?;
+        // On DB refresh, external and internal snapshots are identical (DB is authoritative).
+        let external = preconfirmed.clone();
+        self.publish_head_projection(chain_head_state, preconfirmed, external)
+    }
+
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().latest_confirmed_block_n()
+        self.chain_head_state.borrow().confirmed_tip
     }
     /// Latest block_n, which may be the pre-confirmed block.
     pub fn latest_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().block_n()
+        let head = self.chain_head_state.borrow();
+        head.external_preconfirmed_tip.or(head.confirmed_tip)
     }
     pub fn has_preconfirmed_block(&self) -> bool {
-        self.chain_tip.borrow().is_preconfirmed()
+        self.chain_head_state.borrow().external_preconfirmed_tip.is_some()
     }
     pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
         *self.latest_l1_confirmed.borrow()
     }
 
+    pub(crate) fn internal_preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+        let expected_preconfirmed = self.chain_head_state.borrow().internal_preconfirmed_tip?;
+        runtime_preconfirmed_block(
+            &self.preconfirmed_block_runtime.read().expect("Poisoned lock"),
+            expected_preconfirmed,
+        )
+    }
+
+    /// Get the externally visible preconfirmed block (C-012A).
+    ///
+    /// Reads from the external snapshot (comparator-approved content), NOT from
+    /// the internal speculative runtime block. In mixed mode, this ensures
+    /// external consumers do not see speculative EB content before comparator.
     pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
-        self.chain_tip.borrow().as_preconfirmed().cloned()
+        let expected_preconfirmed = self.chain_head_state.borrow().external_preconfirmed_tip?;
+        // C-012A: Read from external snapshot, not internal runtime.
+        if let Some(ext) = self
+            .external_preconfirmed_block_runtime
+            .borrow()
+            .as_ref()
+            .filter(|block| block.header.block_number == expected_preconfirmed)
+            .cloned()
+        {
+            return Some(ext);
+        }
+
+        match self.db.get_preconfirmed_block_data(expected_preconfirmed) {
+            Ok(Some((header, content))) => {
+                Some(Arc::new(PreconfirmedBlock::new_with_content(header, content, /* candidates */ [])))
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    "Missing external preconfirmed block #{expected_preconfirmed} while head projection expects it"
+                );
+                None
+            }
+            Err(err) => {
+                tracing::warn!("Failed to load external preconfirmed block #{expected_preconfirmed} from db: {err:#}");
+                None
+            }
+        }
+    }
+
+    /// Get the external preconfirmed block at the external tip (C-012A).
+    pub(crate) fn external_preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+        let expected = self.chain_head_state.borrow().external_preconfirmed_tip?;
+        self.external_preconfirmed_block_runtime
+            .borrow()
+            .as_ref()
+            .filter(|block| block.header.block_number == expected)
+            .cloned()
+    }
+
+    pub fn chain_head_state(&self) -> ChainHeadState {
+        *self.chain_head_state.borrow()
+    }
+
+    pub fn watch_chain_head_state(&self) -> tokio::sync::watch::Receiver<ChainHeadState> {
+        self.chain_head_state.subscribe()
     }
 
     /// Get the latest block_n that was in the db when this backend instance was initialized.
@@ -674,12 +1305,69 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_runtime_exec_config(&self) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
         self.db.get_runtime_exec_config(&self.chain_config)
     }
-}
 
-impl<D: MadaraStorage> MadaraBackend<D> {
-    /// Clear any saved runtime execution configuration from the database.
-    pub fn clear_runtime_exec_config(&self) -> Result<()> {
-        self.db.clear_runtime_exec_config()
+    /// Append executed transactions to the internal runtime preconfirmed block content
+    /// without persisting to DB. Runtime-only update.
+    ///
+    /// Note: Production Mixed mode now uses `append_to_internal_preconfirmed_and_persist`
+    /// which also writes block-scoped rows to DB for crash recovery. This runtime-only
+    /// method is retained for tests and any path that needs a pure runtime append.
+    ///
+    /// The content update is visible to chain watcher via the watch channel, enabling
+    /// mempool nonce progression for same-account successor txs. This does NOT advance
+    /// external preconfirmed — that remains comparator-gated.
+    pub fn append_to_internal_preconfirmed_runtime(&self, executed: &[PreconfirmedExecutedTransaction]) -> Result<()> {
+        let block = self
+            .internal_preconfirmed_block()
+            .context("No internal preconfirmed block for speculative frontier update")?;
+        block.append(executed.iter().cloned(), iter::empty::<Arc<ValidatedTransaction>>());
+        Ok(())
+    }
+
+    /// Rewind internal preconfirmed tip to `target_block_n`, discarding speculative
+    /// descendants beyond that block (C-012C).
+    ///
+    /// Called on comparator stop when internal_preconfirmed_tip > target_block_n.
+    /// Discards runtime descendants beyond `target_block_n` while keeping block `target_block_n`
+    /// available for immediate replacement with BRE-backed rows.
+    ///
+    /// Returns the number of discarded descendant blocks (0 if no rewind was needed).
+    pub fn rewind_internal_preconfirmed_to(&self, target_block_n: u64) -> Result<u64> {
+        let current = *self.chain_head_state.borrow();
+        let internal_tip = match current.internal_preconfirmed_tip {
+            Some(tip) if tip > target_block_n => tip,
+            _ => return Ok(0), // No rewind needed
+        };
+
+        let n_discarded = internal_tip - target_block_n;
+
+        // Build new chain head state with internal rewound to target.
+        let rewound_state = ChainHeadState {
+            confirmed_tip: current.confirmed_tip,
+            external_preconfirmed_tip: current.external_preconfirmed_tip,
+            internal_preconfirmed_tip: Some(target_block_n),
+        };
+
+        let current_runtime_preconfirmed = self.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        let target_block = runtime_preconfirmed_block(&current_runtime_preconfirmed, target_block_n)
+            .or_else(|| self.external_preconfirmed_block())
+            .or_else(|| match self.db.get_preconfirmed_block_data(target_block_n) {
+                Ok(Some((header, content))) => Some(Arc::new(PreconfirmedBlock::new_with_content(header, content, []))),
+                _ => None,
+            });
+
+        let external = self.external_preconfirmed_block_runtime.borrow().clone();
+
+        tracing::info!(
+            target_block_n,
+            previous_internal_tip = internal_tip,
+            n_discarded,
+            "internal_preconfirmed_rewound"
+        );
+
+        self.publish_head_projection(rewound_state, target_block, external)
+            .context("Failed to publish rewound head projection")?;
+        Ok(n_discarded)
     }
 }
 
@@ -691,80 +1379,343 @@ pub struct MadaraBackendWriter<D: MadaraStorage> {
 }
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
-    fn replace_chain_tip(&self, new_tip: ChainTip) -> Result<()> {
-        // Note: while you could think it is possible for the `chain_tip` to change between this next line when we
-        // originally get it, and when we save the replace it to a new one, leading to possible corruption in this
-        // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
-        let current_tip = self.inner.chain_tip.borrow().clone();
+    fn transition_to_confirmed_or_empty(&self, new_confirmed_tip: Option<u64>) -> Result<()> {
+        // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
+        let current_head_state = *self.inner.chain_head_state.borrow();
 
-        // Detect if state transition is valid.
-        match (&current_tip, &new_tip) {
-            // Adding the genesis block, which can be preconfirmed or confirmed. Replacing empty with empty won't work (block_n returns None).
-            (ChainTip::Empty, block) => ensure!(block.block_n() == Some(0), "Can only replace the empty chain tip with a genesis block. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
-            // Never valid.
-            (_, ChainTip::Empty) => bail!("Cannot replace the chain tip to empty. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
-            // Block is closed, preconfirmed replaces confirmed at same height.
-            // OR: preconfirmed block is being cleared.
-            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Confirmed(new_block_n)) => ensure!(
-                preconfirmed.header.block_number == *new_block_n || preconfirmed.header.block_number == *new_block_n + 1,
-                "Replacing chain tip from preconfirmed to confirmed requires the new block_n to match the previous one, or be one less than it. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New preconfirmed at same height, replacing the previous proposal.
-            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Preconfirmed(new_preconfirmed)) => ensure!(
-                preconfirmed.header.block_number == new_preconfirmed.header.block_number,
-                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New preconfirmed block on top of a confirmed block.
-            (ChainTip::Confirmed(block_n), ChainTip::Preconfirmed(preconfirmed)) => ensure!(
-                block_n + 1 == preconfirmed.header.block_number,
-                "Replacing chain tip from confirmed to preconfirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New confirmed block is added on top of a confirmed block.
-            (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
-                block_n + 1 == *new_block_n,
-                "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-        }
+        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
 
-        let current_tip_in_db = if self.inner.config.save_preconfirmed {
-            &current_tip
-        } else {
-            // Remove the pre-confirmed case: we save the parent confirmed in that case.
-            &ChainTip::on_confirmed_block_n_or_empty(current_tip.latest_confirmed_block_n())
+        let next_chain_head_state = match new_confirmed_tip {
+            Some(block_n) => current_head_state.next_for_confirmed(block_n)?,
+            None => bail!("Cannot replace chain head to empty"),
         };
 
-        let new_tip_in_db = if self.inner.config.save_preconfirmed {
-            &new_tip
+        if self.inner.config.save_preconfirmed {
+            let new_tip_in_db = if let Some(external_tip) = next_chain_head_state.external_preconfirmed_tip {
+                if let Some(block) = runtime_preconfirmed_block(&current_preconfirmed_runtime, external_tip) {
+                    storage_tip_from_preconfirmed_block(&block)
+                } else {
+                    let (header, content) =
+                        self.inner.db.get_preconfirmed_block_data(external_tip)?.with_context(|| {
+                            format!("Expected persisted preconfirmed block data for block #{external_tip}")
+                        })?;
+                    StorageHeadProjection::Preconfirmed { header, content }
+                }
+            } else {
+                storage_tip_from_confirmed_or_empty(next_chain_head_state.confirmed_tip)
+            };
+
+            if self.inner.db.get_head_projection()? != new_tip_in_db {
+                self.inner.db.replace_head_projection(&new_tip_in_db)?;
+            }
         } else {
-            &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
-        };
-        // Write to db if needed.
-        if current_tip_in_db != new_tip_in_db {
-            self.inner.db.replace_chain_tip(&new_tip_in_db.to_storage())?;
+            let new_tip_in_db = storage_tip_from_confirmed_or_empty(next_chain_head_state.confirmed_tip);
+            if self.inner.db.get_head_projection()? != new_tip_in_db {
+                self.inner.db.replace_head_projection(&new_tip_in_db)?;
+            }
         }
 
-        // Write to the backend. This also sends the notification to subscribers :)
-        self.inner.chain_tip.send_replace(new_tip);
+        let next_external_preconfirmed = match next_chain_head_state.external_preconfirmed_tip {
+            Some(expected_external_block_n) => {
+                let current_external = self.inner.external_preconfirmed_block_runtime.borrow().clone();
+                if let Some(ext) =
+                    current_external.filter(|block| block.header.block_number == expected_external_block_n)
+                {
+                    Some(ext)
+                } else {
+                    runtime_preconfirmed_block(&current_preconfirmed_runtime, expected_external_block_n)
+                        .map(|int| Arc::new(PreconfirmedBlock::new(int.header.clone())))
+                }
+            }
+            None => None,
+        };
 
-        Ok(())
+        self.inner.publish_head_projection(next_chain_head_state, None, next_external_preconfirmed)
+    }
+
+    fn transition_to_preconfirmed(&self, preconfirmed: Arc<PreconfirmedBlock>) -> Result<()> {
+        // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
+        let current_head_state = *self.inner.chain_head_state.borrow();
+
+        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
+
+        let next_chain_head_state = current_head_state.next_for_preconfirmed(preconfirmed.header.block_number)?;
+
+        if self.inner.config.save_preconfirmed {
+            let internal_only_advance = current_head_state.external_preconfirmed_tip.is_some()
+                && next_chain_head_state.external_preconfirmed_tip == current_head_state.external_preconfirmed_tip
+                && next_chain_head_state.internal_preconfirmed_tip != current_head_state.internal_preconfirmed_tip;
+
+            if internal_only_advance {
+                self.inner.db.write_preconfirmed_header(&preconfirmed.header)?;
+                let executed_transactions: Vec<PreconfirmedExecutedTransaction> =
+                    preconfirmed.content.borrow().executed_transactions().cloned().collect();
+                if !executed_transactions.is_empty() {
+                    self.inner.db.append_preconfirmed_content(
+                        preconfirmed.header.block_number,
+                        0,
+                        &executed_transactions,
+                    )?;
+                }
+            } else {
+                self.inner.db.replace_head_projection(&storage_tip_from_preconfirmed_block(preconfirmed.as_ref()))?;
+            }
+        } else {
+            let new_tip_in_db = storage_tip_from_confirmed_or_empty(next_chain_head_state.confirmed_tip);
+            if self.inner.db.get_head_projection()? != new_tip_in_db {
+                self.inner.db.replace_head_projection(&new_tip_in_db)?;
+            }
+        }
+
+        // C-012A: Determine external preconfirmed for the new state.
+        let internal_only_advance = current_head_state.external_preconfirmed_tip.is_some()
+            && next_chain_head_state.external_preconfirmed_tip == current_head_state.external_preconfirmed_tip
+            && next_chain_head_state.internal_preconfirmed_tip != current_head_state.internal_preconfirmed_tip;
+
+        let next_external_preconfirmed = if internal_only_advance {
+            // Internal-only advance (runahead): keep previous external snapshot unchanged.
+            self.inner.external_preconfirmed_block_runtime.borrow().clone()
+        } else {
+            // First preconfirmed block or external tip changing: create a separate external snapshot.
+            // Must be a separate instance (not same Arc) so internal-only appends don't leak.
+            // Copies any initial content (from new_with_content) to the external snapshot.
+            let content = preconfirmed.content.borrow();
+            let executed: Vec<_> = content.executed_transactions().cloned().collect();
+            drop(content);
+            if executed.is_empty() {
+                Some(Arc::new(PreconfirmedBlock::new(preconfirmed.header.clone())))
+            } else {
+                Some(Arc::new(PreconfirmedBlock::new_with_content(
+                    preconfirmed.header.clone(),
+                    executed,
+                    iter::empty::<Arc<ValidatedTransaction>>(),
+                )))
+            }
+        };
+
+        self.inner.publish_head_projection(next_chain_head_state, Some(preconfirmed), next_external_preconfirmed)
     }
 
     /// Append transactions to the current preconfirmed block. Returns an error if there is no preconfirmed block.
     /// Replaces all candidate transactions with the content of `replace_candidates`.
+    ///
+    /// Updates BOTH internal runtime AND external snapshot (C-012A).
+    /// Used in BlockifierOnly mode where no comparator gate is needed.
     pub fn append_to_preconfirmed(
         &self,
         executed: &[PreconfirmedExecutedTransaction],
         replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
     ) -> Result<()> {
-        let block = self.inner.preconfirmed_block().context("There is no current preconfirmed block")?;
+        let block = self.inner.internal_preconfirmed_block().context("There is no current preconfirmed block")?;
 
         if self.inner.config.save_preconfirmed {
             let start_tx_index = block.content.borrow().n_executed();
             // We don't save candidate transactions.
-            self.inner.db.append_preconfirmed_content(start_tx_index as u64, executed)?;
+            self.inner.db.append_preconfirmed_content(block.header.block_number, start_tx_index as u64, executed)?;
         }
 
+        // C-012A: Update both internal and external in BlockifierOnly mode.
+        if let Some(ext_block) = self.inner.external_preconfirmed_block() {
+            ext_block.append(executed.iter().cloned(), iter::empty::<Arc<ValidatedTransaction>>());
+        }
         block.append(executed.iter().cloned(), replace_candidates);
+
+        Ok(())
+    }
+
+    /// Flush the internal runtime preconfirmed block content to DB for crash recovery (C-011A).
+    ///
+    /// Replaces the stored head projection with the current runtime preconfirmed state.
+    /// No-op if `save_preconfirmed` is false. Does NOT modify the runtime block — only
+    /// syncs the DB with what is already in the runtime preconfirmed block.
+    pub fn flush_preconfirmed_content_to_db(&self) -> Result<()> {
+        if !self.inner.config.save_preconfirmed {
+            return Ok(());
+        }
+        let block =
+            self.inner.internal_preconfirmed_block().context("No internal preconfirmed block to flush to DB")?;
+        self.inner.db.replace_head_projection(&storage_tip_from_preconfirmed_block(&block))
+    }
+
+    /// Fill the externally visible preconfirmed shell for `block_n` without changing head tips.
+    ///
+    /// This is used when comparator has already approved the canonical rows for a block, but
+    /// external visibility must still advance contiguously under the existing head-state model.
+    /// The current external shell must already point at `block_n`; this helper only creates or
+    /// replaces the shell content.
+    pub fn fill_external_preconfirmed_shell(
+        &self,
+        block_n: u64,
+        header: PreconfirmedHeader,
+        executed: Vec<PreconfirmedExecutedTransaction>,
+    ) -> Result<()> {
+        let head = self.inner.chain_head_state();
+        ensure!(
+            head.external_preconfirmed_tip == Some(block_n),
+            "External preconfirmed shell mismatch: expected current external tip to be {block_n}, got {:?}",
+            head.external_preconfirmed_tip
+        );
+
+        let current_external = self.inner.external_preconfirmed_block_runtime.borrow().clone();
+        let external = match current_external {
+            Some(block) => {
+                ensure!(
+                    block.header.block_number == block_n,
+                    "External preconfirmed runtime block number mismatch: expected {block_n}, got {}",
+                    block.header.block_number
+                );
+                block
+            }
+            None => {
+                let block = Arc::new(PreconfirmedBlock::new(header));
+                self.inner.external_preconfirmed_block_runtime.send_replace(Some(block.clone()));
+                block
+            }
+        };
+
+        external.content.send_modify(|block| {
+            *block = preconfirmed::PreconfirmedBlockInner::default();
+            block.append_executed(executed);
+        });
+
+        Ok(())
+    }
+
+    /// Promote internal runtime preconfirmed content to the external-visible snapshot (C-012B).
+    ///
+    /// Called after comparator selection in close_block() on Accept/AcceptWithWarn paths.
+    /// Copies the current executed content from the internal runtime block to the external
+    /// snapshot so that external consumers (RPC, sync) can see the comparator-approved content.
+    ///
+    /// On StopExecutionBox, use [`replace_external_preconfirmed_content`] instead to write
+    /// BRE-backed per-tx content directly (C-013).
+    pub fn promote_internal_to_external_preconfirmed(&self) -> Result<()> {
+        let internal = self.inner.internal_preconfirmed_block().context("No internal preconfirmed block to promote")?;
+        let external = self
+            .inner
+            .external_preconfirmed_block()
+            .context("No external preconfirmed block snapshot for promotion")?;
+
+        // Guard: promotion only works when internal and external are at the same block.
+        // In V1 sequential execution, this is always true (comparator runs before next block).
+        // In future pipelined execution with real runahead, the internal runtime block may
+        // be at a different block number than external, and per-block content snapshots
+        // would be needed for cross-block promotion.
+        if internal.header.block_number != external.header.block_number {
+            tracing::warn!(
+                internal_block_n = internal.header.block_number,
+                external_block_n = external.header.block_number,
+                "Skipping promotion: internal and external are at different block numbers (runahead). \
+                 External content will be updated from DB on close."
+            );
+            return Ok(());
+        }
+
+        let content = internal.content.borrow();
+        let executed: Vec<_> = content.executed_transactions().cloned().collect();
+        drop(content);
+
+        if !executed.is_empty() {
+            external.append(executed, iter::empty::<Arc<ValidatedTransaction>>());
+        }
+        Ok(())
+    }
+
+    /// Replace external preconfirmed content with BRE-backed per-tx rows (C-013).
+    ///
+    /// Called on StopExecutionBox path in close_block(). Instead of copying EB-derived content
+    /// from the internal runtime, this method replaces the external snapshot content with
+    /// BRE-backed `PreconfirmedExecutedTransaction` rows built from BRE execution artifacts
+    /// combined with original transaction metadata.
+    pub fn replace_external_preconfirmed_content(
+        &self,
+        block_n: u64,
+        executed: Vec<PreconfirmedExecutedTransaction>,
+    ) -> Result<()> {
+        let external = self
+            .inner
+            .external_preconfirmed_block()
+            .context("No external preconfirmed block snapshot for BRE promotion")?;
+
+        ensure!(
+            external.header.block_number == block_n,
+            "External preconfirmed block number mismatch: expected {block_n}, got {}",
+            external.header.block_number
+        );
+
+        // Clear existing content and replace with BRE-backed rows.
+        external.content.send_modify(|block| {
+            *block = preconfirmed::PreconfirmedBlockInner::default();
+            block.append_executed(executed);
+        });
+
+        Ok(())
+    }
+
+    /// Replace internal preconfirmed content with BRE-backed per-tx rows (C-013).
+    ///
+    /// Called on StopExecutionBox path alongside `replace_external_preconfirmed_content`.
+    /// Ensures that `close_preconfirmed()` reads BRE-backed tx rows (via `block_view_on_preconfirmed`)
+    /// for the final confirmed block body, not EB-derived content.
+    pub fn replace_internal_preconfirmed_content(
+        &self,
+        block_n: u64,
+        executed: Vec<PreconfirmedExecutedTransaction>,
+    ) -> Result<()> {
+        let internal = self
+            .inner
+            .internal_preconfirmed_block()
+            .context("No internal preconfirmed block runtime for BRE replacement")?;
+
+        ensure!(
+            internal.header.block_number == block_n,
+            "Internal preconfirmed block number mismatch: expected {block_n}, got {}",
+            internal.header.block_number
+        );
+
+        // Clear existing content and replace with BRE-backed rows.
+        internal.content.send_modify(|block| {
+            *block = preconfirmed::PreconfirmedBlockInner::default();
+            block.append_executed(executed);
+        });
+
+        Ok(())
+    }
+
+    /// Replace internal preconfirmed content AND persisted block-scoped DB rows with
+    /// the supplied rows. Used on comparator stop path to durably replace EB rows with
+    /// BRE rows for block X.
+    ///
+    /// This replaces both runtime internal content and persisted DB rows atomically.
+    /// Does not modify `external_preconfirmed` runtime state.
+    pub fn replace_internal_preconfirmed_content_and_persist(
+        &self,
+        block_n: u64,
+        executed: Vec<PreconfirmedExecutedTransaction>,
+    ) -> Result<()> {
+        let internal = self
+            .inner
+            .internal_preconfirmed_block()
+            .context("No internal preconfirmed block runtime for BRE replacement")?;
+
+        ensure!(
+            internal.header.block_number == block_n,
+            "Internal preconfirmed block number mismatch: expected {block_n}, got {}",
+            internal.header.block_number
+        );
+
+        // Persist replacement to block-scoped DB storage.
+        if self.inner.config.save_preconfirmed {
+            self.inner.db.replace_preconfirmed_content_for_block(block_n, &executed)?;
+        }
+
+        // Clear existing runtime content and replace.
+        internal.content.send_modify(|block| {
+            *block = preconfirmed::PreconfirmedBlockInner::default();
+            block.append_executed(executed);
+        });
 
         Ok(())
     }
@@ -778,11 +1729,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     pub fn close_preconfirmed(
         &self,
         pre_v0_13_2_hash_override: bool,
+        block_n: u64,
         state_diff: StateDiff,
     ) -> Result<AddFullBlockResult> {
         let fetch_start = Instant::now();
-        let preconfirmed_view =
-            self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
+        let preconfirmed_view = self
+            .inner
+            .block_view_on_preconfirmed(block_n)
+            .with_context(|| format!("There is no preconfirmed block #{block_n}"))?;
         let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
         let fetch_duration = fetch_start.elapsed();
         let fetch_secs = fetch_duration.as_secs_f64();
@@ -800,9 +1754,59 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
+    /// C-024: Close a canonical block using explicit canonical rows.
+    ///
+    /// Unlike `close_preconfirmed` which reads block body from `block_view_on_preconfirmed`
+    /// (unsafe under async runahead), this method builds the confirmed block directly from
+    /// the canonical rows selected by the comparator.
+    pub fn close_canonical_block(
+        &self,
+        pre_v0_13_2_hash_override: bool,
+        block_n: u64,
+        header: PreconfirmedHeader,
+        canonical_rows: Vec<PreconfirmedExecutedTransaction>,
+        state_diff: StateDiff,
+    ) -> Result<AddFullBlockResult> {
+        let fetch_start = Instant::now();
+        let (mut block, classes) = Self::build_full_block_from_canonical_rows(header, canonical_rows);
+        let fetch_duration = fetch_start.elapsed();
+        let fetch_secs = fetch_duration.as_secs_f64();
+        metrics().get_full_block_without_state_diff_duration.record(fetch_secs, &[]);
+        metrics().get_full_block_without_state_diff_last.record(fetch_secs, &[]);
+
+        block.state_diff = state_diff;
+
+        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override, fetch_duration)?;
+        self.new_confirmed_block(block_n)?;
+
+        Ok(result)
+    }
+
+    /// Build a `FullBlockWithoutCommitments` and classes from canonical executed rows.
+    /// This is the canonical row → confirmed block conversion used by C-024 close methods.
+    fn build_full_block_from_canonical_rows(
+        header: PreconfirmedHeader,
+        mut canonical_rows: Vec<PreconfirmedExecutedTransaction>,
+    ) -> (FullBlockWithoutCommitments, Vec<ConvertedClass>) {
+        let classes: Vec<_> = canonical_rows.iter_mut().filter_map(|tx| tx.declared_class.take()).collect();
+        let transactions: Vec<_> = canonical_rows.into_iter().map(|tx| tx.transaction).collect();
+        let events = transactions
+            .iter()
+            .flat_map(|tx| {
+                tx.receipt
+                    .events()
+                    .iter()
+                    .cloned()
+                    .map(|event| EventWithTransactionHash { transaction_hash: *tx.receipt.transaction_hash(), event })
+            })
+            .collect();
+
+        (FullBlockWithoutCommitments { header, state_diff: StateDiff::default(), transactions, events }, classes)
+    }
+
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
     pub fn clear_preconfirmed(&self) -> Result<()> {
-        self.replace_chain_tip(ChainTip::on_confirmed_block_n_or_empty(self.inner.latest_confirmed_block_n()))
+        self.transition_to_confirmed_or_empty(self.inner.latest_confirmed_block_n())
     }
 
     /// Write the runtime execution configuration to the database.
@@ -813,7 +1817,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
     /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
     pub fn new_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {
-        self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(block)))
+        self.transition_to_preconfirmed(Arc::new(block))
     }
 
     /// Add a block. Returns the block hash.
@@ -832,7 +1836,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
-    /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
+    /// Does not change the head projection. Performs merkelization (global tries update) and block hash computation, and saves
     /// all the block parts. Returns the block hash and timing information.
     /// Note: The `get_full_block_with_classes` timing must be provided by the caller.
     fn write_new_confirmed_inner(
@@ -868,15 +1872,19 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
         metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        // Phase 1: Compute the global state root from staged (uncommitted) trie changes.
-        // Nothing is persisted to disk yet — if the custom header hash check fails,
-        // the staged tries are dropped and the DB remains untouched.
-        let merklization_start = Instant::now();
-        let (global_state_root, staged_tries) = self.inner.db.compute_global_trie_staged(
-            &block.state_diff,
-            block.header.protocol_version,
+        let (global_state_root, merklization_timings) = self.apply_to_global_trie(
             block.header.block_number,
+            [&block.state_diff],
+            self.inner.chain_config.latest_protocol_version,
         )?;
+
+        // Copy merklization timings
+        timings.merklization = merklization_timings.total;
+        timings.contract_trie_root = merklization_timings.contract_trie_root;
+        timings.class_trie_root = merklization_timings.class_trie_root;
+        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
+        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
+        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
@@ -888,71 +1896,40 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_hash_compute_duration.record(hash_secs, &[]);
         metrics().block_hash_compute_last.record(hash_secs, &[]);
 
-        tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
+        tracing::debug!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
-            tracing::debug!(
-                target: "custom_header",
-                block_n = block.header.block_number,
-                consumed_timestamp = header.timestamp,
-                consumed_gas_prices = ?header.gas_prices,
-                block_timestamp = block.header.block_timestamp.0,
-                block_gas_prices = ?block.header.gas_prices,
-                "consuming custom header during block close"
+        if let Some(custom_header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
+            let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
+            tracing::info!(
+                "replay_block_hash_verification path=inline_trie block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
+                block.header.block_number,
+                custom_header.expected_block_hash,
+                block_hash,
+                is_valid,
+                parent_block_hash,
+                global_state_root,
+                commitments.transaction.transaction_commitment,
+                commitments.event.events_commitment,
+                commitments.transaction.receipt_commitment,
+                commitments.state_diff.state_diff_commitment,
+                custom_header.timestamp,
+                custom_header.gas_prices.eth_l1_gas_price,
+                custom_header.gas_prices.eth_l1_data_gas_price,
+                custom_header.gas_prices.eth_l2_gas_price,
+                custom_header.gas_prices.strk_l1_gas_price,
+                custom_header.gas_prices.strk_l1_data_gas_price,
+                custom_header.gas_prices.strk_l2_gas_price
             );
-            if !header.is_block_hash_as_expected(&block_hash) {
-                let msg = format!(
-                    "Block hash mismatch at block #{}: expected={}, computed={}. \
-                     No data has been persisted.",
-                    block.header.block_number, header.expected_block_hash, block_hash,
-                );
+            if !is_valid {
                 tracing::warn!(
-                    target: "custom_header",
-                    block_n = block.header.block_number,
-                    expected = ?header.expected_block_hash,
-                    computed = ?block_hash,
-                    "{msg}"
+                    "Block hash not as expected for {} expected={:#x} actual={:#x} state_root={:#x}",
+                    block.header.block_number,
+                    custom_header.expected_block_hash,
+                    block_hash,
+                    global_state_root
                 );
-                anyhow::bail!(msg);
             }
         }
-        let cleared_headers = self.inner.clear_custom_headers_through(block.header.block_number);
-        if cleared_headers > 0 {
-            tracing::debug!(
-                target: "custom_header",
-                block_n = block.header.block_number,
-                cleared_headers,
-                "cleared staged custom headers through closed block"
-            );
-        }
-
-        // Phase 2: Persist the staged trie changes to RocksDB.
-        let contract_trie_root_duration = staged_tries.contract_trie_root_duration;
-        let class_trie_root_duration = staged_tries.class_trie_root_duration;
-        let (contract_trie_timings, class_trie_timings) = staged_tries.commit(block.header.block_number)?;
-
-        // Record total merklization duration (Phase 1 + Phase 2) to match the sync path's
-        // apply_to_global_trie metric which also covers both compute and commit.
-        let merklization_duration = merklization_start.elapsed();
-        let merklization_secs = merklization_duration.as_secs_f64();
-        metrics().apply_to_global_trie_duration.record(merklization_secs, &[]);
-        metrics().apply_to_global_trie_last.record(merklization_secs, &[]);
-
-        // Record per-trie root metrics (histogram + gauge)
-        let contract_root_secs = contract_trie_root_duration.as_secs_f64();
-        let class_root_secs = class_trie_root_duration.as_secs_f64();
-        metrics().contract_trie_root_duration.record(contract_root_secs, &[]);
-        metrics().contract_trie_root_last.record(contract_root_secs, &[]);
-        metrics().class_trie_root_duration.record(class_root_secs, &[]);
-        metrics().class_trie_root_last.record(class_root_secs, &[]);
-
-        // Record merklization timings
-        timings.merklization = merklization_duration;
-        timings.contract_trie_root = contract_trie_root_duration;
-        timings.class_trie_root = class_trie_root_duration;
-        timings.contract_storage_trie_commit = contract_trie_timings.storage_commit;
-        timings.contract_trie_commit = contract_trie_timings.trie_commit;
-        timings.class_trie_commit = class_trie_timings.trie_commit;
 
         // Save the block.
 
@@ -1062,7 +2039,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        // Flush the most latest state to db to reduce data loss
+        // Flush the latest state to db to reduce data loss
         if self
             .inner
             .config
@@ -1077,7 +2054,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.db.on_new_confirmed_head(block_number)?;
 
         // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
+        self.transition_to_confirmed_or_empty(Some(block_number))?;
+        // Confirmed-path immediate GC for block-keyed preconfirmed persistence.
+        self.inner.db.delete_preconfirmed_rows_up_to(block_number)?;
 
         Ok(())
     }
@@ -1088,7 +2067,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     // }
 }
 
-// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the head projection writer handle.
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.db.get_l1_messaging_sync_tip()
@@ -1119,7 +2098,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_messages_to_l2_by_l1_tx_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
-    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+    ) -> Result<Option<storage::L1ToL2MessagesByL1TxHash>> {
         self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
     }
     /// Returns the status entry for a specific `(l1_tx_hash, nonce)` message index key.
@@ -1127,7 +2106,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,
-    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+    ) -> Result<Option<storage::L1ToL2MessageIndexEntry>> {
         self.db.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce)
     }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
@@ -1151,8 +2130,14 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.db.get_snap_sync_latest_block()
     }
+    pub fn get_tainted_rebuild_session(&self) -> Result<Option<TaintedRebuildSession>> {
+        self.db.get_tainted_rebuild_session()
+    }
+    pub fn get_tainted_rebuild_carry_rows(&self) -> Result<Vec<TaintedRebuildCarryRow>> {
+        self.db.get_tainted_rebuild_carry_rows()
+    }
 }
-// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the head projection writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)
@@ -1205,6 +2190,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn remove_saved_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         self.db.remove_mempool_transactions(tx_hashes)
     }
+    pub fn clear_saved_mempool_transactions(&self) -> Result<()> {
+        self.db.clear_saved_mempool_transactions()
+    }
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
     }
@@ -1219,6 +2207,27 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_snap_sync_latest_block(block_n)
+    }
+    pub fn write_tainted_rebuild_session(&self, session: &TaintedRebuildSession) -> Result<()> {
+        self.db.write_tainted_rebuild_session(session)
+    }
+    pub fn replace_tainted_rebuild_carry_rows(&self, rows: &[TaintedRebuildCarryRow]) -> Result<()> {
+        self.db.replace_tainted_rebuild_carry_rows(rows)
+    }
+    pub fn clear_tainted_rebuild_session(&self) -> Result<()> {
+        self.db.clear_tainted_rebuild_session()
+    }
+    pub fn clear_tainted_rebuild_carry_rows(&self) -> Result<()> {
+        self.db.clear_tainted_rebuild_carry_rows()
+    }
+    pub fn stage_tainted_rebuild_preconfirmed_block(
+        &self,
+        header: &PreconfirmedHeader,
+        txs: &[PreconfirmedExecutedTransaction],
+        session: Option<&TaintedRebuildSession>,
+        carry_rows: &[TaintedRebuildCarryRow],
+    ) -> Result<()> {
+        self.db.stage_tainted_rebuild_preconfirmed_block(header, txs, session, carry_rows)
     }
 
     /// Revert the blockchain to a specific block hash.

@@ -134,7 +134,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     /// Get a confirmed block by hash.
     pub fn find_block_by_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let Some(latest_confirmed) = self.latest_confirmed_block_n() else { return Ok(None) };
-        Ok(self.backend().db.find_block_hash(block_hash)?.filter(|found_block_n| found_block_n <= &latest_confirmed))
+        Ok(self.backend().db.find_block_hash(block_hash)?.filter(|found_block_n| found_block_n >= &latest_confirmed))
     }
 
     fn lookup_preconfirmed_state<V>(
@@ -287,6 +287,14 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
                 }
             })
         }) {
+            tracing::info!(
+                target: "mc_db",
+                event = "view_find_transaction_by_hash_hit_preconfirmed",
+                tx_hash = format!("{tx_hash:#x}"),
+                block_number = res.block.block_number(),
+                transaction_index = res.transaction_index,
+                "Transaction hash resolved from external preconfirmed view"
+            );
             return Ok(Some(res));
         }
 
@@ -294,13 +302,40 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         let Some(StorageTxIndex { block_number, transaction_index }) =
             self.backend().db.find_transaction_hash(tx_hash)?
         else {
+            tracing::warn!(
+                target: "mc_db",
+                event = "view_find_transaction_by_hash_miss",
+                tx_hash = format!("{tx_hash:#x}"),
+                latest_confirmed_block = on_block_n,
+                latest_visible_block = ?self.latest_block_n(),
+                has_preconfirmed_block = self.backend().has_preconfirmed_block(),
+                "Transaction hash missing from preconfirmed view and confirmed tx-hash index"
+            );
             return Ok(None);
         };
 
         if block_number > on_block_n {
+            tracing::warn!(
+                target: "mc_db",
+                event = "view_find_transaction_by_hash_index_ahead_of_visible_tip",
+                tx_hash = format!("{tx_hash:#x}"),
+                indexed_block_number = block_number,
+                latest_confirmed_block = on_block_n,
+                latest_visible_block = ?self.latest_block_n(),
+                "Transaction hash index points to a block above latest confirmed tip"
+            );
             return Ok(None);
         }
 
+        tracing::info!(
+            target: "mc_db",
+            event = "view_find_transaction_by_hash_hit_confirmed",
+            tx_hash = format!("{tx_hash:#x}"),
+            block_number,
+            transaction_index,
+            latest_confirmed_block = on_block_n,
+            "Transaction hash resolved from confirmed tx-hash index"
+        );
         Ok(Some(ExecutedTransactionWithBlockView {
             transaction_index,
             block: MadaraConfirmedBlockView::new(self.backend().clone(), block_number).into(),

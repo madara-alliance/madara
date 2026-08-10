@@ -8,7 +8,7 @@ use crate::{
 use anyhow::Context;
 use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::{storage::StorageHeadProjection, MadaraBackend, MadaraStorageRead};
 use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
 use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
@@ -178,14 +178,14 @@ impl GatewayForwardSync {
 
         // After reorg, read chain tip directly from database to get fresh value
         // (the cached chain_tip may be stale after revert_to)
-        let chain_tip = self.backend.db.get_chain_tip().expect("Failed to get chain tip after reorg");
+        let chain_tip = self.backend.db.get_head_projection().expect("Failed to get chain tip after reorg");
         let starting_block_n = match chain_tip {
-            mc_db::storage::StorageChainTip::Confirmed(block_n) => block_n + 1,
-            mc_db::storage::StorageChainTip::Preconfirmed { .. } => {
+            StorageHeadProjection::Confirmed(block_n) => block_n + 1,
+            StorageHeadProjection::Preconfirmed { .. } => {
                 tracing::warn!("Unexpected preconfirmed block after reorg");
                 0
             }
-            mc_db::storage::StorageChainTip::Empty => 0,
+            StorageHeadProjection::Empty => 0,
         };
         tracing::info!("📊 Restarting sync from block #{} (chain_tip={:?})", starting_block_n, chain_tip);
 

@@ -1,5 +1,7 @@
-use mc_telemetry::{register_gauge_metric_instrument, register_histogram_metric_instrument};
-use opentelemetry::metrics::{Gauge, Histogram};
+use mc_telemetry::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use std::sync::LazyLock;
 
@@ -30,6 +32,10 @@ pub struct DbMetrics {
     pub contract_storage_trie_commit_last: Gauge<f64>,
     pub contract_trie_commit_last: Gauge<f64>,
     pub class_trie_commit_last: Gauge<f64>,
+    pub head_projection_violation_count: Counter<u64>,
+
+    #[cfg(test)]
+    pub head_projection_violation_count_test: std::sync::atomic::AtomicU64,
 }
 
 impl DbMetrics {
@@ -169,6 +175,12 @@ impl DbMetrics {
             "Last block: time to commit class trie".to_string(),
             "s".to_string(),
         );
+        let head_projection_violation_count = register_counter_metric_instrument(
+            &meter,
+            "head_projection_violation_count".to_string(),
+            "Total chain head projection invariant violations".to_string(),
+            "".to_string(),
+        );
 
         Self {
             apply_to_global_trie_duration,
@@ -192,6 +204,9 @@ impl DbMetrics {
             contract_storage_trie_commit_last,
             contract_trie_commit_last,
             class_trie_commit_last,
+            head_projection_violation_count,
+            #[cfg(test)]
+            head_projection_violation_count_test: std::sync::atomic::AtomicU64::new(0),
         }
     }
 }

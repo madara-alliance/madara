@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Context;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
-    MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
+    MadaraBackend, MadaraStorageWrite,
 };
 use mc_gateway_client::{BlockId, GatewayProvider};
 use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
@@ -198,10 +198,10 @@ impl GatewaySyncSteps {
 
         // Step 2: Reset chain tip to empty
         tracing::info!("🗑️  Resetting chain tip to empty...");
-        let empty_tip = mc_db::storage::StorageChainTip::Empty;
+        let empty_tip = mc_db::storage::StorageHeadProjection::Empty;
         self._backend
             .db
-            .replace_chain_tip(&empty_tip)
+            .replace_head_projection(&empty_tip)
             .context("Resetting chain tip during genesis mismatch recovery")?;
         tracing::info!("✅ Chain tip reset to empty");
 
@@ -212,10 +212,7 @@ impl GatewaySyncSteps {
 
         // Step 4: Refresh backend cache
         tracing::info!("🔄 Refreshing backend cache...");
-        let fresh_chain_tip =
-            self._backend.db.get_chain_tip().context("Getting fresh chain tip after database wipe")?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self._backend.chain_tip.send_replace(backend_chain_tip);
+        self._backend.refresh_head_projection_from_db().context("Refreshing head projection after database wipe")?;
         tracing::info!("✅ Backend cache refreshed");
         tracing::info!("🔄 Node will now resync from upstream genesis block...");
 
@@ -237,8 +234,7 @@ impl PipelineSteps for GatewaySyncSteps {
             tracing::debug!("Gateway sync parallel step {:?}", block_range);
 
             // Get the confirmed chain tip to detect sync resume scenarios
-            let confirmed_tip_at_start = self._backend.chain_tip.borrow()
-                .latest_confirmed_block_n();
+            let confirmed_tip_at_start = self._backend.latest_confirmed_block_n();
 
             for block_n in block_range {
                 tracing::debug!("📥 Fetching block #{} from gateway", block_n);
@@ -337,10 +333,8 @@ impl PipelineSteps for GatewaySyncSteps {
 
                                             self._backend.db.flush()?;
 
-                                            let fresh_chain_tip = self._backend.db.get_chain_tip()
-                                                .context("Getting fresh chain tip after reorg")?;
-                                            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-                                            self._backend.chain_tip.send_replace(backend_chain_tip);
+                                            self._backend.refresh_head_projection_from_db()
+                                                .context("Refreshing head projection after reorg")?;
                                             tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
 
                                             anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
@@ -478,11 +472,8 @@ pub fn gateway_preconfirmed_block_sync(
                 // We do some shenanigans to abort the request if a new block has been imported.
                 let mut subscription = backend.watch_chain_tip();
                 let (block, block_number) = loop {
-                    let block_number = subscription
-                        .current()
-                        .latest_confirmed_block_n()
-                        .map(|n| n + 1)
-                        .unwrap_or(/* genesis */ 0);
+                    let block_number =
+                        subscription.current().confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0);
                     tracing::debug!("Sync Get Preconfirmed block #{block_number}.");
                     tokio::select! {
                         biased;
@@ -515,7 +506,7 @@ pub fn gateway_preconfirmed_block_sync(
                 // How many of these transactions do we already have? When None, we need to make a new pre-confirmed block.
                 let mut common_prefix = None;
 
-                if let Some(mut in_backend) = backend.block_view_on_preconfirmed() {
+                if let Some(mut in_backend) = backend.block_view_on_preconfirmed(block_number) {
                     in_backend.refresh_with_candidates(); // we want to compare candidates too.
 
                     if in_backend.block_number() != block_number {

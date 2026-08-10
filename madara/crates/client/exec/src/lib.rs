@@ -177,7 +177,7 @@ pub mod trace;
 pub mod execution;
 pub use block_context::*;
 pub use blockifier_state_adapter::BlockifierStateAdapter;
-pub use layered_state_adapter::LayeredStateAdapter;
+pub use layered_state_adapter::{LayeredStateAdapter, ReexecParentOverlay};
 
 /// Blockifier does not support execution for versions earlier than that.
 ///

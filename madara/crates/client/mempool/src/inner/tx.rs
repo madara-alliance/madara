@@ -138,7 +138,7 @@ impl ScoreFunction {
 }
 
 /// Key to index a transaction in the mempool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TxKey(pub ContractAddress, pub Nonce);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -166,6 +166,9 @@ impl TxSummary {
 
 #[cfg(test)]
 mod tests {
+    // TODO(heemankv): The mempool behavior exercised on this branch has been validated manually
+    // and is working, but newer persistence/recovery paths still need stronger automated coverage
+    // here. Any future mempool behavior change should land with explicit tests.
     use starknet_api::core::Nonce;
     use std::cmp::Ordering;
 

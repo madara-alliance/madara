@@ -1,3 +1,7 @@
+// TODO(heemankv): The mempool behavior exercised on this branch has been validated manually and is
+// working, but newer persistence/recovery paths still need stronger automated coverage here. Any
+// future mempool behavior change should land with explicit tests.
+
 use super::*;
 use proptest::prelude::*;
 use starknet_types_core::hash::{Pedersen, StarkHash};
