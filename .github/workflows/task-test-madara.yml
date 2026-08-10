@@ -51,6 +51,11 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
+      - name: Go setup
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.x"
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 

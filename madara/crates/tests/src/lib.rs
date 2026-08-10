@@ -204,6 +204,8 @@ mod preconfirmed_recovery;
 #[cfg(test)]
 mod rpc;
 #[cfg(test)]
+mod starknetgo_ws;
+#[cfg(test)]
 mod storage_proof;
 #[cfg(test)]
 mod transaction_flow;
