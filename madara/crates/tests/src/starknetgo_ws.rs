@@ -144,9 +144,9 @@ fn transfer_call(recipient: Felt, amount_low: Felt, amount_high: Felt) -> Call {
 async fn fetch_gas_prices(node: &MadaraCmd) -> (u128, u128, u128) {
     let block = node.json_rpc().get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await.unwrap();
     (
-        block.l1_gas_price().price_in_fri.try_into().unwrap(),
-        block.l2_gas_price().price_in_fri.try_into().unwrap(),
-        block.l1_data_gas_price().price_in_fri.try_into().unwrap(),
+        u128::max(block.l1_gas_price().price_in_fri.try_into().unwrap(), 1),
+        u128::max(block.l2_gas_price().price_in_fri.try_into().unwrap(), 1),
+        u128::max(block.l1_data_gas_price().price_in_fri.try_into().unwrap(), 1),
     )
 }
 
