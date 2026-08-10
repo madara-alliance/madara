@@ -18,14 +18,14 @@ use starknet_types_core::felt::Felt;
 
 use crate::config;
 use crate::contracts::paradex::{assets_manager, oracle, paraclear};
-use crate::state::StateReader;
-use crate::types::{ContractAddress, ExecutionResult};
+use crate::core::state::StateReader;
+use crate::core::types::{ContractAddress, ExecutionResult};
 
 /// Error returned when execution fails.
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
     #[error("State error: {0}")]
-    State(#[from] crate::state::StateError),
+    State(#[from] crate::core::state::StateError),
 
     #[error("Unknown contract class hash: {0}")]
     UnknownClassHash(Felt),
@@ -325,8 +325,7 @@ mod tests {
     use super::{config, ContractRegistry, ExecutionError};
     use crate::{
         contracts::paradex::{oracle, paraclear},
-        state::mock::MockStateReader,
-        types::ContractAddress,
+        core::{state::mock::MockStateReader, types::ContractAddress},
         RustExecRuntimeConfig,
     };
 
@@ -338,7 +337,7 @@ mod tests {
             ..Default::default()
         });
 
-        let selector = crate::storage::function_selector("get_value");
+        let selector = crate::core::storage::function_selector("get_value");
         assert!(oracle::supports_selector(selector));
         assert!(ContractRegistry::supports_class_hash(oracle_class_hash));
         assert!(ContractRegistry::supports_function(oracle_class_hash, selector));
@@ -363,7 +362,7 @@ mod tests {
 
     #[test]
     fn known_paraclear_1_25_3_hash_dispatches_settle_trade_v3() {
-        let selector = crate::storage::function_selector("settle_trade_v3");
+        let selector = crate::core::storage::function_selector("settle_trade_v3");
 
         assert!(ContractRegistry::supports_class_hash(paraclear::CLASS_HASH_1_25_3));
         assert!(ContractRegistry::supports_function(paraclear::CLASS_HASH_1_25_3, selector));
@@ -392,7 +391,7 @@ mod tests {
 
     #[test]
     fn known_oracle_hash_is_shared_by_1_25_1_and_1_25_3() {
-        let selector = crate::storage::function_selector("get_value");
+        let selector = crate::core::storage::function_selector("get_value");
 
         assert!(ContractRegistry::supports_class_hash(oracle::CLASS_HASH_1_25_1_AND_1_25_3));
         assert!(ContractRegistry::supports_function(oracle::CLASS_HASH_1_25_1_AND_1_25_3, selector));

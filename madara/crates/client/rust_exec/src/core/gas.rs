@@ -5,7 +5,7 @@
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
 
-use crate::types::{ContractAddress, StateDiff};
+use crate::core::types::{ContractAddress, StateDiff};
 
 /// Gas costs for various operations (from Starknet versioned constants).
 /// These values are approximate and should match the protocol version.

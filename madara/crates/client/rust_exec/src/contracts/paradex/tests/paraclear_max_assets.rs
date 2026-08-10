@@ -1,8 +1,8 @@
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_layout;
 use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
-use crate::state::mock::MockStateReader;
-use crate::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
 
 use super::fixtures::{addr, felt, set_storage};
 
@@ -34,8 +34,8 @@ fn make_trade(maker: u64, taker: u64, reduce_only_maker: bool, reduce_only_taker
 
 fn set_token_list(
     state: &mut MockStateReader,
-    contract: crate::types::ContractAddress,
-    account: crate::types::ContractAddress,
+    contract: crate::core::types::ContractAddress,
+    account: crate::core::types::ContractAddress,
     tokens: &[u64],
 ) {
     if tokens.is_empty() {
@@ -53,8 +53,8 @@ fn set_token_list(
 
 fn set_perp_list(
     state: &mut MockStateReader,
-    contract: crate::types::ContractAddress,
-    account: crate::types::ContractAddress,
+    contract: crate::core::types::ContractAddress,
+    account: crate::core::types::ContractAddress,
     markets: &[u64],
 ) {
     if markets.is_empty() {

@@ -2,9 +2,9 @@ use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex::oracle;
 use crate::contracts::paradex::schema::oracle_layout;
-use crate::state::mock::MockStateReader;
-use crate::storage::{function_selector, short_string_to_felt};
-use crate::types::ContractAddress;
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{function_selector, short_string_to_felt};
+use crate::core::types::ContractAddress;
 
 use super::fixtures::{addr, felt, set_oracle_funding_index, set_oracle_latest_tick_data, set_storage, short_str};
 

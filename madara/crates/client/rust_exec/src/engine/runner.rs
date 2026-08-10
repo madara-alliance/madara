@@ -5,9 +5,12 @@ use std::time::Duration;
 use starknet_types_core::felt::Felt;
 
 use crate::{
-    execution::execute_transaction_with_timestamp,
-    verification::{verify_against_blockifier, BlockifierExecutionResult, VerificationResult},
-    ContractAddress, ExecutionResult, StateReader,
+    core::{
+        state::StateReader,
+        types::{ContractAddress, ExecutionResult},
+    },
+    engine::execution::execute_transaction_with_timestamp,
+    integration::verification::{verify_against_blockifier, BlockifierExecutionResult, VerificationResult},
 };
 
 /// Outcome of running Rust execution and verifying against Blockifier.

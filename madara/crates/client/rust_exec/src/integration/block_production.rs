@@ -26,12 +26,12 @@ use mp_convert::ToFelt;
 use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 
-use crate::blockifier_integration::{
+use crate::initialize_runtime_config;
+use crate::integration::blockifier::{
     rust_execute_transaction_blockifier_output, RustBlockifierOutput, RustExecStateAdapter, RustExecutionOutcome,
 };
-use crate::hash_agg;
-use crate::initialize_runtime_config;
-use crate::storage_agg;
+use crate::telemetry::hash_agg;
+use crate::telemetry::storage_agg;
 use crate::RustExecRuntimeConfig;
 
 /// Result of running rust-exec in "shadow" mode for block production comparisons.
@@ -260,7 +260,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                 // Bouncer lock dropped here; execution proceeds below.
             }
 
-            crate::storage::reset_key_derivation_cache();
+            crate::core::storage::reset_key_derivation_cache();
             let rust_state = RustExecStateAdapter::new(&block_state);
             if hash_agg::enabled() {
                 hash_agg::reset();
@@ -367,7 +367,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
         }
 
         let tx_hash = Transaction::tx_hash(tx).to_felt();
-        crate::storage::reset_key_derivation_cache();
+        crate::core::storage::reset_key_derivation_cache();
         let rust_state = RustExecStateAdapter::new(block_state);
         if hash_agg::enabled() {
             hash_agg::reset();
@@ -438,7 +438,7 @@ pub fn execute_settle_trade_v3_shadow<S: BlockifierStateReader + Send + Sync + '
     );
     let output = results.pop().unwrap_or_else(|| RustBlockifierOutput {
         outcome: RustExecutionOutcome::Skipped {
-            reason: crate::blockifier_integration::RustExecutionSkipReason::NonInvokeTransaction,
+            reason: crate::integration::blockifier::RustExecutionSkipReason::NonInvokeTransaction,
             tx_hash: Felt::ZERO,
             block_timestamp: 0,
         },

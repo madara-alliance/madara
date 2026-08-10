@@ -2,7 +2,7 @@
 
 use starknet_types_core::felt::Felt;
 
-use crate::types::{Event, ExecutionResult, StateDiff};
+use crate::core::types::{Event, ExecutionResult, StateDiff};
 
 /// Result of comparing Rust and Blockifier execution.
 #[derive(Debug)]
@@ -223,7 +223,7 @@ pub fn compare_nonces(
 
 /// Compare L2-to-L1 messages from Rust and Blockifier.
 pub fn compare_l2_to_l1_messages(
-    rust_messages: &[crate::types::L2ToL1Message],
+    rust_messages: &[crate::core::types::L2ToL1Message],
     blockifier_messages: &[(Felt, Vec<Felt>)], // (to_address, payload) pairs
 ) -> Vec<VerificationError> {
     let mut errors = Vec::new();
@@ -432,7 +432,7 @@ pub fn verify_against_blockifier(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ContractAddress, StorageKey};
+    use crate::core::types::{ContractAddress, StorageKey};
 
     #[test]
     fn test_matching_state_diffs() {

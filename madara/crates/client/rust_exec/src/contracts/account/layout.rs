@@ -5,8 +5,8 @@
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 
-use crate::storage::sn_keccak;
-use crate::types::StorageKey;
+use crate::core::storage::sn_keccak;
+use crate::core::types::StorageKey;
 
 /// Storage key for the account's public key.
 /// This is used for signature verification.

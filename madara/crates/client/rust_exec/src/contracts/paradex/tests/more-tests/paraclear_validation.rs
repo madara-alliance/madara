@@ -2,7 +2,7 @@
 
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, TradeRequestV3};
-use crate::storage::function_selector;
+use crate::core::storage::function_selector;
 use starknet_types_core::felt::Felt;
 
 use super::super::fixtures::{addr, encode_trade_request_v3_for_test, felt, sample_trade};
@@ -169,8 +169,8 @@ fn test_settle_trade_v3_unsupported_market_returns_zero_with_event() {
     // This test verifies the full execution path: when the market is not supported,
     // settle_trade_v3 returns 0 and emits SettleTradeFailedV3 with error code 1004.
     use super::super::fixtures::{set_paraclear_dependencies, set_settlement_token, short_str};
-    use crate::state::mock::MockStateReader;
-    use crate::storage::event_selector;
+    use crate::core::state::mock::MockStateReader;
+    use crate::core::storage::event_selector;
 
     let mut state = MockStateReader::new();
     let contract = addr(0x5000);

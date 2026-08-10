@@ -2,7 +2,13 @@
 
 use starknet_types_core::felt::Felt;
 
-use crate::{contracts::ContractRegistry, types::ContractAddress, ExecutionError, ExecutionResult, StateReader};
+use crate::{
+    contracts::{ContractRegistry, ExecutionError},
+    core::{
+        state::StateReader,
+        types::{ContractAddress, ExecutionResult},
+    },
+};
 
 /// Main entry point for executing a transaction with Rust implementation.
 ///

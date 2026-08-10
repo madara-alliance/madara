@@ -7,10 +7,10 @@
 use starknet_types_core::felt::Felt;
 
 use super::layout;
-use crate::context::ExecutionContext;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::types::ContractAddress;
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::types::ContractAddress;
 
 /// A call to be executed by the account.
 #[derive(Debug, Clone)]

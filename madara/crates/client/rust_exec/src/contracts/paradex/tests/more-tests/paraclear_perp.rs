@@ -2,11 +2,11 @@
 
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
-use crate::state::mock::MockStateReader;
-use crate::storage::{
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{
     event_selector, function_selector, storage_key_for_map, storage_key_for_map2, storage_key_with_offset,
 };
-use crate::types::ContractAddress;
+use crate::core::types::ContractAddress;
 
 use super::super::fixtures::{
     addr, felt, i128_to_felt, set_account_fee_rate_future, set_assets_manager_market_fee_config,
@@ -141,9 +141,9 @@ fn fee_v2_category(category: OrderCategory) -> OrderCategory {
 }
 
 fn events_with_selector(
-    events: &[crate::types::Event],
+    events: &[crate::core::types::Event],
     selector: starknet_types_core::felt::Felt,
-) -> Vec<&crate::types::Event> {
+) -> Vec<&crate::core::types::Event> {
     events.iter().filter(|event| event.keys.first() == Some(&selector)).collect()
 }
 

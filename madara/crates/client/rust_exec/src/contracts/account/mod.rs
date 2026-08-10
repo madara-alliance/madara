@@ -16,11 +16,11 @@ pub mod layout;
 
 use starknet_types_core::felt::Felt;
 
-use crate::context::ExecutionContext;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::storage::function_selector;
-use crate::types::{ContractAddress, ExecutionResult};
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::storage::function_selector;
+use crate::core::types::{ContractAddress, ExecutionResult};
 
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Account";

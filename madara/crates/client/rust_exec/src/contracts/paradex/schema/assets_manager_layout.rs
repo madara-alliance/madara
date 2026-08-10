@@ -1,8 +1,8 @@
 // @Paradex contract schema
 // Contract: AssetsManager
 
-use crate::storage::{storage_key_for_map2_poseidon, storage_key_for_map_poseidon, storage_key_for_variable};
-use crate::types::StorageKey;
+use crate::core::storage::{storage_key_for_map2_poseidon, storage_key_for_map_poseidon, storage_key_for_variable};
+use crate::core::types::StorageKey;
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 

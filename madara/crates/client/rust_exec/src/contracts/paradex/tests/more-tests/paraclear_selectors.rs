@@ -1,7 +1,7 @@
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::paradex::paraclear;
-use crate::storage::function_selector;
+use crate::core::storage::function_selector;
 
 #[test]
 fn test_paraclear_supports_selector_settle_trade_v3() {

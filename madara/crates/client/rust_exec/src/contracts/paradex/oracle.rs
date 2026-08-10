@@ -5,13 +5,15 @@ use starknet_types_core::felt::Felt;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::context::ExecutionContext;
 use crate::contracts::paradex::schema::oracle_layout as layout;
 use crate::contracts::paradex::schema::oracle_types::TickData;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::storage::{function_selector, sn_keccak, storage_key_for_map_with_base_named, storage_key_with_offset};
-use crate::types::{ContractAddress, ExecutionResult, StorageKey};
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::storage::{
+    function_selector, sn_keccak, storage_key_for_map_with_base_named, storage_key_with_offset,
+};
+use crate::core::types::{ContractAddress, ExecutionResult, StorageKey};
 
 /// Paradex ParaclearOracle class hash for contracts versions 1.25.1 and 1.25.3.
 pub const CLASS_HASH_1_25_1_AND_1_25_3: Felt =
@@ -138,7 +140,7 @@ fn settlement_token_asset_key() -> Felt {
 }
 
 fn short_string(s: &str) -> Felt {
-    crate::storage::short_string_to_felt(s)
+    crate::core::storage::short_string_to_felt(s)
 }
 
 fn take_felt(input: &[Felt]) -> Result<Felt, ExecutionError> {

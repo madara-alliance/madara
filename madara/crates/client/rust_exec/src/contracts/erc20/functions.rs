@@ -5,10 +5,10 @@
 use starknet_types_core::felt::Felt;
 
 use super::layout;
-use crate::context::ExecutionContext;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::types::{ContractAddress, StateDiff};
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::types::{ContractAddress, StateDiff};
 
 /// Read a u256 balance from storage.
 ///
@@ -108,7 +108,7 @@ pub fn execute_transfer<S: StateReader>(
 
     // Emit Transfer event
     // Transfer event: keys = [selector, from, to], data = [amount_low, amount_high]
-    let transfer_selector = crate::storage::sn_keccak(b"Transfer");
+    let transfer_selector = crate::core::storage::sn_keccak(b"Transfer");
     ctx.emit_event(vec![transfer_selector, from.0, to.0], vec![Felt::from(amount_low), Felt::from(amount_high)]);
 
     // Return success (true as felt)

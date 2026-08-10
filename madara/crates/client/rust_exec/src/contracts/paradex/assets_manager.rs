@@ -3,10 +3,10 @@
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 
-use crate::context::ExecutionContext;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::storage::{
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::storage::{
     function_selector, short_string_to_felt, sn_keccak, storage_key_for_map_poseidon,
     storage_key_for_map_poseidon_with_base_named, storage_key_for_substorage_map_poseidon,
     storage_key_for_substorage_map_poseidon_add, storage_key_for_substorage_map_poseidon_add_with_var_named,
@@ -14,7 +14,7 @@ use crate::storage::{
     storage_key_for_substorage_map_poseidon_with_var_named, storage_key_for_substorage_var_add,
     storage_key_for_substorage_var_poseidon, storage_key_with_offset,
 };
-use crate::types::{ContractAddress, ExecutionResult, StorageKey};
+use crate::core::types::{ContractAddress, ExecutionResult, StorageKey};
 
 use crate::contracts::paradex::schema::assets_manager_layout;
 use crate::contracts::paradex::schema::assets_manager_types::{

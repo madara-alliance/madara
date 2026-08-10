@@ -4,7 +4,7 @@
 //! - traceTransactionRust and block production use the same numbers.
 //! - changing fixed receipt/resources/bouncer weights is a single edit.
 
-use crate::gas::GasVector;
+use crate::core::gas::GasVector;
 use once_cell::sync::Lazy;
 
 // NOTE: These numbers are currently hardcoded based on an empirical Blockifier run of

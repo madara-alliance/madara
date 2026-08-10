@@ -7,15 +7,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crate::context::ExecutionContext;
 use crate::contracts::paradex::schema::account_component_layout as account_layout;
 use crate::contracts::paradex::schema::paraclear_layout;
 use crate::contracts::paradex::schema::paraclear_layout as layout;
 use crate::contracts::paradex::schema::token_component_layout as token_layout;
 use crate::contracts::paradex::{assets_manager, oracle};
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::storage::{
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::storage::{
     event_selector, function_selector, pedersen_hash, sn_keccak, storage_key_for_map, storage_key_for_map2,
     storage_key_for_map2_poseidon, storage_key_for_map2_with_base_named, storage_key_for_map_poseidon,
     storage_key_for_map_with_base_named, storage_key_for_substorage_map2_poseidon,
@@ -24,7 +24,7 @@ use crate::storage::{
     storage_key_for_substorage_map_poseidon_hash, storage_key_for_substorage_var_add,
     storage_key_for_substorage_var_poseidon, storage_key_for_variable, storage_key_with_offset,
 };
-use crate::types::{ContractAddress, ExecutionResult, StorageKey};
+use crate::core::types::{ContractAddress, ExecutionResult, StorageKey};
 
 use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 
@@ -1997,7 +1997,7 @@ fn read_contract_address<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
     contract: ContractAddress,
-    key: crate::types::StorageKey,
+    key: crate::core::types::StorageKey,
 ) -> Result<ContractAddress, ExecutionError> {
     let value = ctx.storage_read(state, contract, key)?;
     Ok(ContractAddress(value))
@@ -2033,7 +2033,7 @@ fn is_perpetual_future_supported<S: StateReader>(
 }
 
 fn oracle_settlement_key() -> Felt {
-    crate::storage::short_string_to_felt("USDC")
+    crate::core::storage::short_string_to_felt("USDC")
 }
 
 fn read_settlement_token_address<S: StateReader>(
@@ -4339,67 +4339,67 @@ mod ErrorCodes {
 mod Errors {
     use super::*;
     pub fn trade_size_too_small() -> Felt {
-        crate::storage::short_string_to_felt("Trade: Size must be >1")
+        crate::core::storage::short_string_to_felt("Trade: Size must be >1")
     }
     pub fn trade_time_invalid_not_zero() -> Felt {
-        crate::storage::short_string_to_felt("Trade: traded_at must be >0")
+        crate::core::storage::short_string_to_felt("Trade: traded_at must be >0")
     }
     pub fn trade_time_invalid_not_future() -> Felt {
-        crate::storage::short_string_to_felt("Trade: traded_at from future")
+        crate::core::storage::short_string_to_felt("Trade: traded_at from future")
     }
     pub fn trade_market_mismatch() -> Felt {
-        crate::storage::short_string_to_felt("Trade: Order assets mismatch")
+        crate::core::storage::short_string_to_felt("Trade: Order assets mismatch")
     }
     pub fn trade_market_not_supported() -> Felt {
-        crate::storage::short_string_to_felt("Trade: Market not supported")
+        crate::core::storage::short_string_to_felt("Trade: Market not supported")
     }
     pub fn trade_order_risky_taker() -> Felt {
-        crate::storage::short_string_to_felt("Trade: Too risky for taker")
+        crate::core::storage::short_string_to_felt("Trade: Too risky for taker")
     }
     pub fn trade_order_risky_maker() -> Felt {
-        crate::storage::short_string_to_felt("Trade: Too risky for maker")
+        crate::core::storage::short_string_to_felt("Trade: Too risky for maker")
     }
     pub fn trade_same_account() -> Felt {
-        crate::storage::short_string_to_felt("Trade: self-trades not allowed")
+        crate::core::storage::short_string_to_felt("Trade: self-trades not allowed")
     }
     pub fn trade_same_side() -> Felt {
-        crate::storage::short_string_to_felt("Trade: same side orders")
+        crate::core::storage::short_string_to_felt("Trade: same side orders")
     }
     pub fn reduce_only_will_increase_maker() -> Felt {
-        crate::storage::short_string_to_felt("Trade: reduce-only for maker")
+        crate::core::storage::short_string_to_felt("Trade: reduce-only for maker")
     }
     pub fn reduce_only_will_increase_taker() -> Felt {
-        crate::storage::short_string_to_felt("Trade: reduce-only for taker")
+        crate::core::storage::short_string_to_felt("Trade: reduce-only for taker")
     }
     pub fn trade_invalid_maker_size() -> Felt {
-        crate::storage::short_string_to_felt("Trade: invalid maker order size")
+        crate::core::storage::short_string_to_felt("Trade: invalid maker order size")
     }
     pub fn trade_invalid_taker_size() -> Felt {
-        crate::storage::short_string_to_felt("Trade: invalid taker order size")
+        crate::core::storage::short_string_to_felt("Trade: invalid taker order size")
     }
     pub fn trade_invalid_maker_side() -> Felt {
-        crate::storage::short_string_to_felt("Trade: invalid maker order side")
+        crate::core::storage::short_string_to_felt("Trade: invalid maker order side")
     }
     pub fn trade_invalid_taker_side() -> Felt {
-        crate::storage::short_string_to_felt("Trade: invalid taker order side")
+        crate::core::storage::short_string_to_felt("Trade: invalid taker order side")
     }
     pub fn trade_maker_too_many_assets() -> Felt {
-        crate::storage::short_string_to_felt("Trade: maker too many assets")
+        crate::core::storage::short_string_to_felt("Trade: maker too many assets")
     }
     pub fn trade_taker_too_many_assets() -> Felt {
-        crate::storage::short_string_to_felt("Trade: taker too many assets")
+        crate::core::storage::short_string_to_felt("Trade: taker too many assets")
     }
     pub fn trade_maker_not_enough_balance() -> Felt {
-        crate::storage::short_string_to_felt("Trade: maker not enough balance")
+        crate::core::storage::short_string_to_felt("Trade: maker not enough balance")
     }
     pub fn trade_taker_not_enough_balance() -> Felt {
-        crate::storage::short_string_to_felt("Trade: taker not enough balance")
+        crate::core::storage::short_string_to_felt("Trade: taker not enough balance")
     }
     pub fn trade_maker_not_enough_fee_token() -> Felt {
-        crate::storage::short_string_to_felt("Trade: maker insuff fee token")
+        crate::core::storage::short_string_to_felt("Trade: maker insuff fee token")
     }
     pub fn trade_taker_not_enough_fee_token() -> Felt {
-        crate::storage::short_string_to_felt("Trade: taker insuff fee token")
+        crate::core::storage::short_string_to_felt("Trade: taker insuff fee token")
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::contracts::paradex::{assets_manager, paraclear};
-use crate::state::mock::MockStateReader;
+use crate::core::state::mock::MockStateReader;
 
 use super::fixtures::{addr, felt, set_future_asset_direct, set_option_asset_direct, set_spot_asset_direct, short_str};
 
@@ -101,7 +101,7 @@ fn test_get_asset_kind_zero_market() {
 #[test]
 fn test_settle_trade_v3_not_supported_market() {
     use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
-    use crate::storage::event_selector;
+    use crate::core::storage::event_selector;
 
     let state = MockStateReader::new();
     let contract = addr(0x550);
@@ -139,7 +139,7 @@ fn test_settle_trade_v3_not_supported_market() {
     };
 
     let calldata = super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = crate::storage::function_selector("settle_trade_v3");
+    let selector = crate::core::storage::function_selector("settle_trade_v3");
     let result = paraclear::execute(&state, contract, selector, &calldata, caller).expect("execute");
 
     assert_eq!(result.call_result.retdata, vec![felt(0)]);

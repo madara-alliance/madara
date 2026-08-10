@@ -1,6 +1,6 @@
 use crate::contracts::paradex::paraclear;
-use crate::state::mock::MockStateReader;
-use crate::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
 
 use super::super::fixtures::{addr, felt, set_storage};
 

@@ -2,9 +2,9 @@
 
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
-use crate::state::mock::MockStateReader;
-use crate::storage::{event_selector, function_selector};
-use crate::types::{ContractAddress, Event};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{event_selector, function_selector};
+use crate::core::types::{ContractAddress, Event};
 
 use starknet_types_core::felt::Felt;
 

@@ -9,12 +9,12 @@ use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::hash_agg::{self, CtxReadSource};
-use crate::state::{StateError, StateReader};
-use crate::storage_agg::{self, CtxReadLayer};
-use crate::types::{
+use crate::core::state::{StateError, StateReader};
+use crate::core::types::{
     CallExecutionResult, ContractAddress, Event, ExecutionResult, L2ToL1Message, Nonce, StateDiff, StorageKey,
 };
+use crate::telemetry::hash_agg::{self, CtxReadSource};
+use crate::telemetry::storage_agg::{self, CtxReadLayer};
 
 static CTX_READ_CACHE_ENABLED: Lazy<bool> = Lazy::new(|| {
     std::env::var("RUST_EXEC_CTX_CACHE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true)
@@ -334,7 +334,7 @@ impl StorageReadStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::mock::MockStateReader;
+    use crate::core::state::mock::MockStateReader;
 
     #[test]
     fn test_storage_read_caches_initial_value() {

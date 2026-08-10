@@ -1,7 +1,7 @@
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_layout;
-use crate::state::mock::MockStateReader;
-use crate::storage::{short_string_to_felt, storage_key_with_offset};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{short_string_to_felt, storage_key_with_offset};
 
 use super::super::fixtures::{addr, felt, set_oracle_latest_tick_data, set_storage, short_str};
 
@@ -129,7 +129,7 @@ fn test_read_settlement_token_price_zero_errors() {
     };
 
     let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
-    let selector = crate::storage::function_selector("settle_trade_v3");
+    let selector = crate::core::storage::function_selector("settle_trade_v3");
     let err = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).unwrap_err();
     assert!(format!("{err}").contains("settlement_token_price is zero"));
 }

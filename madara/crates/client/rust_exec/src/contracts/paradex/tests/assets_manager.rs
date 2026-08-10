@@ -1,5 +1,5 @@
 use crate::contracts::paradex::assets_manager;
-use crate::state::mock::MockStateReader;
+use crate::core::state::mock::MockStateReader;
 
 use super::fixtures::{addr, felt, set_future_asset_direct, set_option_asset_direct, set_spot_asset_direct, short_str};
 

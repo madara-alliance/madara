@@ -25,8 +25,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::contracts::paradex::precomputed_sn_keccak;
-use crate::hash_agg;
-use crate::types::StorageKey;
+use crate::core::types::StorageKey;
+use crate::telemetry::hash_agg;
 use keccak::f1600;
 
 /// L2 address upper bound for storage keys (matches starknet_api::core).

@@ -10,10 +10,10 @@
 use starknet_types_core::felt::Felt;
 
 use crate::contracts::ExecutionError;
-use crate::gas::{calculate_fee, BlockContext, FeeType, GasTracker, GasVector, ResourceBounds};
-use crate::state::StateReader;
-use crate::storage::short_string_to_felt;
-use crate::types::{CallExecutionResult, ContractAddress, ExecutionResult, Nonce, StateDiff};
+use crate::core::gas::{calculate_fee, BlockContext, FeeType, GasTracker, GasVector, ResourceBounds};
+use crate::core::state::StateReader;
+use crate::core::storage::short_string_to_felt;
+use crate::core::types::{CallExecutionResult, ContractAddress, ExecutionResult, Nonce, StateDiff};
 
 fn no_charge_fee_enabled() -> bool {
     let value = std::env::var("NO_CHARGE_FEE").unwrap_or_default();

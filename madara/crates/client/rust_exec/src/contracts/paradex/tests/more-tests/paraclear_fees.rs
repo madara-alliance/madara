@@ -1,7 +1,7 @@
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_types::OrderCategory;
-use crate::state::mock::MockStateReader;
-use crate::storage::storage_key_with_offset;
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::storage_key_with_offset;
 
 use super::super::fixtures::{
     addr, dynamic_fee_request, felt, sample_trade, set_account_fee_rate_spot, set_future_asset_direct,

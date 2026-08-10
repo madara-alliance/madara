@@ -42,14 +42,19 @@ use std::time::Instant;
 
 use crate::{
     constants,
-    execution::execute_transaction_with_timestamp,
-    gas::{BlockContext as RustBlockContext, FeeType, GasVector, ResourceBounds},
-    runner::ExecutionVerificationResult,
-    storage::function_selector,
+    core::{
+        gas::{BlockContext as RustBlockContext, FeeType, GasVector, ResourceBounds},
+        state::StateReader,
+        storage::function_selector,
+        types::{CallExecutionResult, ContractAddress, ExecutionResult, Nonce, StateDiff as RustStateDiff},
+    },
+    engine::{
+        execution::execute_transaction_with_timestamp,
+        runner::ExecutionVerificationResult,
+        transaction::{Call, InvokeTransaction as RustInvokeTransaction, TransactionExecutor},
+    },
+    integration::verification::VerificationError,
     trace::{build_transaction_execution_info, RustCallType, RustEntryPointType, RustTransactionExecutionInfo},
-    transaction::{Call, InvokeTransaction as RustInvokeTransaction, TransactionExecutor},
-    types::{CallExecutionResult, ContractAddress, ExecutionResult, Nonce, StateDiff as RustStateDiff},
-    StateReader, VerificationError,
 };
 
 static INIT: Lazy<()> = Lazy::new(|| {
@@ -133,7 +138,7 @@ impl<'a, S: BlockifierStateReader> StateReader for RustExecStateAdapter<'a, S> {
     fn get_storage_at(
         &self,
         contract: ContractAddress,
-        key: crate::types::StorageKey,
+        key: crate::core::types::StorageKey,
     ) -> Result<Felt, crate::StateError> {
         let starknet_contract = ApiContractAddress::try_from(contract.0)
             .map_err(|e| crate::StateError::InvalidAddress(format!("Invalid contract address: {e}")))?;
@@ -785,7 +790,7 @@ fn verify_call_with_call_info<S: StateReader>(
         .map(|(hash, compiled)| (hash.to_felt(), compiled.to_felt()))
         .collect();
 
-    let blockifier_result = crate::verification::BlockifierExecutionResult {
+    let blockifier_result = crate::integration::verification::BlockifierExecutionResult {
         storage: blockifier_storage,
         retdata: blockifier_retdata,
         events: blockifier_events,
@@ -835,7 +840,8 @@ fn verify_call_with_call_info<S: StateReader>(
     // -------------------------------
     // VERIFICATION (single call)
     // -------------------------------
-    let verification_result = crate::verification::verify_against_blockifier(&rust_result, &blockifier_result);
+    let verification_result =
+        crate::integration::verification::verify_against_blockifier(&rust_result, &blockifier_result);
 
     ExecutionVerificationResult {
         executed: true,
@@ -1012,7 +1018,7 @@ fn verify_full_invoke_results(
             vec![]
         };
 
-    let blockifier_result = crate::verification::BlockifierExecutionResult {
+    let blockifier_result = crate::integration::verification::BlockifierExecutionResult {
         storage: blockifier_storage,
         retdata: vec![],
         events: blockifier_events,
@@ -1023,7 +1029,8 @@ fn verify_full_invoke_results(
         compiled_class_hashes: vec![],
     };
 
-    let verification_result = crate::verification::verify_against_blockifier(&rust_result.result, &blockifier_result);
+    let verification_result =
+        crate::integration::verification::verify_against_blockifier(&rust_result.result, &blockifier_result);
     let (contract_logic_errors, _fee_related_errors): (Vec<_>, Vec<_>) =
         verification_result.errors.iter().partition(|error| match error {
             VerificationError::StorageMismatch { contract, .. } => *contract != rust_result.fee_token_address,

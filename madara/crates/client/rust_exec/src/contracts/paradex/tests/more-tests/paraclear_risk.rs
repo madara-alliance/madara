@@ -6,7 +6,7 @@ use super::super::fixtures::{
 };
 
 use crate::contracts::paradex::paraclear;
-use crate::storage::{storage_key_for_map, storage_key_with_offset};
+use crate::core::storage::{storage_key_for_map, storage_key_with_offset};
 
 const SCALE: i128 = 100_000_000;
 
@@ -93,7 +93,7 @@ fn test_unrealized_funding_pnl_positive() {
 
 #[test]
 fn test_is_risky_after_trade_spot_false() {
-    let mut state = crate::state::mock::MockStateReader::new();
+    let mut state = crate::core::state::mock::MockStateReader::new();
     let contract = addr(0x6000);
     let assets_manager = addr(0x6001);
     let oracle = addr(0x6002);
@@ -129,7 +129,7 @@ fn test_is_risky_after_trade_spot_false() {
 
 #[test]
 fn test_is_risky_after_trade_perp_true() {
-    let mut state = crate::state::mock::MockStateReader::new();
+    let mut state = crate::core::state::mock::MockStateReader::new();
     let contract = addr(0x6100);
     let assets_manager = addr(0x6101);
     let oracle = addr(0x6102);

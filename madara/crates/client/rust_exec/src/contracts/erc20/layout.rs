@@ -24,8 +24,8 @@
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::{Felt, NonZeroFelt};
 
-use crate::storage::{pedersen_hash, poseidon_hash_many, sn_keccak};
-use crate::types::{ContractAddress, StorageKey};
+use crate::core::storage::{pedersen_hash, poseidon_hash_many, sn_keccak};
+use crate::core::types::{ContractAddress, StorageKey};
 
 /// L2_ADDRESS_UPPER_BOUND = 2^251 - 256 (from starknet_api::core)
 /// This is used to constrain storage keys to valid Patricia key range.

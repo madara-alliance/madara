@@ -1,8 +1,8 @@
 use super::super::fixtures::{addr, felt, set_storage};
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_layout;
-use crate::state::mock::MockStateReader;
-use crate::storage::{
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{
     storage_key_for_map, storage_key_for_map2, storage_key_for_substorage_map2_poseidon,
     storage_key_for_substorage_map_poseidon, storage_key_for_substorage_var_poseidon, storage_key_for_variable,
 };

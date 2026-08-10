@@ -1,7 +1,7 @@
 // @Paradex contract schema
 // Contract: ParaclearOracle
 
-use crate::types::ContractAddress;
+use crate::core::types::ContractAddress;
 use starknet_types_core::felt::Felt;
 
 #[derive(Clone, Debug, PartialEq)]

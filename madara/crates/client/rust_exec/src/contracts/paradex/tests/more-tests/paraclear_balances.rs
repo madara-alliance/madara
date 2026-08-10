@@ -2,8 +2,8 @@
 
 use super::super::fixtures::{addr, felt, i128_to_felt, set_storage, SCALE};
 use crate::contracts::paradex::paraclear;
-use crate::state::mock::MockStateReader;
-use crate::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{storage_key_for_map, storage_key_for_map2, storage_key_with_offset};
 
 #[test]
 fn test_read_token_balance_amount_missing_zero() {

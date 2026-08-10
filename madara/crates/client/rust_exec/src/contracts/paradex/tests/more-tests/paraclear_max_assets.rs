@@ -1,8 +1,8 @@
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_layout;
 use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
-use crate::state::mock::MockStateReader;
-use crate::storage::storage_key_with_offset;
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::storage_key_with_offset;
 
 use super::super::fixtures::{addr, felt, set_storage};
 

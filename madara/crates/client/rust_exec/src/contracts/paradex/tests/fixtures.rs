@@ -9,13 +9,13 @@ use crate::contracts::paradex::schema::paraclear_types::{
     FeeWithCapRequest, FeeWithCapRequestV2, OrderCategory, OrderV3, TradeRequestV3,
 };
 use crate::contracts::paradex::schema::token_component_layout as token_layout;
-use crate::state::mock::MockStateReader;
-use crate::storage::{
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{
     short_string_to_felt, storage_key_for_map, storage_key_for_map2, storage_key_for_map_poseidon,
     storage_key_for_substorage_map_poseidon, storage_key_for_substorage_map_poseidon_add,
     storage_key_for_substorage_map_poseidon_hash, storage_key_for_substorage_var_poseidon, storage_key_with_offset,
 };
-use crate::types::{ContractAddress, StorageKey};
+use crate::core::types::{ContractAddress, StorageKey};
 
 pub fn felt(value: u64) -> Felt {
     Felt::from(value)

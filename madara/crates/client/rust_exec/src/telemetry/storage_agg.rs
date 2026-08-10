@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::env;
 use std::sync::OnceLock;
 
-use crate::types::{ContractAddress, StorageKey};
+use crate::core::types::{ContractAddress, StorageKey};
 
 #[derive(Default)]
 struct StorageAggStats {

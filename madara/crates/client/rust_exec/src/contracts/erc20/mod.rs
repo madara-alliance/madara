@@ -8,11 +8,11 @@ pub mod layout;
 
 use starknet_types_core::felt::Felt;
 
-use crate::context::ExecutionContext;
 use crate::contracts::ExecutionError;
-use crate::state::StateReader;
-use crate::storage::function_selector;
-use crate::types::{CallExecutionResult, ContractAddress, ExecutionResult, StateDiff};
+use crate::core::context::ExecutionContext;
+use crate::core::state::StateReader;
+use crate::core::storage::function_selector;
+use crate::core::types::{CallExecutionResult, ContractAddress, ExecutionResult, StateDiff};
 
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "ERC20";
@@ -119,9 +119,9 @@ pub fn transfer_internal<S: StateReader>(
         retdata: vec![Felt::ONE], // true
         events: vec![
             // Transfer event
-            crate::types::Event {
+            crate::core::types::Event {
                 order: 0,
-                keys: vec![crate::storage::sn_keccak(b"Transfer"), from.0, to.0],
+                keys: vec![crate::core::storage::sn_keccak(b"Transfer"), from.0, to.0],
                 data: vec![Felt::from(amount), Felt::ZERO], // amount as u256
             },
         ],

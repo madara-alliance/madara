@@ -1,8 +1,8 @@
 use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_layout;
 use crate::contracts::paradex::schema::paraclear_types::{OrderCategory, OrderV3, TradeRequestV3};
-use crate::state::mock::MockStateReader;
-use crate::storage::{event_selector, function_selector};
+use crate::core::state::mock::MockStateReader;
+use crate::core::storage::{event_selector, function_selector};
 use starknet_types_core::felt::Felt;
 
 use super::super::fixtures::{addr, felt, set_storage};

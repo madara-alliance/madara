@@ -1,23 +1,18 @@
 //! mc-rust-exec: native Rust transaction executor for the Madara hybrid pipeline.
 
-pub mod block_production;
-pub mod blockifier_integration;
-pub mod compare;
 pub mod config;
 pub mod constants;
-pub mod context;
 pub mod contracts;
-pub mod execution;
-pub mod gas;
-pub mod hash_agg;
-pub mod runner;
-pub mod state;
-pub mod storage;
-pub mod storage_agg;
+pub mod core;
+pub mod engine;
+pub mod integration;
+pub mod telemetry;
 pub mod trace;
-pub mod transaction;
-pub mod types;
-pub mod verification;
+
+pub use core::{context, gas, state, storage, types};
+pub use engine::{execution, runner, transaction};
+pub use integration::{block_production, blockifier as blockifier_integration, compare, verification};
+pub use telemetry::{hash_agg, storage_agg};
 
 use starknet_types_core::felt::Felt;
 
@@ -61,7 +56,7 @@ pub fn get_function_name(class_hash: Felt, selector: Felt) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::mock::MockStateReader;
+    use crate::core::state::mock::MockStateReader;
 
     #[test]
     fn test_unsupported_contract_returns_none() {

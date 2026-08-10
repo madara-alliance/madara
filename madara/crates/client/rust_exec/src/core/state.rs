@@ -6,7 +6,7 @@
 use starknet_types_core::felt::Felt;
 use thiserror::Error;
 
-use crate::types::{ContractAddress, Nonce, StorageKey};
+use crate::core::types::{ContractAddress, Nonce, StorageKey};
 
 /// Errors that can occur when reading state.
 #[derive(Debug, Error)]
