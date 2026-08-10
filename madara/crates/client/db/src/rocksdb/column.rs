@@ -34,6 +34,7 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::events::EVENTS_BLOOM_COLUMN,
     super::meta::META_COLUMN,
     super::meta::PRECONFIRMED_COLUMN,
+    super::meta::TAINTED_REBUILD_CARRY_COLUMN,
     super::l1_to_l2_messages::L1_TO_L2_PENDING_MESSAGE_BY_NONCE,
     super::l1_to_l2_messages::L1_TO_L2_L1_TXN_HASH_BY_NONCE,
     super::l1_to_l2_messages::L1_TO_L2_TXN_HASH_BY_NONCE,

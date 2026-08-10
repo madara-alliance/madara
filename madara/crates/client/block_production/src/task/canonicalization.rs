@@ -658,6 +658,7 @@ impl BlockProductionTask {
         match &sd_comparison {
             crate::comparator::StateDiffComparison::Mismatch { .. } => {
                 metrics.comparator_state_diff_mismatch_total.add(1, &[]);
+                Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
                 tracing::warn!(
@@ -940,6 +941,7 @@ impl BlockProductionTask {
         match &sd_comparison {
             crate::comparator::StateDiffComparison::Mismatch { .. } => {
                 self.metrics.comparator_state_diff_mismatch_total.add(1, &[]);
+                Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
                 tracing::warn!(
@@ -1047,5 +1049,76 @@ impl BlockProductionTask {
         );
 
         Ok(canonical)
+    }
+
+    fn log_state_diff_mismatch_details(
+        block_n: u64,
+        rust_exec_diff: &StateDiff,
+        blockifier_diff: &StateDiff,
+        comparison: &crate::comparator::StateDiffComparison,
+    ) {
+        let crate::comparator::StateDiffComparison::Mismatch { summary } = comparison else {
+            return;
+        };
+
+        let (storage_mismatch_count, storage_mismatch_preview) =
+            Self::storage_diff_mismatch_preview(rust_exec_diff, blockifier_diff, 16);
+        tracing::warn!(
+            block_n,
+            summary = %summary,
+            rust_exec_storage_contracts = rust_exec_diff.storage_diffs.len(),
+            blockifier_storage_contracts = blockifier_diff.storage_diffs.len(),
+            rust_exec_storage_entries = Self::storage_entry_count(rust_exec_diff),
+            blockifier_storage_entries = Self::storage_entry_count(blockifier_diff),
+            storage_mismatch_count,
+            storage_mismatch_preview = %storage_mismatch_preview,
+            "comparator_state_diff_mismatch_details"
+        );
+    }
+
+    fn storage_entry_count(diff: &StateDiff) -> usize {
+        diff.storage_diffs.iter().map(|item| item.storage_entries.len()).sum()
+    }
+
+    fn storage_diff_mismatch_preview(
+        rust_exec_diff: &StateDiff,
+        blockifier_diff: &StateDiff,
+        preview_limit: usize,
+    ) -> (usize, String) {
+        let rust_exec_storage = Self::flatten_storage_diff(rust_exec_diff);
+        let blockifier_storage = Self::flatten_storage_diff(blockifier_diff);
+        let mut keys = std::collections::BTreeSet::new();
+        keys.extend(rust_exec_storage.keys().copied());
+        keys.extend(blockifier_storage.keys().copied());
+
+        let mut mismatch_count = 0;
+        let mut preview = Vec::new();
+        for (address, key) in keys {
+            let rust_exec_value = rust_exec_storage.get(&(address, key));
+            let blockifier_value = blockifier_storage.get(&(address, key));
+            if rust_exec_value == blockifier_value {
+                continue;
+            }
+
+            mismatch_count += 1;
+            if preview.len() < preview_limit {
+                preview.push(format!(
+                    "address={address:?} key={key:?} rust_exec={rust_exec_value:?} blockifier={blockifier_value:?}"
+                ));
+            }
+        }
+
+        if mismatch_count > preview.len() {
+            preview.push(format!("... {} more", mismatch_count - preview.len()));
+        }
+
+        (mismatch_count, preview.join("; "))
+    }
+
+    fn flatten_storage_diff(diff: &StateDiff) -> BTreeMap<(Felt, Felt), Felt> {
+        diff.storage_diffs
+            .iter()
+            .flat_map(|item| item.storage_entries.iter().map(move |entry| ((item.address, entry.key), entry.value)))
+            .collect()
     }
 }
