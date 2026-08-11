@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
-use std::path::PathBuf;
 
 fn normalize_hex_felt(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim();
@@ -27,6 +26,151 @@ fn parse_hex_felt_arg(raw: &str) -> Result<String, String> {
     normalize_hex_felt(raw)
 }
 
+fn default_rust_exec_executor_addresses() -> Vec<String> {
+    vec!["0x012aa6059457fc2d02240962a6573e051fa919632853e6ba70207d7cef6be4c3".to_string()]
+}
+
+fn default_rust_exec_batch_size() -> u64 {
+    30
+}
+
+fn default_rust_exec_blockifier_batch_size() -> u64 {
+    10
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
+pub struct RustExecParams {
+    /// Sender-address whitelist used for Rust execution routing.
+    ///
+    /// Values are comma-delimited felts.
+    #[arg(
+        env = "MADARA_RUST_EXEC_EXECUTOR_ADDRESSES",
+        long,
+        value_delimiter = ',',
+        value_parser = parse_hex_felt_arg,
+        default_values_t = default_rust_exec_executor_addresses(),
+        value_name = "ADDRESS[,ADDRESS...]"
+    )]
+    #[serde(default = "default_rust_exec_executor_addresses")]
+    pub executor_addresses: Vec<String>,
+
+    /// Maximum Rust-routed transactions picked in one batcher cycle.
+    #[arg(
+        env = "MADARA_RUST_EXEC_BATCH_SIZE",
+        long,
+        default_value_t = default_rust_exec_batch_size(),
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    #[serde(default = "default_rust_exec_batch_size")]
+    pub batch_size: u64,
+
+    /// Maximum Blockifier-routed transactions picked in one batcher cycle.
+    #[arg(
+        env = "MADARA_RUST_EXEC_BLOCKIFIER_BATCH_SIZE",
+        long,
+        default_value_t = default_rust_exec_blockifier_batch_size(),
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    #[serde(default = "default_rust_exec_blockifier_batch_size")]
+    pub blockifier_batch_size: u64,
+
+    /// Enable per-transaction Rust execution timing logs.
+    #[arg(env = "MADARA_RUST_EXEC_EXECUTION_LOG", long, default_value_t = false)]
+    #[serde(default)]
+    pub execution_log: bool,
+
+    /// Enable inner Paraclear execution logs.
+    #[arg(env = "MADARA_RUST_EXEC_EXECUTION_LOG_INNER", long, default_value_t = false)]
+    #[serde(default)]
+    pub execution_log_inner: bool,
+
+    /// Enable Rust transaction state-diff summary logs.
+    #[arg(env = "MADARA_RUST_EXEC_TX_DIFF_LOG", long, default_value_t = false)]
+    #[serde(default)]
+    pub tx_diff_log: bool,
+
+    /// Enable Rust transaction state-diff summary logs for one block.
+    #[arg(env = "MADARA_RUST_EXEC_DEBUG_BLOCK", long)]
+    #[serde(default)]
+    pub debug_block: Option<u64>,
+
+    /// Enable detailed inner Paraclear timing logs.
+    #[arg(env = "MADARA_RUST_EXEC_INNER_TIMING_LOG", long, default_value_t = false)]
+    #[serde(default)]
+    pub inner_timing_log: bool,
+
+    /// Enable the per-transaction storage read cache.
+    #[arg(env = "MADARA_RUST_EXEC_CTX_CACHE", long, default_value_t = true)]
+    #[serde(default = "default_true")]
+    pub ctx_cache: bool,
+
+    /// Enable Pedersen/key derivation caching.
+    #[arg(env = "MADARA_RUST_EXEC_PEDERSEN_CACHE", long, default_value_t = true)]
+    #[serde(default = "default_true")]
+    pub pedersen_cache: bool,
+
+    /// Enable precomputed sn_keccak lookup for known Paradex names.
+    #[arg(env = "MADARA_RUST_EXEC_PRECOMPUTED_SN_KECCAK", long, default_value_t = false)]
+    #[serde(default)]
+    pub precomputed_sn_keccak: bool,
+
+    /// Enable Rust conversion logs.
+    #[arg(env = "MADARA_RUST_EXEC_CONVERSION_LOG", long, default_value_t = false)]
+    #[serde(default)]
+    pub conversion_log: bool,
+
+    /// Enable hash aggregation logs.
+    #[arg(env = "MADARA_RUST_EXEC_HASH_AGG_LOGS", long, default_value_t = false)]
+    #[serde(default)]
+    pub hash_agg_logs: bool,
+
+    /// Enable storage aggregation logs.
+    #[arg(env = "MADARA_RUST_EXEC_STORAGE_AGG_LOGS", long, default_value_t = false)]
+    #[serde(default)]
+    pub storage_agg_logs: bool,
+
+    /// Ignore fee mismatches in Rust-vs-Blockifier transaction comparison.
+    #[arg(env = "MADARA_RUST_EXEC_IGNORE_FEE_MISMATCH", long, default_value_t = false)]
+    #[serde(default)]
+    pub ignore_fee_mismatch: bool,
+
+    /// Select the nearest settle_trade_v3 bouncer profile by position count.
+    #[arg(
+        env = "MADARA_RUST_EXEC_SETTLE_TRADE_V3_POSITIONS",
+        long,
+        value_parser = clap::value_parser!(u16).range(1..=150)
+    )]
+    #[serde(default)]
+    pub settle_trade_v3_positions: Option<u16>,
+}
+
+impl Default for RustExecParams {
+    fn default() -> Self {
+        Self {
+            executor_addresses: default_rust_exec_executor_addresses(),
+            batch_size: default_rust_exec_batch_size(),
+            blockifier_batch_size: default_rust_exec_blockifier_batch_size(),
+            execution_log: false,
+            execution_log_inner: false,
+            tx_diff_log: false,
+            debug_block: None,
+            inner_timing_log: false,
+            ctx_cache: true,
+            pedersen_cache: true,
+            precomputed_sn_keccak: false,
+            conversion_log: false,
+            hash_agg_logs: false,
+            storage_agg_logs: false,
+            ignore_fee_mismatch: false,
+            settle_trade_v3_positions: None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
 pub enum StartupExecutionModeParam {
     Mixed,
@@ -47,65 +191,10 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
     pub mempool_paused: bool,
 
-    /// Load Rust execution routing configuration from a YAML/JSON/TOML file.
-    ///
-    /// The file uses the `RustExecRoutingConfig` field names:
-    /// `executor_addresses`, `supported_selectors`, `supported_class_hashes`,
-    /// `rust_batch_size`, and `blockifier_batch_size`.
-    #[arg(env = "MADARA_RUST_EXEC_ROUTING_CONFIG", long, value_name = "PATH")]
-    pub rust_exec_routing_config: Option<PathBuf>,
-
-    /// Override the sender-address whitelist used for Rust execution routing.
-    ///
-    /// Values are comma-delimited felts.
-    #[arg(
-        env = "MADARA_RUST_EXEC_EXECUTOR_ADDRESSES",
-        long,
-        value_delimiter = ',',
-        value_parser = parse_hex_felt_arg,
-        value_name = "ADDRESS[,ADDRESS...]"
-    )]
-    pub rust_exec_executor_addresses: Option<Vec<String>>,
-
-    /// Override the selector whitelist used for Rust execution routing.
-    ///
-    /// Values are comma-delimited felts.
-    #[arg(
-        env = "MADARA_RUST_EXEC_SUPPORTED_SELECTORS",
-        long,
-        value_delimiter = ',',
-        value_parser = parse_hex_felt_arg,
-        value_name = "SELECTOR[,SELECTOR...]"
-    )]
-    pub rust_exec_supported_selectors: Option<Vec<String>>,
-
-    /// Override the contract class-hash whitelist used for Rust execution routing.
-    ///
-    /// Values are comma-delimited felts.
-    #[arg(
-        env = "MADARA_RUST_EXEC_SUPPORTED_CLASS_HASHES",
-        long,
-        value_delimiter = ',',
-        value_parser = parse_hex_felt_arg,
-        value_name = "CLASS_HASH[,CLASS_HASH...]"
-    )]
-    pub rust_exec_supported_class_hashes: Option<Vec<String>>,
-
-    /// Override the maximum Rust-routed transactions picked in one batcher cycle.
-    #[arg(
-        env = "MADARA_RUST_EXEC_BATCH_SIZE",
-        long,
-        value_parser = clap::value_parser!(u64).range(1..)
-    )]
-    pub rust_exec_batch_size_override: Option<u64>,
-
-    /// Override the maximum Blockifier-routed transactions picked in one batcher cycle.
-    #[arg(
-        env = "MADARA_RUST_EXEC_BLOCKIFIER_BATCH_SIZE",
-        long,
-        value_parser = clap::value_parser!(u64).range(1..)
-    )]
-    pub rust_exec_blockifier_batch_size_override: Option<u64>,
+    /// Rust execution configuration.
+    #[clap(flatten)]
+    #[serde(default)]
+    pub rust_exec: RustExecParams,
 
     /// Enable replay mode for block production.
     ///
@@ -147,43 +236,46 @@ mod tests {
 
     #[rstest]
     #[case::comma_delimited(
-        vec!["madara", "--rust-exec-supported-class-hashes", "0x1,2,0x03"],
+        vec!["madara", "--rust-exec-executor-addresses", "0x1,2,0x03"],
         vec!["0x1", "0x2", "0x03"]
     )]
     #[case::repeated_flag(
         vec![
             "madara",
-            "--rust-exec-supported-class-hashes",
+            "--rust-exec-executor-addresses",
             "0x1",
-            "--rust-exec-supported-class-hashes",
+            "--rust-exec-executor-addresses",
             "0x2"
         ],
         vec!["0x1", "0x2"]
     )]
-    fn block_production_params_parse_rust_exec_supported_class_hashes(
+    fn block_production_params_parse_rust_exec_executor_addresses(
         #[case] args: Vec<&str>,
         #[case] expected: Vec<&str>,
     ) {
         let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
-        assert_eq!(params.rust_exec_supported_class_hashes, Some(expected.into_iter().map(str::to_string).collect()));
+        assert_eq!(params.rust_exec.executor_addresses, expected.into_iter().map(str::to_string).collect::<Vec<_>>());
     }
 
     #[test]
-    fn block_production_params_reject_invalid_rust_exec_supported_class_hash() {
-        let err = BlockProductionParams::try_parse_from(["madara", "--rust-exec-supported-class-hashes", "not-a-felt"])
+    fn block_production_params_reject_invalid_rust_exec_executor_address() {
+        let err = BlockProductionParams::try_parse_from(["madara", "--rust-exec-executor-addresses", "not-a-felt"])
             .expect_err("invalid felt must be rejected");
         assert!(err.to_string().contains("invalid felt hex"));
     }
 
     #[test]
-    fn block_production_params_parse_rust_exec_routing_config_path() {
+    fn block_production_params_parse_rust_exec_cache_flags() {
         let params = BlockProductionParams::try_parse_from([
             "madara",
-            "--rust-exec-routing-config",
-            "configs/rust_exec_routing.yaml",
+            "--rust-exec-ctx-cache=false",
+            "--rust-exec-pedersen-cache=false",
+            "--rust-exec-precomputed-sn-keccak",
         ])
         .expect("arguments should parse");
 
-        assert_eq!(params.rust_exec_routing_config, Some(PathBuf::from("configs/rust_exec_routing.yaml")));
+        assert!(!params.rust_exec.ctx_cache);
+        assert!(!params.rust_exec.pedersen_cache);
+        assert!(params.rust_exec.precomputed_sn_keccak);
     }
 }

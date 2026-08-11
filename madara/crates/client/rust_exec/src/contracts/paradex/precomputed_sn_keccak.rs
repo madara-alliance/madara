@@ -18,14 +18,6 @@ use std::collections::HashMap;
 use crate::contracts::paradex::{assets_manager, oracle, paraclear};
 use crate::contracts::{account, erc20};
 
-static PRECOMPUTED_SN_KECCAK_ENABLED: Lazy<bool> = Lazy::new(|| {
-    let value = std::env::var("RUST_EXEC_PRECOMPUTED_SN_KECCAK").unwrap_or_default();
-    if value.is_empty() {
-        return false;
-    }
-    !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
-});
-
 static PRECOMPUTED_SN_KECCAK: Lazy<HashMap<&'static str, Felt>> = Lazy::new(|| {
     let mut map = HashMap::with_capacity(
         account::PRECOMPUTED_NAMES.len()
@@ -61,7 +53,7 @@ fn compute_sn_keccak_bytes(data: &[u8]) -> Felt {
 }
 
 pub fn lookup_sn_keccak(data: &[u8]) -> Option<Felt> {
-    if !*PRECOMPUTED_SN_KECCAK_ENABLED {
+    if !crate::config::precomputed_sn_keccak_enabled() {
         return None;
     }
     let Ok(value) = std::str::from_utf8(data) else {

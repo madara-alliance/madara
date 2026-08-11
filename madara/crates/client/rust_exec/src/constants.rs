@@ -5,7 +5,6 @@
 //! - changing fixed receipt/resources/bouncer weights is a single edit.
 
 use crate::core::gas::GasVector;
-use once_cell::sync::Lazy;
 
 // NOTE: These numbers are currently hardcoded based on an empirical Blockifier run of
 // `settle_trade_v3`. They are a temporary bridge until rust-exec produces receipts/resources
@@ -31,8 +30,8 @@ pub fn settle_trade_v3_fixed_gas_consumed() -> GasVector {
 // Bouncer weights are used to decide block closure. For rust-exec we derive the dominant terms
 // (sierra/proving gas) from empirical Blockifier runs, indexed by positions count.
 //
-// Set `RUST_EXEC_SETTLE_TRADE_V3_POSITIONS=<n>` (1..=150). We pick the nearest available bucket
-// (ties go to the higher bucket). If the env var is unset or invalid, we fall back to defaults.
+// Configure `settle_trade_v3_positions` in the Madara Rust Exec config to pick the nearest available
+// bucket (ties go to the higher bucket). If unset, we fall back to defaults.
 pub const SETTLE_TRADE_V3_BOUNCER_DEFAULT_FIRST_SIERRA_GAS: u64 = 600_124_824;
 pub const SETTLE_TRADE_V3_BOUNCER_DEFAULT_FIRST_PROVING_GAS: u64 = 606_943_554;
 pub const SETTLE_TRADE_V3_BOUNCER_DEFAULT_STEADY_SIERRA_GAS: u64 = 37_282_620;
@@ -112,20 +111,8 @@ fn select_bouncer_profile(positions: u16) -> BouncerGasProfile {
     best
 }
 
-fn parse_positions_env() -> Option<u16> {
-    let raw = std::env::var("RUST_EXEC_SETTLE_TRADE_V3_POSITIONS").ok()?;
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    trimmed.parse::<u16>().ok()
-}
-
-static SELECTED_BOUNCER_PROFILE: Lazy<Option<BouncerGasProfile>> =
-    Lazy::new(|| parse_positions_env().map(select_bouncer_profile));
-
 pub fn settle_trade_v3_bouncer_gas(is_first: bool) -> (u64, u64) {
-    if let Some(profile) = *SELECTED_BOUNCER_PROFILE {
+    if let Some(profile) = crate::config::settle_trade_v3_positions().map(select_bouncer_profile) {
         if is_first {
             (profile.first_sierra, profile.first_proving)
         } else {

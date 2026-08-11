@@ -62,31 +62,16 @@ static INIT: Lazy<()> = Lazy::new(|| {
     crate::init();
 });
 
-static RUST_CONVERSION_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_CONVERSION_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-});
-
-static RUST_EXECUTION_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXECUTION_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-});
-
-static RUST_TX_DIFF_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXEC_TX_DIFF_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-});
-
 fn hardcoded_settle_trade_v3_gas() -> GasVector {
     constants::settle_trade_v3_fixed_gas_consumed()
 }
 
 fn rust_tx_diff_log_enabled(block_number: u64) -> bool {
-    if *RUST_TX_DIFF_LOG_ENABLED {
+    if crate::config::tx_diff_log_enabled() {
         return true;
     }
 
-    std::env::var("RUST_EXEC_DEBUG_BLOCK")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .is_some_and(|debug_block| debug_block == block_number)
+    crate::config::debug_block().is_some_and(|debug_block| debug_block == block_number)
 }
 
 fn log_rust_tx_diff_summary(
@@ -362,7 +347,7 @@ pub fn rust_execute_transaction_blockifier_output<S: StateReader>(
     tx_hash: Felt,
 ) -> RustBlockifierOutput {
     let outcome = rust_execute_transaction_with_info(state, tx, block_context, tx_hash);
-    let output = if *RUST_CONVERSION_LOG_ENABLED {
+    let output = if crate::config::conversion_log_enabled() {
         let start = Instant::now();
         let output = rust_execution_outcome_to_blockifier_output(&outcome);
         let elapsed = start.elapsed();
@@ -615,7 +600,7 @@ pub fn rust_execute_transaction_with_info<S: StateReader>(
     tx_hash: Felt,
 ) -> RustExecutionOutcome {
     let is_settle_trade_v3 = is_settle_trade_v3_invoke(tx);
-    let outcome = if *RUST_EXECUTION_LOG_ENABLED {
+    let outcome = if crate::config::execution_log_enabled() {
         let start = Instant::now();
         let outcome = rust_execute_transaction(state, tx, block_context, tx_hash);
         let elapsed = start.elapsed();

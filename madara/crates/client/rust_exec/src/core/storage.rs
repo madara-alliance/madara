@@ -111,10 +111,6 @@ fn map_base_cached(_kind: &str, variable_name: &str) -> Felt {
     base
 }
 
-static PEDERSEN_CACHE_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXEC_PEDERSEN_CACHE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true)
-});
-
 /// Compute sn_keccak (Starknet's keccak variant).
 ///
 /// This is used by the Cairo compiler to compute base addresses for storage variables.
@@ -343,7 +339,7 @@ pub fn poseidon_hash_many(values: &[Felt]) -> Felt {
 
 pub fn pedersen_hash(left: &Felt, right: &Felt) -> Felt {
     hash_agg::record_pedersen_call(*left, *right);
-    if *PEDERSEN_CACHE_ENABLED {
+    if crate::config::pedersen_cache_enabled() {
         // Fast path: cache hit. Don't count this as hashing time.
         if let Some(value) = PEDERSEN_CACHE.with(|cache| cache.borrow().get(&(*left, *right)).copied()) {
             hash_agg::record_pedersen_cache_hit();
@@ -357,7 +353,7 @@ pub fn pedersen_hash(left: &Felt, right: &Felt) -> Felt {
     // Cache miss: do the expensive hashing and account it in the hashing timer.
     let out = pedersen_hash_inner(left, right);
 
-    if *PEDERSEN_CACHE_ENABLED {
+    if crate::config::pedersen_cache_enabled() {
         PEDERSEN_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             if cache.len() >= PEDERSEN_CACHE_CAPACITY {

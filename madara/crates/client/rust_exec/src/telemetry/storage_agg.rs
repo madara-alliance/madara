@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::env;
-use std::sync::OnceLock;
 
 use crate::core::types::{ContractAddress, StorageKey};
 
@@ -50,13 +48,9 @@ thread_local! {
     static STATS: RefCell<StorageAggStats> = RefCell::new(StorageAggStats::default());
 }
 
-static STORAGE_AGG_ENABLED: OnceLock<bool> = OnceLock::new();
-
 #[inline]
 pub fn enabled() -> bool {
-    *STORAGE_AGG_ENABLED.get_or_init(|| {
-        env::var("STORAGE_AGG_LOGS").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-    })
+    crate::config::storage_agg_logs_enabled()
 }
 
 #[inline]

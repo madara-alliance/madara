@@ -1,34 +1,17 @@
 //! Configuration for Rust native execution.
 //!
-//! The current pipeline initializes RustExec explicitly from block production at startup.
-//! Environment variables remain as a fallback for standalone use and tests, but they are no
-//! longer the primary runtime configuration surface.
+//! The current pipeline initializes RustExec explicitly from Madara block production.
 
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use starknet_types_core::felt::Felt;
 use std::collections::HashSet;
-use std::env;
-
-/// Environment variable name for Account class hash
-pub const ENV_ACCOUNT_CLASS_HASH: &str = "RUST_EXEC_ACCOUNT_CLASS_HASH";
-
-/// Environment variable name for ERC20 class hash
-pub const ENV_ERC20_CLASS_HASH: &str = "RUST_EXEC_ERC20_CLASS_HASH";
-
-/// Environment variable name for Paraclear class hash
-pub const ENV_PARACLEAR_CLASS_HASH: &str = "RUST_EXEC_PARACLEAR_CLASS_HASH";
-
-/// Environment variable name for Paraclear Oracle class hash
-pub const ENV_PARACLEAR_ORACLE_CLASS_HASH: &str = "RUST_EXEC_PARACLEAR_ORACLE_CLASS_HASH";
-
-/// Environment variable name for AssetsManager class hash
-pub const ENV_ASSETS_MANAGER_CLASS_HASH: &str = "RUST_EXEC_ASSETS_MANAGER_CLASS_HASH";
 
 /// Parse a hex string into a Felt.
 ///
 /// Accepts formats:
 /// - `0x123abc...` (with prefix)
 /// - `123abc...` (without prefix)
+#[cfg(test)]
 fn parse_felt(s: &str) -> Result<Felt, String> {
     let hex_str = s.strip_prefix("0x").unwrap_or(s);
 
@@ -53,6 +36,20 @@ pub struct RustExecRuntimeConfig {
     pub assets_manager_class_hash: Felt,
     pub supported_contract_class_hashes: HashSet<Felt>,
     pub settle_trade_fixed_fee: u128,
+    pub no_charge_fee: bool,
+    pub conversion_log: bool,
+    pub execution_log: bool,
+    pub execution_log_inner: bool,
+    pub tx_diff_log: bool,
+    pub debug_block: Option<u64>,
+    pub inner_timing_log: bool,
+    pub ctx_cache: bool,
+    pub pedersen_cache: bool,
+    pub precomputed_sn_keccak: bool,
+    pub hash_agg_logs: bool,
+    pub storage_agg_logs: bool,
+    pub ignore_fee_mismatch: bool,
+    pub settle_trade_v3_positions: Option<u16>,
 }
 
 impl Default for RustExecRuntimeConfig {
@@ -70,101 +67,48 @@ impl Default for RustExecRuntimeConfig {
             assets_manager_class_hash: Felt::ZERO,
             supported_contract_class_hashes: HashSet::new(),
             settle_trade_fixed_fee: crate::constants::SETTLE_TRADE_V3_FIXED_FEE_AMOUNT,
+            no_charge_fee: false,
+            conversion_log: false,
+            execution_log: false,
+            execution_log_inner: false,
+            tx_diff_log: false,
+            debug_block: None,
+            inner_timing_log: false,
+            ctx_cache: true,
+            pedersen_cache: true,
+            precomputed_sn_keccak: false,
+            hash_agg_logs: false,
+            storage_agg_logs: false,
+            ignore_fee_mismatch: false,
+            settle_trade_v3_positions: None,
         }
     }
 }
 
 static RUNTIME_CONFIG: OnceCell<RustExecRuntimeConfig> = OnceCell::new();
 
-/// Parsed class hash for Account, read from environment at startup.
-pub static ACCOUNT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(ENV_ACCOUNT_CLASS_HASH) {
-    Ok(value) => {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        parse_felt(trimmed).ok()
-    }
-    Err(_) => None,
-});
-
 fn nonzero(value: Felt) -> Option<Felt> {
     (value != Felt::ZERO).then_some(value)
 }
 
 pub fn account_class_hash() -> Option<Felt> {
-    runtime_config().and_then(|cfg| nonzero(cfg.account_class_hash)).or(*ACCOUNT_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.account_class_hash))
 }
-
-/// Parsed class hash for ERC20, read from environment at startup.
-pub static ERC20_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(ENV_ERC20_CLASS_HASH) {
-    Ok(value) => {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        parse_felt(trimmed).ok()
-    }
-    Err(_) => None,
-});
 
 pub fn erc20_class_hash() -> Option<Felt> {
-    runtime_config().and_then(|cfg| nonzero(cfg.erc20_class_hash)).or(*ERC20_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.erc20_class_hash))
 }
-
-/// Parsed class hash for Paraclear, read from environment at startup.
-pub static PARACLEAR_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(ENV_PARACLEAR_CLASS_HASH) {
-    Ok(value) => {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        parse_felt(trimmed).ok()
-    }
-    Err(_) => None,
-});
 
 pub fn paraclear_class_hash() -> Option<Felt> {
-    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_class_hash)).or(*PARACLEAR_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_class_hash))
 }
-
-/// Parsed class hash for Paraclear Oracle, read from environment at startup.
-pub static PARACLEAR_ORACLE_CLASS_HASH: Lazy<Option<Felt>> =
-    Lazy::new(|| match env::var(ENV_PARACLEAR_ORACLE_CLASS_HASH) {
-        Ok(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-
-            parse_felt(trimmed).ok()
-        }
-        Err(_) => None,
-    });
 
 pub fn paraclear_oracle_class_hash() -> Option<Felt> {
-    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_oracle_class_hash)).or(*PARACLEAR_ORACLE_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.paraclear_oracle_class_hash))
 }
 
-/// Parsed class hash for AssetsManager, read from environment at startup.
-pub static ASSETS_MANAGER_CLASS_HASH: Lazy<Option<Felt>> =
-    Lazy::new(|| match env::var(ENV_ASSETS_MANAGER_CLASS_HASH) {
-        Ok(value) => {
-            let trimmed = value.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-
-            parse_felt(trimmed).ok()
-        }
-        Err(_) => None,
-    });
-
 pub fn assets_manager_class_hash() -> Option<Felt> {
-    runtime_config().and_then(|cfg| nonzero(cfg.assets_manager_class_hash)).or(*ASSETS_MANAGER_CLASS_HASH)
+    runtime_config().and_then(|cfg| nonzero(cfg.assets_manager_class_hash))
 }
 
 pub fn supports_runtime_class_hash(class_hash: Felt) -> bool {
@@ -179,15 +123,75 @@ pub fn initialize_runtime_config(config: RustExecRuntimeConfig) {
     let _ = RUNTIME_CONFIG.set(config);
 }
 
+fn runtime_bool(get: impl FnOnce(&RustExecRuntimeConfig) -> bool, default: bool) -> bool {
+    runtime_config().map(get).unwrap_or(default)
+}
+
+pub fn no_charge_fee_enabled() -> bool {
+    runtime_bool(|cfg| cfg.no_charge_fee, false)
+}
+
+pub fn conversion_log_enabled() -> bool {
+    runtime_bool(|cfg| cfg.conversion_log, false)
+}
+
+pub fn execution_log_enabled() -> bool {
+    runtime_bool(|cfg| cfg.execution_log, false)
+}
+
+pub fn execution_log_inner_enabled() -> bool {
+    runtime_bool(|cfg| cfg.execution_log_inner, false)
+}
+
+pub fn tx_diff_log_enabled() -> bool {
+    runtime_bool(|cfg| cfg.tx_diff_log, false)
+}
+
+pub fn debug_block() -> Option<u64> {
+    runtime_config().and_then(|cfg| cfg.debug_block)
+}
+
+pub fn inner_timing_log_enabled() -> bool {
+    runtime_bool(|cfg| cfg.inner_timing_log, false)
+}
+
+pub fn ctx_cache_enabled() -> bool {
+    runtime_bool(|cfg| cfg.ctx_cache, true)
+}
+
+pub fn pedersen_cache_enabled() -> bool {
+    runtime_bool(|cfg| cfg.pedersen_cache, true)
+}
+
+pub fn precomputed_sn_keccak_enabled() -> bool {
+    runtime_bool(|cfg| cfg.precomputed_sn_keccak, false)
+}
+
+pub fn hash_agg_logs_enabled() -> bool {
+    runtime_bool(|cfg| cfg.hash_agg_logs, false)
+}
+
+pub fn storage_agg_logs_enabled() -> bool {
+    runtime_bool(|cfg| cfg.storage_agg_logs, false)
+}
+
+pub fn ignore_fee_mismatch() -> bool {
+    runtime_bool(|cfg| cfg.ignore_fee_mismatch, false)
+}
+
+pub fn settle_trade_v3_positions() -> Option<u16> {
+    runtime_config().and_then(|cfg| cfg.settle_trade_v3_positions)
+}
+
 /// Check if Rust verification is enabled for any contracts.
 ///
 /// Returns `true` if at least one contract class hash is configured.
 pub fn is_verification_enabled() -> bool {
-    ACCOUNT_CLASS_HASH.is_some()
-        || ERC20_CLASS_HASH.is_some()
-        || PARACLEAR_CLASS_HASH.is_some()
-        || PARACLEAR_ORACLE_CLASS_HASH.is_some()
-        || ASSETS_MANAGER_CLASS_HASH.is_some()
+    account_class_hash().is_some()
+        || erc20_class_hash().is_some()
+        || paraclear_class_hash().is_some()
+        || paraclear_oracle_class_hash().is_some()
+        || assets_manager_class_hash().is_some()
 }
 
 /// Log the current configuration status.

@@ -301,37 +301,79 @@ pub(crate) struct RustExecRoutingConfig {
     pub rust_batch_size: usize,
     /// Max Blockifier txs per batcher cycle (default placeholder: 10).
     pub blockifier_batch_size: usize,
+    pub runtime_options: RustExecRuntimeOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RustExecRuntimeOptions {
+    pub conversion_log: bool,
+    pub execution_log: bool,
+    pub execution_log_inner: bool,
+    pub tx_diff_log: bool,
+    pub debug_block: Option<u64>,
+    pub inner_timing_log: bool,
+    pub ctx_cache: bool,
+    pub pedersen_cache: bool,
+    pub precomputed_sn_keccak: bool,
+    pub hash_agg_logs: bool,
+    pub storage_agg_logs: bool,
+    pub ignore_fee_mismatch: bool,
+    pub settle_trade_v3_positions: Option<u16>,
+}
+
+impl Default for RustExecRuntimeOptions {
+    fn default() -> Self {
+        Self {
+            conversion_log: false,
+            execution_log: false,
+            execution_log_inner: false,
+            tx_diff_log: false,
+            debug_block: None,
+            inner_timing_log: false,
+            ctx_cache: true,
+            pedersen_cache: true,
+            precomputed_sn_keccak: false,
+            hash_agg_logs: false,
+            storage_agg_logs: false,
+            ignore_fee_mismatch: false,
+            settle_trade_v3_positions: None,
+        }
+    }
 }
 
 impl Default for RustExecRoutingConfig {
     fn default() -> Self {
         Self {
-            executor_addresses: HashSet::from([Felt::from_hex_unchecked(
-                "0x012aa6059457fc2d02240962a6573e051fa919632853e6ba70207d7cef6be4c3",
-            )]),
-            supported_selectors: HashSet::from([
-                Felt::from_hex_unchecked(
-                    "0x2b7b96e99d84791280de8fc7f8c89f911ca32ac738b79907fe65be82e18478c", // settle_trade_v3
-                ),
-                Felt::from_hex_unchecked(
-                    "0x023afe20cbd1d25f1c7967e386d568da30338747dc10f5b1ad54e7e839f7fa01", // set_prices_and_funding_snapshot
-                ),
-            ]),
-            supported_class_hashes: HashSet::from([
-                Felt::from_hex_unchecked("0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a"),
-                Felt::from_hex_unchecked("0x00049e91ccb24fcf4acec4a24896092d9387a97865dcb0e6f98503399564b452"),
-            ]),
-            rust_batch_size: 30,
-            blockifier_batch_size: 10,
+            executor_addresses: HashSet::new(),
+            supported_selectors: mc_rust_exec::supported_selectors(),
+            supported_class_hashes: mc_rust_exec::supported_class_hashes(),
+            rust_batch_size: 1,
+            blockifier_batch_size: 1,
+            runtime_options: RustExecRuntimeOptions::default(),
         }
     }
 }
 
 pub(crate) fn build_rust_exec_runtime_config(
     routing_cfg: &RustExecRoutingConfig,
+    no_charge_fee: bool,
 ) -> mc_rust_exec::RustExecRuntimeConfig {
     mc_rust_exec::RustExecRuntimeConfig {
         supported_contract_class_hashes: routing_cfg.supported_class_hashes.clone(),
+        no_charge_fee,
+        conversion_log: routing_cfg.runtime_options.conversion_log,
+        execution_log: routing_cfg.runtime_options.execution_log,
+        execution_log_inner: routing_cfg.runtime_options.execution_log_inner,
+        tx_diff_log: routing_cfg.runtime_options.tx_diff_log,
+        debug_block: routing_cfg.runtime_options.debug_block,
+        inner_timing_log: routing_cfg.runtime_options.inner_timing_log,
+        ctx_cache: routing_cfg.runtime_options.ctx_cache,
+        pedersen_cache: routing_cfg.runtime_options.pedersen_cache,
+        precomputed_sn_keccak: routing_cfg.runtime_options.precomputed_sn_keccak,
+        hash_agg_logs: routing_cfg.runtime_options.hash_agg_logs,
+        storage_agg_logs: routing_cfg.runtime_options.storage_agg_logs,
+        ignore_fee_mismatch: routing_cfg.runtime_options.ignore_fee_mismatch,
+        settle_trade_v3_positions: routing_cfg.runtime_options.settle_trade_v3_positions,
         ..Default::default()
     }
 }
@@ -426,8 +468,17 @@ mod tests {
             ..Default::default()
         };
 
-        let runtime_cfg = build_rust_exec_runtime_config(&routing_cfg);
+        let runtime_cfg = build_rust_exec_runtime_config(&routing_cfg, true);
 
         assert_eq!(runtime_cfg.supported_contract_class_hashes, HashSet::from([class_hash_a, class_hash_b]));
+        assert!(runtime_cfg.no_charge_fee);
+    }
+
+    #[test]
+    fn routing_config_derives_supported_contracts_from_manifest() {
+        let routing_cfg = RustExecRoutingConfig::default();
+
+        assert_eq!(routing_cfg.supported_class_hashes, mc_rust_exec::supported_class_hashes());
+        assert_eq!(routing_cfg.supported_selectors, mc_rust_exec::supported_selectors());
     }
 }

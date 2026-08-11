@@ -34,10 +34,6 @@ pub(crate) use names::PRECOMPUTED_NAMES;
 pub(crate) use selectors::FUNCTION_NAMES;
 use selectors::{get_function_name as selector_function_name, settle_trade_v3_selector};
 
-static INNER_TIMING_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXEC_INNER_TIMING_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-});
-
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Paraclear";
 
@@ -67,10 +63,6 @@ static INVARIANTS_PERP_ASSET_INFO_BASE: Lazy<Felt> =
 static PERP_MARKET_FEE_CONFIG_V2_BASE: Lazy<Felt> =
     Lazy::new(|| sn_keccak("perpetual_future_market_fee_config_v2".as_bytes()));
 static PERP_MAX_FEE_RATE_BASE: Lazy<Felt> = Lazy::new(|| sn_keccak("perpetual_future_max_fee_rate".as_bytes()));
-
-static RUST_EXECUTION_LOG_INNER_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXECUTION_LOG_INNER").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
-});
 
 #[derive(Clone, Copy, Debug)]
 enum InnerTimingField {
@@ -131,7 +123,7 @@ impl InnerTiming {
     }
 
     fn log(&self) {
-        if !*INNER_TIMING_LOG_ENABLED {
+        if !crate::config::inner_timing_log_enabled() {
             return;
         }
 
@@ -176,7 +168,7 @@ struct InnerTimingGuard {
 
 impl InnerTimingGuard {
     fn new() -> Self {
-        if *RUST_EXECUTION_LOG_INNER_ENABLED {
+        if crate::config::execution_log_inner_enabled() {
             INNER_TIMING.with(|slot| {
                 *slot.borrow_mut() = Some(InnerTiming::default());
             });
@@ -200,7 +192,7 @@ impl Drop for InnerTimingGuard {
 }
 
 fn set_inner_timing_context(trade: &TradeRequestV3) {
-    if !*RUST_EXECUTION_LOG_INNER_ENABLED {
+    if !crate::config::execution_log_inner_enabled() {
         return;
     }
     INNER_TIMING.with(|slot| {
@@ -211,7 +203,7 @@ fn set_inner_timing_context(trade: &TradeRequestV3) {
 }
 
 fn time_inner<R, F: FnOnce() -> R>(field: InnerTimingField, f: F) -> R {
-    if !*RUST_EXECUTION_LOG_INNER_ENABLED {
+    if !crate::config::execution_log_inner_enabled() {
         return f();
     }
     let start = Instant::now();

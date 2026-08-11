@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::env;
-use std::sync::OnceLock;
 
 use starknet_types_core::felt::Felt;
 
@@ -58,12 +56,9 @@ thread_local! {
     static STATS: RefCell<HashAggStats> = RefCell::new(HashAggStats::default());
 }
 
-static HASH_AGG_ENABLED: OnceLock<bool> = OnceLock::new();
-
 #[inline]
 pub fn enabled() -> bool {
-    *HASH_AGG_ENABLED
-        .get_or_init(|| env::var("HASH_AGG_LOGS").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false))
+    crate::config::hash_agg_logs_enabled()
 }
 
 #[inline]

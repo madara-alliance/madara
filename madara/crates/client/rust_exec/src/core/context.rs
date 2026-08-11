@@ -4,7 +4,6 @@
 //! side effects during contract execution, then produces a final result.
 
 use indexmap::IndexMap;
-use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -15,10 +14,6 @@ use crate::core::types::{
 };
 use crate::telemetry::hash_agg::{self, CtxReadSource};
 use crate::telemetry::storage_agg::{self, CtxReadLayer};
-
-static CTX_READ_CACHE_ENABLED: Lazy<bool> = Lazy::new(|| {
-    std::env::var("RUST_EXEC_CTX_CACHE").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(true)
-});
 
 /// Tracks all state changes during contract execution.
 #[derive(Debug, Default)]
@@ -94,7 +89,7 @@ impl ExecutionContext {
     ) -> Result<Felt, StateError> {
         self.storage_reads_total = self.storage_reads_total.saturating_add(1);
         let storage_agg_enabled = storage_agg::enabled();
-        let read_cache_enabled = *CTX_READ_CACHE_ENABLED;
+        let read_cache_enabled = crate::config::ctx_cache_enabled();
         let start = if storage_agg_enabled { Some(Instant::now()) } else { None };
         // Check write cache first, then per-tx read cache (single timing bucket).
         enum CacheHit {

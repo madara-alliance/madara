@@ -6,17 +6,8 @@ use blockifier::transaction::objects::TransactionExecutionInfo;
 use mp_convert::{Felt, ToFelt};
 use num_bigint::BigInt;
 use num_traits::Zero;
-use once_cell::sync::Lazy;
 
 const MAX_SAMPLES: usize = 25;
-
-static IGNORE_FEE_MISMATCH: Lazy<bool> = Lazy::new(|| {
-    let value = std::env::var("RUST_EXEC_IGNORE_FEE_MISMATCH").unwrap_or_default();
-    if value.is_empty() {
-        return false;
-    }
-    !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
-});
 
 fn felt_hex(f: Felt) -> String {
     format!("{:#x}", f)
@@ -303,7 +294,7 @@ pub fn compare_tx_state_maps<RustErr: std::fmt::Display>(
         return;
     }
 
-    if *IGNORE_FEE_MISMATCH {
+    if crate::config::ignore_fee_mismatch() {
         if let Some((contract, a, b)) = should_ignore_fee_mismatch(rust_maps, block_maps) {
             tracing::info!("TX_COMPARISON: Match");
             tracing::info!("TX_COMPARISON_DETAIL: ignored_fee_mismatch=true contract={} key_a={} rust_a={} blockifier_a={} delta_a={} key_b={} rust_b={} blockifier_b={} delta_b={}",

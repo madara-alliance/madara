@@ -1,10 +1,6 @@
 use super::*;
 
 impl BlockProductionTask {
-    fn env_config_value(name: &str) -> String {
-        std::env::var(name).unwrap_or_else(|_| "<unset>".to_string())
-    }
-
     fn sorted_felt_hex_values(values: &HashSet<Felt>) -> Vec<String> {
         let mut values = values.iter().map(|value| format!("{:#x}", value)).collect::<Vec<_>>();
         values.sort();
@@ -28,7 +24,7 @@ impl BlockProductionTask {
 
         tracing::info!(
             target: "RUST_EXEC",
-            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  ignored_storage_addresses={:?}\n  MADARA_RUST_EXEC_ROUTING_CONFIG={}\n  MADARA_COMPARATOR_IGNORE_FEE_TOKEN_MISMATCH={}\n  MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE={}\n  RUST_EXECUTION_LOG={}\n  RUST_EXEC_TX_DIFF_LOG={}\n  RUST_EXEC_DEBUG_BLOCK={}\n  RUST_EXEC_INNER_TIMING_LOG={}\n  RUST_EXEC_CTX_CACHE={}\n  RUST_EXEC_PEDERSEN_CACHE={}\n  RUST_EXEC_PRECOMPUTED_SN_KECCAK={}",
+            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  ignored_storage_addresses={:?}\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  settle_trade_v3_positions={:?}",
             self.fallback.startup_mode,
             self.fallback.mode,
             self.fallback.startup_recovery_active,
@@ -43,16 +39,20 @@ impl BlockProductionTask {
             supported_class_hashes.len(),
             supported_class_hashes,
             ignored_storage_addresses,
-            Self::env_config_value("MADARA_RUST_EXEC_ROUTING_CONFIG"),
-            Self::env_config_value("MADARA_COMPARATOR_IGNORE_FEE_TOKEN_MISMATCH"),
-            Self::env_config_value("MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE"),
-            Self::env_config_value("RUST_EXECUTION_LOG"),
-            Self::env_config_value("RUST_EXEC_TX_DIFF_LOG"),
-            Self::env_config_value("RUST_EXEC_DEBUG_BLOCK"),
-            Self::env_config_value("RUST_EXEC_INNER_TIMING_LOG"),
-            Self::env_config_value("RUST_EXEC_CTX_CACHE"),
-            Self::env_config_value("RUST_EXEC_PEDERSEN_CACHE"),
-            Self::env_config_value("RUST_EXEC_PRECOMPUTED_SN_KECCAK"),
+            self.no_charge_fee,
+            self.routing_cfg.runtime_options.conversion_log,
+            self.routing_cfg.runtime_options.execution_log,
+            self.routing_cfg.runtime_options.execution_log_inner,
+            self.routing_cfg.runtime_options.tx_diff_log,
+            self.routing_cfg.runtime_options.debug_block,
+            self.routing_cfg.runtime_options.inner_timing_log,
+            self.routing_cfg.runtime_options.ctx_cache,
+            self.routing_cfg.runtime_options.pedersen_cache,
+            self.routing_cfg.runtime_options.precomputed_sn_keccak,
+            self.routing_cfg.runtime_options.hash_agg_logs,
+            self.routing_cfg.runtime_options.storage_agg_logs,
+            self.routing_cfg.runtime_options.ignore_fee_mismatch,
+            self.routing_cfg.runtime_options.settle_trade_v3_positions,
         );
     }
 
@@ -393,7 +393,7 @@ impl BlockProductionTask {
             self.execution_mode_tx.clone(),
             self.execution_mode_rx.clone(),
             self.execution_epoch_rx.clone(),
-            crate::util::build_rust_exec_runtime_config(&self.routing_cfg),
+            crate::util::build_rust_exec_runtime_config(&self.routing_cfg, self.no_charge_fee),
         )
         .context("Starting executor thread")?;
 

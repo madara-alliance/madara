@@ -16,11 +16,7 @@ use crate::core::storage::short_string_to_felt;
 use crate::core::types::{CallExecutionResult, ContractAddress, ExecutionResult, Nonce, StateDiff};
 
 fn no_charge_fee_enabled() -> bool {
-    let value = std::env::var("NO_CHARGE_FEE").unwrap_or_default();
-    if value.is_empty() {
-        return false;
-    }
-    !matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no" | "off")
+    crate::config::no_charge_fee_enabled()
 }
 
 /// A single call within a transaction.

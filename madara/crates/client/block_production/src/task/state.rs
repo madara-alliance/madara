@@ -566,6 +566,11 @@ impl BlockProductionTask {
         self
     }
 
+    pub fn with_rust_exec_runtime_options(mut self, runtime_options: util::RustExecRuntimeOptions) -> Self {
+        self.routing_cfg.runtime_options = runtime_options;
+        self
+    }
+
     /// Test-only: force `run_comparator_for_block` to return an error on the next call.
     #[cfg(test)]
     pub fn with_test_force_comparator_error(mut self) -> Self {
