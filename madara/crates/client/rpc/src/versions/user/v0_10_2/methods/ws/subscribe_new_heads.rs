@@ -115,7 +115,7 @@ pub async fn subscribe_new_heads(
 
 /// Resolves the first confirmed block to emit before accepting the subscription.
 fn initial_head_block_n(starknet: &crate::Starknet, block_id: BlockId) -> Result<u64, StarknetWsApiError> {
-    match block_id {
+    Ok(match block_id {
         BlockId::Number(block_n) => {
             let block_latest = starknet.backend.latest_confirmed_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
 
@@ -149,7 +149,7 @@ fn initial_head_block_n(starknet: &crate::Starknet, block_id: BlockId) -> Result
         BlockId::Tag(BlockTag::L1Accepted) => {
             return Err(StarknetWsApiError::Pending);
         }
-    }
+    })
 }
 
 async fn send_block_header(
