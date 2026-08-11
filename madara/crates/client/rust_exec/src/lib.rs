@@ -25,6 +25,9 @@ pub use config::{
     RustExecRuntimeConfig,
 };
 pub use context::ExecutionContext;
+pub use contracts::paradex::supported::{
+    supported_class_hashes, supported_contracts, supported_selectors, SupportedContract, SupportedFunction,
+};
 pub use contracts::{ContractRegistry, ExecutionError};
 pub use execution::{execute_transaction, execute_transaction_with_timestamp};
 pub use gas::{BlockContext, FeeType, GasCosts, GasTracker, GasVector, ResourceBounds};
