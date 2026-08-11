@@ -6,6 +6,16 @@ use crate::core::storage::{
     storage_key_for_map, storage_key_for_map2, storage_key_for_substorage_map2_poseidon,
     storage_key_for_substorage_map_poseidon, storage_key_for_substorage_var_poseidon, storage_key_for_variable,
 };
+use crate::core::types::ContractAddress;
+use starknet_types_core::felt::Felt;
+
+fn felt_hex(value: &str) -> Felt {
+    Felt::from_hex_unchecked(value)
+}
+
+fn addr_hex(value: &str) -> ContractAddress {
+    ContractAddress(felt_hex(value))
+}
 
 #[test]
 fn test_perp_map_key_legacy_pedersen() {
@@ -84,4 +94,34 @@ fn test_resolve_perp_balance_base() {
     let second =
         paraclear::resolve_perp_balance_base_for_test(&state, &mut ctx, contract, account, market).expect("base");
     assert_eq!(first, second);
+}
+
+#[test]
+fn test_mainnet_perp_balance_base_matches_cairo_map2_key() {
+    let state = MockStateReader::new();
+    let contract = addr(0x301);
+    let maker = addr_hex("0x7158925a5820b47914ab2273d6c5b245efce5ccb51eb03649914c326f4a4da7");
+    let taker = addr_hex("0x7a11fc1604320402a07cb00a1e22150ebc81f7ef8b120c2bc9995ba6f3ef18a");
+    let market = felt_hex("0x4254432d5553442d3741554732362d36333030302d50");
+    let mut ctx = crate::ExecutionContext::new();
+
+    for account in [maker, taker] {
+        let got =
+            paraclear::resolve_perp_balance_base_for_test(&state, &mut ctx, contract, account, market).expect("base");
+        let expected = storage_key_for_map2("Paraclear_perpetual_asset_balance", account.0, market);
+        assert_eq!(got, expected);
+    }
+}
+
+#[test]
+fn test_mainnet_token_balance_base_matches_cairo_map2_key() {
+    let state = MockStateReader::new();
+    let contract = addr(0x301);
+    let account = addr_hex("0x7158925a5820b47914ab2273d6c5b245efce5ccb51eb03649914c326f4a4da7");
+    let token = addr_hex("0x47adc7dee88eec362d71a52c25d40559a921434b2d90e75b6a4a6e4e9fb9ab1");
+    let mut ctx = crate::ExecutionContext::new();
+
+    let got = paraclear::resolve_token_balance_base_for_test(&state, &mut ctx, contract, account, token).expect("base");
+    let expected = storage_key_for_map2("Paraclear_token_asset_balance", account.0, token.0);
+    assert_eq!(got, expected);
 }

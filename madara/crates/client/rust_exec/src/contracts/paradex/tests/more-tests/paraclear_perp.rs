@@ -4,7 +4,8 @@ use crate::contracts::paradex::paraclear;
 use crate::contracts::paradex::schema::paraclear_types::{FeeWithCapRequest, OrderCategory, OrderV3, TradeRequestV3};
 use crate::core::state::mock::MockStateReader;
 use crate::core::storage::{
-    event_selector, function_selector, storage_key_for_map, storage_key_for_map2, storage_key_with_offset,
+    event_selector, function_selector, storage_key_for_map, storage_key_for_map2, storage_key_for_map_poseidon,
+    storage_key_with_offset,
 };
 use crate::core::types::ContractAddress;
 
@@ -576,7 +577,6 @@ fn test_settle_perp_option_asset_kind() {
         0,
         true,
     );
-
     let maker = addr(0x2171);
     let taker = addr(0x2172);
     set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 5000 * SCALE);
@@ -601,6 +601,86 @@ fn test_settle_perp_option_asset_kind() {
     let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
 
     assert_eq!(result.call_result.retdata, vec![felt(1)]);
+}
+
+#[test]
+fn test_settle_perp_option_reduce_existing_position_persists_balance() {
+    let mut state = MockStateReader::new();
+    let contract = addr(0x2074);
+    let assets_manager = addr(0x2075);
+    let oracle = addr(0x2076);
+    let market = felt(0xabc);
+    let settlement_token = addr(0x2077);
+    let settlement_name = short_str("USDC");
+
+    setup_perp_env(
+        &mut state,
+        contract,
+        assets_manager,
+        oracle,
+        market,
+        settlement_token,
+        settlement_name,
+        99_000_000_000,
+        1 * SCALE,
+        0,
+        0,
+        true,
+    );
+    set_option_asset_direct(
+        &mut state,
+        assets_manager,
+        market,
+        short_str("BTC"),
+        settlement_name,
+        felt(1),
+        felt(2),
+        i128_to_felt(63_000 * SCALE),
+    );
+    let option_base = storage_key_for_map_poseidon("option_asset", market);
+    state.set_storage(assets_manager, storage_key_with_offset(option_base, 6), felt(1_786_080_000));
+    set_oracle_latest_tick_data(
+        &mut state,
+        oracle,
+        short_str("BTC"),
+        short_str("BTC"),
+        i128_to_felt(119_000 * SCALE),
+        felt(8),
+    );
+
+    let maker = addr(0x2174);
+    let taker = addr(0x2175);
+    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 5000 * SCALE);
+    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 5000 * SCALE);
+    set_perp_balance(&mut state, contract, maker, market, -4_600_000, -4_170_311_953, 0);
+    set_perp_balance(&mut state, contract, taker, market, 4_600_000, 4_170_311_953, 0);
+
+    let trade = build_trade(
+        maker,
+        taker,
+        market,
+        felt(1),
+        felt(2),
+        2_700_000,
+        99_000_000_000,
+        false,
+        true,
+        OrderCategory::Unspecified,
+        OrderCategory::Unspecified,
+    );
+
+    let calldata = super::super::fixtures::encode_trade_request_v3_for_test(&trade);
+    let selector = function_selector("settle_trade_v3");
+    let result = paraclear::execute(&state, contract, selector, &calldata, addr(0x999)).expect("execute");
+
+    assert_eq!(result.call_result.retdata, vec![felt(1)]);
+    let maker_base = storage_key_for_map2("Paraclear_perpetual_asset_balance", maker.0, market);
+    let taker_base = storage_key_for_map2("Paraclear_perpetual_asset_balance", taker.0, market);
+    let paraclear_diff = result.state_diff.storage_updates.get(&contract).expect("paraclear writes");
+    assert_eq!(paraclear_diff.get(&storage_key_with_offset(maker_base, 1)), Some(&i128_to_felt(-1_900_000)));
+    assert_eq!(paraclear_diff.get(&storage_key_with_offset(maker_base, 2)), Some(&i128_to_felt(-1_722_520_120)));
+    assert_eq!(paraclear_diff.get(&storage_key_with_offset(taker_base, 1)), Some(&i128_to_felt(1_900_000)));
+    assert_eq!(paraclear_diff.get(&storage_key_with_offset(taker_base, 2)), Some(&i128_to_felt(1_722_520_120)));
 }
 
 #[test]

@@ -10,7 +10,8 @@ use crate::contracts::ExecutionError;
 use crate::core::context::ExecutionContext;
 use crate::core::state::StateReader;
 use crate::core::storage::{
-    short_string_to_felt, sn_keccak, storage_key_for_map_poseidon, storage_key_for_map_poseidon_with_base_named,
+    short_string_to_felt, sn_keccak, storage_key_for_map, storage_key_for_map_poseidon,
+    storage_key_for_map_poseidon_with_base_named, storage_key_for_map_with_base_named,
     storage_key_for_substorage_map_poseidon, storage_key_for_substorage_map_poseidon_add,
     storage_key_for_substorage_map_poseidon_add_with_var_named, storage_key_for_substorage_map_poseidon_hash,
     storage_key_for_substorage_map_poseidon_hash_with_var_named,
@@ -453,6 +454,8 @@ fn read_component_map_base(
     key: Felt,
 ) -> Result<StorageKey, ExecutionError> {
     let candidates = [
+        storage_key_for_map_with_base_named(plain_var, key, plain_name),
+        storage_key_for_map_with_base_named(dotted_var, key, dotted_name),
         storage_key_for_map_poseidon_with_base_named(plain_var, key, plain_name),
         storage_key_for_map_poseidon_with_base_named(dotted_var, key, dotted_name),
         storage_key_for_substorage_map_poseidon_with_var_named(component_base, plain_var, key, plain_name),
@@ -468,7 +471,7 @@ fn read_component_map_base(
             return Ok(base);
         }
     }
-    Ok(candidates[2])
+    Ok(candidates[4])
 }
 
 #[allow(dead_code)]
@@ -477,8 +480,10 @@ fn read_component_map_base_with_fallback(
     plain_name: &str,
     dotted_name: &str,
     key: Felt,
-) -> [StorageKey; 8] {
+) -> [StorageKey; 10] {
     [
+        storage_key_for_map(plain_name, key),
+        storage_key_for_map(dotted_name, key),
         storage_key_for_map_poseidon(plain_name, key),
         storage_key_for_map_poseidon(dotted_name, key),
         storage_key_for_substorage_map_poseidon(component_base, plain_name, key),

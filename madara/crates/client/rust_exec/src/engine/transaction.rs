@@ -130,22 +130,34 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
 
         // Execute all calls and collect state changes + events
         let mut all_events = Vec::new();
+        let mut all_messages = Vec::new();
+        let mut retdata = Vec::new();
         for call in &tx.calls {
             // Execute each call and collect its state diff + events
             let call_result = self.execute_single_call(call, tx.sender_address)?;
+            let call_failed = call_result.call_result.failed;
+            let revert_error = call_result.revert_error.clone();
 
             // Merge state diff
             combined_state_diff.merge(call_result.state_diff);
 
             // Collect events
             all_events.extend(call_result.call_result.events);
+            all_messages.extend(call_result.call_result.l2_to_l1_messages);
+            retdata = call_result.call_result.retdata;
+
+            if call_failed || revert_error.is_some() {
+                return Err(ExecutionError::ExecutionFailed(
+                    revert_error.unwrap_or_else(|| "Rust inner call failed".to_string()),
+                ));
+            }
         }
 
         // Build execute call result with aggregated events
         let execute_result = CallExecutionResult {
-            retdata: vec![], // Transaction-level retdata not needed
+            retdata,
             events: all_events,
-            l2_to_l1_messages: vec![],
+            l2_to_l1_messages: all_messages,
             failed: false,
             gas_consumed: 0, // Tracked separately in gas_tracker
         };
@@ -216,13 +228,14 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             .get_class_hash_at(call.to)?
             .ok_or_else(|| ExecutionError::ExecutionFailed(format!("Contract not deployed: {:?}", call.to)))?;
         // Try to execute with our Rust implementation
-        if let Some(result) = crate::contracts::ContractRegistry::execute(
+        if let Some(result) = crate::contracts::ContractRegistry::execute_with_timestamp(
             self.state,
             call.to,
             class_hash,
             call.selector,
             &call.calldata,
             caller, // ← FIXED: Pass the real caller (account), not the contract
+            self.block_context.block_timestamp,
         ) {
             let exec_result = match result {
                 Ok(ok) => ok,
@@ -237,18 +250,10 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             return Ok(exec_result);
         }
 
-        // Contract not supported - return empty result
-        Ok(ExecutionResult {
-            call_result: CallExecutionResult {
-                retdata: vec![],
-                events: vec![],
-                l2_to_l1_messages: vec![],
-                failed: false,
-                gas_consumed: 0,
-            },
-            state_diff: StateDiff::default(),
-            revert_error: None,
-        })
+        Err(ExecutionError::ExecutionFailed(format!(
+            "Unsupported Rust Exec call: contract={:#x} class_hash={:#x} selector={:#x}",
+            call.to.0, class_hash, call.selector
+        )))
     }
 
     /// Transfer fee from sender to sequencer.
@@ -287,6 +292,7 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::state::mock::MockStateReader;
 
     #[test]
     fn test_call_creation() {
@@ -296,5 +302,29 @@ mod tests {
             calldata: vec![Felt::from(3u64)],
         };
         assert_eq!(call.calldata.len(), 1);
+    }
+
+    #[test]
+    fn unsupported_call_errors_instead_of_fee_only_success() {
+        let mut state = MockStateReader::new();
+        let sender = ContractAddress(Felt::from(0x100u64));
+        let target = ContractAddress(Felt::from(0x200u64));
+        state.set_class_hash(target, Felt::from(0xdeadbeefu64));
+
+        let block_context = BlockContext::default();
+        let mut executor = TransactionExecutor::new(&state, &block_context);
+        let tx = InvokeTransaction {
+            tx_hash: Felt::from(0x123u64),
+            version: Felt::ZERO,
+            sender_address: sender,
+            calls: vec![Call { to: target, selector: Felt::from(0x456u64), calldata: Vec::new() }],
+            signature: Vec::new(),
+            nonce: Nonce(Felt::ZERO),
+            fee_type: FeeType::Strk,
+            resource_bounds: ResourceBounds::default(),
+        };
+
+        let error = executor.execute_invoke(&tx, Felt::ZERO).expect_err("unsupported call must fail");
+        assert!(error.to_string().contains("Unsupported Rust Exec call"), "unexpected error: {error}");
     }
 }

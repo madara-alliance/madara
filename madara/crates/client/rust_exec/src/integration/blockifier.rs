@@ -55,6 +55,7 @@ use crate::{
     },
     integration::verification::VerificationError,
     trace::{build_transaction_execution_info, RustCallType, RustEntryPointType, RustTransactionExecutionInfo},
+    ExecutionError,
 };
 
 static INIT: Lazy<()> = Lazy::new(|| {
@@ -69,8 +70,106 @@ static RUST_EXECUTION_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
     std::env::var("RUST_EXECUTION_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
 });
 
+static RUST_TX_DIFF_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
+    std::env::var("RUST_EXEC_TX_DIFF_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
+});
+
 fn hardcoded_settle_trade_v3_gas() -> GasVector {
     constants::settle_trade_v3_fixed_gas_consumed()
+}
+
+fn rust_tx_diff_log_enabled(block_number: u64) -> bool {
+    if *RUST_TX_DIFF_LOG_ENABLED {
+        return true;
+    }
+
+    std::env::var("RUST_EXEC_DEBUG_BLOCK")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|debug_block| debug_block == block_number)
+}
+
+fn log_rust_tx_diff_summary(
+    block_number: u64,
+    tx_hash: Felt,
+    sender_address: Felt,
+    calls: &[Call],
+    rust_result: &crate::engine::transaction::TransactionExecutionResult,
+) {
+    if !rust_tx_diff_log_enabled(block_number) {
+        return;
+    }
+
+    let settle_selector = function_selector("settle_trade_v3");
+    let settle_calls = calls.iter().filter(|call| call.selector == settle_selector).count();
+    let routed_contract_entries = calls
+        .iter()
+        .filter(|call| call.selector == settle_selector)
+        .map(|call| rust_result.state_diff.storage_updates.get(&call.to).map_or(0, |updates| updates.len()))
+        .sum::<usize>();
+    let total_storage_entries =
+        rust_result.state_diff.storage_updates.values().map(|updates| updates.len()).sum::<usize>();
+    let (event_count, failed, retdata) =
+        rust_result.execute_call_info.as_ref().map_or((0, false, Vec::new()), |call_info| {
+            (call_info.events.len(), call_info.failed, call_info.retdata.clone())
+        });
+    let call_summary = calls
+        .iter()
+        .map(|call| format!("{:#x}:{:#x}:{}", call.to.0, call.selector, call.calldata.len()))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    tracing::info!(
+        "rust_exec_tx_diff_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
+settle_calls={} total_storage_entries={} routed_contract_entries={} nonce_updates={} event_count={} failed={} \
+retdata={:?} fee_amount={} revert_error={:?} call_summary={}",
+        block_number,
+        tx_hash,
+        sender_address,
+        calls.len(),
+        settle_calls,
+        total_storage_entries,
+        routed_contract_entries,
+        rust_result.state_diff.address_to_nonce.len(),
+        event_count,
+        failed,
+        retdata,
+        rust_result.actual_fee,
+        rust_result.revert_error,
+        call_summary
+    );
+}
+
+fn log_rust_tx_failure_summary(
+    block_number: u64,
+    tx_hash: Felt,
+    sender_address: Felt,
+    calls: &[Call],
+    error: &ExecutionError,
+) {
+    if !rust_tx_diff_log_enabled(block_number) {
+        return;
+    }
+
+    let settle_selector = function_selector("settle_trade_v3");
+    let settle_calls = calls.iter().filter(|call| call.selector == settle_selector).count();
+    let call_summary = calls
+        .iter()
+        .map(|call| format!("{:#x}:{:#x}:{}", call.to.0, call.selector, call.calldata.len()))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    tracing::info!(
+        "rust_exec_tx_failure_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
+settle_calls={} error={} call_summary={}",
+        block_number,
+        tx_hash,
+        sender_address,
+        calls.len(),
+        settle_calls,
+        error,
+        call_summary
+    );
 }
 
 /// Adapter that allows a Blockifier `StateReader` (including `CachedState`) to be used with
@@ -917,11 +1016,23 @@ fn execute_full_invoke_transaction<S: StateReader>(
     let fee_type = FeeType::Strk;
     let resource_bounds = ResourceBounds::default();
 
+    let calls = match parse_calls_from_invoke_calldata(calldata) {
+        Ok(calls) => calls,
+        Err(error) => {
+            return RustExecutionOutcome::Failed(RustExecutionFailure {
+                error,
+                duration: std::time::Duration::ZERO,
+                sender_address,
+                tx_hash,
+            });
+        }
+    };
+
     let rust_tx = RustInvokeTransaction {
         tx_hash,
         version: Felt::ZERO,
         sender_address: ContractAddress(sender_address),
-        calls: { parse_calls_from_invoke_calldata(calldata).unwrap_or_default() },
+        calls,
         signature: tx.signature().0.to_vec(),
         nonce: Nonce(nonce_value),
         fee_type,
@@ -933,6 +1044,13 @@ fn execute_full_invoke_transaction<S: StateReader>(
     let rust_result = match executor.execute_invoke(&rust_tx, account_class_hash) {
         Ok(result) => result,
         Err(e) => {
+            log_rust_tx_failure_summary(
+                block_context.block_info().block_number.0,
+                tx_hash,
+                sender_address,
+                &rust_tx.calls,
+                &e,
+            );
             return RustExecutionOutcome::Failed(RustExecutionFailure {
                 error: format!("Rust transaction execution failed: {}", e),
                 duration: std::time::Duration::ZERO,
@@ -941,30 +1059,13 @@ fn execute_full_invoke_transaction<S: StateReader>(
             });
         }
     };
-
-    let fee_only_write = rust_result.state_diff.storage_updates.keys().all(|address| {
-        *address == rust_block_context.eth_fee_token_address || *address == rust_block_context.strk_fee_token_address
-    });
-    if fee_only_write {
-        let parsed_calls: Vec<(Felt, Felt, usize)> =
-            rust_tx.calls.iter().map(|call| (call.to.0, call.selector, call.calldata.len())).collect();
-        let event_selectors: Vec<Felt> = rust_result
-            .execute_call_info
-            .as_ref()
-            .map(|info| info.events.iter().filter_map(|event| event.keys.first().copied()).collect())
-            .unwrap_or_default();
-        let storage_update_addresses: Vec<Felt> =
-            rust_result.state_diff.storage_updates.keys().map(|address| address.0).collect();
-        tracing::warn!(
-            tx_hash = %format!("{:#x}", tx_hash),
-            sender_address = %format!("{:#x}", sender_address),
-            parsed_calls = ?parsed_calls,
-            execute_event_selectors = ?event_selectors,
-            execute_retdata = ?rust_result.execute_call_info.as_ref().map(|info| info.retdata.clone()),
-            storage_update_addresses = ?storage_update_addresses,
-            "rust_exec_suspicious_fee_only_state_diff"
-        );
-    }
+    log_rust_tx_diff_summary(
+        block_context.block_info().block_number.0,
+        tx_hash,
+        sender_address,
+        &rust_tx.calls,
+        &rust_result,
+    );
 
     let rust_exec_duration = std::time::Duration::ZERO;
 

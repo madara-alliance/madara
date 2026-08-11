@@ -34,6 +34,10 @@ pub(crate) use names::PRECOMPUTED_NAMES;
 pub(crate) use selectors::FUNCTION_NAMES;
 use selectors::{get_function_name as selector_function_name, settle_trade_v3_selector};
 
+static INNER_TIMING_LOG_ENABLED: Lazy<bool> = Lazy::new(|| {
+    std::env::var("RUST_EXEC_INNER_TIMING_LOG").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
+});
+
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Paraclear";
 
@@ -127,6 +131,10 @@ impl InnerTiming {
     }
 
     fn log(&self) {
+        if !*INNER_TIMING_LOG_ENABLED {
+            return;
+        }
+
         let ms = |d: Duration| d.as_secs_f64() * 1000.0;
         let trade_id = self.trade_id.unwrap_or(Felt::ZERO);
         let market = self.market.unwrap_or(Felt::ZERO);

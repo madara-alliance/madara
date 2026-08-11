@@ -1,7 +1,7 @@
 // @Paradex contract schema
 // Contract: AssetsManager
 
-use crate::core::storage::{storage_key_for_map2_poseidon, storage_key_for_map_poseidon, storage_key_for_variable};
+use crate::core::storage::{storage_key_for_map, storage_key_for_variable};
 use crate::core::types::StorageKey;
 use once_cell::sync::Lazy;
 use starknet_types_core::felt::Felt;
@@ -27,10 +27,10 @@ pub static FEE_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("f
 pub static ASSET_MIN_SIZE_INCREMENT_BASE: Lazy<StorageKey> =
     Lazy::new(|| storage_key_for_variable("asset_min_size_increment"));
 pub fn asset_min_size_increment_key(k: Felt) -> StorageKey {
-    storage_key_for_map_poseidon("asset_min_size_increment", k)
+    storage_key_for_map("asset_min_size_increment", k)
 }
 
 pub static ASSET_KIND_BASE: Lazy<StorageKey> = Lazy::new(|| storage_key_for_variable("asset_kind"));
 pub fn asset_kind_key(k: Felt) -> StorageKey {
-    storage_key_for_map_poseidon("asset_kind", k)
+    storage_key_for_map("asset_kind", k)
 }
