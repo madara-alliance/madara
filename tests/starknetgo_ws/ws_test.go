@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,11 +37,15 @@ type activeProbe struct {
 }
 
 type result struct {
-	name     string
-	id       string
-	observed bool
-	detail   string
-	err      error
+	name          string
+	id            string
+	observed      bool
+	txHash        string
+	finality      string
+	fromAddress   string
+	senderAddress string
+	detail        string
+	err           error
 }
 
 func TestMadaraWebsocketSubscriptions(t *testing.T) {
@@ -153,7 +158,7 @@ func TestMadaraWebsocketSubscriptions(t *testing.T) {
 	defer closeProbes(activeStatusProbes)
 	writeFile(t, statusReadyFile, "ready\n")
 
-	assertResults(t, awaitProbes(append(activeProbes, activeStatusProbes...), waitTimeout))
+	assertResults(t, awaitProbes(append(activeProbes, activeStatusProbes...), waitTimeout), hashes, account0, account1, erc20)
 }
 
 func startProbes(t *testing.T, probes []probe, wsURL string) []activeProbe {
@@ -195,7 +200,7 @@ func closeProbes(probes []activeProbe) {
 	}
 }
 
-func assertResults(t *testing.T, results []result) {
+func assertResults(t *testing.T, results []result, hashes txHashes, account0, account1, erc20 *felt.Felt) {
 	t.Helper()
 	for _, r := range results {
 		if r.err != nil {
@@ -203,6 +208,10 @@ func assertResults(t *testing.T, results []result) {
 			continue
 		}
 		t.Logf("%-44s id=%-8s observed=%t %s", r.name, r.id, r.observed, r.detail)
+		if !r.observed {
+			continue
+		}
+		assertProbeResult(t, r, hashes, account0, account1, erc20)
 	}
 }
 
@@ -257,7 +266,14 @@ func events(name string, input *rpc.EventSubscriptionInput, required bool) probe
 			await: func(wait time.Duration) result {
 				select {
 				case e := <-events:
-					return result{id: sub.ID(), observed: true, detail: fmt.Sprintf("tx=%s finality=%s block=%d", e.TransactionHash, e.FinalityStatus, e.BlockNumber)}
+					return result{
+						id:          sub.ID(),
+						observed:    true,
+						txHash:      feltString(e.TransactionHash),
+						finality:    string(e.FinalityStatus),
+						fromAddress: feltString(e.FromAddress),
+						detail:      fmt.Sprintf("tx=%s finality=%s block=%d", e.TransactionHash, e.FinalityStatus, e.BlockNumber),
+					}
 				case err := <-sub.Err():
 					return result{id: sub.ID(), err: err}
 				case <-time.After(wait):
@@ -288,7 +304,13 @@ func receipts(name string, input *rpc.SubNewTxnReceiptsInput, required bool) pro
 			await: func(wait time.Duration) result {
 				select {
 				case r := <-receipts:
-					return result{id: sub.ID(), observed: true, detail: fmt.Sprintf("tx=%s finality=%s execution=%s block=%d", r.Hash, r.FinalityStatus, r.ExecutionStatus, r.BlockNumber)}
+					return result{
+						id:       sub.ID(),
+						observed: true,
+						txHash:   feltString(r.Hash),
+						finality: string(r.FinalityStatus),
+						detail:   fmt.Sprintf("tx=%s finality=%s execution=%s block=%d", r.Hash, r.FinalityStatus, r.ExecutionStatus, r.BlockNumber),
+					}
 				case err := <-sub.Err():
 					return result{id: sub.ID(), err: err}
 				case <-time.After(wait):
@@ -319,7 +341,14 @@ func txns(name string, input *rpc.SubNewTxnsInput, required bool) probe {
 			await: func(wait time.Duration) result {
 				select {
 				case tx := <-txns:
-					return result{id: sub.ID(), observed: true, detail: fmt.Sprintf("tx=%s finality=%s", tx.Hash, tx.FinalityStatus)}
+					return result{
+						id:            sub.ID(),
+						observed:      true,
+						txHash:        feltString(tx.Hash),
+						finality:      string(tx.FinalityStatus),
+						senderAddress: transactionSender(tx.Transaction),
+						detail:        fmt.Sprintf("tx=%s finality=%s", tx.Hash, tx.FinalityStatus),
+					}
 				case err := <-sub.Err():
 					return result{id: sub.ID(), err: err}
 				case <-time.After(wait):
@@ -350,7 +379,13 @@ func transactionStatus(name string, hash *felt.Felt, required bool) probe {
 			await: func(wait time.Duration) result {
 				select {
 				case s := <-statuses:
-					return result{id: sub.ID(), observed: true, detail: fmt.Sprintf("tx=%s finality=%s execution=%s", s.TransactionHash, s.Status.FinalityStatus, s.Status.ExecutionStatus)}
+					return result{
+						id:       sub.ID(),
+						observed: true,
+						txHash:   feltString(s.TransactionHash),
+						finality: string(s.Status.FinalityStatus),
+						detail:   fmt.Sprintf("tx=%s finality=%s execution=%s", s.TransactionHash, s.Status.FinalityStatus, s.Status.ExecutionStatus),
+					}
 				case err := <-sub.Err():
 					return result{id: sub.ID(), err: err}
 				case <-time.After(wait):
@@ -366,6 +401,183 @@ func timeoutResult(id string, required bool) result {
 		return result{id: id, err: fmt.Errorf("timed out waiting for notification")}
 	}
 	return result{id: id, detail: "subscription accepted; no matching notification during wait"}
+}
+
+func assertProbeResult(t *testing.T, r result, hashes txHashes, account0, account1, erc20 *felt.Felt) {
+	t.Helper()
+
+	switch {
+	case strings.HasPrefix(r.name, "events/"):
+		assertKnownHash(t, r, hashes)
+		assertFinality(t, r, eventFinalities(r.name))
+		if r.fromAddress != erc20.String() {
+			t.Errorf("%s from_address=%s, want %s", r.name, r.fromAddress, erc20)
+		}
+	case strings.HasPrefix(r.name, "receipts/"):
+		assertHashForNamedSender(t, r, hashes)
+		assertKnownHash(t, r, hashes)
+		assertFinality(t, r, receiptFinalities(r.name))
+	case strings.HasPrefix(r.name, "transactions/"):
+		assertHashForNamedSender(t, r, hashes)
+		assertKnownHash(t, r, hashes)
+		assertFinality(t, r, transactionFinalities(r.name))
+		if strings.Contains(r.name, "sender=account0") && r.senderAddress != account0.String() {
+			t.Errorf("%s sender=%s, want %s", r.name, r.senderAddress, account0)
+		}
+		if strings.Contains(r.name, "sender=account1") && r.senderAddress != account1.String() {
+			t.Errorf("%s sender=%s, want %s", r.name, r.senderAddress, account1)
+		}
+	case strings.HasPrefix(r.name, "transactionStatus/"):
+		assertHashForStatusProbe(t, r, hashes)
+		if r.finality == "" {
+			t.Errorf("%s missing finality status", r.name)
+		}
+	}
+}
+
+func assertKnownHash(t *testing.T, r result, hashes txHashes) {
+	t.Helper()
+	if r.txHash == "" {
+		t.Errorf("%s missing transaction hash", r.name)
+		return
+	}
+	for _, hash := range hashes.Hashes {
+		if r.txHash == hash {
+			return
+		}
+	}
+	t.Errorf("%s tx_hash=%s, want one of %v", r.name, r.txHash, hashes.Hashes)
+}
+
+func assertHashForNamedSender(t *testing.T, r result, hashes txHashes) {
+	t.Helper()
+	if strings.Contains(r.name, "sender=account0") {
+		assertExactHash(t, r, hashes.Hashes[0])
+	}
+	if strings.Contains(r.name, "sender=account1") {
+		assertExactHash(t, r, hashes.Hashes[1])
+	}
+}
+
+func assertHashForStatusProbe(t *testing.T, r result, hashes txHashes) {
+	t.Helper()
+	var index int
+	if _, err := fmt.Sscanf(strings.TrimPrefix(r.name, "transactionStatus/"), "%d", &index); err != nil {
+		t.Errorf("%s has invalid status probe name: %v", r.name, err)
+		return
+	}
+	if index < 0 || index >= len(hashes.Hashes) {
+		t.Errorf("%s status probe index out of range", r.name)
+		return
+	}
+	assertExactHash(t, r, hashes.Hashes[index])
+}
+
+func assertExactHash(t *testing.T, r result, want string) {
+	t.Helper()
+	if r.txHash != want {
+		t.Errorf("%s tx_hash=%s, want %s", r.name, r.txHash, want)
+	}
+}
+
+func assertFinality(t *testing.T, r result, allowed map[string]bool) {
+	t.Helper()
+	if len(allowed) == 0 {
+		return
+	}
+	if !allowed[r.finality] {
+		t.Errorf("%s finality=%s, want one of %v", r.name, r.finality, keys(allowed))
+	}
+}
+
+func eventFinalities(name string) map[string]bool {
+	switch {
+	case strings.Contains(name, "finality=ACCEPTED_ON_L2"):
+		return set(string(rpc.TxnFinalityStatusAcceptedOnL2), string(rpc.TxnFinalityStatusAcceptedOnL1))
+	case strings.Contains(name, "finality=PRE_CONFIRMED"):
+		return set(
+			string(rpc.TxnFinalityStatusPreConfirmed),
+			string(rpc.TxnFinalityStatusAcceptedOnL2),
+			string(rpc.TxnFinalityStatusAcceptedOnL1),
+		)
+	default:
+		return nil
+	}
+}
+
+func receiptFinalities(name string) map[string]bool {
+	switch {
+	case strings.Contains(name, "PRE_CONFIRMED+ACCEPTED_ON_L2"):
+		return set(
+			string(rpc.TxnFinalityStatusPreConfirmed),
+			string(rpc.TxnFinalityStatusAcceptedOnL2),
+			string(rpc.TxnFinalityStatusAcceptedOnL1),
+		)
+	case strings.Contains(name, "PRE_CONFIRMED"):
+		return set(string(rpc.TxnFinalityStatusPreConfirmed))
+	case strings.Contains(name, "ACCEPTED_ON_L2"):
+		return set(string(rpc.TxnFinalityStatusAcceptedOnL2), string(rpc.TxnFinalityStatusAcceptedOnL1))
+	default:
+		return nil
+	}
+}
+
+func transactionFinalities(name string) map[string]bool {
+	switch {
+	case strings.Contains(name, "finality=RECEIVED"):
+		return set(string(rpc.TxnStatusReceived))
+	case strings.Contains(name, "finality=CANDIDATE"):
+		return set(string(rpc.TxnStatusCandidate))
+	case strings.Contains(name, "PRE_CONFIRMED"):
+		return set(string(rpc.TxnStatusPreConfirmed))
+	case strings.Contains(name, "ACCEPTED_ON_L2"):
+		return set(string(rpc.TxnStatusAcceptedOnL2))
+	case strings.Contains(name, "finality=all"):
+		return set(
+			string(rpc.TxnStatusReceived),
+			string(rpc.TxnStatusCandidate),
+			string(rpc.TxnStatusPreConfirmed),
+			string(rpc.TxnStatusAcceptedOnL2),
+		)
+	default:
+		return nil
+	}
+}
+
+func set(values ...string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value] = true
+	}
+	return out
+}
+
+func keys(values map[string]bool) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	return out
+}
+
+func feltString(value *felt.Felt) string {
+	if value == nil {
+		return ""
+	}
+	return value.String()
+}
+
+func transactionSender(tx rpc.Transaction) string {
+	switch tx := tx.(type) {
+	case rpc.InvokeTxnV0:
+		return feltString(tx.ContractAddress)
+	case rpc.InvokeTxnV1:
+		return feltString(tx.SenderAddress)
+	case rpc.InvokeTxnV3:
+		return feltString(tx.SenderAddress)
+	default:
+		return ""
+	}
 }
 
 func readTxHashes(t *testing.T, path string) txHashes {

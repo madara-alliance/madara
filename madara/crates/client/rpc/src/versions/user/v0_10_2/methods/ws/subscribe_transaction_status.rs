@@ -1,5 +1,7 @@
 use crate::errors::ErrorExtWs;
+use mp_receipt::ExecutionResult;
 
+/// Subscribes to finality status updates for one transaction and emits reorg notifications.
 pub async fn subscribe_transaction_status(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -39,7 +41,7 @@ pub async fn subscribe_transaction_status(
             SubscriptionUpdate::Snapshot(snapshot) => {
                 allow_current = false;
 
-                send_txn_status(&sink, transaction_hash, snapshot).await?;
+                send_txn_status(starknet, &sink, transaction_hash, snapshot).await?;
                 if matches!(snapshot, crate::TxStatusSnapshot::AcceptedOnL1) {
                     crate::close_ws_subscription(
                         starknet,
@@ -65,6 +67,7 @@ pub async fn subscribe_transaction_status(
     }
 }
 
+/// Waits for the next status or reorg notification while honoring client and unsubscribe closes.
 enum SubscriptionUpdate {
     Snapshot(crate::TxStatusSnapshot),
     NoStatus,
@@ -109,6 +112,7 @@ async fn next_update(
 }
 
 async fn send_txn_status(
+    starknet: &crate::Starknet,
     sink: &jsonrpsee::core::server::SubscriptionSink,
     transaction_hash: mp_convert::Felt,
     snapshot: crate::TxStatusSnapshot,
@@ -120,7 +124,32 @@ async fn send_txn_status(
         crate::TxStatusSnapshot::AcceptedOnL2 => mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2,
         crate::TxStatusSnapshot::AcceptedOnL1 => mp_rpc::v0_10_2::TxnStatus::AcceptedOnL1,
     };
-    let status = mp_rpc::v0_10_2::WsTxnStatusResult { execution_status: None, finality_status, failure_reason: None };
+    let (execution_status, failure_reason) = transaction_execution_status(starknet, transaction_hash)?;
+    let status = mp_rpc::v0_10_2::WsTxnStatusResult { execution_status, finality_status, failure_reason };
     let item = mp_rpc::v0_10_2::NewTxnStatus { transaction_hash, status };
     super::send_starknet_subscription(sink, super::TRANSACTION_STATUS_NOTIFICATION_METHOD, &item).await
+}
+
+fn transaction_execution_status(
+    starknet: &crate::Starknet,
+    transaction_hash: mp_convert::Felt,
+) -> Result<(Option<mp_rpc::v0_10_2::TxnExecutionStatus>, Option<String>), crate::errors::StarknetWsApiError> {
+    let Some(transaction) = starknet
+        .backend
+        .view_on_latest()
+        .find_transaction_by_hash(&transaction_hash)
+        .or_internal_server_error("SubscribeTransactionStatus failed to find transaction execution status")?
+    else {
+        return Ok((None, None));
+    };
+    let transaction = transaction
+        .get_transaction()
+        .or_internal_server_error("SubscribeTransactionStatus failed to retrieve transaction execution status")?;
+
+    Ok(match transaction.receipt.execution_result() {
+        ExecutionResult::Reverted { reason } => {
+            (Some(mp_rpc::v0_10_2::TxnExecutionStatus::Reverted), Some(reason.clone()))
+        }
+        ExecutionResult::Succeeded => (Some(mp_rpc::v0_10_2::TxnExecutionStatus::Succeeded), None),
+    })
 }

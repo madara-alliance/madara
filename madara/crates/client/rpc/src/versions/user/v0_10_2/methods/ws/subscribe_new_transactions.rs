@@ -25,6 +25,7 @@ pub async fn subscribe_new_transactions_with_reorg(
     subscribe_new_transactions_inner(starknet, subscription_sink, finality_status, sender_address, tags, true).await
 }
 
+/// Streams received, candidate, preconfirmed, and confirmed transactions matching the requested filters.
 async fn subscribe_new_transactions_inner(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -151,6 +152,7 @@ async fn subscribe_new_transactions_inner(
             block_view = heads.next_block_view() => {
                 if block_view.is_confirmed() {
                     let block_number = block_view.block_number();
+                    emitted.clear();
                     if let Some(reorgs) = reorgs.as_mut() {
                         match crate::resolve_live_confirmed_head(
                             &starknet.backend,

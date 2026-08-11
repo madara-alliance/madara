@@ -65,6 +65,7 @@ impl AddressSubscriptionFilter {
     }
 }
 
+/// Subscribes to events matching address, key, cursor, and finality filters.
 pub async fn subscribe_events(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -83,12 +84,13 @@ pub async fn subscribe_events(
         return Ok(());
     }
 
-    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_EVENTS).await;
     let requested_finality = finality_status.unwrap_or_default();
     let address_filter = AddressSubscriptionFilter::new(from_address.as_ref());
     let mut reorgs = starknet.backend.subscribe_reorgs();
     let mut next_block_n = initial_event_block_n(starknet, block_id)?;
+
+    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_EVENTS).await;
 
     loop {
         let mut state = EventSubscriptionState {
@@ -114,6 +116,8 @@ pub async fn subscribe_events(
     }
 }
 
+/// Chooses the first block to scan. Without an explicit block id, subscriptions only emit events
+/// observed after subscription creation, so already-confirmed latest block events are not replayed.
 fn initial_event_block_n(starknet: &crate::Starknet, block_id: Option<BlockId>) -> Result<u64, StarknetWsApiError> {
     let Some(block_id) = block_id else {
         return Ok(starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1)));
@@ -139,6 +143,7 @@ fn initial_event_block_n(starknet: &crate::Starknet, block_id: Option<BlockId>) 
     Ok(block_n)
 }
 
+/// Replays confirmed events from the cursor until the current latest block or a reorg boundary.
 async fn backfill_events(
     starknet: &crate::Starknet,
     state: &mut EventSubscriptionState<'_>,
@@ -185,6 +190,7 @@ async fn backfill_events(
     Ok(BackfillResult::Complete)
 }
 
+/// Streams preconfirmed changes and confirmed heads, restarting from the reorg point when needed.
 async fn stream_live_events(
     starknet: &crate::Starknet,
     state: &mut EventSubscriptionState<'_>,
@@ -345,7 +351,7 @@ fn take_pending_reorg(reorgs: &mut ReorgStream) -> Result<Option<mc_db::ReorgNot
 
 fn subscription_allows_finality(requested_finality: &FinalityStatus, event_finality: TxnFinalityStatus) -> bool {
     match requested_finality {
-        FinalityStatus::PreConfirmed => matches!(event_finality, TxnFinalityStatus::PreConfirmed),
+        FinalityStatus::PreConfirmed => true,
         FinalityStatus::AcceptedOnL2 => !matches!(event_finality, TxnFinalityStatus::PreConfirmed),
     }
 }
@@ -532,6 +538,31 @@ mod test {
     }
 
     #[tokio::test]
+    async fn subscribe_events_default_starts_after_latest_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let event_from_address = Felt::from_hex_unchecked("0x1234");
+        let old_hash = Felt::from_hex_unchecked("0x4848");
+        add_confirmed_event_block(&backend, 0, event_from_address, event_from_address, old_hash);
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+        let mut sub = client.subscribe_events(None, None, None, None).await.expect("Failed subscription");
+
+        let new_hash = Felt::from_hex_unchecked("0x4949");
+        add_confirmed_event_block(&backend, 1, event_from_address, event_from_address, new_hash);
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for event")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve event");
+
+        assert_eq!(item.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(item.emitted_event.transaction_hash, new_hash);
+        assert_ne!(item.emitted_event.transaction_hash, old_hash);
+    }
+
+    #[tokio::test]
     async fn subscribe_events_rejects_too_many_addresses_v0_10_2() {
         let (_backend, starknet) = rpc_test_setup();
         let (_handle, server_url) = start_server(starknet).await;
@@ -638,6 +669,78 @@ mod test {
             assert_eq!(item.finality_status, TxnFinalityStatus::PreConfirmed);
             assert_eq!(item.emitted_event.transaction_hash, transaction_hash);
         }
+    }
+
+    #[tokio::test]
+    async fn subscribe_events_preconfirmed_filter_emits_confirmed_update_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
+
+        let mut sub = client
+            .subscribe_events(None, None, None, Some(FinalityStatus::PreConfirmed))
+            .await
+            .expect("Failed subscription");
+
+        let event_from_address = Felt::from_hex_unchecked("0x2345");
+        let transaction_hash = Felt::from_hex_unchecked("0x5050");
+        let tx = transaction_with_event(event_from_address, transaction_hash, event_from_address);
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader {
+                    block_number: 0,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
+                },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: tx.clone(),
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: None,
+                }],
+                vec![],
+            ))
+            .expect("Failed to store preconfirmed block");
+
+        let preconfirmed = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for preconfirmed event")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve preconfirmed event");
+        assert_eq!(preconfirmed.finality_status, TxnFinalityStatus::PreConfirmed);
+        assert_eq!(preconfirmed.emitted_event.transaction_hash, transaction_hash);
+
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 0,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![tx],
+                    events: vec![mp_receipt::EventWithTransactionHash {
+                        transaction_hash,
+                        event: mp_receipt::Event { from_address: event_from_address, keys: vec![], data: vec![] },
+                    }],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block");
+
+        let confirmed = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for confirmed event update")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve confirmed event update");
+
+        assert_eq!(confirmed.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(confirmed.emitted_event.transaction_hash, transaction_hash);
     }
 
     #[tokio::test]

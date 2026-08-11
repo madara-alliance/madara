@@ -5,6 +5,7 @@ use mc_db::subscription::SubscribeNewBlocksTag;
 use mp_rpc::v0_10_0::{FinalityStatus, TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
 
+/// Subscribes to receipt updates matching finality and sender filters, including reorg notifications.
 pub async fn subscribe_new_transaction_receipts_with_reorg(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -86,6 +87,7 @@ pub async fn subscribe_new_transaction_receipts_with_reorg(
 
         if block_view.is_confirmed() {
             let block_number = block_view.block_number();
+            emitted.clear();
             match crate::resolve_live_confirmed_head(
                 &starknet.backend,
                 &mut reorgs,

@@ -131,6 +131,14 @@ mod test {
     }
 
     fn transaction_with_receipt(sender_address: Felt, transaction_hash: Felt) -> TransactionWithReceipt {
+        transaction_with_receipt_and_execution(sender_address, transaction_hash, ExecutionResult::Succeeded)
+    }
+
+    fn transaction_with_receipt_and_execution(
+        sender_address: Felt,
+        transaction_hash: Felt,
+        execution_result: ExecutionResult,
+    ) -> TransactionWithReceipt {
         TransactionWithReceipt {
             transaction: MpTransaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                 contract_address: sender_address,
@@ -142,7 +150,7 @@ mod test {
                 messages_sent: vec![],
                 events: vec![],
                 execution_resources: ExecutionResources::default(),
-                execution_result: ExecutionResult::Succeeded,
+                execution_result,
             }),
         }
     }
@@ -211,13 +219,17 @@ mod test {
     }
 
     fn expected_txn_status(finality_status: mp_rpc::v0_10_2::TxnStatus) -> mp_rpc::v0_10_2::NewTxnStatus {
+        expected_txn_status_with_execution(finality_status, None, None)
+    }
+
+    fn expected_txn_status_with_execution(
+        finality_status: mp_rpc::v0_10_2::TxnStatus,
+        execution_status: Option<mp_rpc::v0_10_2::TxnExecutionStatus>,
+        failure_reason: Option<String>,
+    ) -> mp_rpc::v0_10_2::NewTxnStatus {
         mp_rpc::v0_10_2::NewTxnStatus {
             transaction_hash: TX_HASH,
-            status: mp_rpc::v0_10_2::WsTxnStatusResult {
-                execution_status: None,
-                finality_status,
-                failure_reason: None,
-            },
+            status: mp_rpc::v0_10_2::WsTxnStatusResult { execution_status, finality_status, failure_reason },
         }
     }
 
@@ -290,12 +302,46 @@ mod test {
         let (_handle, server_url) = start_server(starknet).await;
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
-        let mut sub =
-            StarknetWsRpcApiV0_10_2Client::subscribe_new_heads(&client, Some(BlockId::Tag(BlockTag::PreConfirmed)))
-                .await
-                .expect("starknet_subscribeNewHeads");
+        let err = match StarknetWsRpcApiV0_10_2Client::subscribe_new_heads(
+            &client,
+            Some(BlockId::Tag(BlockTag::PreConfirmed)),
+        )
+        .await
+        {
+            Ok(_) => panic!("starknet_subscribeNewHeads should reject preconfirmed before accepting"),
+            Err(err) => err,
+        };
 
-        assert!(sub.next().await.is_none());
+        assert_matches!(
+            err,
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::Pending.into());
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_new_heads_err_l1_accepted_v0_10_2() {
+        let (backend, starknet) = rpc_test_setup();
+        add_block_at(&backend, 0);
+        backend.set_latest_l1_confirmed(Some(0)).expect("Failed to set L1 confirmed block");
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let err =
+            match StarknetWsRpcApiV0_10_2Client::subscribe_new_heads(&client, Some(BlockId::Tag(BlockTag::L1Accepted)))
+                .await
+            {
+                Ok(_) => panic!("starknet_subscribeNewHeads should reject l1 accepted before accepting"),
+                Err(err) => err,
+            };
+
+        assert_matches!(
+            err,
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::Pending.into());
+            }
+        );
     }
 
     #[tokio::test]
@@ -573,6 +619,94 @@ mod test {
                 .expect("Failed to retrieve status");
             assert_eq!(item, expected_txn_status(expected));
         }
+    }
+
+    #[tokio::test]
+    async fn subscribe_transaction_status_includes_succeeded_execution_v0_10_2() {
+        let (backend, mut starknet) = rpc_test_setup();
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions: vec![transaction_with_receipt(SENDER_ADDRESS, TX_HASH)],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block");
+        let watcher = TestTxStatusWatcher::new();
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        starknet.set_tx_status_watcher(Some(watcher));
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_transaction_status(&client, TX_HASH)
+            .await
+            .expect("Failed subscription");
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve status");
+
+        assert_eq!(
+            item,
+            expected_txn_status_with_execution(
+                mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2,
+                Some(mp_rpc::v0_10_2::TxnExecutionStatus::Succeeded),
+                None,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_transaction_status_includes_reverted_execution_v0_10_2() {
+        let (backend, mut starknet) = rpc_test_setup();
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions: vec![transaction_with_receipt_and_execution(
+                        SENDER_ADDRESS,
+                        TX_HASH,
+                        ExecutionResult::Reverted { reason: "boom".into() },
+                    )],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .expect("Failed to store confirmed block");
+        let watcher = TestTxStatusWatcher::new();
+        watcher.set_status(Some(crate::TxStatusSnapshot::AcceptedOnL2));
+        starknet.set_tx_status_watcher(Some(watcher));
+
+        let (_handle, server_url) = start_server(starknet).await;
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+        let mut sub = StarknetWsRpcApiV0_10_2Client::subscribe_transaction_status(&client, TX_HASH)
+            .await
+            .expect("Failed subscription");
+
+        let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for status")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve status");
+
+        assert_eq!(
+            item,
+            expected_txn_status_with_execution(
+                mp_rpc::v0_10_2::TxnStatus::AcceptedOnL2,
+                Some(mp_rpc::v0_10_2::TxnExecutionStatus::Reverted),
+                Some("boom".into()),
+            )
+        );
     }
 
     #[tokio::test]

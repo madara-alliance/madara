@@ -27,6 +27,11 @@ pub struct WsMetrics {
 }
 
 impl WsMetrics {
+    /// Registers websocket health metrics.
+    ///
+    /// Operators should alert on sustained send failures or lagged notifications, and graph active
+    /// subscriptions by method to catch leaked subscriptions or stalled clients. A synthetic
+    /// `subscribeNewHeads` probe can validate end-to-end websocket delivery against these counters.
     pub fn register() -> Self {
         let meter = global::meter_with_scope(
             InstrumentationScope::builder("crates.rpc.websocket.opentelemetry")
