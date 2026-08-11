@@ -225,6 +225,8 @@ impl BlockProductionTask {
             "block_closed"
         );
 
+        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+
         metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
         metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
         metrics.block_counter.add(1, &[]);
