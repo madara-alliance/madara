@@ -650,12 +650,12 @@ where
                 self.format_http_call(&mut writer, event, target, &ts, level)
             }
             (_, target) if target == "RUST_EXEC" || target.starts_with("mc_rust_exec") => {
-                let level_style = match level {
-                    &Level::ERROR => Style::new().red(),
-                    &Level::WARN => Style::new().yellow(),
-                    &Level::DEBUG => Style::new().blue(),
-                    &Level::TRACE => Style::new().cyan(),
-                    &Level::INFO => Style::new().green(),
+                let level_style = match *level {
+                    Level::ERROR => Style::new().red(),
+                    Level::WARN => Style::new().yellow(),
+                    Level::DEBUG => Style::new().blue(),
+                    Level::TRACE => Style::new().cyan(),
+                    Level::INFO => Style::new().green(),
                 };
                 self.format_rust_exec(&mut writer, event, &ts, level, &level_style)
             }
