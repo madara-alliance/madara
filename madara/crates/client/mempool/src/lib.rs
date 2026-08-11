@@ -255,11 +255,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let mut stale_nonce = 0_u64;
         let mut decode_failures = 0_u64;
         let mut insertion_failures = 0_u64;
+        let l1_cursor = self.backend.latest_l1_confirmed_block_n();
         tracing::info!(
             target: "startup_recovery",
             phase = "persisted_mempool_scan_started",
-            l1_cursor = ?self.backend.latest_l1_confirmed_block_n(),
-            "Started restoring persisted mempool transactions"
+            ?l1_cursor,
+            "phase=persisted_mempool_scan_started l1_cursor={l1_cursor:?}"
         );
         for res in self.backend.get_saved_mempool_transactions() {
             scanned += 1;
@@ -282,6 +283,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             }
         }
         let summary = self.inner.read().await.summary();
+        let elapsed_ms = recovery_started.elapsed().as_secs_f64() * 1_000.0;
         tracing::info!(
             target: "startup_recovery",
             phase = "persisted_mempool_scan_completed",
@@ -290,9 +292,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             stale_nonce,
             decode_failures,
             insertion_failures,
-            elapsed_ms = recovery_started.elapsed().as_secs_f64() * 1_000.0,
+            elapsed_ms,
             mempool = %summary,
-            "Completed restoring persisted mempool transactions"
+            "phase=persisted_mempool_scan_completed scanned={scanned} restored={restored} stale_nonce={stale_nonce} decode_failures={decode_failures} insertion_failures={insertion_failures} elapsed_ms={elapsed_ms:.3} mempool={summary}"
         );
         Ok(())
     }
@@ -442,7 +444,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 target: "startup_recovery",
                 phase = "mempool_watcher_debug_delay",
                 delay_ms,
-                "Debug override is delaying chain-watcher subscription after persisted mempool recovery"
+                "phase=mempool_watcher_debug_delay delay_ms={delay_ms}"
             );
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
         }

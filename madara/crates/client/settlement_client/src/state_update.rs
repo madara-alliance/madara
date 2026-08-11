@@ -7,7 +7,10 @@ use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
@@ -75,7 +78,7 @@ pub async fn state_update_worker(
         phase = "l1_cursor_loaded",
         ?persisted_l1_cursor,
         preserve_l1_cursor,
-        "Loaded the persisted L1-confirmed cursor before startup state synchronization"
+        "phase=l1_cursor_loaded persisted_l1_cursor={persisted_l1_cursor:?} preserve_l1_cursor={preserve_l1_cursor}"
     );
 
     if preserve_l1_cursor {
@@ -83,7 +86,7 @@ pub async fn state_update_worker(
             target: "startup_recovery",
             phase = "l1_cursor_preserved_debug_override",
             ?persisted_l1_cursor,
-            "Debug override preserved the persisted L1-confirmed cursor"
+            "phase=l1_cursor_preserved_debug_override persisted_l1_cursor={persisted_l1_cursor:?}"
         );
     } else {
         // Clear L1 confirmed block at startup
@@ -95,8 +98,24 @@ pub async fn state_update_worker(
             target: "startup_recovery",
             phase = "l1_cursor_cleared",
             ?persisted_l1_cursor,
-            "Cleared the persisted L1-confirmed cursor before fetching the current L1 state"
+            "phase=l1_cursor_cleared persisted_l1_cursor={persisted_l1_cursor:?}"
         );
+    }
+
+    if let Some(delay_ms) = std::env::var("MADARA_DEBUG_L1_CURSOR_REPOPULATE_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|delay_ms| *delay_ms > 0)
+    {
+        tracing::warn!(
+            target: "startup_recovery",
+            phase = "l1_cursor_repopulate_debug_delay",
+            delay_ms,
+            "phase=l1_cursor_repopulate_debug_delay delay_ms={delay_ms}"
+        );
+        if ctx.run_until_cancelled(tokio::time::sleep(Duration::from_millis(delay_ms))).await.is_none() {
+            return Ok(());
+        }
     }
 
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
@@ -151,15 +170,17 @@ async fn try_sync_once(
     tracing::info!(
         target: "startup_recovery",
         phase = "l1_state_fetch_started",
-        "Fetching the current core-contract state from L1"
+        "phase=l1_state_fetch_started"
     );
     let initial_state = settlement_client.get_current_core_contract_state().await?;
+    let elapsed_ms = fetch_started.elapsed().as_secs_f64() * 1_000.0;
     tracing::info!(
         target: "startup_recovery",
         phase = "l1_state_fetch_completed",
         l1_confirmed_block = ?initial_state.block_number,
-        elapsed_ms = fetch_started.elapsed().as_secs_f64() * 1_000.0,
-        "Fetched the current core-contract state from L1"
+        elapsed_ms,
+        "phase=l1_state_fetch_completed l1_confirmed_block={:?} elapsed_ms={elapsed_ms:.3}",
+        initial_state.block_number
     );
 
     tracing::info!("Subscribed to L1 state verification");

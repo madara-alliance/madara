@@ -100,7 +100,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             ?l1_cursor_at_subscribe,
             ?l1_tip_at_subscribe,
             ?l2_tip_at_subscribe,
-            "Mempool chain watcher subscribed to L1-confirmed heads"
+            "phase=mempool_chain_watcher_subscribed l1_cursor_at_subscribe={l1_cursor_at_subscribe:?} l1_tip_at_subscribe={l1_tip_at_subscribe:?} l2_tip_at_subscribe={l2_tip_at_subscribe:?}"
         );
 
         let mut startup_l1_catchup: Option<(Instant, u64, u64)> = None;
@@ -260,13 +260,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     {
                         let target = catchup_target.expect("checked above");
                         startup_l1_catchup = Some((Instant::now(), 0, target));
+                        let blocks_to_process = target.saturating_sub(l1_block) + 1;
                         tracing::warn!(
                             target: "startup_recovery",
                             phase = "historical_l1_catchup_started",
                             start_block = l1_block,
                             target_block = target,
-                            blocks_to_process = target.saturating_sub(l1_block) + 1,
-                            "Mempool chain watcher started a historical L1-confirmed-head catch-up"
+                            blocks_to_process,
+                            "phase=historical_l1_catchup_started start_block={l1_block} target_block={target} blocks_to_process={blocks_to_process}"
                         );
                     }
 
@@ -280,25 +281,31 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     if let Some((started, processed, target)) = startup_l1_catchup.as_mut() {
                         *processed += 1;
                         if *processed % 50_000 == 0 {
+                            let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
                             tracing::info!(
                                 target: "startup_recovery",
                                 phase = "historical_l1_catchup_progress",
                                 current_block = l1_block,
                                 target_block = *target,
                                 processed_blocks = *processed,
-                                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
-                                "Mempool chain watcher is processing historical L1-confirmed heads"
+                                elapsed_ms,
+                                "phase=historical_l1_catchup_progress current_block={l1_block} target_block={} processed_blocks={} elapsed_ms={elapsed_ms:.3}",
+                                *target,
+                                *processed
                             );
                         }
                         if l1_block >= *target {
+                            let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
                             tracing::warn!(
                                 target: "startup_recovery",
                                 phase = "historical_l1_catchup_completed",
                                 current_block = l1_block,
                                 target_block = *target,
                                 processed_blocks = *processed,
-                                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
-                                "Mempool chain watcher completed historical L1-confirmed-head catch-up"
+                                elapsed_ms,
+                                "phase=historical_l1_catchup_completed current_block={l1_block} target_block={} processed_blocks={} elapsed_ms={elapsed_ms:.3}",
+                                *target,
+                                *processed
                             );
                             startup_l1_catchup = None;
                         }
