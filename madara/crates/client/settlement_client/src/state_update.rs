@@ -7,7 +7,7 @@ use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
@@ -68,12 +68,36 @@ pub async fn state_update_worker(
         l1_head_sender: l1_head_sender.clone(),
     };
 
-    // Clear L1 confirmed block at startup
-    // TODO: remove this
-    state.backend.set_latest_l1_confirmed(None).map_err(|e| {
-        SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
-    })?;
-    tracing::debug!("update_l1: cleared confirmed block number");
+    let persisted_l1_cursor = state.backend.latest_l1_confirmed_block_n();
+    let preserve_l1_cursor = std::env::var_os("MADARA_DEBUG_PRESERVE_L1_CURSOR_ON_STARTUP").is_some();
+    tracing::info!(
+        target: "startup_recovery",
+        phase = "l1_cursor_loaded",
+        ?persisted_l1_cursor,
+        preserve_l1_cursor,
+        "Loaded the persisted L1-confirmed cursor before startup state synchronization"
+    );
+
+    if preserve_l1_cursor {
+        tracing::warn!(
+            target: "startup_recovery",
+            phase = "l1_cursor_preserved_debug_override",
+            ?persisted_l1_cursor,
+            "Debug override preserved the persisted L1-confirmed cursor"
+        );
+    } else {
+        // Clear L1 confirmed block at startup
+        // TODO: remove this
+        state.backend.set_latest_l1_confirmed(None).map_err(|e| {
+            SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
+        })?;
+        tracing::info!(
+            target: "startup_recovery",
+            phase = "l1_cursor_cleared",
+            ?persisted_l1_cursor,
+            "Cleared the persisted L1-confirmed cursor before fetching the current L1 state"
+        );
+    }
 
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
@@ -123,7 +147,20 @@ async fn try_sync_once(
     ctx: ServiceContext,
 ) -> Result<(), SettlementClientError> {
     let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
+    let fetch_started = Instant::now();
+    tracing::info!(
+        target: "startup_recovery",
+        phase = "l1_state_fetch_started",
+        "Fetching the current core-contract state from L1"
+    );
     let initial_state = settlement_client.get_current_core_contract_state().await?;
+    tracing::info!(
+        target: "startup_recovery",
+        phase = "l1_state_fetch_completed",
+        l1_confirmed_block = ?initial_state.block_number,
+        elapsed_ms = fetch_started.elapsed().as_secs_f64() * 1_000.0,
+        "Fetched the current core-contract state from L1"
+    );
 
     tracing::info!("Subscribed to L1 state verification");
     state.update_state(initial_state)?;

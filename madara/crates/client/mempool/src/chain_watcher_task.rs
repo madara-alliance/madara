@@ -9,7 +9,7 @@ use mp_convert::Felt;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::Nonce;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     fn set_transaction_status(&self, tx_hash: Felt, value: Option<TransactionStatus>) {
@@ -90,6 +90,20 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         // Start returning heads from the next block after the latest confirmed block (inclusive).
         new_heads_subscription
             .set_start_from(self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0));
+
+        let l1_cursor_at_subscribe = *l1_new_heads_subscription.current();
+        let l1_tip_at_subscribe = self.backend.latest_l1_confirmed_block_n();
+        let l2_tip_at_subscribe = new_heads_subscription.current().latest_confirmed_block_n();
+        tracing::info!(
+            target: "startup_recovery",
+            phase = "mempool_chain_watcher_subscribed",
+            ?l1_cursor_at_subscribe,
+            ?l1_tip_at_subscribe,
+            ?l2_tip_at_subscribe,
+            "Mempool chain watcher subscribed to L1-confirmed heads"
+        );
+
+        let mut startup_l1_catchup: Option<(Instant, u64, u64)> = None;
 
         let mut current_head = new_heads_subscription.current_block_view();
 
@@ -233,12 +247,62 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 {
                     tracing::debug!("Mempool task: new head on l1.");
                     let new_head_on_l1: MadaraBlockView<D> = new_head_on_l1.into();
+                    let l1_block = new_head_on_l1.block_number();
+                    let catchup_target = self
+                        .backend
+                        .latest_l1_confirmed_block_n()
+                        .into_iter()
+                        .chain(new_heads_subscription.current().latest_confirmed_block_n())
+                        .min();
+
+                    if startup_l1_catchup.is_none()
+                        && catchup_target.is_some_and(|target| target.saturating_sub(l1_block) >= 1_000)
+                    {
+                        let target = catchup_target.expect("checked above");
+                        startup_l1_catchup = Some((Instant::now(), 0, target));
+                        tracing::warn!(
+                            target: "startup_recovery",
+                            phase = "historical_l1_catchup_started",
+                            start_block = l1_block,
+                            target_block = target,
+                            blocks_to_process = target.saturating_sub(l1_block) + 1,
+                            "Mempool chain watcher started a historical L1-confirmed-head catch-up"
+                        );
+                    }
+
                     self.update_block_transaction_statuses(
                         &new_head_on_l1,
                         new_head_on_l1.get_block_info()?.tx_hashes().iter().cloned().enumerate(),
                         &mut removed,
                         &mut confirmed_tx_hashes,
                     )?;
+
+                    if let Some((started, processed, target)) = startup_l1_catchup.as_mut() {
+                        *processed += 1;
+                        if *processed % 50_000 == 0 {
+                            tracing::info!(
+                                target: "startup_recovery",
+                                phase = "historical_l1_catchup_progress",
+                                current_block = l1_block,
+                                target_block = *target,
+                                processed_blocks = *processed,
+                                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                                "Mempool chain watcher is processing historical L1-confirmed heads"
+                            );
+                        }
+                        if l1_block >= *target {
+                            tracing::warn!(
+                                target: "startup_recovery",
+                                phase = "historical_l1_catchup_completed",
+                                current_block = l1_block,
+                                target_block = *target,
+                                processed_blocks = *processed,
+                                elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0,
+                                "Mempool chain watcher completed historical L1-confirmed-head catch-up"
+                            );
+                            startup_l1_catchup = None;
+                        }
+                    }
                 }
 
                 // Cancel condition.

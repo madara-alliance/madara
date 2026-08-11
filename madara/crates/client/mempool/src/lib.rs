@@ -131,7 +131,7 @@ use starknet_api::core::Nonce;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use topic_pubsub::TopicWatchPubsub;
 mod chain_watcher_task;
 mod inner;
@@ -249,22 +249,51 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             // everytime we restart the node, but will never be removed from db once they're consumed.
             return Ok(());
         }
+        let recovery_started = Instant::now();
+        let mut scanned = 0_u64;
+        let mut restored = 0_u64;
+        let mut stale_nonce = 0_u64;
+        let mut decode_failures = 0_u64;
+        let mut insertion_failures = 0_u64;
+        tracing::info!(
+            target: "startup_recovery",
+            phase = "persisted_mempool_scan_started",
+            l1_cursor = ?self.backend.latest_l1_confirmed_block_n(),
+            "Started restoring persisted mempool transactions"
+        );
         for res in self.backend.get_saved_mempool_transactions() {
+            scanned += 1;
             let tx = match res {
                 Ok(tx) => tx,
                 Err(err) => {
+                    decode_failures += 1;
                     tracing::warn!("Skipping saved mempool transaction that could not be loaded: {err:#}");
                     continue;
                 }
             };
             let is_new_tx = false; // do not trigger metrics update and db update.
-            if let Err(err) = self.add_tx(tx, is_new_tx).await {
-                match err {
-                    MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
-                    err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
+            match self.add_tx(tx, is_new_tx).await {
+                Ok(()) => restored += 1,
+                Err(MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. })) => stale_nonce += 1,
+                Err(err) => {
+                    insertion_failures += 1;
+                    tracing::warn!("Could not re-add mempool transaction from db: {err:#}");
                 }
             }
         }
+        let summary = self.inner.read().await.summary();
+        tracing::info!(
+            target: "startup_recovery",
+            phase = "persisted_mempool_scan_completed",
+            scanned,
+            restored,
+            stale_nonce,
+            decode_failures,
+            insertion_failures,
+            elapsed_ms = recovery_started.elapsed().as_secs_f64() * 1_000.0,
+            mempool = %summary,
+            "Completed restoring persisted mempool transactions"
+        );
         Ok(())
     }
 
@@ -403,6 +432,20 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     pub async fn run_mempool_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
+
+        if let Some(delay_ms) = std::env::var("MADARA_DEBUG_MEMPOOL_WATCHER_DELAY_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|delay_ms| *delay_ms > 0)
+        {
+            tracing::warn!(
+                target: "startup_recovery",
+                phase = "mempool_watcher_debug_delay",
+                delay_ms,
+                "Debug override is delaying chain-watcher subscription after persisted mempool recovery"
+            );
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
 
         tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx))?;
         Ok(())
