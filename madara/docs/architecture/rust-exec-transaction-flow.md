@@ -1,10 +1,14 @@
 # Madara Transaction Flow With Rust-Exec
 
-This checkout keeps the standard Madara transaction pipeline up to block execution, then adds a targeted alternate execution path for Paraclear `settle_trade_v3` calls.
+This checkout keeps the standard Madara transaction pipeline up to block execution, then adds a targeted alternate execution path
+for Paraclear `settle_trade_v3` calls.
 
-The important point is that this is not a second sequencer pipeline. RPC ingress, validation, mempooling, batching, preconfirmed block handling, and final block close still follow the usual Madara design. The new logic starts inside the executor thread and only for a narrow subset of `Invoke` transactions.
+The important point is that this is not a second sequencer pipeline. RPC ingress, validation, mempooling, batching,
+preconfirmed block handling, and final block close still follow the usual Madara design. The new logic starts inside the
+executor thread and only for a narrow subset of `Invoke` transactions.
 
-The contract logic behind that alternate path is now aligned with `paraclear_1_25_1`. This document stays focused on routing, state integration, and tracing rather than on the full trade-matching semantics.
+The contract logic behind that alternate path is now aligned with `paraclear_1_25_1`. This document stays focused on routing,
+state integration, and tracing rather than on the full trade-matching semantics.
 
 ## Scope
 
@@ -133,6 +137,8 @@ sequenceDiagram
 
 ## What Actually Changed
 
+<!-- markdownlint-disable MD013 -->
+
 | Area | Normal flow | New flow in this checkout |
 |---|---|---|
 | Routing point | No per-tx routing. Batch goes straight to Blockifier. | Executor thread classifies each tx and may reroute only `settle_trade_v3`. |
@@ -146,11 +152,14 @@ sequenceDiagram
 | Trace RPC | `traceTransaction` reexecutes and traces via Blockifier. | `traceTransactionRust` replays prior txs with Blockifier, then runs the target tx through rust-exec and builds an RPC trace from Rust call info. |
 | Final block creation | `append_to_preconfirmed` then `close_preconfirmed`. | Same. Block persistence is unchanged because Rust returns Blockifier-shaped outputs. |
 
+<!-- markdownlint-enable MD013 -->
+
 ## How The New Execution Path Works
 
 ### 1. Mode selection is runtime-configured
 
-`crates/client/block_production/src/execution_mode.rs` reads `TX_EXECUTOR_MODE` or `TX_EXECUTION_MODE` once and caches the result. Supported modes are:
+`crates/client/block_production/src/execution_mode.rs` reads `TX_EXECUTOR_MODE` or `TX_EXECUTION_MODE` once and caches the
+result. Supported modes are:
 
 - `Blockifier`
 - `Rust`
@@ -160,7 +169,8 @@ The default remains `Blockifier`.
 
 ### 2. Only `settle_trade_v3` is intercepted
 
-`is_settle_trade_v3_invoke(tx)` parses account calldata and looks for the `settle_trade_v3` selector. If that check fails, the tx always falls back to the normal Blockifier path.
+`is_settle_trade_v3_invoke(tx)` parses account calldata and looks for the `settle_trade_v3` selector. If that check fails, the
+tx always falls back to the normal Blockifier path.
 
 So the new feature is selective, not global.
 
@@ -198,7 +208,8 @@ For `settle_trade_v3`, the Rust contract implementation now follows the latest P
 - `DynamicWithToken` order category support
 - `FeeV2` / `FeeShareV2` event emission
 
-That contract-level behavior is separate from the outer Blockifier compatibility layer. The compatibility layer still shapes the final receipt/resources and block bouncer accounting using `mc-rust-exec` integration constants.
+That contract-level behavior is separate from the outer Blockifier compatibility layer. The compatibility layer still shapes
+the final receipt/resources and block bouncer accounting using `mc-rust-exec` integration constants.
 
 ### 6. `Both` mode is observational, not authoritative
 
@@ -244,8 +255,11 @@ So the trace addition is a debugging and inspection surface for the Rust executo
 
 - Rust execution is authoritative only for `settle_trade_v3` when mode is `Rust`.
 - Validation and mempool admission still happen through the normal Blockifier-based path.
-- Rust `settle_trade_v3` no longer uses legacy hardcoded trade-fee routing. It reads the latest fee configuration from Paraclear/AssetsManager storage.
-- What is still hardcoded today is the Blockifier-shaped receipt fee/resources for `settle_trade_v3`, along with the empirical bouncer gas buckets in `crates/client/rust-exec/src/constants.rs`. `RUST_EXEC_SETTLE_TRADE_V3_POSITIONS` can select the nearest measured bouncer profile.
+- Rust `settle_trade_v3` no longer uses legacy hardcoded trade-fee routing. It reads the latest fee configuration from
+  Paraclear/AssetsManager storage.
+- What is still hardcoded today is the Blockifier-shaped receipt fee/resources for `settle_trade_v3`, along with the empirical
+  bouncer gas buckets in `crates/client/rust-exec/src/constants.rs`. `RUST_EXEC_SETTLE_TRADE_V3_POSITIONS` can select the
+  nearest measured bouncer profile.
 - Unsupported tx kinds or unsupported account classes are skipped by rust-exec.
 - Because mode is cached on first read, changing `TX_EXECUTOR_MODE` requires a restart to take effect reliably.
 
