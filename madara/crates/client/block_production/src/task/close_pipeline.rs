@@ -13,7 +13,7 @@ impl BlockProductionTask {
             anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
         };
         let block_n = state.block_number;
-        tracing::info!("close_block_received_from_executor block_number={block_n}");
+        tracing::debug!("close_block_received_from_executor block_number={block_n}");
         // C-018: Do not compute parent_overlays here. They are recomputed at
         // canonicalization start to avoid stale overlays from parent stops.
         self.pending_canonicalizations.push_back(PendingCanonicalizationInput { state, block_exec_summary });
@@ -44,7 +44,7 @@ impl BlockProductionTask {
             canonical_header: canonical_header_for_close,
             enqueued_at: Instant::now(),
         };
-        tracing::info!("enqueue_close_block_to_async_worker block_number={block_n}");
+        tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
         let (queued_result, completion) = close_queue.try_enqueue(payload)?;
         let ClosePreconfirmedResult::Queued(queued_meta) = queued_result;
         let queue_depth = close_queue.current_depth();
@@ -52,7 +52,7 @@ impl BlockProductionTask {
         let pending_close_completions = self.pending_completions.len() + 1;
         self.metrics.close_queue_enqueued_total.add(1, &[]);
         self.metrics.close_queue_depth.record(queue_depth as u64, &[]);
-        tracing::info!(
+        tracing::debug!(
             "close_block_queued block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={}",
             queued_meta.block_n,
             queue_depth,
@@ -73,7 +73,7 @@ impl BlockProductionTask {
     ) -> anyhow::Result<()> {
         self.metrics.close_queue_dequeued_total.add(1, &[]);
         self.metrics.close_queue_depth.record(close_queue.current_depth() as u64, &[]);
-        tracing::info!(
+        tracing::debug!(
             "close_block_complete block_number={} expected_block_n={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={}",
             completion.block_n,
             expected_block_n,
@@ -224,8 +224,6 @@ impl BlockProductionTask {
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
             "block_closed"
         );
-
-        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
         metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
         metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);

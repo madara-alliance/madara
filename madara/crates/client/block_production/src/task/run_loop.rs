@@ -1,6 +1,61 @@
 use super::*;
 
 impl BlockProductionTask {
+    fn env_config_value(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| "<unset>".to_string())
+    }
+
+    fn sorted_felt_hex_values(values: &HashSet<Felt>) -> Vec<String> {
+        let mut values = values.iter().map(|value| format!("{:#x}", value)).collect::<Vec<_>>();
+        values.sort();
+        values
+    }
+
+    fn log_rust_exec_startup_config(&self) {
+        let executor_addresses = Self::sorted_felt_hex_values(&self.routing_cfg.executor_addresses);
+        let supported_selectors = Self::sorted_felt_hex_values(&self.routing_cfg.supported_selectors);
+        let supported_class_hashes = Self::sorted_felt_hex_values(&self.routing_cfg.supported_class_hashes);
+        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(self.backend.chain_config());
+        let mut ignored_storage_addresses =
+            ignored_storage_addresses.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>();
+        ignored_storage_addresses.sort();
+
+        let (status, summary) = match self.fallback.startup_mode {
+            StartupExecutionMode::Mixed => ("✅ enabled", "selected transactions will use rust exec"),
+            StartupExecutionMode::BlockifierOnly => ("⏸️ disabled", "all transactions will route via Cairo"),
+        };
+        tracing::info!(target: "RUST_EXEC", "{} - {}", status, summary);
+
+        tracing::info!(
+            target: "RUST_EXEC",
+            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  ignored_storage_addresses={:?}\n  MADARA_RUST_EXEC_ROUTING_CONFIG={}\n  MADARA_COMPARATOR_IGNORE_FEE_TOKEN_MISMATCH={}\n  MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE={}\n  RUST_EXECUTION_LOG={}\n  RUST_EXEC_TX_DIFF_LOG={}\n  RUST_EXEC_DEBUG_BLOCK={}\n  RUST_EXEC_INNER_TIMING_LOG={}\n  RUST_EXEC_CTX_CACHE={}\n  RUST_EXEC_PEDERSEN_CACHE={}\n  RUST_EXEC_PRECOMPUTED_SN_KECCAK={}",
+            self.fallback.startup_mode,
+            self.fallback.mode,
+            self.fallback.startup_recovery_active,
+            self.fallback.comparator_enabled,
+            self.replay_mode_enabled,
+            self.routing_cfg.rust_batch_size,
+            self.routing_cfg.blockifier_batch_size,
+            executor_addresses.len(),
+            executor_addresses,
+            supported_selectors.len(),
+            supported_selectors,
+            supported_class_hashes.len(),
+            supported_class_hashes,
+            ignored_storage_addresses,
+            Self::env_config_value("MADARA_RUST_EXEC_ROUTING_CONFIG"),
+            Self::env_config_value("MADARA_COMPARATOR_IGNORE_FEE_TOKEN_MISMATCH"),
+            Self::env_config_value("MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE"),
+            Self::env_config_value("RUST_EXECUTION_LOG"),
+            Self::env_config_value("RUST_EXEC_TX_DIFF_LOG"),
+            Self::env_config_value("RUST_EXEC_DEBUG_BLOCK"),
+            Self::env_config_value("RUST_EXEC_INNER_TIMING_LOG"),
+            Self::env_config_value("RUST_EXEC_CTX_CACHE"),
+            Self::env_config_value("RUST_EXEC_PEDERSEN_CACHE"),
+            Self::env_config_value("RUST_EXEC_PRECOMPUTED_SN_KECCAK"),
+        );
+    }
+
     pub(super) async fn maybe_process_ready_priority_work(
         &mut self,
         close_queue: &FinalizerHandle,
@@ -327,6 +382,7 @@ impl BlockProductionTask {
         self.metrics.close_queue_depth.record(0, &[]);
         self.metrics.close_queue_in_flight.record(0, &[]);
         self.record_block_stage_metrics();
+        self.log_rust_exec_startup_config();
 
         let mut executor = crate::executor::start_executor_thread(
             Arc::clone(&self.backend),

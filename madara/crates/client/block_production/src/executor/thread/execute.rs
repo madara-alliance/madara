@@ -323,7 +323,7 @@ impl ExecutorThread {
                     let stale_epoch = taken.execution_epoch;
                     let mut recovered = taken.blockifier_batch;
                     recovered.extend(taken.rust_batch);
-                    tracing::info!(
+                    tracing::debug!(
                         stale_epoch,
                         current_epoch = execution_epoch,
                         recovered_txs = recovered.len(),
@@ -644,13 +644,16 @@ impl ExecutorThread {
                 }
 
                 tracing::info!(
+                    target: "RUST_EXEC",
                     block_number = execution_state.exec_ctx.block_number,
                     txs_executed = results_len,
                     txs_added = stats.n_added_to_block,
                     txs_reverted = stats.n_reverted,
                     txs_rejected = stats.n_rejected,
+                    duration_ms = phase_duration.as_secs_f64() * 1000.0,
+                    avg_tx_ms = avg_tx_time_ms,
                     block_full = phase_block_full,
-                    "executor_phase_a_finished"
+                    "executed_with_blockifier"
                 );
 
                 phase_block_full
@@ -750,14 +753,17 @@ impl ExecutorThread {
                                 .executor_phase_executed_txs_total
                                 .add(results_len as u64, &[KeyValue::new("phase", "rust")]);
                             tracing::info!(
+                                target: "RUST_EXEC",
                                 block_number = execution_state.exec_ctx.block_number,
                                 txs_executed = results_len,
                                 txs_added = executed_r_len as u64 - rust_rejected,
                                 txs_reverted = rust_reverted,
                                 txs_rejected = rust_rejected,
+                                duration_ms = phase_duration.as_secs_f64() * 1000.0,
+                                avg_tx_ms = avg_tx_time_ms,
                                 block_full = rust_block_full,
                                 mode = ?execution_mode,
-                                "executor_phase_b_finished"
+                                "executed_with_rust_exec"
                             );
 
                             if matches!(rust_output.deferred_reason, Some(RustDeferredReason::UnsupportedOrFailed)) {

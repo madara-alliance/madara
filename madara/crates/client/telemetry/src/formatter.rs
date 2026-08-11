@@ -353,6 +353,26 @@ impl CustomFormatter {
         })
     }
 
+    fn format_rust_exec(
+        &self,
+        writer: &mut Writer<'_>,
+        event: &tracing::Event<'_>,
+        ts: &SystemTime,
+        level: &Level,
+        level_style: &Style,
+    ) -> fmt::Result {
+        visit_message(event, |message| {
+            writeln!(
+                writer,
+                "{} {} {} {:?}",
+                self.timestamp_fmt(ts),
+                level_style.apply_to(level),
+                Style::new().magenta().apply_to("RUST_EXEC"),
+                message,
+            )
+        })
+    }
+
     fn format_cairo_native(
         &self,
         writer: &mut Writer<'_>,
@@ -628,6 +648,16 @@ where
         match (level, target) {
             (&Level::INFO, "rpc_calls" | "gateway_calls") => {
                 self.format_http_call(&mut writer, event, target, &ts, level)
+            }
+            (_, target) if target == "RUST_EXEC" || target.starts_with("mc_rust_exec") => {
+                let level_style = match level {
+                    &Level::ERROR => Style::new().red(),
+                    &Level::WARN => Style::new().yellow(),
+                    &Level::DEBUG => Style::new().blue(),
+                    &Level::TRACE => Style::new().cyan(),
+                    &Level::INFO => Style::new().green(),
+                };
+                self.format_rust_exec(&mut writer, event, &ts, level, &level_style)
             }
             (_, "madara_cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
             (_, "close_block") => self.format_close_block(&mut writer, event, &ts, level, target),
