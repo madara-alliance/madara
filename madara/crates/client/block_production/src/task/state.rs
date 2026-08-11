@@ -430,6 +430,18 @@ impl BlockProductionTask {
         }
     }
 
+    pub(super) fn use_blockifier_on_ignored_storage_mismatch() -> bool {
+        std::env::var("MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE")
+            .ok()
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "blockifier" | "blockifier_reexec" | "blockifier-reexec" | "bre"
+                )
+            })
+            .unwrap_or(false)
+    }
+
     /// Creates a new BlockProductionTask.
     ///
     /// # Parameters

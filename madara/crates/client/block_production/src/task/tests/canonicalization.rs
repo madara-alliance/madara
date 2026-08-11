@@ -262,7 +262,7 @@ fn canonical_warn_selects_eb_source() {
 }
 
 #[test]
-fn canonical_ignored_fee_token_mismatch_selects_eb_source() {
+fn canonical_ignored_fee_token_mismatch_source_is_switchable() {
     use std::collections::BTreeSet;
 
     use crate::comparator::{
@@ -296,20 +296,39 @@ fn canonical_ignored_fee_token_mismatch_selects_eb_source() {
     let er = compare_execution_resources(&eb_weights, &bre_weights, &block_limit);
     let decision = decide(&sd, &er);
 
-    let canonical = match decision {
-        super::ComparatorDecision::Accept | super::ComparatorDecision::AcceptWithWarn { .. } => {
-            CanonicalizedBlockOutput {
-                source: CanonicalBlockSource::ExecutionBox,
-                state_diff: eb_diff.clone(),
-                bouncer_weights: eb_weights,
-                bre_per_tx: None,
+    for (use_bre_for_ignored, expected_source) in
+        [(false, CanonicalBlockSource::ExecutionBox), (true, CanonicalBlockSource::BlockifierReexec)]
+    {
+        let ignored_storage_mismatch =
+            matches!(sd, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
+        let canonical = match decision.clone() {
+            super::ComparatorDecision::Accept | super::ComparatorDecision::AcceptWithWarn { .. } => {
+                if ignored_storage_mismatch && use_bre_for_ignored {
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::BlockifierReexec,
+                        state_diff: bre_diff.clone(),
+                        bouncer_weights: bre_weights,
+                        bre_per_tx: None,
+                    }
+                } else {
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::ExecutionBox,
+                        state_diff: eb_diff.clone(),
+                        bouncer_weights: eb_weights,
+                        bre_per_tx: None,
+                    }
+                }
             }
-        }
-        super::ComparatorDecision::StopExecutionBox { .. } => unreachable!(),
-    };
+            super::ComparatorDecision::StopExecutionBox { .. } => unreachable!(),
+        };
 
-    assert_eq!(canonical.source, CanonicalBlockSource::ExecutionBox);
-    assert_eq!(canonical.state_diff, eb_diff);
+        assert_eq!(canonical.source, expected_source);
+        if use_bre_for_ignored {
+            assert_eq!(canonical.state_diff, bre_diff);
+        } else {
+            assert_eq!(canonical.state_diff, eb_diff);
+        }
+    }
 }
 
 #[test]

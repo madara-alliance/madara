@@ -685,8 +685,12 @@ impl BlockProductionTask {
             ExecutionResourceComparison::Ok => {}
         }
 
+        let ignored_storage_mismatch =
+            matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
+        let use_blockifier_on_ignored_storage_mismatch =
+            ignored_storage_mismatch && Self::use_blockifier_on_ignored_storage_mismatch();
         let sd_match = matches!(
-            sd_comparison,
+            &sd_comparison,
             crate::comparator::StateDiffComparison::Match
                 | crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. }
         );
@@ -702,15 +706,29 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                (
-                    CanonicalizedBlockOutput {
-                        source: CanonicalBlockSource::ExecutionBox,
-                        state_diff: sd_x1.clone(),
-                        bouncer_weights: summary.bouncer_weights,
-                        bre_per_tx: None,
-                    },
-                    None,
-                )
+                if use_blockifier_on_ignored_storage_mismatch {
+                    tracing::warn!(block_n, "comparator_ignored_storage_mismatch_using_blockifier_canonical_output");
+                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
+                    (
+                        CanonicalizedBlockOutput {
+                            source: CanonicalBlockSource::BlockifierReexec,
+                            state_diff: reexec_result.state_diff,
+                            bouncer_weights: reexec_result.exec_resources,
+                            bre_per_tx,
+                        },
+                        None,
+                    )
+                } else {
+                    (
+                        CanonicalizedBlockOutput {
+                            source: CanonicalBlockSource::ExecutionBox,
+                            state_diff: sd_x1.clone(),
+                            bouncer_weights: summary.bouncer_weights,
+                            bre_per_tx: None,
+                        },
+                        None,
+                    )
+                }
             }
             ComparatorDecision::AcceptWithWarn { resource_deltas } => {
                 tracing::info!(
@@ -722,15 +740,29 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 tracing::warn!(block_n, "comparator: ER-x1 > ER-x2 (warn); deltas={resource_deltas}");
-                (
-                    CanonicalizedBlockOutput {
-                        source: CanonicalBlockSource::ExecutionBox,
-                        state_diff: sd_x1.clone(),
-                        bouncer_weights: summary.bouncer_weights,
-                        bre_per_tx: None,
-                    },
-                    None,
-                )
+                if use_blockifier_on_ignored_storage_mismatch {
+                    tracing::warn!(block_n, "comparator_ignored_storage_mismatch_using_blockifier_canonical_output");
+                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
+                    (
+                        CanonicalizedBlockOutput {
+                            source: CanonicalBlockSource::BlockifierReexec,
+                            state_diff: reexec_result.state_diff,
+                            bouncer_weights: reexec_result.exec_resources,
+                            bre_per_tx,
+                        },
+                        None,
+                    )
+                } else {
+                    (
+                        CanonicalizedBlockOutput {
+                            source: CanonicalBlockSource::ExecutionBox,
+                            state_diff: sd_x1.clone(),
+                            bouncer_weights: summary.bouncer_weights,
+                            bre_per_tx: None,
+                        },
+                        None,
+                    )
+                }
             }
             ComparatorDecision::StopExecutionBox { reason } => {
                 tracing::info!(
@@ -960,8 +992,12 @@ impl BlockProductionTask {
             ExecutionResourceComparison::Ok => {}
         }
 
+        let ignored_storage_mismatch =
+            matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
+        let use_blockifier_on_ignored_storage_mismatch =
+            ignored_storage_mismatch && Self::use_blockifier_on_ignored_storage_mismatch();
         let sd_match = matches!(
-            sd_comparison,
+            &sd_comparison,
             crate::comparator::StateDiffComparison::Match
                 | crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. }
         );
@@ -978,11 +1014,22 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                CanonicalizedBlockOutput {
-                    source: CanonicalBlockSource::ExecutionBox,
-                    state_diff: sd_x1.clone(),
-                    bouncer_weights: summary.bouncer_weights,
-                    bre_per_tx: None,
+                if use_blockifier_on_ignored_storage_mismatch {
+                    tracing::warn!(block_n, "comparator_ignored_storage_mismatch_using_blockifier_canonical_output");
+                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::BlockifierReexec,
+                        state_diff: reexec_result.state_diff,
+                        bouncer_weights: reexec_result.exec_resources,
+                        bre_per_tx,
+                    }
+                } else {
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::ExecutionBox,
+                        state_diff: sd_x1.clone(),
+                        bouncer_weights: summary.bouncer_weights,
+                        bre_per_tx: None,
+                    }
                 }
             }
             ComparatorDecision::AcceptWithWarn { resource_deltas } => {
@@ -995,11 +1042,22 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 tracing::warn!(block_n, "comparator: ER-x1 > ER-x2 (warn); deltas={resource_deltas}");
-                CanonicalizedBlockOutput {
-                    source: CanonicalBlockSource::ExecutionBox,
-                    state_diff: sd_x1.clone(),
-                    bouncer_weights: summary.bouncer_weights,
-                    bre_per_tx: None,
+                if use_blockifier_on_ignored_storage_mismatch {
+                    tracing::warn!(block_n, "comparator_ignored_storage_mismatch_using_blockifier_canonical_output");
+                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::BlockifierReexec,
+                        state_diff: reexec_result.state_diff,
+                        bouncer_weights: reexec_result.exec_resources,
+                        bre_per_tx,
+                    }
+                } else {
+                    CanonicalizedBlockOutput {
+                        source: CanonicalBlockSource::ExecutionBox,
+                        state_diff: sd_x1.clone(),
+                        bouncer_weights: summary.bouncer_weights,
+                        bre_per_tx: None,
+                    }
                 }
             }
             ComparatorDecision::StopExecutionBox { reason } => {
@@ -1050,9 +1108,8 @@ impl BlockProductionTask {
         let summary = summary.to_string();
         let storage_mismatch_preview =
             serde_json::to_string(&storage_mismatch_preview).unwrap_or_else(|err| format!("json_error:{err}"));
-        let dump_path =
-            Self::write_state_diff_mismatch_dump(block_n, &summary, rust_exec_diff, blockifier_diff, 256)
-                .unwrap_or_else(|| "unavailable".to_owned());
+        let dump_path = Self::write_state_diff_mismatch_dump(block_n, &summary, rust_exec_diff, blockifier_diff, 256)
+            .unwrap_or_else(|| "unavailable".to_owned());
         tracing::warn!(
             block_n,
             summary = %summary,
