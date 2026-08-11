@@ -9,6 +9,7 @@ on:
 jobs:
   check-binaries:
     permissions:
+      contents: read
       pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2204
 
