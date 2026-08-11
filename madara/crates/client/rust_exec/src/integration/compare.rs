@@ -282,13 +282,13 @@ pub fn compare_tx_state_maps<RustErr: std::fmt::Display>(
     blockifier_first: Option<&Result<TransactionExecutionOutput, TransactionExecutorError>>,
 ) {
     let Some(blockifier_first) = blockifier_first else {
-        tracing::info!("TX_COMPARISON: ❌ Does Not Match");
+        tracing::info!("TX_COMPARISON: Does Not Match");
         tracing::info!("TX_COMPARISON_DETAIL: blockifier missing result");
         return;
     };
 
     let (Ok((_rust_info, rust_maps)), Ok((_block_info, block_maps))) = (rust_formatted, blockifier_first) else {
-        tracing::info!("TX_COMPARISON: ❌ Does Not Match");
+        tracing::info!("TX_COMPARISON: Does Not Match");
         if let Err(err) = rust_formatted {
             tracing::info!("TX_COMPARISON_DETAIL: rust formatted error: {err}");
         }
@@ -299,15 +299,14 @@ pub fn compare_tx_state_maps<RustErr: std::fmt::Display>(
     };
 
     if rust_maps == block_maps {
-        tracing::info!("TX_COMPARISON: ✅ Match");
+        tracing::info!("TX_COMPARISON: Match");
         return;
     }
 
     if *IGNORE_FEE_MISMATCH {
         if let Some((contract, a, b)) = should_ignore_fee_mismatch(rust_maps, block_maps) {
-            tracing::info!("TX_COMPARISON: ✅ Match");
-            tracing::info!(
-                "TX_COMPARISON_DETAIL: ignored_fee_mismatch=true contract={} key_a={} rust_a={} blockifier_a={} delta_a={} key_b={} rust_b={} blockifier_b={} delta_b={}",
+            tracing::info!("TX_COMPARISON: Match");
+            tracing::info!("TX_COMPARISON_DETAIL: ignored_fee_mismatch=true contract={} key_a={} rust_a={} blockifier_a={} delta_a={} key_b={} rust_b={} blockifier_b={} delta_b={}",
                 contract,
                 a.0,
                 a.1,
@@ -322,7 +321,7 @@ pub fn compare_tx_state_maps<RustErr: std::fmt::Display>(
         }
     }
 
-    tracing::info!("TX_COMPARISON: ❌ Does Not Match");
+    tracing::info!("TX_COMPARISON: Does Not Match");
 
     log_storage_diff(rust_maps, block_maps);
     log_simple_map_diff(

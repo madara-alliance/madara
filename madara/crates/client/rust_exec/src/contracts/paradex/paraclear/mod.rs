@@ -141,7 +141,7 @@ impl InnerTiming {
         let maker = self.maker.unwrap_or(Felt::ZERO);
         let taker = self.taker.unwrap_or(Felt::ZERO);
         tracing::info!(
-            "rust exec inner timings (ms): load_account_state_for_risk={:.3}, \
+            "inner_timings load_account_state_for_risk_ms={:.3}, \
              is_risky_after_trade_loaded={:.3}, enforce_max_assets_per_account={:.3}, \
              settle_perpetual={:.3}, settle_spot={:.3}, load_token_balances={:.3}, \
              load_perp_balances_and_prices={:.3}, count_token_assets={:.3}, \

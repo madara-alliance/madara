@@ -112,7 +112,7 @@ fn log_hash_agg(tx_hash: Felt, outcome: &RustExecutionOutcome, hash_stats: hash_
     };
 
     tracing::debug!(
-        "rust_exec_hash_total tx={:#x} outcome={} pedersen_calls={} pedersen_hits={} pedersen_misses={} \
+        "hash_total tx={:#x} outcome={} pedersen_calls={} pedersen_hits={} pedersen_misses={} \
 poseidon_calls={} sn_keccak_calls={} sn_keccak_hits={} sn_keccak_misses={} key_cache_hits={} key_cache_misses={} \
 ctx_reads_total={} ctx_read_cache_hits={} ctx_write_hits={} ctx_backend_reads={} cached_state_reads_total={} \
 cached_state_cache_hits={} cached_state_cache_misses={}",
@@ -138,7 +138,7 @@ cached_state_cache_hits={} cached_state_cache_misses={}",
 
     let total_unique = hash_stats.pedersen_inputs + hash_stats.poseidon_inputs + hash_stats.sn_keccak_inputs;
     tracing::debug!(
-        "rust_exec_hash_unique tx={:#x} pedersen_inputs={} poseidon_inputs={} sn_keccak_inputs={} total_unique={}",
+        "hash_unique tx={:#x} pedersen_inputs={} poseidon_inputs={} sn_keccak_inputs={} total_unique={}",
         tx_hash,
         hash_stats.pedersen_inputs,
         hash_stats.poseidon_inputs,
@@ -155,7 +155,7 @@ fn log_storage_agg(tx_hash: Felt, outcome: &RustExecutionOutcome, ctx_stats: sto
     };
 
     tracing::debug!(
-        "rust_exec_storage_total tx={:#x} outcome={} ctx_reads_total={} ctx_read_cache_hits={} \
+        "storage_total tx={:#x} outcome={} ctx_reads_total={} ctx_read_cache_hits={} \
 ctx_write_cache_hits={} ctx_backend_reads={} ctx_read_cache_us={} ctx_write_cache_us={} \
 ctx_backend_us={} ctx_writes_total={} ctx_write_us={} cached_state_reads_total={} \
 cached_state_cache_hits={} cached_state_cache_misses={} cached_state_read_us={} \
@@ -197,7 +197,7 @@ backend_read_us={}",
     let total_unique_writes = ctx_stats.ctx_write_unique;
 
     tracing::debug!(
-        "rust_exec_storage_unique tx={:#x} ctx_read_cache_unique={} ctx_write_cache_unique={} \
+        "storage_unique tx={:#x} ctx_read_cache_unique={} ctx_write_cache_unique={} \
 ctx_backend_unique={} ctx_write_unique={} cached_state_unique_reads={} \
 cached_state_unique_writes={} layered_unique_reads={} backend_unique_reads={} \
 total_unique_reads={} total_unique_writes={}",
@@ -231,7 +231,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
         for tx in txs {
             if let Some(deadline) = execution_deadline {
                 if Instant::now() > deadline {
-                    tracing::debug!("Rust-exec execution timed out.");
+                    tracing::debug!("execution_timeout");
                     break;
                 }
             }
@@ -249,11 +249,10 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                 let min_tx_delta = BouncerWeights { n_txs: 1, ..BouncerWeights::empty() };
                 if let Some(projected_min) = projected_current.checked_add(min_tx_delta) {
                     if !bouncer.bouncer_config.has_room(projected_min) {
-                        tracing::info!(
-                            tx_hash = format_args!("{:#x}", tx_hash),
+                        tracing::info!(tx_hash = format_args!("{:#x}", tx_hash),
                             projected_current_bouncer_weights = ?projected_current,
                             min_tx_delta = ?min_tx_delta,
-                            "rust_exec_tx_deferred_precheck_block_full"
+                            "tx_deferred_precheck_block_full"
                         );
                         break;
                     }
@@ -307,12 +306,11 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     // the tx is NOT committed — no writes applied, no result pushed.
                     // The tx remains deferred in the caller's suffix (pending_routed.rust_batch).
                     if !bouncer.bouncer_config.has_room(projected_next) {
-                        tracing::info!(
-                            tx_hash = format_args!("{:#x}", tx_hash),
+                        tracing::info!(tx_hash = format_args!("{:#x}", tx_hash),
                             tx_projected_delta = ?tx_projected_delta,
                             projected_current_bouncer_weights = ?projected_current,
                             projected_next_bouncer_weights = ?projected_next,
-                            "rust_exec_tx_deferred_post_exec_block_full"
+                            "tx_deferred_post_exec_block_full"
                         );
                         break;
                     }
@@ -330,22 +328,21 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     {
                         tracing::info!(
                             tx_hash = format_args!("{:#x}", tx_hash),
-                            "rust_exec_tx_deferred_bouncer_try_update_rejected"
+                            "tx_deferred_bouncer_try_update_rejected"
                         );
                         break;
                     }
                     phase_state.first_tx_in_block = false;
                     phase_state.projected_bouncer_weights = Some(projected_next);
                     let current_weights = bouncer.get_bouncer_weights();
-                    tracing::debug!(
-                        tx_hash = format_args!("{:#x}", tx_hash),
+                    tracing::debug!(tx_hash = format_args!("{:#x}", tx_hash),
                         tx_summary = ?tx_execution_summary,
                         tx_builtin_counters = ?tx_builtin_counters,
                         tx_receipt_resources = ?execution_info.receipt.resources,
                         projected_tx_bouncer_delta = ?tx_projected_delta,
                         current_bouncer_weights = ?current_weights,
                         projected_bouncer_weights = ?projected_next,
-                        "rust_exec_bouncer_after_tx"
+                        "bouncer_after_tx"
                     );
                 }
 
@@ -366,7 +363,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
     for tx in txs {
         if let Some(deadline) = execution_deadline {
             if Instant::now() > deadline {
-                tracing::debug!("Rust-exec execution timed out.");
+                tracing::debug!("execution_timeout");
                 break;
             }
         }

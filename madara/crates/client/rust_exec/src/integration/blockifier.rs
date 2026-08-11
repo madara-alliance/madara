@@ -120,7 +120,7 @@ fn log_rust_tx_diff_summary(
         .join(",");
 
     tracing::info!(
-        "rust_exec_tx_diff_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
+        "tx_diff_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
 settle_calls={} total_storage_entries={} routed_contract_entries={} nonce_updates={} event_count={} failed={} \
 retdata={:?} fee_amount={} revert_error={:?} call_summary={}",
         block_number,
@@ -160,7 +160,7 @@ fn log_rust_tx_failure_summary(
         .join(",");
 
     tracing::info!(
-        "rust_exec_tx_failure_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
+        "tx_failure_summary block_number={} tx_hash={:#x} sender_address={:#x} call_count={} \
 settle_calls={} error={} call_summary={}",
         block_number,
         tx_hash,
@@ -366,7 +366,7 @@ pub fn rust_execute_transaction_blockifier_output<S: StateReader>(
         let start = Instant::now();
         let output = rust_execution_outcome_to_blockifier_output(&outcome);
         let elapsed = start.elapsed();
-        tracing::info!("rust->blockifier conversion took {:?} (tx_hash={:#x})", elapsed, tx_hash);
+        tracing::info!("conversion_timing duration_ms={:.3} tx_hash={:#x}", elapsed.as_secs_f64() * 1000.0, tx_hash);
         output
     } else {
         rust_execution_outcome_to_blockifier_output(&outcome)
@@ -619,7 +619,7 @@ pub fn rust_execute_transaction_with_info<S: StateReader>(
         let start = Instant::now();
         let outcome = rust_execute_transaction(state, tx, block_context, tx_hash);
         let elapsed = start.elapsed();
-        tracing::info!("rust execution took {:?} (tx_hash={:#x})", elapsed, tx_hash);
+        tracing::info!("execution_timing duration_ms={:.3} tx_hash={:#x}", elapsed.as_secs_f64() * 1000.0, tx_hash);
         outcome
     } else {
         rust_execute_transaction(state, tx, block_context, tx_hash)
