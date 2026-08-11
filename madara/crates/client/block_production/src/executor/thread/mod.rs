@@ -45,6 +45,7 @@ struct ExecutorStateExecuting {
     declared_classes: HashMap<ClassHash, ContractClass>,
     consumed_l1_to_l2_nonces: HashSet<u64>,
     rust_phase_state: RustPhaseState,
+    saw_blockifier_txs: bool,
     executed_in_block: BatchToExecute,
 }
 

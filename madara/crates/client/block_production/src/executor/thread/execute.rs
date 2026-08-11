@@ -503,6 +503,21 @@ impl ExecutorThread {
                 }
             };
 
+            if execution_state.execution_mode == ExecutionMode::Mixed
+                && execution_state.saw_blockifier_txs
+                && self.replay_mode_enabled
+                && self.replay_boundary_exists(execution_state.exec_ctx.block_number)
+                && !pending_routed.rust_batch.is_empty()
+            {
+                let rescued_count = pending_routed.rust_batch.len();
+                pending_routed.blockifier_batch.extend(mem::take(&mut pending_routed.rust_batch));
+                tracing::info!(
+                    "executor_replay_blockifier_seen_rescuing_rust_batch block_number={} rescued_txs={} phase=before_blockifier",
+                    execution_state.exec_ctx.block_number,
+                    rescued_count
+                );
+            }
+
             // ── Phase A: Blockifier execution ────────────────────────────────────────
             // Apply replay boundary: cap how many blockifier txs we send to execute_txs.
             // Overflow stays in pending_routed.blockifier_batch for the next block.
@@ -610,6 +625,9 @@ impl ExecutorThread {
                 stats.exec_duration += phase_duration;
 
                 self.record_replay_executed_hashes(execution_state.exec_ctx.block_number, &replay_executed_hashes);
+                if results_len > 0 {
+                    execution_state.saw_blockifier_txs = true;
+                }
 
                 combined_results.extend(blockifier_results);
                 combined_executed.extend(executed_b);
@@ -640,6 +658,20 @@ impl ExecutorThread {
 
             // If blockifier phase filled the block, defer rust_batch to next block unchanged.
             // pending_routed retains: blockifier suffix (if any) + full rust_batch.
+            if execution_state.execution_mode == ExecutionMode::Mixed
+                && execution_state.saw_blockifier_txs
+                && self.replay_mode_enabled
+                && self.replay_boundary_exists(execution_state.exec_ctx.block_number)
+                && !pending_routed.rust_batch.is_empty()
+            {
+                let rescued_count = pending_routed.rust_batch.len();
+                pending_routed.blockifier_batch.extend(mem::take(&mut pending_routed.rust_batch));
+                tracing::info!(
+                    "executor_replay_blockifier_seen_rescuing_rust_batch block_number={} rescued_txs={} phase=before_rust",
+                    execution_state.exec_ctx.block_number,
+                    rescued_count
+                );
+            }
 
             // ── Phase B: Rust execution (Mixed mode only) ────────────────────────────
             let execution_mode = execution_state.execution_mode;
