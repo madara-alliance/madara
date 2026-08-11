@@ -63,6 +63,7 @@ struct RoutedPickOutcome {
     routed_recoverable_txs: Vec<ValidatedTransaction>,
     deferred_txs: Vec<ValidatedTransaction>,
     cap_stop_branch: Option<&'static str>,
+    blockifier_routed: bool,
 }
 
 fn drain_local_carry(local_carry: &mut VecDeque<ValidatedTransaction>, max_items: usize) -> Vec<ValidatedTransaction> {
@@ -134,11 +135,14 @@ impl Batcher {
         execution_mode: ExecutionMode,
         frontier_block_n: u64,
         execution_epoch: u64,
+        force_blockifier_for_block: bool,
     ) -> anyhow::Result<RoutedPickOutcome> {
         let picked_total = picked.len();
         let mut routed_recoverable_txs = Vec::with_capacity(picked_total);
         let mut deferred_txs = Vec::new();
         let mut cap_stop_branch = None;
+        let mut blockifier_routed = false;
+        let mut route_remaining_to_blockifier = force_blockifier_for_block;
         let mut routed = RoutedBatchToExecute {
             rust_batch: BatchToExecute::with_capacity(self.routing_cfg.rust_batch_size),
             blockifier_batch: BatchToExecute::with_capacity(self.routing_cfg.blockifier_batch_size),
@@ -167,6 +171,21 @@ impl Batcher {
                     routed_recoverable_txs.push(recovery_tx);
                     routed.blockifier_batch.push(tx, info);
                     self.metrics.batcher_routed_blockifier_total.add(1, &[]);
+                    blockifier_routed = true;
+                    route_remaining_to_blockifier = true;
+                }
+                ExecutionMode::Mixed if route_remaining_to_blockifier => {
+                    if routed.blockifier_batch.len() >= self.routing_cfg.blockifier_batch_size {
+                        cap_stop_branch = Some("blockifier");
+                        deferred_txs.push(recovery_tx);
+                        deferred_txs.extend(picked_iter);
+                        break;
+                    }
+                    routed_recoverable_txs.push(recovery_tx);
+                    routed.blockifier_batch.push(tx, info);
+                    self.metrics.batcher_routed_blockifier_total.add(1, &[]);
+                    blockifier_routed = true;
+                    route_remaining_to_blockifier = true;
                 }
                 ExecutionMode::Mixed => match classify_invoke(&tx, &self.routing_cfg, &self.backend) {
                     RouteDecision::Rust => {
@@ -190,6 +209,8 @@ impl Batcher {
                         routed_recoverable_txs.push(recovery_tx);
                         routed.blockifier_batch.push(tx, info);
                         self.metrics.batcher_routed_blockifier_total.add(1, &[]);
+                        blockifier_routed = true;
+                        route_remaining_to_blockifier = true;
                         let reason_label = match reason {
                             RouteFallbackReason::NotInvoke => "not_invoke",
                             RouteFallbackReason::SenderNotExecutor => "sender_not_executor",
@@ -207,7 +228,7 @@ impl Batcher {
             }
         }
 
-        Ok(RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch })
+        Ok(RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch, blockifier_routed })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -248,6 +269,7 @@ impl Batcher {
 
     pub async fn run(mut self) -> anyhow::Result<()> {
         let mut local_carry = VecDeque::new();
+        let mut force_blockifier_block_n: Option<u64> = None;
         loop {
             if *self.tainted_rebuild_active_rx.borrow() {
                 tokio::select! {
@@ -305,6 +327,11 @@ impl Batcher {
             };
             let execution_epoch = *self.execution_epoch_rx.borrow();
             let execution_mode = *self.execution_mode_rx.borrow();
+            if force_blockifier_block_n.is_some_and(|block_n| block_n != frontier_block_n) {
+                force_blockifier_block_n = None;
+            }
+            let force_blockifier_for_block =
+                execution_mode == ExecutionMode::Mixed && force_blockifier_block_n == Some(frontier_block_n);
 
             let mut chunk_size = self.pick_limit_for_mode(execution_mode);
             if self.replay_mode_enabled {
@@ -395,8 +422,22 @@ impl Batcher {
             if !picked.is_empty() {
                 let picked_total = picked.len();
                 let picked_summary = summarize_validated_batch(&picked);
-                let RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch } =
-                    self.route_picked_txs(picked, execution_mode, frontier_block_n, execution_epoch)?;
+                let RoutedPickOutcome {
+                    routed,
+                    routed_recoverable_txs,
+                    deferred_txs,
+                    cap_stop_branch,
+                    blockifier_routed,
+                } = self.route_picked_txs(
+                    picked,
+                    execution_mode,
+                    frontier_block_n,
+                    execution_epoch,
+                    force_blockifier_for_block,
+                )?;
+                if execution_mode == ExecutionMode::Mixed && blockifier_routed {
+                    force_blockifier_block_n = Some(frontier_block_n);
+                }
                 let routed_total = routed.total_len();
                 let current_epoch = *self.execution_epoch_rx.borrow();
                 let carry_total_after = local_carry.len()
@@ -430,6 +471,7 @@ impl Batcher {
                     blockifier_txs = routed.blockifier_batch.len(),
                     rust_txs = routed.rust_batch.len(),
                     mode = ?execution_mode,
+                    force_blockifier_for_block,
                     "batcher_batch_routed"
                 );
 
