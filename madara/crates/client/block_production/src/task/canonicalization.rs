@@ -76,6 +76,9 @@ impl BlockProductionTask {
         let reexec_epoch = self.reexec_epoch;
         let metrics = Arc::clone(&self.metrics);
         let no_charge_fee = self.no_charge_fee;
+        let ignore_fee_token_mismatch = self.routing_cfg.runtime_options.ignore_fee_token_mismatch;
+        let ignored_storage_mismatch_canonical_source =
+            self.routing_cfg.runtime_options.ignored_storage_mismatch_canonical_source;
         #[cfg(test)]
         let force_comparator_error = self.force_comparator_error;
 
@@ -87,6 +90,8 @@ impl BlockProductionTask {
                 reexec_epoch,
                 metrics,
                 no_charge_fee,
+                ignore_fee_token_mismatch,
+                ignored_storage_mismatch_canonical_source,
                 #[cfg(test)]
                 force_comparator_error,
             )
@@ -457,6 +462,8 @@ impl BlockProductionTask {
         reexec_epoch: u64,
         metrics: Arc<BlockProductionMetrics>,
         no_charge_fee: bool,
+        ignore_fee_token_mismatch: bool,
+        ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
         #[cfg(test)] force_comparator_error: bool,
     ) -> anyhow::Result<CanonicalizationTaskResult> {
         let PendingCanonicalizationInput { state, block_exec_summary } = input;
@@ -499,6 +506,8 @@ impl BlockProductionTask {
                 metrics,
                 no_charge_fee,
                 parent_overlays,
+                ignore_fee_token_mismatch,
+                ignored_storage_mismatch_canonical_source,
                 #[cfg(test)]
                 force_comparator_error,
             )
@@ -529,6 +538,8 @@ impl BlockProductionTask {
         metrics: Arc<BlockProductionMetrics>,
         no_charge_fee: bool,
         parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
+        ignore_fee_token_mismatch: bool,
+        ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
         #[cfg(test)] force_comparator_error: bool,
     ) -> anyhow::Result<CanonicalizationTaskCanonical> {
         use std::time::UNIX_EPOCH;
@@ -633,7 +644,8 @@ impl BlockProductionTask {
 
         let block_limit = state.backend.chain_config().bouncer_config.block_max_capacity;
         let compare_start = Instant::now();
-        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(state.backend.chain_config());
+        let ignored_storage_addresses =
+            Self::comparator_ignored_storage_addresses(state.backend.chain_config(), ignore_fee_token_mismatch);
         let sd_comparison = compare_state_diff_with_ignored_storage_addresses(
             sd_x1,
             &reexec_result.state_diff,
@@ -688,8 +700,8 @@ impl BlockProductionTask {
 
         let ignored_storage_mismatch =
             matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
-        let use_blockifier_on_ignored_storage_mismatch =
-            ignored_storage_mismatch && Self::use_blockifier_on_ignored_storage_mismatch();
+        let use_blockifier_on_ignored_storage_mismatch = ignored_storage_mismatch
+            && ignored_storage_mismatch_canonical_source == RustExecCanonicalSource::BlockifierReexec;
         let sd_match = matches!(
             &sd_comparison,
             crate::comparator::StateDiffComparison::Match
@@ -949,7 +961,10 @@ impl BlockProductionTask {
         // Run the pure comparison functions (timed for comparator_compare_duration_seconds).
         let block_limit = state.backend.chain_config().bouncer_config.block_max_capacity;
         let compare_start = Instant::now();
-        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(state.backend.chain_config());
+        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(
+            state.backend.chain_config(),
+            self.routing_cfg.runtime_options.ignore_fee_token_mismatch,
+        );
         let sd_comparison = compare_state_diff_with_ignored_storage_addresses(
             sd_x1,
             &reexec_result.state_diff,
@@ -1005,8 +1020,9 @@ impl BlockProductionTask {
 
         let ignored_storage_mismatch =
             matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
-        let use_blockifier_on_ignored_storage_mismatch =
-            ignored_storage_mismatch && Self::use_blockifier_on_ignored_storage_mismatch();
+        let use_blockifier_on_ignored_storage_mismatch = ignored_storage_mismatch
+            && self.routing_cfg.runtime_options.ignored_storage_mismatch_canonical_source
+                == RustExecCanonicalSource::BlockifierReexec;
         let sd_match = matches!(
             &sd_comparison,
             crate::comparator::StateDiffComparison::Match

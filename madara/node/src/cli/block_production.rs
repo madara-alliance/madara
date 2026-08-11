@@ -42,6 +42,14 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RustExecCanonicalSourceParam {
+    #[default]
+    ExecutionBox,
+    BlockifierReexec,
+}
+
 #[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
 pub struct RustExecParams {
     /// Sender-address whitelist used for Rust execution routing.
@@ -138,6 +146,21 @@ pub struct RustExecParams {
     #[serde(default)]
     pub ignore_fee_mismatch: bool,
 
+    /// Ignore comparator storage mismatches at the configured fee-token addresses.
+    #[arg(env = "MADARA_RUST_EXEC_IGNORE_FEE_TOKEN_MISMATCH", long, default_value_t = true)]
+    #[serde(default = "default_true")]
+    pub ignore_fee_token_mismatch: bool,
+
+    /// Canonical output to use when only ignored fee-token storage differs.
+    #[arg(
+        env = "MADARA_RUST_EXEC_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE",
+        long,
+        default_value_t = RustExecCanonicalSourceParam::ExecutionBox,
+        value_enum
+    )]
+    #[serde(default)]
+    pub ignored_storage_mismatch_canonical_source: RustExecCanonicalSourceParam,
+
     /// Select the nearest settle_trade_v3 bouncer profile by position count.
     #[arg(
         env = "MADARA_RUST_EXEC_SETTLE_TRADE_V3_POSITIONS",
@@ -166,6 +189,8 @@ impl Default for RustExecParams {
             hash_agg_logs: false,
             storage_agg_logs: false,
             ignore_fee_mismatch: false,
+            ignore_fee_token_mismatch: true,
+            ignored_storage_mismatch_canonical_source: RustExecCanonicalSourceParam::ExecutionBox,
             settle_trade_v3_positions: None,
         }
     }

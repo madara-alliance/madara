@@ -357,7 +357,7 @@ mod tests {
     use super::RunCmd;
     use clap::Parser;
     use figment::{
-        providers::{Format, Json},
+        providers::{Format, Json, Serialized},
         Figment,
     };
 
@@ -411,6 +411,30 @@ mod tests {
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
+    }
+
+    #[test]
+    fn partial_config_overrides_cli_baseline_without_dropping_unrelated_values() {
+        let cli_args = RunCmd::parse_from(["madara", "--sequencer", "--l1-endpoint", "https://l1.example.com"]);
+        let partial_config = serde_json::json!({
+            "block_production_params": {
+                "rust_exec": {
+                    "batch_size": 5
+                }
+            }
+        });
+
+        let run_cmd: RunCmd = Figment::new()
+            .merge(Serialized::defaults(cli_args))
+            .merge(Serialized::defaults(partial_config))
+            .extract()
+            .expect("partial config should layer over CLI values");
+
+        assert_eq!(run_cmd.block_production_params.rust_exec.batch_size, 5);
+        assert_eq!(
+            run_cmd.l1_sync_params.l1_endpoint.as_ref().map(ToString::to_string).as_deref(),
+            Some("https://l1.example.com/")
+        );
     }
 }
 

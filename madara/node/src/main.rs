@@ -139,15 +139,14 @@ async fn main() -> anyhow::Result<()> {
     // Create config builder.
     let mut config: Figment = Figment::new();
 
-    // This loads the arguments in priority
-    // If there are cli arguments, check if they are pointing to a file
-    // If yes, load from that file. If not, load the values from the cli
-    // If there are no cli args, load the default file
+    // CLI and environment values provide the baseline. A config file can then
+    // override only the sections it owns without dropping the remaining values.
     if env::args().count() > 1 {
-        // This is done to overwrite the preset with the args
         let cli_args = RunCmd::parse().apply_arg_preset();
+        let config_path = cli_args.config_file.clone();
+        config = config.merge(Serialized::defaults(cli_args));
 
-        if let Some(config_path) = cli_args.config_file.clone() {
+        if let Some(config_path) = config_path {
             config = match config_path.extension() {
                 None => bail!("Unsupported file type for config file."),
                 Some(os_str) => match os_str.to_str() {
@@ -157,8 +156,6 @@ async fn main() -> anyhow::Result<()> {
                     _ => bail!("Unsupported file type for config file."),
                 },
             }
-        } else {
-            config = config.merge(Serialized::defaults(cli_args));
         }
     } else {
         let path = Path::new("./configs/args/config.json");

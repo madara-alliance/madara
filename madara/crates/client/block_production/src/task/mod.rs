@@ -14,7 +14,7 @@ use crate::metrics::BlockProductionMetrics;
 use crate::reexecution::dispatcher::{new_epoch_token, start_reexec_dispatcher, ReexecDispatcherHandle};
 use crate::reexecution::{ReexecExecutedTxArtifacts, ReexecRequest, ReexecWorkerOutcome};
 use crate::util;
-use crate::util::{AdditionalTxInfo, BatchToExecute};
+use crate::util::{AdditionalTxInfo, BatchToExecute, RustExecCanonicalSource};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use mc_db::close_pipeline_contract::ClosePreconfirmedResult;

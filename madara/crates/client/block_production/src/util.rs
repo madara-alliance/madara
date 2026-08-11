@@ -318,7 +318,16 @@ pub struct RustExecRuntimeOptions {
     pub hash_agg_logs: bool,
     pub storage_agg_logs: bool,
     pub ignore_fee_mismatch: bool,
+    pub ignore_fee_token_mismatch: bool,
+    pub ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
     pub settle_trade_v3_positions: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RustExecCanonicalSource {
+    #[default]
+    ExecutionBox,
+    BlockifierReexec,
 }
 
 impl Default for RustExecRuntimeOptions {
@@ -336,6 +345,8 @@ impl Default for RustExecRuntimeOptions {
             hash_agg_logs: false,
             storage_agg_logs: false,
             ignore_fee_mismatch: false,
+            ignore_fee_token_mismatch: true,
+            ignored_storage_mismatch_canonical_source: RustExecCanonicalSource::ExecutionBox,
             settle_trade_v3_positions: None,
         }
     }

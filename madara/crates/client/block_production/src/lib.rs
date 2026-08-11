@@ -140,7 +140,7 @@ mod util;
 pub use handle::BlockProductionHandle;
 pub use task::{BlockProductionStateNotification, BlockProductionTask};
 pub(crate) use task::{CurrentBlockState, MempoolIntakeMode};
-pub use util::RustExecRuntimeOptions;
+pub use util::{RustExecCanonicalSource, RustExecRuntimeOptions};
 
 #[cfg(test)]
 pub(crate) use task::tests;

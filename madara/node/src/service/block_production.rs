@@ -1,8 +1,11 @@
-use crate::cli::block_production::{parse_hex_felt, BlockProductionParams, RustExecParams, StartupExecutionModeParam};
+use crate::cli::block_production::{
+    parse_hex_felt, BlockProductionParams, RustExecCanonicalSourceParam, RustExecParams, StartupExecutionModeParam,
+};
 use anyhow::Context;
 use mc_block_production::fallback::types::StartupExecutionMode;
 use mc_block_production::{
-    metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask, RustExecRuntimeOptions,
+    metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask, RustExecCanonicalSource,
+    RustExecRuntimeOptions,
 };
 use mc_db::MadaraBackend;
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
@@ -33,6 +36,11 @@ fn rust_exec_runtime_options(config: &RustExecParams) -> RustExecRuntimeOptions 
         hash_agg_logs: config.hash_agg_logs,
         storage_agg_logs: config.storage_agg_logs,
         ignore_fee_mismatch: config.ignore_fee_mismatch,
+        ignore_fee_token_mismatch: config.ignore_fee_token_mismatch,
+        ignored_storage_mismatch_canonical_source: match config.ignored_storage_mismatch_canonical_source {
+            RustExecCanonicalSourceParam::ExecutionBox => RustExecCanonicalSource::ExecutionBox,
+            RustExecCanonicalSourceParam::BlockifierReexec => RustExecCanonicalSource::BlockifierReexec,
+        },
         settle_trade_v3_positions: config.settle_trade_v3_positions,
     }
 }

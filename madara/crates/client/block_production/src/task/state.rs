@@ -411,15 +411,8 @@ impl BlockProductionTask {
 
     pub(super) fn comparator_ignored_storage_addresses(
         chain_config: &mp_chain_config::ChainConfig,
+        ignore_fee_token_mismatch: bool,
     ) -> std::collections::BTreeSet<Felt> {
-        let ignore_fee_token_mismatch = std::env::var("MADARA_COMPARATOR_IGNORE_FEE_TOKEN_MISMATCH")
-            .ok()
-            .map(|value| {
-                let normalized = value.trim().to_ascii_lowercase();
-                !matches!(normalized.as_str(), "0" | "false" | "no" | "off")
-            })
-            .unwrap_or(true);
-
         if ignore_fee_token_mismatch {
             std::collections::BTreeSet::from([
                 chain_config.parent_fee_token_address.to_felt(),
@@ -428,18 +421,6 @@ impl BlockProductionTask {
         } else {
             std::collections::BTreeSet::new()
         }
-    }
-
-    pub(super) fn use_blockifier_on_ignored_storage_mismatch() -> bool {
-        std::env::var("MADARA_COMPARATOR_IGNORED_STORAGE_MISMATCH_CANONICAL_SOURCE")
-            .ok()
-            .map(|value| {
-                matches!(
-                    value.trim().to_ascii_lowercase().as_str(),
-                    "blockifier" | "blockifier_reexec" | "blockifier-reexec" | "bre"
-                )
-            })
-            .unwrap_or(false)
     }
 
     /// Creates a new BlockProductionTask.
