@@ -318,20 +318,21 @@ impl Batcher {
 
             // Resolve the execution-frontier block number per design doc 02 §Replay-boundary rule:
             // use internal_preconfirmed_tip first (execution frontier), then confirmed_tip+1.
-            let frontier_block_n = {
-                let head_state = self.backend.chain_head_state();
-                head_state
-                    .internal_preconfirmed_tip
-                    .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-                    .unwrap_or(0)
-            };
+            let head_state = self.backend.chain_head_state();
+            let frontier_block_n = head_state
+                .internal_preconfirmed_tip
+                .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+                .unwrap_or(0);
             let execution_epoch = *self.execution_epoch_rx.borrow();
             let execution_mode = *self.execution_mode_rx.borrow();
-            if force_blockifier_block_n.is_some_and(|block_n| block_n != frontier_block_n) {
+            if force_blockifier_block_n
+                .zip(head_state.confirmed_tip)
+                .is_some_and(|(block_n, confirmed_tip)| confirmed_tip >= block_n)
+            {
                 force_blockifier_block_n = None;
             }
             let force_blockifier_for_block =
-                execution_mode == ExecutionMode::Mixed && force_blockifier_block_n == Some(frontier_block_n);
+                execution_mode == ExecutionMode::Mixed && force_blockifier_block_n.is_some();
 
             let mut chunk_size = self.pick_limit_for_mode(execution_mode);
             if self.replay_mode_enabled {
