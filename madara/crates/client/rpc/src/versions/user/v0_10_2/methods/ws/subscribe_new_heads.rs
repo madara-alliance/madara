@@ -10,7 +10,13 @@ pub async fn subscribe_new_heads(
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     block_id: BlockId,
 ) -> Result<(), StarknetWsApiError> {
-    let mut block_n = initial_head_block_n(starknet, block_id)?;
+    let mut block_n = match initial_head_block_n(starknet, block_id) {
+        Ok(block_n) => block_n,
+        Err(err) => {
+            subscription_sink.reject(err).await;
+            return Ok(());
+        }
+    };
 
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx =

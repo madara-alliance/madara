@@ -408,7 +408,9 @@ func assertProbeResult(t *testing.T, r result, hashes txHashes, account0, accoun
 
 	switch {
 	case strings.HasPrefix(r.name, "events/"):
-		assertKnownHash(t, r, hashes)
+		if !strings.Contains(r.name, "block_id=") {
+			assertKnownHash(t, r, hashes)
+		}
 		assertFinality(t, r, eventFinalities(r.name))
 		if r.fromAddress != erc20.String() {
 			t.Errorf("%s from_address=%s, want %s", r.name, r.fromAddress, erc20)

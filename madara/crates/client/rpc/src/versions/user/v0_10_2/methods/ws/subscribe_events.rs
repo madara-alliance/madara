@@ -87,7 +87,13 @@ pub async fn subscribe_events(
     let requested_finality = finality_status.unwrap_or_default();
     let address_filter = AddressSubscriptionFilter::new(from_address.as_ref());
     let mut reorgs = starknet.backend.subscribe_reorgs();
-    let mut next_block_n = initial_event_block_n(starknet, block_id)?;
+    let mut next_block_n = match initial_event_block_n(starknet, block_id) {
+        Ok(block_n) => block_n,
+        Err(err) => {
+            subscription_sink.reject(err).await;
+            return Ok(());
+        }
+    };
 
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id(), crate::metrics::SUBSCRIBE_EVENTS).await;
