@@ -62,19 +62,6 @@ pub async fn state_update_worker(
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
-    let state = StateUpdateWorker {
-        block_metrics: block_metrics.clone(),
-        backend: backend.clone(),
-        l1_head_sender: l1_head_sender.clone(),
-    };
-
-    // Clear L1 confirmed block at startup
-    // TODO: remove this
-    state.backend.set_latest_l1_confirmed(None).map_err(|e| {
-        SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
-    })?;
-    tracing::debug!("update_l1: cleared confirmed block number");
-
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
     loop {
@@ -136,8 +123,64 @@ mod state_update_worker_tests {
     use super::*;
     use crate::client::MockSettlementLayerProvider;
     use mp_chain_config::ChainConfig;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Mutex,
+    };
     use std::time::Duration;
+
+    #[test]
+    fn worker_preserves_persisted_l1_cursor_while_fetching_current_state() {
+        const PERSISTED_CURSOR: u64 = 123;
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.set_latest_l1_confirmed(Some(PERSISTED_CURSOR)).expect("cursor should be persisted");
+
+        let (fetch_started_tx, fetch_started_rx) = mpsc::channel();
+        let (release_fetch_tx, release_fetch_rx) = mpsc::channel();
+        let release_fetch_rx = Arc::new(Mutex::new(release_fetch_rx));
+
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_current_core_contract_state().times(1).returning({
+            let release_fetch_rx = Arc::clone(&release_fetch_rx);
+            move || {
+                fetch_started_tx.send(()).expect("test should still be waiting for the fetch");
+                release_fetch_rx
+                    .lock()
+                    .expect("release channel lock should not be poisoned")
+                    .recv()
+                    .expect("test should release the mocked fetch after observing the cursor");
+                Ok(StateUpdate {
+                    block_number: Some(PERSISTED_CURSOR),
+                    global_root: Felt::ZERO,
+                    block_hash: Felt::ZERO,
+                })
+            }
+        });
+        mock.expect_listen_for_update_state_events().times(1).returning(|_ctx, _worker| Ok(()));
+
+        let worker_backend = Arc::clone(&backend);
+        let worker = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime should build").block_on(
+                state_update_worker(
+                    worker_backend,
+                    Arc::new(mock),
+                    ServiceContext::new_for_testing(),
+                    tokio::sync::watch::channel(None).0,
+                    Arc::new(L1BlockMetrics::register().expect("metrics should register")),
+                ),
+            )
+        });
+
+        fetch_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("worker should start fetching the current L1 state");
+        let cursor_during_fetch = backend.latest_l1_confirmed_block_n();
+        release_fetch_tx.send(()).expect("worker should still be waiting for the mocked fetch");
+        worker.join().expect("worker thread should not panic").expect("worker should exit cleanly");
+
+        assert_eq!(cursor_during_fetch, Some(PERSISTED_CURSOR));
+    }
 
     /// End-to-end recovery test: when a state update subscription dies with the
     /// recoverable error produced by the liveness watchdog terminating a stuck
