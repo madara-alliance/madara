@@ -2,7 +2,7 @@ use crate::{client::SettlementLayerProvider, messaging::check_message_to_l2_vali
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use tokio::sync::Notify;
 
 pub struct MessagesToL2Consumer {
@@ -40,21 +40,48 @@ impl MessagesToL2Consumer {
             }
 
             // Return what's in db. Skip and remove invalid/cancelled messages.
-            while let Some(msg) = self
-                .backend
-                .get_next_pending_message_to_l2(self.next_nonce)
-                .context("Getting next pending message to l2")?
-            {
+            loop {
+                let lookup_started = Instant::now();
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=l1_pending_db_lookup_started start_nonce={}",
+                    self.next_nonce
+                );
+                let next_message = self
+                    .backend
+                    .get_next_pending_message_to_l2(self.next_nonce)
+                    .context("Getting next pending message to l2")?;
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=l1_pending_db_lookup_finished start_nonce={} found={} elapsed_ms={:.3}",
+                    self.next_nonce,
+                    next_message.is_some(),
+                    lookup_started.elapsed().as_secs_f64() * 1_000.0
+                );
+                let Some(msg) = next_message else { break };
                 self.next_nonce = msg.tx.nonce + 1;
-                match check_message_to_l2_validity(
+                let validity_started = Instant::now();
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=l1_message_validity_started nonce={}",
+                    msg.tx.nonce
+                );
+                let is_valid = check_message_to_l2_validity(
                     &self.l1_read,
                     &self.backend,
                     &msg,
                     self.unsafe_skip_l1_message_consumed_check,
                 )
                 .await
-                .context("Checking message to l2 validity")?
-                {
+                .context("Checking message to l2 validity")?;
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=l1_message_validity_finished nonce={} valid={} elapsed_ms={:.3}",
+                    msg.tx.nonce,
+                    is_valid,
+                    validity_started.elapsed().as_secs_f64() * 1_000.0
+                );
+                match is_valid {
                     // can be consumed (not cancelled, still exists, not already in chain)
                     true => return Ok(msg),
                     false => self

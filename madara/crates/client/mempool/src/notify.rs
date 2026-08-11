@@ -3,6 +3,7 @@ use mp_chain_config::{ChainConfig, MempoolMode};
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
+    time::Instant,
 };
 use tokio::sync::{Notify, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
@@ -28,7 +29,11 @@ impl Drop for MempoolWriteAccess {
     fn drop(&mut self) {
         // If there are still ready transactions in the mempool, notify the next waiter.
         if self.inner.has_ready_transactions() {
-            tracing::debug!("notify_one (drop)");
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=mempool_notify ready_transactions={}",
+                self.inner.ready_transactions()
+            );
             self.notify.notify_one();
         }
     }
@@ -65,15 +70,28 @@ impl MempoolInnerWithNotify {
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no transaction that can be consumed, this function will wait until there is at least 1 transaction to consume.
     pub async fn get_write_access_wait_for_ready(&self) -> MempoolWriteAccess {
+        let wait_started = Instant::now();
         let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
         tokio::pin!(permit);
         loop {
             {
-                tracing::debug!("taking lock");
+                let lock_started = Instant::now();
                 let inner = self.inner.clone().write_owned().await;
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=mempool_lock_acquired lock_wait_ms={:.3} total_wait_ms={:.3} ready_transactions={}",
+                    lock_started.elapsed().as_secs_f64() * 1_000.0,
+                    wait_started.elapsed().as_secs_f64() * 1_000.0,
+                    inner.ready_transactions()
+                );
 
                 if inner.has_ready_transactions() {
-                    tracing::debug!("consumer ready");
+                    tracing::info!(
+                        target: "batch_pipeline",
+                        "phase=mempool_consumer_ready total_wait_ms={:.3} ready_transactions={}",
+                        wait_started.elapsed().as_secs_f64() * 1_000.0,
+                        inner.ready_transactions()
+                    );
                     return MempoolWriteAccess { inner, notify: self.notify.clone() };
                 }
                 // Note: we put ourselves in the notify list BEFORE giving back the lock.
@@ -82,8 +100,17 @@ impl MempoolInnerWithNotify {
 
                 // drop the locks here
             }
-            tracing::debug!("waiting");
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=mempool_waiting total_wait_ms={:.3}",
+                wait_started.elapsed().as_secs_f64() * 1_000.0
+            );
             permit.as_mut().await; // Wait until we're notified.
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=mempool_notified total_wait_ms={:.3}",
+                wait_started.elapsed().as_secs_f64() * 1_000.0
+            );
             permit.set(self.notify.notified());
         }
     }

@@ -122,6 +122,11 @@ impl ExecutorThread {
     /// When `deadline` is `None`, this waits indefinitely for a batch or command.
     fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=executor_batch_received source=try_recv batch_size={}",
+                batch.len()
+            );
             return WaitTxBatchOutcome::Batch(batch);
         }
 
@@ -154,7 +159,11 @@ impl ExecutorThread {
                         }
                         el = self.incoming_batches.recv() => match el {
                             Some(el) => {
-                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                tracing::info!(
+                                    target: "batch_pipeline",
+                                    "phase=executor_batch_received source=recv_deadline batch_size={}",
+                                    el.len()
+                                );
                                 WaitTxBatchOutcome::Batch(el)
                             }
                             None => {
@@ -172,7 +181,11 @@ impl ExecutorThread {
                         }
                         el = self.incoming_batches.recv() => match el {
                             Some(el) => {
-                                tracing::debug!("Got new batch with {} transactions.", el.len());
+                                tracing::info!(
+                                    target: "batch_pipeline",
+                                    "phase=executor_batch_received source=recv_no_deadline batch_size={}",
+                                    el.len()
+                                );
                                 WaitTxBatchOutcome::Batch(el)
                             }
                             None => {
@@ -448,6 +461,11 @@ impl ExecutorThread {
             };
 
             let exec_start_time = Instant::now();
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=executor_batch_started batch_size={}",
+                to_exec.len()
+            );
 
             // TODO: we should use the execution deadline option
             // Execute the transactions.
@@ -455,6 +473,13 @@ impl ExecutorThread {
                 execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
 
             let exec_duration = exec_start_time.elapsed();
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=executor_batch_finished requested_batch_size={} result_count={} elapsed_ms={:.3}",
+                to_exec.len(),
+                blockifier_results.len(),
+                exec_duration.as_secs_f64() * 1_000.0
+            );
 
             // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
             let block_full = blockifier_results.len() < to_exec.len();

@@ -13,7 +13,7 @@ use mp_transactions::{
     L1HandlerTransactionWithFee,
 };
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use tokio::sync::mpsc;
 
 pub struct Batcher {
@@ -47,14 +47,28 @@ impl Batcher {
     }
 
     pub async fn run(mut self) -> anyhow::Result<()> {
+        let mut cycle = 0_u64;
         loop {
+            cycle += 1;
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
             // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
             // the worker has finished executing its current one.
+            let reserve_started = Instant::now();
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=output_reserve_wait_started cycle={cycle} available_capacity={}",
+                self.out.capacity()
+            );
             let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
                 // Stop condition: service stopped (ctx), or batch sender closed.
                 return anyhow::Ok(());
             };
+            let reserve_wait_ms = reserve_started.elapsed().as_secs_f64() * 1_000.0;
+            tracing::info!(
+                target: "batch_pipeline",
+                "phase=output_permit_reserved cycle={cycle} wait_ms={reserve_wait_ms:.3} available_capacity={}",
+                self.out.capacity()
+            );
 
             // We have 3 transactions streams:
             // * bypass inclusion (for admin rpc/chain bootstrapping purposes)
@@ -118,6 +132,8 @@ impl Batcher {
 
             tokio::pin!(tx_stream);
 
+            let input_wait_started = Instant::now();
+            tracing::info!(target: "batch_pipeline", "phase=input_batch_wait_started cycle={cycle}");
             let batch = tokio::select! {
                 _ = self.ctx.cancelled() => {
                     // Stop condition: cancelled.
@@ -126,7 +142,12 @@ impl Batcher {
                 Some(got) = tx_stream.next() => {
                     // got a batch :)
                     let got = got.context("Creating batch for block building")?;
-                    tracing::debug!("Batcher got a batch of {}.", got.len());
+                    let input_wait_ms = input_wait_started.elapsed().as_secs_f64() * 1_000.0;
+                    tracing::info!(
+                        target: "batch_pipeline",
+                        "phase=input_batch_ready cycle={cycle} batch_size={} wait_ms={input_wait_ms:.3}",
+                        got.len()
+                    );
                     got.into_iter().collect::<BatchToExecute>()
                 }
                 // Stop condition: tx_stream is empty.
@@ -134,7 +155,11 @@ impl Batcher {
             };
 
             if !batch.is_empty() {
-                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                tracing::info!(
+                    target: "batch_pipeline",
+                    "phase=output_batch_send cycle={cycle} batch_size={}",
+                    batch.len()
+                );
 
                 permit.send(batch);
             }
