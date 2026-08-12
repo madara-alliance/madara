@@ -2412,7 +2412,44 @@ fn upsert_token_balance<S: StateReader>(
     let amount_key = storage_key_with_offset(base, 1);
     let current = felt_to_i128(ctx.storage_read(state, contract, amount_key)?)?;
     let updated = current + delta;
+    if updated == 0 {
+        remove_token_balance(ctx, state, contract, account, token_address)?;
+        return Ok(());
+    }
     ctx.storage_write(contract, amount_key, i128_to_felt(updated));
+    Ok(())
+}
+
+fn remove_token_balance<S: StateReader>(
+    ctx: &mut ExecutionContext,
+    state: &S,
+    contract: ContractAddress,
+    account: ContractAddress,
+    token_address: ContractAddress,
+) -> Result<(), ExecutionError> {
+    let base = resolve_token_balance_base(state, ctx, contract, account, token_address)?;
+    let prev = ctx.storage_read(state, contract, storage_key_with_offset(base, 2))?;
+    let next = ctx.storage_read(state, contract, storage_key_with_offset(base, 3))?;
+
+    if prev != Felt::ZERO {
+        let prev_base = resolve_token_balance_base(state, ctx, contract, account, ContractAddress(prev))?;
+        ctx.storage_write(contract, storage_key_with_offset(prev_base, 3), next);
+    }
+    if next != Felt::ZERO {
+        let next_base = resolve_token_balance_base(state, ctx, contract, account, ContractAddress(next))?;
+        ctx.storage_write(contract, storage_key_with_offset(next_base, 2), prev);
+    }
+
+    let tail_key = resolve_token_balance_tail_key(state, contract, account)?;
+    let tail = ctx.storage_read(state, contract, tail_key)?;
+    if tail == token_address.0 {
+        ctx.storage_write(contract, tail_key, prev);
+    }
+
+    ctx.storage_write(contract, base, Felt::ZERO);
+    ctx.storage_write(contract, storage_key_with_offset(base, 1), Felt::ZERO);
+    ctx.storage_write(contract, storage_key_with_offset(base, 2), Felt::ZERO);
+    ctx.storage_write(contract, storage_key_with_offset(base, 3), Felt::ZERO);
     Ok(())
 }
 
