@@ -549,9 +549,12 @@ install-llvm19:
 		CODENAME=$(CODENAME); \
 	fi; \
 	echo "Using LLVM repository codename: $$CODENAME"; \
+	if [ -f /etc/apt/blacksmith-ubuntu-mirrors.txt ]; then \
+		printf '%s\n' "http://archive.ubuntu.com/ubuntu" | $(if $(SUDO),sudo,) tee /etc/apt/blacksmith-ubuntu-mirrors.txt > /dev/null; \
+	fi; \
 	$(if $(SUDO),sudo,) wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | $(if $(SUDO),sudo,) tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null; \
-	$(if $(SUDO),sudo,) add-apt-repository -y "deb http://apt.llvm.org/$$CODENAME/ llvm-toolchain-$$CODENAME-19 main"; \
-	$(if $(SUDO),sudo,) apt-get update -y; \
+	$(if $(SUDO),sudo,) add-apt-repository -y -n "deb http://apt.llvm.org/$$CODENAME/ llvm-toolchain-$$CODENAME-19 main"; \
+	$(if $(SUDO),sudo,) apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update -y; \
 	$(if $(SUDO),sudo,) apt-get install -y \
 		clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
 		libmlir-19-dev mlir-19-tools \
