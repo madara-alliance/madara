@@ -262,12 +262,51 @@ fn canonical_warn_selects_eb_source() {
 }
 
 #[test]
-fn canonical_ignored_fee_token_mismatch_source_is_switchable() {
+fn strict_output_mismatch_selects_bre_source() {
+    use crate::comparator::{
+        decide_with_report, transaction_outputs::FieldMismatch, BlockComparisonReport, CanonicalBlockSource,
+        CanonicalizedBlockOutput, MismatchCategory, MismatchPolicy,
+    };
+    use blockifier::bouncer::BouncerWeights;
+
+    let mut report = BlockComparisonReport::default();
+    report.push(FieldMismatch {
+        category: MismatchCategory::Event,
+        policy: MismatchPolicy::Strict,
+        transaction_hash: Some(Felt::ONE),
+        transaction_index: Some(0),
+        field_path: "receipt.events[0].data[0]".into(),
+        execution_box_value: "0x1".into(),
+        blockifier_value: "0x2".into(),
+    });
+    let state = crate::comparator::state_diff::compare_state_diff(&StateDiff::default(), &StateDiff::default());
+    let resources = crate::comparator::execution_resources::compare_execution_resources(
+        &BouncerWeights::empty(),
+        &BouncerWeights::empty(),
+        &BouncerWeights::max(),
+    );
+    let decision = decide_with_report(&report, &state, &resources);
+    assert!(matches!(decision, super::ComparatorDecision::StopExecutionBox { .. }));
+
+    let canonical = match decision {
+        super::ComparatorDecision::StopExecutionBox { .. } => CanonicalizedBlockOutput {
+            source: CanonicalBlockSource::BlockifierReexec,
+            state_diff: StateDiff::default(),
+            bouncer_weights: BouncerWeights::empty(),
+            bre_per_tx: None,
+        },
+        _ => unreachable!(),
+    };
+    assert_eq!(canonical.source, CanonicalBlockSource::BlockifierReexec);
+}
+
+#[test]
+fn canonical_allowed_fee_balance_mismatch_source_is_switchable() {
     use std::collections::BTreeSet;
 
     use crate::comparator::{
         decide, execution_resources::compare_execution_resources,
-        state_diff::compare_state_diff_with_ignored_storage_addresses, CanonicalBlockSource, CanonicalizedBlockOutput,
+        state_diff::compare_state_diff_with_allowed_fee_balance_keys, CanonicalBlockSource, CanonicalizedBlockOutput,
     };
     use blockifier::bouncer::BouncerWeights;
     use mp_state_update::{ContractStorageDiffItem, StorageEntry};
@@ -287,23 +326,23 @@ fn canonical_ignored_fee_token_mismatch_source_is_switchable() {
         }],
         ..Default::default()
     };
-    let ignored = BTreeSet::from([fee_token]);
+    let allowed = BTreeSet::from([(fee_token, Felt::ONE)]);
     let eb_weights = BouncerWeights::empty();
     let bre_weights = BouncerWeights::empty();
     let block_limit = BouncerWeights::max();
 
-    let sd = compare_state_diff_with_ignored_storage_addresses(&eb_diff, &bre_diff, &ignored);
+    let sd = compare_state_diff_with_allowed_fee_balance_keys(&eb_diff, &bre_diff, &allowed);
     let er = compare_execution_resources(&eb_weights, &bre_weights, &block_limit);
     let decision = decide(&sd, &er);
 
-    for (use_bre_for_ignored, expected_source) in
+    for (use_bre_for_allowed, expected_source) in
         [(false, CanonicalBlockSource::ExecutionBox), (true, CanonicalBlockSource::BlockifierReexec)]
     {
-        let ignored_storage_mismatch =
-            matches!(sd, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
+        let allowed_fee_balance_mismatch =
+            matches!(sd, crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { .. });
         let canonical = match decision.clone() {
             super::ComparatorDecision::Accept | super::ComparatorDecision::AcceptWithWarn { .. } => {
-                if ignored_storage_mismatch && use_bre_for_ignored {
+                if allowed_fee_balance_mismatch && use_bre_for_allowed {
                     CanonicalizedBlockOutput {
                         source: CanonicalBlockSource::BlockifierReexec,
                         state_diff: bre_diff.clone(),
@@ -323,12 +362,86 @@ fn canonical_ignored_fee_token_mismatch_source_is_switchable() {
         };
 
         assert_eq!(canonical.source, expected_source);
-        if use_bre_for_ignored {
+        if use_bre_for_allowed {
             assert_eq!(canonical.state_diff, bre_diff);
         } else {
             assert_eq!(canonical.state_diff, eb_diff);
         }
     }
+}
+
+#[test]
+fn fee_balance_allowlist_is_derived_only_for_fee_payer_and_sequencer() {
+    use mp_convert::ToFelt;
+    use starknet_api::abi::abi_utils::get_storage_var_address;
+
+    let chain_config = ChainConfig::madara_test();
+    let sender = Felt::from(0x123u64);
+    let sequencer = Felt::from(0x456u64);
+    let mut row = make_fake_preconfirmed_tx(vec![]);
+    if let mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(tx)) =
+        &mut row.transaction.transaction
+    {
+        tx.contract_address = sender;
+    } else {
+        panic!("expected invoke-v0 fixture");
+    }
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut row.transaction.receipt {
+        receipt.actual_fee.amount = Felt::ONE;
+    }
+
+    let allowed = BlockProductionTask::comparator_allowed_fee_balance_keys(
+        &chain_config,
+        true,
+        std::slice::from_ref(&row),
+        &[],
+        sequencer,
+    );
+    let token = chain_config.parent_fee_token_address.to_felt();
+    let sender_low = get_storage_var_address("ERC20_balances", &[sender]).to_felt();
+    let sequencer_low = get_storage_var_address("ERC20_balances", &[sequencer]).to_felt();
+
+    assert_eq!(
+        allowed,
+        std::collections::BTreeSet::from([
+            (token, sender_low),
+            (token, sender_low + Felt::ONE),
+            (token, sequencer_low),
+            (token, sequencer_low + Felt::ONE),
+        ])
+    );
+
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut row.transaction.receipt {
+        receipt.actual_fee.amount = Felt::ZERO;
+    }
+    let mut reexec = crate::reexecution::ReexecExecutedTxArtifacts {
+        receipt: row.transaction.receipt.clone(),
+        tx_state_update: Default::default(),
+    };
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut reexec.receipt {
+        receipt.actual_fee.amount = Felt::ONE;
+    }
+    assert_eq!(
+        BlockProductionTask::comparator_allowed_fee_balance_keys(
+            &chain_config,
+            true,
+            std::slice::from_ref(&row),
+            std::slice::from_ref(&reexec),
+            sequencer,
+        ),
+        allowed
+    );
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut reexec.receipt {
+        receipt.actual_fee.amount = Felt::ZERO;
+    }
+    assert!(BlockProductionTask::comparator_allowed_fee_balance_keys(
+        &chain_config,
+        true,
+        &[row],
+        &[reexec],
+        sequencer,
+    )
+    .is_empty());
 }
 
 #[test]
@@ -847,6 +960,63 @@ fn build_bre_rows_preserves_metadata_uses_bre_execution() {
         Some(&Felt::from(0xBBu64)),
         "storage_diffs must be BRE-derived"
     );
+}
+
+#[test]
+fn build_bre_rows_pairs_artifacts_by_transaction_hash() {
+    use crate::reexecution::ReexecExecutedTxArtifacts;
+
+    let mut original_1 = make_fake_preconfirmed_tx(vec![]);
+    let mut original_2 = make_fake_preconfirmed_tx(vec![]);
+    let hash_1 = Felt::ONE;
+    let hash_2 = Felt::TWO;
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut original_1.transaction.receipt {
+        receipt.transaction_hash = hash_1;
+    }
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut original_2.transaction.receipt {
+        receipt.transaction_hash = hash_2;
+    }
+    let artifact = |hash, marker| ReexecExecutedTxArtifacts {
+        receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: hash,
+            ..Default::default()
+        }),
+        tx_state_update: mp_state_update::TransactionStateUpdate {
+            nonces: [(marker, Felt::ONE)].into_iter().collect(),
+            ..Default::default()
+        },
+    };
+
+    let rows = BlockProductionTask::build_bre_preconfirmed_rows(
+        &[original_1, original_2],
+        vec![artifact(hash_2, Felt::from(22u64)), artifact(hash_1, Felt::from(11u64))],
+    )
+    .unwrap();
+
+    assert_eq!(*rows[0].transaction.receipt.transaction_hash(), hash_1);
+    assert!(rows[0].state_diff.nonces.contains_key(&Felt::from(11u64)));
+    assert_eq!(*rows[1].transaction.receipt.transaction_hash(), hash_2);
+    assert!(rows[1].state_diff.nonces.contains_key(&Felt::from(22u64)));
+}
+
+#[test]
+fn build_bre_rows_rejects_duplicate_or_missing_membership() {
+    use crate::reexecution::ReexecExecutedTxArtifacts;
+
+    let mut original = make_fake_preconfirmed_tx(vec![]);
+    if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut original.transaction.receipt {
+        receipt.transaction_hash = Felt::ONE;
+    }
+    let artifact = || ReexecExecutedTxArtifacts {
+        receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: Felt::ONE,
+            ..Default::default()
+        }),
+        tx_state_update: Default::default(),
+    };
+
+    assert!(BlockProductionTask::build_bre_preconfirmed_rows(std::slice::from_ref(&original), vec![]).is_err());
+    assert!(BlockProductionTask::build_bre_preconfirmed_rows(&[original], vec![artifact(), artifact()]).is_err());
 }
 
 #[test]

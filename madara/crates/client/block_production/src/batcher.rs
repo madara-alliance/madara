@@ -142,6 +142,7 @@ impl Batcher {
         let mut routed = RoutedBatchToExecute {
             rust_batch: BatchToExecute::with_capacity(self.routing_cfg.rust_batch_size),
             blockifier_batch: BatchToExecute::with_capacity(self.routing_cfg.blockifier_batch_size),
+            original_tx_hashes: Vec::with_capacity(picked_total),
             block_n: frontier_block_n,
             execution_mode,
             execution_epoch,
@@ -150,6 +151,7 @@ impl Batcher {
         let mut picked_iter = picked.into_iter();
         while let Some(validated) = picked_iter.next() {
             let recovery_tx = validated.clone();
+            let transaction_hash = recovery_tx.hash;
             let (tx, arrived_at, declared_class) = validated
                 .into_blockifier_for_sequencing()
                 .map_err(anyhow::Error::from)
@@ -166,6 +168,7 @@ impl Batcher {
                     }
                     routed_recoverable_txs.push(recovery_tx);
                     routed.blockifier_batch.push(tx, info);
+                    routed.original_tx_hashes.push(transaction_hash);
                     self.metrics.batcher_routed_blockifier_total.add(1, &[]);
                 }
                 ExecutionMode::Mixed => match classify_invoke(&tx, &self.routing_cfg, &self.backend) {
@@ -178,6 +181,7 @@ impl Batcher {
                         }
                         routed_recoverable_txs.push(recovery_tx);
                         routed.rust_batch.push(tx, info);
+                        routed.original_tx_hashes.push(transaction_hash);
                         self.metrics.batcher_routed_rust_total.add(1, &[]);
                     }
                     RouteDecision::Blockifier(reason) => {
@@ -189,6 +193,7 @@ impl Batcher {
                         }
                         routed_recoverable_txs.push(recovery_tx);
                         routed.blockifier_batch.push(tx, info);
+                        routed.original_tx_hashes.push(transaction_hash);
                         self.metrics.batcher_routed_blockifier_total.add(1, &[]);
                         let reason_label = match reason {
                             RouteFallbackReason::NotInvoke => "not_invoke",
@@ -536,6 +541,7 @@ mod tests {
         ValidatedTransaction::from_starknet_api(
             AccountTransaction::Invoke(InvokeTransaction {
                 tx: ApiInvokeTransaction::V3(InvokeTransactionV3 {
+                    proof_facts: Default::default(),
                     sender_address: ContractAddress::try_from(sender_address).expect("valid sender address"),
                     resource_bounds: Default::default(),
                     tip: Default::default(),

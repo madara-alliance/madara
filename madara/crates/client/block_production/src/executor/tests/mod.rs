@@ -435,10 +435,13 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
         &setup.backend,
         BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[1], &setup.backend, Felt::ZERO)),
     );
+    let tx1_hash = tx1.tx_hash().to_felt();
+    let tx2_hash = tx2.tx_hash().to_felt();
 
     let routed = RoutedBatchToExecute {
         blockifier_batch: [(tx1, info1)].into_iter().collect(),
         rust_batch: [(tx2, info2)].into_iter().collect(),
+        original_tx_hashes: vec![tx2_hash, tx1_hash],
         block_n: 0,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 0,
@@ -450,6 +453,12 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         // Both blockifier_batch and rust_batch txs should be in combined executed_txs.
         assert_eq!(res.executed_txs.len(), 2, "mixed mode: both branches should produce combined result");
+        assert_eq!(
+            res.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(),
+            vec![tx1_hash, tx2_hash],
+            "physical execution remains backend-grouped"
+        );
+        assert_eq!(res.original_tx_hashes, vec![tx2_hash, tx1_hash], "source order must survive backend grouping");
     });
 
     // Close block.
@@ -486,6 +495,7 @@ async fn test_blockifier_only_mode_rescues_rust_batch(
     let routed = RoutedBatchToExecute {
         blockifier_batch: [(tx1, info1)].into_iter().collect(),
         rust_batch: [(tx2, info2)].into_iter().collect(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::BlockifierOnly,
         execution_epoch: 0,
@@ -531,6 +541,7 @@ async fn test_mixed_mode_rust_only_payload_executes(
     let routed = RoutedBatchToExecute {
         blockifier_batch: BatchToExecute::default(),
         rust_batch: [(tx, info)].into_iter().collect(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 0,
@@ -571,6 +582,7 @@ async fn test_blockifier_only_rescues_rust_only_payload(
     let routed = RoutedBatchToExecute {
         blockifier_batch: BatchToExecute::default(),
         rust_batch: [(tx, info)].into_iter().collect(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::BlockifierOnly,
         execution_epoch: 0,
@@ -622,6 +634,7 @@ async fn test_mode_transition_rescues_deferred_rust_txs(
     let routed = RoutedBatchToExecute {
         blockifier_batch: BatchToExecute::default(),
         rust_batch: [(tx1, info1), (tx2, info2)].into_iter().collect(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 0,
@@ -652,6 +665,7 @@ async fn test_mode_transition_rescues_deferred_rust_txs(
     let routed2 = RoutedBatchToExecute {
         blockifier_batch: BatchToExecute::default(),
         rust_batch: [(tx3, info3)].into_iter().collect(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::BlockifierOnly,
         execution_epoch: 0,

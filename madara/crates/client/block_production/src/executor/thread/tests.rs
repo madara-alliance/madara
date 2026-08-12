@@ -181,6 +181,7 @@ fn deferred_suffix_rebinds_to_next_block_after_rollover() {
     let mut pending_routed = RoutedBatchToExecute {
         blockifier_batch: [(tx, info)].into_iter().collect(),
         rust_batch: BatchToExecute::default(),
+        original_tx_hashes: Vec::new(),
         block_n: 999,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 0,
@@ -215,6 +216,7 @@ fn prepare_tainted_rebuild_fallback_rebinds_unaccepted_queued_batches_to_the_fut
     let mut pending_routed = RoutedBatchToExecute {
         blockifier_batch: [(pending_tx, pending_info)].into_iter().collect(),
         rust_batch: BatchToExecute::default(),
+        original_tx_hashes: Vec::new(),
         block_n: current_block_n,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 7,
@@ -223,6 +225,7 @@ fn prepare_tainted_rebuild_fallback_rebinds_unaccepted_queued_batches_to_the_fut
         .try_send(RoutedBatchToExecute {
             blockifier_batch: [(queued_tx, queued_info)].into_iter().collect(),
             rust_batch: BatchToExecute::default(),
+            original_tx_hashes: Vec::new(),
             block_n: 0,
             execution_mode: ExecutionMode::Mixed,
             execution_epoch: 7,
@@ -316,6 +319,7 @@ fn resync_to_backend_head_reanchors_next_block_to_backend_tip() {
     let mut pending_routed = RoutedBatchToExecute {
         blockifier_batch: [(pending_tx, pending_info)].into_iter().collect(),
         rust_batch: BatchToExecute::default(),
+        original_tx_hashes: Vec::new(),
         block_n: 0,
         execution_mode: ExecutionMode::BlockifierOnly,
         execution_epoch: 9,
@@ -425,6 +429,7 @@ fn stale_forward_reply_does_not_block_fallback_handoff() {
         "BatchExecuted",
         ExecutorMessage::BatchExecuted(BatchExecutionResult {
             executed_txs: BatchToExecute::default(),
+            original_tx_hashes: vec![],
             blockifier_results: vec![],
             stats: ExecutionStats::default(),
             execution_mode: ExecutionMode::Mixed,
@@ -487,6 +492,7 @@ fn fallback_command_interrupts_wait_for_confirmed_hash() {
     let mut pending_routed = RoutedBatchToExecute {
         blockifier_batch: [(carry_tx, carry_info)].into_iter().collect(),
         rust_batch: BatchToExecute::default(),
+        original_tx_hashes: Vec::new(),
         block_n: current_block_n,
         execution_mode: ExecutionMode::Mixed,
         execution_epoch: 0,

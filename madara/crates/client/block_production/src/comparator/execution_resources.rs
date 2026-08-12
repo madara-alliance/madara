@@ -36,6 +36,7 @@ pub struct ResourceDeltas {
     pub sierra_gas: Option<u64>,
     pub n_txs: Option<u64>,
     pub proving_gas: Option<u64>,
+    pub receipt_l2_gas: Option<u64>,
 }
 
 impl ResourceDeltas {
@@ -48,6 +49,7 @@ impl ResourceDeltas {
             || self.sierra_gas.is_some()
             || self.n_txs.is_some()
             || self.proving_gas.is_some()
+            || self.receipt_l2_gas.is_some()
     }
 }
 
@@ -55,7 +57,7 @@ impl std::fmt::Display for ResourceDeltas {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ResourceDeltas(l1_gas={:?}, msg_seg={:?}, n_events={:?}, state_diff={:?}, sierra_gas={:?}, n_txs={:?}, proving_gas={:?})",
+            "ResourceDeltas(l1_gas={:?}, msg_seg={:?}, n_events={:?}, state_diff={:?}, sierra_gas={:?}, n_txs={:?}, proving_gas={:?}, receipt_l2_gas={:?})",
             self.l1_gas,
             self.message_segment_length,
             self.n_events,
@@ -63,6 +65,7 @@ impl std::fmt::Display for ResourceDeltas {
             self.sierra_gas,
             self.n_txs,
             self.proving_gas,
+            self.receipt_l2_gas,
         )
     }
 }
@@ -104,6 +107,7 @@ fn exceeds_limit(lhs: &BouncerWeights, rhs: &BouncerWeights) -> ResourceDeltas {
         sierra_gas: gas_amount_delta(lhs.sierra_gas, rhs.sierra_gas),
         n_txs: usize_delta(lhs.n_txs, rhs.n_txs),
         proving_gas: gas_amount_delta(lhs.proving_gas, rhs.proving_gas),
+        receipt_l2_gas: gas_amount_delta(lhs.receipt_l2_gas, rhs.receipt_l2_gas),
     }
 }
 
@@ -142,6 +146,7 @@ mod tests {
             sierra_gas: GasAmount(1_000_000),
             n_txs: 1_000,
             proving_gas: GasAmount(1_000_000),
+            receipt_l2_gas: GasAmount(1_000_000),
         }
     }
 
@@ -190,5 +195,18 @@ mod tests {
         let x2 = weights(50, 500); // x1 also > x2
         let result = compare_execution_resources(&x1, &x2, &limit);
         assert!(matches!(result, ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. }));
+    }
+
+    #[test]
+    fn receipt_l2_gas_above_limit_is_fatal() {
+        let mut limit = max_weights();
+        limit.receipt_l2_gas = GasAmount(100);
+        let mut x1 = weights(10, 10);
+        x1.receipt_l2_gas = GasAmount(101);
+        let result = compare_execution_resources(&x1, &BouncerWeights::empty(), &limit);
+        assert!(matches!(result, ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. }));
+        if let ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { deltas } = result {
+            assert_eq!(deltas.receipt_l2_gas, Some(1));
+        }
     }
 }

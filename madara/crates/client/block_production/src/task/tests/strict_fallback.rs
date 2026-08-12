@@ -95,9 +95,11 @@ fn strict_stop_mismatch_summary() -> crate::comparator::state_diff::StateDiffMis
     crate::comparator::state_diff::StateDiffMismatchSummary {
         storage_diffs_match: false,
         declared_classes_match: true,
+        old_declared_classes_match: true,
         deployed_contracts_match: true,
         replaced_classes_match: true,
         nonces_match: true,
+        migrated_compiled_classes_match: true,
         diff_count: 1,
     }
 }

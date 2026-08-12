@@ -5,14 +5,14 @@ use blockifier::{
     transaction::transaction_execution::Transaction,
 };
 use mc_db::MadaraBackend;
-use mc_exec::LayeredStateAdapter;
+use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
@@ -413,6 +413,8 @@ pub(crate) enum RouteFallbackReason {
 pub(crate) struct RoutedBatchToExecute {
     pub rust_batch: BatchToExecute,
     pub blockifier_batch: BatchToExecute,
+    /// Original submitted order before backend routing grouped the physical batches.
+    pub original_tx_hashes: Vec<Felt>,
     /// Initial execution-frontier block number captured by the batcher when this routed
     /// payload was built. The executor rebinds this to the authoritative block frontier
     /// once the payload is actually accepted and whenever a deferred suffix rolls forward.
@@ -431,6 +433,7 @@ impl Default for RoutedBatchToExecute {
         Self {
             rust_batch: BatchToExecute::default(),
             blockifier_batch: BatchToExecute::default(),
+            original_tx_hashes: Vec::new(),
             block_n: 0,
             execution_mode: ExecutionMode::BlockifierOnly,
             execution_epoch: 0,
@@ -445,6 +448,50 @@ impl RoutedBatchToExecute {
     pub fn total_len(&self) -> usize {
         self.rust_batch.len() + self.blockifier_batch.len()
     }
+
+    pub fn normalize_original_tx_hashes(&mut self) {
+        let mut present: BTreeMap<Felt, usize> =
+            self.blockifier_batch.txs.iter().chain(&self.rust_batch.txs).map(|tx| tx.tx_hash().to_felt()).fold(
+                BTreeMap::new(),
+                |mut counts, hash| {
+                    *counts.entry(hash).or_default() += 1usize;
+                    counts
+                },
+            );
+        if self.original_tx_hashes.is_empty() {
+            self.original_tx_hashes =
+                self.blockifier_batch.txs.iter().chain(&self.rust_batch.txs).map(|tx| tx.tx_hash().to_felt()).collect();
+            return;
+        }
+        self.original_tx_hashes.retain(|hash| {
+            present.get_mut(hash).is_some_and(|count| {
+                let keep = *count > 0;
+                *count = count.saturating_sub(1);
+                keep
+            })
+        });
+    }
+
+    pub fn take_processed_original_hashes(&mut self, processed: &[Transaction]) -> Vec<Felt> {
+        let mut processed: BTreeMap<Felt, usize> =
+            processed.iter().map(|tx| tx.tx_hash().to_felt()).fold(BTreeMap::new(), |mut counts, hash| {
+                *counts.entry(hash).or_default() += 1usize;
+                counts
+            });
+        let mut included = Vec::with_capacity(processed.len());
+        self.original_tx_hashes.retain(|hash| {
+            let is_processed = processed.get_mut(hash).is_some_and(|count| {
+                let found = *count > 0;
+                *count = count.saturating_sub(1);
+                found
+            });
+            if is_processed {
+                included.push(*hash);
+            }
+            !is_processed
+        });
+        included
+    }
 }
 
 /// Convenience conversion: all items go to `blockifier_batch`.
@@ -452,9 +499,11 @@ impl RoutedBatchToExecute {
 impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
     fn from_iter<T: IntoIterator<Item = (Transaction, AdditionalTxInfo)>>(iter: T) -> Self {
         let blockifier_batch = iter.into_iter().collect::<BatchToExecute>();
+        let original_tx_hashes = blockifier_batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
         Self {
             blockifier_batch,
             rust_batch: BatchToExecute::default(),
+            original_tx_hashes,
             block_n: 0,
             execution_mode: ExecutionMode::BlockifierOnly,
             execution_epoch: 0,
@@ -466,9 +515,31 @@ impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
 mod tests {
     use std::collections::HashSet;
 
+    use mc_exec::execution::TxInfo;
+    use mp_convert::ToFelt;
+    use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+    use starknet_core::utils::get_selector_from_name;
     use starknet_types_core::felt::Felt;
 
-    use super::{build_rust_exec_runtime_config, RustExecRoutingConfig};
+    use super::{
+        build_rust_exec_runtime_config, AdditionalTxInfo, BatchToExecute, RoutedBatchToExecute, RustExecRoutingConfig,
+    };
+
+    fn blockifier_tx(hash_marker: u64) -> blockifier::transaction::transaction_execution::Transaction {
+        L1HandlerTransactionWithFee::new(
+            L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: hash_marker,
+                contract_address: Felt::from(0x1234u64),
+                entry_point_selector: get_selector_from_name("handle").expect("selector"),
+                calldata: vec![Felt::from(hash_marker)].into(),
+            },
+            1,
+        )
+        .into_blockifier(Felt::ONE, mp_chain_config::StarknetVersion::LATEST)
+        .expect("l1 handler")
+        .0
+    }
 
     #[test]
     fn runtime_config_carries_supported_rust_class_hashes() {
@@ -491,5 +562,33 @@ mod tests {
 
         assert_eq!(routing_cfg.supported_class_hashes, mc_rust_exec::supported_class_hashes());
         assert_eq!(routing_cfg.supported_selectors, mc_rust_exec::supported_selectors());
+    }
+
+    #[test]
+    fn original_hash_order_tracks_processed_prefix_and_deferred_suffix() {
+        let tx_1 = blockifier_tx(1);
+        let tx_2 = blockifier_tx(2);
+        let hash_1 = tx_1.tx_hash().to_felt();
+        let hash_2 = tx_2.tx_hash().to_felt();
+        let mut routed = RoutedBatchToExecute {
+            rust_batch: BatchToExecute {
+                txs: vec![tx_1.clone()],
+                additional_info: vec![AdditionalTxInfo::default()].into(),
+            },
+            blockifier_batch: BatchToExecute {
+                txs: vec![tx_2.clone()],
+                additional_info: vec![AdditionalTxInfo::default()].into(),
+            },
+            original_tx_hashes: vec![hash_1, hash_2],
+            ..Default::default()
+        };
+
+        assert_eq!(routed.take_processed_original_hashes(&[tx_2]), vec![hash_2]);
+        assert_eq!(routed.original_tx_hashes, vec![hash_1]);
+
+        routed.rust_batch.txs.clear();
+        routed.rust_batch.additional_info.clear();
+        routed.normalize_original_tx_hashes();
+        assert!(routed.original_tx_hashes.is_empty());
     }
 }

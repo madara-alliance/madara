@@ -332,6 +332,7 @@ impl ExecutorThread {
                     taken = RoutedBatchToExecute {
                         blockifier_batch: recovered,
                         rust_batch: BatchToExecute::default(),
+                        original_tx_hashes: taken.original_tx_hashes,
                         block_n: taken.block_n,
                         execution_mode: ExecutionMode::BlockifierOnly,
                         execution_epoch,
@@ -359,10 +360,12 @@ impl ExecutorThread {
                 pending_routed = RoutedBatchToExecute {
                     blockifier_batch: deduped_blockifier,
                     rust_batch: taken.rust_batch,
+                    original_tx_hashes: taken.original_tx_hashes,
                     block_n: taken.block_n,
                     execution_mode: taken.execution_mode,
                     execution_epoch: taken.execution_epoch,
                 };
+                pending_routed.normalize_original_tx_hashes();
                 Self::rebind_routed_batch_to_block(&mut pending_routed, Self::current_executor_block_n(&state));
 
                 if matches!(
@@ -830,9 +833,31 @@ impl ExecutorThread {
 
             execution_state.executed_in_block.extend(combined_executed.clone());
 
+            let processed_original_hashes = pending_routed.take_processed_original_hashes(&combined_executed.txs);
+            let mut successful_hashes: std::collections::BTreeMap<Felt, usize> = combined_executed
+                .txs
+                .iter()
+                .zip(&combined_results)
+                .filter_map(|(tx, result)| result.is_ok().then_some(tx.tx_hash().to_felt()))
+                .fold(std::collections::BTreeMap::new(), |mut counts, hash| {
+                    *counts.entry(hash).or_default() += 1usize;
+                    counts
+                });
+            let original_tx_hashes = processed_original_hashes
+                .into_iter()
+                .filter(|hash| {
+                    successful_hashes.get_mut(hash).is_some_and(|count| {
+                        let include = *count > 0;
+                        *count = count.saturating_sub(1);
+                        include
+                    })
+                })
+                .collect();
+
             // One combined BatchExecuted per routed payload (design doc §"one combined BatchExecuted").
             let exec_result = BatchExecutionResult {
                 executed_txs: combined_executed,
+                original_tx_hashes,
                 blockifier_results: combined_results,
                 stats,
                 execution_mode: execution_state.execution_mode,

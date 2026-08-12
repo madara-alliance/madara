@@ -1,9 +1,12 @@
 use crate::batcher::Batcher;
 use crate::close_queue::{CloseJobCompletion, QueuedClosePayload};
 use crate::comparator::{
-    decide, execution_resources::compare_execution_resources,
-    state_diff::compare_state_diff_with_ignored_storage_addresses, CanonicalBlockSource, CanonicalizedBlockOutput,
-    ComparatorDecision, ExecutionResourceComparison,
+    decide, decide_with_report,
+    execution_resources::compare_execution_resources,
+    state_diff::compare_state_diff_with_allowed_fee_balance_keys,
+    transaction_outputs::{compare_transaction_outputs, FieldMismatch},
+    CanonicalBlockSource, CanonicalizedBlockOutput, ComparatorDecision, ExecutionResourceComparison, MismatchCategory,
+    MismatchPolicy, TransactionOutputComparisonConfig,
 };
 use crate::executor::{self, BatchExecutionResult, ExecutorMessage};
 use crate::fallback::manager::FallbackManager;
@@ -36,6 +39,8 @@ use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
 use opentelemetry::KeyValue;
+use starknet_api::abi::abi_utils::get_storage_var_address;
+use starknet_api::block::FeeType;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::mem;
 use std::sync::Arc;

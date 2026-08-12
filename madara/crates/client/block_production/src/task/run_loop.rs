@@ -11,14 +11,6 @@ impl BlockProductionTask {
         let executor_addresses = Self::sorted_felt_hex_values(&self.routing_cfg.executor_addresses);
         let supported_selectors = Self::sorted_felt_hex_values(&self.routing_cfg.supported_selectors);
         let supported_class_hashes = Self::sorted_felt_hex_values(&self.routing_cfg.supported_class_hashes);
-        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(
-            self.backend.chain_config(),
-            self.routing_cfg.runtime_options.ignore_fee_token_mismatch,
-        );
-        let mut ignored_storage_addresses =
-            ignored_storage_addresses.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>();
-        ignored_storage_addresses.sort();
-
         let (status, summary) = match self.fallback.startup_mode {
             StartupExecutionMode::Mixed => ("✅ enabled", "selected transactions will use rust exec"),
             StartupExecutionMode::BlockifierOnly => ("⏸️ disabled", "all transactions will route via Cairo"),
@@ -27,7 +19,7 @@ impl BlockProductionTask {
 
         tracing::info!(
             target: "RUST_EXEC",
-            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  ignored_storage_addresses={:?}\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
+            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  fee_storage_policy=derived_sender_and_sequencer_balance_keys\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
             self.fallback.startup_mode,
             self.fallback.mode,
             self.fallback.startup_recovery_active,
@@ -41,7 +33,6 @@ impl BlockProductionTask {
             supported_selectors,
             supported_class_hashes.len(),
             supported_class_hashes,
-            ignored_storage_addresses,
             self.no_charge_fee,
             self.routing_cfg.runtime_options.conversion_log,
             self.routing_cfg.runtime_options.execution_log,
