@@ -7,3 +7,5 @@ pub const APPCHAIN_CONTRACT_SIERRA: &[u8] =
     include_bytes!("../../../../build-artifacts/js_tests/madara_contracts_StateUpdateContract.contract_class.json");
 pub const MESSAGING_CONTRACT_SIERRA: &[u8] =
     include_bytes!("../../../../build-artifacts/js_tests/madara_contracts_MessagingContract.contract_class.json");
+pub const RUST_EXEC_TRANSFER_SIERRA: &[u8] =
+    include_bytes!("../../../../build-artifacts/js_tests/madara_contracts_RustExecTransfer.contract_class.json");

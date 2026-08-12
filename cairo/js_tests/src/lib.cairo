@@ -3,3 +3,4 @@ pub mod hello;
 pub mod appchain_test;
 pub mod messaging_test;
 pub mod declare_test;
+pub mod rust_exec_transfer;

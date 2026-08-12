@@ -438,7 +438,7 @@ impl BlockProductionTask {
         };
 
         let (close_queue_handle, close_queue_task) = crate::finalizer::FinalizerHandle::spawn(
-            self.close_queue_capacity.max(1),
+            self.close_queue_capacity(),
             self.metrics.clone(),
             BlockProductionTask::execute_close_payload,
         );
@@ -481,6 +481,7 @@ impl BlockProductionTask {
                     recovered_block.canonical_rows,
                     recovered_block.header,
                 )
+                .await
                 .with_context(|| format!("Enqueueing startup recovery close payload for block #{block_number}"))?;
 
                 let (expected_block_n, completion_rx) = self

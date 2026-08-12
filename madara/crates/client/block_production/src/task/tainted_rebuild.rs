@@ -772,6 +772,7 @@ impl BlockProductionTask {
             pending.canonical_rows,
             pending.canonical_header,
         )
+        .await
     }
 
     #[cfg(test)]

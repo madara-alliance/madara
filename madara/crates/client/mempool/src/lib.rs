@@ -315,15 +315,23 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             // still disabling new writes during the run.
             return Ok(());
         }
+        let mut stale_tx_hashes = Vec::new();
         for res in self.backend.get_saved_mempool_transactions() {
             let tx = res.context("Getting mempool transactions")?;
             let is_new_tx = false; // do not trigger metrics update and db update.
-            if let Err(err) = self.add_tx(tx, is_new_tx).await {
+            if let Err(err) = self.add_tx(tx.clone(), is_new_tx).await {
                 match err {
-                    MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
+                    MempoolInsertionError::InnerMempool(
+                        TxInsertionError::TooOld { .. } | TxInsertionError::NonceTooLow { .. },
+                    ) => stale_tx_hashes.push(tx.hash),
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
                 }
             }
+        }
+        if self.config.save_to_db && !stale_tx_hashes.is_empty() {
+            self.backend
+                .remove_saved_mempool_transactions(stale_tx_hashes)
+                .context("Removing stale mempool transactions during startup")?;
         }
         self.reconcile_loaded_txs_with_chain_head().await?;
         Ok(())
@@ -420,8 +428,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
 
         let now = TxTimestamp::now();
+        // Sequencing may run ahead of comparator approval. Use the internal
+        // execution frontier so the next same-account nonce becomes ready while
+        // the preceding block is still being compared.
         let account_nonce =
-            self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
+            self.backend.view_on_internal_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
 
         let (ret, summary) = {
@@ -656,6 +667,7 @@ pub(crate) mod tests {
                             fee_data_availability_mode: Default::default(),
                             paymaster_data: Default::default(),
                             account_deployment_data: Default::default(),
+                            proof_facts: Default::default(),
                         },
                     ),
                     tx_hash,

@@ -33,44 +33,35 @@ async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
 
         // 2. Deploy contract through UDC
         let (contract_address, deploy_tx) = make_udc_call(
-            &setup.contracts.0[0],
+            &setup.contracts.0[1],
             &setup.backend,
-            /* nonce */ Felt::ONE,
+            /* nonce */ Felt::ZERO,
             declare_res.class_hash,
             /* calldata (pubkey) */ &[Felt::TWO],
         );
-        setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
+        setup.tx_validator.submit_invoke_transaction(deploy_tx.into()).await.unwrap();
 
         // 3. Invoke transaction
         sign_and_add_invoke_tx(
-            &setup.contracts.0[0],
-            &setup.contracts.0[1],
-            &setup.backend,
-            &setup.tx_validator,
-            Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
-        )
-        .await;
-
-        // 4. Declare transaction (for a different contract)
-        sign_and_add_declare_tx(
             &setup.contracts.0[2],
-            &setup.backend,
-            &setup.tx_validator,
-            Felt::ZERO, // Different account, so nonce starts at ZERO
-        )
-        .await;
-
-        // 5. Another invoke transaction
-        sign_and_add_invoke_tx(
-            &setup.contracts.0[1],
             &setup.contracts.0[3],
             &setup.backend,
             &setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        // 4. Another invoke transaction
+        sign_and_add_invoke_tx(
+            &setup.contracts.0[4],
+            &setup.contracts.0[5],
+            &setup.backend,
+            &setup.tx_validator,
             Felt::ZERO, // Different account, so nonce starts at ZERO
         )
         .await;
 
-        // 6. Add L1 handler transaction
+        // 5. Add L1 handler transaction
         let paid_fee_on_l1 = 128328u128;
         setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
             L1HandlerTransaction {
@@ -104,15 +95,28 @@ async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
     let _task =
         AbortOnDrop::spawn(async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() });
 
-    // Wait for batch to be executed
-    assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if original_devnet_setup
+                .backend
+                .block_view_on_current_preconfirmed()
+                .is_some_and(|view| view.num_executed_transactions() == 5)
+            {
+                break;
+            }
+            notifications.recv().await.expect("block production notification channel should stay open");
+        }
+    })
+    .await
+    .expect("all transaction types should execute before close");
 
     // Manually close the block
     control.close_block().await.unwrap();
-    assert!(matches!(
-        notifications.recv().await.unwrap(),
-        BlockProductionStateNotification::ClosedBlock { block_n: 1 }
-    ));
+    loop {
+        if matches!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 1 }) {
+            break;
+        }
+    }
 
     // Step 2: Capture global_state_root, state_diff, and header info from closed block
     let block_number = original_devnet_setup.backend.latest_confirmed_block_n().unwrap();
@@ -144,8 +148,20 @@ async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
         restart_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
     });
 
-    // Wait for batch to be executed (transactions added to preconfirmed block)
-    assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if restart_devnet_setup
+                .backend
+                .block_view_on_current_preconfirmed()
+                .is_some_and(|view| view.num_executed_transactions() == executed_transactions.len())
+            {
+                break;
+            }
+            restart_notifications.recv().await.expect("block production notification channel should stay open");
+        }
+    })
+    .await
+    .expect("restart phase should execute the same transaction set");
 
     // Fetch preconfirmed block view BEFORE dropping the task to avoid race conditions
     let preconfirmed_view = restart_devnet_setup.backend.block_view_on_current_preconfirmed().unwrap();

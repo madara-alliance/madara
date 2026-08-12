@@ -204,6 +204,8 @@ mod preconfirmed_recovery;
 #[cfg(test)]
 mod rpc;
 #[cfg(test)]
+mod rust_exec;
+#[cfg(test)]
 mod storage_proof;
 #[cfg(test)]
 mod transaction_flow;
@@ -216,7 +218,7 @@ use starknet_providers::{Provider, SequencerGatewayProvider};
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
 use std::sync::mpsc::TryRecvError;
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 use std::{
@@ -259,6 +261,7 @@ pub struct MadaraCmd {
     gateway_root_url: Option<Url>,
     tempdir: Arc<TempDir>,
     label: String,
+    logs: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 impl MadaraCmd {
@@ -300,6 +303,27 @@ impl MadaraCmd {
 
     pub fn db_dir(&self) -> &Path {
         self.tempdir.path()
+    }
+
+    pub fn log_cursor(&self) -> usize {
+        self.logs
+            .as_ref()
+            .expect("log capture must be enabled on the command builder")
+            .lock()
+            .expect("Madara log buffer lock poisoned")
+            .len()
+    }
+
+    pub fn logs_since(&self, cursor: usize) -> Vec<String> {
+        self.logs
+            .as_ref()
+            .expect("log capture must be enabled on the command builder")
+            .lock()
+            .expect("Madara log buffer lock poisoned")
+            .iter()
+            .skip(cursor)
+            .cloned()
+            .collect()
     }
 
     pub async fn wait_for_ready(&mut self) -> &mut Self {
@@ -383,6 +407,7 @@ impl MadaraCmd {
 
         let reader = BufReader::new(stdout);
         let (tx, rx) = mpsc::channel();
+        let logs = self.logs.clone();
 
         thread::spawn(move || {
             let mut rpc_port = None;
@@ -390,6 +415,9 @@ impl MadaraCmd {
             let mut gateway_port = None;
 
             for line in reader.lines().map_while(Result::ok) {
+                if let Some(logs) = logs.as_ref() {
+                    logs.lock().expect("Madara log buffer lock poisoned").push(line.clone());
+                }
                 // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
                 // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
                 fn get_port(line: &str, prefix: &str) -> Option<u16> {
@@ -475,6 +503,7 @@ pub struct MadaraCmdBuilder {
     rpc_enabled: bool,
     gateway_enabled: bool,
     label: String,
+    capture_logs: bool,
 }
 
 impl Default for MadaraCmdBuilder {
@@ -486,6 +515,7 @@ impl Default for MadaraCmdBuilder {
             rpc_enabled: true,
             gateway_enabled: false,
             label: String::new(),
+            capture_logs: false,
         }
     }
 }
@@ -500,6 +530,10 @@ impl MadaraCmdBuilder {
     }
     pub fn enable_gateway(self) -> Self {
         Self { gateway_enabled: true, ..self }
+    }
+
+    pub fn capture_logs(self) -> Self {
+        Self { capture_logs: true, ..self }
     }
 
     pub fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
@@ -578,6 +612,7 @@ impl MadaraCmdBuilder {
             gateway_root_url: None,
             label: self.label,
             tempdir: self.tempdir,
+            logs: self.capture_logs.then(|| Arc::new(Mutex::new(Vec::new()))),
         }
     }
 }

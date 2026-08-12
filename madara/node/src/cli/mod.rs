@@ -405,12 +405,12 @@ mod tests {
     }
 
     #[test]
-    fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
+    fn config_file_without_close_queue_capacity_defaults_to_ten() {
         let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
         let run_cmd: RunCmd =
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
-        assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
+        assert_eq!(run_cmd.block_production_params.close_queue_capacity, 10);
     }
 
     #[test]

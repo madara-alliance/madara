@@ -15,5 +15,9 @@
       "get_name",
       "get_version"
     ]
+  },
+  "RustExecTransfer": {
+    "class_hash": "0x01243f5fe98954ece09eec4ccc03567b2b3e51bef4fa3f1c4ea2ab8c57e9c3b8",
+    "supported_functions_file": "../devnet/rust_exec_transfer/supported_functions.json"
   }
 }

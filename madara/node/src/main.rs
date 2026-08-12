@@ -207,7 +207,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let node_version = env!("MADARA_BUILD_VERSION");
 
     tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);

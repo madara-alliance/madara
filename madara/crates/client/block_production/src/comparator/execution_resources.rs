@@ -142,6 +142,7 @@ mod tests {
             sierra_gas: GasAmount(1_000_000),
             n_txs: 1_000,
             proving_gas: GasAmount(1_000_000),
+            receipt_l2_gas: GasAmount(1_000_000),
         }
     }
 

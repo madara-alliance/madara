@@ -53,6 +53,8 @@ mod tainted_rebuild;
 #[cfg(test)]
 pub(crate) mod tests;
 
+#[cfg(test)]
+use self::state::OptimisticPipelineNotification;
 use self::state::{
     ApprovedExternalContent, CanonicalizationTaskCanonical, CanonicalizationTaskResult, PendingCanonicalizationInput,
     PendingStopFallbackHandoff, PendingTaintedRebuildCarry, StartupRecoveredBlockPayload, TaintedRebuildClosePayload,

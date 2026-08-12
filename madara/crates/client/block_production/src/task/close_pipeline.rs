@@ -23,7 +23,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    pub(super) fn enqueue_canonical_close_payload(
+    pub(super) async fn enqueue_canonical_close_payload(
         &mut self,
         close_queue: &FinalizerHandle,
         state: CurrentBlockState,
@@ -45,7 +45,7 @@ impl BlockProductionTask {
             enqueued_at: Instant::now(),
         };
         tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
-        let (queued_result, completion) = close_queue.try_enqueue(payload)?;
+        let (queued_result, completion) = close_queue.enqueue(payload).await?;
         let ClosePreconfirmedResult::Queued(queued_meta) = queued_result;
         let queue_depth = close_queue.current_depth();
         let queue_in_flight = close_queue.current_in_flight();

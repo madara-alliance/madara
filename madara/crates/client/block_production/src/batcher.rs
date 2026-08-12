@@ -546,6 +546,7 @@ mod tests {
                     fee_data_availability_mode: Default::default(),
                     paymaster_data: Default::default(),
                     account_deployment_data: Default::default(),
+                    proof_facts: Default::default(),
                 }),
                 tx_hash: TransactionHash(Felt::from(hash)),
             }),
@@ -607,9 +608,7 @@ mod tests {
 
     #[tokio::test]
     async fn blockifier_only_pick_limit_keeps_bypass_suffix_out_of_mempool() {
-        let mut routing_cfg = RustExecRoutingConfig::default();
-        routing_cfg.blockifier_batch_size = 1;
-        routing_cfg.rust_batch_size = 1;
+        let routing_cfg = RustExecRoutingConfig { blockifier_batch_size: 1, rust_batch_size: 1, ..Default::default() };
 
         let mut harness = spawn_batcher_harness(ExecutionMode::BlockifierOnly, routing_cfg);
         let tx1 = validated_invoke(Felt::from(0x111u64), 0, 0xaaa1);
@@ -641,9 +640,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_carry_retries_before_new_bypass_traffic() {
-        let mut routing_cfg = RustExecRoutingConfig::default();
-        routing_cfg.blockifier_batch_size = 1;
-        routing_cfg.rust_batch_size = 1;
+        let routing_cfg = RustExecRoutingConfig { blockifier_batch_size: 1, rust_batch_size: 1, ..Default::default() };
 
         let mut harness = spawn_batcher_harness(ExecutionMode::Mixed, routing_cfg);
         let tx1 = validated_invoke(Felt::from(0x222u64), 0, 0xbbb1);
