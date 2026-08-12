@@ -3073,7 +3073,7 @@ dependencies = [
 [[package]]
 name = "bonsai-trie"
 version = "0.1.0"
-source = "git+https://github.com/madara-alliance/bonsai-trie?tag=v1.0.0#13e8f7b3e5b398367c3c5b32544dc5381292e35b"
+source = "git+https://github.com/madara-alliance/bonsai-trie?rev=cdf3fd76bed2ead78804ed7d755b76423c4f3b3f#cdf3fd76bed2ead78804ed7d755b76423c4f3b3f"
 dependencies = [
  "bitvec",
  "derive_more 0.99.20",
@@ -9344,6 +9344,7 @@ dependencies = [
  "indoc 2.0.7",
  "ip_network",
  "itertools 0.14.0",
+ "jemallocator",
  "jsonrpsee",
  "lazy_static",
  "librocksdb-sys",

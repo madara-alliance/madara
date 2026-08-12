@@ -98,6 +98,9 @@
 //! [m-proc-macros]: m_proc_macros
 #![warn(missing_docs)]
 
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use mc_db::MadaraStorageRead;
 mod cli;
 mod service;
