@@ -7,12 +7,12 @@ use serde::Serialize;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
-use crate::contracts::account::functions::parse_calls;
+use crate::contracts::account::{self, functions::parse_calls};
 use crate::contracts::paradex::schema::{paraclear_layout, token_component_layout};
 use crate::contracts::paradex::{oracle, paraclear as paraclear_contract};
 use crate::core::gas::GasVector;
 use crate::core::storage::{function_selector, short_string_to_felt};
-use crate::core::types::{CallExecutionResult, ContractAddress, ExecutionResult, StateDiff};
+use crate::core::types::{CallExecutionResult, ContractAddress, Event, ExecutionResult, StateDiff};
 use crate::StateReader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -75,6 +75,11 @@ fn class_hash_cached<S: StateReader>(
     value
 }
 
+fn take_account_event(events: &mut Vec<Event>) -> Option<Event> {
+    let index = events.iter().position(account::is_transaction_executed_event)?;
+    Some(events.remove(index))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_transaction_execution_info<S: StateReader>(
     state: &S,
@@ -97,6 +102,7 @@ pub fn build_transaction_execution_info<S: StateReader>(
     let mut class_hash_cache = HashMap::new();
     let mut inner_calls = Vec::new();
     let mut attach_events = execute_result.call_result.events.clone();
+    let account_event = take_account_event(&mut attach_events);
     let mut attach_messages = execute_result.call_result.l2_to_l1_messages.clone();
 
     if let Ok(parsed_calls) = parse_calls(calldata) {
@@ -262,7 +268,7 @@ pub fn build_transaction_execution_info<S: StateReader>(
         caller_address: Felt::ZERO,
         class_hash: account_class_hash,
         entry_point_type: RustEntryPointType::External,
-        execution: CallExecutionResult::default(),
+        execution: CallExecutionResult { events: account_event.into_iter().collect(), ..Default::default() },
         inner_calls,
     });
 
@@ -305,5 +311,23 @@ pub fn build_transaction_execution_info<S: StateReader>(
         revert_error: execute_result.revert_error.clone(),
         receipt: RustTransactionReceipt { actual_fee: fee_amount, gas_consumed },
         state_diff: execute_result.state_diff.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_transaction_executed_on_the_account_call() {
+        let target_event = Event { order: 0, keys: vec![Felt::from(1u64)], data: vec![Felt::from(2u64)] };
+        let account_class_hash =
+            Felt::from_hex_unchecked("0x73414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2");
+        let account_event =
+            account::transaction_executed_event(account_class_hash, Felt::from(3u64), 1).expect("supported event");
+        let mut events = vec![account_event.clone(), target_event.clone()];
+
+        assert_eq!(take_account_event(&mut events), Some(account_event));
+        assert_eq!(events, vec![target_event]);
     }
 }
