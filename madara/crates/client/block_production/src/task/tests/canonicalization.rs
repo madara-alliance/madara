@@ -41,6 +41,22 @@ fn build_parent_overlays_filters_out_stale_and_future() {
 }
 
 #[test]
+fn reexec_parent_state_snapshot_keeps_base_paired_with_overlays() {
+    let diffs = (2479842..=2479846).map(|block_n| (block_n, empty_state_diff())).collect::<Vec<_>>();
+    let snapshot = BlockProductionTask::capture_reexec_parent_state(&diffs, Some(2479841), 2479847);
+
+    // The finalizer may advance the DB while the comparator task is starting. The
+    // request must retain the base used to select its overlays.
+    let later_confirmed_base = Some(2479842);
+    assert_ne!(snapshot.confirmed_base_block_n, later_confirmed_base);
+    assert_eq!(snapshot.confirmed_base_block_n, Some(2479841));
+    assert_eq!(
+        snapshot.parent_overlays.iter().map(|overlay| overlay.block_n).collect::<Vec<_>>(),
+        vec![2479842, 2479843, 2479844, 2479845, 2479846]
+    );
+}
+
+#[test]
 fn state_diff_to_state_maps_converts_storage() {
     use mp_state_update::{ContractStorageDiffItem, StorageEntry};
 
