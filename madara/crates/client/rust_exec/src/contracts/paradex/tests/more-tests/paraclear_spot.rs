@@ -206,6 +206,18 @@ fn test_settle_spot_fee_v2_path() {
     assert_eq!(result.call_result.retdata, vec![felt(1)]);
     assert_eq!(events_with_selector(&result.call_result.events, event_selector("FeeV2")).len(), 2);
     assert_eq!(events_with_selector(&result.call_result.events, event_selector("TradeSettled")).len(), 1);
+
+    let balance_events = events_with_selector(&result.call_result.events, event_selector("TokenAssetBalanceUpdate"));
+    let maker_settlement_event = balance_events
+        .iter()
+        .find(|event| event.data[0] == maker.0 && event.data[1] == settlement_token.0)
+        .expect("maker settlement event");
+    let taker_settlement_event = balance_events
+        .iter()
+        .find(|event| event.data[0] == taker.0 && event.data[1] == settlement_token.0)
+        .expect("taker settlement event");
+    assert_eq!(maker_settlement_event.data[3], i128_to_felt(1500 * SCALE));
+    assert_eq!(taker_settlement_event.data[3], i128_to_felt(1000 * SCALE));
 }
 
 #[test]

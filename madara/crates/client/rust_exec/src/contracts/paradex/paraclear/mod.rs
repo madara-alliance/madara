@@ -786,7 +786,7 @@ fn settle_spot<S: StateReader>(
             maker_quote_delta,
         )?;
 
-        let (maker_after_fee, taker_after_fee) = fee_payments(
+        let _post_fee_balances = fee_payments(
             ctx,
             state,
             contract,
@@ -835,7 +835,7 @@ fn settle_spot<S: StateReader>(
             trade.maker_order.account,
             settlement_token_address,
             i128_to_felt(maker_settlement_before),
-            i128_to_felt(maker_after_fee),
+            i128_to_felt(maker_updated_settlement),
             Felt::ZERO,
         );
         emit_token_balance_update(
@@ -843,7 +843,7 @@ fn settle_spot<S: StateReader>(
             trade.taker_order.account,
             settlement_token_address,
             i128_to_felt(taker_settlement_before),
-            i128_to_felt(taker_after_fee),
+            i128_to_felt(taker_updated_settlement),
             Felt::ZERO,
         );
 
@@ -1140,7 +1140,7 @@ fn settle_perpetual<S: StateReader>(
             )?;
         }
 
-        let (maker_after_fee, taker_after_fee) = {
+        let _post_fee_balances = {
             fee_payments(
                 ctx,
                 state,
@@ -1209,7 +1209,7 @@ fn settle_perpetual<S: StateReader>(
                 trade.maker_order.account,
                 settlement_token_address,
                 i128_to_felt(maker_settlement_before),
-                i128_to_felt(maker_after_fee),
+                i128_to_felt(maker_settlement_after),
                 Felt::ZERO,
             );
             emit_token_balance_update(
@@ -1217,7 +1217,7 @@ fn settle_perpetual<S: StateReader>(
                 trade.taker_order.account,
                 settlement_token_address,
                 i128_to_felt(taker_settlement_before),
-                i128_to_felt(taker_after_fee),
+                i128_to_felt(taker_settlement_after),
                 Felt::ZERO,
             );
 
