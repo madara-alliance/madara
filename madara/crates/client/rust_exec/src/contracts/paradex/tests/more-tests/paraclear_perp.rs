@@ -12,7 +12,8 @@ use crate::core::types::ContractAddress;
 use super::super::fixtures::{
     addr, felt, i128_to_felt, set_account_fee_rate_future, set_assets_manager_market_fee_config,
     set_future_asset_direct, set_option_asset_direct, set_oracle_funding_index, set_oracle_latest_tick_data,
-    set_paraclear_dependencies, set_settlement_token, set_token_balance_amount_only, set_token_name, short_str, SCALE,
+    set_paraclear_dependencies, set_settlement_token, set_token_balance, set_token_balance_amount_only, set_token_name,
+    short_str, SCALE,
 };
 
 fn setup_perp_env(
@@ -444,8 +445,8 @@ fn test_settle_perp_fee_v2_path() {
 
     let maker = addr(0x2151);
     let taker = addr(0x2152);
-    set_token_balance_amount_only(&mut state, contract, maker, settlement_token, 5000 * SCALE);
-    set_token_balance_amount_only(&mut state, contract, taker, settlement_token, 5000 * SCALE);
+    set_token_balance(&mut state, contract, maker, settlement_token, 5000 * SCALE);
+    set_token_balance(&mut state, contract, taker, settlement_token, 5000 * SCALE);
 
     set_assets_manager_market_fee_config(
         &mut state,
@@ -494,6 +495,27 @@ fn test_settle_perp_fee_v2_path() {
     assert_eq!(taker_event.data[1], i128_to_felt(taker_fee));
     assert_eq!(maker_event.data[2], settlement_token.0);
     assert_eq!(taker_event.data[2], settlement_token.0);
+
+    let balance_events = events_with_selector(&result.call_result.events, event_selector("TokenAssetBalanceUpdate"));
+    let maker_balance_event =
+        balance_events.iter().find(|event| event.data[0] == maker.0).expect("maker balance event");
+    let taker_balance_event =
+        balance_events.iter().find(|event| event.data[0] == taker.0).expect("taker balance event");
+    assert_eq!(maker_balance_event.data[3], i128_to_felt(5000 * SCALE));
+    assert_eq!(taker_balance_event.data[3], i128_to_felt(5000 * SCALE));
+
+    let updates = result.state_diff.storage_updates.get(&contract).expect("paraclear writes");
+    let mut balance_ctx = crate::ExecutionContext::new();
+    let maker_balance_base =
+        paraclear::resolve_token_balance_base_for_test(&state, &mut balance_ctx, contract, maker, settlement_token)
+            .expect("maker balance base");
+    let taker_balance_base =
+        paraclear::resolve_token_balance_base_for_test(&state, &mut balance_ctx, contract, taker, settlement_token)
+            .expect("taker balance base");
+    let maker_balance_key = storage_key_with_offset(maker_balance_base, 1);
+    let taker_balance_key = storage_key_with_offset(taker_balance_base, 1);
+    assert_eq!(updates.get(&maker_balance_key), Some(&i128_to_felt(5000 * SCALE - maker_fee)));
+    assert_eq!(updates.get(&taker_balance_key), Some(&i128_to_felt(5000 * SCALE - taker_fee)));
 }
 
 #[test]
