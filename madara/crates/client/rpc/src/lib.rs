@@ -2,8 +2,9 @@
 //! interface for interacting with the Starknet node. This module implements the official Starknet
 //! JSON-RPC specification along with some Madara-specific extensions.
 //!
-//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`, with
-//! methods accessible through port **9944** by default (configurable via `--rpc-port`). The RPC
+//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`,
+//! `v0.10.0`, and `v0.10.2`, with methods accessible through port **9944** by default
+//! (configurable via `--rpc-port`). The RPC
 //! server supports both HTTP and WebSocket connections on the same port.
 //!
 //! ## Version Management
@@ -11,10 +12,11 @@
 //! RPC methods are versioned to ensure backward compatibility. To access methods from a specific
 //! version, append `/rpc/v.../` to your RPC url, where `v...` is your version code. For example:
 //!
-//! - Default (v0.7.1): `http://localhost:9944/`
+//! - Default (latest, currently v0.10.2): `http://localhost:9944/`
 //! - Version 0.8.1: `http://localhost:9944/rpc/v0_8_1/`
 //! - Version 0.9.0: `http://localhost:9944/rpc/v0_9_0/`
 //! - Version 0.10.0: `http://localhost:9944/rpc/v0_10_0/`
+//! - Version 0.10.2: `http://localhost:9944/rpc/v0_10_2/`
 //!
 //! ## Available Endpoints
 //!
@@ -956,6 +958,11 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_0::StarknetWriteRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetTraceRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
+
+    rpc_api.merge(versions::user::v0_10_2::StarknetReadRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetWriteRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }
