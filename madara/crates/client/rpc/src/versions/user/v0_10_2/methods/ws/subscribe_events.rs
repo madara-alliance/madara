@@ -802,6 +802,20 @@ mod test {
 
         let mut sub = raw_subscribe_events(&client, None).await;
 
+        // Starknet OpenRPC says an omitted block_id defaults to latest, and both
+        // Pathfinder and Juno replay the latest canonical event before live
+        // updates. Drain that bootstrap event before triggering the reorg.
+        let latest = tokio::time::timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("Timed out waiting for latest event")
+            .expect("Subscription closed unexpectedly")
+            .expect("Failed to retrieve latest event");
+        let latest: mp_rpc::v0_10_2::EmittedEventWithFinality =
+            serde_json::from_value(latest).expect("Failed to deserialize latest event item");
+
+        assert_eq!(latest.finality_status, TxnFinalityStatus::L2);
+        assert_eq!(latest.emitted_event.transaction_hash, block_1_tx_hash);
+
         backend.revert_to(&block_0_hash).expect("Revert should succeed");
 
         let reorg = tokio::time::timeout(Duration::from_secs(5), sub.next())

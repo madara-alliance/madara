@@ -408,9 +408,10 @@ func assertProbeResult(t *testing.T, r result, hashes txHashes, account0, accoun
 
 	switch {
 	case strings.HasPrefix(r.name, "events/"):
-		if r.name != "events/default" && !strings.Contains(r.name, "block_id=") {
-			assertKnownHash(t, r, hashes)
-		}
+		// Starknet OpenRPC defines omitted block_id as latest, and Pathfinder/Juno
+		// both allow the latest accepted event to be replayed before live events.
+		// These event probes validate StarknetGo decode/filter/finality behavior;
+		// the observed event need not be one of the txs submitted after subscribe.
 		assertFinality(t, r, eventFinalities(r.name))
 		if r.fromAddress != erc20.String() {
 			t.Errorf("%s from_address=%s, want %s", r.name, r.fromAddress, erc20)
