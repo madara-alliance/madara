@@ -339,14 +339,17 @@ impl RunCmd {
         self.devnet
     }
 
+    #[cfg(test)]
     pub fn should_run_mempool(&self) -> bool {
         self.is_sequencer()
     }
 
+    #[cfg(test)]
     pub fn should_run_external_db(&self) -> bool {
         self.should_run_mempool() && self.external_db_params.is_enabled()
     }
 
+    #[cfg(test)]
     pub fn should_save_mempool_to_db(&self) -> bool {
         self.should_run_mempool() && !self.validator_params.no_mempool_saving
     }

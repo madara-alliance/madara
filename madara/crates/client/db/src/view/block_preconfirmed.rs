@@ -619,7 +619,7 @@ mod tests {
             ))
             .unwrap();
 
-        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+        let result = backend.block_view_on_preconfirmed(1).unwrap().get_normalized_state_diff().unwrap();
 
         assert_eq!(
             result,
@@ -713,7 +713,7 @@ mod tests {
             .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 10, ..Default::default() }))
             .unwrap();
 
-        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+        let result = backend.block_view_on_preconfirmed(10).unwrap().get_normalized_state_diff().unwrap();
 
         assert_eq!(
             result,
