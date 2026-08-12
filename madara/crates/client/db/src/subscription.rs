@@ -65,6 +65,10 @@ impl<D: MadaraStorageRead> SubscribeNewL1Heads<D> {
             let highest_block_plus_one = self.subscription.current().map(|v| v + 1).unwrap_or(0);
 
             if next_block_to_return < highest_block_plus_one {
+                // A historical range is immediately ready; consume cooperative budget so a large catch-up
+                // cannot starve peer tasks.
+                tokio::task::coop::consume_budget().await;
+                // Only advance after the yield point so cancelling this future cannot skip an unreturned head.
                 self.current_value = Some(next_block_to_return);
                 return &self.current_value;
             }
@@ -211,5 +215,73 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
     pub fn subscribe_new_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
         SubscribeNewHeads::new(self, tag)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_chain_config::ChainConfig;
+    use std::{
+        future::{poll_fn, Future},
+        pin::pin,
+        sync::atomic::{AtomicBool, Ordering},
+        task::Poll,
+    };
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn historical_l1_backlog_yields_to_peer_tasks() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mut subscription = backend.subscribe_new_l1_confirmed_heads();
+        backend.set_latest_l1_confirmed(Some(1_000)).expect("L1 tip should be set");
+
+        let peer_ran = AtomicBool::new(false);
+        let drain_backlog = async {
+            for expected in 0..=1_000 {
+                assert_eq!(*subscription.next_head().await, Some(expected));
+            }
+            assert!(peer_ran.load(Ordering::SeqCst), "historical catch-up monopolized the runtime");
+        };
+        let peer_task = async {
+            peer_ran.store(true, Ordering::SeqCst);
+        };
+
+        tokio::join!(biased; drain_backlog, peer_task);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cancelled_historical_l1_head_is_returned_on_retry() {
+        tokio::spawn(async {
+            let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+            let mut subscription = backend.subscribe_new_l1_confirmed_heads();
+            backend.set_latest_l1_confirmed(Some(1)).expect("L1 tip should be set");
+
+            // Exhaust this task's cooperative budget without awaiting the Pending call, which would let Tokio
+            // reschedule the task with a fresh budget.
+            loop {
+                let consumed = poll_fn(|cx| {
+                    let future = tokio::task::coop::consume_budget();
+                    let mut future = pin!(future);
+                    Poll::Ready(future.as_mut().poll(cx).is_ready())
+                })
+                .await;
+                if !consumed {
+                    break;
+                }
+            }
+
+            // Poll the subscription to its cooperative yield point, then cancel it before it returns a head.
+            {
+                let mut next_head = Box::pin(subscription.next_head());
+                let yielded = poll_fn(|cx| Poll::Ready(next_head.as_mut().poll(cx).is_pending())).await;
+                assert!(yielded, "subscription should yield when its cooperative budget is exhausted");
+            }
+
+            assert_eq!(*subscription.current(), None, "a cancelled call must not advance the subscription cursor");
+            assert_eq!(*subscription.next_head().await, Some(0), "the cancelled head should be returned on retry");
+            assert_eq!(*subscription.next_head().await, Some(1), "later heads should retain their order");
+        })
+        .await
+        .expect("cancellation regression task should complete");
     }
 }
