@@ -117,6 +117,9 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7");
 
 const ACCOUNT_CLASS_DEFINITION: &[u8] = include_bytes!(
+    "../../../../../build-artifacts/bootstrapper/cairo/target/dev/madara_factory_contracts_Account.contract_class.json"
+);
+const ACCOUNT_ADDRESS_CLASS_DEFINITION: &[u8] = include_bytes!(
     "../../../../../build-artifacts/cairo_artifacts/openzeppelin_AccountUpgradeable.contract_class.json"
 );
 
@@ -152,6 +155,9 @@ impl ChainGenesisDescription {
         let account_class =
             InitiallyDeclaredClass::new_sierra(ACCOUNT_CLASS_DEFINITION).context("Failed to add account class")?;
         let account_class_hash = account_class.class_hash();
+        let account_address_class = InitiallyDeclaredClass::new_sierra(ACCOUNT_ADDRESS_CLASS_DEFINITION)
+            .context("Failed to add address derivation account class")?;
+        let account_address_class_hash = account_address_class.class_hash();
         self.declared_classes.insert(account_class);
 
         fn get_contract_pubkey_storage_address() -> StorageKey {
@@ -172,9 +178,13 @@ impl ChainGenesisDescription {
                     let key = SigningKey::from_secret_scalar(secret_scalar);
                     let pubkey = key.verifying_key();
 
-                    // calculating actual address w.r.t. the class hash.
-                    let calculated_address =
-                        calculate_contract_address(Felt::ZERO, account_class_hash, &[pubkey.scalar()], Felt::ZERO);
+                    // Keep devnet account addresses stable for clients/tests while deploying the native-compatible class.
+                    let calculated_address = calculate_contract_address(
+                        Felt::ZERO,
+                        account_address_class_hash,
+                        &[pubkey.scalar()],
+                        Felt::ZERO,
+                    );
 
                     let balance = ContractFeeTokensBalance {
                         fri: (10_000 * ETH_WEI_DECIMALS).into(),
@@ -516,6 +526,36 @@ mod tests {
         assert_matches!(
             classes.iter().find(|class| class.class_hash == udc_class_hash).map(|class| &class.class_info),
             Some(ClassInfo::Sierra(info)) if info.compiled_class_hash_v2 == Some(udc_declaration.compiled_class_hash)
+        );
+    }
+
+    #[test]
+    fn test_devnet_account_class_is_native_compatible_sierra() {
+        let mut genesis = ChainGenesisDescription::base_config().unwrap();
+        let contracts = genesis.add_devnet_contracts(1).unwrap();
+        let (_block, classes) = genesis.into_block(&ChainConfig::madara_devnet()).unwrap();
+
+        let account_class_hash = contracts.0[0].class_hash;
+        let account_class = classes
+            .iter()
+            .find(|class| class.class_hash == account_class_hash)
+            .expect("devnet account class should be declared in genesis");
+
+        let ClassInfo::Sierra(info) = &account_class.class_info else {
+            panic!("devnet account class should be a Sierra class");
+        };
+
+        assert_eq!(info.contract_class.sierra_version().unwrap().to_string(), "1.7.0");
+    }
+
+    #[test]
+    fn test_devnet_account_addresses_stay_stable() {
+        let mut genesis = ChainGenesisDescription::base_config().unwrap();
+        let contracts = genesis.add_devnet_contracts(1).unwrap();
+
+        assert_eq!(
+            contracts.0[0].address,
+            Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d")
         );
     }
 
