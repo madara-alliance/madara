@@ -9,7 +9,7 @@
 
 use starknet_types_core::felt::Felt;
 
-use crate::contracts::ExecutionError;
+use crate::contracts::{account, ExecutionError};
 use crate::core::gas::{calculate_fee, BlockContext, FeeType, GasTracker, GasVector, ResourceBounds};
 use crate::core::state::StateReader;
 use crate::core::storage::short_string_to_felt;
@@ -147,6 +147,12 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
                     revert_error.unwrap_or_else(|| "Rust inner call failed".to_string()),
                 ));
             }
+        }
+
+        if let Some(account_event) =
+            account::transaction_executed_event(account_class_hash, tx.tx_hash, all_events.len())
+        {
+            all_events.insert(0, account_event);
         }
 
         // Build execute call result with aggregated events
