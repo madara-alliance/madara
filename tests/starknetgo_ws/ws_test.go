@@ -408,7 +408,7 @@ func assertProbeResult(t *testing.T, r result, hashes txHashes, account0, accoun
 
 	switch {
 	case strings.HasPrefix(r.name, "events/"):
-		if !strings.Contains(r.name, "block_id=") {
+		if r.name != "events/default" && !strings.Contains(r.name, "block_id=") {
 			assertKnownHash(t, r, hashes)
 		}
 		assertFinality(t, r, eventFinalities(r.name))

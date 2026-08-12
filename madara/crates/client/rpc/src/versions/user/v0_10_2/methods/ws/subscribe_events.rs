@@ -122,11 +122,11 @@ pub async fn subscribe_events(
     }
 }
 
-/// Chooses the first block to scan. Without an explicit block id, subscriptions only emit events
-/// observed after subscription creation, so already-confirmed latest block events are not replayed.
+/// Chooses the first block to scan. Without an explicit block id, Starknet OpenRPC defaults to
+/// latest, so an already-confirmed latest block is replayed before live events are streamed.
 fn initial_event_block_n(starknet: &crate::Starknet, block_id: Option<BlockId>) -> Result<u64, StarknetWsApiError> {
     let Some(block_id) = block_id else {
-        return Ok(starknet.backend.latest_confirmed_block_n().map_or(0, |block_n| block_n.saturating_add(1)));
+        return Ok(starknet.backend.latest_confirmed_block_n().unwrap_or(0));
     };
 
     if matches!(block_id, BlockId::Tag(BlockTag::PreConfirmed)) {
@@ -304,6 +304,13 @@ fn validate_keys(keys: &Option<Vec<Vec<Felt>>>) -> Result<(), StarknetWsApiError
     Ok(())
 }
 
+/// Emits matching events for one block using a latest DB view.
+///
+/// The latest view gives one consistent event scan, while reorg checks before and during emission
+/// stop the scan before stale events are sent. Finality is derived from the event's preconfirmed
+/// flag plus the latest L1-confirmed cursor, then filtered against the subscription finality. The
+/// dedup set is scoped to the current backfill/live phase and prevents duplicate emissions when a
+/// block is refreshed or revisited before the next restart.
 async fn send_block_events(
     starknet: &crate::Starknet,
     state: &mut EventSubscriptionState<'_>,
@@ -351,10 +358,12 @@ async fn send_block_events(
     Ok(None)
 }
 
+/// Drains one pending reorg notification, converting lag into a terminal subscription error.
 fn take_pending_reorg(reorgs: &mut ReorgStream) -> Result<Option<mc_db::ReorgNotification>, StarknetWsApiError> {
     crate::try_recv_live_reorg(reorgs, super::missed_reorg_notifications_error)
 }
 
+/// Applies Starknet's event finality filter; PRE_CONFIRMED subscribers also receive later updates.
 fn subscription_allows_finality(requested_finality: &FinalityStatus, event_finality: TxnFinalityStatus) -> bool {
     match requested_finality {
         FinalityStatus::PreConfirmed => true,
@@ -362,6 +371,7 @@ fn subscription_allows_finality(requested_finality: &FinalityStatus, event_final
     }
 }
 
+/// Converts event storage metadata into the websocket finality status exposed to subscribers.
 fn event_finality_status(event: &EventWithInfo, latest_l1_confirmed_block_n: Option<u64>) -> TxnFinalityStatus {
     if event.in_preconfirmed {
         return TxnFinalityStatus::PreConfirmed;
@@ -544,18 +554,15 @@ mod test {
     }
 
     #[tokio::test]
-    async fn subscribe_events_default_starts_after_latest_v0_10_2() {
+    async fn subscribe_events_default_starts_from_latest_v0_10_2() {
         let (backend, starknet) = rpc_test_setup();
         let event_from_address = Felt::from_hex_unchecked("0x1234");
-        let old_hash = Felt::from_hex_unchecked("0x4848");
-        add_confirmed_event_block(&backend, 0, event_from_address, event_from_address, old_hash);
+        let latest_hash = Felt::from_hex_unchecked("0x4848");
+        add_confirmed_event_block(&backend, 0, event_from_address, event_from_address, latest_hash);
 
         let (_handle, server_url) = start_server(starknet).await;
         let client = WsClientBuilder::default().build(&server_url).await.expect("Failed to start ws client");
         let mut sub = client.subscribe_events(None, None, None, None).await.expect("Failed subscription");
-
-        let new_hash = Felt::from_hex_unchecked("0x4949");
-        add_confirmed_event_block(&backend, 1, event_from_address, event_from_address, new_hash);
 
         let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
             .await
@@ -564,8 +571,7 @@ mod test {
             .expect("Failed to retrieve event");
 
         assert_eq!(item.finality_status, TxnFinalityStatus::L2);
-        assert_eq!(item.emitted_event.transaction_hash, new_hash);
-        assert_ne!(item.emitted_event.transaction_hash, old_hash);
+        assert_eq!(item.emitted_event.transaction_hash, latest_hash);
     }
 
     #[tokio::test]
