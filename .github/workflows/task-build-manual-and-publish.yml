@@ -68,7 +68,7 @@ jobs:
         run: yes | make artifacts
 
       - name: Run cargo check
-        run: cargo check
+        run: RUST_BUILD_DOCKER=1 cargo check
 
       - name: Tags
         id: tag

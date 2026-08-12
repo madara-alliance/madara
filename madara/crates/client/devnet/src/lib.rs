@@ -598,7 +598,10 @@ mod tests {
 
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if wait_block_time {
-                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+                assert_eq!(
+                    notifications.recv().await.unwrap(),
+                    BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+                );
                 let _found = chain
                     .backend
                     .view_on_latest_confirmed()
@@ -655,7 +658,10 @@ mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         if wait_block_time {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+            assert_eq!(
+                notifications.recv().await.unwrap(),
+                BlockProductionStateNotification::ClosedBlock { block_n: 2 }
+            );
             let _found = chain
                 .backend
                 .view_on_latest_confirmed()
