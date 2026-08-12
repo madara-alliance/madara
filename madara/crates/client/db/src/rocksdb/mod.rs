@@ -771,7 +771,17 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
         tracing::debug!("on_new_confirmed_head block_n={block_n}");
-        self.snapshots.set_new_head(block_n);
+        let snapshot_block_n = self.inner.get_latest_applied_trie_update()?.unwrap_or(block_n);
+
+        if snapshot_block_n != block_n {
+            tracing::debug!(
+                confirmed_block_n = block_n,
+                snapshot_block_n,
+                "confirmed head lags trie head; labeling storage-proof snapshot with latest applied trie block"
+            );
+        }
+
+        self.snapshots.set_new_head(snapshot_block_n);
         self.metrics.update(self);
         Ok(())
     }
@@ -1073,6 +1083,7 @@ impl MadaraStorageWrite for RocksDBStorage {
 mod tests {
     use super::*;
     use crate::rocksdb::global_trie::bonsai_identifier;
+    use crate::storage::MadaraStorageWrite;
     use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
     use mp_convert::Felt;
 
@@ -1156,5 +1167,57 @@ mod tests {
         let mut missing = storage.class_trie();
         assert!(!revert_single_trie("class", &mut missing, None, 8).unwrap());
         assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN).unwrap(), None);
+    }
+
+    fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
+        let temp_dir = tempfile::TempDir::with_prefix("rocksdb-storage-proof-test").unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
+        (temp_dir, storage)
+    }
+
+    #[test]
+    fn confirmed_head_snapshot_uses_latest_applied_trie_block() {
+        let (_temp_dir, storage) = create_test_storage(RocksDBConfig {
+            max_saved_trie_logs: Some(16),
+            max_kept_snapshots: Some(16),
+            snapshot_interval: 1,
+            ..Default::default()
+        });
+
+        let contract = Felt::from_hex_unchecked("0x1234");
+        let key = Felt::from_hex_unchecked("0x5678");
+        let identifier = contract.to_bytes_be();
+        let key_bits = key.to_bytes_be();
+
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::ONE).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.write_latest_applied_trie_update(&Some(0)).unwrap();
+        storage.on_new_confirmed_head(0).unwrap();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::TWO).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        let root_at_1 = trie.root_hash(&identifier).unwrap();
+
+        trie.insert(&identifier, &key_bits.as_bits()[5..], &Felt::THREE).unwrap();
+        trie.commit(BasicId::new(2)).unwrap();
+
+        // Simulate the gateway sync path where trie application has already advanced
+        // to block 2 before block 1 is sealed as confirmed.
+        storage.write_latest_applied_trie_update(&Some(2)).unwrap();
+        storage.on_new_confirmed_head(1).unwrap();
+
+        let (snapshot_id, _) = storage.snapshots.get_closest(1);
+        assert_eq!(snapshot_id, Some(2));
+
+        let historical = storage
+            .contract_storage_trie()
+            .get_transactional_state(BasicId::new(1), storage.contract_storage_trie().get_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(historical.root_hash(&identifier).unwrap(), root_at_1);
+        assert_eq!(historical.get(&identifier, &key_bits.as_bits()[5..]).unwrap(), Some(Felt::TWO));
     }
 }

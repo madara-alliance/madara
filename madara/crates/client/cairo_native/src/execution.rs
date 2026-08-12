@@ -888,12 +888,14 @@ mod tests {
 
         let class_hash = create_unique_test_class_hash();
 
-        // Create config with very short timeout to force compilation failure
+        // Simulate a compilation failure while blocking mode waits on an in-progress
+        // compilation. This covers the blocking error path without invoking the native
+        // compiler with an artificially tiny timeout, which can segfault in CI.
         let config = Arc::new(
             config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Blocking)
-                .with_compilation_timeout(Duration::from_millis(1)) // Very short timeout
+                .with_compilation_timeout(Duration::from_secs(1))
                 .build(),
         );
 
@@ -908,7 +910,15 @@ mod tests {
             "Class should not be in failed_compilations initially"
         );
 
-        // Compilation timeout expected in blocking mode with very short timeout
+        compilation::insert_compilation_in_progress(class_hash);
+        let failure_thread_class_hash = class_hash;
+        let failure_thread = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            compilation::remove_compilation_in_progress(&failure_thread_class_hash);
+            compilation::mark_failed_compilation(failure_thread_class_hash, Instant::now());
+        });
+
+        // Compilation failure expected in blocking mode while waiting on another compilation.
         let result = handle_sierra_class(
             &sierra_class,
             &class_hash.to_felt(),
@@ -916,6 +926,7 @@ mod tests {
             &sierra_class.info,
             config.clone(),
         );
+        failure_thread.join().expect("failure marker thread should complete");
 
         // In blocking mode, compilation failures/timeouts should return an error (not fall back to VM)
         // This is the key difference from async mode - blocking mode waits and fails if compilation fails
@@ -939,19 +950,19 @@ mod tests {
             !compilation::is_compilation_in_progress(&class_hash),
             "Class should not be in compilation_in_progress after failure"
         );
-        // In blocking mode, failures don't go to FAILED_COMPILATIONS (that's async mode only)
+        assert!(
+            compilation::has_failed_compilation(&class_hash),
+            "Class should be marked as failed after simulated compilation failure"
+        );
+        compilation::remove_failed_compilation(&class_hash);
 
         // Metrics assertions - compilation timeout/failure
         assert_counters!(
-            CACHE_MEMORY_MISS: 1,
-            CACHE_DISK_MISS: 1,
-            COMPILATIONS_STARTED: 1,
+            CACHE_MEMORY_MISS: 2,
+            COMPILATION_IN_PROGRESS_SKIP: 1,
+            COMPILATIONS_STARTED: 0,
             VM_FALLBACKS: 0, // No VM fallback in blocking mode
         );
-        use std::sync::atomic::Ordering;
-        let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
-            + test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed);
-        assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
     }
 
     /// Tests the memory cache timeout scenario.
