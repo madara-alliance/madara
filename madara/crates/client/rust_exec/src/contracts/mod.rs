@@ -37,6 +37,9 @@ pub enum ExecutionError {
 
     #[error("Execution failed: {0}")]
     ExecutionFailed(String),
+
+    #[error("Invalid transaction nonce: expected {expected:#x}, got {actual:#x}")]
+    InvalidNonce { expected: Felt, actual: Felt },
 }
 
 /// Registry of known contracts and their implementations.
