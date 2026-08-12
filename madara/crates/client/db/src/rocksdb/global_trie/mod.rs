@@ -141,6 +141,8 @@ pub fn apply_to_global_trie<'a>(
 
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
         tracing::debug!("applying state_diff block_n={block_n}");
+        let storage_entries_count =
+            state_diff.storage_diffs.iter().map(|diff| diff.storage_entries.len()).sum::<usize>();
         let block_start = Instant::now();
 
         let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
@@ -200,6 +202,24 @@ pub fn apply_to_global_trie<'a>(
         let block_secs = timings.total.as_secs_f64();
         metrics().apply_to_global_trie_duration.record(block_secs, &[]);
         metrics().apply_to_global_trie_last.record(block_secs, &[]);
+        tracing::info!(
+            target: "trie_perf",
+            "global trie apply timings block_n={} total_ms={:.3} contract_total_ms={:.3} class_total_ms={:.3} contract_storage_commit_ms={:.3} contract_trie_commit_ms={:.3} class_trie_commit_ms={:.3} deployed_contracts={} replaced_classes={} nonces={} storage_contracts={} storage_entries={} declared_classes={} migrated_classes={}",
+            block_n,
+            timings.total.as_secs_f64() * 1000.0,
+            timings.contract_trie_root.as_secs_f64() * 1000.0,
+            timings.class_trie_root.as_secs_f64() * 1000.0,
+            timings.contract_trie.storage_commit.as_secs_f64() * 1000.0,
+            timings.contract_trie.trie_commit.as_secs_f64() * 1000.0,
+            timings.class_trie.trie_commit.as_secs_f64() * 1000.0,
+            state_diff.deployed_contracts.len(),
+            state_diff.replaced_classes.len(),
+            state_diff.nonces.len(),
+            state_diff.storage_diffs.len(),
+            storage_entries_count,
+            state_diff.declared_classes.len(),
+            state_diff.migrated_compiled_classes.len(),
+        );
     }
 
     let root = state_root.context("Applying an empty batch to the global trie")?;
