@@ -258,7 +258,7 @@ mod tests {
         let lookup = TransactionLookupSwitch {
             redirect_to_gateway: Arc::new(StubLookup),
             mempool_with_validator: Arc::new(StubLookup),
-            ctx: ServiceContext::new_for_testing(),
+            ctx: ServiceContext::new(),
         };
 
         let status_err = lookup.feeder_transaction_status(Felt::ZERO).await.unwrap_err();

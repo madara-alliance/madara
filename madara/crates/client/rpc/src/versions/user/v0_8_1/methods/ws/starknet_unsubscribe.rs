@@ -42,7 +42,7 @@ mod test {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        crate::Starknet::new(
+        crate::Starknet::new_with_lookup(
             backend,
             std::sync::Arc::clone(&mempool_validator) as _,
             mempool_validator,

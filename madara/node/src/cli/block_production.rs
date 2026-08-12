@@ -38,6 +38,10 @@ fn default_rust_exec_blockifier_batch_size() -> u64 {
     10
 }
 
+fn default_close_queue_capacity() -> u64 {
+    10
+}
+
 fn default_true() -> bool {
     true
 }
@@ -112,12 +116,12 @@ pub struct RustExecParams {
     pub inner_timing_log: bool,
 
     /// Enable the per-transaction storage read cache.
-    #[arg(env = "MADARA_RUST_EXEC_CTX_CACHE", long, default_value_t = true)]
+    #[arg(env = "MADARA_RUST_EXEC_CTX_CACHE", long, action = clap::ArgAction::Set, default_value_t = true)]
     #[serde(default = "default_true")]
     pub ctx_cache: bool,
 
     /// Enable Pedersen/key derivation caching.
-    #[arg(env = "MADARA_RUST_EXEC_PEDERSEN_CACHE", long, default_value_t = true)]
+    #[arg(env = "MADARA_RUST_EXEC_PEDERSEN_CACHE", long, action = clap::ArgAction::Set, default_value_t = true)]
     #[serde(default = "default_true")]
     pub pedersen_cache: bool,
 
@@ -147,7 +151,12 @@ pub struct RustExecParams {
     pub ignore_fee_mismatch: bool,
 
     /// Ignore comparator storage mismatches at the configured fee-token addresses.
-    #[arg(env = "MADARA_RUST_EXEC_IGNORE_FEE_TOKEN_MISMATCH", long, default_value_t = true)]
+    #[arg(
+        env = "MADARA_RUST_EXEC_IGNORE_FEE_TOKEN_MISMATCH",
+        long,
+        action = clap::ArgAction::Set,
+        default_value_t = true
+    )]
     #[serde(default = "default_true")]
     pub ignore_fee_token_mismatch: bool,
 
@@ -216,6 +225,16 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
     pub mempool_paused: bool,
 
+    /// Capacity of the ordered serial close queue.
+    #[arg(
+        env = "MADARA_CLOSE_QUEUE_CAPACITY",
+        long,
+        default_value_t = default_close_queue_capacity(),
+        value_parser = clap::value_parser!(u64).range(1..=10)
+    )]
+    #[serde(default = "default_close_queue_capacity")]
+    pub close_queue_capacity: u64,
+
     /// Rust execution configuration.
     #[clap(flatten)]
     #[serde(default)]
@@ -260,16 +279,33 @@ mod tests {
     }
 
     #[rstest]
+    #[case::default(vec!["madara"], 10)]
+    #[case::minimum(vec!["madara", "--close-queue-capacity", "1"], 1)]
+    #[case::maximum(vec!["madara", "--close-queue-capacity", "10"], 10)]
+    fn block_production_params_parse_close_queue_capacity(#[case] args: Vec<&str>, #[case] expected: u64) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.close_queue_capacity, expected);
+    }
+
+    #[rstest]
+    #[case::zero("0")]
+    #[case::above_protocol_limit("11")]
+    fn block_production_params_reject_invalid_close_queue_capacity(#[case] value: &str) {
+        BlockProductionParams::try_parse_from(["madara", "--close-queue-capacity", value])
+            .expect_err("out-of-range close queue capacity must be rejected");
+    }
+
+    #[rstest]
     #[case::comma_delimited(
-        vec!["madara", "--rust-exec-executor-addresses", "0x1,2,0x03"],
+        vec!["madara", "--executor-addresses", "0x1,2,0x03"],
         vec!["0x1", "0x2", "0x03"]
     )]
     #[case::repeated_flag(
         vec![
             "madara",
-            "--rust-exec-executor-addresses",
+            "--executor-addresses",
             "0x1",
-            "--rust-exec-executor-addresses",
+            "--executor-addresses",
             "0x2"
         ],
         vec!["0x1", "0x2"]
@@ -284,7 +320,7 @@ mod tests {
 
     #[test]
     fn block_production_params_reject_invalid_rust_exec_executor_address() {
-        let err = BlockProductionParams::try_parse_from(["madara", "--rust-exec-executor-addresses", "not-a-felt"])
+        let err = BlockProductionParams::try_parse_from(["madara", "--executor-addresses", "not-a-felt"])
             .expect_err("invalid felt must be rejected");
         assert!(err.to_string().contains("invalid felt hex"));
     }
@@ -293,14 +329,16 @@ mod tests {
     fn block_production_params_parse_rust_exec_cache_flags() {
         let params = BlockProductionParams::try_parse_from([
             "madara",
-            "--rust-exec-ctx-cache=false",
-            "--rust-exec-pedersen-cache=false",
-            "--rust-exec-precomputed-sn-keccak",
+            "--ctx-cache=false",
+            "--pedersen-cache=false",
+            "--precomputed-sn-keccak",
+            "--ignore-fee-token-mismatch=false",
         ])
         .expect("arguments should parse");
 
         assert!(!params.rust_exec.ctx_cache);
         assert!(!params.rust_exec.pedersen_cache);
         assert!(params.rust_exec.precomputed_sn_keccak);
+        assert!(!params.rust_exec.ignore_fee_token_mismatch);
     }
 }

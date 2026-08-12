@@ -1,10 +1,22 @@
 use super::*;
 
+const DEFAULT_CLOSE_QUEUE_CAPACITY: usize = 10;
+const MAX_CLOSE_QUEUE_CAPACITY: usize = 10;
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
     ClosedBlock { block_n: u64 },
     BatchExecuted,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum OptimisticPipelineNotification {
+    BlockStarted { block_n: u64 },
+    BatchExecuted { block_n: u64 },
+    ComparatorStarted { block_n: u64 },
+    ComparatorFinished { block_n: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -340,6 +352,10 @@ pub struct BlockProductionTask {
     pub(super) current_state: Option<TaskState>,
     pub(super) metrics: Arc<BlockProductionMetrics>,
     pub(super) state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
+    #[cfg(test)]
+    pub(super) optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
+    #[cfg(test)]
+    pub(super) comparator_gates: BTreeMap<u64, Arc<tokio::sync::Semaphore>>,
     pub(super) handle: BlockProductionHandle,
     pub(super) executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     pub(super) fallback_commands_recv: Option<mpsc::UnboundedReceiver<executor::FallbackCommand>>,
@@ -395,7 +411,7 @@ impl BlockProductionTask {
     }
 
     pub(super) fn close_queue_capacity(&self) -> usize {
-        self.close_queue_capacity.max(1)
+        self.close_queue_capacity
     }
 
     pub(super) fn next_internal_preconfirmed_block_n_from_backend(&self) -> anyhow::Result<u64> {
@@ -452,7 +468,7 @@ impl BlockProductionTask {
         Self {
             backend: backend.clone(),
             mempool,
-            close_queue_capacity: 1,
+            close_queue_capacity: DEFAULT_CLOSE_QUEUE_CAPACITY,
             current_state: None,
             metrics,
             handle: BlockProductionHandle::new(
@@ -464,6 +480,10 @@ impl BlockProductionTask {
                 no_charge_fee,
             ),
             state_notifications: None,
+            #[cfg(test)]
+            optimistic_pipeline_notifications: None,
+            #[cfg(test)]
+            comparator_gates: BTreeMap::new(),
             executor_commands_recv: Some(recv),
             fallback_commands_recv: Some(fallback_cmd_rx),
             l1_client,
@@ -503,9 +523,13 @@ impl BlockProductionTask {
         self
     }
 
-    pub fn with_close_queue_capacity(mut self, close_queue_capacity: usize) -> Self {
-        self.close_queue_capacity = close_queue_capacity.max(1);
-        self
+    pub fn with_close_queue_capacity(mut self, close_queue_capacity: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_CLOSE_QUEUE_CAPACITY).contains(&close_queue_capacity),
+            "close queue capacity must be in 1..={MAX_CLOSE_QUEUE_CAPACITY}"
+        );
+        self.close_queue_capacity = close_queue_capacity;
+        Ok(self)
     }
 
     pub fn with_replay_mode_enabled(mut self, enabled: bool) -> Self {
@@ -574,6 +598,22 @@ impl BlockProductionTask {
         if let Some(sender) = self.state_notifications.as_mut() {
             let _ = sender.send(notification);
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn subscribe_optimistic_pipeline_notifications(
+        &mut self,
+    ) -> mpsc::UnboundedReceiver<OptimisticPipelineNotification> {
+        let (sender, recv) = mpsc::unbounded_channel();
+        self.optimistic_pipeline_notifications = Some(sender);
+        recv
+    }
+
+    #[cfg(test)]
+    pub(super) fn gate_comparator_for_block(&mut self, block_n: u64) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        self.comparator_gates.insert(block_n, gate.clone());
+        gate
     }
 
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {

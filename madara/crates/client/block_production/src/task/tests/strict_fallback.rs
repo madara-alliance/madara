@@ -76,7 +76,7 @@ pub(super) fn spawn_test_finalizer(
     task: &BlockProductionTask,
 ) -> (crate::finalizer::FinalizerHandle, crate::finalizer::FinalizerTaskHandle) {
     crate::finalizer::FinalizerHandle::spawn(
-        task.close_queue_capacity.max(1),
+        task.close_queue_capacity(),
         task.metrics.clone(),
         BlockProductionTask::execute_close_payload,
     )
@@ -141,6 +141,7 @@ pub(super) async fn apply_tainted_rebuild_step_result(
         canonical_executed_rows,
         canonical_header,
     )
+    .await
     .expect("enqueue tainted rebuild close");
     drain_next_pending_close_completion(task, &close_queue_handle).await;
     drop(close_queue_handle);
@@ -380,6 +381,7 @@ pub(super) fn rust_transfer_routing_cfg(
         supported_class_hashes: HashSet::from([fee_token_class_hash]),
         rust_batch_size,
         blockifier_batch_size,
+        runtime_options: Default::default(),
     }
 }
 

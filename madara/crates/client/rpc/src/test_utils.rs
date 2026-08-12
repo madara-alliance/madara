@@ -99,7 +99,7 @@ pub async fn rpc_test_setup_with_execution() -> (Arc<MadaraBackend>, Starknet, m
     genesis.build_and_store(&backend).await.unwrap();
 
     let provider = Arc::new(TestTransactionProvider);
-    let rpc = Starknet::new(
+    let rpc = Starknet::new_with_lookup(
         backend.clone(),
         Arc::clone(&provider) as _,
         provider,
@@ -169,7 +169,7 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
     let provider = Arc::new(TestTransactionProvider);
-    let mut rpc = Starknet::new(
+    let mut rpc = Starknet::new_with_lookup(
         backend.clone(),
         Arc::clone(&provider) as _,
         provider,

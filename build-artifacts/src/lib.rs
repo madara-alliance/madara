@@ -130,7 +130,13 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     let err_msg = "Failed to download artifacts, make sure that docker is installed";
 
     let version = get_version(artifacts)?;
-    let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
+    println!("cargo::rerun-if-env-changed=MADARA_ARTIFACTS_IMAGE");
+    println!("cargo::rerun-if-env-changed=GITHUB_REPOSITORY_OWNER");
+    let image_repository = std::env::var("MADARA_ARTIFACTS_IMAGE").unwrap_or_else(|_| {
+        let owner = std::env::var("GITHUB_REPOSITORY_OWNER").unwrap_or_else(|_| "madara-alliance".to_owned());
+        format!("ghcr.io/{owner}/artifacts")
+    });
+    let image = format!("{image_repository}:{version}");
     println!("cargo::warning=fetching artifacts from image: {}", image);
 
     let root = &root.0;

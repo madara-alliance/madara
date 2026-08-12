@@ -48,14 +48,14 @@
 //!
 //! # Environment Variables
 //!
-//! - `MIGRATION_TEST_RPC_URL`: RPC endpoint URL (default: http://localhost:9944)
+//! - `MIGRATION_TEST_RPC_URL`: RPC endpoint URL (default: http://localhost:9944/rpc/v0_10_0/)
 
 use rstest::rstest;
 use starknet_core::types::{BlockId, MaybePreConfirmedStateUpdate};
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
 
 /// Default RPC URL for migration tests.
-const DEFAULT_RPC_URL: &str = "http://localhost:9944";
+const DEFAULT_RPC_URL: &str = "http://localhost:9944/rpc/v0_10_0/";
 
 /// Get the RPC URL from environment or use default.
 fn get_rpc_url() -> String {

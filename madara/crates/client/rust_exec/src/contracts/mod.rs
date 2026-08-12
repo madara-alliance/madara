@@ -11,12 +11,14 @@
 //! See [`crate::config`] for details.
 
 pub mod account;
+pub mod devnet;
 pub mod erc20;
 pub mod paradex;
 
 use starknet_types_core::felt::Felt;
 
 use crate::config;
+use crate::contracts::devnet::rust_exec_transfer;
 use crate::contracts::paradex::{assets_manager, oracle, paraclear};
 use crate::core::state::StateReader;
 use crate::core::types::{ContractAddress, ExecutionResult};
@@ -64,6 +66,9 @@ impl ContractRegistry {
     ///
     /// Returns `None` if the class hash is not recognized.
     pub fn get_contract_name(class_hash: Felt) -> Option<String> {
+        if rust_exec_transfer::supports_class_hash(class_hash) {
+            return Some(rust_exec_transfer::NAME.to_string());
+        }
         if let Some(account_hash) = config::account_class_hash() {
             if class_hash == account_hash {
                 return Some(account::NAME.to_string());
@@ -102,6 +107,9 @@ impl ContractRegistry {
     ///
     /// Returns `None` if the function is not recognized.
     pub fn get_function_name(class_hash: Felt, selector: Felt) -> Option<String> {
+        if rust_exec_transfer::supports_class_hash(class_hash) {
+            return rust_exec_transfer::get_function_name(selector);
+        }
         if let Some(account_hash) = config::account_class_hash() {
             if class_hash == account_hash {
                 return account::get_function_name(selector);
@@ -148,6 +156,9 @@ impl ContractRegistry {
     ///
     /// This checks the class hash against configured environment variables.
     pub fn supports_class_hash(class_hash: Felt) -> bool {
+        if rust_exec_transfer::supports_class_hash(class_hash) {
+            return true;
+        }
         if let Some(account_hash) = config::account_class_hash() {
             if class_hash == account_hash {
                 return true;
@@ -184,6 +195,9 @@ impl ContractRegistry {
 
     /// Check if a (class_hash, selector) pair is supported.
     pub fn supports_function(class_hash: Felt, selector: Felt) -> bool {
+        if rust_exec_transfer::supports_class_hash(class_hash) {
+            return rust_exec_transfer::supports_selector(selector);
+        }
         if let Some(account_hash) = config::account_class_hash() {
             if class_hash == account_hash {
                 return account::supports_selector(selector);
@@ -247,6 +261,9 @@ impl ContractRegistry {
         caller: ContractAddress,
         block_timestamp: u64,
     ) -> Option<Result<ExecutionResult, ExecutionError>> {
+        if rust_exec_transfer::supports_class_hash(class_hash) {
+            return Some(rust_exec_transfer::execute(state, contract_address, selector, calldata, caller));
+        }
         if let Some(account_hash) = config::account_class_hash() {
             if class_hash == account_hash {
                 return Some(account::execute(state, contract_address, selector, calldata, caller));
@@ -324,10 +341,25 @@ mod tests {
 
     use super::{config, ContractRegistry, ExecutionError};
     use crate::{
+        contracts::devnet::rust_exec_transfer,
         contracts::paradex::{oracle, paraclear},
         core::{state::mock::MockStateReader, types::ContractAddress},
         RustExecRuntimeConfig,
     };
+
+    #[test]
+    fn known_devnet_transfer_hash_dispatches_manifest_functions() {
+        let transfer = crate::core::storage::function_selector("transfer");
+        let mismatch = crate::core::storage::function_selector("transfer_with_comparator_mismatch");
+
+        assert!(ContractRegistry::supports_class_hash(rust_exec_transfer::class_hash()));
+        assert!(ContractRegistry::supports_function(rust_exec_transfer::class_hash(), transfer));
+        assert!(ContractRegistry::supports_function(rust_exec_transfer::class_hash(), mismatch));
+        assert_eq!(
+            ContractRegistry::get_contract_name(rust_exec_transfer::class_hash()),
+            Some("RustExecTransfer".to_string())
+        );
+    }
 
     #[test]
     fn generic_supported_class_hash_allows_oracle_selector_dispatch() {

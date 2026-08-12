@@ -16,7 +16,7 @@ pub use telemetry::{hash_agg, storage_agg};
 
 use starknet_types_core::felt::Felt;
 
-pub const SUPPORTED_CONTRACTS: &str = include_str!("contracts/paradex/supported_contracts.json");
+pub const SUPPORTED_CONTRACTS: &str = include_str!(concat!(env!("OUT_DIR"), "/supported_contracts.json"));
 
 pub use block_production::{execute_txns, RustDeferredReason, RustExecOutput, RustPhaseState};
 pub use config::{

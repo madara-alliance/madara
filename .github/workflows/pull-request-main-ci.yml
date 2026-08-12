@@ -19,6 +19,7 @@ concurrency:
 
 permissions:
   contents: write
+  packages: read
   pull-requests: write
 
 jobs:
@@ -103,6 +104,9 @@ jobs:
     needs: publish-artifacts
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-build-madara.yml
+    permissions:
+      contents: read
+      packages: read
     secrets: inherit
 
   build-cairo-artifacts:

@@ -201,6 +201,21 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
         MadaraStateView::on_confirmed_or_empty(self.clone(), head.confirmed_tip)
     }
+
+    /// Returns the latest internal execution state for sequencer-only decisions.
+    ///
+    /// Unlike [`Self::view_on_latest`], this includes speculative preconfirmed
+    /// blocks that have not passed the comparator and must not be exposed by RPC.
+    pub fn view_on_internal_latest(self: &Arc<Self>) -> MadaraStateView<D> {
+        let head = self.chain_head_state();
+        if let Some(preconfirmed_tip) = head.internal_preconfirmed_tip {
+            if let Some(block) = self.block_view_on_preconfirmed(preconfirmed_tip) {
+                return block.into();
+            }
+        }
+
+        MadaraStateView::on_confirmed_or_empty(self.clone(), head.confirmed_tip)
+    }
 }
 
 // Returns (start_tx_index, to_take).

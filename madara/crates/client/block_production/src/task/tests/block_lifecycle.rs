@@ -77,9 +77,9 @@ async fn test_block_prod_bouncer_cap_reached_closes_block(
     assert_eq!(closed_1.get_executed_transactions(..).unwrap().len(), 1);
     // rolled over to next block.
     assert_eq!(closed_2.get_executed_transactions(..).unwrap().len(), 1);
-    // rolled over to next block.
-    // last block should not be closed though.
-    assert_eq!(preconfirmed_3.get_executed_transactions(..).len(), 1);
+    // The third batch has executed, but block 3 remains preconfirmed and is not
+    // externally populated until its close path publishes canonical rows.
+    assert!(devnet_setup.backend.block_view_on_confirmed(3).is_none());
     assert!(devnet_setup.mempool.is_empty().await);
 }
 
@@ -167,7 +167,7 @@ async fn test_l1_handler_tx(
         res.class_hash,
         /* calldata (pubkey) */ &[Felt::TWO],
     );
-    devnet_setup.tx_validator.submit_invoke_transaction(tx).await.unwrap();
+    devnet_setup.tx_validator.submit_invoke_transaction(tx.into()).await.unwrap();
 
     assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 

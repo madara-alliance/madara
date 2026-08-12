@@ -119,6 +119,10 @@ const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 const ACCOUNT_CLASS_DEFINITION: &[u8] = include_bytes!(
     "../../../../../build-artifacts/cairo_artifacts/openzeppelin_AccountUpgradeable.contract_class.json"
 );
+const RUST_EXEC_TRANSFER_CLASS_DEFINITION: &[u8] =
+    include_bytes!("../../../../../build-artifacts/js_tests/madara_contracts_RustExecTransfer.contract_class.json");
+pub const RUST_EXEC_TRANSFER_CONTRACT_ADDRESS: Felt =
+    Felt::from_hex_unchecked("0x525553545f455845435f5452414e53464552");
 
 /// High level description of the genesis block.
 #[derive(Clone, Debug, Default)]
@@ -136,13 +140,19 @@ impl ChainGenesisDescription {
         let udc_class = InitiallyDeclaredClass::new_sierra(UDC_CLASS_DEFINITION).context("Failed to add UDC class")?;
         let erc20_class =
             InitiallyDeclaredClass::new_sierra(ERC20_CLASS_DEFINITION).context("Failed to add ERC20 class")?;
+        let rust_exec_transfer_class = InitiallyDeclaredClass::new_sierra(RUST_EXEC_TRANSFER_CLASS_DEFINITION)
+            .context("Failed to add Rust Exec transfer class")?;
         Ok(Self {
             initial_balances: InitialBalances::default(),
             deployed_contracts: InitiallyDeployedContracts::default()
                 .with(UDC_CONTRACT_ADDRESS, udc_class.class_hash())
                 .with(ERC20_ETH_CONTRACT_ADDRESS, erc20_class.class_hash())
-                .with(ERC20_STRK_CONTRACT_ADDRESS, erc20_class.class_hash()),
-            declared_classes: InitiallyDeclaredClasses::default().with(udc_class).with(erc20_class),
+                .with(ERC20_STRK_CONTRACT_ADDRESS, erc20_class.class_hash())
+                .with(RUST_EXEC_TRANSFER_CONTRACT_ADDRESS, rust_exec_transfer_class.class_hash()),
+            declared_classes: InitiallyDeclaredClasses::default()
+                .with(udc_class)
+                .with(erc20_class)
+                .with(rust_exec_transfer_class),
             initial_storage: StorageDiffs::default(),
         })
     }
@@ -588,7 +598,10 @@ mod tests {
 
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if wait_block_time {
-                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+                assert_eq!(
+                    notifications.recv().await.unwrap(),
+                    BlockProductionStateNotification::ClosedBlock { block_n: 1 }
+                );
                 let _found = chain
                     .backend
                     .view_on_latest_confirmed()
@@ -645,7 +658,10 @@ mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         if wait_block_time {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+            assert_eq!(
+                notifications.recv().await.unwrap(),
+                BlockProductionStateNotification::ClosedBlock { block_n: 2 }
+            );
             let _found = chain
                 .backend
                 .view_on_latest_confirmed()

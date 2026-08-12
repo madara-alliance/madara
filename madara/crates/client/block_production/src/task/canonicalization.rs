@@ -1,5 +1,21 @@
 use super::*;
 
+struct CanonicalizationTaskContext {
+    parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
+    dispatcher: Option<ReexecDispatcherHandle>,
+    reexec_epoch: u64,
+    metrics: Arc<BlockProductionMetrics>,
+    no_charge_fee: bool,
+    ignore_fee_token_mismatch: bool,
+    ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
+    #[cfg(test)]
+    force_comparator_error: bool,
+    #[cfg(test)]
+    optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
+    #[cfg(test)]
+    comparator_gate: Option<Arc<tokio::sync::Semaphore>>,
+}
+
 impl BlockProductionTask {
     pub(super) fn buffer_approved_external_content(
         &mut self,
@@ -81,22 +97,29 @@ impl BlockProductionTask {
             self.routing_cfg.runtime_options.ignored_storage_mismatch_canonical_source;
         #[cfg(test)]
         let force_comparator_error = self.force_comparator_error;
+        #[cfg(test)]
+        let optimistic_pipeline_notifications = self.optimistic_pipeline_notifications.clone();
+        #[cfg(test)]
+        let comparator_gate = self.comparator_gates.remove(&block_n);
 
-        self.canonicalization_task = Some(tokio::spawn(async move {
-            Self::run_canonicalization_task(
-                input,
-                parent_overlays,
-                dispatcher,
-                reexec_epoch,
-                metrics,
-                no_charge_fee,
-                ignore_fee_token_mismatch,
-                ignored_storage_mismatch_canonical_source,
-                #[cfg(test)]
-                force_comparator_error,
-            )
-            .await
-        }));
+        let context = CanonicalizationTaskContext {
+            parent_overlays,
+            dispatcher,
+            reexec_epoch,
+            metrics,
+            no_charge_fee,
+            ignore_fee_token_mismatch,
+            ignored_storage_mismatch_canonical_source,
+            #[cfg(test)]
+            force_comparator_error,
+            #[cfg(test)]
+            optimistic_pipeline_notifications,
+            #[cfg(test)]
+            comparator_gate,
+        };
+
+        self.canonicalization_task =
+            Some(tokio::spawn(async move { Self::run_canonicalization_task(input, context).await }));
     }
     pub(super) async fn handle_canonicalization_result(
         &mut self,
@@ -348,6 +371,7 @@ impl BlockProductionTask {
             canonical_rows_for_close,
             canonical_header_for_close,
         )
+        .await
     }
     pub(super) fn build_bre_preconfirmed_rows(
         original_txs: &[PreconfirmedExecutedTransaction],
@@ -455,20 +479,38 @@ impl BlockProductionTask {
 
         maps
     }
-    pub(super) async fn run_canonicalization_task(
+    async fn run_canonicalization_task(
         input: PendingCanonicalizationInput,
-        parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
-        mut dispatcher: Option<ReexecDispatcherHandle>,
-        reexec_epoch: u64,
-        metrics: Arc<BlockProductionMetrics>,
-        no_charge_fee: bool,
-        ignore_fee_token_mismatch: bool,
-        ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
-        #[cfg(test)] force_comparator_error: bool,
+        context: CanonicalizationTaskContext,
     ) -> anyhow::Result<CanonicalizationTaskResult> {
+        let CanonicalizationTaskContext {
+            parent_overlays,
+            mut dispatcher,
+            reexec_epoch,
+            metrics,
+            no_charge_fee,
+            ignore_fee_token_mismatch,
+            ignored_storage_mismatch_canonical_source,
+            #[cfg(test)]
+            force_comparator_error,
+            #[cfg(test)]
+            optimistic_pipeline_notifications,
+            #[cfg(test)]
+            comparator_gate,
+        } = context;
         let PendingCanonicalizationInput { state, block_exec_summary } = input;
         let block_n = state.block_number;
         let execution_mode = state.execution_snapshot.execution_mode;
+
+        #[cfg(test)]
+        if execution_mode == ExecutionMode::Mixed {
+            if let Some(sender) = optimistic_pipeline_notifications.as_ref() {
+                let _ = sender.send(OptimisticPipelineNotification::ComparatorStarted { block_n });
+            }
+            if let Some(gate) = comparator_gate {
+                gate.acquire().await.context("Test comparator gate closed")?.forget();
+            }
+        }
 
         let preconfirmed_view = state
             .backend
@@ -495,7 +537,7 @@ impl BlockProductionTask {
 
         let canonical_result = if execution_mode == ExecutionMode::Mixed {
             let dispatcher_handle = dispatcher.as_mut().expect("mixed mode requires reexec dispatcher");
-            Self::run_comparator_for_block_task(
+            let result = Self::run_comparator_for_block_task(
                 block_n,
                 &state,
                 &preconfirmed_view,
@@ -511,7 +553,13 @@ impl BlockProductionTask {
                 #[cfg(test)]
                 force_comparator_error,
             )
-            .await
+            .await;
+
+            #[cfg(test)]
+            if let Some(sender) = optimistic_pipeline_notifications.as_ref() {
+                let _ = sender.send(OptimisticPipelineNotification::ComparatorFinished { block_n });
+            }
+            result
         } else {
             Ok(CanonicalizationTaskCanonical {
                 canonical: CanonicalizedBlockOutput {
@@ -1173,7 +1221,7 @@ impl BlockProductionTask {
         diff.storage_diffs.iter().map(|item| item.storage_entries.len()).sum()
     }
 
-    fn storage_diff_mismatch_preview_json(
+    pub(super) fn storage_diff_mismatch_preview_json(
         rust_exec_diff: &StateDiff,
         blockifier_diff: &StateDiff,
         preview_limit: usize,
