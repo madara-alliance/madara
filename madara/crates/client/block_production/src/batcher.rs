@@ -27,6 +27,24 @@ use tokio::time::Instant;
 
 const BATCHER_OUTPUT_BACKPRESSURE_INFO_MS: f64 = 50.0;
 
+fn execution_frontier_block_n(backend: &MadaraBackend, replay_mode_enabled: bool) -> u64 {
+    let head_state = backend.chain_head_state();
+    let frontier_block_n = head_state
+        .internal_preconfirmed_tip
+        .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+        .unwrap_or(0);
+
+    if replay_mode_enabled && backend.replay_boundary_is_met(frontier_block_n) == Some(true) {
+        if let Some(next_block_n) =
+            frontier_block_n.checked_add(1).filter(|block_n| backend.replay_boundary_exists(*block_n))
+        {
+            return next_block_n;
+        }
+    }
+
+    frontier_block_n
+}
+
 #[derive(Default)]
 struct ValidatedBatchBoundary {
     first_hash: Option<String>,
@@ -294,15 +312,9 @@ impl Batcher {
                 continue;
             }
 
-            // Resolve the execution-frontier block number per design doc 02 §Replay-boundary rule:
-            // use internal_preconfirmed_tip first (execution frontier), then confirmed_tip+1.
-            let frontier_block_n = {
-                let head_state = self.backend.chain_head_state();
-                head_state
-                    .internal_preconfirmed_tip
-                    .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-                    .unwrap_or(0)
-            };
+            // A completed replay boundary advances dispatch to a preloaded successor before
+            // comparator-gated canonical close advances the backend head.
+            let frontier_block_n = execution_frontier_block_n(&self.backend, self.replay_mode_enabled);
             let execution_epoch = *self.execution_epoch_rx.borrow();
             let execution_mode = *self.execution_mode_rx.borrow();
 
@@ -501,10 +513,13 @@ impl Batcher {
 mod tests {
     use super::*;
     use futures::{stream, StreamExt};
+    use mc_db::preconfirmed::PreconfirmedBlock;
     use mc_exec::execution::TxInfo;
     use mc_mempool::MempoolConfig;
+    use mp_block::header::PreconfirmedHeader;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
+    use mp_rpc::admin::ReplayBlockBoundary;
     use starknet_api::core::{ContractAddress, Nonce};
     use starknet_api::executable_transaction::{AccountTransaction, InvokeTransaction};
     use starknet_api::transaction::{InvokeTransaction as ApiInvokeTransaction, InvokeTransactionV3, TransactionHash};
@@ -558,6 +573,31 @@ mod tests {
 
     fn batch_hashes(batch: &RoutedBatchToExecute) -> Vec<Felt> {
         batch.blockifier_batch.txs.iter().chain(batch.rust_batch.txs.iter()).map(|tx| tx.tx_hash().to_felt()).collect()
+    }
+
+    #[test]
+    fn replay_frontier_advances_after_current_boundary_is_met() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
+            .expect("create current preconfirmed block");
+
+        let current_last_hash = Felt::from(0x7001u64);
+        backend.set_replay_boundary(ReplayBlockBoundary {
+            block_n: 0,
+            expected_tx_count: 1,
+            last_tx_hash: current_last_hash,
+        });
+        backend.set_replay_boundary(ReplayBlockBoundary {
+            block_n: 1,
+            expected_tx_count: 1,
+            last_tx_hash: Felt::from(0x8001u64),
+        });
+
+        assert_eq!(execution_frontier_block_n(&backend, true), 0);
+        backend.replay_boundary_record_executed_hashes(0, &[current_last_hash]);
+        assert_eq!(execution_frontier_block_n(&backend, true), 1);
     }
 
     fn spawn_batcher_harness(initial_mode: ExecutionMode, routing_cfg: RustExecRoutingConfig) -> BatcherTestHarness {
