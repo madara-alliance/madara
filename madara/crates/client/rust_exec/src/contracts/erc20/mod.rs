@@ -125,18 +125,11 @@ pub fn transfer_internal<S: StateReader>(
     // Return a successful call result
     Ok(CallExecutionResult {
         retdata: vec![Felt::ONE], // true
-        events: vec![
-            // Transfer event
-            crate::core::types::Event {
-                order: 0,
-                keys: vec![
-                    crate::core::storage::sn_keccak(PRECOMPUTED_NAMES[TRANSFER_EVENT_INDEX].as_bytes()),
-                    from.0,
-                    to.0,
-                ],
-                data: vec![Felt::from(amount), Felt::ZERO], // amount as u256
-            },
-        ],
+        events: vec![crate::core::types::Event {
+            order: 0,
+            keys: vec![crate::core::storage::sn_keccak(PRECOMPUTED_NAMES[TRANSFER_EVENT_INDEX].as_bytes())],
+            data: vec![from.0, to.0, Felt::from(amount), Felt::ZERO],
+        }],
         l2_to_l1_messages: vec![],
         failed: false,
         gas_consumed: 500, // Approximate gas for transfer
@@ -157,10 +150,28 @@ fn felt_to_u128(felt: Felt) -> Result<u128, ExecutionError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::state::mock::MockStateReader;
 
     #[test]
     fn test_supports_balance_of() {
         assert!(supports_selector(balance_of_selector()));
+    }
+
+    #[test]
+    fn internal_fee_transfer_uses_legacy_event_abi() {
+        let token = ContractAddress(Felt::from(1u64));
+        let from = ContractAddress(Felt::from(2u64));
+        let to = ContractAddress(Felt::from(3u64));
+        let amount = 10u128;
+        let mut state = MockStateReader::new();
+        state.set_storage(token, layout::balance_key(from), Felt::from(100u64));
+        let mut state_diff = StateDiff::default();
+
+        let result = transfer_internal(&state, token, from, to, amount, &mut state_diff).expect("fee transfer");
+        let event = result.events.first().expect("transfer event");
+
+        assert_eq!(event.keys, vec![crate::core::storage::event_selector("Transfer")]);
+        assert_eq!(event.data, vec![from.0, to.0, Felt::from(amount), Felt::ZERO]);
     }
 
     #[test]

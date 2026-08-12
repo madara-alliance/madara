@@ -20,8 +20,8 @@ use starknet_types_core::felt::Felt;
 use crate::contracts::ExecutionError;
 use crate::core::context::ExecutionContext;
 use crate::core::state::StateReader;
-use crate::core::storage::function_selector;
-use crate::core::types::{ContractAddress, ExecutionResult};
+use crate::core::storage::{event_selector, function_selector};
+use crate::core::types::{ContractAddress, Event, ExecutionResult};
 
 pub(crate) use names::PRECOMPUTED_NAMES;
 
@@ -30,6 +30,7 @@ const EXECUTE_INDEX: usize = 1;
 const IS_VALID_SIGNATURE_INDEX: usize = 3;
 const GET_PUBLIC_KEY_INDEX: usize = 4;
 const SET_PUBLIC_KEY_INDEX: usize = 5;
+const TRANSACTION_EXECUTED_EVENT_INDEX: usize = 6;
 
 /// Name of the contract (for debugging/logging).
 pub const NAME: &str = "Account";
@@ -53,6 +54,22 @@ fn get_public_key_selector() -> Felt {
 
 fn set_public_key_selector() -> Felt {
     function_selector(PRECOMPUTED_NAMES[SET_PUBLIC_KEY_INDEX])
+}
+
+pub fn transaction_executed_event(account_class_hash: Felt, tx_hash: Felt, order: usize) -> Option<Event> {
+    let argent_multiowner_class_hash =
+        Felt::from_hex_unchecked("0x73414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2");
+    (account_class_hash == argent_multiowner_class_hash).then(|| Event {
+        order,
+        keys: vec![event_selector(PRECOMPUTED_NAMES[TRANSACTION_EXECUTED_EVENT_INDEX]), tx_hash],
+        data: Vec::new(),
+    })
+}
+
+pub fn is_transaction_executed_event(event: &Event) -> bool {
+    event.keys.first() == Some(&event_selector(PRECOMPUTED_NAMES[TRANSACTION_EXECUTED_EVENT_INDEX]))
+        && event.keys.len() == 2
+        && event.data.is_empty()
 }
 
 /// Check if this contract supports a given function selector.
@@ -163,5 +180,25 @@ mod tests {
     #[test]
     fn test_supports_get_public_key() {
         assert!(supports_selector(get_public_key_selector()));
+    }
+
+    #[test]
+    fn transaction_executed_event_matches_live_account_abi() {
+        let tx_hash = Felt::from(0x123u64);
+        let account_class_hash =
+            Felt::from_hex_unchecked("0x73414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2");
+        let event = transaction_executed_event(account_class_hash, tx_hash, 7).expect("supported account event");
+
+        assert_eq!(event.order, 7);
+        assert_eq!(
+            event.keys,
+            vec![
+                Felt::from_hex_unchecked("0x1dcde06aabdbca2f80aa51392b345d7549d7757aa855f7e37f5d335ac8243b1"),
+                tx_hash
+            ]
+        );
+        assert!(event.data.is_empty());
+        assert!(is_transaction_executed_event(&event));
+        assert!(transaction_executed_event(Felt::ZERO, tx_hash, 7).is_none());
     }
 }
