@@ -41,7 +41,7 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
 
     let state_adapter = if is_direct_child && req.parent_overlays.is_empty() {
         // Direct child of confirmed base — no overlays needed.
-        tracing::info!(
+        tracing::debug!(
             block_n = req.block_n,
             confirmed_base_block_n = ?req.confirmed_base_block_n,
             parent_state_source = "confirmed_db_direct_parent",
@@ -52,7 +52,7 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
     } else {
         // Runahead or non-trivial path: build synthetic parent from confirmed base + overlays.
         // new_for_reexec() validates contiguity and fails closed if overlays are missing.
-        tracing::info!(
+        tracing::debug!(
             block_n = req.block_n,
             confirmed_base_block_n = ?req.confirmed_base_block_n,
             parent_state_source = "synthetic_parent_with_overlays",

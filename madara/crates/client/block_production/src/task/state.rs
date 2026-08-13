@@ -31,6 +31,40 @@ pub(super) struct BlockExecutionSnapshot {
     pub(super) execution_mode: ExecutionMode,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct InternalPreconfirmedWindowSnapshot {
+    pub(super) confirmed_tip: Option<u64>,
+    pub(super) external_preconfirmed_tip: Option<u64>,
+    pub(super) internal_preconfirmed_tip: Option<u64>,
+    pub(super) depth: usize,
+    pub(super) capacity: usize,
+}
+
+impl InternalPreconfirmedWindowSnapshot {
+    pub(super) fn from_backend(backend: &MadaraBackend, capacity: usize) -> Self {
+        let head = backend.chain_head_state();
+        Self::from_tips(head.confirmed_tip, head.external_preconfirmed_tip, head.internal_preconfirmed_tip, capacity)
+    }
+
+    pub(super) fn from_tips(
+        confirmed_tip: Option<u64>,
+        external_preconfirmed_tip: Option<u64>,
+        internal_preconfirmed_tip: Option<u64>,
+        capacity: usize,
+    ) -> Self {
+        let confirmed_count = confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        let internal_count = internal_preconfirmed_tip.map_or(confirmed_count, |tip| tip.saturating_add(1));
+        let depth = internal_count.saturating_sub(confirmed_count).min(capacity as u64) as usize;
+        Self { confirmed_tip, external_preconfirmed_tip, internal_preconfirmed_tip, depth, capacity }
+    }
+
+    pub(super) fn confirmed_advance_from(self, previous_confirmed_tip: Option<u64>) -> usize {
+        let previous_count = previous_confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        let current_count = self.confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        current_count.saturating_sub(previous_count) as usize
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CurrentBlockState {
     pub(super) backend: Arc<MadaraBackend>,
@@ -316,12 +350,30 @@ impl CurrentBlockState {
                 execution_mode = ?mode,
                 "Accepted batch into preconfirmed block"
             );
-            tracing::info!(
-                "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
-                stats.n_added_to_block,
-                self.block_number,
-                stats.exec_duration,
-            );
+            if stats.n_added_by_rust_exec > 0 {
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    block_number = self.block_number,
+                    tx_count = stats.n_added_by_rust_exec,
+                    duration_ms = stats.rust_exec_duration.as_secs_f64() * 1000.0,
+                    "🧮 Executed and added {} transaction(s) to block #{} in {:.3?}",
+                    stats.n_added_by_rust_exec,
+                    self.block_number,
+                    stats.rust_exec_duration,
+                );
+            }
+            if stats.n_added_by_blockifier > 0 {
+                tracing::info!(
+                    target: "CAIRO",
+                    block_number = self.block_number,
+                    tx_count = stats.n_added_by_blockifier,
+                    duration_ms = stats.blockifier_exec_duration.as_secs_f64() * 1000.0,
+                    "🧮 Executed and added {} transaction(s) to block #{} in {:.3?}",
+                    stats.n_added_by_blockifier,
+                    self.block_number,
+                    stats.blockifier_exec_duration,
+                );
+            }
             tracing::debug!("Tick stats {:?}", stats);
         }
         Ok(())
@@ -412,6 +464,10 @@ impl BlockProductionTask {
 
     pub(super) fn close_queue_capacity(&self) -> usize {
         self.close_queue_capacity
+    }
+
+    pub(super) fn internal_preconfirmed_window(&self) -> InternalPreconfirmedWindowSnapshot {
+        InternalPreconfirmedWindowSnapshot::from_backend(&self.backend, self.close_queue_capacity)
     }
 
     pub(super) fn next_internal_preconfirmed_block_n_from_backend(&self) -> anyhow::Result<u64> {

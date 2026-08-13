@@ -1,7 +1,8 @@
 use super::state::OptimisticPipelineNotification;
 use super::{
-    CanonicalizationTaskCanonical, CanonicalizationTaskResult, ComparatorDecision, PendingCanonicalizationInput,
-    TaintedRebuildClosePayload, TaintedRebuildSourceTx, TaintedRebuildStepResult, TaskState,
+    CanonicalizationTaskCanonical, CanonicalizationTaskResult, ComparatorDecision, InternalPreconfirmedWindowSnapshot,
+    PendingCanonicalizationInput, TaintedRebuildClosePayload, TaintedRebuildSourceTx, TaintedRebuildStepResult,
+    TaskState,
 };
 use crate::comparator::CanonicalBlockSource;
 use crate::executor::{BatchExecutionResult, ExecutorMessage};

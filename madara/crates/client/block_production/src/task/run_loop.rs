@@ -293,7 +293,7 @@ impl BlockProductionTask {
                     None => anyhow::bail!("No current state"),
                 }
 
-                tracing::info!("received_executor_end_block");
+                tracing::debug!("received_executor_end_block");
                 self.close_block(block_exec_summary, close_queue).await?;
             }
             ExecutorMessage::EndFinalBlock { block_exec_summary, block_number, execution_epoch } => {

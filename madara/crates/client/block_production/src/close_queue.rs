@@ -22,6 +22,7 @@ pub(crate) struct QueuedClosePayload {
     pub canonical_executed_rows: Vec<PreconfirmedExecutedTransaction>,
     /// C-024: Header for block X at canonicalization time.
     pub canonical_header: PreconfirmedHeader,
+    pub internal_capacity: usize,
     pub enqueued_at: Instant,
 }
 

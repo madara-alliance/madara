@@ -96,7 +96,7 @@ impl RocksDBStorageInner {
         };
         let res = super::deserialize::<(u32, u16)>(&res)?;
         let out = StorageTxIndex { block_number: res.0.into(), transaction_index: res.1.into() };
-        tracing::info!(
+        tracing::debug!(
             target: "mc_db",
             event = "db_find_transaction_hash_hit",
             tx_hash = format!("{tx_hash:#x}"),
@@ -237,7 +237,7 @@ impl RocksDBStorageInner {
             .last()
             .map(|tx| format!("{:#x}", tx.receipt.transaction_hash()))
             .unwrap_or_else(|| "none".to_string());
-        tracing::info!(
+        tracing::debug!(
             target: "mc_db",
             event = "db_blocks_store_transactions",
             block_number,

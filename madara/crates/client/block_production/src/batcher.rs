@@ -223,7 +223,7 @@ impl Batcher {
                 self.blockifier_barrier.set(Some(barrier_key));
                 blockifier_barrier_active = true;
                 let reason = self.record_route_fallback(reason);
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_number = frontier_block_n,
                     execution_epoch,
@@ -282,7 +282,7 @@ impl Batcher {
                             deferred_txs.push(recovery_tx);
                             deferred_txs.extend(picked_iter);
                             let reason = self.record_route_fallback(reason);
-                            tracing::info!(
+                            tracing::debug!(
                                 target: "RUST_EXEC",
                                 block_number = frontier_block_n,
                                 execution_epoch,
@@ -305,7 +305,7 @@ impl Batcher {
                                 self.blockifier_barrier.set(Some(barrier_key));
                                 blockifier_barrier_active = true;
                                 let reason = self.record_route_fallback(reason);
-                                tracing::info!(
+                                tracing::debug!(
                                     target: "RUST_EXEC",
                                     block_number = frontier_block_n,
                                     execution_epoch,
@@ -408,7 +408,7 @@ impl Batcher {
             let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
             if self.replay_mode_enabled {
                 if permit_wait_ms >= BATCHER_OUTPUT_BACKPRESSURE_INFO_MS {
-                    tracing::info!(
+                    tracing::debug!(
                         "batcher_output_backpressured permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
                         output_capacity_before_wait,
                         self.out.capacity()
@@ -515,7 +515,7 @@ impl Batcher {
                         _ = self.ctx.cancelled() => return anyhow::Ok(()),
                         res = &mut collect_boundary => {
                             let got = res.context("Staging complete replay boundary")?;
-                            tracing::info!(
+                            tracing::debug!(
                                 block_number = frontier_block_n,
                                 tx_count = got.len(),
                                 "replay_boundary_transactions_staged"
@@ -586,7 +586,7 @@ impl Batcher {
                 self.metrics.batcher_output_rust_branch_size.record(routed.rust_batch.len() as f64, &[]);
                 self.metrics.batcher_output_blockifier_branch_size.record(routed.blockifier_batch.len() as f64, &[]);
 
-                tracing::info!(
+                tracing::debug!(
                     block_number = frontier_block_n,
                     picked_txs = picked_total,
                     routed_txs = routed_total,

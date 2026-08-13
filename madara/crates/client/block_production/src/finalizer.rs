@@ -71,7 +71,7 @@ impl FinalizerHandle {
                 let block_n = job.payload.db_payload.block_n;
                 let queue_wait = job.payload.enqueued_at.elapsed();
                 metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
-                tracing::info!(
+                tracing::debug!(
                     "close_job_processing_started block_number={} queue_wait_ms={} in_flight={}",
                     block_n,
                     queue_wait.as_secs_f64() * 1000.0,
@@ -80,7 +80,7 @@ impl FinalizerHandle {
 
                 let execute_start = std::time::Instant::now();
                 let result = execute_fn(metrics.clone(), job.payload).await;
-                tracing::info!(
+                tracing::debug!(
                     "close_job_processing_finished block_number={} execute_duration_ms={} success={} in_flight={}",
                     block_n,
                     execute_start.elapsed().as_secs_f64() * 1000.0,
@@ -165,6 +165,7 @@ mod tests {
             },
             canonical_executed_rows: vec![],
             canonical_header: Default::default(),
+            internal_capacity: 1,
             enqueued_at: Instant::now(),
         }
     }
