@@ -440,19 +440,21 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             tokio::select! {
                 biased;
 
-                // Preconfirmed block new tx. We process this first to make sure we don't miss transactions.
+                // Canonical/internal frontier progress must not be starved by a busy preconfirmed
+                // content watch. The new-head handler refreshes the full preconfirmed content, so
+                // handling it first cannot lose transaction updates.
+                new_head = new_heads_subscription.next_block_view() => {
+                    tracing::debug!("Mempool task: new head.");
+                    self.handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)?;
+                }
+
+                // New transaction content on the current preconfirmed block.
                 Some(preconfirmed) = OptionFuture::from(current_internal_frontier.as_mut().and_then(|v| v.as_preconfirmed_mut()).map(|v| async {
                     v.wait_until_outdated().await;
                     v
                 })) => {
                     tracing::debug!("Mempool task: preconfirmed update.");
                     self.handle_preconfirmed_content_update(preconfirmed, &mut effects)?;
-                }
-
-                // New block on l2: either confirmed or pre-confirmed.
-                new_head = new_heads_subscription.next_block_view() => {
-                    tracing::debug!("Mempool task: new head.");
-                    self.handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)?;
                 }
 
                 // Process blocks confirmed on l1. Avoid updates that are past the l2 tip though.
@@ -787,6 +789,124 @@ mod tests {
             mempool.get_consumer().await.next().expect("promoted transaction should be consumable").hash,
             pending_tx.hash
         );
+        watcher.abort();
+    }
+
+    #[tokio::test]
+    async fn devnet_chain_watcher_promotes_nonce_when_preconfirmed_block_is_confirmed() {
+        let backend = backend_with_genesis().await;
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let account = Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
+        let pending_tx = invoke_with_nonce(account, Felt::ONE, Felt::from(0xdef1u64));
+        mempool.accept_tx(pending_tx.clone()).await.expect("future-nonce transaction should queue");
+
+        let watcher = {
+            let mempool = mempool.clone();
+            tokio::spawn(async move { mempool.run_chain_watcher_task(ServiceContext::new()).await })
+        };
+        tokio::task::yield_now().await;
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+            .expect("preconfirmed block creation");
+        tokio::task::yield_now().await;
+
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 1, ..Default::default() },
+                    state_diff: StateDiff {
+                        nonces: vec![NonceUpdate { contract_address: account, nonce: Felt::ONE }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &[],
+                false,
+            )
+            .expect("preconfirmed block confirmation");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !mempool.inner.read().await.has_ready_transactions() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("confirmed nonce should promote the queued transaction");
+
+        assert_eq!(
+            mempool.get_consumer().await.next().expect("promoted transaction should be consumable").hash,
+            pending_tx.hash
+        );
+        watcher.abort();
+    }
+
+    #[tokio::test]
+    async fn devnet_chain_watcher_confirmation_is_not_starved_by_preconfirmed_updates() {
+        let backend = backend_with_genesis().await;
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let account = Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
+        let pending_tx = invoke_with_nonce(account, Felt::ONE, Felt::from(0xdef2u64));
+        mempool.accept_tx(pending_tx.clone()).await.expect("future-nonce transaction should queue");
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+            .expect("preconfirmed block creation");
+        let preconfirmed = backend
+            .block_view_on_preconfirmed(1)
+            .expect("runtime preconfirmed block")
+            .block()
+            .clone();
+
+        let watcher = {
+            let mempool = mempool.clone();
+            tokio::spawn(async move { mempool.run_chain_watcher_task(ServiceContext::new()).await })
+        };
+        tokio::task::yield_now().await;
+
+        let noisy_preconfirmed = preconfirmed.clone();
+        let content_updates = tokio::spawn(async move {
+            loop {
+                noisy_preconfirmed.append(
+                    std::iter::empty::<mc_db::preconfirmed::PreconfirmedExecutedTransaction>(),
+                    std::iter::empty::<Arc<ValidatedTransaction>>(),
+                );
+                tokio::task::yield_now().await;
+            }
+        });
+
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 1, ..Default::default() },
+                    state_diff: StateDiff {
+                        nonces: vec![NonceUpdate { contract_address: account, nonce: Felt::ONE }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &[],
+                false,
+            )
+            .expect("preconfirmed block confirmation");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !mempool.inner.read().await.has_ready_transactions() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("confirmed nonce must not be starved by preconfirmed content updates");
+
+        assert_eq!(
+            mempool.get_consumer().await.next().expect("promoted transaction should be consumable").hash,
+            pending_tx.hash
+        );
+        content_updates.abort();
         watcher.abort();
     }
 
