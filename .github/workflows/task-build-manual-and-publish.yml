@@ -63,6 +63,7 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Run make artifacts
+        if: ${{ inputs.image-name != 'madara' }}
         run: yes | make artifacts
 
       - name: Run cargo check
