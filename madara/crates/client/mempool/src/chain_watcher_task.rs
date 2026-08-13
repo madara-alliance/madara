@@ -238,6 +238,25 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         mut new_head: MadaraBlockView<D>,
         effects: &mut ChainWatcherBranchEffects,
     ) -> anyhow::Result<()> {
+        if let MadaraBlockView::Confirmed(confirmed) = &new_head {
+            let backend_internal_tip = self.backend.chain_head_state().internal_preconfirmed_tip;
+            let confirmation_is_behind_internal_frontier = current_internal_frontier
+                .as_ref()
+                .is_some_and(|current| current.block_number() > confirmed.block_number())
+                && backend_internal_tip.is_some_and(|tip| tip > confirmed.block_number());
+
+            if confirmation_is_behind_internal_frontier {
+                // The internal subscription still emits every confirmed block while execution runs ahead.
+                // This is canonical progress below the speculative frontier, not a rewind of that frontier.
+                self.update_block_transaction_statuses(
+                    &new_head,
+                    confirmed.get_block_info()?.tx_hashes.iter().cloned().enumerate(),
+                    &mut effects.potentially_removed,
+                )?;
+                return Ok(());
+            }
+        }
+
         let current_preconfirmed_n =
             current_internal_frontier.as_ref().and_then(|v| v.as_preconfirmed()).map(|v| v.block_number());
         let next_preconfirmed_n = new_head.as_preconfirmed().map(|v| v.block_number());
@@ -571,6 +590,42 @@ mod tests {
         assert!(effects.potentially_removed.contains_key(&old_candidate.hash));
         assert!(effects.executed_reinsert_suppressed.is_empty());
         assert!(effects.nonce_updates.is_empty(), "forward advance should not rollback old executed nonces");
+    }
+
+    #[tokio::test]
+    async fn confirmed_ancestor_does_not_rewind_internal_preconfirmed_frontier() {
+        let backend = backend_with_genesis().await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+
+        let candidate = Arc::new(crate::tests::tx_account(Felt::from(0xabcdu64)));
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                vec![],
+                vec![candidate],
+            ))
+            .expect("internal preconfirmed block creation");
+        let mut internal_view = backend.block_view_on_preconfirmed(1).expect("internal preconfirmed block view");
+        internal_view.refresh_with_candidates();
+
+        let mut current_internal_frontier = Some(MadaraBlockView::Preconfirmed(internal_view));
+        let confirmed_parent: MadaraBlockView<_> =
+            backend.block_view_on_confirmed(0).expect("genesis block should be confirmed").into();
+        let mut effects = ChainWatcherBranchEffects::new();
+
+        mempool
+            .handle_new_internal_frontier(&mut current_internal_frontier, confirmed_parent, &mut effects)
+            .expect("confirmed ancestor handling");
+
+        let current = current_internal_frontier
+            .as_ref()
+            .and_then(MadaraBlockView::as_preconfirmed)
+            .expect("internal preconfirmed frontier must remain active");
+        assert_eq!(current.block_number(), 1);
+        assert!(effects.potentially_removed.is_empty());
+        assert!(effects.executed_reinsert_suppressed.is_empty());
+        assert!(effects.nonce_updates.is_empty());
     }
 
     #[tokio::test]
