@@ -492,9 +492,9 @@ impl BlockProductionTask {
                     .await
                     .context("Startup recovery close queue worker dropped completion channel")?
                     .with_context(|| format!("Executing startup recovery close payload for block #{block_number}"))?;
-                self.handle_close_completion(&close_queue_handle, expected_block_n, completion).with_context(|| {
-                    format!("Processing startup recovery close completion for block #{block_number}")
-                })?;
+                self.handle_close_completion(&close_queue_handle, expected_block_n, completion).await.with_context(
+                    || format!("Processing startup recovery close completion for block #{block_number}"),
+                )?;
 
                 tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
             }

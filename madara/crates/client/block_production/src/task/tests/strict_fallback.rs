@@ -88,7 +88,9 @@ pub(super) async fn drain_next_pending_close_completion(
 ) {
     let (expected_block_n, rx) = task.pending_completions.pop_front().expect("pending completion");
     let completion = rx.await.expect("close completion channel").expect("close payload should complete successfully");
-    task.handle_close_completion(close_queue_handle, expected_block_n, completion).expect("process close completion");
+    task.handle_close_completion(close_queue_handle, expected_block_n, completion)
+        .await
+        .expect("process close completion");
 }
 
 fn strict_stop_mismatch_summary() -> crate::comparator::state_diff::StateDiffMismatchSummary {

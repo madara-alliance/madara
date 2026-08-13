@@ -17,9 +17,9 @@ impl ExecutorThread {
         let mut force_close = false;
         let mut block_empty = true;
         let mut l2_gas_consumed_block = 0;
-        let mut execution_epoch: u64 = 0;
+        let mut execution_epoch = *self.execution_epoch_rx.borrow();
         let mut desired_execution_mode = *self.execution_mode_rx.borrow();
-        let mut wait_for_confirmed_after_fallback: Option<u64> = None;
+        let mut tainted_rebuild_parked = self.start_tainted_rebuild_parked;
         let mut runtime_replay_active = false;
         let mut replay_current_block_active = false;
 
@@ -28,28 +28,14 @@ impl ExecutorThread {
 
         // The goal here is to do the least possible between batches, as to maximize CPU usage.
         loop {
-            while let Ok(cmd) = self.commands.try_recv() {
+            while !tainted_rebuild_parked {
+                let Ok(cmd) = self.commands.try_recv() else {
+                    break;
+                };
                 match cmd {
                     ExecutorCommand::CloseBlock(callback) => {
                         force_close = true;
                         let _ = callback.send(Ok(()));
-                    }
-                    ExecutorCommand::ResyncToBackendHead { wait_for_confirmed_block_n } => {
-                        self.resync_to_backend_head(
-                            &mut state,
-                            &mut pending_routed,
-                            &mut desired_execution_mode,
-                            execution_epoch,
-                            wait_for_confirmed_block_n,
-                            &mut wait_for_confirmed_after_fallback,
-                            &mut runtime_replay_active,
-                            &mut replay_current_block_active,
-                            &mut next_block_deadline,
-                            &mut force_close,
-                            &mut block_empty,
-                            &mut l2_gas_consumed_block,
-                            block_time,
-                        )?;
                     }
                     ExecutorCommand::SetDesiredExecutionMode { mode } => {
                         self.apply_desired_execution_mode(&mut desired_execution_mode, &state, mode);
@@ -70,44 +56,93 @@ impl ExecutorThread {
                             block_time,
                         )?;
                         let _ = reply.send(Ok(carry));
-                        wait_for_confirmed_after_fallback = Some(block_n);
+                        tainted_rebuild_parked = true;
                         runtime_replay_active = false;
                         replay_current_block_active = false;
                         self.publish_replay_status(runtime_replay_active, execution_epoch);
+                        tracing::info!(
+                            target: "RUST_EXEC",
+                            block_n,
+                            execution_epoch,
+                            "Executor parked for tainted rebuild"
+                        );
+                    }
+                    ExecutorCommand::ResumeAfterTaintedRebuild { reply, .. } => {
+                        let _ = reply.send(Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                            "executor is not parked".to_owned(),
+                        )));
                     }
                 }
             }
 
-            if let Some(wait_block_n) = wait_for_confirmed_after_fallback {
-                if self
-                    .backend
-                    .latest_confirmed_block_n()
-                    .is_none_or(|confirmed_block_n| confirmed_block_n < wait_block_n)
-                {
-                    tracing::info!(
-                        wait_block_n,
-                        requeued_txs = pending_routed.blockifier_batch.len(),
-                        "executor_waiting_for_fallback_block_close"
-                    );
-                    match self.wait_for_confirmed_tip_or_command(wait_block_n) {
-                        WaitForConfirmedOutcome::Advanced => {
-                            continue;
+            if tainted_rebuild_parked {
+                let command = self.wait_rt.block_on(async {
+                    tokio::time::timeout(std::time::Duration::from_millis(100), self.commands.recv()).await
+                });
+                let command = match command {
+                    Ok(Some(command)) => command,
+                    Ok(None) => {
+                        self.finish_shutdown(state, execution_epoch);
+                        return Ok(());
+                    }
+                    Err(_) if self.incoming_batches.is_closed() => {
+                        self.finish_shutdown(state, execution_epoch);
+                        return Ok(());
+                    }
+                    Err(_) => continue,
+                };
+                match command {
+                    ExecutorCommand::CloseBlock(callback) => {
+                        let _ = callback.send(Err(crate::executor::ExecutorCommandError::TaintedRebuildActive));
+                    }
+                    ExecutorCommand::SetDesiredExecutionMode { mode } => {
+                        if mode != ExecutionMode::BlockifierOnly {
+                            tracing::warn!(
+                                target: "RUST_EXEC",
+                                ?mode,
+                                "Ignored mode change while executor is parked for tainted rebuild"
+                            );
                         }
-                        WaitForConfirmedOutcome::Command(ExecutorCommand::CloseBlock(callback)) => {
-                            force_close = true;
-                            let _ = callback.send(Ok(()));
-                            continue;
-                        }
-                        WaitForConfirmedOutcome::Command(ExecutorCommand::ResyncToBackendHead {
-                            wait_for_confirmed_block_n,
-                        }) => {
-                            self.resync_to_backend_head(
+                    }
+                    ExecutorCommand::PrepareTaintedRebuildFallback { block_n, execution_epoch: new_epoch, reply } => {
+                        desired_execution_mode = ExecutionMode::BlockifierOnly;
+                        self.publish_effective_execution_mode(desired_execution_mode);
+                        execution_epoch = new_epoch;
+                        let carry = self.prepare_tainted_rebuild_fallback(
+                            &mut state,
+                            &mut pending_routed,
+                            block_n,
+                            execution_epoch,
+                            &mut next_block_deadline,
+                            &mut force_close,
+                            &mut block_empty,
+                            &mut l2_gas_consumed_block,
+                            block_time,
+                        )?;
+                        let _ = reply.send(Ok(carry));
+                        tracing::info!(
+                            target: "RUST_EXEC",
+                            block_n,
+                            execution_epoch,
+                            "Executor remains parked for tainted rebuild"
+                        );
+                    }
+                    ExecutorCommand::ResumeAfterTaintedRebuild {
+                        expected_confirmed_head,
+                        execution_epoch: resume_epoch,
+                        reply,
+                    } => {
+                        let result = if resume_epoch != execution_epoch {
+                            Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(format!(
+                                "expected execution epoch {execution_epoch}, got {resume_epoch}"
+                            )))
+                        } else {
+                            self.resume_after_tainted_rebuild(
                                 &mut state,
                                 &mut pending_routed,
                                 &mut desired_execution_mode,
                                 execution_epoch,
-                                wait_for_confirmed_block_n,
-                                &mut wait_for_confirmed_after_fallback,
+                                expected_confirmed_head,
                                 &mut runtime_replay_active,
                                 &mut replay_current_block_active,
                                 &mut next_block_deadline,
@@ -115,49 +150,22 @@ impl ExecutorThread {
                                 &mut block_empty,
                                 &mut l2_gas_consumed_block,
                                 block_time,
-                            )?;
-                            continue;
+                            )
+                        };
+                        if let Ok(ack) = result.as_ref() {
+                            tainted_rebuild_parked = false;
+                            tracing::info!(
+                                target: "RUST_EXEC",
+                                confirmed_head = ack.confirmed_head,
+                                next_block_n = ack.next_block_n,
+                                execution_epoch = ack.execution_epoch,
+                                "Executor resumed after tainted rebuild"
+                            );
                         }
-                        WaitForConfirmedOutcome::Command(ExecutorCommand::SetDesiredExecutionMode { mode }) => {
-                            self.apply_desired_execution_mode(&mut desired_execution_mode, &state, mode);
-                            continue;
-                        }
-                        WaitForConfirmedOutcome::Command(ExecutorCommand::PrepareTaintedRebuildFallback {
-                            block_n,
-                            execution_epoch: new_epoch,
-                            reply,
-                        }) => {
-                            desired_execution_mode = ExecutionMode::BlockifierOnly;
-                            self.publish_effective_execution_mode(desired_execution_mode);
-                            execution_epoch = new_epoch;
-                            let carry = self.prepare_tainted_rebuild_fallback(
-                                &mut state,
-                                &mut pending_routed,
-                                block_n,
-                                execution_epoch,
-                                &mut next_block_deadline,
-                                &mut force_close,
-                                &mut block_empty,
-                                &mut l2_gas_consumed_block,
-                                block_time,
-                            )?;
-                            let _ = reply.send(Ok(carry));
-                            wait_for_confirmed_after_fallback = Some(block_n);
-                            runtime_replay_active = false;
-                            replay_current_block_active = false;
-                            self.publish_replay_status(runtime_replay_active, execution_epoch);
-                            continue;
-                        }
+                        let _ = reply.send(result);
                     }
                 }
-
-                state = self.initial_state().context("Rebuilding executor state after fallback block close")?;
-                wait_for_confirmed_after_fallback = None;
-                if runtime_replay_active && pending_routed.is_empty() {
-                    runtime_replay_active = false;
-                    replay_current_block_active = false;
-                    self.publish_replay_status(runtime_replay_active, execution_epoch);
-                }
+                continue;
             }
 
             // ── Intake ──────────────────────────────────────────────────────────────────
@@ -196,26 +204,6 @@ impl ExecutorThread {
                             let _ = callback.send(Ok(()));
                             (RoutedBatchToExecute::default(), false)
                         }
-                        WaitTxBatchOutcome::Command(ExecutorCommand::ResyncToBackendHead {
-                            wait_for_confirmed_block_n,
-                        }) => {
-                            self.resync_to_backend_head(
-                                &mut state,
-                                &mut pending_routed,
-                                &mut desired_execution_mode,
-                                execution_epoch,
-                                wait_for_confirmed_block_n,
-                                &mut wait_for_confirmed_after_fallback,
-                                &mut runtime_replay_active,
-                                &mut replay_current_block_active,
-                                &mut next_block_deadline,
-                                &mut force_close,
-                                &mut block_empty,
-                                &mut l2_gas_consumed_block,
-                                block_time,
-                            )?;
-                            (RoutedBatchToExecute::default(), true)
-                        }
                         WaitTxBatchOutcome::Command(ExecutorCommand::SetDesiredExecutionMode { mode }) => {
                             self.apply_desired_execution_mode(&mut desired_execution_mode, &state, mode);
                             continue;
@@ -240,74 +228,28 @@ impl ExecutorThread {
                                 block_time,
                             )?;
                             let _ = reply.send(Ok(carry));
-                            wait_for_confirmed_after_fallback = Some(block_n);
+                            tainted_rebuild_parked = true;
                             runtime_replay_active = false;
                             replay_current_block_active = false;
                             self.publish_replay_status(runtime_replay_active, execution_epoch);
+                            tracing::info!(
+                                target: "RUST_EXEC",
+                                block_n,
+                                execution_epoch,
+                                "Executor parked for tainted rebuild"
+                            );
                             (RoutedBatchToExecute::default(), true)
+                        }
+                        WaitTxBatchOutcome::Command(ExecutorCommand::ResumeAfterTaintedRebuild { reply, .. }) => {
+                            let _ =
+                                reply.send(Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                                    "executor is not parked".to_owned(),
+                                )));
+                            continue;
                         }
                         // Channel closed — graceful shutdown.
                         WaitTxBatchOutcome::Exit => {
-                            match state {
-                                ExecutorThreadState::Executing(mut execution_state) => {
-                                    tracing::debug!(
-                                        "Shutting down executor, closing block block_n={}",
-                                        execution_state.exec_ctx.block_number
-                                    );
-                                    let finalize_start = Instant::now();
-                                    match execution_state.executor.finalize() {
-                                        Ok(block_exec_summary) => {
-                                            let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                                            self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                                            self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-                                            if self
-                                                .replies_sender
-                                                .blocking_send(ExecutorMessage::EndFinalBlock {
-                                                    block_exec_summary: Some(Box::new(block_exec_summary)),
-                                                    block_number: Some(execution_state.exec_ctx.block_number),
-                                                    execution_epoch,
-                                                })
-                                                .is_err()
-                                            {
-                                                tracing::warn!(
-                                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
-                                            );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            if self
-                                                .replies_sender
-                                                .blocking_send(ExecutorMessage::EndFinalBlock {
-                                                    block_exec_summary: None,
-                                                    block_number: Some(execution_state.exec_ctx.block_number),
-                                                    execution_epoch,
-                                                })
-                                                .is_err()
-                                            {
-                                                tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
-                                            }
-                                            tracing::warn!(
-                                            "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
-                                            e
-                                        );
-                                        }
-                                    }
-                                }
-                                ExecutorThreadState::NewBlock(_) => {
-                                    tracing::debug!("Shutting down executor, no block to close");
-                                    if self
-                                        .replies_sender
-                                        .blocking_send(ExecutorMessage::EndFinalBlock {
-                                            block_exec_summary: None,
-                                            block_number: None,
-                                            execution_epoch,
-                                        })
-                                        .is_err()
-                                    {
-                                        tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
-                                    }
-                                }
-                            }
+                            self.finish_shutdown(state, execution_epoch);
                             return Ok(());
                         }
                     }
@@ -374,7 +316,7 @@ impl ExecutorThread {
                         &mut pending_routed,
                         &mut desired_execution_mode,
                         &mut execution_epoch,
-                        &mut wait_for_confirmed_after_fallback,
+                        &mut tainted_rebuild_parked,
                         &mut runtime_replay_active,
                         &mut replay_current_block_active,
                         &mut next_block_deadline,
@@ -418,7 +360,7 @@ impl ExecutorThread {
                         &mut pending_routed,
                         &mut desired_execution_mode,
                         &mut execution_epoch,
-                        &mut wait_for_confirmed_after_fallback,
+                        &mut tainted_rebuild_parked,
                         &mut runtime_replay_active,
                         &mut replay_current_block_active,
                         &mut next_block_deadline,
@@ -442,7 +384,7 @@ impl ExecutorThread {
                     &mut pending_routed,
                     &mut desired_execution_mode,
                     &mut execution_epoch,
-                    &mut wait_for_confirmed_after_fallback,
+                    &mut tainted_rebuild_parked,
                     &mut runtime_replay_active,
                     &mut replay_current_block_active,
                     &mut next_block_deadline,
@@ -982,7 +924,7 @@ impl ExecutorThread {
                 self.publish_effective_execution_mode(desired_execution_mode);
                 if replay_current_block_active {
                     replay_current_block_active = false;
-                    if pending_routed.is_empty() && wait_for_confirmed_after_fallback.is_none() {
+                    if pending_routed.is_empty() {
                         runtime_replay_active = false;
                     }
                     self.publish_replay_status(runtime_replay_active, execution_epoch);
@@ -994,6 +936,69 @@ impl ExecutorThread {
                 block_empty = true;
                 force_close = false;
                 // pending_routed naturally carries deferred suffixes to the next block.
+            }
+        }
+    }
+
+    fn finish_shutdown(&mut self, state: ExecutorThreadState, execution_epoch: u64) {
+        match state {
+            ExecutorThreadState::Executing(mut execution_state) => {
+                tracing::debug!(
+                    "Shutting down executor, closing block block_n={}",
+                    execution_state.exec_ctx.block_number
+                );
+                let finalize_start = Instant::now();
+                match execution_state.executor.finalize() {
+                    Ok(block_exec_summary) => {
+                        let finalize_secs = finalize_start.elapsed().as_secs_f64();
+                        self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
+                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
+                        if self
+                            .replies_sender
+                            .blocking_send(ExecutorMessage::EndFinalBlock {
+                                block_exec_summary: Some(Box::new(block_exec_summary)),
+                                block_number: Some(execution_state.exec_ctx.block_number),
+                                execution_epoch,
+                            })
+                            .is_err()
+                        {
+                            tracing::warn!(
+                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if self
+                            .replies_sender
+                            .blocking_send(ExecutorMessage::EndFinalBlock {
+                                block_exec_summary: None,
+                                block_number: Some(execution_state.exec_ctx.block_number),
+                                execution_epoch,
+                            })
+                            .is_err()
+                        {
+                            tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                        }
+                        tracing::warn!(
+                            "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
+                            e
+                        );
+                    }
+                }
+            }
+            ExecutorThreadState::NewBlock(_) => {
+                tracing::debug!("Shutting down executor, no block to close");
+                if self
+                    .replies_sender
+                    .blocking_send(ExecutorMessage::EndFinalBlock {
+                        block_exec_summary: None,
+                        block_number: None,
+                        execution_epoch,
+                    })
+                    .is_err()
+                {
+                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                }
             }
         }
     }

@@ -13,7 +13,7 @@ impl ExecutorThread {
         pending_routed: &mut RoutedBatchToExecute,
         desired_execution_mode: &mut ExecutionMode,
         execution_epoch: &mut u64,
-        wait_for_confirmed_after_fallback: &mut Option<u64>,
+        tainted_rebuild_parked: &mut bool,
         runtime_replay_active: &mut bool,
         replay_current_block_active: &mut bool,
         next_block_deadline: &mut Instant,
@@ -75,26 +75,6 @@ impl ExecutorThread {
                         *force_close = true;
                         let _ = callback.send(Ok(()));
                     }
-                    WaitForConfirmedOutcome::Command(ExecutorCommand::ResyncToBackendHead {
-                        wait_for_confirmed_block_n,
-                    }) => {
-                        self.resync_to_backend_head(
-                            state,
-                            pending_routed,
-                            desired_execution_mode,
-                            *execution_epoch,
-                            wait_for_confirmed_block_n,
-                            wait_for_confirmed_after_fallback,
-                            runtime_replay_active,
-                            replay_current_block_active,
-                            next_block_deadline,
-                            force_close,
-                            block_empty,
-                            l2_gas_consumed_block,
-                            block_time,
-                        )?;
-                        break Ok(WaitForConfirmedHashOutcome::ContinueOuterLoop);
-                    }
                     WaitForConfirmedOutcome::Command(ExecutorCommand::SetDesiredExecutionMode { mode }) => {
                         self.apply_desired_execution_mode(desired_execution_mode, state, mode);
                     }
@@ -118,11 +98,16 @@ impl ExecutorThread {
                             block_time,
                         )?;
                         let _ = reply.send(Ok(carry));
-                        *wait_for_confirmed_after_fallback = Some(block_n);
+                        *tainted_rebuild_parked = true;
                         *runtime_replay_active = false;
                         *replay_current_block_active = false;
                         self.publish_replay_status(*runtime_replay_active, *execution_epoch);
                         break Ok(WaitForConfirmedHashOutcome::ContinueOuterLoop);
+                    }
+                    WaitForConfirmedOutcome::Command(ExecutorCommand::ResumeAfterTaintedRebuild { reply, .. }) => {
+                        let _ = reply.send(Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                            "executor is not parked".to_owned(),
+                        )));
                     }
                 }
             }
@@ -136,7 +121,7 @@ impl ExecutorThread {
         pending_routed: &mut RoutedBatchToExecute,
         desired_execution_mode: &mut ExecutionMode,
         execution_epoch: &mut u64,
-        wait_for_confirmed_after_fallback: &mut Option<u64>,
+        tainted_rebuild_parked: &mut bool,
         runtime_replay_active: &mut bool,
         replay_current_block_active: &mut bool,
         next_block_deadline: &mut Instant,
@@ -151,24 +136,6 @@ impl ExecutorThread {
                 ExecutorCommand::CloseBlock(callback) => {
                     *force_close = true;
                     let _ = callback.send(Ok(()));
-                }
-                ExecutorCommand::ResyncToBackendHead { wait_for_confirmed_block_n } => {
-                    self.resync_to_backend_head(
-                        state,
-                        pending_routed,
-                        desired_execution_mode,
-                        *execution_epoch,
-                        wait_for_confirmed_block_n,
-                        wait_for_confirmed_after_fallback,
-                        runtime_replay_active,
-                        replay_current_block_active,
-                        next_block_deadline,
-                        force_close,
-                        block_empty,
-                        l2_gas_consumed_block,
-                        block_time,
-                    )?;
-                    return Ok(NewBlockBoundarySyncOutcome::ContinueOuterLoop);
                 }
                 ExecutorCommand::SetDesiredExecutionMode { mode } => {
                     self.apply_desired_execution_mode(desired_execution_mode, state, mode);
@@ -189,11 +156,16 @@ impl ExecutorThread {
                         block_time,
                     )?;
                     let _ = reply.send(Ok(carry));
-                    *wait_for_confirmed_after_fallback = Some(block_n);
+                    *tainted_rebuild_parked = true;
                     *runtime_replay_active = false;
                     *replay_current_block_active = false;
                     self.publish_replay_status(*runtime_replay_active, *execution_epoch);
                     return Ok(NewBlockBoundarySyncOutcome::ContinueOuterLoop);
+                }
+                ExecutorCommand::ResumeAfterTaintedRebuild { reply, .. } => {
+                    let _ = reply.send(Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                        "executor is not parked".to_owned(),
+                    )));
                 }
             }
         }

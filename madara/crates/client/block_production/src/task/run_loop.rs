@@ -125,7 +125,7 @@ impl BlockProductionTask {
             if let Some(completion) = completion {
                 let (expected_block_n, _rx) = self.pending_completions.pop_front().expect("pending completion exists");
                 let completion = completion??;
-                self.handle_close_completion(close_queue, expected_block_n, completion)?;
+                self.handle_close_completion(close_queue, expected_block_n, completion).await?;
                 return Ok(true);
             }
         }
@@ -400,15 +400,10 @@ impl BlockProductionTask {
             self.execution_mode_tx.clone(),
             self.execution_mode_rx.clone(),
             self.execution_epoch_rx.clone(),
+            self.tainted_rebuild_session.is_some(),
             crate::util::build_rust_exec_runtime_config(&self.routing_cfg, self.no_charge_fee),
         )
         .context("Starting executor thread")?;
-
-        if let Some(session) = self.tainted_rebuild_session.as_ref() {
-            self.handle
-                .resync_to_backend_head(Some(session.next_block_n))
-                .context("Queueing executor resync for startup tainted rebuild replay")?;
-        }
 
         let mut fallback_commands_recv =
             self.fallback_commands_recv.take().context("Fallback commands channel already taken")?;
@@ -458,7 +453,7 @@ impl BlockProductionTask {
                 continue;
             }
 
-            self.maybe_start_tainted_rebuild_task().context("Starting tainted rebuild step")?;
+            self.maybe_start_tainted_rebuild_task().await.context("Starting tainted rebuild step")?;
 
             tokio::select! {
                 res = &mut batcher_task, if !batcher_completed => {
@@ -589,6 +584,7 @@ impl BlockProductionTask {
                     let completion = completion_res
                         .context("Close queue worker dropped completion channel")??;
                     self.handle_close_completion(&close_queue_handle, expected_block_n, completion)
+                        .await
                         .context("Processing close completion")?;
                 }
 
@@ -653,7 +649,7 @@ impl BlockProductionTask {
                             );
                         }
                     }
-                    if let Err(err) = self.maybe_finish_tainted_rebuild_if_drained() {
+                    if let Err(err) = self.maybe_finish_tainted_rebuild_if_drained().await {
                         tracing::warn!(
                             "Shutdown drain: failed to finish tainted rebuild session after close completion for block #{}: {err:#}",
                             completion.block_n

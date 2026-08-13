@@ -412,6 +412,8 @@ pub struct BlockProductionTask {
     pub(super) optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
     #[cfg(test)]
     pub(super) comparator_gates: BTreeMap<u64, Arc<tokio::sync::Semaphore>>,
+    #[cfg(test)]
+    pub(super) tainted_rebuild_resume_gate: Option<Arc<tokio::sync::Semaphore>>,
     pub(super) handle: BlockProductionHandle,
     pub(super) executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     pub(super) fallback_commands_recv: Option<mpsc::UnboundedReceiver<executor::FallbackCommand>>,
@@ -577,6 +579,8 @@ impl BlockProductionTask {
             optimistic_pipeline_notifications: None,
             #[cfg(test)]
             comparator_gates: BTreeMap::new(),
+            #[cfg(test)]
+            tainted_rebuild_resume_gate: None,
             executor_commands_recv: Some(recv),
             fallback_commands_recv: Some(fallback_cmd_rx),
             l1_client,
@@ -717,6 +721,13 @@ impl BlockProductionTask {
         gate
     }
 
+    #[cfg(test)]
+    pub(super) fn gate_tainted_rebuild_resume(&mut self) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        self.tainted_rebuild_resume_gate = Some(gate.clone());
+        gate
+    }
+
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
 
@@ -728,6 +739,9 @@ impl BlockProductionTask {
         self.publish_tainted_rebuild_gate();
 
         if self.tainted_rebuild_session.is_some() {
+            self.execution_epoch =
+                self.tainted_rebuild_session.as_ref().expect("tainted rebuild session exists").execution_epoch;
+            let _ = self.execution_epoch_tx.send(self.execution_epoch);
             self.fallback.mode = ExecutionMode::BlockifierOnly;
             self.fallback.comparator_enabled = false;
             let _ = self.execution_mode_tx.send(self.fallback.mode);
