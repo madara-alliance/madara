@@ -137,8 +137,13 @@ async fn drained_tainted_rebuild_waits_for_resume_ack_before_gate_reopens() {
     assert!(!task.tainted_rebuild_active(), "rebuild gate should reopen only after resume is acknowledged");
 }
 
+#[rstest::rstest]
+#[case(1)]
+#[case(2)]
 #[tokio::test]
-async fn restart_after_final_overflow_close_reconciles_legacy_stale_cursor() {
+async fn restart_after_final_overflow_close_reconciles_and_remains_blockifier_only(
+    #[case] persisted_next_block_n: u64,
+) {
     use crate::fallback::types::{ExecutionMode, StartupExecutionMode};
 
     let backend = MadaraBackend::open_for_testing_with_config(
@@ -160,14 +165,14 @@ async fn restart_after_final_overflow_close_reconciles_legacy_stale_cursor() {
             )
             .expect("seed confirmed overflow head");
     }
-    let stale_session = mc_db::StoredTaintedRebuildSession {
+    let persisted_session = mc_db::StoredTaintedRebuildSession {
         execution_epoch: 9,
         anchor_block_n: 0,
-        next_block_n: 1,
+        next_block_n: persisted_next_block_n,
         tail_block_n: 0,
         active: true,
     };
-    backend.write_tainted_rebuild_session(&stale_session).expect("persist legacy stale rebuild cursor");
+    backend.write_tainted_rebuild_session(&persisted_session).expect("persist rebuild cursor");
     backend.refresh_head_projection_from_db().expect("refresh confirmed head");
 
     let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));

@@ -478,10 +478,9 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
     let comparator_gate = task.gate_comparator_for_block(1);
     let resume_gate = task.gate_tainted_rebuild_resume();
     let mut notifications = task.subscribe_optimistic_pipeline_notifications();
-    let task_runner =
-        tokio::spawn(
-            async move { task.run(ServiceContext::new_for_testing()).await.expect("block production should run") },
-        );
+    let _task = AbortOnDrop::spawn(async move {
+        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
+    });
 
     wait_for_preconfirmed_tx_count(&devnet_setup.backend, 1, 5).await;
     control.close_block().await.expect("five-transaction speculative block should close");
@@ -559,22 +558,7 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         "durable resume cursor must point past the final overflow block"
     );
 
-    task_runner.abort();
-    assert!(task_runner.await.expect_err("aborted block production task must stop").is_cancelled());
-    drop(control);
-    drop(resume_gate);
-    tokio::task::yield_now().await;
-
-    let mut restart_task = devnet_setup
-        .block_prod_task()
-        .with_startup_execution_mode(crate::fallback::types::StartupExecutionMode::Mixed)
-        .with_rust_exec_executor_addresses([executor])
-        .with_test_comparator_reexec_tx_limit(3);
-    let control = restart_task.handle();
-    let mut notifications = restart_task.subscribe_optimistic_pipeline_notifications();
-    let _restart_task = AbortOnDrop::spawn(async move {
-        restart_task.run(ServiceContext::new_for_testing()).await.expect("restarted block production should run")
-    });
+    resume_gate.add_permits(1);
 
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
@@ -590,11 +574,11 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         }
     })
     .await
-    .expect("restarted capacity fallback should acknowledge the final overflow block and remain Blockifier-only");
+    .expect("capacity fallback should acknowledge the final overflow block and remain Blockifier-only");
 
     assert!(
         devnet_setup.backend.get_tainted_rebuild_session().expect("read rebuild session after restart").is_none(),
-        "restarted executor acknowledgement must clear the durable session"
+        "executor acknowledgement must clear the durable session"
     );
     assert!(
         devnet_setup.backend.get_tainted_rebuild_carry_rows().expect("read rebuild carry after restart").is_empty(),
@@ -629,7 +613,7 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         (1..=final_tip).flat_map(|block_n| block_tx_hashes(&devnet_setup.backend, block_n)).collect::<Vec<_>>();
     let mut all_final_expected = all_expected;
     all_final_expected.push(post_fallback_tx);
-    assert_eq!(all_final_hashes, all_final_expected, "restart recovery must not lose or duplicate any transaction");
+    assert_eq!(all_final_hashes, all_final_expected, "fallback recovery must not lose or duplicate any transaction");
 
     let final_status = control.executionbox_status().await.expect("final execution status should be available");
     assert_eq!(final_status.mode, crate::fallback::types::ExecutionMode::BlockifierOnly);
