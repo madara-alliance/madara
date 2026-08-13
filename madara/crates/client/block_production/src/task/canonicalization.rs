@@ -18,8 +18,8 @@ struct CanonicalizationTaskContext {
 
 /// Keep the DB base and overlays atomic while async finalization advances the confirmed head.
 pub(super) struct ReexecParentStateSnapshot {
-    confirmed_base_block_n: Option<u64>,
-    parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
+    pub(super) confirmed_base_block_n: Option<u64>,
+    pub(super) parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
 }
 
 impl BlockProductionTask {
