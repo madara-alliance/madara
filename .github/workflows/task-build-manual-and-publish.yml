@@ -36,7 +36,7 @@ jobs:
   build-manual-and-publish:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     env:
-      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-${{ inputs.image-name }}
+      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-${{ inputs.image-name }}-v2
     outputs:
       manual-sha: ${{ steps.tag.outputs.manual-sha }}
       manual-latest: ${{ steps.tag.outputs.manual-latest }}
