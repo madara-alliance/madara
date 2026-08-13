@@ -94,10 +94,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # Step 2: Build crate
 FROM base-rust AS builder-rust
 
-# Allows emulated cross-platform builds to serialize Cargo when upstream build
-# scripts contend over shared generated executables. Native builds stay parallel.
-ARG CARGO_BUILD_JOBS
-
 COPY --from=planner /app/recipe.json recipe.json
 COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
 
