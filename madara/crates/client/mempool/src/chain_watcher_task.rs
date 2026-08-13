@@ -746,7 +746,7 @@ mod tests {
 
         let watcher = {
             let mempool = mempool.clone();
-            tokio::spawn(async move { mempool.run_chain_watcher_task(ServiceContext::new_for_testing()).await })
+            tokio::spawn(async move { mempool.run_chain_watcher_task(ServiceContext::new()).await })
         };
         tokio::task::yield_now().await;
 
