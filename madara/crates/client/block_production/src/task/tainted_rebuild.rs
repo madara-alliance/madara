@@ -414,7 +414,12 @@ impl BlockProductionTask {
         let live_session_after_step = Self::tainted_rebuild_live_session_after_step(&session, next_session.clone());
 
         backend
-            .stage_tainted_rebuild_preconfirmed_block(&header, &canonical_rows, next_session.as_ref(), &carry_rows)
+            .stage_tainted_rebuild_preconfirmed_block(
+                &header,
+                &canonical_rows,
+                live_session_after_step.as_ref(),
+                &carry_rows,
+            )
             .context("Persisting tainted rebuild block staging state")?;
         backend
             .write_access()
@@ -450,7 +455,7 @@ impl BlockProductionTask {
         })
     }
 
-    pub(super) fn maybe_finish_tainted_rebuild_if_drained(&mut self) -> anyhow::Result<bool> {
+    pub(super) async fn maybe_finish_tainted_rebuild_if_drained(&mut self) -> anyhow::Result<bool> {
         let Some(session) = self.tainted_rebuild_session.clone() else {
             return Ok(false);
         };
@@ -461,8 +466,55 @@ impl BlockProductionTask {
             return Ok(false);
         }
 
-        self.backend.clear_tainted_rebuild_session().context("Clearing drained tainted rebuild session")?;
+        let expected_confirmed_head = session
+            .next_block_n
+            .checked_sub(1)
+            .context("Tainted rebuild next block cannot be zero when resuming the executor")?;
+        anyhow::ensure!(
+            self.backend.latest_confirmed_block_n() == Some(expected_confirmed_head),
+            "Tainted rebuild drained at unexpected confirmed head: expected #{expected_confirmed_head}, found {:?}",
+            self.backend.latest_confirmed_block_n()
+        );
+
+        #[cfg(test)]
+        if let Some(gate) = self.tainted_rebuild_resume_gate.take() {
+            gate.acquire().await.context("Waiting for tainted rebuild resume test gate")?.forget();
+        }
+
+        tracing::info!(
+            target: "RUST_EXEC",
+            expected_confirmed_head,
+            execution_epoch = session.execution_epoch,
+            "Tainted rebuild resume requested"
+        );
+        let reply = self
+            .handle
+            .resume_after_tainted_rebuild(expected_confirmed_head, session.execution_epoch)
+            .context("Requesting executor resume after drained tainted rebuild")?;
+        let ack = reply
+            .await
+            .context("Executor dropped tainted rebuild resume acknowledgement")?
+            .context("Executor rejected tainted rebuild resume")?;
+        anyhow::ensure!(
+            ack.confirmed_head == expected_confirmed_head,
+            "Executor acknowledged confirmed head #{}, expected #{expected_confirmed_head}",
+            ack.confirmed_head
+        );
+        anyhow::ensure!(
+            ack.next_block_n == session.next_block_n,
+            "Executor acknowledged next block #{}, expected #{}",
+            ack.next_block_n,
+            session.next_block_n
+        );
+        anyhow::ensure!(
+            ack.execution_epoch == session.execution_epoch,
+            "Executor acknowledged execution epoch {}, expected {}",
+            ack.execution_epoch,
+            session.execution_epoch
+        );
+
         self.backend.clear_tainted_rebuild_carry_rows().context("Clearing drained tainted rebuild carry rows")?;
+        self.backend.clear_tainted_rebuild_session().context("Clearing drained tainted rebuild session")?;
         self.tainted_rebuild_session = None;
         self.tainted_rebuild_handoff_pending = false;
 
@@ -471,36 +523,21 @@ impl BlockProductionTask {
             let _ = self.execution_mode_tx.send(self.fallback.mode);
         }
 
-        self.queue_post_close_executor_resync(None, "drained tainted rebuild")
-            .context("Queueing executor resync after drained tainted rebuild")?;
         self.publish_tainted_rebuild_gate();
+
+        tracing::info!(
+            target: "RUST_EXEC",
+            confirmed_head = ack.confirmed_head,
+            next_block_n = ack.next_block_n,
+            execution_epoch = ack.execution_epoch,
+            execution_mode = ?self.fallback.mode,
+            "Tainted rebuild resume acknowledged"
+        );
 
         Ok(true)
     }
 
-    pub(super) fn queue_post_close_executor_resync(
-        &self,
-        wait_for_confirmed_block_n: Option<u64>,
-        reason: &'static str,
-    ) -> anyhow::Result<()> {
-        match self.handle.resync_to_backend_head(wait_for_confirmed_block_n) {
-            Ok(()) => Ok(()),
-            // During graceful shutdown the final close completion can arrive after the
-            // executor has already emitted EndFinalBlock and torn down its command loop.
-            // At that point there is no speculative frontier left to realign, so the
-            // post-close resync is intentionally a no-op.
-            Err(executor::ExecutorCommandError::ChannelClosed) => {
-                tracing::info!(
-                    reason,
-                    wait_for_confirmed_block_n = ?wait_for_confirmed_block_n,
-                    "executor_already_stopped_skipping_post_close_resync"
-                );
-                Ok(())
-            }
-        }
-    }
-
-    pub(super) fn maybe_start_tainted_rebuild_task(&mut self) -> anyhow::Result<()> {
+    pub(super) async fn maybe_start_tainted_rebuild_task(&mut self) -> anyhow::Result<()> {
         if self.tainted_rebuild_task.is_some() || self.tainted_rebuild_handoff_pending {
             return Ok(());
         }
@@ -519,7 +556,7 @@ impl BlockProductionTask {
         {
             return Ok(());
         }
-        if self.maybe_finish_tainted_rebuild_if_drained()? {
+        if self.maybe_finish_tainted_rebuild_if_drained().await? {
             return Ok(());
         }
 

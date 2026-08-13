@@ -28,20 +28,27 @@ pub struct ExecutorThreadHandle {
     pub replies: mpsc::Receiver<ExecutorMessage>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ExecutorCommandError {
     #[error("Executor not running")]
     ChannelClosed,
+    #[error("Executor is parked for tainted rebuild recovery")]
+    TaintedRebuildActive,
+    #[error("Invalid tainted rebuild resume: {0}")]
+    InvalidTaintedRebuildResume(String),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TaintedRebuildResumeAck {
+    pub confirmed_head: u64,
+    pub next_block_n: u64,
+    pub execution_epoch: u64,
 }
 
 #[derive(Debug)]
 pub enum ExecutorCommand {
     /// Force close the current block.
     CloseBlock(oneshot::Sender<Result<(), ExecutorCommandError>>),
-    /// Discard stale executor-local progression and rebuild from the backend-authoritative head.
-    /// Optionally hold the executor at the rebuilt frontier until
-    /// `wait_for_confirmed_block_n` is confirmed by the backend.
-    ResyncToBackendHead { wait_for_confirmed_block_n: Option<u64> },
     /// Update the desired execution mode for future blocks.
     /// The executor applies it immediately only when no block is active.
     SetDesiredExecutionMode { mode: ExecutionMode },
@@ -52,6 +59,13 @@ pub enum ExecutorCommand {
         block_n: u64,
         execution_epoch: u64,
         reply: oneshot::Sender<Result<Vec<TaintedRebuildCarryTx>, ExecutorCommandError>>,
+    },
+    /// The durable tainted rebuild is fully confirmed. Re-anchor to the backend,
+    /// acknowledge the resulting frontier, and leave the parked state.
+    ResumeAfterTaintedRebuild {
+        expected_confirmed_head: u64,
+        execution_epoch: u64,
+        reply: oneshot::Sender<Result<TaintedRebuildResumeAck, ExecutorCommandError>>,
     },
 }
 
@@ -133,6 +147,7 @@ pub fn start_executor_thread(
     execution_mode_tx: watch::Sender<ExecutionMode>,
     execution_mode_rx: watch::Receiver<ExecutionMode>,
     execution_epoch_rx: watch::Receiver<u64>,
+    start_tainted_rebuild_parked: bool,
     rust_exec_runtime_config: RustExecRuntimeConfig,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
@@ -151,6 +166,7 @@ pub fn start_executor_thread(
         execution_mode_tx,
         execution_mode_rx,
         execution_epoch_rx,
+        start_tainted_rebuild_parked,
         rust_exec_runtime_config,
     )?;
     // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable

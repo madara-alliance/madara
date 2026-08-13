@@ -42,8 +42,6 @@ impl ExecutorThread {
         pending_routed: &mut RoutedBatchToExecute,
         desired_execution_mode: &mut ExecutionMode,
         execution_epoch: u64,
-        wait_for_confirmed_block_n: Option<u64>,
-        wait_for_confirmed_after_fallback: &mut Option<u64>,
         runtime_replay_active: &mut bool,
         replay_current_block_active: &mut bool,
         next_block_deadline: &mut Instant,
@@ -62,7 +60,6 @@ impl ExecutorThread {
         *state = self.initial_state().context("Resyncing executor state to backend head")?;
         *pending_routed = RoutedBatchToExecute::default();
         *desired_execution_mode = *self.execution_mode_rx.borrow();
-        *wait_for_confirmed_after_fallback = wait_for_confirmed_block_n;
         *runtime_replay_active = false;
         *replay_current_block_active = false;
         *next_block_deadline = Instant::now() + block_time;
@@ -77,18 +74,80 @@ impl ExecutorThread {
             ExecutorThreadState::Executing(_) => unreachable!("resync must reset executor to NewBlock"),
         };
         tracing::info!(
+            target: "RUST_EXEC",
             stale_block_n = ?stale_block_n,
             dropped_pending_txs,
             backend_confirmed_tip = ?backend_head.confirmed_tip,
             backend_internal_tip = ?backend_head.internal_preconfirmed_tip,
             next_block_n,
-            wait_for_confirmed_block_n = ?wait_for_confirmed_block_n,
             desired_execution_mode = ?*desired_execution_mode,
             execution_epoch,
-            "executor_resynced_to_backend_head"
+            "Executor resynced to backend head"
         );
 
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn resume_after_tainted_rebuild(
+        &mut self,
+        state: &mut ExecutorThreadState,
+        pending_routed: &mut RoutedBatchToExecute,
+        desired_execution_mode: &mut ExecutionMode,
+        execution_epoch: u64,
+        expected_confirmed_head: u64,
+        runtime_replay_active: &mut bool,
+        replay_current_block_active: &mut bool,
+        next_block_deadline: &mut Instant,
+        force_close: &mut bool,
+        block_empty: &mut bool,
+        l2_gas_consumed_block: &mut u128,
+        block_time: std::time::Duration,
+    ) -> Result<crate::executor::TaintedRebuildResumeAck, crate::executor::ExecutorCommandError> {
+        let confirmed_head = self.backend.latest_confirmed_block_n().ok_or_else(|| {
+            crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                "backend has no confirmed head".to_owned(),
+            )
+        })?;
+        if confirmed_head != expected_confirmed_head {
+            return Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(format!(
+                "expected confirmed head #{expected_confirmed_head}, found #{confirmed_head}"
+            )));
+        }
+        if *self.execution_mode_rx.borrow() != ExecutionMode::BlockifierOnly {
+            return Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(format!(
+                "expected BlockifierOnly mode, found {:?}",
+                *self.execution_mode_rx.borrow()
+            )));
+        }
+
+        self.resync_to_backend_head(
+            state,
+            pending_routed,
+            desired_execution_mode,
+            execution_epoch,
+            runtime_replay_active,
+            replay_current_block_active,
+            next_block_deadline,
+            force_close,
+            block_empty,
+            l2_gas_consumed_block,
+            block_time,
+        )
+        .map_err(|err| crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(format!("{err:#}")))?;
+
+        let next_block_n = match state {
+            ExecutorThreadState::NewBlock(state) => state.state_adaptor.block_n(),
+            ExecutorThreadState::Executing(_) => unreachable!("resync must leave executor at a new-block boundary"),
+        };
+        if next_block_n != confirmed_head.saturating_add(1) {
+            return Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(format!(
+                "expected next block #{}, found #{next_block_n}",
+                confirmed_head.saturating_add(1)
+            )));
+        }
+
+        Ok(crate::executor::TaintedRebuildResumeAck { confirmed_head, next_block_n, execution_epoch })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -175,24 +234,6 @@ impl ExecutorThread {
         );
 
         Ok(carry)
-    }
-
-    pub(super) fn wait_for_confirmed_tip_or_command(&mut self, min_confirmed_block_n: u64) -> WaitForConfirmedOutcome {
-        if self
-            .backend
-            .latest_confirmed_block_n()
-            .is_some_and(|confirmed_block_n| confirmed_block_n >= min_confirmed_block_n)
-        {
-            return WaitForConfirmedOutcome::Advanced;
-        }
-
-        let mut receiver = self.backend.watch_chain_head_state();
-        self.wait_rt.block_on(async {
-            tokio::select! {
-                Some(cmd) = self.commands.recv() => WaitForConfirmedOutcome::Command(cmd),
-                _ = receiver.changed() => WaitForConfirmedOutcome::Advanced,
-            }
-        })
     }
 
     pub(super) fn replay_boundary_exists(&self, block_n: u64) -> bool {

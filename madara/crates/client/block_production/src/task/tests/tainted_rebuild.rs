@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn tainted_rebuild_waits_for_anchor_confirm() {
+#[tokio::test]
+async fn tainted_rebuild_waits_for_anchor_confirm() {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_test()),
         MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
@@ -26,7 +26,7 @@ fn tainted_rebuild_waits_for_anchor_confirm() {
     });
     task.publish_tainted_rebuild_gate();
 
-    task.maybe_start_tainted_rebuild_task().expect("anchor-confirm gate should not error");
+    task.maybe_start_tainted_rebuild_task().await.expect("anchor-confirm gate should not error");
     assert!(task.tainted_rebuild_task.is_none(), "rebuild must not start before the anchor is confirmed");
 }
 
@@ -57,59 +57,108 @@ fn executionbox_status_and_enable_remain_safe_while_tainted_rebuild_is_active() 
     );
 }
 
-#[test]
-fn drained_tainted_rebuild_queues_executor_resync_before_gate_reopens() {
+#[tokio::test]
+async fn drained_tainted_rebuild_waits_for_resume_ack_before_gate_reopens() {
     use crate::fallback::types::StartupExecutionMode;
 
     let mut task = tainted_rebuild_control_plane_test_task(StartupExecutionMode::BlockifierOnly);
     let mut executor_commands_recv = task.executor_commands_recv.take().expect("executor command receiver");
-    task.tainted_rebuild_session = Some(mc_db::StoredTaintedRebuildSession {
+    task.backend
+        .write_access()
+        .add_full_block_with_classes(
+            &mp_block::FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                state_diff: StateDiff::default(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .expect("seed confirmed resume head");
+    let session = mc_db::StoredTaintedRebuildSession {
         execution_epoch: task.execution_epoch,
-        anchor_block_n: 22,
-        next_block_n: 26,
-        tail_block_n: 25,
+        anchor_block_n: 0,
+        next_block_n: 1,
+        tail_block_n: 0,
         active: true,
-    });
+    };
+    task.backend.write_tainted_rebuild_session(&session).expect("persist drained rebuild session");
+    task.tainted_rebuild_session = Some(session);
     task.publish_tainted_rebuild_gate();
     assert!(task.tainted_rebuild_active(), "rebuild gate should start closed");
 
+    let execution_epoch = task.execution_epoch;
+    let responder = tokio::spawn(async move {
+        let command = executor_commands_recv.recv().await.expect("resume command");
+        let crate::executor::ExecutorCommand::ResumeAfterTaintedRebuild {
+            expected_confirmed_head,
+            execution_epoch: command_epoch,
+            reply,
+        } = command
+        else {
+            panic!("expected acknowledged tainted rebuild resume");
+        };
+        assert_eq!(expected_confirmed_head, 0);
+        assert_eq!(command_epoch, execution_epoch);
+        reply
+            .send(Ok(crate::executor::TaintedRebuildResumeAck { confirmed_head: 0, next_block_n: 1, execution_epoch }))
+            .expect("send resume acknowledgement");
+    });
+
     let drained =
-        task.maybe_finish_tainted_rebuild_if_drained().expect("finishing drained tainted rebuild should succeed");
+        task.maybe_finish_tainted_rebuild_if_drained().await.expect("finishing drained tainted rebuild should succeed");
+    responder.await.expect("resume responder");
 
     assert!(drained, "drained tainted rebuild should be detected");
-    assert!(matches!(
-        executor_commands_recv.try_recv(),
-        Ok(crate::executor::ExecutorCommand::ResyncToBackendHead { wait_for_confirmed_block_n: None })
-    ));
     assert!(task.tainted_rebuild_session.is_none(), "drained rebuild must clear the in-memory session");
-    assert!(!task.tainted_rebuild_active(), "rebuild gate should reopen only after resync is queued");
+    assert!(task.backend.get_tainted_rebuild_session().expect("read rebuild session").is_none());
+    assert!(!task.tainted_rebuild_active(), "rebuild gate should reopen only after resume is acknowledged");
 }
 
-#[test]
-fn drained_tainted_rebuild_tolerates_executor_shutdown_when_resync_cannot_be_queued() {
+#[tokio::test]
+async fn drained_tainted_rebuild_keeps_durable_gate_when_resume_cannot_be_queued() {
     use crate::fallback::types::StartupExecutionMode;
 
     let mut task = tainted_rebuild_control_plane_test_task(StartupExecutionMode::BlockifierOnly);
     drop(task.executor_commands_recv.take().expect("executor command receiver"));
-    task.tainted_rebuild_session = Some(mc_db::StoredTaintedRebuildSession {
+    task.backend
+        .write_access()
+        .add_full_block_with_classes(
+            &mp_block::FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                state_diff: StateDiff::default(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .expect("seed confirmed resume head");
+    let session = mc_db::StoredTaintedRebuildSession {
         execution_epoch: task.execution_epoch,
-        anchor_block_n: 22,
-        next_block_n: 26,
-        tail_block_n: 25,
+        anchor_block_n: 0,
+        next_block_n: 1,
+        tail_block_n: 0,
         active: true,
-    });
+    };
+    task.backend.write_tainted_rebuild_session(&session).expect("persist drained rebuild session");
+    task.tainted_rebuild_session = Some(session);
     task.publish_tainted_rebuild_gate();
 
-    let drained =
-        task.maybe_finish_tainted_rebuild_if_drained().expect("drained rebuild should tolerate executor shutdown");
+    let err = task
+        .maybe_finish_tainted_rebuild_if_drained()
+        .await
+        .expect_err("resume must fail when the executor command channel is closed");
 
-    assert!(drained, "drained tainted rebuild should still be detected");
-    assert!(task.tainted_rebuild_session.is_none(), "drained rebuild must clear the in-memory session");
-    assert!(!task.tainted_rebuild_active(), "rebuild gate should still reopen after shutdown-time drain");
+    assert!(format!("{err:#}").contains("Requesting executor resume"));
+    assert!(task.tainted_rebuild_session.is_some(), "failed resume must preserve the durable session");
+    assert!(task.backend.get_tainted_rebuild_session().expect("read rebuild session").is_some());
+    assert!(task.tainted_rebuild_active(), "failed resume must keep the rebuild gate closed");
 }
 
 #[tokio::test]
-async fn active_tainted_rebuild_close_completion_queues_executor_resync_for_next_block() {
+async fn active_tainted_rebuild_close_completion_keeps_executor_parked() {
     use crate::fallback::types::StartupExecutionMode;
 
     let mut task = tainted_rebuild_control_plane_test_task(StartupExecutionMode::BlockifierOnly);
@@ -125,19 +174,18 @@ async fn active_tainted_rebuild_close_completion_queues_executor_resync_for_next
 
     let (close_queue_handle, close_queue_task) = spawn_test_finalizer(&task);
     task.handle_close_completion(&close_queue_handle, 25, crate::close_queue::CloseJobCompletion { block_n: 25 })
+        .await
         .expect("processing active tainted rebuild close completion");
 
-    assert!(matches!(
-        executor_commands_recv.try_recv(),
-        Ok(crate::executor::ExecutorCommand::ResyncToBackendHead { wait_for_confirmed_block_n: Some(26) })
-    ));
+    assert!(matches!(executor_commands_recv.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Empty)));
+    assert!(task.tainted_rebuild_active(), "active rebuild must keep the executor and batcher parked");
 
     drop(close_queue_handle);
     close_queue_task.join().await.expect("finalizer should shut down cleanly");
 }
 
 #[tokio::test]
-async fn active_tainted_rebuild_close_completion_tolerates_executor_shutdown() {
+async fn active_tainted_rebuild_close_completion_needs_no_executor_command() {
     use crate::fallback::types::StartupExecutionMode;
 
     let mut task = tainted_rebuild_control_plane_test_task(StartupExecutionMode::BlockifierOnly);
@@ -153,12 +201,13 @@ async fn active_tainted_rebuild_close_completion_tolerates_executor_shutdown() {
 
     let (close_queue_handle, close_queue_task) = spawn_test_finalizer(&task);
     task.handle_close_completion(&close_queue_handle, 25, crate::close_queue::CloseJobCompletion { block_n: 25 })
+        .await
         .expect("processing active tainted rebuild close completion should tolerate executor shutdown");
 
     assert_eq!(
         task.tainted_rebuild_session.as_ref().map(|session| session.next_block_n),
         Some(26),
-        "active session should remain intact when shutdown-time resync becomes a no-op"
+        "active session should remain intact without per-close executor resync"
     );
 
     drop(close_queue_handle);

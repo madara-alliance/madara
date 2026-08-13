@@ -97,6 +97,7 @@ fn start_executor_thread_for_tests(
         mode_tx,
         mode_rx,
         execution_epoch_rx,
+        false,
         mc_rust_exec::RustExecRuntimeConfig::default(),
     )
     .unwrap()

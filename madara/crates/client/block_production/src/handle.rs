@@ -127,13 +127,23 @@ impl BlockProductionHandle {
             .map_err(|_| ExecutorCommandError::ChannelClosed)
     }
 
-    pub(crate) fn resync_to_backend_head(
+    pub(crate) fn resume_after_tainted_rebuild(
         &self,
-        wait_for_confirmed_block_n: Option<u64>,
-    ) -> Result<(), ExecutorCommandError> {
+        expected_confirmed_head: u64,
+        execution_epoch: u64,
+    ) -> Result<
+        oneshot::Receiver<Result<crate::executor::TaintedRebuildResumeAck, ExecutorCommandError>>,
+        ExecutorCommandError,
+    > {
+        let (reply_tx, reply_rx) = oneshot::channel();
         self.executor_commands
-            .send(ExecutorCommand::ResyncToBackendHead { wait_for_confirmed_block_n })
-            .map_err(|_| ExecutorCommandError::ChannelClosed)
+            .send(ExecutorCommand::ResumeAfterTaintedRebuild {
+                expected_confirmed_head,
+                execution_epoch,
+                reply: reply_tx,
+            })
+            .map_err(|_| ExecutorCommandError::ChannelClosed)?;
+        Ok(reply_rx)
     }
 
     pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {

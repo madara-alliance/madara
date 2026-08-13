@@ -39,6 +39,7 @@ fn make_executor_thread() -> (
         mode_tx,
         mode_rx,
         execution_epoch_rx,
+        false,
         RustExecRuntimeConfig::default(),
     )
     .expect("executor thread");
@@ -104,6 +105,21 @@ fn wait_take_tx_batch_prefers_commands_for_new_block_boundary() {
 }
 
 #[test]
+fn parked_executor_still_shuts_down_when_batch_channel_closes() {
+    let (mut thread, incoming_tx, _commands_tx, _replay_status_rx, mut replies_rx, _execution_epoch_tx) =
+        make_executor_thread();
+    thread.start_tainted_rebuild_parked = true;
+    drop(incoming_tx);
+
+    let executor = std::thread::spawn(move || thread.run());
+    assert!(matches!(
+        replies_rx.blocking_recv(),
+        Some(ExecutorMessage::EndFinalBlock { block_exec_summary: None, block_number: None, execution_epoch: 0 })
+    ));
+    executor.join().expect("executor thread should join").expect("parked executor should shut down cleanly");
+}
+
+#[test]
 fn sync_new_block_boundary_commands_rechecks_mode_after_batch_dequeue() {
     let (mut thread, _incoming_tx, commands_tx, _replay_status_rx, _replies_rx, _execution_epoch_tx) =
         make_executor_thread();
@@ -112,7 +128,7 @@ fn sync_new_block_boundary_commands_rechecks_mode_after_batch_dequeue() {
         RoutedBatchToExecute { execution_mode: ExecutionMode::Mixed, execution_epoch: 7, ..Default::default() };
     let mut desired_execution_mode = ExecutionMode::Mixed;
     let mut execution_epoch = 7;
-    let mut wait_for_confirmed_after_fallback = None;
+    let mut tainted_rebuild_parked = false;
     let mut runtime_replay_active = false;
     let mut replay_current_block_active = false;
     let mut next_block_deadline = Instant::now();
@@ -132,7 +148,7 @@ fn sync_new_block_boundary_commands_rechecks_mode_after_batch_dequeue() {
             &mut pending_routed,
             &mut desired_execution_mode,
             &mut execution_epoch,
-            &mut wait_for_confirmed_after_fallback,
+            &mut tainted_rebuild_parked,
             &mut runtime_replay_active,
             &mut replay_current_block_active,
             &mut next_block_deadline,
@@ -147,7 +163,7 @@ fn sync_new_block_boundary_commands_rechecks_mode_after_batch_dequeue() {
     assert!(matches!(state, ExecutorThreadState::NewBlock(_)));
     assert_eq!(desired_execution_mode, ExecutionMode::BlockifierOnly);
     assert_eq!(execution_epoch, 7);
-    assert!(wait_for_confirmed_after_fallback.is_none());
+    assert!(!tainted_rebuild_parked);
     assert!(!runtime_replay_active);
     assert!(!replay_current_block_active);
     assert!(!force_close);
@@ -328,7 +344,6 @@ fn resync_to_backend_head_reanchors_next_block_to_backend_tip() {
     seed_confirmed_blocks(&backend, 3);
 
     let mut desired_execution_mode = ExecutionMode::Mixed;
-    let mut wait_for_confirmed_after_fallback = Some(1);
     let mut runtime_replay_active = true;
     let mut replay_current_block_active = true;
     let mut next_block_deadline = Instant::now();
@@ -342,8 +357,6 @@ fn resync_to_backend_head_reanchors_next_block_to_backend_tip() {
             &mut pending_routed,
             &mut desired_execution_mode,
             9,
-            None,
-            &mut wait_for_confirmed_after_fallback,
             &mut runtime_replay_active,
             &mut replay_current_block_active,
             &mut next_block_deadline,
@@ -357,7 +370,6 @@ fn resync_to_backend_head_reanchors_next_block_to_backend_tip() {
     assert!(matches!(state, ExecutorThreadState::NewBlock(_)));
     assert!(pending_routed.is_empty(), "stale routed payload must be discarded on resync");
     assert_eq!(desired_execution_mode, ExecutionMode::Mixed, "resync must preserve desired execution mode");
-    assert!(wait_for_confirmed_after_fallback.is_none());
     assert!(!runtime_replay_active);
     assert!(!replay_current_block_active);
     assert!(!force_close);
@@ -499,7 +511,7 @@ fn fallback_command_interrupts_wait_for_confirmed_hash() {
     };
     let mut desired_execution_mode = ExecutionMode::Mixed;
     let mut execution_epoch = 0;
-    let mut wait_for_confirmed_after_fallback = None;
+    let mut tainted_rebuild_parked = false;
     let mut runtime_replay_active = false;
     let mut replay_current_block_active = false;
     let mut next_block_deadline = Instant::now();
@@ -522,7 +534,7 @@ fn fallback_command_interrupts_wait_for_confirmed_hash() {
             &mut pending_routed,
             &mut desired_execution_mode,
             &mut execution_epoch,
-            &mut wait_for_confirmed_after_fallback,
+            &mut tainted_rebuild_parked,
             &mut runtime_replay_active,
             &mut replay_current_block_active,
             &mut next_block_deadline,
@@ -537,11 +549,7 @@ fn fallback_command_interrupts_wait_for_confirmed_hash() {
     assert!(matches!(outcome, WaitForConfirmedHashOutcome::ContinueOuterLoop));
     assert_eq!(desired_execution_mode, ExecutionMode::BlockifierOnly);
     assert_eq!(execution_epoch, 1);
-    assert_eq!(
-        wait_for_confirmed_after_fallback,
-        Some(current_block_n.saturating_sub(1)),
-        "fallback must hold the executor until the fallback block is confirmed"
-    );
+    assert!(tainted_rebuild_parked, "fallback must park the executor until the durable rebuild is acknowledged");
     assert_eq!(
         ExecutorThread::current_executor_block_n(&state),
         1,

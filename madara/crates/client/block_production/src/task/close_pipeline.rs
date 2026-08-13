@@ -86,7 +86,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    pub(super) fn handle_close_completion(
+    pub(super) async fn handle_close_completion(
         &mut self,
         close_queue: &FinalizerHandle,
         expected_block_n: u64,
@@ -123,15 +123,9 @@ impl BlockProductionTask {
         self.try_publish_current_external_shell()
             .context("Publishing comparator-approved external shell after close completion")?;
         self.send_state_notification(BlockProductionStateNotification::ClosedBlock { block_n: completion.block_n });
-        let drained = self
-            .maybe_finish_tainted_rebuild_if_drained()
+        self.maybe_finish_tainted_rebuild_if_drained()
+            .await
             .context("Finishing drained tainted rebuild session after close completion")?;
-        if !drained {
-            if let Some(session) = self.tainted_rebuild_session.as_ref() {
-                self.queue_post_close_executor_resync(Some(session.next_block_n), "active tainted rebuild close")
-                    .context("Queueing executor resync toward the next tainted rebuild block")?;
-            }
-        }
         self.record_block_stage_metrics();
         Ok(())
     }

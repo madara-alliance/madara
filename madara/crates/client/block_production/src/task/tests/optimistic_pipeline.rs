@@ -451,7 +451,7 @@ async fn accepted_blockifier_canonical_replays_speculative_descendant(
 #[tokio::test]
 async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_and_descendants(
     #[future]
-    #[with(Duration::from_secs(3_000), false, true)]
+    #[with(Duration::from_secs(5), false, true)]
     devnet_setup: DevnetSetup,
 ) {
     let mut devnet_setup = devnet_setup.await;
@@ -476,6 +476,7 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         .with_test_comparator_reexec_tx_limit(3);
     let control = task.handle();
     let comparator_gate = task.gate_comparator_for_block(1);
+    let resume_gate = task.gate_tainted_rebuild_resume();
     let mut notifications = task.subscribe_optimistic_pipeline_notifications();
     let _task = AbortOnDrop::spawn(async move {
         task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
@@ -500,12 +501,52 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
     assert_eq!(devnet_setup.backend.chain_head_state().internal_preconfirmed_tip, Some(3));
 
     comparator_gate.add_permits(1);
+
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let session =
+                devnet_setup.backend.get_tainted_rebuild_session().expect("read durable tainted rebuild session");
+            let carry_empty = devnet_setup
+                .backend
+                .get_tainted_rebuild_carry_rows()
+                .expect("read durable tainted rebuild carry")
+                .is_empty();
+            if session.as_ref().is_some_and(|session| session.next_block_n > session.tail_block_n)
+                && carry_empty
+                && session.as_ref().is_some_and(|session| {
+                    devnet_setup.backend.latest_confirmed_block_n() == session.next_block_n.checked_sub(1)
+                })
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("tainted rebuild should drain while the final executor resume is gated");
+
+    let confirmed_before_resume = devnet_setup.backend.latest_confirmed_block_n();
+    assert_eq!(
+        control.close_block().await,
+        Err(crate::executor::ExecutorCommandError::TaintedRebuildActive),
+        "normal executor must remain parked after rebuild confirmation and before resume acknowledgement"
+    );
+    let post_fallback_tx = send_raw_blockifier_transfer(&devnet_setup, &control, 3, 4).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert_eq!(
+        devnet_setup.backend.latest_confirmed_block_n(),
+        confirmed_before_resume,
+        "fresh work must not produce a competing block while the rebuild gate is closed"
+    );
+
     wait_for_pipeline_notification(
         &mut notifications,
         OptimisticPipelineNotification::ComparatorFinished { block_n: 1 },
         "waiting for block #1 comparator result",
     )
     .await;
+    while notifications.try_recv().is_ok() {}
+    resume_gate.add_permits(1);
 
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
@@ -530,16 +571,11 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
     let all_expected = speculative_hashes.iter().copied().chain([descendant_2, descendant_3]).collect::<Vec<_>>();
     let all_confirmed =
         (1..=confirmed_tip).flat_map(|block_n| block_tx_hashes(&devnet_setup.backend, block_n)).collect::<Vec<_>>();
-    for expected_hash in &all_expected {
-        assert_eq!(
-            all_confirmed.iter().filter(|actual_hash| *actual_hash == expected_hash).count(),
-            1,
-            "transaction {expected_hash:#x} must be confirmed exactly once"
-        );
-    }
+    assert_eq!(
+        all_confirmed, all_expected,
+        "Blockifier prefix, omitted suffix, and evicted descendants must retain their canonical order"
+    );
 
-    while notifications.try_recv().is_ok() {}
-    let post_fallback_tx = send_raw_blockifier_transfer(&devnet_setup, &control, 3, 4).await;
     let post_fallback_block_n = loop {
         match recv_pipeline_notification(&mut notifications).await {
             OptimisticPipelineNotification::BatchExecuted { block_n } => break block_n,
