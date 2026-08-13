@@ -57,6 +57,27 @@ fn executionbox_status_and_enable_remain_safe_while_tainted_rebuild_is_active() 
     );
 }
 
+#[test]
+fn final_overflow_rebuild_step_advances_durable_resume_cursor() {
+    let session = mc_db::StoredTaintedRebuildSession {
+        execution_epoch: 7,
+        anchor_block_n: 10,
+        next_block_n: 12,
+        tail_block_n: 11,
+        active: true,
+    };
+
+    let drained_session = BlockProductionTask::tainted_rebuild_live_session_after_step(&session, None)
+        .expect("drained session marker must survive until the final close is acknowledged");
+
+    assert_eq!(drained_session.next_block_n, 13, "cursor must advance past the overflow block that just closed");
+    assert_eq!(
+        drained_session.next_block_n - 1,
+        session.next_block_n,
+        "restart must expect the final overflow block as the confirmed head"
+    );
+}
+
 #[tokio::test]
 async fn drained_tainted_rebuild_waits_for_resume_ack_before_gate_reopens() {
     use crate::fallback::types::StartupExecutionMode;
@@ -114,6 +135,79 @@ async fn drained_tainted_rebuild_waits_for_resume_ack_before_gate_reopens() {
     assert!(task.tainted_rebuild_session.is_none(), "drained rebuild must clear the in-memory session");
     assert!(task.backend.get_tainted_rebuild_session().expect("read rebuild session").is_none());
     assert!(!task.tainted_rebuild_active(), "rebuild gate should reopen only after resume is acknowledged");
+}
+
+#[tokio::test]
+async fn restart_after_final_overflow_close_reconciles_legacy_stale_cursor() {
+    use crate::fallback::types::{ExecutionMode, StartupExecutionMode};
+
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+    for block_number in 0..=1 {
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &mp_block::FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number, ..Default::default() },
+                    state_diff: StateDiff::default(),
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .expect("seed confirmed overflow head");
+    }
+    let stale_session = mc_db::StoredTaintedRebuildSession {
+        execution_epoch: 9,
+        anchor_block_n: 0,
+        next_block_n: 1,
+        tail_block_n: 0,
+        active: true,
+    };
+    backend.write_tainted_rebuild_session(&stale_session).expect("persist legacy stale rebuild cursor");
+    backend.refresh_head_projection_from_db().expect("refresh confirmed head");
+
+    let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
+    let mut task = BlockProductionTask::new(
+        backend,
+        mempool,
+        Arc::new(BlockProductionMetrics::register()),
+        Arc::new(L1ClientMock::new()),
+        false,
+        false,
+    )
+    .with_startup_execution_mode(StartupExecutionMode::Mixed);
+    task.setup_initial_state().await.expect("restore stale rebuild session");
+    assert_eq!(task.fallback.mode, ExecutionMode::BlockifierOnly);
+
+    let mut executor_commands_recv = task.executor_commands_recv.take().expect("executor command receiver");
+    let responder = tokio::spawn(async move {
+        let command = executor_commands_recv.recv().await.expect("resume command");
+        let crate::executor::ExecutorCommand::ResumeAfterTaintedRebuild {
+            expected_confirmed_head,
+            execution_epoch,
+            reply,
+        } = command
+        else {
+            panic!("expected acknowledged tainted rebuild resume");
+        };
+        assert_eq!(expected_confirmed_head, 1);
+        assert_eq!(execution_epoch, 9);
+        reply
+            .send(Ok(crate::executor::TaintedRebuildResumeAck { confirmed_head: 1, next_block_n: 2, execution_epoch }))
+            .expect("send resume acknowledgement");
+    });
+
+    assert!(task.maybe_finish_tainted_rebuild_if_drained().await.expect("reconcile completed final overflow close"));
+    responder.await.expect("resume responder");
+
+    assert!(task.tainted_rebuild_session.is_none());
+    assert!(task.backend.get_tainted_rebuild_session().expect("read rebuild session").is_none());
+    assert!(!task.tainted_rebuild_active());
+    assert_eq!(task.fallback.mode, ExecutionMode::BlockifierOnly);
 }
 
 #[tokio::test]
