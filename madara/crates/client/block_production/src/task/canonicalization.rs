@@ -1,7 +1,7 @@
 use super::*;
 
 struct CanonicalizationTaskContext {
-    parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
+    reexec_parent_state: ReexecParentStateSnapshot,
     dispatcher: Option<ReexecDispatcherHandle>,
     reexec_epoch: u64,
     metrics: Arc<BlockProductionMetrics>,
@@ -14,6 +14,12 @@ struct CanonicalizationTaskContext {
     optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
     #[cfg(test)]
     comparator_gate: Option<Arc<tokio::sync::Semaphore>>,
+}
+
+/// Keep the DB base and overlays atomic while async finalization advances the confirmed head.
+pub(super) struct ReexecParentStateSnapshot {
+    pub(super) confirmed_base_block_n: Option<u64>,
+    pub(super) parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
 }
 
 impl BlockProductionTask {
@@ -76,11 +82,12 @@ impl BlockProductionTask {
         // not a stale snapshot from when EndBlock was first queued.
         let block_n = input.state.block_number;
         let confirmed_base = input.state.backend.latest_confirmed_block_n();
-        let parent_overlays = Self::build_parent_overlays(&self.diffs_since_snapshot, confirmed_base, block_n);
+        let reexec_parent_state =
+            Self::capture_reexec_parent_state(&self.diffs_since_snapshot, confirmed_base, block_n);
         tracing::info!(
             block_n,
             confirmed_base_block_n = ?confirmed_base,
-            overlay_count = parent_overlays.len(),
+            overlay_count = reexec_parent_state.parent_overlays.len(),
             "canonicalization_overlays_recomputed"
         );
 
@@ -103,7 +110,7 @@ impl BlockProductionTask {
         let comparator_gate = self.comparator_gates.remove(&block_n);
 
         let context = CanonicalizationTaskContext {
-            parent_overlays,
+            reexec_parent_state,
             dispatcher,
             reexec_epoch,
             metrics,
@@ -423,6 +430,17 @@ impl BlockProductionTask {
             .collect()
     }
 
+    pub(super) fn capture_reexec_parent_state(
+        diffs_since_snapshot: &[(u64, StateDiff)],
+        confirmed_base_block_n: Option<u64>,
+        target_block_n: u64,
+    ) -> ReexecParentStateSnapshot {
+        ReexecParentStateSnapshot {
+            confirmed_base_block_n,
+            parent_overlays: Self::build_parent_overlays(diffs_since_snapshot, confirmed_base_block_n, target_block_n),
+        }
+    }
+
     /// Convert `mp_state_update::StateDiff` to blockifier `StateMaps`.
     ///
     /// This is the minimal conversion needed for `LayeredStateAdapter` overlay lookups
@@ -484,7 +502,7 @@ impl BlockProductionTask {
         context: CanonicalizationTaskContext,
     ) -> anyhow::Result<CanonicalizationTaskResult> {
         let CanonicalizationTaskContext {
-            parent_overlays,
+            reexec_parent_state,
             mut dispatcher,
             reexec_epoch,
             metrics,
@@ -547,7 +565,7 @@ impl BlockProductionTask {
                 reexec_epoch,
                 metrics,
                 no_charge_fee,
-                parent_overlays,
+                reexec_parent_state,
                 ignore_fee_token_mismatch,
                 ignored_storage_mismatch_canonical_source,
                 #[cfg(test)]
@@ -585,7 +603,7 @@ impl BlockProductionTask {
         reexec_epoch: u64,
         metrics: Arc<BlockProductionMetrics>,
         no_charge_fee: bool,
-        parent_overlays: Vec<mc_exec::ReexecParentOverlay>,
+        reexec_parent_state: ReexecParentStateSnapshot,
         ignore_fee_token_mismatch: bool,
         ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
         #[cfg(test)] force_comparator_error: bool,
@@ -615,7 +633,7 @@ impl BlockProductionTask {
             .collect::<anyhow::Result<Vec<_>>>()
             .context("Converting speculative transactions for re-execution")?;
 
-        let confirmed_base = state.backend.latest_confirmed_block_n();
+        let ReexecParentStateSnapshot { confirmed_base_block_n: confirmed_base, parent_overlays } = reexec_parent_state;
         let tx_count = txs.len();
         let overlay_count = parent_overlays.len();
 
