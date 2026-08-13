@@ -82,7 +82,7 @@ impl ExecutionReadCache {
         let contracts = config.contracts.as_deref().unwrap_or_default().iter().copied().collect::<HashSet<_>>();
 
         if all_contracts {
-            tracing::info!("Execution read cache enabled for all contracts (max_bytes={}).", config.max_memory_bytes);
+            tracing::debug!("Execution read cache enabled for all contracts (max_bytes={}).", config.max_memory_bytes);
         } else if contracts.is_empty() {
             tracing::warn!(
                 "Execution read cache enabled but no contract allowlist provided (max_bytes={}).",

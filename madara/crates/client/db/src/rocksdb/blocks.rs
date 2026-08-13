@@ -86,7 +86,7 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>> {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(TX_HASH_TO_INDEX_COLUMN), tx_hash.to_bytes_be())? else {
-            tracing::warn!(
+            tracing::debug!(
                 target: "mc_db",
                 event = "db_find_transaction_hash_miss",
                 tx_hash = format!("{tx_hash:#x}"),

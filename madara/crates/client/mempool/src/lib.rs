@@ -455,12 +455,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
             if removed_txs.is_empty() {
-                tracing::info!("🔖 Inserted 1 transaction to the mempool [{summary}]");
+                tracing::info!("🔖 Inserted transaction {:#x} to the mempool [{summary}]", tx.hash);
             } else if removed_txs.len() == 1 {
-                tracing::info!("🔖 Replaced 1 transaction in the mempool [{summary}]");
+                tracing::info!("🔖 Inserted replacement transaction {:#x} to the mempool [{summary}]", tx.hash);
             } else {
                 tracing::info!(
-                    "🔖 Inserted 1 and removed {} transactions from the mempool [{summary}]",
+                    "🔖 Inserted transaction {:#x} and removed {} transactions from the mempool [{summary}]",
+                    tx.hash,
                     removed_txs.len()
                 );
             }
@@ -604,12 +605,12 @@ impl Iterator for MempoolConsumer {
     fn next(&mut self) -> Option<Self::Item> {
         let tx = self.lock.pop_next_ready();
         if let Some(tx) = &tx {
-            tracing::debug!(
-                tx_hash = format!("{:#x}", tx.hash),
-                tx_nonce = tx_nonce_string(tx).as_deref().unwrap_or("-"),
-                contract_address = ?tx.contract_address,
-                summary_after = %self.lock.summary(),
-                "mempool_pop_next_ready"
+            tracing::info!(
+                "📤 Took transaction {:#x} from the mempool for processing [{}, nonce={}, sender={:#x}]",
+                tx.hash,
+                self.lock.summary(),
+                tx_nonce_string(tx).as_deref().unwrap_or("-"),
+                tx.contract_address
             );
         }
         tx

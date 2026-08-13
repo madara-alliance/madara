@@ -961,7 +961,7 @@ impl BlockProductionTask {
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => {
-                tracing::warn!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     allowed_fee_balance_value_mismatches = mismatches.len(),
@@ -1030,7 +1030,7 @@ impl BlockProductionTask {
                 "comparator_output_mismatch_summary"
             );
             for mismatch in comparison_report.iter_mismatches().take(20) {
-                tracing::warn!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     transaction_index = ?mismatch.transaction_index,
@@ -1415,7 +1415,7 @@ impl BlockProductionTask {
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => {
-                tracing::warn!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     allowed_fee_balance_value_mismatches = mismatches.len(),

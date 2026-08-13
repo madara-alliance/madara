@@ -287,7 +287,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
                 }
             })
         }) {
-            tracing::info!(
+            tracing::debug!(
                 target: "mc_db",
                 event = "view_find_transaction_by_hash_hit_preconfirmed",
                 tx_hash = format!("{tx_hash:#x}"),
@@ -302,7 +302,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         let Some(StorageTxIndex { block_number, transaction_index }) =
             self.backend().db.find_transaction_hash(tx_hash)?
         else {
-            tracing::warn!(
+            tracing::debug!(
                 target: "mc_db",
                 event = "view_find_transaction_by_hash_miss",
                 tx_hash = format!("{tx_hash:#x}"),

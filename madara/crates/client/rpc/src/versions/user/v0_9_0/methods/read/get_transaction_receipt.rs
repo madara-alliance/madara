@@ -34,7 +34,7 @@ pub fn get_transaction_receipt(
     let res = match view.find_transaction_by_hash(&transaction_hash)? {
         Some(res) => res,
         None => {
-            tracing::warn!(
+            tracing::debug!(
                 target: "mc_rpc",
                 event = "rpc_get_transaction_receipt_not_found",
                 tx_hash = format!("{transaction_hash:#x}"),

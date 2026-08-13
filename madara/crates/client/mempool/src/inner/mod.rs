@@ -297,7 +297,7 @@ impl InnerMempool {
             account_update.removed_txs.len(),
         );
         if matches!(account_update.account_data.new_status, AccountStatus::Pending) {
-            tracing::warn!(
+            tracing::debug!(
                 "mempool_account_pending_after_nonce_update contract_address={contract_address:?} account_nonce={:?} front_nonce_after={front_nonce_after:?} queued_len_after={queued_len_after}",
                 account_update.account_data.account_nonce,
             );
