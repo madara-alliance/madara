@@ -802,10 +802,9 @@ mod types;
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
-use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
+use mc_submit_tx::{SubmitTransaction, TransactionLookup};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
-use versions::cloud::v0_1_0::CloudRpcMetrics;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -849,12 +848,6 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
     pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
-    /// Cloud endpoint: validated transaction provider (bypasses full pre-validation).
-    pub(crate) add_validated_transaction_provider: Option<Arc<dyn SubmitValidatedTransaction>>,
-    /// Cloud endpoint: whether to charge fee when submitting validated transactions.
-    pub(crate) cloud_charge_fee: bool,
-    /// Cloud endpoint: metrics (None when not serving cloud requests).
-    pub(crate) cloud_metrics: Option<Arc<CloudRpcMetrics>>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -895,9 +888,6 @@ impl Starknet {
             ws_handles,
             transaction_submitter: add_transaction_provider,
             transaction_lookup,
-            add_validated_transaction_provider: None,
-            cloud_charge_fee: true,
-            cloud_metrics: None,
             storage_proof_config,
             block_prod_handle,
             ctx,
@@ -919,20 +909,8 @@ impl Starknet {
         self.replay_mode_enabled = value;
     }
 
-    pub fn set_add_validated_transaction_provider(&mut self, provider: Arc<dyn SubmitValidatedTransaction>) {
-        self.add_validated_transaction_provider = Some(provider);
-    }
-
     pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
         self.mempool = Some(mempool);
-    }
-
-    pub fn set_cloud_charge_fee(&mut self, value: bool) {
-        self.cloud_charge_fee = value;
-    }
-
-    pub fn set_cloud_metrics(&mut self, metrics: CloudRpcMetrics) {
-        self.cloud_metrics = Some(Arc::new(metrics));
     }
 }
 
@@ -964,16 +942,6 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_2::StarknetTraceRpcApiV0_10_2Server::into_rpc(starknet.clone()))?;
 
-    Ok(rpc_api)
-}
-
-/// Returns the RpcModule for the cloud (Paradex) endpoint.
-///
-/// Registers only the cloud-specific methods. The provider must be set on `starknet`
-/// via `set_add_validated_transaction_provider` before calling this function.
-pub fn rpc_api_cloud(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
-    let mut rpc_api = RpcModule::new(());
-    rpc_api.merge(versions::cloud::v0_1_0::ParadoxCloudWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     Ok(rpc_api)
 }
 

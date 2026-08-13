@@ -176,7 +176,7 @@ pub trait MadaraStatusRpcApi {
 }
 
 /// ExecutionBox operational control methods (Step 6).
-/// Added to the existing admin endpoint; NOT exposed on cloud endpoint.
+/// Added to the existing admin endpoint.
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraExecutionBoxRpcApi {
     /// Force-disable ExecutionBox, switching to blockifier-only mode immediately.
