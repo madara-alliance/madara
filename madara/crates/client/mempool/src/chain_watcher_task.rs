@@ -500,7 +500,7 @@ mod tests {
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, Transaction};
     use mp_convert::Felt;
     use mp_state_update::{NonceUpdate, StateDiff};
-    use mp_transactions::InvokeTransaction;
+    use mp_transactions::{validated::ValidatedTransaction, InvokeTransaction};
     use mp_utils::service::ServiceContext;
     use starknet_api::core::Nonce;
     use std::{collections::HashMap, sync::Arc, time::Duration};
