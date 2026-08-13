@@ -67,6 +67,7 @@ jobs:
         run: yes | make artifacts
 
       - name: Run cargo check
+        if: ${{ inputs.image-name != 'madara' }}
         run: RUST_BUILD_DOCKER=1 cargo check
 
       - name: Tags
