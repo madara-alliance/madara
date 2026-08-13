@@ -417,17 +417,6 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.block_production_params.replay_mode,
     );
 
-    // Cloud (Paradex) RPC — private endpoint for validated transaction injection
-
-    let service_rpc_cloud = RpcService::cloud(
-        run_cmd.rpc_params.clone(),
-        backend.clone(),
-        tx_submit.clone(),
-        tx_lookup.clone(),
-        validated_tx_submit.clone(),
-        run_cmd.validator_params.no_charge_fee,
-    );
-
     // Feeder gateway
 
     let service_gateway = GatewayService::new(
@@ -455,7 +444,6 @@ async fn main() -> anyhow::Result<()> {
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
-        .with(service_rpc_cloud)?
         .with(service_gateway)?
         .with(service_telemetry)?;
 
@@ -493,10 +481,6 @@ async fn main() -> anyhow::Result<()> {
 
     if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcAdmin);
-    }
-
-    if run_cmd.rpc_params.rpc_cloud && !warp_update_receiver {
-        app.activate(MadaraServiceId::RpcCloud);
     }
 
     if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {

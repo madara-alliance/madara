@@ -380,8 +380,6 @@ pub enum MadaraServiceId {
     Analytics,
     Mempool,
     ExternalDb,
-    #[serde(skip)]
-    RpcCloud,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -400,7 +398,6 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::Analytics => PowerOfTwo::P8,
             MadaraServiceId::Mempool => PowerOfTwo::P9,
             MadaraServiceId::ExternalDb => PowerOfTwo::P10,
-            MadaraServiceId::RpcCloud => PowerOfTwo::P11,
         }
     }
 }
@@ -418,7 +415,6 @@ impl Display for MadaraServiceId {
                 Self::BlockProduction => "block production",
                 Self::RpcUser => "rpc user",
                 Self::RpcAdmin => "rpc admin",
-                Self::RpcCloud => "rpc cloud",
                 Self::Gateway => "gateway",
                 Self::Telemetry => "telemetry",
                 Self::Analytics => "analytics",
@@ -460,7 +456,6 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P8 => Self::Analytics,
             PowerOfTwo::P9 => Self::Mempool,
             PowerOfTwo::P10 => Self::ExternalDb,
-            PowerOfTwo::P11 => Self::RpcCloud,
             _ => Self::Monitor, // Default fallback for unknown values
         }
     }
