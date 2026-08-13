@@ -130,6 +130,10 @@ impl BlockComparisonReport {
         !self.strict_mismatches.is_empty()
     }
 
+    pub fn has_strict_category(&self, category: MismatchCategory) -> bool {
+        self.strict_mismatches.iter().any(|mismatch| mismatch.category == category)
+    }
+
     pub fn mismatch_count(&self) -> usize {
         self.strict_mismatches.len()
             + self.allowed_mismatches.len()

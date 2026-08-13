@@ -1,6 +1,6 @@
 use crate::close_queue::{CloseJobCompletion, QueuedCloseJob, QueuedClosePayload};
 use crate::metrics::BlockProductionMetrics;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use mc_db::close_pipeline_contract::{ClosePreconfirmedResult, QueuedMeta};
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -71,7 +71,7 @@ impl FinalizerHandle {
                 let block_n = job.payload.db_payload.block_n;
                 let queue_wait = job.payload.enqueued_at.elapsed();
                 metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
-                tracing::info!(
+                tracing::debug!(
                     "close_job_processing_started block_number={} queue_wait_ms={} in_flight={}",
                     block_n,
                     queue_wait.as_secs_f64() * 1000.0,
@@ -80,7 +80,7 @@ impl FinalizerHandle {
 
                 let execute_start = std::time::Instant::now();
                 let result = execute_fn(metrics.clone(), job.payload).await;
-                tracing::info!(
+                tracing::debug!(
                     "close_job_processing_finished block_number={} execute_duration_ms={} success={} in_flight={}",
                     block_n,
                     execute_start.elapsed().as_secs_f64() * 1000.0,
@@ -114,8 +114,8 @@ impl FinalizerHandle {
         self.in_flight.load(Ordering::Relaxed)
     }
 
-    /// Try to enqueue a close job. Returns backpressure error if the queue is full.
-    pub fn try_enqueue(
+    /// Enqueue a close job, waiting for capacity when the queue is full.
+    pub async fn enqueue(
         &self,
         payload: QueuedClosePayload,
     ) -> Result<(ClosePreconfirmedResult, oneshot::Receiver<Result<CloseJobCompletion>>)> {
@@ -123,16 +123,9 @@ impl FinalizerHandle {
         let (sender, receiver) = oneshot::channel();
         let job = QueuedCloseJob { payload, completion: sender };
 
-        match self.sender.try_send(job) {
-            Ok(()) => {
-                let queued = QueuedMeta { block_n, queue_depth: self.current_depth() };
-                Ok((ClosePreconfirmedResult::Queued(queued), receiver))
-            }
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                bail!("Close queue is full (capacity={}), invariant/config violation", self.configured_capacity)
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => Err(anyhow!("Close queue is closed")),
-        }
+        self.sender.send(job).await.map_err(|_| anyhow!("Close queue is closed"))?;
+        let queued = QueuedMeta { block_n, queue_depth: self.current_depth() };
+        Ok((ClosePreconfirmedResult::Queued(queued), receiver))
     }
 }
 
@@ -152,9 +145,8 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use mp_state_update::StateDiff;
-    use rstest::rstest;
     use std::sync::Arc;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     fn test_payload(block_n: u64) -> QueuedClosePayload {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
@@ -173,6 +165,7 @@ mod tests {
             },
             canonical_executed_rows: vec![],
             canonical_header: Default::default(),
+            internal_capacity: 1,
             enqueued_at: Instant::now(),
         }
     }
@@ -184,34 +177,50 @@ mod tests {
         Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })
     }
 
-    #[rstest]
-    #[case::cap1_enqueue1(1, 1, true)]
-    #[case::cap1_enqueue2(1, 2, false)]
-    #[case::cap2_enqueue2(2, 2, true)]
-    #[case::cap3_enqueue1(3, 1, true)]
     #[tokio::test]
-    async fn backpressure_matrix(#[case] capacity: usize, #[case] enqueue_count: usize, #[case] all_succeed: bool) {
+    async fn saturated_queue_waits_for_capacity() {
+        let first_started = Arc::new(tokio::sync::Notify::new());
+        let release_first = Arc::new(tokio::sync::Notify::new());
+        let first_started_worker = first_started.clone();
+        let release_first_worker = release_first.clone();
+        let execute_fn = move |_metrics: Arc<BlockProductionMetrics>,
+                               payload: QueuedClosePayload|
+              -> std::pin::Pin<Box<dyn Future<Output = Result<CloseJobCompletion>> + Send>> {
+            let first_started = first_started_worker.clone();
+            let release_first = release_first_worker.clone();
+            Box::pin(async move {
+                if payload.db_payload.block_n == 0 {
+                    first_started.notify_one();
+                    release_first.notified().await;
+                }
+                Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })
+            })
+        };
+
         let metrics = Arc::new(BlockProductionMetrics::register());
-        let (handle, task_handle) = FinalizerHandle::spawn(capacity, metrics, test_execute);
+        let (handle, task_handle) = FinalizerHandle::spawn(1, metrics, execute_fn);
+        let (_, first_completion) = handle.enqueue(test_payload(0)).await.expect("first enqueue should succeed");
+        first_started.notified().await;
+        let (_, second_completion) = handle.enqueue(test_payload(1)).await.expect("second enqueue should fill queue");
 
-        let mut receivers = Vec::new();
-        let mut enqueue_failures = 0;
+        let third_completion = {
+            let third_enqueue = handle.enqueue(test_payload(2));
+            tokio::pin!(third_enqueue);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), &mut third_enqueue).await.is_err(),
+                "enqueue should wait while the bounded queue is saturated"
+            );
 
-        for i in 0..enqueue_count {
-            match handle.try_enqueue(test_payload(i as u64)) {
-                Ok((ClosePreconfirmedResult::Queued(_), recv)) => receivers.push(recv),
-                Err(_) => enqueue_failures += 1,
-            }
-        }
+            release_first.notify_one();
+            let (_, completion) = tokio::time::timeout(Duration::from_secs(1), &mut third_enqueue)
+                .await
+                .expect("enqueue should resume after capacity is released")
+                .expect("third enqueue should succeed");
+            completion
+        };
 
-        if all_succeed {
-            assert_eq!(enqueue_failures, 0, "all enqueues should succeed with capacity={capacity}");
-        } else {
-            assert!(enqueue_failures > 0, "some enqueues should fail with capacity={capacity}");
-        }
-
-        for recv in receivers {
-            recv.await.expect("completion channel should not be dropped").expect("close should succeed");
+        for completion in [first_completion, second_completion, third_completion] {
+            completion.await.expect("completion channel should stay open").expect("close should succeed");
         }
 
         drop(handle);
@@ -225,7 +234,7 @@ mod tests {
 
         let mut receivers = Vec::new();
         for i in 0..5u64 {
-            let (_, recv) = handle.try_enqueue(test_payload(i)).expect("enqueue should succeed");
+            let (_, recv) = handle.enqueue(test_payload(i)).await.expect("enqueue should succeed");
             receivers.push(recv);
         }
 
@@ -259,7 +268,7 @@ mod tests {
         let metrics = Arc::new(BlockProductionMetrics::register());
         let (handle, task_handle) = FinalizerHandle::spawn(4, metrics, execute_fn);
 
-        let (_, recv) = handle.try_enqueue(test_payload(0)).expect("enqueue should succeed");
+        let (_, recv) = handle.enqueue(test_payload(0)).await.expect("enqueue should succeed");
 
         // Yield to let the worker pick up the job before we drop the handle.
         tokio::task::yield_now().await;

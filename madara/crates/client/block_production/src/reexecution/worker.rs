@@ -41,7 +41,7 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
 
     let state_adapter = if is_direct_child && req.parent_overlays.is_empty() {
         // Direct child of confirmed base — no overlays needed.
-        tracing::info!(
+        tracing::debug!(
             block_n = req.block_n,
             confirmed_base_block_n = ?req.confirmed_base_block_n,
             parent_state_source = "confirmed_db_direct_parent",
@@ -52,7 +52,7 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
     } else {
         // Runahead or non-trivial path: build synthetic parent from confirmed base + overlays.
         // new_for_reexec() validates contiguity and fails closed if overlays are missing.
-        tracing::info!(
+        tracing::debug!(
             block_n = req.block_n,
             confirmed_base_block_n = ?req.confirmed_base_block_n,
             parent_state_source = "synthetic_parent_with_overlays",
@@ -107,8 +107,13 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
     let mut tx_idx = 0;
     let mut deployed_in_block: HashSet<Felt> = HashSet::new();
     let mut per_tx_complete = true;
+    let requested_tx_count = req.txs.len();
+    #[cfg(test)]
+    let execution_tx_count = req.test_max_txs.unwrap_or(requested_tx_count).min(requested_tx_count);
+    #[cfg(not(test))]
+    let execution_tx_count = requested_tx_count;
 
-    for chunk in req.txs.chunks(REEXEC_CHUNK_SIZE) {
+    for chunk in req.txs[..execution_tx_count].chunks(REEXEC_CHUNK_SIZE) {
         if cancel.is_cancelled() {
             return Ok(ReexecWorkerOutcome::Cancelled { epoch: req.epoch, block_n });
         }
@@ -131,16 +136,32 @@ pub fn run_blockifier_reexec(req: ReexecRequest, cancel: CancellationToken) -> a
             }
         }
         tx_idx += n_processed;
+        if n_processed < chunk.len() {
+            break;
+        }
     }
 
-    // If per-tx artifacts are incomplete, keep the canonical included prefix that we do have.
-    // The caller must replay the speculative suffix instead of silently keeping EB-backed rows.
-    if !per_tx_complete || per_tx_artifacts.len() != req.txs.len() {
+    let omitted_suffix_count = requested_tx_count.saturating_sub(tx_idx);
+    if omitted_suffix_count > 0 {
         tracing::warn!(
+            target: "RUST_EXEC",
             block_n,
-            expected = req.txs.len(),
-            got = per_tx_artifacts.len(),
-            "BRE per-tx artifacts incomplete — stop-path must split canonical prefix from replay suffix"
+            epoch = req.epoch,
+            requested_tx_count,
+            blockifier_processed_count = tx_idx,
+            blockifier_artifact_count = per_tx_artifacts.len(),
+            omitted_suffix_count,
+            "Blockifier re-execution reached capacity; preserving canonical prefix and replaying suffix"
+        );
+    }
+    if !per_tx_complete || per_tx_artifacts.len() != tx_idx {
+        tracing::error!(
+            target: "RUST_EXEC",
+            block_n,
+            epoch = req.epoch,
+            blockifier_processed_count = tx_idx,
+            blockifier_artifact_count = per_tx_artifacts.len(),
+            "Blockifier re-execution artifacts are incomplete within the processed prefix"
         );
     }
 

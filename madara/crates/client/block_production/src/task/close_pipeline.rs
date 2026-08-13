@@ -13,17 +13,37 @@ impl BlockProductionTask {
             anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
         };
         let block_n = state.block_number;
+        let execution_mode = state.execution_snapshot.execution_mode;
+        let tx_count = state.accumulated_stats.n_added_to_block;
         tracing::debug!("close_block_received_from_executor block_number={block_n}");
         // C-018: Do not compute parent_overlays here. They are recomputed at
         // canonicalization start to avoid stale overlays from parent stops.
         self.pending_canonicalizations.push_back(PendingCanonicalizationInput { state, block_exec_summary });
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(block_n) });
+        if execution_mode == ExecutionMode::Mixed {
+            let window = self.internal_preconfirmed_window();
+            tracing::info!(
+                target: "RUST_EXEC",
+                block_number = block_n,
+                tx_count,
+                confirmed_tip = ?window.confirmed_tip,
+                external_preconfirmed_tip = ?window.external_preconfirmed_tip,
+                internal_preconfirmed_tip = ?window.internal_preconfirmed_tip,
+                internal_depth = window.depth,
+                internal_capacity = window.capacity,
+                "📥 Block #{} added to internal preconfirmed window at {}/{} (confirmed tip {:?})",
+                block_n,
+                window.depth,
+                window.capacity,
+                window.confirmed_tip,
+            );
+        }
         self.record_block_stage_metrics();
         self.maybe_start_canonicalization_task();
         Ok(())
     }
 
-    pub(super) fn enqueue_canonical_close_payload(
+    pub(super) async fn enqueue_canonical_close_payload(
         &mut self,
         close_queue: &FinalizerHandle,
         state: CurrentBlockState,
@@ -42,10 +62,11 @@ impl BlockProductionTask {
             state_diff: canonical_state_diff,
             canonical_executed_rows: canonical_rows_for_close,
             canonical_header: canonical_header_for_close,
+            internal_capacity: self.close_queue_capacity,
             enqueued_at: Instant::now(),
         };
         tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
-        let (queued_result, completion) = close_queue.try_enqueue(payload)?;
+        let (queued_result, completion) = close_queue.enqueue(payload).await?;
         let ClosePreconfirmedResult::Queued(queued_meta) = queued_result;
         let queue_depth = close_queue.current_depth();
         let queue_in_flight = close_queue.current_in_flight();
@@ -126,6 +147,7 @@ impl BlockProductionTask {
             state_diff,
             canonical_executed_rows,
             canonical_header,
+            internal_capacity,
             ..
         } = payload;
         tracing::debug!("Close and save block block_n={}", state.block_number);
@@ -143,6 +165,7 @@ impl BlockProductionTask {
         let nonce_updates_count = state_diff.nonces.len();
         let state_diff_len = state_diff.len();
         let consumed_l1_nonces_count = state.consumed_core_contract_nonces.len();
+        let confirmed_tip_before = state.backend.chain_head_state().confirmed_tip;
 
         let bouncer_l1_gas = canonical_bouncer_weights.l1_gas;
         let bouncer_sierra_gas = canonical_bouncer_weights.sierra_gas.0;
@@ -177,6 +200,9 @@ impl BlockProductionTask {
         .await
         .context("Closing block")?;
         let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
+        let window_after = InternalPreconfirmedWindowSnapshot::from_backend(&state.backend, internal_capacity);
+        let slots_freed = window_after.confirmed_advance_from(confirmed_tip_before);
+        let depth_before_close = window_after.depth.saturating_add(slots_freed).min(window_after.capacity);
         metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
         metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
 
@@ -222,10 +248,27 @@ impl BlockProductionTask {
             class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
             block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
+            confirmed_tip = ?window_after.confirmed_tip,
+            external_preconfirmed_tip = ?window_after.external_preconfirmed_tip,
+            internal_preconfirmed_tip = ?window_after.internal_preconfirmed_tip,
+            internal_depth = window_after.depth,
+            internal_capacity = window_after.capacity,
+            internal_slots_freed = slots_freed,
             "block_closed"
         );
 
-        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+        if state.execution_snapshot.execution_mode == ExecutionMode::Mixed {
+            tracing::info!(
+                "⛏️  Closed block #{} with {n_txs} transactions in {time_to_close:?} | RUST_EXEC internal preconfirmed window {} -> {}/{} (freed {} slot(s))",
+                state.block_number,
+                depth_before_close,
+                window_after.depth,
+                window_after.capacity,
+                slots_freed,
+            );
+        } else {
+            tracing::info!("⛏️  Closed block #{} with {n_txs} transactions in {time_to_close:?}", state.block_number);
+        }
 
         metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
         metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);

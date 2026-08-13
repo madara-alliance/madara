@@ -58,6 +58,9 @@ pub struct ReexecRequest {
     /// base and target block. Required for correct re-execution under runahead
     /// runahead where confirmed tip lags behind executed blocks.
     pub parent_overlays: Vec<ReexecParentOverlay>,
+    /// Test-only deterministic stand-in for Blockifier reaching block capacity.
+    #[cfg(test)]
+    pub test_max_txs: Option<usize>,
 }
 
 /// Per-tx execution artifacts produced by BRE (C-013).

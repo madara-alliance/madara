@@ -76,15 +76,30 @@ fn test_upsert_token_balance_updates_existing() {
 }
 
 #[test]
-fn test_update_token_balance_writes_delta() {
+fn test_update_token_balance_removes_zero_balance() {
     let mut state = MockStateReader::new();
     let contract = addr(0x430);
     let account = addr(0x431);
     let token = addr(0x432);
 
+    let previous_token = addr(0x433);
+    let next_token = addr(0x434);
+    let tail_key = storage_key_for_map("Paraclear_token_asset_balance_tail", account.0);
+    set_storage(&mut state, contract, tail_key, next_token.0);
+
     let base = storage_key_for_map2("Paraclear_token_asset_balance", account.0, token.0);
     set_storage(&mut state, contract, base, token.0);
     set_storage(&mut state, contract, storage_key_with_offset(base, 1), felt(1 * 100_000_000u64));
+    set_storage(&mut state, contract, storage_key_with_offset(base, 2), previous_token.0);
+    set_storage(&mut state, contract, storage_key_with_offset(base, 3), next_token.0);
+
+    let previous_base = storage_key_for_map2("Paraclear_token_asset_balance", account.0, previous_token.0);
+    set_storage(&mut state, contract, previous_base, previous_token.0);
+    set_storage(&mut state, contract, storage_key_with_offset(previous_base, 3), token.0);
+
+    let next_base = storage_key_for_map2("Paraclear_token_asset_balance", account.0, next_token.0);
+    set_storage(&mut state, contract, next_base, next_token.0);
+    set_storage(&mut state, contract, storage_key_with_offset(next_base, 2), token.0);
 
     let mut ctx = crate::ExecutionContext::new();
     paraclear::update_token_balance_for_test(&mut ctx, &state, contract, account, token, -1 * 100_000_000)
@@ -93,8 +108,13 @@ fn test_update_token_balance_writes_delta() {
     let result = ctx.build_result();
     let updates = result.state_diff.storage_updates.get(&contract).expect("updates");
 
-    assert_eq!(updates.len(), 1);
+    assert_eq!(updates.get(&base).copied(), Some(felt(0)));
     assert_eq!(updates.get(&storage_key_with_offset(base, 1)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(previous_base, 3)).copied(), Some(next_token.0));
+    assert_eq!(updates.get(&storage_key_with_offset(next_base, 2)).copied(), Some(previous_token.0));
+    assert_eq!(updates.get(&tail_key), None);
 }
 
 #[test]

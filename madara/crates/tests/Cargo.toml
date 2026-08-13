@@ -23,6 +23,7 @@ assert_matches.workspace = true
 flate2 = "1.0.30"
 futures.workspace = true
 m-cairo-test-contracts.workspace = true
+mc-devnet.workspace = true
 mc-gateway-client.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true

@@ -43,9 +43,9 @@ pub struct CanonicalizedBlockOutput {
     pub source: CanonicalBlockSource,
     pub state_diff: StateDiff,
     pub bouncer_weights: BouncerWeights,
-    /// Per-tx BRE execution artifacts (C-013). Present on `StopExecutionBox` when the
-    /// worker produced complete per-tx results. `None` on Accept/AcceptWithWarn (EB-backed
-    /// promotion used instead) or when BRE per-tx collection was incomplete.
+    /// Per-tx BRE execution artifacts (C-013). On `StopExecutionBox`, this may be a
+    /// shorter canonical prefix when Blockifier reaches block capacity; the omitted
+    /// speculative suffix is replayed in Blockifier-only mode.
     pub bre_per_tx: Option<Vec<ReexecExecutedTxArtifacts>>,
 }
 
@@ -94,6 +94,14 @@ pub fn decide_with_report(
     sd: &StateDiffComparison,
     er: &ExecutionResourceComparison,
 ) -> ComparatorDecision {
+    // Missing, extra, or duplicate transactions is the primary failure even
+    // though the shortened execution will also produce an aggregate state mismatch.
+    if report.has_strict_category(MismatchCategory::TransactionAlignment) {
+        return ComparatorDecision::StopExecutionBox {
+            reason: StopReason::OutputMismatch { summary: report.strict_summary() },
+        };
+    }
+
     // State diff mismatch is always a hard stop, regardless of resource comparison.
     if let StateDiffComparison::Mismatch { summary } = sd {
         return ComparatorDecision::StopExecutionBox {
@@ -205,6 +213,25 @@ mod tests {
 
         assert!(matches!(
             decide_with_report(&report, &matching_sd(), &ok_er()),
+            ComparatorDecision::StopExecutionBox { reason: StopReason::OutputMismatch { .. } }
+        ));
+    }
+
+    #[test]
+    fn transaction_alignment_is_primary_when_state_diff_also_mismatches() {
+        let mut report = BlockComparisonReport::default();
+        report.push(transaction_outputs::FieldMismatch {
+            category: MismatchCategory::TransactionAlignment,
+            policy: MismatchPolicy::Strict,
+            transaction_hash: Some(Felt::ONE),
+            transaction_index: Some(3),
+            field_path: "transactions.missing_in_blockifier".into(),
+            execution_box_value: "present".into(),
+            blockifier_value: "missing".into(),
+        });
+
+        assert!(matches!(
+            decide_with_report(&report, &mismatching_sd(), &ok_er()),
             ComparatorDecision::StopExecutionBox { reason: StopReason::OutputMismatch { .. } }
         ));
     }

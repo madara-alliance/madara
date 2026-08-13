@@ -1,8 +1,8 @@
-use super::root_tracking::collect_diffs_for_root_from_base;
+use super::state::OptimisticPipelineNotification;
 use super::{
-    prune_diffs_since_snapshot, validate_parallel_queue_invariant, CanonicalizationTaskCanonical,
-    CanonicalizationTaskResult, ComparatorDecision, PendingCanonicalizationInput, TaintedRebuildClosePayload,
-    TaintedRebuildSourceTx, TaintedRebuildStepResult, TaskState,
+    CanonicalizationTaskCanonical, CanonicalizationTaskResult, ComparatorDecision, InternalPreconfirmedWindowSnapshot,
+    PendingCanonicalizationInput, TaintedRebuildClosePayload, TaintedRebuildSourceTx, TaintedRebuildStepResult,
+    TaskState,
 };
 use crate::comparator::CanonicalBlockSource;
 use crate::executor::{BatchExecutionResult, ExecutorMessage};
@@ -28,7 +28,7 @@ use mp_rpc::v0_9_0::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
     InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
 };
-use mp_state_update::{ContractStorageDiffItem, NonceUpdate, StateDiff, StorageEntry};
+use mp_state_update::StateDiff;
 use mp_transactions::compute_hash::calculate_contract_address;
 use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee, Transaction};
@@ -43,6 +43,7 @@ type TxFixtureInfo = (Transaction, mp_receipt::TransactionReceipt);
 
 mod block_lifecycle;
 mod canonicalization;
+mod optimistic_pipeline;
 mod publication;
 mod startup_recovery;
 mod state_tracking;
@@ -51,10 +52,9 @@ mod tainted_rebuild;
 
 use self::strict_fallback::{
     apply_tainted_rebuild_step_result, assert_tx_not_in_mempool, carry_row_from_validated,
-    drain_next_pending_close_completion, make_preconfirmed_tx_with_hash, make_validated_invoke_tx,
-    persist_preconfirmed_bucket, recv_routed_batch, routed_batch_hashes, rust_transfer_routing_cfg,
-    seed_real_preconfirmed_block, spawn_batcher_with_bypass_txs, spawn_test_finalizer,
-    tainted_rebuild_control_plane_test_task,
+    make_preconfirmed_tx_with_hash, make_validated_invoke_tx, persist_preconfirmed_bucket, recv_routed_batch,
+    routed_batch_hashes, rust_transfer_routing_cfg, seed_real_preconfirmed_block, spawn_batcher_with_bypass_txs,
+    spawn_test_finalizer, tainted_rebuild_control_plane_test_task,
 };
 
 fn empty_state_diff() -> StateDiff {
@@ -67,42 +67,6 @@ fn empty_state_diff() -> StateDiff {
         nonces: vec![],
         migrated_compiled_classes: vec![],
     }
-}
-
-fn synthetic_state_diff(index: u64) -> StateDiff {
-    StateDiff {
-        storage_diffs: vec![ContractStorageDiffItem {
-            address: Felt::from(10_000 + index),
-            storage_entries: vec![StorageEntry { key: Felt::from(1_u64), value: Felt::from(40_000 + index) }],
-        }],
-        old_declared_contracts: vec![],
-        declared_classes: vec![],
-        deployed_contracts: vec![],
-        replaced_classes: vec![],
-        nonces: vec![NonceUpdate { contract_address: Felt::from(10_000 + index), nonce: Felt::from(index + 1) }],
-        migrated_compiled_classes: vec![],
-    }
-}
-
-fn seed_confirmed_anchor_block(backend: &Arc<MadaraBackend>, block_n: u64) {
-    use mp_block::FullBlockWithoutCommitments;
-
-    if backend.chain_head_state().confirmed_tip != Some(block_n) {
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader { block_number: block_n, ..Default::default() },
-                    state_diff: StateDiff::default(),
-                    transactions: vec![],
-                    events: vec![],
-                },
-                &[],
-                false,
-            )
-            .expect("seed confirmed anchor block");
-    }
-    backend.db.on_new_confirmed_head(block_n).expect("pin anchor snapshot");
 }
 
 #[rstest::fixture]
@@ -139,6 +103,7 @@ impl DevnetSetup {
 pub async fn devnet_setup(
     #[default(Duration::from_secs(30))] block_time: Duration,
     #[default(false)] use_bouncer_weights: bool,
+    #[default(false)] save_preconfirmed: bool,
 ) -> DevnetSetup {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -152,18 +117,17 @@ pub async fn devnet_setup(
 
         Arc::new(ChainConfig {
             block_time,
-            bouncer_config: BouncerConfig {
-                block_max_capacity: bouncer_weights,
-                builtin_weights: Default::default(),
-                blake_weight: Default::default(),
-            },
+            bouncer_config: BouncerConfig { block_max_capacity: bouncer_weights, builtin_weights: Default::default() },
             ..ChainConfig::madara_devnet()
         })
     } else {
         Arc::new(ChainConfig { block_time, ..ChainConfig::madara_devnet() })
     };
 
-    let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::clone(&chain_config),
+        MadaraBackendConfig { save_preconfirmed, ..Default::default() },
+    );
     backend.set_l1_gas_quote_for_testing();
     genesis.build_and_store(&backend).await.unwrap();
 
@@ -197,11 +161,10 @@ pub async fn tainted_rebuild_spill_devnet_setup() -> DevnetSetup {
         bouncer_config: BouncerConfig {
             block_max_capacity: BouncerWeights {
                 sierra_gas: starknet_api::execution_resources::GasAmount(40_000_000),
-                proving_gas: starknet_api::execution_resources::GasAmount(40_000_000),
+                proving_gas: starknet_api::execution_resources::GasAmount(50_000_000),
                 ..BouncerWeights::max()
             },
             builtin_weights: Default::default(),
-            blake_weight: Default::default(),
         },
         ..ChainConfig::madara_devnet()
     });
@@ -476,7 +439,7 @@ pub async fn sign_and_add_invoke_tx(
         nonce,
     );
 
-    validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
+    validator.submit_invoke_transaction(tx.into()).await.expect("Should accept the transaction");
 }
 
 //
@@ -542,5 +505,6 @@ fn make_empty_block_exec_summary() -> blockifier::blockifier::transaction_execut
         casm_hash_computation_data_sierra_gas: Default::default(),
         casm_hash_computation_data_proving_gas: Default::default(),
         compiled_class_hashes_for_migration: Vec::new(),
+        block_info: Default::default(),
     }
 }

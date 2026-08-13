@@ -50,7 +50,7 @@ jobs:
       - name: Archive migration tests
         run: |
           mkdir -p target/nextest
-          CARGO_TARGET_DIR=target cargo nextest archive \
+          CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo nextest archive \
             --release \
             --package mc-e2e-tests \
             --features migration-tests \

@@ -1,11 +1,12 @@
 //! Transaction types and full transaction execution.
 //!
 //! This module provides the full transaction execution flow that mirrors Blockifier:
-//! 1. Account __validate__
-//! 2. Increment nonce
-//! 3. Account __execute__ (which calls target contracts)
-//! 4. Calculate fee
-//! 5. Transfer fee to sequencer
+//! 1. Validate nonce
+//! 2. Account __validate__
+//! 3. Increment nonce
+//! 4. Account __execute__ (which calls target contracts)
+//! 5. Calculate fee
+//! 6. Transfer fee to sequencer
 
 use starknet_types_core::felt::Felt;
 
@@ -94,11 +95,12 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
     /// Execute a full invoke transaction.
     ///
     /// This runs the complete flow:
-    /// 1. __validate__ on account
-    /// 2. Increment nonce
-    /// 3. __execute__ on account (dispatches to target contracts)
-    /// 4. Calculate fee from gas consumed
-    /// 5. Transfer fee from sender to sequencer
+    /// 1. Validate nonce
+    /// 2. __validate__ on account
+    /// 3. Increment nonce
+    /// 4. __execute__ on account (dispatches to target contracts)
+    /// 5. Calculate fee from gas consumed
+    /// 6. Transfer fee from sender to sequencer
     pub fn execute_invoke(
         &mut self,
         tx: &InvokeTransaction,
@@ -106,7 +108,13 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
     ) -> Result<TransactionExecutionResult, ExecutionError> {
         let mut combined_state_diff = StateDiff::default();
 
-        // 1. Validate transaction
+        // 1. Reject stale or out-of-order transactions before executing any calls.
+        let current_nonce = self.state.get_nonce_at(tx.sender_address)?;
+        if tx.nonce != current_nonce {
+            return Err(ExecutionError::InvalidNonce { expected: current_nonce.0, actual: tx.nonce.0 });
+        }
+
+        // 2. Validate transaction
         let validate_result = self.execute_validate(tx, account_class_hash)?;
 
         // Merge validate state diff (if any storage changes)
@@ -114,10 +122,10 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             // Usually validate doesn't change state, but merge anyway
         }
 
-        // 2. Increment nonce
-        self.increment_nonce(tx.sender_address, &mut combined_state_diff)?;
+        // 3. Increment nonce
+        combined_state_diff.address_to_nonce.insert(tx.sender_address, current_nonce.increment());
 
-        // 3. Execute transaction - charge gas for account's __execute__
+        // 4. Execute transaction - charge gas for account's __execute__
         self.gas_tracker.charge_call_contract();
         for call in &tx.calls {
             self.gas_tracker.charge_calldata(call.calldata.len());
@@ -164,14 +172,14 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             gas_consumed: 0, // Tracked separately in gas_tracker
         };
 
-        // 4. Calculate fee
+        // 5. Calculate fee
         self.gas_tracker.calculate_da_gas(&combined_state_diff);
         let gas_consumed = self.gas_tracker.gas_vector();
         let _calculated_fee = calculate_fee(&gas_consumed, self.block_context, tx.fee_type);
         let skip_fee = no_charge_fee_enabled();
         let actual_fee = if skip_fee { 0 } else { Self::FIXED_FEE_AMOUNT };
 
-        // 5. Transfer fee
+        // 6. Transfer fee
         let fee_transfer_result =
             if skip_fee { None } else { self.transfer_fee(tx, actual_fee, &mut combined_state_diff)? };
 
@@ -212,14 +220,6 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             failed: false,
             gas_consumed: 5000,
         }))
-    }
-
-    /// Increment the account nonce.
-    fn increment_nonce(&mut self, account: ContractAddress, state_diff: &mut StateDiff) -> Result<(), ExecutionError> {
-        let current_nonce = self.state.get_nonce_at(account)?;
-        let new_nonce = current_nonce.increment();
-        state_diff.address_to_nonce.insert(account, new_nonce);
-        Ok(())
     }
 
     /// Execute a single call to a contract.
@@ -328,5 +328,34 @@ mod tests {
 
         let error = executor.execute_invoke(&tx, Felt::ZERO).expect_err("unsupported call must fail");
         assert!(error.to_string().contains("Unsupported Rust Exec call"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn rejects_transaction_nonce_that_does_not_match_state() {
+        let mut state = MockStateReader::new();
+        let sender = ContractAddress(Felt::from(0x100u64));
+        let target = ContractAddress(Felt::from(0x200u64));
+        state.set_nonce(sender, Nonce(Felt::from(7u64)));
+        state.set_class_hash(target, Felt::from(0xdeadbeefu64));
+
+        let block_context = BlockContext::default();
+        let mut executor = TransactionExecutor::new(&state, &block_context);
+        let tx = InvokeTransaction {
+            tx_hash: Felt::from(0x123u64),
+            version: Felt::ZERO,
+            sender_address: sender,
+            calls: vec![Call { to: target, selector: Felt::from(0x456u64), calldata: Vec::new() }],
+            signature: Vec::new(),
+            nonce: Nonce(Felt::from(8u64)),
+            fee_type: FeeType::Strk,
+            resource_bounds: ResourceBounds::default(),
+        };
+
+        let error = executor.execute_invoke(&tx, Felt::ZERO).expect_err("nonce mismatch must fail");
+        assert!(matches!(
+            error,
+            ExecutionError::InvalidNonce { expected, actual }
+                if expected == Felt::from(7u64) && actual == Felt::from(8u64)
+        ));
     }
 }

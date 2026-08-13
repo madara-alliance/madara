@@ -234,19 +234,10 @@ fn close_canonical_block_uses_payload_rows() {
     // Canonical rows have 5 txs.
     let canonical_rows: Vec<_> = (10..=14).map(make_c024_preconfirmed_tx).collect();
 
-    // First compute the real root for an empty state diff.
-    let (_state_root, timings) = backend
-        .write_access()
-        .apply_to_global_trie(0, [&StateDiff::default()], backend.chain_config().latest_protocol_version)
-        .expect("apply_to_global_trie");
-
     let _result = backend
         .write_access()
-        .close_canonical_block(true, 0, header, canonical_rows, StateDiff::default(), timings)
+        .close_canonical_block(true, 0, header, canonical_rows, StateDiff::default())
         .expect("close_canonical_block should succeed");
-
-    // Advance confirmed head.
-    backend.write_access().new_confirmed_block(0).unwrap();
 
     // Verify confirmed block has 5 txs.
     let confirmed = backend.block_view_on_confirmed(0).expect("confirmed block 0");

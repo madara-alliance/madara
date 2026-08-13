@@ -50,5 +50,5 @@ jobs:
       - name: Cargo Clippy
         run: |
           echo "Running cargo clippy..."
-          cargo clippy --workspace --all-features --no-deps -- -D warnings
-          cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
+          RUST_BUILD_DOCKER=1 cargo clippy --workspace --all-features --no-deps -- -D warnings
+          RUST_BUILD_DOCKER=1 cargo clippy --workspace --all-features --tests --no-deps -- -D warnings

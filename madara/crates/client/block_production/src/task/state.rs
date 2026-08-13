@@ -1,10 +1,22 @@
 use super::*;
 
+const DEFAULT_CLOSE_QUEUE_CAPACITY: usize = 10;
+const MAX_CLOSE_QUEUE_CAPACITY: usize = 10;
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
     ClosedBlock { block_n: u64 },
     BatchExecuted,
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum OptimisticPipelineNotification {
+    BlockStarted { block_n: u64 },
+    BatchExecuted { block_n: u64 },
+    ComparatorStarted { block_n: u64 },
+    ComparatorFinished { block_n: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,6 +29,40 @@ pub(crate) enum MempoolIntakeMode {
 #[derive(Debug)]
 pub(super) struct BlockExecutionSnapshot {
     pub(super) execution_mode: ExecutionMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct InternalPreconfirmedWindowSnapshot {
+    pub(super) confirmed_tip: Option<u64>,
+    pub(super) external_preconfirmed_tip: Option<u64>,
+    pub(super) internal_preconfirmed_tip: Option<u64>,
+    pub(super) depth: usize,
+    pub(super) capacity: usize,
+}
+
+impl InternalPreconfirmedWindowSnapshot {
+    pub(super) fn from_backend(backend: &MadaraBackend, capacity: usize) -> Self {
+        let head = backend.chain_head_state();
+        Self::from_tips(head.confirmed_tip, head.external_preconfirmed_tip, head.internal_preconfirmed_tip, capacity)
+    }
+
+    pub(super) fn from_tips(
+        confirmed_tip: Option<u64>,
+        external_preconfirmed_tip: Option<u64>,
+        internal_preconfirmed_tip: Option<u64>,
+        capacity: usize,
+    ) -> Self {
+        let confirmed_count = confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        let internal_count = internal_preconfirmed_tip.map_or(confirmed_count, |tip| tip.saturating_add(1));
+        let depth = internal_count.saturating_sub(confirmed_count).min(capacity as u64) as usize;
+        Self { confirmed_tip, external_preconfirmed_tip, internal_preconfirmed_tip, depth, capacity }
+    }
+
+    pub(super) fn confirmed_advance_from(self, previous_confirmed_tip: Option<u64>) -> usize {
+        let previous_count = previous_confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        let current_count = self.confirmed_tip.map_or(0, |tip| tip.saturating_add(1));
+        current_count.saturating_sub(previous_count) as usize
+    }
 }
 
 #[derive(Debug)]
@@ -308,12 +354,30 @@ impl CurrentBlockState {
                 execution_mode = ?mode,
                 "Accepted batch into preconfirmed block"
             );
-            tracing::info!(
-                "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
-                stats.n_added_to_block,
-                self.block_number,
-                stats.exec_duration,
-            );
+            if stats.n_added_by_rust_exec > 0 {
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    block_number = self.block_number,
+                    tx_count = stats.n_added_by_rust_exec,
+                    duration_ms = stats.rust_exec_duration.as_secs_f64() * 1000.0,
+                    "🧮 Executed and added {} transaction(s) to block #{} in {:.3?}",
+                    stats.n_added_by_rust_exec,
+                    self.block_number,
+                    stats.rust_exec_duration,
+                );
+            }
+            if stats.n_added_by_blockifier > 0 {
+                tracing::info!(
+                    target: "CAIRO",
+                    block_number = self.block_number,
+                    tx_count = stats.n_added_by_blockifier,
+                    duration_ms = stats.blockifier_exec_duration.as_secs_f64() * 1000.0,
+                    "🧮 Executed and added {} transaction(s) to block #{} in {:.3?}",
+                    stats.n_added_by_blockifier,
+                    self.block_number,
+                    stats.blockifier_exec_duration,
+                );
+            }
             tracing::debug!("Tick stats {:?}", stats);
         }
         Ok(())
@@ -344,6 +408,10 @@ pub struct BlockProductionTask {
     pub(super) current_state: Option<TaskState>,
     pub(super) metrics: Arc<BlockProductionMetrics>,
     pub(super) state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
+    #[cfg(test)]
+    pub(super) optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
+    #[cfg(test)]
+    pub(super) comparator_gates: BTreeMap<u64, Arc<tokio::sync::Semaphore>>,
     pub(super) handle: BlockProductionHandle,
     pub(super) executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     pub(super) fallback_commands_recv: Option<mpsc::UnboundedReceiver<executor::FallbackCommand>>,
@@ -383,6 +451,9 @@ pub struct BlockProductionTask {
     /// immediately to exercise the fail-safe fallback path.
     #[cfg(test)]
     pub(super) force_comparator_error: bool,
+    /// Test-only deterministic Blockifier re-execution capacity.
+    #[cfg(test)]
+    pub(super) comparator_reexec_tx_limit: Option<usize>,
 }
 
 impl BlockProductionTask {
@@ -399,7 +470,11 @@ impl BlockProductionTask {
     }
 
     pub(super) fn close_queue_capacity(&self) -> usize {
-        self.close_queue_capacity.max(1)
+        self.close_queue_capacity
+    }
+
+    pub(super) fn internal_preconfirmed_window(&self) -> InternalPreconfirmedWindowSnapshot {
+        InternalPreconfirmedWindowSnapshot::from_backend(&self.backend, self.close_queue_capacity)
     }
 
     pub(super) fn next_internal_preconfirmed_block_n_from_backend(&self) -> anyhow::Result<u64> {
@@ -486,7 +561,7 @@ impl BlockProductionTask {
         Self {
             backend: backend.clone(),
             mempool,
-            close_queue_capacity: 1,
+            close_queue_capacity: DEFAULT_CLOSE_QUEUE_CAPACITY,
             current_state: None,
             metrics,
             handle: BlockProductionHandle::new(
@@ -498,6 +573,10 @@ impl BlockProductionTask {
                 no_charge_fee,
             ),
             state_notifications: None,
+            #[cfg(test)]
+            optimistic_pipeline_notifications: None,
+            #[cfg(test)]
+            comparator_gates: BTreeMap::new(),
             executor_commands_recv: Some(recv),
             fallback_commands_recv: Some(fallback_cmd_rx),
             l1_client,
@@ -529,6 +608,8 @@ impl BlockProductionTask {
             execution_epoch: 0,
             #[cfg(test)]
             force_comparator_error: false,
+            #[cfg(test)]
+            comparator_reexec_tx_limit: None,
         }
     }
 
@@ -537,9 +618,13 @@ impl BlockProductionTask {
         self
     }
 
-    pub fn with_close_queue_capacity(mut self, close_queue_capacity: usize) -> Self {
-        self.close_queue_capacity = close_queue_capacity.max(1);
-        self
+    pub fn with_close_queue_capacity(mut self, close_queue_capacity: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_CLOSE_QUEUE_CAPACITY).contains(&close_queue_capacity),
+            "close queue capacity must be in 1..={MAX_CLOSE_QUEUE_CAPACITY}"
+        );
+        self.close_queue_capacity = close_queue_capacity;
+        Ok(self)
     }
 
     pub fn with_replay_mode_enabled(mut self, enabled: bool) -> Self {
@@ -593,6 +678,12 @@ impl BlockProductionTask {
         self
     }
 
+    #[cfg(test)]
+    pub fn with_test_comparator_reexec_tx_limit(mut self, limit: usize) -> Self {
+        self.comparator_reexec_tx_limit = Some(limit);
+        self
+    }
+
     pub fn handle(&self) -> BlockProductionHandle {
         self.handle.clone()
     }
@@ -608,6 +699,22 @@ impl BlockProductionTask {
         if let Some(sender) = self.state_notifications.as_mut() {
             let _ = sender.send(notification);
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn subscribe_optimistic_pipeline_notifications(
+        &mut self,
+    ) -> mpsc::UnboundedReceiver<OptimisticPipelineNotification> {
+        let (sender, recv) = mpsc::unbounded_channel();
+        self.optimistic_pipeline_notifications = Some(sender);
+        recv
+    }
+
+    #[cfg(test)]
+    pub(super) fn gate_comparator_for_block(&mut self, block_n: u64) -> Arc<tokio::sync::Semaphore> {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        self.comparator_gates.insert(block_n, gate.clone());
+        gate
     }
 
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {

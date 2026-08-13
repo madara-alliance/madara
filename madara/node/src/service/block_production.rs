@@ -63,13 +63,16 @@ impl BlockProductionService {
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
         let mempool_paused = config.mempool_paused;
+        let close_queue_capacity =
+            usize::try_from(config.close_queue_capacity).context("close_queue_capacity does not fit into usize")?;
         let mut task =
             BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, mempool_paused, no_charge_fee)
                 .with_replay_mode_enabled(config.replay_mode)
                 .with_startup_execution_mode(match config.startup_execution_mode {
                     StartupExecutionModeParam::Mixed => StartupExecutionMode::Mixed,
                     StartupExecutionModeParam::BlockifierOnly => StartupExecutionMode::BlockifierOnly,
-                });
+                })
+                .with_close_queue_capacity(close_queue_capacity)?;
 
         let rust_batch_size =
             usize::try_from(config.rust_exec.batch_size).context("rust_exec.batch_size does not fit into usize")?;
@@ -157,7 +160,7 @@ impl BlockProductionService {
 
 #[cfg(test)]
 mod tests {
-    use super::rust_exec_runtime_options;
+    use super::{rust_exec_runtime_options, RustExecParams};
 
     #[test]
     fn rust_exec_runtime_options_carry_cli_values() {

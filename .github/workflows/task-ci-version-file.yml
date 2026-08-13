@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   check:
@@ -48,6 +49,7 @@ jobs:
       tag-exists: ${{ steps.check_tag.outputs.tag-exists }}
     permissions:
       contents: write
+      packages: read
 
     steps:
       - uses: actions/checkout@v5
@@ -82,6 +84,14 @@ jobs:
         run: |
           VERSION=$(yq -e ".current_version" ${{ inputs.version-file }})
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Log in to the container registry
+        if: inputs.container-image != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check Container Tag
         if: inputs.container-image != ''

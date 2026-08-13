@@ -8,6 +8,7 @@ use crate::util::{AdditionalTxInfo, BatchToExecute, RoutedBatchToExecute};
 use assert_matches::assert_matches;
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::MadaraBackend;
+use mc_devnet::{Call, Multicall, Selector, RUST_EXEC_TRANSFER_CONTRACT_ADDRESS};
 use mc_exec::execution::TxInfo;
 use mp_chain_config::StarknetVersion;
 use mp_convert::{Felt, ToFelt};
@@ -31,6 +32,28 @@ pub(super) fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (
         .into_blockifier_for_sequencing()
         .unwrap();
     (tx, AdditionalTxInfo { declared_class, arrived_at: ts })
+}
+
+fn make_rust_transfer_tx(
+    setup: &DevnetSetup,
+    sender_index: usize,
+    recipient_index: usize,
+    nonce: Felt,
+    amount: u64,
+) -> (Transaction, AdditionalTxInfo) {
+    make_tx(
+        &setup.backend,
+        BroadcastedTxn::Invoke(crate::task::tests::make_invoke_tx(
+            &setup.contracts.0[sender_index],
+            Multicall::default().with(Call {
+                to: RUST_EXEC_TRANSFER_CONTRACT_ADDRESS,
+                selector: Selector::from("transfer"),
+                calldata: vec![setup.contracts.0[recipient_index].address, Felt::from(amount)],
+            }),
+            &setup.backend,
+            nonce,
+        )),
+    )
 }
 
 fn make_l1_handler_tx(
@@ -363,7 +386,7 @@ struct DualPhaseSetup {
 /// Build a minimal executor setup for dual-phase tests.
 /// Uses a long block_time so we control block closing explicitly.
 async fn make_dual_phase_setup(mode: ExecutionMode) -> DualPhaseSetup {
-    let setup = devnet_setup(Duration::from_secs(30000), false).await;
+    let setup = devnet_setup(Duration::from_secs(30000), false, false).await;
     let (commands_sender, commands) = mpsc::unbounded_channel();
     let handle = start_executor_thread_for_tests(setup.backend.clone(), commands, mode);
     DualPhaseSetup { backend: setup.backend, handle, commands_sender }
@@ -425,16 +448,13 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
     let (commands_sender, commands) = mpsc::unbounded_channel();
     let mut handle = start_executor_thread_for_tests(setup.backend.clone(), commands, ExecutionMode::Mixed);
 
-    // Put one declare tx in blockifier_batch and one in rust_batch.
-    // Different accounts so nonces don't conflict.
+    // Put one declare tx in blockifier_batch and one supported fixture call in rust_batch.
+    // Different accounts ensure the branches do not share a nonce dependency.
     let (tx1, info1) = make_tx(
         &setup.backend,
         BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[0], &setup.backend, Felt::ZERO)),
     );
-    let (tx2, info2) = make_tx(
-        &setup.backend,
-        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[1], &setup.backend, Felt::ZERO)),
-    );
+    let (tx2, info2) = make_rust_transfer_tx(&setup, 1, 2, Felt::ZERO, 42);
     let tx1_hash = tx1.tx_hash().to_felt();
     let tx2_hash = tx2.tx_hash().to_felt();
 
@@ -449,7 +469,6 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
     handle.send_batch.as_mut().unwrap().send(routed).await.unwrap();
 
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
-    // T-031 stub: rust phase goes through blockifier, so both txs execute.
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         // Both blockifier_batch and rust_batch txs should be in combined executed_txs.
         assert_eq!(res.executed_txs.len(), 2, "mixed mode: both branches should produce combined result");
@@ -534,10 +553,7 @@ async fn test_mixed_mode_rust_only_payload_executes(
     let mut handle = start_executor_thread_for_tests(setup.backend.clone(), commands, ExecutionMode::Mixed);
 
     // Only rust_batch populated; blockifier_batch is empty.
-    let (tx, info) = make_tx(
-        &setup.backend,
-        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[0], &setup.backend, Felt::ZERO)),
-    );
+    let (tx, info) = make_rust_transfer_tx(&setup, 0, 1, Felt::ZERO, 42);
     let routed = RoutedBatchToExecute {
         blockifier_batch: BatchToExecute::default(),
         rust_batch: [(tx, info)].into_iter().collect(),
@@ -621,14 +637,8 @@ async fn test_mode_transition_rescues_deferred_rust_txs(
     let mut handle = start_executor_thread_for_tests(setup.backend.clone(), commands, ExecutionMode::Mixed);
 
     // Send two txs in rust_batch under Mixed mode.
-    let (tx1, info1) = make_tx(
-        &setup.backend,
-        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[0], &setup.backend, Felt::ZERO)),
-    );
-    let (tx2, info2) = make_tx(
-        &setup.backend,
-        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[1], &setup.backend, Felt::ZERO)),
-    );
+    let (tx1, info1) = make_rust_transfer_tx(&setup, 0, 2, Felt::ZERO, 42);
+    let (tx2, info2) = make_rust_transfer_tx(&setup, 1, 3, Felt::ZERO, 43);
     let tx1_hash = tx1.tx_hash().to_felt();
     let tx2_hash = tx2.tx_hash().to_felt();
     let routed = RoutedBatchToExecute {

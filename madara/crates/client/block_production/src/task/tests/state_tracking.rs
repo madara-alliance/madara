@@ -1,16 +1,34 @@
 use super::*;
 
-#[rstest::rstest]
-#[case::parallel_below_minimum(true, 9, false)]
-#[case::parallel_minimum(true, 10, true)]
-#[case::serial_any_capacity(false, 1, true)]
-fn queue_invariant_matrix(#[case] parallel: bool, #[case] capacity: usize, #[case] expect_ok: bool) {
-    let result = validate_parallel_queue_invariant(parallel, capacity);
-    assert_eq!(result.is_ok(), expect_ok);
-    if !expect_ok {
-        let msg = format!("{:#}", result.expect_err("must fail"));
-        assert!(msg.contains("QueueInvariantViolated"));
-    }
+#[test]
+fn optimistic_window_configures_serial_close_queue_capacity() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_devnet()));
+    let metrics = Arc::new(BlockProductionMetrics::register());
+    let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    let l1_client = Arc::new(L1ClientMock::new());
+    let new_task =
+        || BlockProductionTask::new(backend.clone(), mempool.clone(), metrics.clone(), l1_client.clone(), false, false);
+
+    assert_eq!(new_task().close_queue_capacity(), 10);
+    assert_eq!(new_task().with_close_queue_capacity(4).expect("valid capacity").close_queue_capacity(), 4);
+    assert!(new_task().with_close_queue_capacity(0).is_err());
+    assert!(new_task().with_close_queue_capacity(11).is_err());
+}
+
+#[test]
+fn internal_preconfirmed_window_reports_authoritative_depth() {
+    let empty = InternalPreconfirmedWindowSnapshot::from_tips(None, None, None, 10);
+    assert_eq!(empty.depth, 0);
+
+    let full = InternalPreconfirmedWindowSnapshot::from_tips(Some(100), Some(101), Some(110), 10);
+    assert_eq!(full.depth, 10);
+
+    let draining = InternalPreconfirmedWindowSnapshot::from_tips(Some(105), Some(106), Some(110), 10);
+    assert_eq!(draining.depth, 5);
+    assert_eq!(draining.confirmed_advance_from(Some(104)), 1);
+
+    let fallback_rewind = InternalPreconfirmedWindowSnapshot::from_tips(Some(105), Some(106), Some(106), 10);
+    assert_eq!(fallback_rewind.depth, 1);
 }
 
 #[test]
@@ -236,41 +254,4 @@ async fn stale_batch_executed_is_dropped_after_fallback() {
 
     drop(close_queue_handle);
     close_queue_task.join().await.expect("finalizer should shut down cleanly");
-}
-
-#[rstest::rstest]
-#[case::prune_nothing(vec![(11, empty_state_diff()), (12, empty_state_diff())], 10, vec![11, 12])]
-#[case::prune_prefix(vec![(10, empty_state_diff()), (11, empty_state_diff()), (12, empty_state_diff())], 10, vec![11, 12])]
-#[case::prune_all(vec![(10, empty_state_diff())], 10, vec![])]
-fn boundary_prune_matrix(
-    #[case] mut input: Vec<(u64, StateDiff)>,
-    #[case] completed_block_n: u64,
-    #[case] expected_blocks: Vec<u64>,
-) {
-    prune_diffs_since_snapshot(&mut input, completed_block_n);
-    let remaining_blocks = input.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
-    assert_eq!(remaining_blocks, expected_blocks);
-}
-
-#[rstest::rstest]
-#[case::from_empty_base(vec![(0, empty_state_diff()), (1, empty_state_diff()), (2, empty_state_diff())], None, 2, 3)]
-#[case::from_snapshot_floor(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(89), 92, 3)]
-#[case::skip_pruned_prefix(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(90), 92, 2)]
-fn collect_diffs_for_root_from_base_ok(
-    #[case] input: Vec<(u64, StateDiff)>,
-    #[case] base_block_n: Option<u64>,
-    #[case] target_block_n: u64,
-    #[case] expected_len: usize,
-) {
-    let collected =
-        collect_diffs_for_root_from_base(&input, base_block_n, target_block_n).expect("diff span should be contiguous");
-    assert_eq!(collected.len(), expected_len);
-}
-
-#[test]
-fn collect_diffs_for_root_from_base_rejects_gap() {
-    let input = vec![(90, empty_state_diff()), (92, empty_state_diff())];
-    let err = collect_diffs_for_root_from_base(&input, Some(89), 92).expect_err("gap must fail");
-    let msg = format!("{err:#}");
-    assert!(msg.contains("Missing tracked state diff for block #91"));
 }

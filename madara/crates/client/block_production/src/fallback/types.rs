@@ -22,6 +22,7 @@ pub enum FallbackReason {
     ExecResourcesOverLimit,
     ManualForceDisable,
     ComparatorPipelineError,
+    BlockifierCanonicalSubstitution,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -86,7 +86,7 @@ jobs:
             2>&1 | tee /tmp/madara.log &
 
           for i in {1..90}; do
-            curl -s localhost:9944 -H "Content-Type: application/json" \
+            curl -s localhost:9944/rpc/v0_10_0/ -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' \
               >/dev/null 2>&1 && echo "✅ Madara ready" && break
             [ $i -eq 90 ] && { cat /tmp/madara.log; exit 1; }
@@ -129,7 +129,7 @@ jobs:
             --no-fail-fast \
             rpc::migration
         env:
-          MIGRATION_TEST_RPC_URL: "http://localhost:9944"
+          MIGRATION_TEST_RPC_URL: "http://localhost:9944/rpc/v0_10_0/"
 
       - name: Cleanup
         if: always()

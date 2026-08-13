@@ -41,6 +41,22 @@ fn build_parent_overlays_filters_out_stale_and_future() {
 }
 
 #[test]
+fn reexec_parent_state_snapshot_keeps_base_paired_with_overlays() {
+    let diffs = (2479842..=2479846).map(|block_n| (block_n, empty_state_diff())).collect::<Vec<_>>();
+    let snapshot = BlockProductionTask::capture_reexec_parent_state(&diffs, Some(2479841), 2479847);
+
+    // The finalizer may advance the DB while the comparator task is starting. The
+    // request must retain the base used to select its overlays.
+    let later_confirmed_base = Some(2479842);
+    assert_ne!(snapshot.confirmed_base_block_n, later_confirmed_base);
+    assert_eq!(snapshot.confirmed_base_block_n, Some(2479841));
+    assert_eq!(
+        snapshot.parent_overlays.iter().map(|overlay| overlay.block_n).collect::<Vec<_>>(),
+        vec![2479842, 2479843, 2479844, 2479845, 2479846]
+    );
+}
+
+#[test]
 fn state_diff_to_state_maps_converts_storage() {
     use mp_state_update::{ContractStorageDiffItem, StorageEntry};
 
@@ -1017,6 +1033,38 @@ fn build_bre_rows_rejects_duplicate_or_missing_membership() {
 
     assert!(BlockProductionTask::build_bre_preconfirmed_rows(std::slice::from_ref(&original), vec![]).is_err());
     assert!(BlockProductionTask::build_bre_preconfirmed_rows(&[original], vec![artifact(), artifact()]).is_err());
+}
+
+#[test]
+fn build_bre_prefix_rows_accepts_only_a_contiguous_original_prefix() {
+    use crate::reexecution::ReexecExecutedTxArtifacts;
+
+    let original = (1u64..=5)
+        .map(|hash| {
+            let mut row = make_fake_preconfirmed_tx(vec![]);
+            if let mp_receipt::TransactionReceipt::Invoke(receipt) = &mut row.transaction.receipt {
+                receipt.transaction_hash = Felt::from(hash);
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+    let artifact = |hash: u64| ReexecExecutedTxArtifacts {
+        receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash: Felt::from(hash),
+            ..Default::default()
+        }),
+        tx_state_update: Default::default(),
+    };
+
+    let prefix =
+        BlockProductionTask::build_bre_preconfirmed_prefix_rows(&original, vec![artifact(1), artifact(2), artifact(3)])
+            .unwrap();
+    assert_eq!(
+        prefix.iter().map(|row| *row.transaction.receipt.transaction_hash()).collect::<Vec<_>>(),
+        vec![Felt::ONE, Felt::TWO, Felt::from(3u64)]
+    );
+
+    assert!(BlockProductionTask::build_bre_preconfirmed_prefix_rows(&original, vec![artifact(1), artifact(3)]).is_err());
 }
 
 #[test]

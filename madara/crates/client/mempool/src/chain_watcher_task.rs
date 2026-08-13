@@ -207,11 +207,22 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         let previous_num_txs = preconfirmed.num_executed_transactions();
         preconfirmed.refresh_with_candidates();
+        let current_tx_hashes = preconfirmed.get_block_info().tx_hashes;
+        let first_new_tx_index = previous_num_txs.min(current_tx_hashes.len());
+
+        if current_tx_hashes.len() < previous_num_txs {
+            tracing::debug!(
+                block_n = preconfirmed.block_number(),
+                previous_tx_count = previous_num_txs,
+                replacement_tx_count = current_tx_hashes.len(),
+                "mempool_chain_watcher_reconciling_preconfirmed_content_replacement"
+            );
+        }
 
         self.update_preconfirmed_block_transaction_statuses(
             preconfirmed,
-            preconfirmed.get_block_info().tx_hashes[previous_num_txs..].iter().cloned().enumerate(),
-            previous_num_txs,
+            current_tx_hashes.iter().cloned().enumerate().skip(first_new_tx_index),
+            first_new_tx_index,
             &mut effects.potentially_removed,
             &mut effects.nonce_updates,
         )?;
@@ -323,7 +334,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         executed_reinsert_suppressed: HashSet<Felt>,
     ) {
         if !executed_reinsert_suppressed.is_empty() {
-            tracing::info!(
+            tracing::debug!(
                 suppressed_executed_reinsertions = executed_reinsert_suppressed.len(),
                 "mempool_chain_watcher_suppressing_executed_reinsertion_on_rewind"
             );

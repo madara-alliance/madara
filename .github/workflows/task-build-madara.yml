@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   build-binaries:
@@ -47,6 +48,13 @@ jobs:
       # even though `make artifacts` now runs in its own producer lane.
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
+
+      - name: Log in to the artifact registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Build Madara
       - name: Cargo build

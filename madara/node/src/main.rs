@@ -189,7 +189,10 @@ async fn main() -> anyhow::Result<()> {
 
     // If the devnet is running, we set the gas prices to a default value.
     if run_cmd.is_devnet() {
-        run_cmd.l1_sync_params.l1_sync_disabled = true;
+        // Keep L1 sync available for devnet messaging tests and explicit local L1 setups.
+        if run_cmd.l1_sync_params.l1_endpoint.is_none() {
+            run_cmd.l1_sync_params.l1_sync_disabled = true;
+        }
         run_cmd.l1_sync_params.l1_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.blob_gas_price.get_or_insert(128);
         run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);
@@ -207,7 +210,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let node_name = run_cmd.node_name_or_provide().await.to_string();
-    let node_version = env!("MADARA_BUILD_VERSION");
 
     tracing::info!("🥷  {} Node", GREET_IMPL_NAME);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);

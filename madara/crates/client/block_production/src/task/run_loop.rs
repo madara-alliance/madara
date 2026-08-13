@@ -106,6 +106,7 @@ impl BlockProductionTask {
                 canonical_executed_rows,
                 canonical_header,
             )
+            .await
             .context("Enqueueing tainted rebuild close payload")?;
             return Ok(true);
         }
@@ -186,6 +187,10 @@ impl BlockProductionTask {
                     execution_mode,
                 )));
                 self.record_block_stage_metrics();
+                #[cfg(test)]
+                if let Some(sender) = self.optimistic_pipeline_notifications.as_ref() {
+                    let _ = sender.send(OptimisticPipelineNotification::BlockStarted { block_n: expected_block_n });
+                }
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 if batch_execution_result.execution_epoch != self.execution_epoch {
@@ -228,7 +233,13 @@ impl BlockProductionTask {
                 self.metrics.record_execution_stats(&batch_execution_result.stats);
                 state.accumulated_stats = state.accumulated_stats.clone() + batch_execution_result.stats.clone();
                 state.append_batch(batch_execution_result).await?;
+                #[cfg(test)]
+                let block_n = state.block_number;
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
+                #[cfg(test)]
+                if let Some(sender) = self.optimistic_pipeline_notifications.as_ref() {
+                    let _ = sender.send(OptimisticPipelineNotification::BatchExecuted { block_n });
+                }
             }
             ExecutorMessage::EndBlock { block_exec_summary, block_number, execution_epoch } => {
                 if execution_epoch != self.execution_epoch {
@@ -273,7 +284,7 @@ impl BlockProductionTask {
                     None => anyhow::bail!("No current state"),
                 }
 
-                tracing::info!("received_executor_end_block");
+                tracing::debug!("received_executor_end_block");
                 self.close_block(block_exec_summary, close_queue).await?;
             }
             ExecutorMessage::EndFinalBlock { block_exec_summary, block_number, execution_epoch } => {
@@ -566,6 +577,7 @@ impl BlockProductionTask {
                         canonical_executed_rows,
                         canonical_header,
                     )
+                    .await
                     .context("Enqueueing tainted rebuild close payload")?;
                 }
 

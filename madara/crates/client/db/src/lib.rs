@@ -430,33 +430,6 @@ pub struct MadaraBackendConfig {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
-    fn log_confirmed_state_root_consistency(&self, context: &str, block_n: u64) -> Result<bool> {
-        let block_info = self.db.get_block_info(block_n)?.ok_or_else(|| {
-            anyhow::anyhow!("Missing block info while verifying confirmed state root for block #{block_n}")
-        })?;
-        let expected_root = block_info.header.global_state_root;
-        let actual_root = self.db.get_state_root_hash()?;
-        let matches = actual_root == expected_root;
-        tracing::info!(
-            "confirmed_state_root_consistency context={} block_number={} expected_root={:#x} actual_root={:#x} match={}",
-            context,
-            block_n,
-            expected_root,
-            actual_root,
-            matches
-        );
-        if !matches {
-            tracing::error!(
-                "confirmed_state_root_consistency_mismatch context={} block_number={} expected_root={:#x} actual_root={:#x}",
-                context,
-                block_n,
-                expected_root,
-                actual_root
-            );
-        }
-        Ok(matches)
-    }
-
     fn new_and_init(
         db: D,
         chain_config: Arc<ChainConfig>,
@@ -647,7 +620,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         );
         let status = runtime.to_status();
         guard.insert(boundary.block_n, runtime);
-        tracing::info!(
+        tracing::debug!(
             "replay_boundary_set block_number={} expected_tx_count={} seeded_executed={} boundary_met={} closed={} mismatch={:?}",
             status.block_n,
             status.expected_tx_count,
@@ -1166,7 +1139,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         let next_runtime_preconfirmed_block_n = runtime_preconfirmed_tip_block_n(&next_runtime_preconfirmed);
         let transition = classify_chain_head_transition(previous_head_state, chain_head_state);
 
-        tracing::info!(
+        tracing::debug!(
             target: "db::chain_head_projection",
             transition,
             previous_confirmed_tip = ?previous_head_state.confirmed_tip,
@@ -1179,7 +1152,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             next_runtime_preconfirmed_block_n = ?next_runtime_preconfirmed_block_n,
             "chain_head_state_updated"
         );
-        tracing::info!(
+        tracing::debug!(
             target: "db::chain_head_projection",
             "chain_head_state_updated transition={} prev_confirmed={:?} prev_external_preconfirmed={:?} prev_internal_preconfirmed={:?} next_confirmed={:?} next_external_preconfirmed={:?} next_internal_preconfirmed={:?} prev_runtime_preconfirmed={:?} next_runtime_preconfirmed={:?}",
             transition,
@@ -1900,7 +1873,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         if let Some(custom_header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
             let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
-            tracing::info!(
+            tracing::debug!(
                 "replay_block_hash_verification path=inline_trie block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
                 block.header.block_number,
                 custom_header.expected_block_hash,
@@ -1921,7 +1894,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                 custom_header.gas_prices.strk_l2_gas_price
             );
             if !is_valid {
-                tracing::warn!(
+                tracing::debug!(
                     "Block hash not as expected for {} expected={:#x} actual={:#x} state_root={:#x}",
                     block.header.block_number,
                     custom_header.expected_block_hash,

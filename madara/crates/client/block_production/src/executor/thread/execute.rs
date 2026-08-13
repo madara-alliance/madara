@@ -514,7 +514,7 @@ impl ExecutorThread {
             {
                 let rescued_count = pending_routed.rust_batch.len();
                 pending_routed.blockifier_batch.extend(mem::take(&mut pending_routed.rust_batch));
-                tracing::info!(
+                tracing::debug!(
                     "executor_replay_blockifier_seen_rescuing_rust_batch block_number={} rescued_txs={} phase=before_blockifier",
                     execution_state.exec_ctx.block_number,
                     rescued_count
@@ -529,7 +529,7 @@ impl ExecutorThread {
                 if let Some(remaining) = self.replay_boundary_remaining_capacity(block_n) {
                     let count = pending_routed.blockifier_batch.len().min(remaining);
                     if count < pending_routed.blockifier_batch.len() {
-                        tracing::info!(
+                        tracing::debug!(
                             "replay_boundary_executor_slice block_number={} remaining_for_block={} moved_to_next_block={}",
                             block_n,
                             remaining,
@@ -582,6 +582,7 @@ impl ExecutorThread {
                 let avg_tx_time_ms =
                     if results_len > 0 { phase_duration.as_secs_f64() * 1000.0 / results_len as f64 } else { 0.0 };
                 let mut replay_executed_hashes: Vec<Felt> = Vec::new();
+                let mut blockifier_added = 0;
                 for (btx, res) in executed_b.txs.iter().zip(blockifier_results.iter()) {
                     match res {
                         Ok((execution_info, _)) => {
@@ -603,6 +604,7 @@ impl ExecutorThread {
                                 context_label::PRODUCTION,
                             );
                             stats.n_added_to_block += 1;
+                            blockifier_added += 1;
                             replay_executed_hashes.push(btx.tx_hash().to_felt());
                             stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                             block_empty = false;
@@ -626,6 +628,8 @@ impl ExecutorThread {
                 stats.n_batches += 1;
                 stats.n_executed += executed_b.len();
                 stats.exec_duration += phase_duration;
+                stats.n_added_by_blockifier += blockifier_added;
+                stats.blockifier_exec_duration += phase_duration;
 
                 self.record_replay_executed_hashes(execution_state.exec_ctx.block_number, &replay_executed_hashes);
                 if results_len > 0 {
@@ -646,11 +650,10 @@ impl ExecutorThread {
                     self.metrics.executor_block_full_total.add(1, &[KeyValue::new("phase", "blockifier")]);
                 }
 
-                tracing::info!(
-                    target: "RUST_EXEC",
+                tracing::debug!(
                     block_number = execution_state.exec_ctx.block_number,
                     txs_executed = results_len,
-                    txs_added = stats.n_added_to_block,
+                    txs_added = blockifier_added,
                     txs_reverted = stats.n_reverted,
                     txs_rejected = stats.n_rejected,
                     duration_ms = phase_duration.as_secs_f64() * 1000.0,
@@ -672,7 +675,7 @@ impl ExecutorThread {
             {
                 let rescued_count = pending_routed.rust_batch.len();
                 pending_routed.blockifier_batch.extend(mem::take(&mut pending_routed.rust_batch));
-                tracing::info!(
+                tracing::debug!(
                     "executor_replay_blockifier_seen_rescuing_rust_batch block_number={} rescued_txs={} phase=before_rust",
                     execution_state.exec_ctx.block_number,
                     rescued_count
@@ -708,6 +711,7 @@ impl ExecutorThread {
                             let mut replay_executed_hashes: Vec<Felt> = Vec::new();
                             let mut rust_reverted: u64 = 0;
                             let mut rust_rejected: u64 = 0;
+                            let mut rust_added = 0;
                             for (btx, res) in executed_r.txs.iter().zip(rust_output.results.iter()) {
                                 match res {
                                     Ok((execution_info, _)) => {
@@ -718,6 +722,7 @@ impl ExecutorThread {
                                             context_label::PRODUCTION,
                                         );
                                         stats.n_added_to_block += 1;
+                                        rust_added += 1;
                                         replay_executed_hashes.push(btx.tx_hash().to_felt());
                                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                                         block_empty = false;
@@ -739,6 +744,8 @@ impl ExecutorThread {
                             }
                             stats.n_executed += executed_r_len;
                             stats.exec_duration += phase_duration;
+                            stats.n_added_by_rust_exec += rust_added;
+                            stats.rust_exec_duration += phase_duration;
 
                             self.record_replay_executed_hashes(
                                 execution_state.exec_ctx.block_number,
@@ -755,11 +762,11 @@ impl ExecutorThread {
                             self.metrics
                                 .executor_phase_executed_txs_total
                                 .add(results_len as u64, &[KeyValue::new("phase", "rust")]);
-                            tracing::info!(
+                            tracing::debug!(
                                 target: "RUST_EXEC",
                                 block_number = execution_state.exec_ctx.block_number,
                                 txs_executed = results_len,
-                                txs_added = executed_r_len as u64 - rust_rejected,
+                                txs_added = rust_added,
                                 txs_reverted = rust_reverted,
                                 txs_rejected = rust_rejected,
                                 duration_ms = phase_duration.as_secs_f64() * 1000.0,
@@ -808,7 +815,7 @@ impl ExecutorThread {
                         if !pending_routed.rust_batch.is_empty() {
                             let rescued_count = pending_routed.rust_batch.len();
                             pending_routed.blockifier_batch.extend(mem::take(&mut pending_routed.rust_batch));
-                            tracing::info!(
+                            tracing::debug!(
                                 rescued_count,
                                 "executor_rescued_deferred_rust_txs_to_blockifier_on_mode_transition"
                             );

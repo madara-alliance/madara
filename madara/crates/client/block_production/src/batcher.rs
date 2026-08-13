@@ -20,12 +20,30 @@ use mp_transactions::{
 };
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{cell::Cell, collections::VecDeque, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
 const BATCHER_OUTPUT_BACKPRESSURE_INFO_MS: f64 = 50.0;
+
+fn execution_frontier_block_n(backend: &MadaraBackend, replay_mode_enabled: bool) -> u64 {
+    let head_state = backend.chain_head_state();
+    let frontier_block_n = head_state
+        .internal_preconfirmed_tip
+        .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+        .unwrap_or(0);
+
+    if replay_mode_enabled && backend.replay_boundary_is_met(frontier_block_n) == Some(true) {
+        if let Some(next_block_n) =
+            frontier_block_n.checked_add(1).filter(|block_n| backend.replay_boundary_exists(*block_n))
+        {
+            return next_block_n;
+        }
+    }
+
+    frontier_block_n
+}
 
 #[derive(Default)]
 struct ValidatedBatchBoundary {
@@ -65,6 +83,39 @@ struct RoutedPickOutcome {
     cap_stop_branch: Option<&'static str>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BarrierRouteDecision {
+    Rust,
+    Blockifier,
+    ActivateBlockifier(RouteFallbackReason),
+    DeferAndActivateBlockifier(RouteFallbackReason),
+}
+
+fn apply_blockifier_barrier(
+    decision: RouteDecision,
+    barrier_active: bool,
+    rust_prefix_present: bool,
+) -> BarrierRouteDecision {
+    if barrier_active {
+        return BarrierRouteDecision::Blockifier;
+    }
+
+    match decision {
+        RouteDecision::Rust => BarrierRouteDecision::Rust,
+        RouteDecision::Blockifier(reason) if rust_prefix_present => {
+            BarrierRouteDecision::DeferAndActivateBlockifier(reason)
+        }
+        RouteDecision::Blockifier(reason) => BarrierRouteDecision::ActivateBlockifier(reason),
+    }
+}
+
+fn whole_block_barrier_reason(decisions: impl IntoIterator<Item = RouteDecision>) -> Option<RouteFallbackReason> {
+    decisions.into_iter().find_map(|decision| match decision {
+        RouteDecision::Rust => None,
+        RouteDecision::Blockifier(reason) => Some(reason),
+    })
+}
+
 fn drain_local_carry(local_carry: &mut VecDeque<ValidatedTransaction>, max_items: usize) -> Vec<ValidatedTransaction> {
     let mut picked = Vec::with_capacity(max_items);
     for _ in 0..max_items {
@@ -102,6 +153,7 @@ pub struct Batcher {
     metrics: Arc<BlockProductionMetrics>,
     batch_size: usize,
     replay_mode_enabled: bool,
+    blockifier_barrier: Cell<Option<(u64, u64)>>,
 }
 
 fn l1_to_recoverable_validated(tx: L1HandlerTransactionWithFee, chain_id: mp_convert::Felt) -> ValidatedTransaction {
@@ -134,6 +186,7 @@ impl Batcher {
         execution_mode: ExecutionMode,
         frontier_block_n: u64,
         execution_epoch: u64,
+        whole_replay_block: bool,
     ) -> anyhow::Result<RoutedPickOutcome> {
         let picked_total = picked.len();
         let mut routed_recoverable_txs = Vec::with_capacity(picked_total);
@@ -147,6 +200,40 @@ impl Batcher {
             execution_mode,
             execution_epoch,
         };
+        let barrier_key = (frontier_block_n, execution_epoch);
+        if self.blockifier_barrier.get() != Some(barrier_key) {
+            self.blockifier_barrier.set(None);
+        }
+        if execution_mode == ExecutionMode::BlockifierOnly && picked_total > 0 {
+            self.blockifier_barrier.set(Some(barrier_key));
+        }
+        let mut blockifier_barrier_active = self.blockifier_barrier.get() == Some(barrier_key);
+
+        if execution_mode == ExecutionMode::Mixed && whole_replay_block && !blockifier_barrier_active {
+            let mut decisions = Vec::with_capacity(picked_total);
+            for validated in &picked {
+                let (tx, _, _) = validated
+                    .clone()
+                    .into_blockifier_for_sequencing()
+                    .map_err(anyhow::Error::from)
+                    .context("Converting replay transaction for whole-block routing")?;
+                decisions.push(classify_invoke(&tx, &self.routing_cfg, &self.backend));
+            }
+
+            if let Some(reason) = whole_block_barrier_reason(decisions) {
+                self.blockifier_barrier.set(Some(barrier_key));
+                blockifier_barrier_active = true;
+                let reason = self.record_route_fallback(reason);
+                tracing::debug!(
+                    target: "RUST_EXEC",
+                    block_number = frontier_block_n,
+                    execution_epoch,
+                    reason,
+                    tx_count = picked_total,
+                    "whole_block_blockifier_barrier_activated"
+                );
+            }
+        }
 
         let mut picked_iter = picked.into_iter();
         while let Some(validated) = picked_iter.next() {
@@ -171,48 +258,95 @@ impl Batcher {
                     routed.original_tx_hashes.push(transaction_hash);
                     self.metrics.batcher_routed_blockifier_total.add(1, &[]);
                 }
-                ExecutionMode::Mixed => match classify_invoke(&tx, &self.routing_cfg, &self.backend) {
-                    RouteDecision::Rust => {
-                        if routed.rust_batch.len() >= self.routing_cfg.rust_batch_size {
-                            cap_stop_branch = Some("rust");
-                            deferred_txs.push(recovery_tx);
-                            deferred_txs.extend(picked_iter);
-                            break;
-                        }
-                        routed_recoverable_txs.push(recovery_tx);
-                        routed.rust_batch.push(tx, info);
-                        routed.original_tx_hashes.push(transaction_hash);
-                        self.metrics.batcher_routed_rust_total.add(1, &[]);
-                    }
-                    RouteDecision::Blockifier(reason) => {
-                        if routed.blockifier_batch.len() >= self.routing_cfg.blockifier_batch_size {
-                            cap_stop_branch = Some("blockifier");
-                            deferred_txs.push(recovery_tx);
-                            deferred_txs.extend(picked_iter);
-                            break;
-                        }
-                        routed_recoverable_txs.push(recovery_tx);
-                        routed.blockifier_batch.push(tx, info);
-                        routed.original_tx_hashes.push(transaction_hash);
-                        self.metrics.batcher_routed_blockifier_total.add(1, &[]);
-                        let reason_label = match reason {
-                            RouteFallbackReason::NotInvoke => "not_invoke",
-                            RouteFallbackReason::SenderNotExecutor => "sender_not_executor",
-                            RouteFallbackReason::SelectorNotSupported => "selector_not_supported",
-                            RouteFallbackReason::ClassHashLookupFailed => "class_hash_lookup_failed",
-                            RouteFallbackReason::ClassHashNotSupported => "class_hash_not_supported",
-                            RouteFallbackReason::MulticallPartiallySupported => {
-                                self.metrics.batcher_multicall_partial_supported_total.add(1, &[]);
-                                "multicall_partially_supported"
+                ExecutionMode::Mixed => {
+                    let decision = if blockifier_barrier_active {
+                        BarrierRouteDecision::Blockifier
+                    } else {
+                        apply_blockifier_barrier(
+                            classify_invoke(&tx, &self.routing_cfg, &self.backend),
+                            false,
+                            !routed.rust_batch.is_empty(),
+                        )
+                    };
+                    match decision {
+                        BarrierRouteDecision::Rust => {
+                            if routed.rust_batch.len() >= self.routing_cfg.rust_batch_size {
+                                cap_stop_branch = Some("rust");
+                                deferred_txs.push(recovery_tx);
+                                deferred_txs.extend(picked_iter);
+                                break;
                             }
-                        };
-                        self.metrics.batcher_route_fallback_total.add(1, &[KeyValue::new("reason", reason_label)]);
+                            routed_recoverable_txs.push(recovery_tx);
+                            routed.rust_batch.push(tx, info);
+                            routed.original_tx_hashes.push(transaction_hash);
+                            self.metrics.batcher_routed_rust_total.add(1, &[]);
+                        }
+                        BarrierRouteDecision::DeferAndActivateBlockifier(reason) => {
+                            self.blockifier_barrier.set(Some(barrier_key));
+                            deferred_txs.push(recovery_tx);
+                            deferred_txs.extend(picked_iter);
+                            let reason = self.record_route_fallback(reason);
+                            tracing::debug!(
+                                target: "RUST_EXEC",
+                                block_number = frontier_block_n,
+                                execution_epoch,
+                                reason,
+                                rust_prefix_txs = routed.rust_batch.len(),
+                                deferred_txs = deferred_txs.len(),
+                                "blockifier_barrier_activated"
+                            );
+                            break;
+                        }
+                        BarrierRouteDecision::Blockifier | BarrierRouteDecision::ActivateBlockifier(_) => {
+                            if routed.blockifier_batch.len() >= self.routing_cfg.blockifier_batch_size {
+                                cap_stop_branch = Some("blockifier");
+                                deferred_txs.push(recovery_tx);
+                                deferred_txs.extend(picked_iter);
+                                break;
+                            }
+
+                            if let BarrierRouteDecision::ActivateBlockifier(reason) = decision {
+                                self.blockifier_barrier.set(Some(barrier_key));
+                                blockifier_barrier_active = true;
+                                let reason = self.record_route_fallback(reason);
+                                tracing::debug!(
+                                    target: "RUST_EXEC",
+                                    block_number = frontier_block_n,
+                                    execution_epoch,
+                                    reason,
+                                    rust_prefix_txs = 0,
+                                    deferred_txs = 0,
+                                    "blockifier_barrier_activated"
+                                );
+                            }
+
+                            routed_recoverable_txs.push(recovery_tx);
+                            routed.blockifier_batch.push(tx, info);
+                            routed.original_tx_hashes.push(transaction_hash);
+                            self.metrics.batcher_routed_blockifier_total.add(1, &[]);
+                        }
                     }
-                },
+                }
             }
         }
 
         Ok(RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch })
+    }
+
+    fn record_route_fallback(&self, reason: RouteFallbackReason) -> &'static str {
+        let reason_label = match reason {
+            RouteFallbackReason::NotInvoke => "not_invoke",
+            RouteFallbackReason::SenderNotExecutor => "sender_not_executor",
+            RouteFallbackReason::SelectorNotSupported => "selector_not_supported",
+            RouteFallbackReason::ClassHashLookupFailed => "class_hash_lookup_failed",
+            RouteFallbackReason::ClassHashNotSupported => "class_hash_not_supported",
+            RouteFallbackReason::MulticallPartiallySupported => {
+                self.metrics.batcher_multicall_partial_supported_total.add(1, &[]);
+                "multicall_partially_supported"
+            }
+        };
+        self.metrics.batcher_route_fallback_total.add(1, &[KeyValue::new("reason", reason_label)]);
+        reason_label
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -248,6 +382,7 @@ impl Batcher {
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
             replay_mode_enabled,
+            blockifier_barrier: Cell::new(None),
         }
     }
 
@@ -278,7 +413,7 @@ impl Batcher {
             let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
             if self.replay_mode_enabled {
                 if permit_wait_ms >= BATCHER_OUTPUT_BACKPRESSURE_INFO_MS {
-                    tracing::info!(
+                    tracing::debug!(
                         "batcher_output_backpressured permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
                         output_capacity_before_wait,
                         self.out.capacity()
@@ -299,19 +434,14 @@ impl Batcher {
                 continue;
             }
 
-            // Resolve the execution-frontier block number per design doc 02 §Replay-boundary rule:
-            // use internal_preconfirmed_tip first (execution frontier), then confirmed_tip+1.
-            let frontier_block_n = {
-                let head_state = self.backend.chain_head_state();
-                head_state
-                    .internal_preconfirmed_tip
-                    .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-                    .unwrap_or(0)
-            };
+            // A completed replay boundary advances dispatch to a preloaded successor before
+            // comparator-gated canonical close advances the backend head.
+            let frontier_block_n = execution_frontier_block_n(&self.backend, self.replay_mode_enabled);
             let execution_epoch = *self.execution_epoch_rx.borrow();
             let execution_mode = *self.execution_mode_rx.borrow();
 
             let mut chunk_size = self.pick_limit_for_mode(execution_mode);
+            let mut stage_complete_replay_boundary = false;
             if self.replay_mode_enabled {
                 if let Some(remaining) = self.backend.replay_boundary_remaining_dispatch_capacity(frontier_block_n) {
                     if remaining == 0 {
@@ -327,7 +457,18 @@ impl Batcher {
                         continue;
                     }
 
-                    chunk_size = chunk_size.min(remaining as usize);
+                    let status = self.backend.get_replay_boundary_status(frontier_block_n);
+                    if local_carry.is_empty()
+                        && status
+                            .as_ref()
+                            .is_some_and(|status| status.dispatched_tx_count == 0 && status.executed_tx_count == 0)
+                    {
+                        chunk_size =
+                            usize::try_from(remaining).context("Replay boundary transaction count overflow")?;
+                        stage_complete_replay_boundary = true;
+                    } else {
+                        chunk_size = chunk_size.min(remaining as usize);
+                    }
                 }
             }
 
@@ -370,38 +511,61 @@ impl Batcher {
                     bypass_txs_stream,
                     stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
                     |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
-                )
-                .try_ready_chunks(chunk_size.max(1));
+                );
 
-                tokio::pin!(tx_stream);
-
-                tokio::select! {
-                    _ = self.ctx.cancelled() => {
-                        // Stop condition: cancelled.
-                        return anyhow::Ok(());
+                if stage_complete_replay_boundary {
+                    let collect_boundary = tx_stream.take(chunk_size).try_collect::<Vec<_>>();
+                    tokio::pin!(collect_boundary);
+                    tokio::select! {
+                        _ = self.ctx.cancelled() => return anyhow::Ok(()),
+                        res = &mut collect_boundary => {
+                            let got = res.context("Staging complete replay boundary")?;
+                            tracing::debug!(
+                                block_number = frontier_block_n,
+                                tx_count = got.len(),
+                                "replay_boundary_transactions_staged"
+                            );
+                            got
+                        }
                     }
-                    res = self.mempool_intake_rx.changed() => {
-                        if res.is_err() {
+                } else {
+                    let tx_stream = tx_stream.try_ready_chunks(chunk_size.max(1));
+                    tokio::pin!(tx_stream);
+
+                    tokio::select! {
+                        _ = self.ctx.cancelled() => {
+                            // Stop condition: cancelled.
                             return anyhow::Ok(());
                         }
-                        continue;
+                        res = self.mempool_intake_rx.changed() => {
+                            if res.is_err() {
+                                return anyhow::Ok(());
+                            }
+                            continue;
+                        }
+                        Some(got) = tx_stream.next() => {
+                            // got a batch :)
+                            let got = got.context("Creating batch for block building")?;
+                            tracing::debug!("Batcher got a batch of {}.", got.len());
+                            got
+                        }
+                        // Stop condition: tx_stream is empty.
+                        else => return anyhow::Ok(())
                     }
-                    Some(got) = tx_stream.next() => {
-                        // got a batch :)
-                        let got = got.context("Creating batch for block building")?;
-                        tracing::debug!("Batcher got a batch of {}.", got.len());
-                        got
-                    }
-                    // Stop condition: tx_stream is empty.
-                    else => return anyhow::Ok(())
                 }
             };
 
             if !picked.is_empty() {
                 let picked_total = picked.len();
                 let picked_summary = summarize_validated_batch(&picked);
-                let RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch } =
-                    self.route_picked_txs(picked, execution_mode, frontier_block_n, execution_epoch)?;
+                let RoutedPickOutcome { routed, routed_recoverable_txs, deferred_txs, cap_stop_branch } = self
+                    .route_picked_txs(
+                        picked,
+                        execution_mode,
+                        frontier_block_n,
+                        execution_epoch,
+                        stage_complete_replay_boundary,
+                    )?;
                 let routed_total = routed.total_len();
                 let current_epoch = *self.execution_epoch_rx.borrow();
                 let carry_total_after = local_carry.len()
@@ -427,7 +591,7 @@ impl Batcher {
                 self.metrics.batcher_output_rust_branch_size.record(routed.rust_batch.len() as f64, &[]);
                 self.metrics.batcher_output_blockifier_branch_size.record(routed.blockifier_batch.len() as f64, &[]);
 
-                tracing::info!(
+                tracing::debug!(
                     block_number = frontier_block_n,
                     picked_txs = picked_total,
                     routed_txs = routed_total,
@@ -506,10 +670,13 @@ impl Batcher {
 mod tests {
     use super::*;
     use futures::{stream, StreamExt};
+    use mc_db::preconfirmed::PreconfirmedBlock;
     use mc_exec::execution::TxInfo;
     use mc_mempool::MempoolConfig;
+    use mp_block::header::PreconfirmedHeader;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
+    use mp_rpc::admin::ReplayBlockBoundary;
     use starknet_api::core::{ContractAddress, Nonce};
     use starknet_api::executable_transaction::{AccountTransaction, InvokeTransaction};
     use starknet_api::transaction::{InvokeTransaction as ApiInvokeTransaction, InvokeTransactionV3, TransactionHash};
@@ -565,6 +732,88 @@ mod tests {
         batch.blockifier_batch.txs.iter().chain(batch.rust_batch.txs.iter()).map(|tx| tx.tx_hash().to_felt()).collect()
     }
 
+    #[test]
+    fn blockifier_barrier_preserves_alternating_sender_order() {
+        let decisions = (0..15).map(|index| {
+            if index % 2 == 0 {
+                RouteDecision::Rust
+            } else {
+                RouteDecision::Blockifier(RouteFallbackReason::SelectorNotSupported)
+            }
+        });
+        let mut barrier_active = false;
+        let mut rust_prefix_present = false;
+        let routed = decisions
+            .map(|decision| {
+                let routed = apply_blockifier_barrier(decision, barrier_active, rust_prefix_present);
+                match routed {
+                    BarrierRouteDecision::Rust => rust_prefix_present = true,
+                    BarrierRouteDecision::ActivateBlockifier(_)
+                    | BarrierRouteDecision::DeferAndActivateBlockifier(_) => barrier_active = true,
+                    BarrierRouteDecision::Blockifier => {}
+                }
+                routed
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(routed[0], BarrierRouteDecision::Rust);
+        assert_eq!(
+            routed[1],
+            BarrierRouteDecision::DeferAndActivateBlockifier(RouteFallbackReason::SelectorNotSupported)
+        );
+        assert!(routed[2..].iter().all(|decision| *decision == BarrierRouteDecision::Blockifier));
+    }
+
+    #[test]
+    fn blockifier_first_routes_entire_block_through_blockifier() {
+        let first = apply_blockifier_barrier(
+            RouteDecision::Blockifier(RouteFallbackReason::SelectorNotSupported),
+            false,
+            false,
+        );
+        assert_eq!(first, BarrierRouteDecision::ActivateBlockifier(RouteFallbackReason::SelectorNotSupported));
+        assert_eq!(apply_blockifier_barrier(RouteDecision::Rust, true, false), BarrierRouteDecision::Blockifier);
+    }
+
+    #[test]
+    fn unsupported_transaction_routes_a_complete_replay_block_through_blockifier() {
+        assert_eq!(
+            whole_block_barrier_reason([
+                RouteDecision::Rust,
+                RouteDecision::Rust,
+                RouteDecision::Blockifier(RouteFallbackReason::SelectorNotSupported),
+                RouteDecision::Rust,
+            ]),
+            Some(RouteFallbackReason::SelectorNotSupported)
+        );
+        assert_eq!(whole_block_barrier_reason([RouteDecision::Rust, RouteDecision::Rust]), None);
+    }
+
+    #[test]
+    fn replay_frontier_advances_after_current_boundary_is_met() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
+            .expect("create current preconfirmed block");
+
+        let current_last_hash = Felt::from(0x7001u64);
+        backend.set_replay_boundary(ReplayBlockBoundary {
+            block_n: 0,
+            expected_tx_count: 1,
+            last_tx_hash: current_last_hash,
+        });
+        backend.set_replay_boundary(ReplayBlockBoundary {
+            block_n: 1,
+            expected_tx_count: 1,
+            last_tx_hash: Felt::from(0x8001u64),
+        });
+
+        assert_eq!(execution_frontier_block_n(&backend, true), 0);
+        backend.replay_boundary_record_executed_hashes(0, &[current_last_hash]);
+        assert_eq!(execution_frontier_block_n(&backend, true), 1);
+    }
+
     fn spawn_batcher_harness(initial_mode: ExecutionMode, routing_cfg: RustExecRoutingConfig) -> BatcherTestHarness {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let mempool = Arc::new(Mempool::new(
@@ -613,9 +862,7 @@ mod tests {
 
     #[tokio::test]
     async fn blockifier_only_pick_limit_keeps_bypass_suffix_out_of_mempool() {
-        let mut routing_cfg = RustExecRoutingConfig::default();
-        routing_cfg.blockifier_batch_size = 1;
-        routing_cfg.rust_batch_size = 1;
+        let routing_cfg = RustExecRoutingConfig { blockifier_batch_size: 1, rust_batch_size: 1, ..Default::default() };
 
         let mut harness = spawn_batcher_harness(ExecutionMode::BlockifierOnly, routing_cfg);
         let tx1 = validated_invoke(Felt::from(0x111u64), 0, 0xaaa1);
@@ -647,9 +894,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_carry_retries_before_new_bypass_traffic() {
-        let mut routing_cfg = RustExecRoutingConfig::default();
-        routing_cfg.blockifier_batch_size = 1;
-        routing_cfg.rust_batch_size = 1;
+        let routing_cfg = RustExecRoutingConfig { blockifier_batch_size: 1, rust_batch_size: 1, ..Default::default() };
 
         let mut harness = spawn_batcher_harness(ExecutionMode::Mixed, routing_cfg);
         let tx1 = validated_invoke(Felt::from(0x222u64), 0, 0xbbb1);
