@@ -478,9 +478,10 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
     let comparator_gate = task.gate_comparator_for_block(1);
     let resume_gate = task.gate_tainted_rebuild_resume();
     let mut notifications = task.subscribe_optimistic_pipeline_notifications();
-    let task_runner = AbortOnDrop::spawn(async move {
-        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
-    });
+    let task_runner =
+        tokio::spawn(
+            async move { task.run(ServiceContext::new_for_testing()).await.expect("block production should run") },
+        );
 
     wait_for_preconfirmed_tx_count(&devnet_setup.backend, 1, 5).await;
     control.close_block().await.expect("five-transaction speculative block should close");
@@ -558,7 +559,8 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         "durable resume cursor must point past the final overflow block"
     );
 
-    drop(task_runner);
+    task_runner.abort();
+    assert!(task_runner.await.expect_err("aborted block production task must stop").is_cancelled());
     drop(control);
     drop(resume_gate);
     tokio::task::yield_now().await;
