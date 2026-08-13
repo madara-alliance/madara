@@ -323,7 +323,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         executed_reinsert_suppressed: HashSet<Felt>,
     ) {
         if !executed_reinsert_suppressed.is_empty() {
-            tracing::info!(
+            tracing::debug!(
                 suppressed_executed_reinsertions = executed_reinsert_suppressed.len(),
                 "mempool_chain_watcher_suppressing_executed_reinsertion_on_rewind"
             );

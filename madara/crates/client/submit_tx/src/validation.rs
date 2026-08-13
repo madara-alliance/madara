@@ -471,7 +471,7 @@ impl SubmitTransaction for TransactionValidator {
         });
 
         self.accept_tx(api_tx, None, arrived_at).await?;
-        tracing::info!(
+        tracing::debug!(
             target: "mc_submit_tx",
             event = "submit_invoke_transaction_accepted",
             tx_hash = format!("{:#x}", hash),

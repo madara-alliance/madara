@@ -298,3 +298,86 @@ async fn real_comparator_mismatch_replays_descendants_and_sticks_to_blockifier_o
     assert_eq!(final_status.mode, crate::fallback::types::ExecutionMode::BlockifierOnly);
     assert!(!final_status.comparator_enabled);
 }
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(45))]
+#[tokio::test]
+async fn accepted_blockifier_canonical_replays_speculative_descendant(
+    #[future]
+    #[with(Duration::from_secs(3_000), false)]
+    devnet_setup: DevnetSetup,
+) {
+    let mut devnet_setup = devnet_setup.await;
+    let mempool = devnet_setup.mempool.clone();
+    let _mempool_task = AbortOnDrop::spawn(async move {
+        mempool.run_mempool_task(ServiceContext::new_for_testing()).await.expect("mempool service should run")
+    });
+    tokio::task::yield_now().await;
+    let executor = devnet_setup.contracts.0[0].address;
+    let anchor_amount = Felt::from(51u64);
+    let descendant_amount = Felt::from(52u64);
+    let last_amount_key = get_storage_var_address("last_amount", &[]).to_felt();
+    let anchor_tx = submit_rust_exec_transfer(&devnet_setup, Felt::ZERO, "transfer", anchor_amount).await;
+
+    let mut task = devnet_setup
+        .block_prod_task()
+        .with_startup_execution_mode(crate::fallback::types::StartupExecutionMode::Mixed)
+        .with_rust_exec_executor_addresses([executor])
+        .with_rust_exec_runtime_options(crate::RustExecRuntimeOptions {
+            ignored_storage_mismatch_canonical_source: crate::RustExecCanonicalSource::BlockifierReexec,
+            ..Default::default()
+        });
+    let control = task.handle();
+    let comparator_gate = task.gate_comparator_for_block(1);
+    let mut notifications = task.subscribe_optimistic_pipeline_notifications();
+    let _task = AbortOnDrop::spawn(async move {
+        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
+    });
+
+    while recv_pipeline_notification(&mut notifications).await
+        != (OptimisticPipelineNotification::BatchExecuted { block_n: 1 })
+    {}
+    control.close_block().await.expect("anchor close command should succeed");
+    while recv_pipeline_notification(&mut notifications).await
+        != (OptimisticPipelineNotification::ComparatorStarted { block_n: 1 })
+    {}
+
+    let descendant_tx = submit_rust_exec_transfer(&devnet_setup, Felt::ONE, "transfer", descendant_amount).await;
+    loop {
+        match recv_pipeline_notification(&mut notifications).await {
+            OptimisticPipelineNotification::BatchExecuted { block_n: 2 } => break,
+            OptimisticPipelineNotification::ComparatorFinished { block_n: 1 } => {
+                panic!("anchor comparator finished before descendant execution")
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(devnet_setup.backend.chain_head_state().internal_preconfirmed_tip, Some(2));
+
+    comparator_gate.add_permits(1);
+    while recv_pipeline_notification(&mut notifications).await
+        != (OptimisticPipelineNotification::ComparatorFinished { block_n: 1 })
+    {}
+
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let status = control.executionbox_status().await.expect("execution status should be available");
+            if status.mode == crate::fallback::types::ExecutionMode::BlockifierOnly
+                && status.reason == Some(crate::fallback::types::FallbackReason::BlockifierCanonicalSubstitution)
+                && status.taint_block == Some(1)
+                && status.replay_backlog_empty
+                && devnet_setup.backend.latest_confirmed_block_n().is_some_and(|tip| tip >= 2)
+            {
+                assert!(!status.comparator_enabled);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Blockifier canonical substitution should close the anchor and rebuild its descendant");
+
+    assert!(block_contains_tx(&devnet_setup.backend, 1, anchor_tx));
+    assert!(block_contains_tx(&devnet_setup.backend, 2, descendant_tx));
+    assert_eq!(block_storage_value(&devnet_setup.backend, 2, last_amount_key), descendant_amount);
+}
