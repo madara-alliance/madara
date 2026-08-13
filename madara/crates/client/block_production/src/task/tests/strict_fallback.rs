@@ -120,6 +120,15 @@ fn make_strict_stop_canonicalization_result(backend: Arc<MadaraBackend>, block_n
     }
 }
 
+fn make_accepted_blockifier_canonicalization_result(
+    backend: Arc<MadaraBackend>,
+    block_n: u64,
+) -> CanonicalizationTaskResult {
+    let mut result = make_strict_stop_canonicalization_result(backend, block_n);
+    result.canonical_result.as_mut().expect("canonical result").stop_reason = None;
+    result
+}
+
 pub(super) async fn apply_tainted_rebuild_step_result(
     task: &mut BlockProductionTask,
     result: TaintedRebuildStepResult,
@@ -332,6 +341,71 @@ async fn ready_strict_stop_canonicalization_preempts_forward_progress_before_mor
         matches!(task.current_state, Some(TaskState::NotExecuting { latest_block_n: Some(0) })),
         "strict stop should clamp stale forward execution state before more reply drain"
     );
+
+    drop(close_queue_handle);
+    close_queue_task.join().await.expect("finalizer should shut down cleanly");
+}
+
+#[tokio::test]
+async fn accepted_blockifier_canonical_handoff_fences_late_successor_batch() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_devnet()),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+    for block_number in 0..=1 {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number, ..Default::default() }))
+            .expect("seed speculative block");
+    }
+
+    let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    let metrics = Arc::new(BlockProductionMetrics::register());
+    let mut task = BlockProductionTask::new(
+        backend.clone(),
+        mempool,
+        metrics.clone(),
+        Arc::new(L1ClientMock::new()),
+        false,
+        false,
+    );
+    task.current_state = Some(TaskState::Executing(CurrentBlockState::with_execution_mode(
+        backend.clone(),
+        1,
+        crate::fallback::types::ExecutionMode::Mixed,
+    )));
+
+    let (close_queue_handle, close_queue_task) =
+        crate::finalizer::FinalizerHandle::spawn(1, metrics, BlockProductionTask::execute_close_payload);
+
+    task.handle_canonicalization_result(
+        make_accepted_blockifier_canonicalization_result(backend.clone(), 0),
+        &close_queue_handle,
+    )
+    .await
+    .expect("accepted Blockifier canonical output should start a safe handoff");
+
+    assert_eq!(task.execution_epoch, 1, "canonical substitution must fence the old executor epoch");
+    assert_eq!(backend.chain_head_state().internal_preconfirmed_tip, Some(0));
+    assert!(matches!(task.current_state, Some(TaskState::NotExecuting { latest_block_n: Some(0) })));
+    assert_eq!(task.fallback.reason, Some(crate::fallback::types::FallbackReason::BlockifierCanonicalSubstitution));
+
+    task.process_reply(
+        ExecutorMessage::BatchExecuted(BatchExecutionResult {
+            executed_txs: crate::util::BatchToExecute::default(),
+            blockifier_results: vec![],
+            stats: crate::util::ExecutionStats { n_executed: 1, n_added_to_block: 1, ..Default::default() },
+            execution_mode: crate::fallback::types::ExecutionMode::Mixed,
+            execution_epoch: 0,
+            emitted_at: std::time::Instant::now(),
+        }),
+        &close_queue_handle,
+    )
+    .await
+    .expect("late successor BatchExecuted must be dropped instead of touching the rewound frontier");
+
+    assert_eq!(backend.chain_head_state().internal_preconfirmed_tip, Some(0));
+    assert!(task.pending_stop_fallback_handoff.is_some());
 
     drop(close_queue_handle);
     close_queue_task.join().await.expect("finalizer should shut down cleanly");

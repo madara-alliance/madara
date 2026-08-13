@@ -262,15 +262,19 @@ impl BlockProductionTask {
         let canonical_bouncer_weights = canonical.canonical.bouncer_weights;
         let canonical_state_diff = canonical.canonical.state_diff;
 
-        if let Some(reason) = canonical.stop_reason {
-            let (fallback_reason, metric_reason) = match reason {
-                crate::comparator::StopReason::StateDiffMismatch { .. } => {
-                    (FallbackReason::StateDiffMismatch, "state_diff_mismatch")
-                }
-                crate::comparator::StopReason::ExecutionResourcesOverLimit { .. } => {
-                    (FallbackReason::ExecResourcesOverLimit, "exec_resources_over_limit")
-                }
-            };
+        let fallback = match canonical.stop_reason {
+            Some(crate::comparator::StopReason::StateDiffMismatch { .. }) => {
+                Some((FallbackReason::StateDiffMismatch, "state_diff_mismatch"))
+            }
+            Some(crate::comparator::StopReason::ExecutionResourcesOverLimit { .. }) => {
+                Some((FallbackReason::ExecResourcesOverLimit, "exec_resources_over_limit"))
+            }
+            None if is_stop_path => {
+                Some((FallbackReason::BlockifierCanonicalSubstitution, "blockifier_canonical_substitution"))
+            }
+            None => None,
+        };
+        if let Some((fallback_reason, metric_reason)) = fallback {
             let included_prefix_len = canonical_rows.as_ref().expect("canonical rows must exist").len();
             let current_block_suffix = Self::collect_current_block_suffix_replay_txs(
                 &state.as_ref().expect("canonicalization state must exist").speculative_executed_txs,
@@ -948,7 +952,7 @@ impl BlockProductionTask {
                 resource_result,
                 canonical_source,
                 resource_deltas = %resource_deltas,
-                "⚠️ Comparator passed for block #{} in {:.3?} (state diff: {}; resources: {}; canonical: {})",
+                "✅ Comparator passed for block #{} in {:.3?} (state diff: {}; resources: {}; canonical: {})",
                 block_n,
                 reexec_start.elapsed(),
                 state_diff_result,
