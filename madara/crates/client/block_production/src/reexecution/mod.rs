@@ -58,11 +58,15 @@ pub struct ReexecRequest {
     /// base and target block. Required for correct re-execution under runahead
     /// runahead where confirmed tip lags behind executed blocks.
     pub parent_overlays: Vec<ReexecParentOverlay>,
+    /// Test-only deterministic stand-in for Blockifier reaching block capacity.
+    #[cfg(test)]
+    pub test_max_txs: Option<usize>,
 }
 
 /// Per-tx execution artifacts produced by BRE (C-013).
 ///
-/// Each entry corresponds to one successfully executed transaction in block order.
+/// Each entry corresponds to one successfully executed transaction and is paired by
+/// receipt transaction hash; callers must not assume backend completion order.
 /// Combined with original tx metadata (payload, arrived_at, paid_fee_on_l1, declared_class)
 /// to produce BRE-backed `PreconfirmedExecutedTransaction` rows on stop path.
 #[derive(Debug)]
@@ -82,7 +86,7 @@ pub struct ReexecResult {
     pub state_diff: StateDiff,
     /// Execution resources (bouncer weights) produced by Blockifier-only re-execution (ER-x2).
     pub exec_resources: BouncerWeights,
-    /// Ordered per-tx execution artifacts (C-013).
+    /// Per-tx execution artifacts (C-013), paired by receipt transaction hash.
     ///
     /// This is the canonical included prefix produced by Blockifier re-execution.
     /// If Blockifier truncates the speculative block due to bouncer/capacity, `per_tx.len()`

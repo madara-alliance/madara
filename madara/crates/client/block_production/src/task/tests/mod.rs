@@ -103,6 +103,7 @@ impl DevnetSetup {
 pub async fn devnet_setup(
     #[default(Duration::from_secs(30))] block_time: Duration,
     #[default(false)] use_bouncer_weights: bool,
+    #[default(false)] save_preconfirmed: bool,
 ) -> DevnetSetup {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -123,7 +124,10 @@ pub async fn devnet_setup(
         Arc::new(ChainConfig { block_time, ..ChainConfig::madara_devnet() })
     };
 
-    let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::clone(&chain_config),
+        MadaraBackendConfig { save_preconfirmed, ..Default::default() },
+    );
     backend.set_l1_gas_quote_for_testing();
     genesis.build_and_store(&backend).await.unwrap();
 

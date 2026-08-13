@@ -21,6 +21,23 @@ async fn submit_rust_exec_transfer(setup: &DevnetSetup, nonce: Felt, entrypoint:
         .transaction_hash
 }
 
+async fn send_raw_blockifier_transfer(
+    setup: &DevnetSetup,
+    control: &crate::BlockProductionHandle,
+    sender_index: usize,
+    receiver_index: usize,
+) -> Felt {
+    let tx = make_validated_invoke_tx(
+        &setup.contracts.0[sender_index],
+        &setup.contracts.0[receiver_index],
+        &setup.backend,
+        Felt::ZERO,
+    );
+    let hash = tx.hash;
+    control.send_tx_raw(tx).await.expect("raw descendant transaction should be accepted");
+    hash
+}
+
 async fn wait_for_confirmed_block(backend: &Arc<MadaraBackend>, block_n: u64) {
     tokio::time::timeout(Duration::from_secs(15), async {
         while backend.latest_confirmed_block_n().is_none_or(|tip| tip < block_n) {
@@ -50,6 +67,34 @@ fn block_contains_tx(backend: &Arc<MadaraBackend>, block_n: u64, tx_hash: Felt) 
     view.get_executed_transactions(..).is_ok_and(|txs| txs.iter().any(|tx| *tx.receipt.transaction_hash() == tx_hash))
 }
 
+fn block_tx_hashes(backend: &Arc<MadaraBackend>, block_n: u64) -> Vec<Felt> {
+    backend
+        .block_view_on_confirmed(block_n)
+        .unwrap_or_else(|| panic!("confirmed block #{block_n} should exist"))
+        .get_executed_transactions(..)
+        .expect("confirmed transactions should be readable")
+        .iter()
+        .map(|tx| *tx.receipt.transaction_hash())
+        .collect()
+}
+
+async fn wait_for_preconfirmed_tx_count(backend: &Arc<MadaraBackend>, block_n: u64, expected: usize) {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let tx_count = backend
+                .block_view_on_preconfirmed(block_n)
+                .map(|view| view.get_executed_transactions(..).len())
+                .unwrap_or_default();
+            if tx_count >= expected {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("block #{block_n} did not reach {expected} speculative transactions"));
+}
+
 async fn recv_pipeline_notification(
     notifications: &mut mpsc::UnboundedReceiver<OptimisticPipelineNotification>,
 ) -> OptimisticPipelineNotification {
@@ -57,6 +102,25 @@ async fn recv_pipeline_notification(
         .await
         .expect("optimistic pipeline notification timed out")
         .expect("optimistic pipeline notification channel closed")
+}
+
+async fn wait_for_pipeline_notification(
+    notifications: &mut mpsc::UnboundedReceiver<OptimisticPipelineNotification>,
+    expected: OptimisticPipelineNotification,
+    phase: &str,
+) {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let observed =
+                notifications.recv().await.unwrap_or_else(|| panic!("notification channel closed during {phase}"));
+            eprintln!("{phase}: observed {observed:?}");
+            if observed == expected {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out during {phase}; expected {expected:?}"));
 }
 
 #[rstest::rstest]
@@ -181,7 +245,7 @@ async fn n_minus_10_gate_bounds_optimistic_window(
 #[tokio::test]
 async fn real_comparator_mismatch_replays_descendants_and_sticks_to_blockifier_only(
     #[future]
-    #[with(Duration::from_secs(3_000), false)]
+    #[with(Duration::from_secs(3_000), false, true)]
     devnet_setup: DevnetSetup,
 ) {
     let mut devnet_setup = devnet_setup.await;
@@ -304,7 +368,7 @@ async fn real_comparator_mismatch_replays_descendants_and_sticks_to_blockifier_o
 #[tokio::test]
 async fn accepted_blockifier_canonical_replays_speculative_descendant(
     #[future]
-    #[with(Duration::from_secs(3_000), false)]
+    #[with(Duration::from_secs(3_000), false, true)]
     devnet_setup: DevnetSetup,
 ) {
     let mut devnet_setup = devnet_setup.await;
@@ -380,4 +444,117 @@ async fn accepted_blockifier_canonical_replays_speculative_descendant(
     assert!(block_contains_tx(&devnet_setup.backend, 1, anchor_tx));
     assert!(block_contains_tx(&devnet_setup.backend, 2, descendant_tx));
     assert_eq!(block_storage_value(&devnet_setup.backend, 2, last_amount_key), descendant_amount);
+}
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(75))]
+#[tokio::test]
+async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_and_descendants(
+    #[future]
+    #[with(Duration::from_secs(3_000), false, true)]
+    devnet_setup: DevnetSetup,
+) {
+    let mut devnet_setup = devnet_setup.await;
+    let mempool = devnet_setup.mempool.clone();
+    let _mempool_task = AbortOnDrop::spawn(async move {
+        mempool.run_mempool_task(ServiceContext::new_for_testing()).await.expect("mempool service should run")
+    });
+    tokio::task::yield_now().await;
+
+    let executor = devnet_setup.contracts.0[0].address;
+    let mut speculative_hashes = Vec::new();
+    for nonce in 0..5u64 {
+        speculative_hashes.push(
+            submit_rust_exec_transfer(&devnet_setup, Felt::from(nonce), "transfer", Felt::from(100u64 + nonce)).await,
+        );
+    }
+
+    let mut task = devnet_setup
+        .block_prod_task()
+        .with_startup_execution_mode(crate::fallback::types::StartupExecutionMode::Mixed)
+        .with_rust_exec_executor_addresses([executor])
+        .with_test_comparator_reexec_tx_limit(3);
+    let control = task.handle();
+    let comparator_gate = task.gate_comparator_for_block(1);
+    let mut notifications = task.subscribe_optimistic_pipeline_notifications();
+    let _task = AbortOnDrop::spawn(async move {
+        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
+    });
+
+    wait_for_preconfirmed_tx_count(&devnet_setup.backend, 1, 5).await;
+    control.close_block().await.expect("five-transaction speculative block should close");
+    wait_for_pipeline_notification(
+        &mut notifications,
+        OptimisticPipelineNotification::ComparatorStarted { block_n: 1 },
+        "waiting for block #1 comparator",
+    )
+    .await;
+
+    let descendant_2 = send_raw_blockifier_transfer(&devnet_setup, &control, 1, 4).await;
+    wait_for_preconfirmed_tx_count(&devnet_setup.backend, 2, 1).await;
+    control.close_block().await.expect("first speculative descendant should close");
+
+    let descendant_3 = send_raw_blockifier_transfer(&devnet_setup, &control, 2, 4).await;
+    wait_for_preconfirmed_tx_count(&devnet_setup.backend, 3, 1).await;
+    control.close_block().await.expect("second speculative descendant should close");
+    assert_eq!(devnet_setup.backend.chain_head_state().internal_preconfirmed_tip, Some(3));
+
+    comparator_gate.add_permits(1);
+    wait_for_pipeline_notification(
+        &mut notifications,
+        OptimisticPipelineNotification::ComparatorFinished { block_n: 1 },
+        "waiting for block #1 comparator result",
+    )
+    .await;
+
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let status = control.executionbox_status().await.expect("execution status should be available");
+            if status.mode == crate::fallback::types::ExecutionMode::BlockifierOnly
+                && status.reason == Some(crate::fallback::types::FallbackReason::OutputMismatch)
+                && status.taint_block == Some(1)
+                && status.replay_backlog_empty
+                && devnet_setup.backend.latest_confirmed_block_n().is_some_and(|tip| tip >= 3)
+            {
+                assert!(!status.comparator_enabled, "comparator must remain disabled after capacity fallback");
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("capacity fallback should close the Blockifier prefix and replay all descendants");
+
+    assert_eq!(block_tx_hashes(&devnet_setup.backend, 1), speculative_hashes[..3]);
+    let confirmed_tip = devnet_setup.backend.latest_confirmed_block_n().expect("fallback should confirm blocks");
+    let all_expected = speculative_hashes.iter().copied().chain([descendant_2, descendant_3]).collect::<Vec<_>>();
+    let all_confirmed =
+        (1..=confirmed_tip).flat_map(|block_n| block_tx_hashes(&devnet_setup.backend, block_n)).collect::<Vec<_>>();
+    for expected_hash in &all_expected {
+        assert_eq!(
+            all_confirmed.iter().filter(|actual_hash| *actual_hash == expected_hash).count(),
+            1,
+            "transaction {expected_hash:#x} must be confirmed exactly once"
+        );
+    }
+
+    while notifications.try_recv().is_ok() {}
+    let post_fallback_tx = send_raw_blockifier_transfer(&devnet_setup, &control, 3, 4).await;
+    let post_fallback_block_n = loop {
+        match recv_pipeline_notification(&mut notifications).await {
+            OptimisticPipelineNotification::BatchExecuted { block_n } => break block_n,
+            OptimisticPipelineNotification::ComparatorStarted { block_n } => {
+                panic!("comparator unexpectedly restarted for block #{block_n}")
+            }
+            _ => {}
+        }
+    };
+    control.close_block().await.expect("post-fallback Blockifier-only block should close");
+    wait_for_confirmed_block(&devnet_setup.backend, post_fallback_block_n).await;
+    assert!(block_contains_tx(&devnet_setup.backend, post_fallback_block_n, post_fallback_tx));
+
+    let final_status = control.executionbox_status().await.expect("final execution status should be available");
+    assert_eq!(final_status.mode, crate::fallback::types::ExecutionMode::BlockifierOnly);
+    assert_eq!(final_status.reason, Some(crate::fallback::types::FallbackReason::OutputMismatch));
+    assert!(!final_status.comparator_enabled);
 }

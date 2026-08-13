@@ -233,6 +233,7 @@ async fn stale_batch_executed_is_dropped_after_fallback() {
     task.process_reply(
         super::ExecutorMessage::BatchExecuted(super::BatchExecutionResult {
             executed_txs: crate::util::BatchToExecute::default(),
+            original_tx_hashes: vec![],
             blockifier_results: vec![],
             stats: crate::util::ExecutionStats { n_executed: 1, n_added_to_block: 1, ..Default::default() },
             execution_mode: crate::fallback::types::ExecutionMode::Mixed,

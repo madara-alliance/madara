@@ -82,6 +82,8 @@ pub(crate) struct CurrentBlockState {
     /// internal speculative frontier / mempool nonce visibility. Canonical DB
     /// persistence happens after comparator selection in close_block().
     pub(super) speculative_executed_txs: Vec<PreconfirmedExecutedTransaction>,
+    /// Original submitted order, retained independently from backend execution order.
+    pub(super) original_tx_hashes: Vec<Felt>,
 }
 
 #[derive(Debug, Clone)]
@@ -186,6 +188,7 @@ impl CurrentBlockState {
             block_start_time: Instant::now(),
             accumulated_stats: Default::default(),
             speculative_executed_txs: Vec::new(),
+            original_tx_hashes: Vec::new(),
         }
     }
 
@@ -223,6 +226,7 @@ impl CurrentBlockState {
             self.block_number
         );
         let mut executed = vec![];
+        self.original_tx_hashes.append(&mut batch.original_tx_hashes);
 
         for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
             batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
@@ -447,6 +451,9 @@ pub struct BlockProductionTask {
     /// immediately to exercise the fail-safe fallback path.
     #[cfg(test)]
     pub(super) force_comparator_error: bool,
+    /// Test-only deterministic Blockifier re-execution capacity.
+    #[cfg(test)]
+    pub(super) comparator_reexec_tx_limit: Option<usize>,
 }
 
 impl BlockProductionTask {
@@ -481,18 +488,48 @@ impl BlockProductionTask {
         Ok(next)
     }
 
-    pub(super) fn comparator_ignored_storage_addresses(
+    pub(super) fn comparator_allowed_fee_balance_keys(
         chain_config: &mp_chain_config::ChainConfig,
         ignore_fee_token_mismatch: bool,
-    ) -> std::collections::BTreeSet<Felt> {
-        if ignore_fee_token_mismatch {
-            std::collections::BTreeSet::from([
-                chain_config.parent_fee_token_address.to_felt(),
-                chain_config.native_fee_token_address.to_felt(),
-            ])
-        } else {
-            std::collections::BTreeSet::new()
+        rows: &[PreconfirmedExecutedTransaction],
+        reexec_rows: &[ReexecExecutedTxArtifacts],
+        sequencer_address: Felt,
+    ) -> std::collections::BTreeSet<(Felt, Felt)> {
+        if !ignore_fee_token_mismatch {
+            return std::collections::BTreeSet::new();
         }
+
+        let reexec_fees = reexec_rows
+            .iter()
+            .map(|row| (*row.receipt.transaction_hash(), row.receipt.actual_fee().amount))
+            .collect::<BTreeMap<_, _>>();
+
+        rows.iter()
+            .filter_map(|row| {
+                let transaction_hash = *row.transaction.receipt.transaction_hash();
+                let reexec_fee = reexec_fees.get(&transaction_hash).copied().unwrap_or_default();
+                if row.transaction.receipt.actual_fee().amount == Felt::ZERO && reexec_fee == Felt::ZERO {
+                    return None;
+                }
+                let fee_payer = match &row.transaction.transaction {
+                    mp_transactions::Transaction::Invoke(tx) => *tx.sender_address(),
+                    mp_transactions::Transaction::Declare(tx) => *tx.sender_address(),
+                    mp_transactions::Transaction::DeployAccount(_) => *row.transaction.contract_address(),
+                    mp_transactions::Transaction::L1Handler(_) | mp_transactions::Transaction::Deploy(_) => {
+                        return None;
+                    }
+                };
+                let fee_token = match row.transaction.transaction.fee_type() {
+                    FeeType::Eth => chain_config.parent_fee_token_address.to_felt(),
+                    FeeType::Strk => chain_config.native_fee_token_address.to_felt(),
+                };
+                Some([fee_payer, sequencer_address].into_iter().flat_map(move |owner| {
+                    let low = get_storage_var_address("ERC20_balances", &[owner]).to_felt();
+                    [(fee_token, low), (fee_token, low + Felt::ONE)]
+                }))
+            })
+            .flatten()
+            .collect()
     }
 
     /// Creates a new BlockProductionTask.
@@ -571,6 +608,8 @@ impl BlockProductionTask {
             execution_epoch: 0,
             #[cfg(test)]
             force_comparator_error: false,
+            #[cfg(test)]
+            comparator_reexec_tx_limit: None,
         }
     }
 
@@ -636,6 +675,12 @@ impl BlockProductionTask {
     #[cfg(test)]
     pub fn with_test_force_comparator_error(mut self) -> Self {
         self.force_comparator_error = true;
+        self
+    }
+
+    #[cfg(test)]
+    pub fn with_test_comparator_reexec_tx_limit(mut self, limit: usize) -> Self {
+        self.comparator_reexec_tx_limit = Some(limit);
         self
     }
 

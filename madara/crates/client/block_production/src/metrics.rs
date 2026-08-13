@@ -115,10 +115,16 @@ pub struct BlockProductionMetrics {
     pub comparator_execbox_resources_gt_reexec_total: Counter<u64>,
     /// Total blocks where ER-x1 > block limit (fatal path).
     pub comparator_execbox_resources_gt_block_limit_total: Counter<u64>,
-    /// Total ExecutionBox stop events, labelled by reason=state_diff_mismatch|exec_resources_over_limit.
+    /// Total ExecutionBox stop events, labelled by output/state/resource reason.
     pub comparator_executionbox_stop_total: Counter<u64>,
     /// Comparator pure-function compute duration per block.
     pub comparator_compare_duration_seconds: Histogram<f64>,
+    /// Field mismatches labelled by typed category and policy.
+    pub comparator_mismatches_total: Counter<u64>,
+    /// Comparator decisions labelled by accept|accept_with_warn|stop_execution_box.
+    pub comparator_decisions_total: Counter<u64>,
+    /// Allowed actual-fee, fee-transfer amount, and approved fee-balance differences.
+    pub comparator_allowed_fee_differences_total: Counter<u64>,
     /// Total re-execution cancellations, labelled by reason=epoch_cancelled|worker_error|shutdown.
     pub reexecution_cancelled_total: Counter<u64>,
 
@@ -599,6 +605,24 @@ impl BlockProductionMetrics {
             "Comparator pure-function compute duration per block".to_string(),
             "s".to_string(),
         );
+        let comparator_mismatches_total = register_counter_metric_instrument(
+            &meter,
+            "comparator_mismatches_total".to_string(),
+            "Comparator field mismatches labelled by category and policy".to_string(),
+            "mismatch".to_string(),
+        );
+        let comparator_decisions_total = register_counter_metric_instrument(
+            &meter,
+            "comparator_decisions_total".to_string(),
+            "Comparator decisions labelled by outcome".to_string(),
+            "decision".to_string(),
+        );
+        let comparator_allowed_fee_differences_total = register_counter_metric_instrument(
+            &meter,
+            "comparator_allowed_fee_differences_total".to_string(),
+            "Allowed actual-fee, fee-transfer amount, and approved fee-balance differences".to_string(),
+            "difference".to_string(),
+        );
         let reexecution_cancelled_total = register_counter_metric_instrument(
             &meter,
             "reexecution_cancelled_total".to_string(),
@@ -718,6 +742,9 @@ impl BlockProductionMetrics {
             comparator_execbox_resources_gt_block_limit_total,
             comparator_executionbox_stop_total,
             comparator_compare_duration_seconds,
+            comparator_mismatches_total,
+            comparator_decisions_total,
+            comparator_allowed_fee_differences_total,
             reexecution_cancelled_total,
             executor_routed_payloads_total,
             executor_phase_duration_seconds,

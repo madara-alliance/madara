@@ -95,9 +95,11 @@ fn strict_stop_mismatch_summary() -> crate::comparator::state_diff::StateDiffMis
     crate::comparator::state_diff::StateDiffMismatchSummary {
         storage_diffs_match: false,
         declared_classes_match: true,
+        old_declared_classes_match: true,
         deployed_contracts_match: true,
         replaced_classes_match: true,
         nonces_match: true,
+        migrated_compiled_classes_match: true,
         diff_count: 1,
     }
 }
@@ -394,6 +396,7 @@ async fn accepted_blockifier_canonical_handoff_fences_late_successor_batch() {
         ExecutorMessage::BatchExecuted(BatchExecutionResult {
             executed_txs: crate::util::BatchToExecute::default(),
             blockifier_results: vec![],
+            original_tx_hashes: vec![],
             stats: crate::util::ExecutionStats { n_executed: 1, n_added_to_block: 1, ..Default::default() },
             execution_mode: crate::fallback::types::ExecutionMode::Mixed,
             execution_epoch: 0,

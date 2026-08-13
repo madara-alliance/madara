@@ -12,6 +12,8 @@ struct CanonicalizationTaskContext {
     #[cfg(test)]
     force_comparator_error: bool,
     #[cfg(test)]
+    comparator_reexec_tx_limit: Option<usize>,
+    #[cfg(test)]
     optimistic_pipeline_notifications: Option<mpsc::UnboundedSender<OptimisticPipelineNotification>>,
     #[cfg(test)]
     comparator_gate: Option<Arc<tokio::sync::Semaphore>>,
@@ -107,6 +109,8 @@ impl BlockProductionTask {
         #[cfg(test)]
         let force_comparator_error = self.force_comparator_error;
         #[cfg(test)]
+        let comparator_reexec_tx_limit = self.comparator_reexec_tx_limit;
+        #[cfg(test)]
         let optimistic_pipeline_notifications = self.optimistic_pipeline_notifications.clone();
         #[cfg(test)]
         let comparator_gate = self.comparator_gates.remove(&block_n);
@@ -122,6 +126,8 @@ impl BlockProductionTask {
             internal_capacity,
             #[cfg(test)]
             force_comparator_error,
+            #[cfg(test)]
+            comparator_reexec_tx_limit,
             #[cfg(test)]
             optimistic_pipeline_notifications,
             #[cfg(test)]
@@ -230,15 +236,18 @@ impl BlockProductionTask {
         let had_speculative =
             !state.as_ref().expect("canonicalization state must exist").speculative_executed_txs.is_empty();
         let is_stop_path = matches!(canonical.canonical.source, CanonicalBlockSource::BlockifierReexec);
+        let source_ordered_speculative = if had_speculative {
+            Self::speculative_rows_in_original_order(
+                &state.as_ref().expect("canonicalization state must exist").speculative_executed_txs,
+                &state.as_ref().expect("canonicalization state must exist").original_tx_hashes,
+            )?
+        } else {
+            Vec::new()
+        };
         let bre_rows = canonical
             .canonical
             .bre_per_tx
-            .map(|per_tx| {
-                Self::build_bre_preconfirmed_rows(
-                    &state.as_ref().expect("canonicalization state must exist").speculative_executed_txs,
-                    per_tx,
-                )
-            })
+            .map(|per_tx| Self::build_bre_preconfirmed_prefix_rows(&source_ordered_speculative, per_tx))
             .transpose()
             .context("Building BRE-backed canonical rows")?;
         let mut canonical_rows = Some(match canonical.canonical.source {
@@ -263,6 +272,9 @@ impl BlockProductionTask {
         let canonical_state_diff = canonical.canonical.state_diff;
 
         let fallback = match canonical.stop_reason {
+            Some(crate::comparator::StopReason::OutputMismatch { .. }) => {
+                Some((FallbackReason::OutputMismatch, "output_mismatch"))
+            }
             Some(crate::comparator::StopReason::StateDiffMismatch { .. }) => {
                 Some((FallbackReason::StateDiffMismatch, "state_diff_mismatch"))
             }
@@ -276,17 +288,20 @@ impl BlockProductionTask {
         };
         if let Some((fallback_reason, metric_reason)) = fallback {
             let included_prefix_len = canonical_rows.as_ref().expect("canonical rows must exist").len();
-            let current_block_suffix = Self::collect_current_block_suffix_replay_txs(
-                &state.as_ref().expect("canonicalization state must exist").speculative_executed_txs,
-                included_prefix_len,
-            );
+            let current_block_suffix =
+                Self::collect_current_block_suffix_replay_txs(&source_ordered_speculative, included_prefix_len);
             let current_block_suffix_count = current_block_suffix.len();
-            tracing::info!(
+            let omitted_transaction_hashes =
+                current_block_suffix.txs.iter().map(|tx| format!("{:#x}", tx.tx_hash().to_felt())).collect::<Vec<_>>();
+            tracing::warn!(
+                target: "RUST_EXEC",
                 block_n,
-                included_prefix_len,
-                current_block_suffix_count,
-                total_replay_txs = current_block_suffix_count,
-                "stop_path_split_current_block_prefix_and_replay_suffix"
+                execution_box_transaction_count = source_ordered_speculative.len(),
+                blockifier_canonical_prefix_count = included_prefix_len,
+                replay_suffix_count = current_block_suffix_count,
+                omitted_transaction_hashes = ?omitted_transaction_hashes,
+                fallback_reason = ?fallback_reason,
+                "Comparator rejected the ExecutionBox block; preserving the Blockifier prefix and replaying the omitted suffix"
             );
             self.drop_descendant_pending_canonicalizations(block_n);
             pending_stop_fallback_handoff = Some(self.begin_stop_fallback_handoff(
@@ -391,16 +406,25 @@ impl BlockProductionTask {
         original_txs: &[PreconfirmedExecutedTransaction],
         bre_per_tx: Vec<ReexecExecutedTxArtifacts>,
     ) -> anyhow::Result<Vec<PreconfirmedExecutedTransaction>> {
+        let mut bre_by_hash = std::collections::BTreeMap::new();
+        for bre in bre_per_tx {
+            let hash = *bre.receipt.transaction_hash();
+            anyhow::ensure!(bre_by_hash.insert(hash, bre).is_none(), "Duplicate BRE transaction hash {hash:#x}");
+        }
+        anyhow::ensure!(
+            bre_by_hash.len() == original_txs.len(),
+            "BRE transaction membership mismatch: expected {} transaction(s), got {}",
+            original_txs.len(),
+            bre_by_hash.len()
+        );
+
         original_txs
             .iter()
-            .zip(bre_per_tx)
-            .map(|(orig, bre)| {
-                anyhow::ensure!(
-                    bre.receipt.transaction_hash() == orig.transaction.receipt.transaction_hash(),
-                    "Transaction hash mismatch while rebuilding canonical row: expected {:#x}, got {:#x}",
-                    orig.transaction.receipt.transaction_hash(),
-                    bre.receipt.transaction_hash()
-                );
+            .map(|orig| {
+                let hash = *orig.transaction.receipt.transaction_hash();
+                let bre = bre_by_hash.remove(&hash).with_context(|| {
+                    format!("Missing BRE transaction hash {hash:#x} while rebuilding canonical rows")
+                })?;
                 let tx_reverted =
                     matches!(bre.receipt.execution_result(), mp_receipt::ExecutionResult::Reverted { .. });
                 let mut state_diff = bre.tx_state_update;
@@ -416,7 +440,93 @@ impl BlockProductionTask {
                     paid_fee_on_l1: orig.paid_fee_on_l1,
                 })
             })
-            .collect()
+            .collect::<anyhow::Result<Vec<_>>>()
+            .and_then(|rows| {
+                anyhow::ensure!(bre_by_hash.is_empty(), "BRE contains extra transaction(s) while rebuilding rows");
+                Ok(rows)
+            })
+    }
+
+    pub(super) fn speculative_rows_in_original_order(
+        rows: &[PreconfirmedExecutedTransaction],
+        original_tx_hashes: &[Felt],
+    ) -> anyhow::Result<Vec<PreconfirmedExecutedTransaction>> {
+        if original_tx_hashes.is_empty() {
+            return Ok(rows.to_vec());
+        }
+        anyhow::ensure!(
+            original_tx_hashes.len() == rows.len(),
+            "Speculative transaction membership mismatch: {} original hash(es), {} executed row(s)",
+            original_tx_hashes.len(),
+            rows.len()
+        );
+
+        let mut rows_by_hash = std::collections::BTreeMap::new();
+        for row in rows {
+            let hash = *row.transaction.receipt.transaction_hash();
+            anyhow::ensure!(
+                rows_by_hash.insert(hash, row.clone()).is_none(),
+                "Duplicate speculative transaction {hash:#x}"
+            );
+        }
+
+        let ordered = original_tx_hashes
+            .iter()
+            .map(|hash| {
+                rows_by_hash
+                    .remove(hash)
+                    .with_context(|| format!("Missing speculative transaction {hash:#x} from original order"))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        anyhow::ensure!(
+            rows_by_hash.is_empty(),
+            "Speculative execution contains transaction(s) absent from original order"
+        );
+        Ok(ordered)
+    }
+
+    pub(super) fn build_bre_preconfirmed_prefix_rows(
+        source_ordered_txs: &[PreconfirmedExecutedTransaction],
+        bre_per_tx: Vec<ReexecExecutedTxArtifacts>,
+    ) -> anyhow::Result<Vec<PreconfirmedExecutedTransaction>> {
+        let mut bre_by_hash = std::collections::BTreeMap::new();
+        for bre in bre_per_tx {
+            let hash = *bre.receipt.transaction_hash();
+            anyhow::ensure!(bre_by_hash.insert(hash, bre).is_none(), "Duplicate BRE transaction hash {hash:#x}");
+        }
+
+        let mut prefix = Vec::with_capacity(bre_by_hash.len());
+        for original in source_ordered_txs {
+            let hash = *original.transaction.receipt.transaction_hash();
+            let Some(bre) = bre_by_hash.remove(&hash) else {
+                break;
+            };
+            prefix.push(Self::build_bre_preconfirmed_row(original, bre)?);
+        }
+        anyhow::ensure!(
+            bre_by_hash.is_empty(),
+            "BRE transaction result is not a contiguous prefix of original execution"
+        );
+        Ok(prefix)
+    }
+
+    fn build_bre_preconfirmed_row(
+        original: &PreconfirmedExecutedTransaction,
+        bre: ReexecExecutedTxArtifacts,
+    ) -> anyhow::Result<PreconfirmedExecutedTransaction> {
+        let tx_reverted = matches!(bre.receipt.execution_result(), mp_receipt::ExecutionResult::Reverted { .. });
+        let mut state_diff = bre.tx_state_update;
+        state_diff.declared_classes = Self::declared_classes_from_original_metadata(original, tx_reverted)?;
+        Ok(PreconfirmedExecutedTransaction {
+            transaction: TransactionWithReceipt {
+                transaction: original.transaction.transaction.clone(),
+                receipt: bre.receipt,
+            },
+            state_diff,
+            declared_class: original.declared_class.clone(),
+            arrived_at: original.arrived_at,
+            paid_fee_on_l1: original.paid_fee_on_l1,
+        })
     }
 
     /// C-023: When BRE canonicalizes only a prefix of the current speculative block X,
@@ -520,6 +630,8 @@ impl BlockProductionTask {
             #[cfg(test)]
             force_comparator_error,
             #[cfg(test)]
+            comparator_reexec_tx_limit,
+            #[cfg(test)]
             optimistic_pipeline_notifications,
             #[cfg(test)]
             comparator_gate,
@@ -579,6 +691,8 @@ impl BlockProductionTask {
                 internal_capacity,
                 #[cfg(test)]
                 force_comparator_error,
+                #[cfg(test)]
+                comparator_reexec_tx_limit,
             )
             .await;
 
@@ -617,6 +731,7 @@ impl BlockProductionTask {
         ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
         internal_capacity: usize,
         #[cfg(test)] force_comparator_error: bool,
+        #[cfg(test)] comparator_reexec_tx_limit: Option<usize>,
     ) -> anyhow::Result<CanonicalizationTaskCanonical> {
         use std::time::UNIX_EPOCH;
 
@@ -636,8 +751,9 @@ impl BlockProductionTask {
         };
 
         let parent_state_view = preconfirmed_view.state_view_on_parent();
-        let txs: Vec<_> = state
-            .speculative_executed_txs
+        let source_ordered_speculative =
+            Self::speculative_rows_in_original_order(&state.speculative_executed_txs, &state.original_tx_hashes)?;
+        let txs: Vec<_> = source_ordered_speculative
             .iter()
             .map(|tx| Self::prepare_preconfirmed_tx_for_reexecution(tx, &parent_state_view, no_charge_fee))
             .collect::<anyhow::Result<Vec<_>>>()
@@ -676,6 +792,8 @@ impl BlockProductionTask {
             old_declared_contracts: state.get_old_declared_contracts_from_speculative(),
             confirmed_base_block_n: confirmed_base,
             parent_overlays,
+            #[cfg(test)]
+            test_max_txs: comparator_reexec_tx_limit,
         };
 
         let reexec_start = Instant::now();
@@ -732,16 +850,106 @@ impl BlockProductionTask {
 
         let block_limit = state.backend.chain_config().bouncer_config.block_max_capacity;
         let compare_start = Instant::now();
-        let ignored_storage_addresses =
-            Self::comparator_ignored_storage_addresses(state.backend.chain_config(), ignore_fee_token_mismatch);
-        let sd_comparison = compare_state_diff_with_ignored_storage_addresses(
+        let allowed_fee_balance_keys = Self::comparator_allowed_fee_balance_keys(
+            state.backend.chain_config(),
+            ignore_fee_token_mismatch,
+            &state.speculative_executed_txs,
+            &reexec_result.per_tx,
+            header.sequencer_address,
+        );
+        let sd_comparison = compare_state_diff_with_allowed_fee_balance_keys(
             sd_x1,
             &reexec_result.state_diff,
-            &ignored_storage_addresses,
+            &allowed_fee_balance_keys,
         );
         let er_comparison =
             compare_execution_resources(&summary.bouncer_weights, &reexec_result.exec_resources, &block_limit);
-        let decision = decide(&sd_comparison, &er_comparison);
+        let comparison_config = TransactionOutputComparisonConfig {
+            fee_token_addresses: std::collections::BTreeSet::from([
+                state.backend.chain_config().parent_fee_token_address.to_felt(),
+                state.backend.chain_config().native_fee_token_address.to_felt(),
+            ]),
+            fee_transfer_selector: starknet_core::utils::starknet_keccak(b"Transfer"),
+            sequencer_address: header.sequencer_address,
+            protocol_version: header.protocol_version,
+            chain_id: state.backend.chain_config().chain_id.to_felt(),
+        };
+        let mut comparison_report = compare_transaction_outputs(
+            &state.speculative_executed_txs,
+            &reexec_result.per_tx,
+            &state.original_tx_hashes,
+            sd_x1,
+            &reexec_result.state_diff,
+            matches!(sd_comparison, crate::comparator::StateDiffComparison::Mismatch { .. }),
+            &comparison_config,
+        );
+        match &sd_comparison {
+            crate::comparator::StateDiffComparison::Mismatch { summary } => {
+                comparison_report.push(FieldMismatch {
+                    category: MismatchCategory::StateUpdate,
+                    policy: MismatchPolicy::Strict,
+                    transaction_hash: None,
+                    transaction_index: None,
+                    field_path: "state_diff.aggregate".into(),
+                    execution_box_value: format!("hash={:#x}; {summary}", sd_x1.compute_hash()),
+                    blockifier_value: format!("hash={:#x}; {summary}", reexec_result.state_diff.compute_hash()),
+                });
+            }
+            crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => {
+                for mismatch_value in mismatches {
+                    comparison_report.push(FieldMismatch {
+                        category: MismatchCategory::StateUpdate,
+                        policy: MismatchPolicy::Allowed,
+                        transaction_hash: None,
+                        transaction_index: None,
+                        field_path: format!(
+                            "state_diff.storage[{:#x}][{:#x}]",
+                            mismatch_value.contract_address, mismatch_value.storage_key
+                        ),
+                        execution_box_value: format!("{:#x}", mismatch_value.execution_box_value),
+                        blockifier_value: format!("{:#x}", mismatch_value.blockifier_value),
+                    });
+                }
+            }
+            crate::comparator::StateDiffComparison::Match => {}
+        }
+        match &er_comparison {
+            ExecutionResourceComparison::WarnExecutionBoxGreaterThanReexec { .. } => {
+                comparison_report.push(FieldMismatch {
+                    category: MismatchCategory::Resource,
+                    policy: MismatchPolicy::Warning,
+                    transaction_hash: None,
+                    transaction_index: None,
+                    field_path: "block.bouncer_weights".into(),
+                    execution_box_value: format!("{:?}", summary.bouncer_weights),
+                    blockifier_value: format!("{:?}", reexec_result.exec_resources),
+                });
+            }
+            ExecutionResourceComparison::Ok if summary.bouncer_weights != reexec_result.exec_resources => {
+                comparison_report.push(FieldMismatch {
+                    category: MismatchCategory::Resource,
+                    policy: MismatchPolicy::Diagnostic,
+                    transaction_hash: None,
+                    transaction_index: None,
+                    field_path: "block.bouncer_weights".into(),
+                    execution_box_value: format!("{:?}", summary.bouncer_weights),
+                    blockifier_value: format!("{:?}", reexec_result.exec_resources),
+                });
+            }
+            _ => {}
+        }
+        let decision = decide_with_report(&comparison_report, &sd_comparison, &er_comparison);
+        if matches!(&er_comparison, ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. }) {
+            comparison_report.push(FieldMismatch {
+                category: MismatchCategory::Resource,
+                policy: MismatchPolicy::Strict,
+                transaction_hash: None,
+                transaction_index: None,
+                field_path: "block.bouncer_weights_vs_limit".into(),
+                execution_box_value: format!("{:?}", summary.bouncer_weights),
+                blockifier_value: format!("limit={block_limit:?}; reexec={:?}", reexec_result.exec_resources),
+            });
+        }
         let compare_elapsed = compare_start.elapsed().as_secs_f64();
 
         metrics.comparator_blocks_compared_total.add(1, &[]);
@@ -752,12 +960,12 @@ impl BlockProductionTask {
                 metrics.comparator_state_diff_mismatch_total.add(1, &[]);
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
-            crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
-                tracing::debug!(
+            crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => {
+                tracing::warn!(
                     target: "RUST_EXEC",
                     block_n,
-                    ignored_storage_addresses = ?ignored_storage_addresses,
-                    "comparator_state_diff_ignored_storage_mismatch"
+                    allowed_fee_balance_value_mismatches = mismatches.len(),
+                    "comparator_state_diff_allowed_fee_balance_mismatch"
                 );
             }
             crate::comparator::StateDiffComparison::Match => {}
@@ -776,6 +984,7 @@ impl BlockProductionTask {
             ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. } => {
                 metrics.comparator_execbox_resources_gt_block_limit_total.add(1, &[]);
                 tracing::error!(
+                    target: "RUST_EXEC",
                     block_n,
                     er_x1 = ?summary.bouncer_weights,
                     er_x2 = ?reexec_result.exec_resources,
@@ -786,14 +995,64 @@ impl BlockProductionTask {
             ExecutionResourceComparison::Ok => {}
         }
 
-        let ignored_storage_mismatch =
-            matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
-        let use_blockifier_on_ignored_storage_mismatch = ignored_storage_mismatch
+        let decision_label = match &decision {
+            ComparatorDecision::Accept => "accept",
+            ComparatorDecision::AcceptWithWarn { .. } => "accept_with_warn",
+            ComparatorDecision::StopExecutionBox { .. } => "stop_execution_box",
+        };
+        metrics.comparator_decisions_total.add(1, &[KeyValue::new("decision", decision_label)]);
+        for ((category, policy), count) in comparison_report.mismatch_counts() {
+            metrics
+                .comparator_mismatches_total
+                .add(count, &[KeyValue::new("category", category.as_str()), KeyValue::new("policy", policy.as_str())]);
+        }
+        let allowed_fee_difference_count = comparison_report.allowed_mismatches.len() as u64;
+        metrics.comparator_allowed_fee_differences_total.add(allowed_fee_difference_count, &[]);
+        if comparison_report.mismatch_count() > 0 {
+            let categories = comparison_report
+                .iter_mismatches()
+                .map(|mismatch| mismatch.category.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            tracing::warn!(
+                target: "RUST_EXEC",
+                block_n,
+                decision = decision_label,
+                strict_mismatches = comparison_report.strict_mismatches.len(),
+                allowed_mismatches = comparison_report.allowed_mismatches.len(),
+                resource_warnings = comparison_report.resource_warnings.len(),
+                diagnostics = comparison_report.diagnostics.len(),
+                affected_transactions = comparison_report.affected_transaction_hashes.len(),
+                execution_box_transactions = comparison_report.execution_box_transaction_count,
+                blockifier_transactions = comparison_report.blockifier_transaction_count,
+                canonical_transactions = comparison_report.canonical_transaction_count,
+                paired_transactions = comparison_report.paired_transaction_count,
+                categories = ?categories,
+                "comparator_output_mismatch_summary"
+            );
+            for mismatch in comparison_report.iter_mismatches().take(20) {
+                tracing::warn!(
+                    target: "RUST_EXEC",
+                    block_n,
+                    transaction_index = ?mismatch.transaction_index,
+                    transaction_hash = ?mismatch.transaction_hash.map(|hash| format!("{hash:#x}")),
+                    category = mismatch.category.as_str(),
+                    policy = mismatch.policy.as_str(),
+                    field_path = %mismatch.field_path,
+                    execution_box = %mismatch.execution_box_value,
+                    blockifier = %mismatch.blockifier_value,
+                    decision = decision_label,
+                    "comparator_output_mismatch_detail"
+                );
+            }
+        }
+
+        let allowed_fee_mismatch = !comparison_report.allowed_mismatches.is_empty();
+        let use_blockifier_on_allowed_fee_mismatch = allowed_fee_mismatch
             && ignored_storage_mismatch_canonical_source == RustExecCanonicalSource::BlockifierReexec;
         let sd_match = matches!(
             &sd_comparison,
             crate::comparator::StateDiffComparison::Match
-                | crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. }
+                | crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { .. }
         );
         let er_match = matches!(er_comparison, ExecutionResourceComparison::Ok);
 
@@ -808,19 +1067,18 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::debug!(
+                if use_blockifier_on_allowed_fee_mismatch {
+                    tracing::warn!(
                         target: "RUST_EXEC",
                         block_n,
-                        "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
+                        "comparator_allowed_fee_mismatch_using_blockifier_canonical_output"
                     );
-                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                     (
                         CanonicalizedBlockOutput {
                             source: CanonicalBlockSource::BlockifierReexec,
                             state_diff: reexec_result.state_diff,
                             bouncer_weights: reexec_result.exec_resources,
-                            bre_per_tx,
+                            bre_per_tx: Some(reexec_result.per_tx),
                         },
                         None,
                     )
@@ -846,19 +1104,18 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::debug!(
+                if use_blockifier_on_allowed_fee_mismatch {
+                    tracing::warn!(
                         target: "RUST_EXEC",
                         block_n,
-                        "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
+                        "comparator_allowed_fee_mismatch_using_blockifier_canonical_output"
                     );
-                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                     (
                         CanonicalizedBlockOutput {
                             source: CanonicalBlockSource::BlockifierReexec,
                             state_diff: reexec_result.state_diff,
                             bouncer_weights: reexec_result.exec_resources,
-                            bre_per_tx,
+                            bre_per_tx: Some(reexec_result.per_tx),
                         },
                         None,
                     )
@@ -884,13 +1141,12 @@ impl BlockProductionTask {
                     reason = %reason,
                     "comparator_failed"
                 );
-                let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                 (
                     CanonicalizedBlockOutput {
                         source: CanonicalBlockSource::BlockifierReexec,
                         state_diff: reexec_result.state_diff,
                         bouncer_weights: reexec_result.exec_resources,
-                        bre_per_tx,
+                        bre_per_tx: Some(reexec_result.per_tx),
                     },
                     Some(reason.clone()),
                 )
@@ -906,8 +1162,8 @@ impl BlockProductionTask {
         let comparator_duration_ms = reexec_start.elapsed().as_secs_f64() * 1000.0;
         let state_diff_result = match &sd_comparison {
             crate::comparator::StateDiffComparison::Match => "matched",
-            crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. } => {
-                "matched with ignored fee-token storage"
+            crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { .. } => {
+                "matched with allowed fee-token balance differences"
             }
             crate::comparator::StateDiffComparison::Mismatch { .. } => "mismatched",
         };
@@ -922,6 +1178,10 @@ impl BlockProductionTask {
             CanonicalBlockSource::ExecutionBox => "ExecutionBox",
             CanonicalBlockSource::BlockifierReexec => "Blockifier",
         };
+        let allowed_fee_balance_value_mismatches = match &sd_comparison {
+            crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => mismatches.len(),
+            _ => 0,
+        };
 
         match &decision {
             ComparatorDecision::Accept => tracing::info!(
@@ -931,7 +1191,7 @@ impl BlockProductionTask {
                 overlay_count,
                 duration_ms = comparator_duration_ms,
                 state_diff_result,
-                ignored_storage_addresses = ?ignored_storage_addresses,
+                allowed_fee_balance_value_mismatches,
                 resource_result,
                 canonical_source,
                 "✅ Comparator passed for block #{} in {:.3?} (state diff: {}; resources: {}; canonical: {})",
@@ -948,7 +1208,7 @@ impl BlockProductionTask {
                 overlay_count,
                 duration_ms = comparator_duration_ms,
                 state_diff_result,
-                ignored_storage_addresses = ?ignored_storage_addresses,
+                allowed_fee_balance_value_mismatches,
                 resource_result,
                 canonical_source,
                 resource_deltas = %resource_deltas,
@@ -966,7 +1226,7 @@ impl BlockProductionTask {
                 overlay_count,
                 duration_ms = comparator_duration_ms,
                 state_diff_result,
-                ignored_storage_addresses = ?ignored_storage_addresses,
+                allowed_fee_balance_value_mismatches,
                 resource_result,
                 canonical_source,
                 reason = %reason,
@@ -1032,8 +1292,9 @@ impl BlockProductionTask {
         let no_charge_fee = self.no_charge_fee;
         // C-010A: Use in-memory speculative buffer for transaction list (not preconfirmed view,
         // which has no executed txs in mixed mode since writes were deferred).
-        let txs: Vec<_> = state
-            .speculative_executed_txs
+        let source_ordered_speculative =
+            Self::speculative_rows_in_original_order(&state.speculative_executed_txs, &state.original_tx_hashes)?;
+        let txs: Vec<_> = source_ordered_speculative
             .iter()
             .map(|tx| Self::prepare_preconfirmed_tx_for_reexecution(tx, &parent_state_view, no_charge_fee))
             .collect::<anyhow::Result<Vec<_>>>()
@@ -1064,6 +1325,8 @@ impl BlockProductionTask {
             old_declared_contracts: state.get_old_declared_contracts_from_speculative(),
             confirmed_base_block_n: confirmed_base,
             parent_overlays,
+            #[cfg(test)]
+            test_max_txs: self.comparator_reexec_tx_limit,
         };
 
         // Send to dispatcher and await result (inline in V1, no pipeline buffering yet).
@@ -1125,14 +1388,17 @@ impl BlockProductionTask {
         // Run the pure comparison functions (timed for comparator_compare_duration_seconds).
         let block_limit = state.backend.chain_config().bouncer_config.block_max_capacity;
         let compare_start = Instant::now();
-        let ignored_storage_addresses = Self::comparator_ignored_storage_addresses(
+        let allowed_fee_balance_keys = Self::comparator_allowed_fee_balance_keys(
             state.backend.chain_config(),
             self.routing_cfg.runtime_options.ignore_fee_token_mismatch,
+            &state.speculative_executed_txs,
+            &reexec_result.per_tx,
+            header.sequencer_address,
         );
-        let sd_comparison = compare_state_diff_with_ignored_storage_addresses(
+        let sd_comparison = compare_state_diff_with_allowed_fee_balance_keys(
             sd_x1,
             &reexec_result.state_diff,
-            &ignored_storage_addresses,
+            &allowed_fee_balance_keys,
         );
         let er_comparison =
             compare_execution_resources(&summary.bouncer_weights, &reexec_result.exec_resources, &block_limit);
@@ -1148,12 +1414,12 @@ impl BlockProductionTask {
                 self.metrics.comparator_state_diff_mismatch_total.add(1, &[]);
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
-            crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
-                tracing::debug!(
+            crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { mismatches } => {
+                tracing::warn!(
                     target: "RUST_EXEC",
                     block_n,
-                    ignored_storage_addresses = ?ignored_storage_addresses,
-                    "comparator_state_diff_ignored_storage_mismatch"
+                    allowed_fee_balance_value_mismatches = mismatches.len(),
+                    "comparator_state_diff_allowed_fee_balance_mismatch"
                 );
             }
             crate::comparator::StateDiffComparison::Match => {}
@@ -1172,6 +1438,7 @@ impl BlockProductionTask {
             ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. } => {
                 self.metrics.comparator_execbox_resources_gt_block_limit_total.add(1, &[]);
                 tracing::error!(
+                    target: "RUST_EXEC",
                     block_n,
                     er_x1 = ?summary.bouncer_weights,
                     er_x2 = ?reexec_result.exec_resources,
@@ -1182,15 +1449,15 @@ impl BlockProductionTask {
             ExecutionResourceComparison::Ok => {}
         }
 
-        let ignored_storage_mismatch =
-            matches!(&sd_comparison, crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. });
-        let use_blockifier_on_ignored_storage_mismatch = ignored_storage_mismatch
+        let allowed_fee_balance_mismatch =
+            matches!(&sd_comparison, crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { .. });
+        let use_blockifier_on_allowed_fee_balance_mismatch = allowed_fee_balance_mismatch
             && self.routing_cfg.runtime_options.ignored_storage_mismatch_canonical_source
                 == RustExecCanonicalSource::BlockifierReexec;
         let sd_match = matches!(
             &sd_comparison,
             crate::comparator::StateDiffComparison::Match
-                | crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. }
+                | crate::comparator::StateDiffComparison::AllowedFeeBalanceMismatch { .. }
         );
         let er_match = matches!(er_comparison, ExecutionResourceComparison::Ok);
 
@@ -1206,18 +1473,17 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::debug!(
+                if use_blockifier_on_allowed_fee_balance_mismatch {
+                    tracing::warn!(
                         target: "RUST_EXEC",
                         block_n,
-                        "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
+                        "comparator_allowed_fee_balance_mismatch_using_blockifier_canonical_output"
                     );
-                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                     CanonicalizedBlockOutput {
                         source: CanonicalBlockSource::BlockifierReexec,
                         state_diff: reexec_result.state_diff,
                         bouncer_weights: reexec_result.exec_resources,
-                        bre_per_tx,
+                        bre_per_tx: Some(reexec_result.per_tx),
                     }
                 } else {
                     CanonicalizedBlockOutput {
@@ -1238,18 +1504,17 @@ impl BlockProductionTask {
                     overlay_count,
                     "comparator_passed"
                 );
-                if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::debug!(
+                if use_blockifier_on_allowed_fee_balance_mismatch {
+                    tracing::warn!(
                         target: "RUST_EXEC",
                         block_n,
-                        "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
+                        "comparator_allowed_fee_balance_mismatch_using_blockifier_canonical_output"
                     );
-                    let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                     CanonicalizedBlockOutput {
                         source: CanonicalBlockSource::BlockifierReexec,
                         state_diff: reexec_result.state_diff,
                         bouncer_weights: reexec_result.exec_resources,
-                        bre_per_tx,
+                        bre_per_tx: Some(reexec_result.per_tx),
                     }
                 } else {
                     CanonicalizedBlockOutput {
@@ -1274,12 +1539,11 @@ impl BlockProductionTask {
                 // This legacy helper only returns the canonical source decision.
                 // C-013: Pass BRE per-tx artifacts for BRE-backed external promotion.
                 // Empty per_tx (from incomplete collection) triggers EB-backed fallback.
-                let bre_per_tx = if reexec_result.per_tx.is_empty() { None } else { Some(reexec_result.per_tx) };
                 CanonicalizedBlockOutput {
                     source: CanonicalBlockSource::BlockifierReexec,
                     state_diff: reexec_result.state_diff,
                     bouncer_weights: reexec_result.exec_resources,
-                    bre_per_tx,
+                    bre_per_tx: Some(reexec_result.per_tx),
                 }
             }
         };
@@ -1311,6 +1575,7 @@ impl BlockProductionTask {
         let dump_path = Self::write_state_diff_mismatch_dump(block_n, &summary, rust_exec_diff, blockifier_diff, 256)
             .unwrap_or_else(|| "unavailable".to_owned());
         tracing::warn!(
+            target: "RUST_EXEC",
             block_n,
             summary = %summary,
             rust_exec_storage_contracts = rust_exec_diff.storage_diffs.len(),
@@ -1424,13 +1689,24 @@ impl BlockProductionTask {
         let bytes = match serde_json::to_vec_pretty(&payload) {
             Ok(bytes) => bytes,
             Err(err) => {
-                tracing::warn!(block_n, error = %err, "comparator_state_diff_mismatch_dump_serialize_failed");
+                tracing::warn!(
+                    target: "RUST_EXEC",
+                    block_n,
+                    error = %err,
+                    "comparator_state_diff_mismatch_dump_serialize_failed"
+                );
                 return None;
             }
         };
 
         if let Err(err) = std::fs::write(&path, bytes) {
-            tracing::warn!(block_n, path = %path, error = %err, "comparator_state_diff_mismatch_dump_write_failed");
+            tracing::warn!(
+                target: "RUST_EXEC",
+                block_n,
+                path = %path,
+                error = %err,
+                "comparator_state_diff_mismatch_dump_write_failed"
+            );
             return None;
         }
 

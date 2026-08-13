@@ -580,11 +580,12 @@ impl BlockProductionTask {
 
         let n_purged = purged_blocks.len();
         if n_purged > 0 {
-            tracing::info!(
+            tracing::warn!(
+                target: "RUST_EXEC",
                 stop_block_n,
-                n_purged,
+                descendant_blocks_evicted = n_purged,
                 purged_blocks = ?purged_blocks,
-                "descendant_canonicalizations_purged_stale_queue_entries"
+                "Comparator fallback evicted speculative descendant canonicalizations"
             );
         }
     }
@@ -603,13 +604,14 @@ impl BlockProductionTask {
         let new_mode = self.fallback.mode;
         let _ = self.execution_mode_tx.send(new_mode);
 
-        tracing::info!(
+        tracing::error!(
+            target: "RUST_EXEC",
             block_n,
             reason = ?reason,
             previous_mode = ?previous_mode,
             new_mode = ?new_mode,
             current_block_suffix_txs = current_block_suffix.len(),
-            "executionbox_fallback_entered"
+            "ExecutionBox stopped; Madara entered persistent Blockifier-only fallback"
         );
 
         self.execution_epoch += 1;
@@ -732,7 +734,12 @@ impl BlockProductionTask {
             let n_rows = rows.len();
             self.install_tainted_rebuild_session(block_n, pending.canonical_header.clone(), rows.clone(), carry_rows)?;
             pending.state.backend.write_access().replace_internal_preconfirmed_content(block_n, rows.clone())?;
-            tracing::info!(block_n, n_rows, "internal_preconfirmed_replaced_with_bre_content_and_persisted");
+            tracing::warn!(
+                target: "RUST_EXEC",
+                block_n,
+                blockifier_canonical_transactions = n_rows,
+                "Installed the Blockifier canonical prefix for the failed speculative block"
+            );
         } else {
             self.install_tainted_rebuild_session(
                 block_n,

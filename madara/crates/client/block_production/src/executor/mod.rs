@@ -103,6 +103,7 @@ pub enum ExecutorMessage {
 #[derive(Debug)]
 pub struct BatchExecutionResult {
     pub executed_txs: BatchToExecute,
+    pub original_tx_hashes: Vec<mp_convert::Felt>,
     pub blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
     pub stats: ExecutionStats,
     pub execution_mode: ExecutionMode,
