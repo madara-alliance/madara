@@ -56,9 +56,10 @@ pub(crate) mod tests;
 #[cfg(test)]
 use self::state::OptimisticPipelineNotification;
 use self::state::{
-    ApprovedExternalContent, CanonicalizationTaskCanonical, CanonicalizationTaskResult, PendingCanonicalizationInput,
-    PendingStopFallbackHandoff, PendingTaintedRebuildCarry, StartupRecoveredBlockPayload, TaintedRebuildClosePayload,
-    TaintedRebuildSourceTx, TaintedRebuildStepResult,
+    ApprovedExternalContent, CanonicalizationTaskCanonical, CanonicalizationTaskResult,
+    InternalPreconfirmedWindowSnapshot, PendingCanonicalizationInput, PendingStopFallbackHandoff,
+    PendingTaintedRebuildCarry, StartupRecoveredBlockPayload, TaintedRebuildClosePayload, TaintedRebuildSourceTx,
+    TaintedRebuildStepResult,
 };
 pub use self::state::{BlockProductionStateNotification, BlockProductionTask};
 pub(crate) use self::state::{CurrentBlockState, MempoolIntakeMode, TaskState};

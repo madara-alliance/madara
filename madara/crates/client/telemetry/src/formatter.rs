@@ -353,13 +353,14 @@ impl CustomFormatter {
         })
     }
 
-    fn format_rust_exec(
+    fn format_execution_engine(
         &self,
         writer: &mut Writer<'_>,
         event: &tracing::Event<'_>,
         ts: &SystemTime,
         level: &Level,
         level_style: &Style,
+        engine: &str,
     ) -> fmt::Result {
         visit_message(event, |message| {
             writeln!(
@@ -367,7 +368,7 @@ impl CustomFormatter {
                 "{} {} {} {:?}",
                 self.timestamp_fmt(ts),
                 level_style.apply_to(level),
-                Style::new().magenta().apply_to("RUST_EXEC"),
+                Style::new().magenta().apply_to(engine),
                 message,
             )
         })
@@ -657,7 +658,17 @@ where
                     Level::TRACE => Style::new().cyan(),
                     Level::INFO => Style::new().green(),
                 };
-                self.format_rust_exec(&mut writer, event, &ts, level, &level_style)
+                self.format_execution_engine(&mut writer, event, &ts, level, &level_style, "RUST_EXEC")
+            }
+            (_, "CAIRO") => {
+                let level_style = match *level {
+                    Level::ERROR => Style::new().red(),
+                    Level::WARN => Style::new().yellow(),
+                    Level::DEBUG => Style::new().blue(),
+                    Level::TRACE => Style::new().cyan(),
+                    Level::INFO => Style::new().green(),
+                };
+                self.format_execution_engine(&mut writer, event, &ts, level, &level_style, "CAIRO")
             }
             (_, "madara_cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
             (_, "close_block") => self.format_close_block(&mut writer, event, &ts, level, target),

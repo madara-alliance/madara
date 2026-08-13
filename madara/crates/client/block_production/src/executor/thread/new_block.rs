@@ -59,7 +59,7 @@ impl ExecutorThread {
                     );
                     break Ok(WaitForConfirmedHashOutcome::Hash(Some((block_n_min_10, block_hash))));
                 }
-                tracing::info!(
+                tracing::debug!(
                     "executor_confirmed_hash_still_pending required_block={} current_block={}",
                     block_n_min_10,
                     block_n

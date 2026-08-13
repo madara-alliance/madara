@@ -8,6 +8,7 @@ struct CanonicalizationTaskContext {
     no_charge_fee: bool,
     ignore_fee_token_mismatch: bool,
     ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
+    internal_capacity: usize,
     #[cfg(test)]
     force_comparator_error: bool,
     #[cfg(test)]
@@ -32,7 +33,7 @@ impl BlockProductionTask {
     ) {
         let row_count = executed_rows.len();
         self.approved_external_content.insert(block_n, ApprovedExternalContent { source, header, executed_rows });
-        tracing::info!(
+        tracing::debug!(
             block_n,
             canonical_source = ?source,
             row_count,
@@ -59,7 +60,7 @@ impl BlockProductionTask {
             return Err(err).with_context(|| format!("Filling external preconfirmed shell for block #{block_n}"));
         }
 
-        tracing::info!(
+        tracing::debug!(
             block_n,
             canonical_source = ?source,
             row_count,
@@ -84,7 +85,7 @@ impl BlockProductionTask {
         let confirmed_base = input.state.backend.latest_confirmed_block_n();
         let reexec_parent_state =
             Self::capture_reexec_parent_state(&self.diffs_since_snapshot, confirmed_base, block_n);
-        tracing::info!(
+        tracing::debug!(
             block_n,
             confirmed_base_block_n = ?confirmed_base,
             overlay_count = reexec_parent_state.parent_overlays.len(),
@@ -102,6 +103,7 @@ impl BlockProductionTask {
         let ignore_fee_token_mismatch = self.routing_cfg.runtime_options.ignore_fee_token_mismatch;
         let ignored_storage_mismatch_canonical_source =
             self.routing_cfg.runtime_options.ignored_storage_mismatch_canonical_source;
+        let internal_capacity = self.close_queue_capacity;
         #[cfg(test)]
         let force_comparator_error = self.force_comparator_error;
         #[cfg(test)]
@@ -117,6 +119,7 @@ impl BlockProductionTask {
             no_charge_fee,
             ignore_fee_token_mismatch,
             ignored_storage_mismatch_canonical_source,
+            internal_capacity,
             #[cfg(test)]
             force_comparator_error,
             #[cfg(test)]
@@ -145,7 +148,7 @@ impl BlockProductionTask {
                 let mut state = state.take().expect("canonicalization state must exist on error");
                 let confirmed_base = state.backend.latest_confirmed_block_n();
                 let overlay_count = self.diffs_since_snapshot.len();
-                tracing::info!(
+                tracing::debug!(
                     block_n,
                     confirmed_base_block_n = ?confirmed_base,
                     overlay_count,
@@ -211,7 +214,7 @@ impl BlockProductionTask {
             }
         };
 
-        tracing::info!(
+        tracing::debug!(
             block_n,
             canonical_source = ?canonical.canonical.source,
             "block_canonicalized"
@@ -367,7 +370,7 @@ impl BlockProductionTask {
                 backend_clone.write_access().flush_preconfirmed_content_to_db().context(flush_context)
             })
             .await?;
-            tracing::info!(block_n, "canonical_preconfirmed_persisted");
+            tracing::debug!(block_n, "canonical_preconfirmed_persisted");
         }
 
         self.enqueue_canonical_close_payload(
@@ -509,6 +512,7 @@ impl BlockProductionTask {
             no_charge_fee,
             ignore_fee_token_mismatch,
             ignored_storage_mismatch_canonical_source,
+            internal_capacity,
             #[cfg(test)]
             force_comparator_error,
             #[cfg(test)]
@@ -568,6 +572,7 @@ impl BlockProductionTask {
                 reexec_parent_state,
                 ignore_fee_token_mismatch,
                 ignored_storage_mismatch_canonical_source,
+                internal_capacity,
                 #[cfg(test)]
                 force_comparator_error,
             )
@@ -606,6 +611,7 @@ impl BlockProductionTask {
         reexec_parent_state: ReexecParentStateSnapshot,
         ignore_fee_token_mismatch: bool,
         ignored_storage_mismatch_canonical_source: RustExecCanonicalSource,
+        internal_capacity: usize,
         #[cfg(test)] force_comparator_error: bool,
     ) -> anyhow::Result<CanonicalizationTaskCanonical> {
         use std::time::UNIX_EPOCH;
@@ -637,12 +643,23 @@ impl BlockProductionTask {
         let tx_count = txs.len();
         let overlay_count = parent_overlays.len();
 
+        let window = InternalPreconfirmedWindowSnapshot::from_backend(&state.backend, internal_capacity);
         tracing::info!(
+            target: "RUST_EXEC",
             block_n,
             confirmed_base_block_n = ?confirmed_base,
             overlay_count,
             tx_count,
-            "comparator_started"
+            confirmed_tip = ?window.confirmed_tip,
+            external_preconfirmed_tip = ?window.external_preconfirmed_tip,
+            internal_preconfirmed_tip = ?window.internal_preconfirmed_tip,
+            internal_depth = window.depth,
+            internal_capacity = window.capacity,
+            "🔍 Comparator started for block #{} ({} transaction(s), internal {}/{})",
+            block_n,
+            tx_count,
+            window.depth,
+            window.capacity,
         );
 
         let req = ReexecRequest {
@@ -666,15 +683,15 @@ impl BlockProductionTask {
 
         let reexec_result = match outcome {
             ReexecWorkerOutcome::Completed(r) => {
-                tracing::info!(
+                tracing::debug!(
                     block_n,
                     outcome = "completed",
                     duration_ms = format!("{reexec_duration_ms:.1}"),
                     "comparator_reexec_finished"
                 );
                 if tx_count > 0 {
-                    tracing::info!(
-                        "🔁 Re-executed and compared {} transaction(s) with Blockifier for block {} - {:.3?}",
+                    tracing::debug!(
+                        "Re-executed and compared {} transaction(s) with Blockifier for block {} - {:.3?}",
                         tx_count,
                         block_n,
                         reexec_start.elapsed(),
@@ -683,7 +700,8 @@ impl BlockProductionTask {
                 r
             }
             ReexecWorkerOutcome::Cancelled { epoch, block_n: bn } => {
-                tracing::info!(
+                tracing::warn!(
+                    target: "RUST_EXEC",
                     block_n = bn,
                     epoch,
                     outcome = "cancelled",
@@ -731,7 +749,7 @@ impl BlockProductionTask {
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
-                tracing::warn!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     ignored_storage_addresses = ?ignored_storage_addresses,
@@ -743,7 +761,7 @@ impl BlockProductionTask {
         match &er_comparison {
             ExecutionResourceComparison::WarnExecutionBoxGreaterThanReexec { .. } => {
                 metrics.comparator_execbox_resources_gt_reexec_total.add(1, &[]);
-                tracing::warn!(
+                tracing::debug!(
                     block_n,
                     er_x1 = ?summary.bouncer_weights,
                     er_x2 = ?reexec_result.exec_resources,
@@ -775,9 +793,9 @@ impl BlockProductionTask {
         );
         let er_match = matches!(er_comparison, ExecutionResourceComparison::Ok);
 
-        let (canonical, stop_reason) = match decision {
+        let (canonical, stop_reason) = match &decision {
             ComparatorDecision::Accept => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "accept",
@@ -787,7 +805,7 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::warn!(
+                    tracing::debug!(
                         target: "RUST_EXEC",
                         block_n,
                         "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
@@ -815,7 +833,7 @@ impl BlockProductionTask {
                 }
             }
             ComparatorDecision::AcceptWithWarn { .. } => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "accept_with_warn",
@@ -825,7 +843,7 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::warn!(
+                    tracing::debug!(
                         target: "RUST_EXEC",
                         block_n,
                         "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
@@ -853,7 +871,7 @@ impl BlockProductionTask {
                 }
             }
             ComparatorDecision::StopExecutionBox { reason } => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "stop",
@@ -870,16 +888,91 @@ impl BlockProductionTask {
                         bouncer_weights: reexec_result.exec_resources,
                         bre_per_tx,
                     },
-                    Some(reason),
+                    Some(reason.clone()),
                 )
             }
         };
 
-        tracing::info!(
+        tracing::debug!(
             block_n,
             canonical_source = ?canonical.source,
             "canonicalization_source_selected"
         );
+
+        let comparator_duration_ms = reexec_start.elapsed().as_secs_f64() * 1000.0;
+        let state_diff_result = match &sd_comparison {
+            crate::comparator::StateDiffComparison::Match => "matched",
+            crate::comparator::StateDiffComparison::IgnoredStorageMismatch { .. } => {
+                "matched with ignored fee-token storage"
+            }
+            crate::comparator::StateDiffComparison::Mismatch { .. } => "mismatched",
+        };
+        let resource_result = match &er_comparison {
+            ExecutionResourceComparison::Ok => "within comparator limits",
+            ExecutionResourceComparison::WarnExecutionBoxGreaterThanReexec { .. } => {
+                "ExecutionBox greater than Blockifier but within block limit"
+            }
+            ExecutionResourceComparison::FatalExecutionBoxGreaterThanBlockLimit { .. } => "over block limit",
+        };
+        let canonical_source = match canonical.source {
+            CanonicalBlockSource::ExecutionBox => "ExecutionBox",
+            CanonicalBlockSource::BlockifierReexec => "Blockifier",
+        };
+
+        match &decision {
+            ComparatorDecision::Accept => tracing::info!(
+                target: "RUST_EXEC",
+                block_n,
+                tx_count,
+                overlay_count,
+                duration_ms = comparator_duration_ms,
+                state_diff_result,
+                ignored_storage_addresses = ?ignored_storage_addresses,
+                resource_result,
+                canonical_source,
+                "✅ Comparator passed for block #{} in {:.3?} (state diff: {}; resources: {}; canonical: {})",
+                block_n,
+                reexec_start.elapsed(),
+                state_diff_result,
+                resource_result,
+                canonical_source,
+            ),
+            ComparatorDecision::AcceptWithWarn { resource_deltas } => tracing::warn!(
+                target: "RUST_EXEC",
+                block_n,
+                tx_count,
+                overlay_count,
+                duration_ms = comparator_duration_ms,
+                state_diff_result,
+                ignored_storage_addresses = ?ignored_storage_addresses,
+                resource_result,
+                canonical_source,
+                resource_deltas = %resource_deltas,
+                "⚠️ Comparator passed for block #{} in {:.3?} (state diff: {}; resources: {}; canonical: {})",
+                block_n,
+                reexec_start.elapsed(),
+                state_diff_result,
+                resource_result,
+                canonical_source,
+            ),
+            ComparatorDecision::StopExecutionBox { reason } => tracing::error!(
+                target: "RUST_EXEC",
+                block_n,
+                tx_count,
+                overlay_count,
+                duration_ms = comparator_duration_ms,
+                state_diff_result,
+                ignored_storage_addresses = ?ignored_storage_addresses,
+                resource_result,
+                canonical_source,
+                reason = %reason,
+                "❌ Comparator failed for block #{} in {:.3?} ({}; canonical: {}; switching to Blockifier-only)",
+                block_n,
+                reexec_start.elapsed(),
+                reason,
+                canonical_source,
+            ),
+        }
 
         Ok(CanonicalizationTaskCanonical { canonical, stop_reason })
     }
@@ -948,7 +1041,7 @@ impl BlockProductionTask {
         let tx_count = txs.len();
         let overlay_count = parent_overlays.len();
 
-        tracing::info!(
+        tracing::debug!(
             block_n,
             confirmed_base_block_n = ?confirmed_base,
             overlay_count,
@@ -980,14 +1073,14 @@ impl BlockProductionTask {
 
         let reexec_result = match outcome {
             ReexecWorkerOutcome::Completed(r) => {
-                tracing::info!(
+                tracing::debug!(
                     block_n,
                     outcome = "completed",
                     duration_ms = format!("{reexec_duration_ms:.1}"),
                     "comparator_reexec_finished"
                 );
                 if tx_count > 0 {
-                    tracing::info!(
+                    tracing::debug!(
                         "🔁 Re-executed and compared {} transaction(s) with Blockifier for block {} - {:.3?}",
                         tx_count,
                         block_n,
@@ -997,7 +1090,8 @@ impl BlockProductionTask {
                 r
             }
             ReexecWorkerOutcome::Cancelled { epoch, block_n: bn } => {
-                tracing::info!(
+                tracing::warn!(
+                    target: "RUST_EXEC",
                     block_n = bn,
                     epoch,
                     outcome = "cancelled",
@@ -1051,7 +1145,7 @@ impl BlockProductionTask {
                 Self::log_state_diff_mismatch_details(block_n, sd_x1, &reexec_result.state_diff, &sd_comparison);
             }
             crate::comparator::StateDiffComparison::IgnoredStorageMismatch { ignored_storage_addresses } => {
-                tracing::warn!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     ignored_storage_addresses = ?ignored_storage_addresses,
@@ -1063,7 +1157,7 @@ impl BlockProductionTask {
         match &er_comparison {
             ExecutionResourceComparison::WarnExecutionBoxGreaterThanReexec { .. } => {
                 self.metrics.comparator_execbox_resources_gt_reexec_total.add(1, &[]);
-                tracing::warn!(
+                tracing::debug!(
                     block_n,
                     er_x1 = ?summary.bouncer_weights,
                     er_x2 = ?reexec_result.exec_resources,
@@ -1099,7 +1193,7 @@ impl BlockProductionTask {
         // Select canonical source based on comparator decision (C-009A).
         let canonical = match &decision {
             ComparatorDecision::Accept => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "accept",
@@ -1109,7 +1203,7 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::warn!(
+                    tracing::debug!(
                         target: "RUST_EXEC",
                         block_n,
                         "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
@@ -1131,7 +1225,7 @@ impl BlockProductionTask {
                 }
             }
             ComparatorDecision::AcceptWithWarn { .. } => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "accept_with_warn",
@@ -1141,7 +1235,7 @@ impl BlockProductionTask {
                     "comparator_passed"
                 );
                 if use_blockifier_on_ignored_storage_mismatch {
-                    tracing::warn!(
+                    tracing::debug!(
                         target: "RUST_EXEC",
                         block_n,
                         "comparator_ignored_storage_mismatch_using_blockifier_canonical_output"
@@ -1163,7 +1257,7 @@ impl BlockProductionTask {
                 }
             }
             ComparatorDecision::StopExecutionBox { reason } => {
-                tracing::info!(
+                tracing::debug!(
                     target: "RUST_EXEC",
                     block_n,
                     decision = "stop",
@@ -1186,7 +1280,7 @@ impl BlockProductionTask {
             }
         };
 
-        tracing::info!(
+        tracing::debug!(
             block_n,
             canonical_source = ?canonical.source,
             "canonicalization_source_selected"

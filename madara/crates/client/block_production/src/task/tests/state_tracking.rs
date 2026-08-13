@@ -16,6 +16,22 @@ fn optimistic_window_configures_serial_close_queue_capacity() {
 }
 
 #[test]
+fn internal_preconfirmed_window_reports_authoritative_depth() {
+    let empty = InternalPreconfirmedWindowSnapshot::from_tips(None, None, None, 10);
+    assert_eq!(empty.depth, 0);
+
+    let full = InternalPreconfirmedWindowSnapshot::from_tips(Some(100), Some(101), Some(110), 10);
+    assert_eq!(full.depth, 10);
+
+    let draining = InternalPreconfirmedWindowSnapshot::from_tips(Some(105), Some(106), Some(110), 10);
+    assert_eq!(draining.depth, 5);
+    assert_eq!(draining.confirmed_advance_from(Some(104)), 1);
+
+    let fallback_rewind = InternalPreconfirmedWindowSnapshot::from_tips(Some(105), Some(106), Some(106), 10);
+    assert_eq!(fallback_rewind.depth, 1);
+}
+
+#[test]
 fn preconfirmed_runahead_is_accepted_before_previous_close_completes() {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_devnet()),

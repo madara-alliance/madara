@@ -27,6 +27,10 @@ pub struct ExecutionStats {
     pub n_batches: usize,
     /// Number of transactions included into the block.
     pub n_added_to_block: usize,
+    /// Number of included transactions executed by Blockifier.
+    pub n_added_by_blockifier: usize,
+    /// Number of included transactions executed by Rust Exec.
+    pub n_added_by_rust_exec: usize,
     /// Number of transactions executed.
     pub n_executed: usize,
     /// Reverted transactions are failing transactions that are included in the block.
@@ -39,6 +43,10 @@ pub struct ExecutionStats {
     pub l2_gas_consumed: u128,
     /// Execution time
     pub exec_duration: Duration,
+    /// Blockifier execution time.
+    pub blockifier_exec_duration: Duration,
+    /// Rust Exec execution time.
+    pub rust_exec_duration: Duration,
 }
 
 impl Add for ExecutionStats {
@@ -47,12 +55,16 @@ impl Add for ExecutionStats {
         Self {
             n_batches: self.n_batches + other.n_batches,
             n_added_to_block: self.n_added_to_block + other.n_added_to_block,
+            n_added_by_blockifier: self.n_added_by_blockifier + other.n_added_by_blockifier,
+            n_added_by_rust_exec: self.n_added_by_rust_exec + other.n_added_by_rust_exec,
             n_executed: self.n_executed + other.n_executed,
             n_reverted: self.n_reverted + other.n_reverted,
             n_rejected: self.n_rejected + other.n_rejected,
             declared_classes: self.declared_classes + other.declared_classes,
             l2_gas_consumed: self.l2_gas_consumed + other.l2_gas_consumed,
             exec_duration: self.exec_duration + other.exec_duration,
+            blockifier_exec_duration: self.blockifier_exec_duration + other.blockifier_exec_duration,
+            rust_exec_duration: self.rust_exec_duration + other.rust_exec_duration,
         }
     }
 }
@@ -465,10 +477,34 @@ impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::time::Duration;
 
     use starknet_types_core::felt::Felt;
 
-    use super::{build_rust_exec_runtime_config, RustExecRoutingConfig};
+    use super::{build_rust_exec_runtime_config, ExecutionStats, RustExecRoutingConfig};
+
+    #[test]
+    fn execution_stats_preserve_per_engine_accounting() {
+        let blockifier = ExecutionStats {
+            n_added_to_block: 2,
+            n_added_by_blockifier: 2,
+            blockifier_exec_duration: Duration::from_millis(20),
+            ..Default::default()
+        };
+        let rust_exec = ExecutionStats {
+            n_added_to_block: 3,
+            n_added_by_rust_exec: 3,
+            rust_exec_duration: Duration::from_millis(5),
+            ..Default::default()
+        };
+
+        let combined = blockifier + rust_exec;
+        assert_eq!(combined.n_added_to_block, 5);
+        assert_eq!(combined.n_added_by_blockifier, 2);
+        assert_eq!(combined.n_added_by_rust_exec, 3);
+        assert_eq!(combined.blockifier_exec_duration, Duration::from_millis(20));
+        assert_eq!(combined.rust_exec_duration, Duration::from_millis(5));
+    }
 
     #[test]
     fn runtime_config_carries_supported_rust_class_hashes() {
