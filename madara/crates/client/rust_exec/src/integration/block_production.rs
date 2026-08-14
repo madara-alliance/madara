@@ -609,7 +609,6 @@ mod tests {
                 sierra_gas: GasAmount(10),
                 proving_gas: GasAmount(95),
                 receipt_l2_gas: GasAmount(96),
-                ..BouncerWeights::empty()
             }),
             ..Default::default()
         };
