@@ -298,10 +298,10 @@ mod tests {
         let mut routed = RoutedBatchToExecute::default();
         for _ in 0..3 {
             let tx = make_invoke_tx(sender, Felt::ONE, selector);
-            routed.blockifier_batch.push(tx, AdditionalTxInfo::default());
+            routed.transactions.push(tx, AdditionalTxInfo::default());
         }
-        assert_eq!(routed.blockifier_batch.len(), 3);
-        assert_eq!(routed.rust_batch.len(), 0);
+        assert_eq!(routed.blockifier_suffix_len(), 3);
+        assert_eq!(routed.rust_prefix_len(), 0);
         assert_eq!(routed.total_len(), 3);
         assert!(!routed.is_empty());
     }

@@ -10,5 +10,7 @@ supported_class_hashes:
   - "0x05e9bdfbd0b2b461a42052f43a38663b1d53f7ce8a9537bdc06b857b7508a13a"
   - "0x00049e91ccb24fcf4acec4a24896092d9387a97865dcb0e6f98503399564b452"
 
-rust_batch_size: 30
+# Maximum transactions in one source-ordered logical batch while Mixed.
+mixed_batch_size: 30
+# Blockifier-only pick size and contiguous Blockifier suffix execution chunk size.
 blockifier_batch_size: 10

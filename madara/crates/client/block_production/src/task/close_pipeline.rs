@@ -15,6 +15,11 @@ impl BlockProductionTask {
         let block_n = state.block_number;
         let execution_mode = state.execution_snapshot.execution_mode;
         let tx_count = state.accumulated_stats.n_added_to_block;
+        if tx_count > 0 {
+            self.metrics
+                .block_rust_exec_routing_ratio
+                .record(state.accumulated_stats.n_added_by_rust_exec as f64 / tx_count as f64, &[]);
+        }
         tracing::debug!("close_block_received_from_executor block_number={block_n}");
         // C-018: Do not compute parent_overlays here. They are recomputed at
         // canonicalization start to avoid stale overlays from parent stops.

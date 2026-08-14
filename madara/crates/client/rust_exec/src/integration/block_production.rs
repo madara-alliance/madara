@@ -9,13 +9,14 @@
 //! "run rust-exec + format like blockifier + apply writes to CachedState" glue here.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use blockifier::blockifier::transaction_executor::{
     TransactionExecutionOutput, TransactionExecutor, TransactionExecutorError, TransactionExecutorResult,
     BLOCK_STATE_ACCESS_ERR,
 };
-use blockifier::bouncer::{get_tx_weights, BouncerWeights};
+use blockifier::bouncer::{get_tx_weights, Bouncer, BouncerWeights};
 use blockifier::execution::call_info::{CairoPrimitiveCounterMap, ExecutionSummary};
 use blockifier::fee::receipt::TransactionReceipt;
 use blockifier::state::cached_state::StateChangesKeys;
@@ -58,14 +59,64 @@ pub struct RustPhaseState {
 }
 
 impl RustPhaseState {
-    /// Rust may project resource weights differently from Blockifier, but the transaction count is
-    /// shared by both execution paths and must always come from the live block bouncer.
+    /// Take the conservative value in every resource dimension while keeping the live transaction count.
     pub fn effective_bouncer_weights(&self, live_bouncer_weights: BouncerWeights) -> BouncerWeights {
-        let Some(mut projected) = self.projected_bouncer_weights else {
+        let Some(projected) = self.projected_bouncer_weights else {
             return live_bouncer_weights;
         };
-        projected.n_txs = live_bouncer_weights.n_txs;
-        projected
+        BouncerWeights {
+            l1_gas: projected.l1_gas.max(live_bouncer_weights.l1_gas),
+            message_segment_length: projected.message_segment_length.max(live_bouncer_weights.message_segment_length),
+            n_events: projected.n_events.max(live_bouncer_weights.n_events),
+            state_diff_size: projected.state_diff_size.max(live_bouncer_weights.state_diff_size),
+            sierra_gas: projected.sierra_gas.max(live_bouncer_weights.sierra_gas),
+            n_txs: live_bouncer_weights.n_txs,
+            proving_gas: projected.proving_gas.max(live_bouncer_weights.proving_gas),
+            receipt_l2_gas: projected.receipt_l2_gas.max(live_bouncer_weights.receipt_l2_gas),
+        }
+    }
+
+    pub fn blockifier_reservation(&self, live_bouncer_weights: BouncerWeights) -> (BouncerWeights, BouncerWeights) {
+        let effective = self.effective_bouncer_weights(live_bouncer_weights);
+        let reserved =
+            effective.checked_sub(live_bouncer_weights).expect("effective bouncer weights must dominate live weights");
+        (effective, reserved)
+    }
+
+    pub fn absorb_blockifier_delta(
+        &mut self,
+        effective_before: BouncerWeights,
+        live_before: BouncerWeights,
+        live_after: BouncerWeights,
+    ) {
+        let delta = live_after.checked_sub(live_before).expect("Blockifier bouncer weights cannot decrease");
+        let mut effective_after = effective_before.checked_add(delta).expect("effective bouncer weights overflowed");
+        effective_after.n_txs = live_after.n_txs;
+        self.projected_bouncer_weights = Some(effective_after);
+    }
+}
+
+/// Temporarily reserves Rust's conservative projected headroom from Blockifier's public capacity.
+pub struct ScopedBlockifierCapacity {
+    bouncer: Arc<Mutex<Bouncer>>,
+    original_capacity: BouncerWeights,
+}
+
+impl ScopedBlockifierCapacity {
+    pub fn reserve(bouncer: Arc<Mutex<Bouncer>>, reserved: BouncerWeights) -> Option<Self> {
+        let original_capacity = {
+            let mut bouncer = bouncer.lock().expect("Bouncer lock poisoned");
+            let original_capacity = bouncer.bouncer_config.block_max_capacity;
+            bouncer.bouncer_config.block_max_capacity = original_capacity.checked_sub(reserved)?;
+            original_capacity
+        };
+        Some(Self { bouncer, original_capacity })
+    }
+}
+
+impl Drop for ScopedBlockifierCapacity {
+    fn drop(&mut self) {
+        self.bouncer.lock().expect("Bouncer lock poisoned").bouncer_config.block_max_capacity = self.original_capacity;
     }
 }
 
@@ -497,8 +548,10 @@ fn classify_rust_results<T, E>(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_rust_results, RustDeferredReason, RustPhaseState};
-    use blockifier::bouncer::BouncerWeights;
+    use super::{classify_rust_results, RustDeferredReason, RustPhaseState, ScopedBlockifierCapacity};
+    use blockifier::bouncer::{Bouncer, BouncerConfig, BouncerWeights};
+    use starknet_api::execution_resources::GasAmount;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn rust_result_classification_stops_before_first_error() {
@@ -511,16 +564,154 @@ mod tests {
         let phase_state = RustPhaseState {
             projected_bouncer_weights: Some(BouncerWeights {
                 n_txs: 2,
+                l1_gas: 91,
+                message_segment_length: 92,
+                n_events: 93,
                 state_diff_size: 99,
+                sierra_gas: GasAmount(10),
+                proving_gas: GasAmount(95),
+                receipt_l2_gas: GasAmount(96),
                 ..BouncerWeights::empty()
             }),
             ..Default::default()
         };
-        let live = BouncerWeights { n_txs: 7, state_diff_size: 12, ..BouncerWeights::empty() };
+        let live = BouncerWeights {
+            n_txs: 7,
+            l1_gas: 11,
+            message_segment_length: 12,
+            n_events: 13,
+            state_diff_size: 14,
+            sierra_gas: GasAmount(20),
+            proving_gas: GasAmount(15),
+            receipt_l2_gas: GasAmount(16),
+        };
 
         let effective = phase_state.effective_bouncer_weights(live);
 
         assert_eq!(effective.n_txs, 7);
+        assert_eq!(effective.l1_gas, 91);
+        assert_eq!(effective.message_segment_length, 92);
+        assert_eq!(effective.n_events, 93);
         assert_eq!(effective.state_diff_size, 99);
+        assert_eq!(effective.sierra_gas, GasAmount(20));
+        assert_eq!(effective.proving_gas, GasAmount(95));
+        assert_eq!(effective.receipt_l2_gas, GasAmount(96));
+    }
+
+    #[test]
+    fn blockifier_delta_advances_the_conservative_projection() {
+        let mut phase_state = RustPhaseState::default();
+        let live_before = BouncerWeights {
+            n_txs: 1,
+            l1_gas: 1,
+            message_segment_length: 2,
+            n_events: 3,
+            state_diff_size: 10,
+            sierra_gas: GasAmount(20),
+            proving_gas: GasAmount(30),
+            receipt_l2_gas: GasAmount(40),
+        };
+        let effective_before = BouncerWeights {
+            n_txs: 1,
+            l1_gas: 11,
+            message_segment_length: 12,
+            n_events: 13,
+            state_diff_size: 30,
+            sierra_gas: GasAmount(100),
+            proving_gas: GasAmount(110),
+            receipt_l2_gas: GasAmount(120),
+        };
+        let live_after = BouncerWeights {
+            n_txs: 3,
+            l1_gas: 3,
+            message_segment_length: 5,
+            n_events: 7,
+            state_diff_size: 18,
+            sierra_gas: GasAmount(25),
+            proving_gas: GasAmount(36),
+            receipt_l2_gas: GasAmount(47),
+        };
+
+        phase_state.absorb_blockifier_delta(effective_before, live_before, live_after);
+
+        assert_eq!(
+            phase_state.projected_bouncer_weights,
+            Some(BouncerWeights {
+                n_txs: 3,
+                l1_gas: 13,
+                message_segment_length: 15,
+                n_events: 17,
+                state_diff_size: 38,
+                sierra_gas: GasAmount(105),
+                proving_gas: GasAmount(116),
+                receipt_l2_gas: GasAmount(127),
+            })
+        );
+    }
+
+    #[test]
+    fn scoped_blockifier_capacity_restores_the_original_limit() {
+        let max = BouncerWeights {
+            n_txs: 10,
+            l1_gas: 100,
+            message_segment_length: 100,
+            n_events: 100,
+            state_diff_size: 100,
+            sierra_gas: GasAmount(1_000),
+            proving_gas: GasAmount(1_000),
+            receipt_l2_gas: GasAmount(1_000),
+        };
+        let bouncer = Arc::new(Mutex::new(Bouncer::new(BouncerConfig {
+            block_max_capacity: max,
+            builtin_weights: Default::default(),
+        })));
+        let reserved = BouncerWeights {
+            n_txs: 0,
+            l1_gas: 10,
+            message_segment_length: 11,
+            n_events: 12,
+            state_diff_size: 20,
+            sierra_gas: GasAmount(300),
+            proving_gas: GasAmount(301),
+            receipt_l2_gas: GasAmount(302),
+        };
+
+        {
+            let _guard = ScopedBlockifierCapacity::reserve(bouncer.clone(), reserved).expect("reservation fits");
+            let reduced = bouncer.lock().unwrap().bouncer_config.block_max_capacity;
+            assert_eq!(reduced.l1_gas, 90);
+            assert_eq!(reduced.message_segment_length, 89);
+            assert_eq!(reduced.n_events, 88);
+            assert_eq!(reduced.state_diff_size, 80);
+            assert_eq!(reduced.sierra_gas, GasAmount(700));
+            assert_eq!(reduced.proving_gas, GasAmount(699));
+            assert_eq!(reduced.receipt_l2_gas, GasAmount(698));
+        }
+
+        assert_eq!(bouncer.lock().unwrap().bouncer_config.block_max_capacity, max);
+        let too_large = BouncerWeights { state_diff_size: 101, ..BouncerWeights::empty() };
+        assert!(ScopedBlockifierCapacity::reserve(bouncer.clone(), too_large).is_none());
+        assert_eq!(bouncer.lock().unwrap().bouncer_config.block_max_capacity, max);
+    }
+
+    #[test]
+    fn scoped_blockifier_capacity_restores_the_limit_during_unwind() {
+        let max = BouncerWeights { state_diff_size: 100, ..BouncerWeights::max() };
+        let bouncer = Arc::new(Mutex::new(Bouncer::new(BouncerConfig {
+            block_max_capacity: max,
+            builtin_weights: Default::default(),
+        })));
+        let reserved = BouncerWeights { state_diff_size: 20, ..BouncerWeights::empty() };
+
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+            let bouncer = bouncer.clone();
+            move || {
+                let _guard = ScopedBlockifierCapacity::reserve(bouncer, reserved).expect("reservation fits");
+                panic!("simulate Blockifier failure");
+            }
+        }));
+
+        assert!(unwound.is_err());
+        assert_eq!(bouncer.lock().unwrap().bouncer_config.block_max_capacity, max);
     }
 }

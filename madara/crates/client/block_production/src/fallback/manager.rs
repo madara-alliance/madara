@@ -79,6 +79,14 @@ impl FallbackManager {
         self.reexec_epoch += 1;
     }
 
+    /// Persist a Rust runtime safety fallback without tainting the successfully executed prefix.
+    pub fn enter_rust_runtime_fallback(&mut self) {
+        self.mode = ExecutionMode::BlockifierOnly;
+        self.reason = Some(FallbackReason::RustRuntimeFailure);
+        self.taint_block = None;
+        self.comparator_enabled = false;
+    }
+
     /// Called when startup preconfirmed recovery completes.
     ///
     /// Maps startup config to runtime mode:
@@ -254,6 +262,21 @@ mod tests {
         let epoch_before = m.reexec_epoch;
         m.enter_fallback(FallbackReason::ExecResourcesOverLimit, 5);
         assert_eq!(m.reexec_epoch, epoch_before + 1);
+    }
+
+    #[test]
+    fn rust_runtime_fallback_is_persistent_without_tainting_the_block() {
+        let mut manager = make_manager_mixed_startup();
+        manager.on_startup_recovery_complete();
+        let epoch_before = manager.reexec_epoch;
+
+        manager.enter_rust_runtime_fallback();
+
+        assert_eq!(manager.mode, ExecutionMode::BlockifierOnly);
+        assert_eq!(manager.reason, Some(FallbackReason::RustRuntimeFailure));
+        assert_eq!(manager.taint_block, None);
+        assert_eq!(manager.reexec_epoch, epoch_before);
+        assert!(!manager.comparator_enabled);
     }
 
     // --- status snapshot ---

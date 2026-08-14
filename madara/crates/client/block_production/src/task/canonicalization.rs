@@ -181,6 +181,8 @@ impl BlockProductionTask {
                     }
                 }
 
+                let recovered_descendant_rows = self.recover_descendant_pending_canonicalizations(block_n)?;
+
                 match self.backend.rewind_internal_preconfirmed_to(block_n) {
                     Ok(n_discarded) if n_discarded > 0 => {
                         tracing::info!(block_n, n_discarded, "internal_preconfirmed_descendants_discarded");
@@ -203,9 +205,9 @@ impl BlockProductionTask {
                         block_n,
                         "comparator_error",
                         BatchToExecute::default(),
+                        recovered_descendant_rows,
                     )
                     .await?;
-                self.drop_descendant_pending_canonicalizations(block_n);
                 self.install_tainted_rebuild_session(
                     block_n,
                     preconfirmed_view.block().header.clone(),
@@ -303,7 +305,7 @@ impl BlockProductionTask {
                 fallback_reason = ?fallback_reason,
                 "Comparator rejected the ExecutionBox block; preserving the Blockifier prefix and replaying the omitted suffix"
             );
-            self.drop_descendant_pending_canonicalizations(block_n);
+            let recovered_descendant_rows = self.recover_descendant_pending_canonicalizations(block_n)?;
             pending_stop_fallback_handoff = Some(self.begin_stop_fallback_handoff(
                 block_n,
                 state.take().expect("strict stop must take ownership of canonicalization state"),
@@ -316,6 +318,7 @@ impl BlockProductionTask {
                 fallback_reason,
                 metric_reason,
                 current_block_suffix,
+                recovered_descendant_rows,
             )?);
         }
 
@@ -461,28 +464,14 @@ impl BlockProductionTask {
             rows.len()
         );
 
-        let mut rows_by_hash = std::collections::BTreeMap::new();
-        for row in rows {
-            let hash = *row.transaction.receipt.transaction_hash();
+        for (index, (row, expected_hash)) in rows.iter().zip(original_tx_hashes).enumerate() {
+            let actual_hash = *row.transaction.receipt.transaction_hash();
             anyhow::ensure!(
-                rows_by_hash.insert(hash, row.clone()).is_none(),
-                "Duplicate speculative transaction {hash:#x}"
+                actual_hash == *expected_hash,
+                "Speculative execution order mismatch at index {index}: expected {expected_hash:#x}, got {actual_hash:#x}"
             );
         }
-
-        let ordered = original_tx_hashes
-            .iter()
-            .map(|hash| {
-                rows_by_hash
-                    .remove(hash)
-                    .with_context(|| format!("Missing speculative transaction {hash:#x} from original order"))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        anyhow::ensure!(
-            rows_by_hash.is_empty(),
-            "Speculative execution contains transaction(s) absent from original order"
-        );
-        Ok(ordered)
+        Ok(rows.to_vec())
     }
 
     pub(super) fn build_bre_preconfirmed_prefix_rows(

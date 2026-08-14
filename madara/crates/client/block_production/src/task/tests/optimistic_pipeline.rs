@@ -258,6 +258,7 @@ async fn sequential_mode_waits_for_previous_comparator_and_close(
     )
     .await;
     assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(1));
+    wait_for_confirmed_block(&devnet_setup.backend, 2).await;
 }
 
 #[rstest::rstest]
@@ -431,7 +432,7 @@ async fn real_comparator_mismatch_replays_descendants_and_sticks_to_blockifier_o
 #[rstest::rstest]
 #[timeout(Duration::from_secs(45))]
 #[tokio::test]
-async fn accepted_blockifier_canonical_replays_speculative_descendant(
+async fn comparator_fallback_replays_speculative_descendant(
     #[future]
     #[with(Duration::from_secs(3_000), false, true)]
     devnet_setup: DevnetSetup,
@@ -492,7 +493,7 @@ async fn accepted_blockifier_canonical_replays_speculative_descendant(
         loop {
             let status = control.executionbox_status().await.expect("execution status should be available");
             if status.mode == crate::fallback::types::ExecutionMode::BlockifierOnly
-                && status.reason == Some(crate::fallback::types::FallbackReason::BlockifierCanonicalSubstitution)
+                && status.reason == Some(crate::fallback::types::FallbackReason::OutputMismatch)
                 && status.taint_block == Some(1)
                 && status.replay_backlog_empty
                 && devnet_setup.backend.latest_confirmed_block_n().is_some_and(|tip| tip >= 2)
@@ -504,7 +505,7 @@ async fn accepted_blockifier_canonical_replays_speculative_descendant(
         }
     })
     .await
-    .expect("Blockifier canonical substitution should close the anchor and rebuild its descendant");
+    .expect("Comparator fallback should close the anchor and rebuild its descendant");
 
     assert!(block_contains_tx(&devnet_setup.backend, 1, anchor_tx));
     assert!(block_contains_tx(&devnet_setup.backend, 2, descendant_tx));

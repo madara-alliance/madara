@@ -98,6 +98,12 @@ pub enum ExecutorMessage {
         execution_epoch: u64,
     },
     BatchExecuted(BatchExecutionResult),
+    /// Rust classification succeeded but runtime execution failed unexpectedly.
+    /// The ordered suffix is retained for Blockifier while future blocks enter persistent fallback.
+    RuntimeFallbackEntered {
+        block_number: u64,
+        execution_epoch: u64,
+    },
     /// Normal block closing (block time reached, block full, or explicit CloseBlock).
     EndBlock {
         block_exec_summary: Box<BlockExecutionSummary>,
@@ -118,7 +124,7 @@ pub enum ExecutorMessage {
 pub struct BatchExecutionResult {
     pub executed_txs: BatchToExecute,
     pub original_tx_hashes: Vec<mp_convert::Felt>,
-    pub blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
+    pub execution_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
     pub stats: ExecutionStats,
     pub execution_mode: ExecutionMode,
     pub execution_epoch: u64,
@@ -149,6 +155,7 @@ pub fn start_executor_thread(
     execution_epoch_rx: watch::Receiver<u64>,
     start_tainted_rebuild_parked: bool,
     pipeline_mode: crate::BlockPipelineMode,
+    blockifier_batch_size: usize,
     rust_exec_runtime_config: RustExecRuntimeConfig,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
@@ -169,6 +176,7 @@ pub fn start_executor_thread(
         execution_epoch_rx,
         start_tainted_rebuild_parked,
         pipeline_mode,
+        blockifier_batch_size,
         rust_exec_runtime_config,
     )?;
     // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable

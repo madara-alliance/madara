@@ -79,7 +79,7 @@ impl BlockProductionService {
                 })
                 .with_close_queue_capacity(close_queue_capacity)?;
 
-        let rust_batch_size =
+        let mixed_batch_size =
             usize::try_from(config.rust_exec.batch_size).context("rust_exec.batch_size does not fit into usize")?;
         let blockifier_batch_size = usize::try_from(config.rust_exec.blockifier_batch_size)
             .context("rust_exec.blockifier_batch_size does not fit into usize")?;
@@ -89,7 +89,7 @@ impl BlockProductionService {
                 &config.rust_exec.executor_addresses,
                 "rust_exec.executor_addresses",
             )?)
-            .with_rust_exec_batch_size(rust_batch_size)
+            .with_rust_exec_batch_size(mixed_batch_size)
             .with_rust_exec_blockifier_batch_size(blockifier_batch_size)
             .with_rust_exec_runtime_options(rust_exec_runtime_options(&config.rust_exec));
 

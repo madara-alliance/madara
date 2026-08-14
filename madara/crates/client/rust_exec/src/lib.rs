@@ -18,7 +18,9 @@ use starknet_types_core::felt::Felt;
 
 pub const SUPPORTED_CONTRACTS: &str = include_str!(concat!(env!("OUT_DIR"), "/supported_contracts.json"));
 
-pub use block_production::{execute_txns, RustDeferredReason, RustExecOutput, RustPhaseState};
+pub use block_production::{
+    execute_txns, RustDeferredReason, RustExecOutput, RustPhaseState, ScopedBlockifierCapacity,
+};
 pub use config::{
     account_class_hash, assets_manager_class_hash, erc20_class_hash, initialize_runtime_config,
     is_verification_enabled, log_config_status, paraclear_class_hash, paraclear_oracle_class_hash, runtime_config,

@@ -233,26 +233,33 @@ impl CurrentBlockState {
             mode,
             self.block_number
         );
+        anyhow::ensure!(
+            batch.execution_results.len() == batch.executed_txs.len(),
+            "Execution result count {} does not match ordered transaction count {} for block #{}",
+            batch.execution_results.len(),
+            batch.executed_txs.len(),
+            self.block_number
+        );
         let mut executed = vec![];
         self.original_tx_hashes.append(&mut batch.original_tx_hashes);
 
-        for ((blockifier_exec_result, blockifier_tx), mut additional_info) in
-            batch.blockifier_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
+        for ((execution_result, executed_tx), mut additional_info) in
+            batch.execution_results.into_iter().zip(batch.executed_txs.txs).zip(batch.executed_txs.additional_info)
         {
-            if let Some(core_contract_nonce) = blockifier_tx.l1_handler_tx_nonce() {
+            if let Some(core_contract_nonce) = executed_tx.l1_handler_tx_nonce() {
                 // Even when the l1 handler tx is reverted, we mark the nonce as consumed.
                 self.consumed_core_contract_nonces
                     .insert(core_contract_nonce.to_felt().try_into().context("Invalid nonce while appending batch")?);
             }
 
-            if let Ok((execution_info, state_diff)) = blockifier_exec_result {
+            if let Ok((execution_info, state_diff)) = execution_result {
                 let declared_class = additional_info.declared_class.take().filter(|_| !execution_info.is_reverted());
 
-                let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
+                let receipt = from_blockifier_execution_info(&execution_info, &executed_tx);
+                let converted_tx = TransactionWithHash::from(executed_tx.clone());
 
                 // Extract paid_fee_on_l1 from L1 handler transactions
-                let paid_fee_on_l1 = match &blockifier_tx {
+                let paid_fee_on_l1 = match &executed_tx {
                     blockifier::transaction::transaction_execution::Transaction::L1Handler(l1_tx) => {
                         Some(l1_tx.paid_fee_on_l1.0)
                     }
@@ -675,8 +682,8 @@ impl BlockProductionTask {
         self
     }
 
-    pub fn with_rust_exec_batch_size(mut self, rust_batch_size: usize) -> Self {
-        self.routing_cfg.rust_batch_size = rust_batch_size.max(1);
+    pub fn with_rust_exec_batch_size(mut self, mixed_batch_size: usize) -> Self {
+        self.routing_cfg.mixed_batch_size = mixed_batch_size.max(1);
         self
     }
 

@@ -70,7 +70,7 @@ pub struct RustExecParams {
     #[serde(default = "default_rust_exec_executor_addresses")]
     pub executor_addresses: Vec<String>,
 
-    /// Maximum Rust-routed transactions picked in one batcher cycle.
+    /// Maximum transactions in one logical mixed-mode routing batch.
     #[arg(
         env = "MADARA_RUST_EXEC_BATCH_SIZE",
         long,
@@ -80,7 +80,7 @@ pub struct RustExecParams {
     #[serde(default = "default_rust_exec_batch_size")]
     pub batch_size: u64,
 
-    /// Maximum Blockifier-routed transactions picked in one batcher cycle.
+    /// Maximum transactions in a Blockifier-only pick or one Blockifier execution chunk.
     #[arg(
         env = "MADARA_RUST_EXEC_BLOCKIFIER_BATCH_SIZE",
         long,
@@ -349,6 +349,16 @@ mod tests {
     ) {
         let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
         assert_eq!(params.rust_exec.executor_addresses, expected.into_iter().map(str::to_string).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn block_production_params_parse_logical_and_blockifier_chunk_sizes() {
+        let params =
+            BlockProductionParams::try_parse_from(["madara", "--batch-size", "7", "--blockifier-batch-size", "3"])
+                .expect("routing batch sizes should parse");
+
+        assert_eq!(params.rust_exec.batch_size, 7, "batch_size is the complete Mixed logical batch cap");
+        assert_eq!(params.rust_exec.blockifier_batch_size, 3, "Blockifier size is its chunk and B-only pick cap");
     }
 
     #[test]

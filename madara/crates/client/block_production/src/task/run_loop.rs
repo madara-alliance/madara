@@ -19,14 +19,14 @@ impl BlockProductionTask {
 
         tracing::info!(
             target: "RUST_EXEC",
-            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  pipeline_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  fee_storage_policy=derived_sender_and_sequencer_balance_keys\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
+            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  pipeline_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  mixed_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  fee_storage_policy=derived_sender_and_sequencer_balance_keys\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
             self.fallback.startup_mode,
             self.fallback.mode,
             self.pipeline_mode,
             self.fallback.startup_recovery_active,
             self.fallback.comparator_enabled,
             self.replay_mode_enabled,
-            self.routing_cfg.rust_batch_size,
+            self.routing_cfg.mixed_batch_size,
             self.routing_cfg.blockifier_batch_size,
             executor_addresses.len(),
             executor_addresses,
@@ -99,6 +99,11 @@ impl BlockProductionTask {
                 canonical_executed_rows,
                 canonical_header,
             } = result.close_payload;
+            #[cfg(test)]
+            if let Some(sender) = self.optimistic_pipeline_notifications.as_ref() {
+                let _ = sender
+                    .send(OptimisticPipelineNotification::BlockStarted { block_n: canonical_header.block_number });
+            }
             self.enqueue_canonical_close_payload(
                 close_queue,
                 state,
@@ -241,6 +246,27 @@ impl BlockProductionTask {
                 if let Some(sender) = self.optimistic_pipeline_notifications.as_ref() {
                     let _ = sender.send(OptimisticPipelineNotification::BatchExecuted { block_n });
                 }
+            }
+            ExecutorMessage::RuntimeFallbackEntered { block_number, execution_epoch } => {
+                if execution_epoch != self.execution_epoch {
+                    tracing::info!(
+                        block_number,
+                        message_epoch = execution_epoch,
+                        current_epoch = self.execution_epoch,
+                        "dropping_stale_rust_runtime_fallback"
+                    );
+                    return Ok(());
+                }
+                self.fallback.enter_rust_runtime_fallback();
+                let _ = self.execution_mode_tx.send(ExecutionMode::BlockifierOnly);
+                self.metrics.execution_mode_current.record(0, &[]);
+                self.metrics.executionbox_fallback_total.add(1, &[KeyValue::new("reason", "rust_runtime_failure")]);
+                tracing::error!(
+                    target: "RUST_EXEC",
+                    block_number,
+                    execution_epoch,
+                    "rust_runtime_failure_entered_persistent_blockifier_fallback"
+                );
             }
             ExecutorMessage::EndBlock { block_exec_summary, block_number, execution_epoch } => {
                 if execution_epoch != self.execution_epoch {
@@ -403,6 +429,7 @@ impl BlockProductionTask {
             self.execution_epoch_rx.clone(),
             self.tainted_rebuild_session.is_some(),
             self.pipeline_mode,
+            self.routing_cfg.blockifier_batch_size,
             crate::util::build_rust_exec_runtime_config(&self.routing_cfg, self.no_charge_fee),
         )
         .context("Starting executor thread")?;
@@ -566,6 +593,12 @@ impl BlockProductionTask {
                         canonical_executed_rows,
                         canonical_header,
                     } = result.close_payload;
+                    #[cfg(test)]
+                    if let Some(sender) = self.optimistic_pipeline_notifications.as_ref() {
+                        let _ = sender.send(OptimisticPipelineNotification::BlockStarted {
+                            block_n: canonical_header.block_number,
+                        });
+                    }
                     self.enqueue_canonical_close_payload(
                         &close_queue_handle,
                         state,

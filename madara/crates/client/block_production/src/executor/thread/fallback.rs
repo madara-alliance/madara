@@ -25,12 +25,8 @@ impl ExecutorThread {
         routed: &mut RoutedBatchToExecute,
         target_execution_mode: ExecutionMode,
     ) {
-        if routed.execution_mode == target_execution_mode {
-            return;
-        }
-
-        if target_execution_mode == ExecutionMode::BlockifierOnly && !routed.rust_batch.is_empty() {
-            routed.blockifier_batch.extend(mem::take(&mut routed.rust_batch));
+        if target_execution_mode == ExecutionMode::BlockifierOnly {
+            routed.normalize_to_blockifier_only(BlockifierRouteCause::FallbackRecovery);
         }
 
         routed.execution_mode = target_execution_mode;
@@ -190,8 +186,7 @@ impl ExecutorThread {
 
         // Append executor-local pending txs last (not yet executed).
         let pending_block_n = Some(pending_routed.block_n);
-        extend_carry_txs(&mut carry, mem::take(&mut pending_routed.blockifier_batch), pending_block_n);
-        extend_carry_txs(&mut carry, mem::take(&mut pending_routed.rust_batch), pending_block_n);
+        extend_carry_txs(&mut carry, pending_routed.drain_ordered(), pending_block_n);
 
         // C-021: Also absorb any already-routed batches sitting in the batcher->executor
         // channel. These txs have already left the mempool, but were not yet reflected in
@@ -203,8 +198,7 @@ impl ExecutorThread {
             drained_routed_batches += 1;
             drained_routed_txs += stale_routed.total_len();
             let stale_block_n = queued_future_block_n;
-            extend_carry_txs(&mut carry, stale_routed.blockifier_batch, stale_block_n);
-            extend_carry_txs(&mut carry, stale_routed.rust_batch, stale_block_n);
+            extend_carry_txs(&mut carry, stale_routed.transactions, stale_block_n);
         }
 
         let pre_dedup = carry.len();
@@ -212,8 +206,8 @@ impl ExecutorThread {
         let carry: Vec<TaintedRebuildCarryTx> =
             carry.into_iter().filter(|carry_tx| seen_hashes.insert(carry_tx.tx.tx_hash().to_felt())).collect();
         let n_deduped = pre_dedup - carry.len();
-        pending_routed.blockifier_batch = BatchToExecute::default();
-        pending_routed.rust_batch = BatchToExecute::default();
+        pending_routed.transactions = BatchToExecute::default();
+        pending_routed.route = BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::FallbackRecovery };
         pending_routed.block_n = 0;
         pending_routed.execution_mode = ExecutionMode::BlockifierOnly;
         let replay_summary = summarize_carry_txs(&carry);
