@@ -428,15 +428,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
 
         let now = TxTimestamp::now();
-        // Sequencing may run ahead of comparator approval. Use the internal
-        // execution frontier so the next same-account nonce becomes ready while
-        // the preceding block is still being compared.
-        let account_nonce =
-            self.backend.view_on_internal_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
 
         let (ret, summary) = {
             let mut lock = self.inner.write().await;
+            // Read while holding the insertion lock. Otherwise a chain-watcher nonce update can
+            // complete after this read and before insertion, recreating the account with a stale nonce.
+            let account_nonce =
+                self.backend.view_on_internal_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
             let ret = lock.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
             (ret, lock.summary())
         };
@@ -628,9 +627,9 @@ pub(crate) mod tests {
     // here. Any future mempool behavior change should land with explicit tests.
     use super::*;
     use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
-    use mp_block::{header::PreconfirmedHeader, TransactionWithReceipt};
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
-    use mp_state_update::TransactionStateUpdate;
+    use mp_state_update::{NonceUpdate, StateDiff, TransactionStateUpdate};
     use mp_transactions::{InvokeTransaction, Transaction};
     use starknet_api::{core::ContractAddress, transaction::TransactionHash};
     use std::time::Duration;
@@ -744,6 +743,46 @@ pub(crate) mod tests {
         assert!(mempool.is_empty().await, "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_accept_uses_chain_nonce_at_insertion_time(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let queued_tx = tx_account_with_nonce_and_hash(&tx_account, Felt::ONE, Felt::from(301u64));
+
+        let insertion_lock = mempool.inner.write().await;
+        let mut accept = tokio::spawn({
+            let mempool = mempool.clone();
+            let queued_tx = queued_tx.clone();
+            async move { mempool.accept_tx(queued_tx).await }
+        });
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut accept).await.is_err());
+
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 1, ..Default::default() },
+                    state_diff: StateDiff {
+                        nonces: vec![NonceUpdate { contract_address: tx_account.contract_address, nonce: Felt::ONE }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &[],
+                false,
+            )
+            .unwrap();
+        drop(insertion_lock);
+
+        accept.await.unwrap().unwrap();
+        assert_eq!(mempool.get_consumer().await.next().unwrap().hash, queued_tx.hash);
     }
 
     #[rstest::rstest]

@@ -28,7 +28,8 @@ use starknet_types_core::felt::Felt;
 
 use crate::initialize_runtime_config;
 use crate::integration::blockifier::{
-    rust_execute_transaction_blockifier_output, RustBlockifierOutput, RustExecStateAdapter, RustExecutionOutcome,
+    rust_execute_transaction_blockifier_output, rust_tx_diff_log_enabled, RustBlockifierOutput, RustExecStateAdapter,
+    RustExecutionOutcome,
 };
 use crate::telemetry::hash_agg;
 use crate::telemetry::storage_agg;
@@ -341,6 +342,31 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
             }
             let output_failed = output.output.is_err();
             if let Ok((execution_info, maps)) = output.output.as_mut() {
+                let block_number = executor.block_context.block_info().block_number.0;
+                if rust_tx_diff_log_enabled(block_number) {
+                    tracing::info!(
+                        target: "RUST_EXEC",
+                        "cached_state_apply_stage block_number={} tx_hash={:#x} stage=before_apply storage_entries={} zero_entries={}",
+                        block_number,
+                        tx_hash,
+                        maps.storage.len(),
+                        maps.storage.values().filter(|value| **value == Felt::ZERO).count(),
+                    );
+                    for ((contract_address, storage_key), value) in &maps.storage {
+                        if *value == Felt::ZERO {
+                            let parent_value = block_state.state.get_storage_at(*contract_address, *storage_key);
+                            tracing::info!(
+                                target: "RUST_EXEC",
+                                "cached_state_apply_entry block_number={} tx_hash={:#x} stage=before_apply contract_address={:#x} storage_key={:#x} value=0x0 parent_value={:?}",
+                                block_number,
+                                tx_hash,
+                                contract_address.to_felt(),
+                                storage_key.to_felt(),
+                                parent_value,
+                            );
+                        }
+                    }
+                }
                 if options.update_bouncer {
                     let tx_state_changes_keys = maps.keys();
                     let tx_execution_summary = execution_info.summarize(executor.block_context.versioned_constants());
@@ -405,7 +431,19 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     );
                 }
 
+                let applied_storage_entries = maps.storage.len();
+                let applied_zero_entries = maps.storage.values().filter(|value| **value == Felt::ZERO).count();
                 block_state.apply_writes(maps, &HashMap::new());
+                if rust_tx_diff_log_enabled(block_number) {
+                    tracing::info!(
+                        target: "RUST_EXEC",
+                        "cached_state_apply_stage block_number={} tx_hash={:#x} stage=after_apply storage_entries={} zero_entries={}",
+                        block_number,
+                        tx_hash,
+                        applied_storage_entries,
+                        applied_zero_entries,
+                    );
+                }
             }
 
             results.push(output);

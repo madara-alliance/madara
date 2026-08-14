@@ -137,8 +137,36 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
         let mut all_messages = Vec::new();
         let mut retdata = Vec::new();
         for call in &tx.calls {
+            if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    "contract_call_stage block_number={} tx_hash={:#x} stage=started contract_address={:#x} selector={:#x} calldata_len={}",
+                    diagnostic.block_number,
+                    diagnostic.tx_hash,
+                    call.to.0,
+                    call.selector,
+                    call.calldata.len(),
+                );
+            }
             // Execute each call and collect its state diff + events
             let call_result = self.execute_single_call(call, tx.sender_address)?;
+            if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
+                let storage_entries =
+                    call_result.state_diff.storage_updates.values().map(|updates| updates.len()).sum::<usize>();
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    "contract_call_stage block_number={} tx_hash={:#x} stage=completed contract_address={:#x} selector={:#x} storage_entries={} nonce_updates={} events={} failed={} revert_error={:?}",
+                    diagnostic.block_number,
+                    diagnostic.tx_hash,
+                    call.to.0,
+                    call.selector,
+                    storage_entries,
+                    call_result.state_diff.address_to_nonce.len(),
+                    call_result.call_result.events.len(),
+                    call_result.call_result.failed,
+                    call_result.revert_error,
+                );
+            }
             let call_failed = call_result.call_result.failed;
             let revert_error = call_result.revert_error.clone();
 
