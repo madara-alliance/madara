@@ -15,10 +15,7 @@ use std::{
 };
 
 fn is_preconfirmed_forward_advance(current_preconfirmed_n: Option<u64>, next_preconfirmed_n: Option<u64>) -> bool {
-    matches!(
-        (current_preconfirmed_n, next_preconfirmed_n),
-        (Some(current), Some(next)) if current.checked_add(1) == Some(next)
-    )
+    matches!((current_preconfirmed_n, next_preconfirmed_n), (Some(current), Some(next)) if next > current)
 }
 
 struct ChainWatcherBranchEffects {
@@ -528,8 +525,9 @@ mod tests {
 
     #[rstest::rstest]
     #[case(Some(42), Some(43), true)]
+    #[case(Some(42), Some(44), true)]
     #[case(Some(42), Some(42), false)]
-    #[case(Some(42), Some(44), false)]
+    #[case(Some(44), Some(42), false)]
     #[case(Some(42), None, false)]
     #[case(None, Some(0), false)]
     #[case(None, None, false)]
@@ -974,6 +972,76 @@ mod tests {
             Some(Felt::ZERO),
             "rewind should roll executed nonce back to parent value"
         );
+    }
+
+    #[tokio::test]
+    async fn skipped_preconfirmed_frontier_is_forward_progress_and_does_not_roll_back_nonce() {
+        use mc_db::preconfirmed::PreconfirmedExecutedTransaction;
+        use mp_block::TransactionWithReceipt;
+        use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
+        use mp_state_update::TransactionStateUpdate;
+        use std::collections::HashMap;
+
+        let backend = backend_with_genesis().await;
+        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+        let account = Felt::from(0x3333u64);
+        let successor = invoke_with_nonce(account, Felt::from(8u64), Felt::from(0x8000u64));
+        mempool.accept_tx(successor.clone()).await.expect("future-nonce successor should queue");
+        mempool
+            .apply_nonce_updates(HashMap::from([(account, Felt::from(8u64))]), HashMap::new())
+            .await
+            .expect("executed transaction should make its successor ready");
+
+        let executed_tx = invoke_with_nonce(account, Felt::from(7u64), Felt::from(0x7000u64));
+        let executed_hash = executed_tx.hash;
+        let executed = PreconfirmedExecutedTransaction {
+            transaction: TransactionWithReceipt {
+                transaction: executed_tx.transaction.clone(),
+                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                    transaction_hash: executed_hash,
+                    ..Default::default()
+                }),
+            },
+            state_diff: TransactionStateUpdate {
+                storage_diffs: Default::default(),
+                contract_class_hashes: Default::default(),
+                declared_classes: Default::default(),
+                nonces: HashMap::from([(account, Felt::from(8u64))]),
+            },
+            declared_class: None,
+            arrived_at: executed_tx.arrived_at,
+            paid_fee_on_l1: None,
+        };
+
+        let old_block = Arc::new(PreconfirmedBlock::new_with_content(
+            PreconfirmedHeader { block_number: 1, ..Default::default() },
+            vec![executed],
+            vec![],
+        ));
+        let mut old_view = mc_db::MadaraPreconfirmedBlockView::new(backend.clone(), old_block);
+        old_view.refresh_with_candidates();
+        let mut current_internal_frontier = Some(MadaraBlockView::Preconfirmed(old_view));
+
+        // Watch notifications may coalesce, so block #2 can legitimately be skipped.
+        let new_head: MadaraBlockView<_> = mc_db::MadaraPreconfirmedBlockView::new(
+            backend,
+            Arc::new(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 3, ..Default::default() })),
+        )
+        .into();
+        let mut effects = ChainWatcherBranchEffects::new();
+
+        mempool
+            .handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)
+            .expect("skipped forward frontier handling");
+
+        assert!(effects.executed_reinsert_suppressed.is_empty());
+        assert!(!effects.potentially_removed.contains_key(&executed_hash));
+        assert!(!effects.nonce_updates.contains_key(&account), "forward progress must not synthesize a nonce rollback");
+        mempool
+            .apply_nonce_updates(effects.nonce_updates, effects.nonce_floors)
+            .await
+            .expect("apply skipped-frontier effects");
+        assert_eq!(mempool.get_consumer().await.next().expect("successor should remain ready").hash, successor.hash);
     }
 
     #[tokio::test]
