@@ -13,6 +13,11 @@ fn optimistic_window_configures_serial_close_queue_capacity() {
     assert_eq!(new_task().with_close_queue_capacity(4).expect("valid capacity").close_queue_capacity(), 4);
     assert!(new_task().with_close_queue_capacity(0).is_err());
     assert!(new_task().with_close_queue_capacity(11).is_err());
+    assert_eq!(new_task().pipeline_mode, BlockPipelineMode::Optimistic);
+    assert_eq!(
+        new_task().with_pipeline_mode(BlockPipelineMode::Sequential).pipeline_mode,
+        BlockPipelineMode::Sequential
+    );
 }
 
 #[test]

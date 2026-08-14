@@ -148,6 +148,7 @@ pub fn start_executor_thread(
     execution_mode_rx: watch::Receiver<ExecutionMode>,
     execution_epoch_rx: watch::Receiver<u64>,
     start_tainted_rebuild_parked: bool,
+    pipeline_mode: crate::BlockPipelineMode,
     rust_exec_runtime_config: RustExecRuntimeConfig,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
@@ -167,6 +168,7 @@ pub fn start_executor_thread(
         execution_mode_rx,
         execution_epoch_rx,
         start_tainted_rebuild_parked,
+        pipeline_mode,
         rust_exec_runtime_config,
     )?;
     // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable

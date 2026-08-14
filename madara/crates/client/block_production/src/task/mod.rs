@@ -66,5 +66,5 @@ use self::state::{
     PendingTaintedRebuildCarry, StartupRecoveredBlockPayload, TaintedRebuildClosePayload, TaintedRebuildSourceTx,
     TaintedRebuildStepResult,
 };
-pub use self::state::{BlockProductionStateNotification, BlockProductionTask};
+pub use self::state::{BlockPipelineMode, BlockProductionStateNotification, BlockProductionTask};
 pub(crate) use self::state::{CurrentBlockState, MempoolIntakeMode, TaskState};

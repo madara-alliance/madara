@@ -57,6 +57,18 @@ pub struct RustPhaseState {
     pub projected_bouncer_weights: Option<BouncerWeights>,
 }
 
+impl RustPhaseState {
+    /// Rust may project resource weights differently from Blockifier, but the transaction count is
+    /// shared by both execution paths and must always come from the live block bouncer.
+    pub fn effective_bouncer_weights(&self, live_bouncer_weights: BouncerWeights) -> BouncerWeights {
+        let Some(mut projected) = self.projected_bouncer_weights else {
+            return live_bouncer_weights;
+        };
+        projected.n_txs = live_bouncer_weights.n_txs;
+        projected
+    }
+}
+
 #[derive(Debug)]
 pub struct RustExecOutput {
     pub results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
@@ -243,7 +255,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
             if options.update_bouncer {
                 let ps = phase_state.as_deref_mut().expect("rust phase state missing");
                 let bouncer = executor.bouncer.lock().expect("Bouncer lock poisoned");
-                let projected_current = ps.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
+                let projected_current = ps.effective_bouncer_weights(*bouncer.get_bouncer_weights());
                 let min_tx_delta = BouncerWeights { n_txs: 1, ..BouncerWeights::empty() };
                 if let Some(projected_min) = projected_current.checked_add(min_tx_delta) {
                     if !bouncer.bouncer_config.has_room(projected_min) {
@@ -284,8 +296,7 @@ fn execute_settle_trade_v3_internal<S: BlockifierStateReader + Send + Sync + 'st
                     let tx_builtin_counters = execution_info.summarize_builtins();
                     let mut bouncer = executor.bouncer.lock().expect("Bouncer lock poisoned");
                     let phase_state = phase_state.as_deref_mut().expect("rust phase state missing");
-                    let projected_current =
-                        phase_state.projected_bouncer_weights.unwrap_or_else(|| *bouncer.get_bouncer_weights());
+                    let projected_current = phase_state.effective_bouncer_weights(*bouncer.get_bouncer_weights());
                     let tx_projected_delta = rust_bouncer_delta(
                         &block_state,
                         &bouncer,
@@ -486,11 +497,30 @@ fn classify_rust_results<T, E>(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_rust_results, RustDeferredReason};
+    use super::{classify_rust_results, RustDeferredReason, RustPhaseState};
+    use blockifier::bouncer::BouncerWeights;
 
     #[test]
     fn rust_result_classification_stops_before_first_error() {
         let results = [Ok(()), Ok(()), Err(()), Ok(())];
         assert_eq!(classify_rust_results(&results, 4), (2, false, Some(RustDeferredReason::UnsupportedOrFailed)));
+    }
+
+    #[test]
+    fn projected_weights_use_live_shared_transaction_count() {
+        let phase_state = RustPhaseState {
+            projected_bouncer_weights: Some(BouncerWeights {
+                n_txs: 2,
+                state_diff_size: 99,
+                ..BouncerWeights::empty()
+            }),
+            ..Default::default()
+        };
+        let live = BouncerWeights { n_txs: 7, state_diff_size: 12, ..BouncerWeights::empty() };
+
+        let effective = phase_state.effective_bouncer_weights(live);
+
+        assert_eq!(effective.n_txs, 7);
+        assert_eq!(effective.state_diff_size, 99);
     }
 }

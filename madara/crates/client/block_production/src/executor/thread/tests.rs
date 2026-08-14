@@ -40,6 +40,7 @@ fn make_executor_thread() -> (
         mode_rx,
         execution_epoch_rx,
         false,
+        crate::BlockPipelineMode::Optimistic,
         RustExecRuntimeConfig::default(),
     )
     .expect("executor thread");

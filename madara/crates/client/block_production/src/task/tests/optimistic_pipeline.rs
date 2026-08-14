@@ -198,6 +198,71 @@ async fn next_block_executes_while_previous_comparator_is_gated(
 #[rstest::rstest]
 #[timeout(Duration::from_secs(30))]
 #[tokio::test]
+async fn sequential_mode_waits_for_previous_comparator_and_close(
+    #[future]
+    #[with(Duration::from_secs(3_000), false)]
+    devnet_setup: DevnetSetup,
+) {
+    let mut devnet_setup = devnet_setup.await;
+    let mempool = devnet_setup.mempool.clone();
+    let _mempool_task = AbortOnDrop::spawn(async move {
+        mempool.run_mempool_task(ServiceContext::new_for_testing()).await.expect("mempool service should run")
+    });
+    tokio::task::yield_now().await;
+    let executor = devnet_setup.contracts.0[0].address;
+    submit_rust_exec_transfer(&devnet_setup, Felt::ZERO, "transfer", Felt::from(51u64)).await;
+
+    let mut task = devnet_setup
+        .block_prod_task()
+        .with_startup_execution_mode(crate::fallback::types::StartupExecutionMode::Mixed)
+        .with_pipeline_mode(crate::BlockPipelineMode::Sequential)
+        .with_rust_exec_executor_addresses([executor]);
+    let control = task.handle();
+    let comparator_gate = task.gate_comparator_for_block(1);
+    let mut notifications = task.subscribe_optimistic_pipeline_notifications();
+    let _task = AbortOnDrop::spawn(async move {
+        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
+    });
+
+    loop {
+        if recv_pipeline_notification(&mut notifications).await
+            == (OptimisticPipelineNotification::BatchExecuted { block_n: 1 })
+        {
+            control.close_block().await.expect("block #1 close command should succeed");
+            break;
+        }
+    }
+    wait_for_pipeline_notification(
+        &mut notifications,
+        OptimisticPipelineNotification::ComparatorStarted { block_n: 1 },
+        "sequential comparator start",
+    )
+    .await;
+
+    submit_rust_exec_transfer(&devnet_setup, Felt::ONE, "transfer", Felt::from(52u64)).await;
+    let premature_start = tokio::time::timeout(Duration::from_millis(250), async {
+        loop {
+            if notifications.recv().await == Some(OptimisticPipelineNotification::BlockStarted { block_n: 2 }) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(premature_start.is_err(), "block #2 started before block #1 comparator completed");
+
+    comparator_gate.add_permits(1);
+    wait_for_pipeline_notification(
+        &mut notifications,
+        OptimisticPipelineNotification::BlockStarted { block_n: 2 },
+        "sequential next block start",
+    )
+    .await;
+    assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(1));
+}
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(30))]
+#[tokio::test]
 async fn n_minus_10_gate_bounds_optimistic_window(
     #[future]
     #[with(Duration::from_millis(20), false)]

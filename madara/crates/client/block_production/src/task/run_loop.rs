@@ -19,9 +19,10 @@ impl BlockProductionTask {
 
         tracing::info!(
             target: "RUST_EXEC",
-            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  fee_storage_policy=derived_sender_and_sequencer_balance_keys\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
+            "startup_config\n  startup_mode={:?}\n  effective_mode={:?}\n  pipeline_mode={:?}\n  startup_recovery_active={}\n  comparator_enabled={}\n  replay_mode_enabled={}\n  rust_batch_size={}\n  blockifier_batch_size={}\n  executor_addresses_count={}\n  executor_addresses={:?}\n  supported_selectors_source=supported_contracts.json\n  supported_selectors_count={}\n  supported_selectors={:?}\n  supported_class_hashes_source=supported_contracts.json\n  supported_class_hashes_count={}\n  supported_class_hashes={:?}\n  fee_storage_policy=derived_sender_and_sequencer_balance_keys\n  no_charge_fee={}\n  conversion_log={}\n  execution_log={}\n  execution_log_inner={}\n  tx_diff_log={}\n  debug_block={:?}\n  inner_timing_log={}\n  ctx_cache={}\n  pedersen_cache={}\n  precomputed_sn_keccak={}\n  hash_agg_logs={}\n  storage_agg_logs={}\n  ignore_fee_mismatch={}\n  ignore_fee_token_mismatch={}\n  ignored_storage_mismatch_canonical_source={:?}\n  settle_trade_v3_positions={:?}",
             self.fallback.startup_mode,
             self.fallback.mode,
+            self.pipeline_mode,
             self.fallback.startup_recovery_active,
             self.fallback.comparator_enabled,
             self.replay_mode_enabled,
@@ -401,6 +402,7 @@ impl BlockProductionTask {
             self.execution_mode_rx.clone(),
             self.execution_epoch_rx.clone(),
             self.tainted_rebuild_session.is_some(),
+            self.pipeline_mode,
             crate::util::build_rust_exec_runtime_config(&self.routing_cfg, self.no_charge_fee),
         )
         .context("Starting executor thread")?;

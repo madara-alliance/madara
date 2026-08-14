@@ -211,6 +211,14 @@ pub enum StartupExecutionModeParam {
     BlockifierOnly,
 }
 
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockPipelineModeParam {
+    #[default]
+    Optimistic,
+    Sequential,
+}
+
 /// Parameters used to config block production.
 #[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
 pub struct BlockProductionParams {
@@ -234,6 +242,20 @@ pub struct BlockProductionParams {
     )]
     #[serde(default = "default_close_queue_capacity")]
     pub close_queue_capacity: u64,
+
+    /// Block progression policy.
+    ///
+    /// `optimistic` allows execution of later blocks while earlier blocks are being compared and
+    /// closed. `sequential` waits for comparator validation and canonical close before starting the
+    /// next block.
+    #[arg(
+        env = "MADARA_BLOCK_PIPELINE_MODE",
+        long = "block-pipeline-mode",
+        default_value_t = BlockPipelineModeParam::Optimistic,
+        value_enum
+    )]
+    #[serde(default)]
+    pub pipeline_mode: BlockPipelineModeParam,
 
     /// Rust execution configuration.
     #[clap(flatten)]
@@ -293,6 +315,17 @@ mod tests {
     fn block_production_params_reject_invalid_close_queue_capacity(#[case] value: &str) {
         BlockProductionParams::try_parse_from(["madara", "--close-queue-capacity", value])
             .expect_err("out-of-range close queue capacity must be rejected");
+    }
+
+    #[rstest]
+    #[case::default(vec!["madara"], BlockPipelineModeParam::Optimistic)]
+    #[case::sequential(
+        vec!["madara", "--block-pipeline-mode", "sequential"],
+        BlockPipelineModeParam::Sequential
+    )]
+    fn block_production_params_parse_pipeline_mode(#[case] args: Vec<&str>, #[case] expected: BlockPipelineModeParam) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.pipeline_mode, expected);
     }
 
     #[rstest]
