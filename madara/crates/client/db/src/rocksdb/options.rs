@@ -539,6 +539,12 @@ impl Column {
         options.set_level_zero_slowdown_writes_trigger(config.level_zero_slowdown_writes_trigger);
         options.set_level_zero_stop_writes_trigger(config.level_zero_stop_writes_trigger);
 
+        // Pending-compaction limits are also CF-scoped. Without setting them on
+        // each descriptor, named CFs silently retain RocksDB's 64/256 GiB
+        // defaults instead of the configured 6/12 GiB defaults (or overrides).
+        options.set_soft_pending_compaction_bytes_limit(config.soft_pending_compaction_bytes_limit);
+        options.set_hard_pending_compaction_bytes_limit(config.hard_pending_compaction_bytes_limit);
+
         // Point lookup optimization for columns that primarily do single-key gets.
         // Adds a bloom filter in the block cache for faster negative lookups.
         if self.point_lookup {
@@ -546,5 +552,63 @@ impl Column {
         }
 
         options
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rocksdb::column::ALL_COLUMNS;
+    use crate::rocksdb::RocksDBStorage;
+    use std::fs;
+
+    fn column_family_section<'a>(options: &'a str, column: &str) -> &'a str {
+        let header = format!("[CFOptions \"{column}\"]");
+        let section_start = options.find(&header).unwrap_or_else(|| panic!("missing options for column {column}"));
+        let section = &options[section_start + header.len()..];
+        let section_end = section.find("\n[").unwrap_or(section.len());
+        &section[..section_end]
+    }
+
+    #[test]
+    fn named_column_families_use_configured_pending_compaction_limits() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = RocksDBConfig {
+            soft_pending_compaction_bytes_limit: 7 * GiB,
+            hard_pending_compaction_bytes_limit: 13 * GiB,
+            ..RocksDBConfig::default()
+        };
+        let _storage = RocksDBStorage::open(directory.path(), config.clone()).unwrap();
+
+        let options_path = fs::read_dir(directory.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("OPTIONS-"))
+            })
+            .max()
+            .expect("RocksDB should persist an OPTIONS file");
+        let options = fs::read_to_string(options_path).unwrap();
+
+        for column in ALL_COLUMNS {
+            let section = column_family_section(&options, column.rocksdb_name);
+            assert!(
+                section.contains(&format!(
+                    "soft_pending_compaction_bytes_limit={}",
+                    config.soft_pending_compaction_bytes_limit
+                )),
+                "soft pending-compaction limit was not applied to {}",
+                column.rocksdb_name
+            );
+            assert!(
+                section.contains(&format!(
+                    "hard_pending_compaction_bytes_limit={}",
+                    config.hard_pending_compaction_bytes_limit
+                )),
+                "hard pending-compaction limit was not applied to {}",
+                column.rocksdb_name
+            );
+        }
     }
 }

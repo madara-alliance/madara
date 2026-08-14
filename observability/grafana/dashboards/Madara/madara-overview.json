@@ -2644,12 +2644,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
+          "expr": "max(db_column_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
           "legendFormat": "L0 Files",
           "refId": "A"
         }
       ],
-      "title": "L0 Files",
+      "title": "Worst CF L0 Files",
       "type": "stat"
     },
     {
@@ -2712,12 +2712,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_column_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Immutable MemTables",
           "refId": "A"
         }
       ],
-      "title": "Immutable MemTables",
+      "title": "Worst CF Immutable MemTables",
       "type": "stat"
     },
     {
@@ -2888,7 +2888,7 @@
         "y": 76
       },
       "id": 76,
-      "description": "Monitors RocksDB write stall risk.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
+      "description": "Monitors the worst single column family across the selected pods, matching RocksDB's per-column-family write-stall thresholds.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
       "options": {
         "legend": {
           "calcs": [
@@ -2911,7 +2911,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
+          "expr": "max(db_column_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
           "legendFormat": "L0 Files",
           "refId": "A"
         },
@@ -2920,7 +2920,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_column_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Immutable MemTables",
           "refId": "B"
         }
@@ -3569,7 +3569,7 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": false
           },
           "unit": "bytes",
           "min": 0
@@ -3602,7 +3602,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"} > 0",
+          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"}",
           "legendFormat": "{{column}}",
           "refId": "A"
         }

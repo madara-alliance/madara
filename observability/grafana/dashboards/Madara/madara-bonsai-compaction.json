@@ -108,7 +108,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Maximum real column-family backlog. The configured RocksDB soft and hard pending-compaction limits are 6 GiB and 12 GiB per column family.",
+      "description": "Maximum real column-family backlog. The default RocksDB soft and hard pending-compaction limits are 6 GiB and 12 GiB per column family; deployments may override them.",
       "fieldConfig": {
         "defaults": {
           "color": {
