@@ -66,7 +66,7 @@ fn hardcoded_settle_trade_v3_gas() -> GasVector {
     constants::settle_trade_v3_fixed_gas_consumed()
 }
 
-fn rust_tx_diff_log_enabled(block_number: u64) -> bool {
+pub(crate) fn rust_tx_diff_log_enabled(block_number: u64) -> bool {
     if crate::config::tx_diff_log_enabled() {
         return true;
     }
