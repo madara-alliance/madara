@@ -289,8 +289,8 @@ impl ExecutionContext {
 
     /// Build the final state diff.
     ///
-    /// Only includes storage values that actually changed OR non-zero initializations.
-    /// Matches Blockifier: writes of 0 to unread slots are excluded.
+    /// Removes writes known to be unchanged. Unread writes must remain explicit so the
+    /// outer Blockifier `CachedState` can compare them with the real parent value.
     pub fn build_state_diff(&self) -> StateDiff {
         let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
 
@@ -298,7 +298,7 @@ impl ExecutionContext {
             if let Some(diagnostic) = crate::telemetry::tx_diff::current().filter(|_| *new_value == Felt::ZERO) {
                 let initial_value = self.initial_reads.get(&(*contract, *key));
                 let preserved = self.preserved_nested_zero_writes.contains(&(*contract, *key));
-                let included = preserved || initial_value.is_some_and(|old_value| old_value != new_value);
+                let included = preserved || initial_value.is_none_or(|old_value| old_value != new_value);
                 let reason = if preserved {
                     "preserved_explicit_or_nested"
                 } else if initial_value.is_some_and(|old_value| old_value != new_value) {
@@ -306,7 +306,7 @@ impl ExecutionContext {
                 } else if initial_value.is_some() {
                     "unchanged_from_initial_read"
                 } else {
-                    "unread_zero"
+                    "forwarded_for_parent_resolution"
                 };
                 tracing::info!(
                     target: "RUST_EXEC",
@@ -333,11 +333,9 @@ impl ExecutionContext {
                     storage_updates.entry(*contract).or_default().insert(*key, *new_value);
                 }
             } else {
-                // Never read before writing - only include if NON-ZERO
-                // (Blockifier excludes writes of 0 to unread slots)
-                if *new_value != Felt::ZERO {
-                    storage_updates.entry(*contract).or_default().insert(*key, *new_value);
-                }
+                // The transaction context cannot know whether an unread write changes the
+                // parent. Forward it to Blockifier's CachedState for final diff reduction.
+                storage_updates.entry(*contract).or_default().insert(*key, *new_value);
             }
         }
 
@@ -451,18 +449,18 @@ mod tests {
     }
 
     #[test]
-    fn test_state_diff_excludes_unread_zero_writes() {
+    fn test_state_diff_preserves_unread_zero_writes_for_parent_resolution() {
         let _state = MockStateReader::new();
         let contract = ContractAddress(Felt::from(1u64));
         let key = StorageKey(Felt::from(100u64));
 
         let mut ctx = ExecutionContext::new();
 
-        // Write 0 without reading first - should NOT appear in diff (Blockifier behavior)
+        // The outer CachedState owns parent-aware no-op elimination.
         ctx.storage_write(contract, key, Felt::from(0u64));
 
         let diff = ctx.build_state_diff();
-        assert!(diff.storage_updates.is_empty());
+        assert_eq!(diff.storage_updates[&contract][&key], Felt::ZERO);
     }
 
     #[test]
@@ -493,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn test_direct_write_replaces_nested_zero_semantics() {
+    fn test_direct_unread_zero_write_remains_explicit() {
         let contract = ContractAddress(Felt::from(1u64));
         let key = StorageKey(Felt::from(100u64));
         let nested_diff = StateDiff {
@@ -505,7 +503,7 @@ mod tests {
         ctx.merge_state_diff(&nested_diff);
         ctx.storage_write(contract, key, Felt::ZERO);
 
-        assert!(ctx.build_state_diff().storage_updates.is_empty());
+        assert_eq!(ctx.build_state_diff().storage_updates[&contract][&key], Felt::ZERO);
     }
 
     #[test]
