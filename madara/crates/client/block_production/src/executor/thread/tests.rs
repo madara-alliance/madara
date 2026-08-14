@@ -99,6 +99,17 @@ fn blockifier_only_batch(
 }
 
 #[test]
+fn block_local_batch_number_resets_for_each_rebound_block() {
+    let mut sequence = None;
+
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 1);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 2);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 42), 1);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 42), 2);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 1);
+}
+
+#[test]
 fn wait_take_tx_batch_prefers_commands_for_new_block_boundary() {
     let (mut thread, incoming_tx, commands_tx, _replay_status_rx, _replies_rx, _execution_epoch_tx) =
         make_executor_thread();

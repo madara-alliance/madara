@@ -23,6 +23,7 @@ impl ExecutorThread {
         let mut tainted_rebuild_parked = self.start_tainted_rebuild_parked;
         let mut runtime_replay_active = false;
         let mut replay_current_block_active = false;
+        let mut accepted_batch_sequence = None;
 
         tracing::debug!("Starting executor thread.");
         self.publish_replay_status(runtime_replay_active, execution_epoch);
@@ -340,7 +341,23 @@ impl ExecutorThread {
 
                 if !pending_routed.is_empty() {
                     let summary = summarize_routed_batch(&pending_routed);
+                    let block_n = pending_routed.block_n;
+                    let batch_n = next_block_local_batch_number(&mut accepted_batch_sequence, block_n);
+                    let tx_hashes = pending_routed
+                        .original_tx_hashes
+                        .iter()
+                        .map(|hash| format!("{hash:#x}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     self.metrics.executor_routed_payloads_total.add(1, &[]);
+                    tracing::info!(
+                        target: "RUST_EXEC",
+                        "📦 Block #{block_n} batch #{batch_n} accepted: route={:?}; total={}; Rust prefix={}; Blockifier suffix={}; transaction hashes=[{tx_hashes}]",
+                        pending_routed.route,
+                        pending_routed.total_len(),
+                        pending_routed.rust_prefix_len(),
+                        pending_routed.blockifier_suffix_len(),
+                    );
                     tracing::debug!(
                         total_txs = pending_routed.total_len(),
                         execution_mode = ?pending_routed.execution_mode,

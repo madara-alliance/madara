@@ -155,6 +155,19 @@ fn summarize_carry_txs(carry: &[TaintedRebuildCarryTx]) -> BatchBoundarySummary 
     summarize_batch(&combined)
 }
 
+fn next_block_local_batch_number(sequence: &mut Option<(u64, u64)>, block_n: u64) -> u64 {
+    match sequence {
+        Some((current_block_n, batch_n)) if *current_block_n == block_n => {
+            *batch_n = batch_n.saturating_add(1);
+            *batch_n
+        }
+        _ => {
+            *sequence = Some((block_n, 1));
+            1
+        }
+    }
+}
+
 fn extend_carry_txs(carry: &mut Vec<TaintedRebuildCarryTx>, batch: BatchToExecute, source_block_n: Option<u64>) {
     carry.extend(batch.into_iter().map(|(tx, additional_info)| TaintedRebuildCarryTx {
         tx,
