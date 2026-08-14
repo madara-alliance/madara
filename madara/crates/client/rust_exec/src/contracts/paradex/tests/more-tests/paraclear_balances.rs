@@ -213,6 +213,34 @@ fn test_add_pending_transfer_clears_stale_zero_field() {
 }
 
 #[test]
+fn test_add_pending_transfer_preserves_explicit_zero_from_zero_layered_state() {
+    let mut state = MockStateReader::new();
+    let contract = addr(0x480);
+    let executor = addr(0x481);
+    let count_key =
+        crate::contracts::paradex::schema::paraclear_layout::pending_transfer_count_by_executor_key(executor.0);
+    set_storage(&mut state, contract, count_key, felt(0));
+
+    let mut nested_ctx = crate::ExecutionContext::new();
+    paraclear::add_pending_transfer_for_test(
+        &state,
+        &mut nested_ctx,
+        contract,
+        executor,
+        felt(0xc8c4d45ff),
+        addr(0x482),
+        addr(0),
+        5 * 100_000_000,
+    )
+    .expect("add transfer");
+
+    let mut account_ctx = crate::ExecutionContext::new();
+    account_ctx.merge_state_diff(&nested_ctx.build_result().state_diff);
+    let base = crate::contracts::paradex::schema::paraclear_layout::pending_transfers_key2(executor.0, felt(1));
+    assert_eq!(account_ctx.build_state_diff().storage_updates[&contract][&storage_key_with_offset(base, 2)], felt(0));
+}
+
+#[test]
 fn test_read_perpetual_balance_missing_zero() {
     let state = MockStateReader::new();
     let contract = addr(0x470);

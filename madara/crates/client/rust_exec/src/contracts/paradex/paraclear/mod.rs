@@ -3995,10 +3995,7 @@ fn add_pending_transfer<S: StateReader>(
     let base = layout::pending_transfers_key2(executor.0, Felt::from(next));
     for (offset, value) in [(0, trade_id), (1, recipient.0), (2, token_address.0), (3, i128_to_felt(amount))] {
         let key = storage_key_with_offset(base, offset);
-        if value == Felt::ZERO {
-            ctx.storage_read(state, contract, key)?;
-        }
-        ctx.storage_write(contract, key, value);
+        ctx.storage_write_explicit(contract, key, value);
     }
     Ok(())
 }

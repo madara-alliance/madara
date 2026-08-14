@@ -174,6 +174,14 @@ impl ExecutionContext {
         self.gas_consumed += 200;
     }
 
+    /// Write a storage value that must remain visible in the transaction state diff even when it is zero.
+    pub fn storage_write_explicit(&mut self, contract: ContractAddress, key: StorageKey, value: Felt) {
+        self.storage_write(contract, key, value);
+        if value == Felt::ZERO {
+            self.preserved_nested_zero_writes.insert((contract, key));
+        }
+    }
+
     /// Emit an event.
     ///
     /// Events are ordered by the order they are emitted.
@@ -409,6 +417,17 @@ mod tests {
 
         let diff = ctx.build_state_diff();
         assert!(diff.storage_updates.is_empty());
+    }
+
+    #[test]
+    fn test_state_diff_preserves_explicit_unread_zero_write() {
+        let contract = ContractAddress(Felt::from(1u64));
+        let key = StorageKey(Felt::from(100u64));
+        let mut ctx = ExecutionContext::new();
+
+        ctx.storage_write_explicit(contract, key, Felt::ZERO);
+
+        assert_eq!(ctx.build_state_diff().storage_updates[&contract][&key], Felt::ZERO);
     }
 
     #[test]
