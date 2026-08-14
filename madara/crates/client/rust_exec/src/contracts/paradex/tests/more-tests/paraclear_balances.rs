@@ -204,8 +204,11 @@ fn test_add_pending_transfer_clears_stale_zero_field() {
     )
     .expect("add transfer");
 
-    let result = ctx.build_result();
-    let updates = result.state_diff.storage_updates.get(&contract).expect("updates");
+    let nested_result = ctx.build_result();
+    let mut account_ctx = crate::ExecutionContext::new();
+    account_ctx.merge_state_diff(&nested_result.state_diff);
+    let account_result = account_ctx.build_result();
+    let updates = account_result.state_diff.storage_updates.get(&contract).expect("updates");
     assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), Some(felt(0)));
 }
 

@@ -5,7 +5,7 @@
 
 use indexmap::IndexMap;
 use starknet_types_core::felt::Felt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::core::state::{StateError, StateReader};
@@ -26,6 +26,9 @@ pub struct ExecutionContext {
 
     /// Storage writes: (contract, key) -> new_value
     storage_writes: HashMap<(ContractAddress, StorageKey), Felt>,
+
+    /// Zero writes already validated by a nested state diff.
+    preserved_nested_zero_writes: HashSet<(ContractAddress, StorageKey)>,
 
     /// Nonce updates: contract -> new_nonce
     nonce_updates: HashMap<ContractAddress, Nonce>,
@@ -159,6 +162,7 @@ impl ExecutionContext {
         let storage_agg_enabled = storage_agg::enabled();
         let start = if storage_agg_enabled { Some(Instant::now()) } else { None };
         self.storage_writes_total = self.storage_writes_total.saturating_add(1);
+        self.preserved_nested_zero_writes.remove(&(contract, key));
         self.storage_writes.insert((contract, key), value);
         hash_agg::record_ctx_write();
         if let Some(start) = start {
@@ -225,6 +229,11 @@ impl ExecutionContext {
         // Merge storage updates
         for (contract, updates) in &state_diff.storage_updates {
             for (key, value) in updates {
+                if *value == Felt::ZERO {
+                    self.preserved_nested_zero_writes.insert((*contract, *key));
+                } else {
+                    self.preserved_nested_zero_writes.remove(&(*contract, *key));
+                }
                 self.storage_writes.insert((*contract, *key), *value);
             }
         }
@@ -258,6 +267,11 @@ impl ExecutionContext {
         let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
 
         for ((contract, key), new_value) in &self.storage_writes {
+            if self.preserved_nested_zero_writes.contains(&(*contract, *key)) {
+                storage_updates.entry(*contract).or_default().insert(*key, *new_value);
+                continue;
+            }
+
             // Check if we read this slot before writing
             if let Some(old_value) = self.initial_reads.get(&(*contract, *key)) {
                 // We read it first - only include if value changed
@@ -395,6 +409,38 @@ mod tests {
 
         let diff = ctx.build_state_diff();
         assert!(diff.storage_updates.is_empty());
+    }
+
+    #[test]
+    fn test_state_diff_preserves_nested_zero_update() {
+        let contract = ContractAddress(Felt::from(1u64));
+        let key = StorageKey(Felt::from(100u64));
+        let nested_diff = StateDiff {
+            storage_updates: IndexMap::from_iter([(contract, IndexMap::from_iter([(key, Felt::ZERO)]))]),
+            ..StateDiff::default()
+        };
+
+        let mut ctx = ExecutionContext::new();
+        ctx.merge_state_diff(&nested_diff);
+
+        let diff = ctx.build_state_diff();
+        assert_eq!(diff.storage_updates[&contract][&key], Felt::ZERO);
+    }
+
+    #[test]
+    fn test_direct_write_replaces_nested_zero_semantics() {
+        let contract = ContractAddress(Felt::from(1u64));
+        let key = StorageKey(Felt::from(100u64));
+        let nested_diff = StateDiff {
+            storage_updates: IndexMap::from_iter([(contract, IndexMap::from_iter([(key, Felt::ZERO)]))]),
+            ..StateDiff::default()
+        };
+
+        let mut ctx = ExecutionContext::new();
+        ctx.merge_state_diff(&nested_diff);
+        ctx.storage_write(contract, key, Felt::ZERO);
+
+        assert!(ctx.build_state_diff().storage_updates.is_empty());
     }
 
     #[test]
