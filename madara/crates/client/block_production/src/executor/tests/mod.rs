@@ -98,6 +98,7 @@ fn start_executor_thread_for_tests(
         mode_rx,
         execution_epoch_rx,
         false,
+        crate::BlockPipelineMode::Optimistic,
         mc_rust_exec::RustExecRuntimeConfig::default(),
     )
     .unwrap()
@@ -486,6 +487,56 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
     commands_sender.send(ExecutorCommand::CloseBlock(s)).unwrap();
     r.await.unwrap().unwrap();
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock { .. }));
+}
+
+/// The global bouncer transaction cap applies across both branches of a mixed block. A Rust tx
+/// must observe a Blockifier tx already packed into the same block and roll over to the next one.
+#[rstest::rstest]
+#[tokio::test]
+async fn test_mixed_mode_uses_shared_global_transaction_cap(
+    #[with(Duration::from_secs(30000), true)]
+    #[future]
+    devnet_setup: DevnetSetup,
+) {
+    let setup = devnet_setup.await;
+    let (commands_sender, commands) = mpsc::unbounded_channel();
+    let mut handle = start_executor_thread_for_tests(setup.backend.clone(), commands, ExecutionMode::Mixed);
+
+    let (blockifier_tx, blockifier_info) = make_tx(
+        &setup.backend,
+        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[0], &setup.backend, Felt::ZERO)),
+    );
+    let blockifier_hash = blockifier_tx.tx_hash().to_felt();
+    let (rust_tx, rust_info) = make_rust_transfer_tx(&setup, 1, 2, Felt::ZERO, 42);
+    let rust_hash = rust_tx.tx_hash().to_felt();
+    let routed = RoutedBatchToExecute {
+        blockifier_batch: [(blockifier_tx, blockifier_info)].into_iter().collect(),
+        rust_batch: [(rust_tx, rust_info)].into_iter().collect(),
+        original_tx_hashes: vec![blockifier_hash, rust_hash],
+        block_n: 1,
+        execution_mode: ExecutionMode::Mixed,
+        execution_epoch: 0,
+    };
+    handle.send_batch.as_mut().unwrap().send(routed).await.unwrap();
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(), vec![blockifier_hash]);
+    });
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock { block_exec_summary, .. }) => {
+        assert_eq!(block_exec_summary.bouncer_weights.n_txs, 1);
+    });
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(), vec![rust_hash]);
+    });
+    let (sender, recv) = oneshot::channel();
+    commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    recv.await.unwrap().unwrap();
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock { block_exec_summary, .. }) => {
+        assert_eq!(block_exec_summary.bouncer_weights.n_txs, 1);
+    });
 }
 
 /// T-034-3 (updated for C-022): In BlockifierOnly mode with a non-empty rust_batch,

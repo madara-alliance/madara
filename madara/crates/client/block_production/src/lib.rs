@@ -138,7 +138,7 @@ mod task;
 mod util;
 
 pub use handle::BlockProductionHandle;
-pub use task::{BlockProductionStateNotification, BlockProductionTask};
+pub use task::{BlockPipelineMode, BlockProductionStateNotification, BlockProductionTask};
 pub(crate) use task::{CurrentBlockState, MempoolIntakeMode};
 pub use util::{RustExecCanonicalSource, RustExecRuntimeOptions};
 

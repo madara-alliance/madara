@@ -414,6 +414,7 @@ mod tests {
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
         assert_eq!(run_cmd.block_production_params.close_queue_capacity, 10);
+        assert_eq!(run_cmd.block_production_params.pipeline_mode, block_production::BlockPipelineModeParam::Optimistic);
     }
 
     #[test]
@@ -421,6 +422,7 @@ mod tests {
         let cli_args = RunCmd::parse_from(["madara", "--sequencer", "--l1-endpoint", "https://l1.example.com"]);
         let partial_config = serde_json::json!({
             "block_production_params": {
+                "pipeline_mode": "sequential",
                 "rust_exec": {
                     "batch_size": 5
                 }
@@ -434,6 +436,7 @@ mod tests {
             .expect("partial config should layer over CLI values");
 
         assert_eq!(run_cmd.block_production_params.rust_exec.batch_size, 5);
+        assert_eq!(run_cmd.block_production_params.pipeline_mode, block_production::BlockPipelineModeParam::Sequential);
         assert_eq!(
             run_cmd.l1_sync_params.l1_endpoint.as_ref().map(ToString::to_string).as_deref(),
             Some("https://l1.example.com/")

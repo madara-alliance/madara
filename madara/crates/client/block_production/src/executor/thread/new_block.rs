@@ -2,6 +2,99 @@ use super::*;
 use crate::executor::ExecutorCommand;
 
 impl ExecutorThread {
+    /// In sequential mode, do not create block N until block N-1 has passed comparator validation
+    /// and completed canonical close. Fallback commands remain able to interrupt this wait.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn wait_for_previous_block_close_or_command(
+        &mut self,
+        state: &mut ExecutorThreadState,
+        pending_routed: &mut RoutedBatchToExecute,
+        desired_execution_mode: &mut ExecutionMode,
+        execution_epoch: &mut u64,
+        tainted_rebuild_parked: &mut bool,
+        runtime_replay_active: &mut bool,
+        replay_current_block_active: &mut bool,
+        next_block_deadline: &mut Instant,
+        force_close: &mut bool,
+        block_empty: &mut bool,
+        l2_gas_consumed_block: &mut u128,
+        block_time: std::time::Duration,
+        block_n: u64,
+    ) -> anyhow::Result<NewBlockBoundarySyncOutcome> {
+        if self.pipeline_mode == crate::BlockPipelineMode::Optimistic {
+            return Ok(NewBlockBoundarySyncOutcome::Proceed);
+        }
+        let Some(required_confirmed_block) = block_n.checked_sub(1) else {
+            return Ok(NewBlockBoundarySyncOutcome::Proceed);
+        };
+        let backend = Arc::clone(&self.backend);
+        let is_closed =
+            || backend.latest_confirmed_block_n().is_some_and(|confirmed| confirmed >= required_confirmed_block);
+        if is_closed() {
+            return Ok(NewBlockBoundarySyncOutcome::Proceed);
+        }
+
+        tracing::info!(block_number = block_n, required_confirmed_block, "executor_waiting_for_previous_block_close");
+        loop {
+            let mut receiver = self.backend.watch_chain_head_state();
+            if is_closed() {
+                tracing::info!(
+                    block_number = block_n,
+                    required_confirmed_block,
+                    "executor_previous_block_close_observed"
+                );
+                return Ok(NewBlockBoundarySyncOutcome::Proceed);
+            }
+
+            match self.wait_rt.block_on(async {
+                tokio::select! {
+                    Some(cmd) = self.commands.recv() => WaitForConfirmedOutcome::Command(cmd),
+                    _ = receiver.changed() => WaitForConfirmedOutcome::Advanced,
+                }
+            }) {
+                WaitForConfirmedOutcome::Advanced => {}
+                WaitForConfirmedOutcome::Command(ExecutorCommand::CloseBlock(callback)) => {
+                    *force_close = true;
+                    let _ = callback.send(Ok(()));
+                }
+                WaitForConfirmedOutcome::Command(ExecutorCommand::SetDesiredExecutionMode { mode }) => {
+                    self.apply_desired_execution_mode(desired_execution_mode, state, mode);
+                }
+                WaitForConfirmedOutcome::Command(ExecutorCommand::PrepareTaintedRebuildFallback {
+                    block_n,
+                    execution_epoch: new_epoch,
+                    reply,
+                }) => {
+                    *desired_execution_mode = ExecutionMode::BlockifierOnly;
+                    self.publish_effective_execution_mode(*desired_execution_mode);
+                    *execution_epoch = new_epoch;
+                    let carry = self.prepare_tainted_rebuild_fallback(
+                        state,
+                        pending_routed,
+                        block_n,
+                        *execution_epoch,
+                        next_block_deadline,
+                        force_close,
+                        block_empty,
+                        l2_gas_consumed_block,
+                        block_time,
+                    )?;
+                    let _ = reply.send(Ok(carry));
+                    *tainted_rebuild_parked = true;
+                    *runtime_replay_active = false;
+                    *replay_current_block_active = false;
+                    self.publish_replay_status(*runtime_replay_active, *execution_epoch);
+                    return Ok(NewBlockBoundarySyncOutcome::ContinueOuterLoop);
+                }
+                WaitForConfirmedOutcome::Command(ExecutorCommand::ResumeAfterTaintedRebuild { reply, .. }) => {
+                    let _ = reply.send(Err(crate::executor::ExecutorCommandError::InvalidTaintedRebuildResume(
+                        "executor is not parked".to_owned(),
+                    )));
+                }
+            }
+        }
+    }
+
     /// current_block_n-10 however might not be saved into the database yet. In that case, we have to wait.
     /// This shouldn't create a deadlock (cyclic wait) unless the database is in a weird state (?)
     ///

@@ -1,11 +1,12 @@
 use crate::cli::block_production::{
-    parse_hex_felt, BlockProductionParams, RustExecCanonicalSourceParam, RustExecParams, StartupExecutionModeParam,
+    parse_hex_felt, BlockPipelineModeParam, BlockProductionParams, RustExecCanonicalSourceParam, RustExecParams,
+    StartupExecutionModeParam,
 };
 use anyhow::Context;
 use mc_block_production::fallback::types::StartupExecutionMode;
 use mc_block_production::{
-    metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask, RustExecCanonicalSource,
-    RustExecRuntimeOptions,
+    metrics::BlockProductionMetrics, BlockPipelineMode, BlockProductionHandle, BlockProductionTask,
+    RustExecCanonicalSource, RustExecRuntimeOptions,
 };
 use mc_db::MadaraBackend;
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
@@ -71,6 +72,10 @@ impl BlockProductionService {
                 .with_startup_execution_mode(match config.startup_execution_mode {
                     StartupExecutionModeParam::Mixed => StartupExecutionMode::Mixed,
                     StartupExecutionModeParam::BlockifierOnly => StartupExecutionMode::BlockifierOnly,
+                })
+                .with_pipeline_mode(match config.pipeline_mode {
+                    BlockPipelineModeParam::Optimistic => BlockPipelineMode::Optimistic,
+                    BlockPipelineModeParam::Sequential => BlockPipelineMode::Sequential,
                 })
                 .with_close_queue_capacity(close_queue_capacity)?;
 

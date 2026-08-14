@@ -3,6 +3,14 @@ use super::*;
 const DEFAULT_CLOSE_QUEUE_CAPACITY: usize = 10;
 const MAX_CLOSE_QUEUE_CAPACITY: usize = 10;
 
+/// Controls whether execution may run ahead of comparator validation and canonical block close.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlockPipelineMode {
+    #[default]
+    Optimistic,
+    Sequential,
+}
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
@@ -405,6 +413,7 @@ pub struct BlockProductionTask {
     pub(super) backend: Arc<MadaraBackend>,
     pub(super) mempool: Arc<Mempool>,
     pub(super) close_queue_capacity: usize,
+    pub(super) pipeline_mode: BlockPipelineMode,
     pub(super) current_state: Option<TaskState>,
     pub(super) metrics: Arc<BlockProductionMetrics>,
     pub(super) state_notifications: Option<mpsc::UnboundedSender<BlockProductionStateNotification>>,
@@ -564,6 +573,7 @@ impl BlockProductionTask {
             backend: backend.clone(),
             mempool,
             close_queue_capacity: DEFAULT_CLOSE_QUEUE_CAPACITY,
+            pipeline_mode: BlockPipelineMode::default(),
             current_state: None,
             metrics,
             handle: BlockProductionHandle::new(
@@ -629,6 +639,11 @@ impl BlockProductionTask {
         );
         self.close_queue_capacity = close_queue_capacity;
         Ok(self)
+    }
+
+    pub fn with_pipeline_mode(mut self, pipeline_mode: BlockPipelineMode) -> Self {
+        self.pipeline_mode = pipeline_mode;
+        self
     }
 
     pub fn with_replay_mode_enabled(mut self, enabled: bool) -> Self {

@@ -375,6 +375,31 @@ impl ExecutorThread {
                 }
                 Self::normalize_routed_batch_for_execution_mode(&mut pending_routed, desired_execution_mode);
             }
+            if let Some(block_n) = match &state {
+                ExecutorThreadState::NewBlock(state_new_block) => Some(state_new_block.state_adaptor.block_n()),
+                ExecutorThreadState::Executing(_) => None,
+            } {
+                if matches!(
+                    self.wait_for_previous_block_close_or_command(
+                        &mut state,
+                        &mut pending_routed,
+                        &mut desired_execution_mode,
+                        &mut execution_epoch,
+                        &mut tainted_rebuild_parked,
+                        &mut runtime_replay_active,
+                        &mut replay_current_block_active,
+                        &mut next_block_deadline,
+                        &mut force_close,
+                        &mut block_empty,
+                        &mut l2_gas_consumed_block,
+                        block_time,
+                        block_n,
+                    )?,
+                    NewBlockBoundarySyncOutcome::ContinueOuterLoop
+                ) {
+                    continue;
+                }
+            }
             let resolved_block_n_min_10_hash = if let Some(block_n) = match &state {
                 ExecutorThreadState::NewBlock(state_new_block) => Some(state_new_block.state_adaptor.block_n()),
                 ExecutorThreadState::Executing(_) => None,
@@ -882,9 +907,8 @@ impl ExecutorThread {
                 );
                 let finalize_start = Instant::now();
                 let mut block_exec_summary = execution_state.executor.finalize()?;
-                if let Some(projected_bouncer_weights) = execution_state.rust_phase_state.projected_bouncer_weights {
-                    block_exec_summary.bouncer_weights = projected_bouncer_weights;
-                }
+                block_exec_summary.bouncer_weights =
+                    execution_state.rust_phase_state.effective_bouncer_weights(block_exec_summary.bouncer_weights);
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
                 self.metrics.executor_finalize_last.record(finalize_secs, &[]);

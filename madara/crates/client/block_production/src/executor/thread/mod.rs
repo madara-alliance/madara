@@ -107,6 +107,7 @@ pub struct ExecutorThread {
     execution_mode_rx: watch::Receiver<ExecutionMode>,
     execution_epoch_rx: watch::Receiver<u64>,
     start_tainted_rebuild_parked: bool,
+    pipeline_mode: crate::BlockPipelineMode,
     rust_exec_runtime_config: RustExecRuntimeConfig,
 
     /// See `take_tx_batch`. When the mempool is empty, we will not be getting transactions.
@@ -207,6 +208,7 @@ impl ExecutorThread {
         execution_mode_rx: watch::Receiver<ExecutionMode>,
         execution_epoch_rx: watch::Receiver<u64>,
         start_tainted_rebuild_parked: bool,
+        pipeline_mode: crate::BlockPipelineMode,
         rust_exec_runtime_config: RustExecRuntimeConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -221,6 +223,7 @@ impl ExecutorThread {
             execution_mode_rx,
             execution_epoch_rx,
             start_tainted_rebuild_parked,
+            pipeline_mode,
             rust_exec_runtime_config,
             wait_rt: tokio::runtime::Builder::new_current_thread()
                 .enable_time()
