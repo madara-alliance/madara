@@ -1,4 +1,4 @@
-use crate::{preconfirmed::PreconfirmedBlock, prelude::*};
+use crate::{preconfirmed::PreconfirmedBlock, prelude::*, StorageHeadProjection};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod block;
@@ -9,10 +9,7 @@ mod state;
 pub use block::MadaraBlockView;
 pub use block_confirmed::MadaraConfirmedBlockView;
 pub use block_preconfirmed::MadaraPreconfirmedBlockView;
-use mp_block::{
-    header::{BlockTimestamp, PreconfirmedHeader},
-    TransactionWithReceipt,
-};
+use mp_block::{header::PreconfirmedHeader, TransactionWithReceipt};
 pub use state::MadaraStateView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +25,52 @@ impl<D: MadaraStorageRead> ExecutedTransactionWithBlockView<D> {
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
+    fn fake_preconfirmed_after(self: &Arc<Self>, parent_block_number: Option<u64>) -> Result<Arc<PreconfirmedBlock>> {
+        let (block_number, sequencer_address, protocol_version, gas_prices, l1_da_mode, total_l2_gas_used) =
+            if let Some(parent_block_number) = parent_block_number {
+                let parent_block_info = MadaraConfirmedBlockView::new(self.clone(), parent_block_number)
+                    .get_block_info()
+                    .context("Parent block should be found")?;
+                (
+                    parent_block_number + 1,
+                    parent_block_info.header.sequencer_address,
+                    parent_block_info.header.protocol_version,
+                    parent_block_info.header.gas_prices,
+                    parent_block_info.header.l1_da_mode,
+                    parent_block_info.total_l2_gas_used,
+                )
+            } else {
+                (
+                    0,
+                    self.chain_config().sequencer_address.to_felt(),
+                    self.chain_config().latest_protocol_version,
+                    Default::default(),
+                    self.chain_config().l1_da_mode,
+                    0,
+                )
+            };
+
+        let (block_timestamp, gas_prices) = if let Some(custom_header) = self.get_custom_header(block_number) {
+            (UNIX_EPOCH + Duration::from_secs(custom_header.timestamp), custom_header.gas_prices)
+        } else {
+            let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
+                self.calculate_gas_prices(&quote, gas_prices.strk_l2_gas_price, total_l2_gas_used)?
+            } else {
+                gas_prices
+            };
+            (SystemTime::now(), gas_prices)
+        };
+
+        Ok(Arc::new(PreconfirmedBlock::new(PreconfirmedHeader {
+            block_number,
+            sequencer_address,
+            block_timestamp: block_timestamp.into(),
+            protocol_version,
+            gas_prices,
+            l1_da_mode,
+        })))
+    }
+
     /// Returns a view on the last confirmed block. This view is used to query content from that block.
     /// Returns [`None`] if the database has no blocks.
     pub fn block_view_on_last_confirmed(self: &Arc<Self>) -> Option<MadaraConfirmedBlockView<D>> {
@@ -120,59 +163,25 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         let chain_head = self.chain_head_state();
         // TODO: cache the preconfirmed fake blocks.
         let block = if let Some(preconfirmed_tip) = chain_head.external_preconfirmed_tip {
-            self.block_view_on_external_preconfirmed(preconfirmed_tip)
-                .map(|view| view.block().clone())
-                .with_context(|| format!("Expected preconfirmed block #{preconfirmed_tip} in head projection"))?
-        } else if let Some(parent_block_number) = chain_head.confirmed_tip {
-            // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
-            let parent_block_info = self
-                .block_view_on_confirmed(parent_block_number)
-                .context("Parent block should be found")?
-                .get_block_info()?;
-
-            let (block_timestamp, gas_prices) =
-                if let Some(custom_header) = self.get_custom_header(parent_block_number.saturating_add(1)) {
-                    // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
-                    let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
-                    let gas_prices = custom_header.gas_prices;
-                    (block_timestamp, gas_prices)
-                } else {
-                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
-                        self.calculate_gas_prices(
-                            &quote,
-                            parent_block_info.header.gas_prices.strk_l2_gas_price,
-                            parent_block_info.total_l2_gas_used,
-                        )?
-                    } else {
-                        parent_block_info.header.gas_prices
-                    };
-                    (SystemTime::now(), gas_prices)
-                };
-
-            PreconfirmedBlock::new(PreconfirmedHeader {
-                block_number: parent_block_number + 1,
-                sequencer_address: parent_block_info.header.sequencer_address,
-                block_timestamp: block_timestamp.into(),
-                protocol_version: parent_block_info.header.protocol_version,
-                gas_prices,
-                l1_da_mode: parent_block_info.header.l1_da_mode,
-            })
-            .into()
+            if let Some(view) = self.block_view_on_external_preconfirmed(preconfirmed_tip) {
+                view.block().clone()
+            } else {
+                // Block close persists the new canonical head before publishing the three
+                // in-memory projection fields. Validation can therefore observe the old tip
+                // after its external snapshot has already been swapped. Recover from the
+                // authoritative persisted projection instead of returning a transient RPC 500.
+                match self.db.get_head_projection().context("Reading persisted head projection")? {
+                    StorageHeadProjection::Preconfirmed { header, content } => {
+                        Arc::new(PreconfirmedBlock::new_with_content(header, content, /* candidates */ []))
+                    }
+                    StorageHeadProjection::Confirmed(parent_block_number) => {
+                        self.fake_preconfirmed_after(Some(parent_block_number))?
+                    }
+                    StorageHeadProjection::Empty => self.fake_preconfirmed_after(None)?,
+                }
+            }
         } else {
-            // Fake preconfirmed block, based on chain config. Most recent gas prices.
-            PreconfirmedBlock::new(PreconfirmedHeader {
-                block_number: 0,
-                sequencer_address: self.chain_config().sequencer_address.to_felt(),
-                block_timestamp: BlockTimestamp::now(),
-                protocol_version: self.chain_config().latest_protocol_version,
-                gas_prices: if let Some(quote) = self.get_last_l1_gas_quote() {
-                    self.calculate_gas_prices(&quote, 0, 0)?
-                } else {
-                    Default::default()
-                },
-                l1_da_mode: self.chain_config().l1_da_mode,
-            })
-            .into()
+            self.fake_preconfirmed_after(chain_head.confirmed_tip)?
         };
         Ok(MadaraPreconfirmedBlockView::new(self.clone(), block))
     }

@@ -155,6 +155,53 @@ fn runahead_keeps_external_visibility_and_promotes_next_on_confirm() {
 }
 
 #[test]
+fn validation_recovers_from_block_close_projection_publication_window() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
+        .expect("creating preconfirmed block should succeed");
+    backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                state_diff: StateDiff::default(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .expect("closing block should succeed");
+
+    // Recreate the exact interleaving from production: the confirmed head is
+    // durable and the external snapshot is gone, but a reader still holds the
+    // previous in-memory head notification.
+    backend.chain_head_state.send_replace(ChainHeadState {
+        confirmed_tip: None,
+        external_preconfirmed_tip: Some(0),
+        internal_preconfirmed_tip: Some(0),
+    });
+    assert!(matches!(
+        backend.db.get_head_projection().expect("reading durable confirmed projection"),
+        StorageHeadProjection::Confirmed(0)
+    ));
+    assert_eq!(backend.chain_head_state().external_preconfirmed_tip, Some(0));
+    assert!(backend.block_view_on_current_preconfirmed().is_none());
+
+    let view = backend
+        .block_view_on_preconfirmed_or_fake()
+        .expect("validation should recover from the persisted confirmed projection");
+    assert_eq!(view.block_number(), 1);
+    assert_eq!(view.num_executed_transactions(), 0);
+}
+
+#[test]
 fn runahead_keeps_multiple_runtime_preconfirmed_blocks_when_persistence_is_disabled() {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_test()),

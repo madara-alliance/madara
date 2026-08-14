@@ -531,7 +531,8 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         Err(crate::executor::ExecutorCommandError::TaintedRebuildActive),
         "normal executor must remain parked after rebuild confirmation and before resume acknowledgement"
     );
-    let post_fallback_tx = send_raw_blockifier_transfer(&devnet_setup, &control, 3, 4).await;
+    let post_fallback_tx =
+        submit_rust_exec_transfer(&devnet_setup, Felt::from(5u64), "transfer", Felt::from(200u64)).await;
     tokio::time::sleep(Duration::from_millis(250)).await;
     assert_eq!(
         devnet_setup.backend.latest_confirmed_block_n(),
@@ -545,15 +546,24 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         "waiting for block #1 comparator result",
     )
     .await;
-    while notifications.try_recv().is_ok() {}
+
+    let drained_session = devnet_setup
+        .backend
+        .get_tainted_rebuild_session()
+        .expect("read drained rebuild session before restart")
+        .expect("drained rebuild session must remain durable until resume acknowledgement");
+    assert_eq!(
+        devnet_setup.backend.latest_confirmed_block_n(),
+        drained_session.next_block_n.checked_sub(1),
+        "durable resume cursor must point past the final overflow block"
+    );
+
     resume_gate.add_permits(1);
 
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let status = control.executionbox_status().await.expect("execution status should be available");
             if status.mode == crate::fallback::types::ExecutionMode::BlockifierOnly
-                && status.reason == Some(crate::fallback::types::FallbackReason::OutputMismatch)
-                && status.taint_block == Some(1)
                 && status.replay_backlog_empty
                 && devnet_setup.backend.latest_confirmed_block_n().is_some_and(|tip| tip >= 3)
             {
@@ -564,7 +574,16 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
         }
     })
     .await
-    .expect("capacity fallback should close the Blockifier prefix and replay all descendants");
+    .expect("capacity fallback should acknowledge the final overflow block and remain Blockifier-only");
+
+    assert!(
+        devnet_setup.backend.get_tainted_rebuild_session().expect("read rebuild session after restart").is_none(),
+        "executor acknowledgement must clear the durable session"
+    );
+    assert!(
+        devnet_setup.backend.get_tainted_rebuild_carry_rows().expect("read rebuild carry after restart").is_empty(),
+        "all suffix and descendant transactions must be drained before intake reopens"
+    );
 
     assert_eq!(block_tx_hashes(&devnet_setup.backend, 1), speculative_hashes[..3]);
     let confirmed_tip = devnet_setup.backend.latest_confirmed_block_n().expect("fallback should confirm blocks");
@@ -589,8 +608,14 @@ async fn blockifier_capacity_prefix_replaces_execbox_block_and_replays_suffix_an
     wait_for_confirmed_block(&devnet_setup.backend, post_fallback_block_n).await;
     assert!(block_contains_tx(&devnet_setup.backend, post_fallback_block_n, post_fallback_tx));
 
+    let final_tip = devnet_setup.backend.latest_confirmed_block_n().expect("post-fallback block should confirm");
+    let all_final_hashes =
+        (1..=final_tip).flat_map(|block_n| block_tx_hashes(&devnet_setup.backend, block_n)).collect::<Vec<_>>();
+    let mut all_final_expected = all_expected;
+    all_final_expected.push(post_fallback_tx);
+    assert_eq!(all_final_hashes, all_final_expected, "fallback recovery must not lose or duplicate any transaction");
+
     let final_status = control.executionbox_status().await.expect("final execution status should be available");
     assert_eq!(final_status.mode, crate::fallback::types::ExecutionMode::BlockifierOnly);
-    assert_eq!(final_status.reason, Some(crate::fallback::types::FallbackReason::OutputMismatch));
     assert!(!final_status.comparator_enabled);
 }

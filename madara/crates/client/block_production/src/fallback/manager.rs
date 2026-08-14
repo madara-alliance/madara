@@ -101,6 +101,13 @@ impl FallbackManager {
         }
     }
 
+    /// Finish restart recovery without undoing a previously entered persistent fallback.
+    pub fn on_persistent_fallback_recovery_complete(&mut self) {
+        self.startup_recovery_active = false;
+        self.mode = ExecutionMode::BlockifierOnly;
+        self.comparator_enabled = false;
+    }
+
     /// Merge manager-owned policy state with executor-owned runtime replay truth.
     pub fn status(&self, replay_status: RuntimeReplayStatus) -> ExecutionboxStatus {
         ExecutionboxStatus {
@@ -139,6 +146,16 @@ mod tests {
         let m = make_manager_mixed_startup();
         assert!(m.startup_recovery_active);
         assert_eq!(m.mode, ExecutionMode::BlockifierOnly, "mode must be BlockifierOnly during recovery");
+    }
+
+    #[test]
+    fn persistent_fallback_recovery_does_not_restore_mixed_mode() {
+        let mut manager = make_manager_mixed_startup();
+        manager.on_persistent_fallback_recovery_complete();
+
+        assert!(!manager.startup_recovery_active);
+        assert_eq!(manager.mode, ExecutionMode::BlockifierOnly);
+        assert!(!manager.comparator_enabled);
     }
 
     #[test]

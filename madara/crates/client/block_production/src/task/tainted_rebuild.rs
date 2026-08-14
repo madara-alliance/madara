@@ -184,13 +184,9 @@ impl BlockProductionTask {
         next_session: Option<mc_db::StoredTaintedRebuildSession>,
     ) -> Option<mc_db::StoredTaintedRebuildSession> {
         next_session.or_else(|| {
-            Some(if session.next_block_n <= session.tail_block_n {
-                mc_db::StoredTaintedRebuildSession {
-                    next_block_n: session.next_block_n.saturating_add(1),
-                    ..session.clone()
-                }
-            } else {
-                session.clone()
+            Some(mc_db::StoredTaintedRebuildSession {
+                next_block_n: session.next_block_n.saturating_add(1),
+                ..session.clone()
             })
         })
     }
@@ -466,14 +462,35 @@ impl BlockProductionTask {
             return Ok(false);
         }
 
+        let confirmed_head = self.backend.latest_confirmed_block_n();
+        let mut session = session;
+        if confirmed_head == Some(session.next_block_n) {
+            let stale_next_block_n = session.next_block_n;
+            session.next_block_n = session
+                .next_block_n
+                .checked_add(1)
+                .context("Tainted rebuild next block overflow while reconciling the final overflow close")?;
+            self.backend
+                .write_tainted_rebuild_session(&session)
+                .context("Advancing stale tainted rebuild cursor after the final overflow close")?;
+            self.tainted_rebuild_session = Some(session.clone());
+            tracing::warn!(
+                target: "RUST_EXEC",
+                confirmed_head = stale_next_block_n,
+                next_block_n = session.next_block_n,
+                execution_epoch = session.execution_epoch,
+                "Reconciled completed final overflow rebuild after restart"
+            );
+        }
+
         let expected_confirmed_head = session
             .next_block_n
             .checked_sub(1)
             .context("Tainted rebuild next block cannot be zero when resuming the executor")?;
         anyhow::ensure!(
-            self.backend.latest_confirmed_block_n() == Some(expected_confirmed_head),
+            confirmed_head == Some(expected_confirmed_head),
             "Tainted rebuild drained at unexpected confirmed head: expected #{expected_confirmed_head}, found {:?}",
-            self.backend.latest_confirmed_block_n()
+            confirmed_head
         );
 
         #[cfg(test)]
@@ -519,7 +536,7 @@ impl BlockProductionTask {
         self.tainted_rebuild_handoff_pending = false;
 
         if self.fallback.startup_recovery_active {
-            self.fallback.on_startup_recovery_complete();
+            self.fallback.on_persistent_fallback_recovery_complete();
             let _ = self.execution_mode_tx.send(self.fallback.mode);
         }
 
