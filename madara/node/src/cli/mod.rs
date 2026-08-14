@@ -357,7 +357,7 @@ impl RunCmd {
 
 #[cfg(test)]
 mod tests {
-    use super::RunCmd;
+    use super::{block_production, RunCmd};
     use clap::Parser;
     use figment::{
         providers::{Format, Json, Serialized},
