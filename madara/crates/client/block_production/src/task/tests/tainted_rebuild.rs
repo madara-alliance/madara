@@ -1,4 +1,5 @@
 use super::*;
+use mc_exec::execution::TxInfo;
 
 #[tokio::test]
 async fn tainted_rebuild_waits_for_anchor_confirm() {
@@ -391,7 +392,7 @@ async fn startup_resume_restores_tainted_rebuild_session_and_blocks_mixed_enable
 #[rstest::rstest]
 #[timeout(Duration::from_secs(30))]
 #[tokio::test]
-async fn all_rust_traffic_respects_rust_batch_size(
+async fn all_rust_traffic_respects_mixed_batch_size(
     #[future]
     #[from(devnet_setup)]
     devnet_setup: DevnetSetup,
@@ -424,11 +425,12 @@ async fn all_rust_traffic_respects_rust_batch_size(
         routing_cfg,
         vec![tx0, tx1, overflow_tx.clone()],
         crate::MempoolIntakeMode::Paused,
+        false,
     );
 
     let routed = recv_routed_batch(&mut out_rx).await;
-    assert_eq!(routed.rust_batch.len(), 2, "rust branch cap must stop all-Rust traffic");
-    assert_eq!(routed.blockifier_batch.len(), 0);
+    assert_eq!(routed.rust_prefix_len(), 2, "logical batch cap must stop all-Rust traffic");
+    assert_eq!(routed.blockifier_suffix_len(), 0);
     assert_tx_not_in_mempool(&devnet_setup.mempool, &overflow_tx).await;
     let replayed = recv_routed_batch(&mut out_rx).await;
     let (blockifier_hashes, rust_hashes) = routed_batch_hashes(&replayed);
@@ -442,7 +444,7 @@ async fn all_rust_traffic_respects_rust_batch_size(
 #[rstest::rstest]
 #[timeout(Duration::from_secs(30))]
 #[tokio::test]
-async fn all_blockifier_traffic_respects_blockifier_batch_size(
+async fn all_blockifier_traffic_uses_the_mixed_logical_batch_size(
     #[future]
     #[from(devnet_setup)]
     devnet_setup: DevnetSetup,
@@ -451,7 +453,7 @@ async fn all_blockifier_traffic_respects_blockifier_batch_size(
 
     let devnet_setup = devnet_setup.await;
     let routing_cfg = crate::util::RustExecRoutingConfig {
-        rust_batch_size: 10,
+        mixed_batch_size: 3,
         blockifier_batch_size: 2,
         ..crate::util::RustExecRoutingConfig::default()
     };
@@ -479,20 +481,17 @@ async fn all_blockifier_traffic_respects_blockifier_batch_size(
         routing_cfg,
         vec![tx0, tx1, overflow_tx.clone()],
         crate::MempoolIntakeMode::Paused,
+        false,
     );
 
     let routed = recv_routed_batch(&mut out_rx).await;
-    assert_eq!(routed.rust_batch.len(), 0);
-    assert_eq!(routed.blockifier_batch.len(), 2, "blockifier branch cap must stop all-Blockifier traffic");
-    assert_tx_not_in_mempool(&devnet_setup.mempool, &overflow_tx).await;
-    let replayed = recv_routed_batch(&mut out_rx).await;
-    let (blockifier_hashes, rust_hashes) = routed_batch_hashes(&replayed);
+    assert_eq!(routed.rust_prefix_len(), 0);
     assert_eq!(
-        blockifier_hashes,
-        vec![overflow_tx.hash],
-        "local carry must replay the overflow tx on the next batcher cycle"
+        routed.blockifier_suffix_len(),
+        3,
+        "Mixed mode uses the logical batch cap; the executor applies the Blockifier chunk cap"
     );
-    assert!(rust_hashes.is_empty(), "all-Blockifier overflow must stay on the Blockifier branch");
+    assert_tx_not_in_mempool(&devnet_setup.mempool, &overflow_tx).await;
 
     ctx.cancel_global();
     batcher_task.await.expect("batcher join");
@@ -501,7 +500,7 @@ async fn all_blockifier_traffic_respects_blockifier_batch_size(
 #[rstest::rstest]
 #[timeout(Duration::from_secs(30))]
 #[tokio::test]
-async fn mixed_traffic_stops_at_first_tx_whose_branch_is_full(
+async fn mixed_traffic_uses_one_logical_cap_and_a_batch_scoped_barrier(
     #[future]
     #[from(devnet_setup)]
     devnet_setup: DevnetSetup,
@@ -528,6 +527,7 @@ async fn mixed_traffic_stops_at_first_tx_whose_branch_is_full(
         &devnet_setup.backend,
         Felt::ONE,
     );
+    let rust_1_hash = rust_1.hash;
     let overflow_rust = make_validated_invoke_tx(
         &devnet_setup.contracts.0[0],
         &devnet_setup.contracts.0[4],
@@ -546,25 +546,26 @@ async fn mixed_traffic_stops_at_first_tx_whose_branch_is_full(
         routing_cfg,
         vec![rust_0, blockifier_0, rust_1, overflow_rust.clone(), tail_blockifier.clone()],
         crate::MempoolIntakeMode::Paused,
+        false,
     );
 
     let routed = recv_routed_batch(&mut out_rx).await;
-    assert_eq!(routed.rust_batch.len(), 2, "the first full branch must stop the cycle");
-    assert_eq!(routed.blockifier_batch.len(), 1, "later txs after the cap hit must stay deferred");
-    assert_eq!(routed.total_len(), 3);
+    assert_eq!(routed.rust_prefix_len(), 1, "the prefix must stop at the first Blockifier transaction");
+    assert_eq!(routed.blockifier_suffix_len(), 1, "the first unsupported transaction starts the suffix");
+    assert_eq!(routed.total_len(), 2, "the mixed batch size is a single logical cap");
     assert_tx_not_in_mempool(&devnet_setup.mempool, &overflow_rust).await;
     assert_tx_not_in_mempool(&devnet_setup.mempool, &tail_blockifier).await;
     let replayed = recv_routed_batch(&mut out_rx).await;
     let (blockifier_hashes, rust_hashes) = routed_batch_hashes(&replayed);
     assert_eq!(
         rust_hashes,
-        vec![overflow_rust.hash],
-        "the first picked overflow tx should stay on the rust branch next cycle"
+        vec![rust_1_hash, overflow_rust.hash],
+        "a new logical batch restarts Rust classification after the earlier suffix drains"
     );
     assert_eq!(
         blockifier_hashes,
         Vec::<Felt>::new(),
-        "unpicked suffix must remain in the ingress queue rather than being folded into local carry"
+        "the prior batch's barrier must not leak into the next logical batch"
     );
     let source_tail = recv_routed_batch(&mut out_rx).await;
     let (blockifier_hashes, rust_hashes) = routed_batch_hashes(&source_tail);
@@ -574,6 +575,73 @@ async fn mixed_traffic_stops_at_first_tx_whose_branch_is_full(
         "txs beyond the one-cycle pick limit should remain in the source queue and arrive after carry drains"
     );
     assert_eq!(rust_hashes, Vec::<Felt>::new());
+
+    ctx.cancel_global();
+    batcher_task.await.expect("batcher join");
+}
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(30))]
+#[tokio::test]
+async fn replay_boundary_splits_into_logical_batches_and_restarts_rust(
+    #[future]
+    #[from(devnet_setup)]
+    devnet_setup: DevnetSetup,
+) {
+    use crate::fallback::types::ExecutionMode;
+    use mp_rpc::admin::ReplayBlockBoundary;
+
+    let devnet_setup = devnet_setup.await;
+    let routing_cfg = rust_transfer_routing_cfg(&devnet_setup.backend, &devnet_setup.contracts.0[0], 2, 10);
+    let rust_0 = make_validated_invoke_tx(
+        &devnet_setup.contracts.0[0],
+        &devnet_setup.contracts.0[2],
+        &devnet_setup.backend,
+        Felt::ZERO,
+    );
+    let blockifier_0 = make_validated_invoke_tx(
+        &devnet_setup.contracts.0[1],
+        &devnet_setup.contracts.0[3],
+        &devnet_setup.backend,
+        Felt::ZERO,
+    );
+    let rust_1 = make_validated_invoke_tx(
+        &devnet_setup.contracts.0[0],
+        &devnet_setup.contracts.0[4],
+        &devnet_setup.backend,
+        Felt::ONE,
+    );
+    devnet_setup.backend.set_replay_boundary(ReplayBlockBoundary {
+        block_n: 1,
+        expected_tx_count: 3,
+        last_tx_hash: rust_1.hash,
+    });
+    let (ctx, batcher_task, mut out_rx) = spawn_batcher_with_bypass_txs(
+        &devnet_setup,
+        ExecutionMode::Mixed,
+        routing_cfg,
+        vec![rust_0.clone(), blockifier_0.clone(), rust_1.clone()],
+        crate::MempoolIntakeMode::Paused,
+        true,
+    );
+
+    let first = recv_routed_batch(&mut out_rx).await;
+    assert_eq!(
+        first.transactions.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(),
+        vec![rust_0.hash, blockifier_0.hash]
+    );
+    assert_eq!(first.rust_prefix_len(), 1);
+    assert_eq!(first.blockifier_suffix_len(), 1);
+
+    let second = recv_routed_batch(&mut out_rx).await;
+    assert_eq!(second.transactions.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(), vec![rust_1.hash]);
+    assert_eq!(second.rust_prefix_len(), 1, "each replay logical batch must restart Rust classification");
+    assert_eq!(second.blockifier_suffix_len(), 0);
+
+    let status = devnet_setup.backend.get_replay_boundary_status(1).expect("replay boundary status");
+    assert_eq!(status.dispatched_tx_count, 3);
+    assert_eq!(status.executed_tx_count, 0);
+    assert!(!status.boundary_met, "dispatch alone must not complete the replay boundary");
 
     ctx.cancel_global();
     batcher_task.await.expect("batcher join");
@@ -615,11 +683,12 @@ async fn blockifier_only_mode_respects_blockifier_batch_size(
         routing_cfg,
         vec![tx0, tx1, overflow_tx.clone()],
         crate::MempoolIntakeMode::Paused,
+        false,
     );
 
     let routed = recv_routed_batch(&mut out_rx).await;
-    assert_eq!(routed.rust_batch.len(), 0, "BlockifierOnly mode must not emit a rust branch");
-    assert_eq!(routed.blockifier_batch.len(), 2, "BlockifierOnly mode must honor the Blockifier cap");
+    assert_eq!(routed.rust_prefix_len(), 0, "BlockifierOnly mode must not emit a Rust prefix");
+    assert_eq!(routed.blockifier_suffix_len(), 2, "BlockifierOnly mode must honor the Blockifier cap");
     assert_tx_not_in_mempool(&devnet_setup.mempool, &overflow_tx).await;
     let replayed = recv_routed_batch(&mut out_rx).await;
     let (blockifier_hashes, rust_hashes) = routed_batch_hashes(&replayed);

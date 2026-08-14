@@ -617,20 +617,36 @@ impl BlockProductionTask {
         replay
     }
 
-    /// Drop stale descendant canonicalization queue entries while leaving persisted descendant
-    /// preconfirmed buckets intact as the durable rebuild source of truth.
-    pub(super) fn drop_descendant_pending_canonicalizations(&mut self, stop_block_n: u64) {
+    /// Drop stale descendant canonicalizations after recovering their ordered transactions.
+    pub(super) fn recover_descendant_pending_canonicalizations(
+        &mut self,
+        stop_block_n: u64,
+    ) -> anyhow::Result<Vec<mc_db::StoredTaintedRebuildCarryRow>> {
         let mut purged_blocks = Vec::new();
+        let mut recovered_rows = Vec::new();
 
-        let mut kept = VecDeque::new();
-        for entry in self.pending_canonicalizations.drain(..) {
-            if entry.state.block_number <= stop_block_n {
-                kept.push_back(entry);
-            } else {
-                purged_blocks.push(entry.state.block_number);
+        for entry in &self.pending_canonicalizations {
+            if entry.state.block_number > stop_block_n {
+                let block_n = entry.state.block_number;
+                let rows = if entry.state.speculative_executed_txs.is_empty() {
+                    self.backend
+                        .db
+                        .get_preconfirmed_block_data(block_n)?
+                        .with_context(|| format!("Missing persisted speculative descendant block #{block_n}"))?
+                        .1
+                } else {
+                    Self::speculative_rows_in_original_order(
+                        &entry.state.speculative_executed_txs,
+                        &entry.state.original_tx_hashes,
+                    )?
+                };
+                recovered_rows.extend(Self::tainted_rebuild_carry_rows_from_sources(
+                    Self::tainted_rebuild_sources_from_preconfirmed_rows(block_n, rows, self.no_charge_fee),
+                ));
+                purged_blocks.push(block_n);
             }
         }
-        self.pending_canonicalizations = kept;
+        self.pending_canonicalizations.retain(|entry| entry.state.block_number <= stop_block_n);
 
         let n_purged = purged_blocks.len();
         if n_purged > 0 {
@@ -642,6 +658,8 @@ impl BlockProductionTask {
                 "Comparator fallback evicted speculative descendant canonicalizations"
             );
         }
+
+        Ok(recovered_rows)
     }
 
     pub(super) fn spawn_tainted_rebuild_carry_task(
@@ -650,6 +668,7 @@ impl BlockProductionTask {
         block_n: u64,
         metric_reason: &str,
         current_block_suffix: BatchToExecute,
+        recovered_descendant_rows: Vec<mc_db::StoredTaintedRebuildCarryRow>,
     ) -> anyhow::Result<PendingTaintedRebuildCarry> {
         let previous_mode = self.fallback.mode;
         self.metrics.comparator_executionbox_stop_total.add(1, &[KeyValue::new("reason", metric_reason.to_string())]);
@@ -704,8 +723,10 @@ impl BlockProductionTask {
         }
         self.reexec_epoch += 1;
 
-        let current_block_suffix_rows =
-            Self::tainted_rebuild_carry_rows_from_batch(current_block_suffix, Some(block_n));
+        let recovered_rows = Self::merge_dedup_tainted_rebuild_carry_rows(
+            Self::tainted_rebuild_carry_rows_from_batch(current_block_suffix, Some(block_n)),
+            recovered_descendant_rows,
+        );
         let reply_rx = self
             .handle
             .request_tainted_rebuild_fallback(block_n, self.execution_epoch)
@@ -716,7 +737,7 @@ impl BlockProductionTask {
                 .map_err(|_| executor::ExecutorCommandError::ChannelClosed)?
                 .context("Preparing executor tainted rebuild fallback carry")?;
             Ok(Self::merge_dedup_tainted_rebuild_carry_rows(
-                current_block_suffix_rows,
+                recovered_rows,
                 Self::tainted_rebuild_carry_rows_from_executor_carry(executor_carry),
             ))
         });
@@ -730,8 +751,15 @@ impl BlockProductionTask {
         block_n: u64,
         metric_reason: &str,
         current_block_suffix: BatchToExecute,
+        recovered_descendant_rows: Vec<mc_db::StoredTaintedRebuildCarryRow>,
     ) -> anyhow::Result<Vec<mc_db::StoredTaintedRebuildCarryRow>> {
-        let pending = self.spawn_tainted_rebuild_carry_task(reason, block_n, metric_reason, current_block_suffix)?;
+        let pending = self.spawn_tainted_rebuild_carry_task(
+            reason,
+            block_n,
+            metric_reason,
+            current_block_suffix,
+            recovered_descendant_rows,
+        )?;
         self.await_tainted_rebuild_carry(pending).await.context("Awaiting tainted rebuild carry handoff")
     }
 
@@ -760,9 +788,15 @@ impl BlockProductionTask {
         fallback_reason: FallbackReason,
         metric_reason: &str,
         current_block_suffix: BatchToExecute,
+        recovered_descendant_rows: Vec<mc_db::StoredTaintedRebuildCarryRow>,
     ) -> anyhow::Result<PendingStopFallbackHandoff> {
-        let carry =
-            self.spawn_tainted_rebuild_carry_task(fallback_reason, block_n, metric_reason, current_block_suffix)?;
+        let carry = self.spawn_tainted_rebuild_carry_task(
+            fallback_reason,
+            block_n,
+            metric_reason,
+            current_block_suffix,
+            recovered_descendant_rows,
+        )?;
         Ok(PendingStopFallbackHandoff {
             block_n,
             state,
@@ -864,17 +898,21 @@ impl BlockProductionTask {
             .context("Reading tainted rebuild tail block")?
             .unwrap_or(block_n);
         let next_block_n = block_n.saturating_add(1);
-        let session = if carry_rows.is_empty() && tail_block_n <= block_n {
-            None
-        } else {
-            Some(mc_db::StoredTaintedRebuildSession {
-                execution_epoch: self.execution_epoch,
-                anchor_block_n: block_n,
-                next_block_n,
-                tail_block_n,
-                active: true,
-            })
-        };
+        let session = Some(mc_db::StoredTaintedRebuildSession {
+            execution_epoch: self.execution_epoch,
+            anchor_block_n: block_n,
+            next_block_n,
+            tail_block_n,
+            active: true,
+        });
+
+        tracing::debug!(
+            block_n,
+            tail_block_n,
+            carry_rows = carry_rows.len(),
+            rebuild_session_installed = session.is_some(),
+            "tainted_rebuild_session_install_decision"
+        );
 
         self.backend
             .stage_tainted_rebuild_preconfirmed_block(&header, &canonical_rows, session.as_ref(), &carry_rows)

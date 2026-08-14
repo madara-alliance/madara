@@ -23,6 +23,7 @@ pub enum FallbackReason {
     ManualForceDisable,
     ComparatorPipelineError,
     BlockifierCanonicalSubstitution,
+    RustRuntimeFailure,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

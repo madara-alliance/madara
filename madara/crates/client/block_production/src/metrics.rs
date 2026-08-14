@@ -101,10 +101,18 @@ pub struct BlockProductionMetrics {
     pub batcher_route_fallback_total: Counter<u64>,
     /// Multicall with mixed support (subset of batcher_route_fallback_total).
     pub batcher_multicall_partial_supported_total: Counter<u64>,
-    /// Histogram of output batch size for the Rust branch (txs per cycle).
-    pub batcher_output_rust_branch_size: Histogram<f64>,
-    /// Histogram of output batch size for the Blockifier branch (txs per cycle).
-    pub batcher_output_blockifier_branch_size: Histogram<f64>,
+    /// Transactions forced into the Blockifier suffix after the direct trigger.
+    pub batcher_barrier_amplified_blockifier_total: Counter<u64>,
+    /// Histogram of complete logical batch size.
+    pub batcher_logical_batch_size: Histogram<f64>,
+    /// Histogram of Rust prefix size.
+    pub batcher_rust_prefix_size: Histogram<f64>,
+    /// Histogram of Blockifier suffix size.
+    pub batcher_blockifier_suffix_size: Histogram<f64>,
+    /// Histogram of executor switches per logical batch (always zero or one).
+    pub batcher_executor_switches: Histogram<f64>,
+    /// Rust execution share for each completed block, from zero to one.
+    pub block_rust_exec_routing_ratio: Histogram<f64>,
 
     // Comparator / re-execution metrics (Step 5, T-055)
     /// Total blocks submitted to the comparator (SD/ER comparison pair).
@@ -142,6 +150,10 @@ pub struct BlockProductionMetrics {
     pub executor_block_full_total: Counter<u64>,
     /// Total RustExec capacity rejections. Label: reason=limit_exceeded|resource_error.
     pub executor_rust_capacity_reject_total: Counter<u64>,
+    /// Ordered suffix length carried across a block boundary, labelled by close reason.
+    pub executor_ordered_suffix_carried_size: Histogram<f64>,
+    /// Rust projected capacity reserved from Blockifier, labelled by resource dimension.
+    pub executor_bouncer_reservation: Histogram<f64>,
 }
 
 impl BlockProductionMetrics {
@@ -555,17 +567,41 @@ impl BlockProductionMetrics {
             "Total transactions with mixed multicall support (Blockifier fallback)".to_string(),
             "tx".to_string(),
         );
-        let batcher_output_rust_branch_size = register_histogram_metric_instrument(
+        let batcher_barrier_amplified_blockifier_total = register_counter_metric_instrument(
             &meter,
-            "batcher_output_rust_branch_size_txs".to_string(),
-            "Histogram of Rust branch size per batcher cycle".to_string(),
+            "batcher_barrier_amplified_blockifier_total".to_string(),
+            "Transactions forced into a Blockifier suffix after the direct classifier trigger".to_string(),
             "tx".to_string(),
         );
-        let batcher_output_blockifier_branch_size = register_histogram_metric_instrument(
+        let batcher_logical_batch_size = register_histogram_metric_instrument(
             &meter,
-            "batcher_output_blockifier_branch_size_txs".to_string(),
-            "Histogram of Blockifier branch size per batcher cycle".to_string(),
+            "batcher_logical_batch_size_txs".to_string(),
+            "Histogram of complete logical batch size".to_string(),
             "tx".to_string(),
+        );
+        let batcher_rust_prefix_size = register_histogram_metric_instrument(
+            &meter,
+            "batcher_rust_prefix_size_txs".to_string(),
+            "Histogram of Rust prefix size per logical batch".to_string(),
+            "tx".to_string(),
+        );
+        let batcher_blockifier_suffix_size = register_histogram_metric_instrument(
+            &meter,
+            "batcher_blockifier_suffix_size_txs".to_string(),
+            "Histogram of Blockifier suffix size per logical batch".to_string(),
+            "tx".to_string(),
+        );
+        let batcher_executor_switches = register_histogram_metric_instrument(
+            &meter,
+            "batcher_executor_switches".to_string(),
+            "Histogram of executor switches per logical batch".to_string(),
+            "switch".to_string(),
+        );
+        let block_rust_exec_routing_ratio = register_histogram_metric_instrument(
+            &meter,
+            "block_rust_exec_routing_ratio".to_string(),
+            "Rust execution share of transactions added to each completed block".to_string(),
+            "ratio".to_string(),
         );
 
         // Comparator / re-execution metrics (T-055)
@@ -667,6 +703,18 @@ impl BlockProductionMetrics {
             "Total RustExec capacity rejections labelled by reason=limit_exceeded|resource_error".to_string(),
             "event".to_string(),
         );
+        let executor_ordered_suffix_carried_size = register_histogram_metric_instrument(
+            &meter,
+            "executor_ordered_suffix_carried_size_txs".to_string(),
+            "Ordered logical-batch suffix carried across a block boundary".to_string(),
+            "tx".to_string(),
+        );
+        let executor_bouncer_reservation = register_histogram_metric_instrument(
+            &meter,
+            "executor_bouncer_reservation".to_string(),
+            "Rust projected resource capacity reserved from Blockifier at engine handoff".to_string(),
+            "resource".to_string(),
+        );
 
         Self {
             block_gauge,
@@ -734,8 +782,12 @@ impl BlockProductionMetrics {
             batcher_routed_blockifier_total,
             batcher_route_fallback_total,
             batcher_multicall_partial_supported_total,
-            batcher_output_rust_branch_size,
-            batcher_output_blockifier_branch_size,
+            batcher_barrier_amplified_blockifier_total,
+            batcher_logical_batch_size,
+            batcher_rust_prefix_size,
+            batcher_blockifier_suffix_size,
+            batcher_executor_switches,
+            block_rust_exec_routing_ratio,
             comparator_blocks_compared_total,
             comparator_state_diff_mismatch_total,
             comparator_execbox_resources_gt_reexec_total,
@@ -752,6 +804,8 @@ impl BlockProductionMetrics {
             executor_phase_deferred_txs_total,
             executor_block_full_total,
             executor_rust_capacity_reject_total,
+            executor_ordered_suffix_carried_size,
+            executor_bouncer_reservation,
         }
     }
 

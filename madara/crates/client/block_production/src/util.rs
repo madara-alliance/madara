@@ -12,9 +12,10 @@ use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::{
     collections::VecDeque,
+    num::NonZeroUsize,
     ops::{Add, AddAssign},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -309,9 +310,9 @@ pub(crate) struct RustExecRoutingConfig {
     pub supported_selectors: HashSet<Felt>,
     /// Whitelisted contract class hashes for RustExec routing.
     pub supported_class_hashes: HashSet<Felt>,
-    /// Max RustExec txs per batcher cycle (default placeholder: 30).
-    pub rust_batch_size: usize,
-    /// Max Blockifier txs per batcher cycle (default placeholder: 10).
+    /// Max transactions in one logical mixed-mode routing batch.
+    pub mixed_batch_size: usize,
+    /// Max transactions in a Blockifier-only pick or one Blockifier execution chunk.
     pub blockifier_batch_size: usize,
     pub runtime_options: RustExecRuntimeOptions,
 }
@@ -370,7 +371,7 @@ impl Default for RustExecRoutingConfig {
             executor_addresses: HashSet::new(),
             supported_selectors: mc_rust_exec::supported_selectors(),
             supported_class_hashes: mc_rust_exec::supported_class_hashes(),
-            rust_batch_size: 1,
+            mixed_batch_size: 1,
             blockifier_batch_size: 1,
             runtime_options: RustExecRuntimeOptions::default(),
         }
@@ -419,13 +420,36 @@ pub(crate) enum RouteFallbackReason {
     MulticallPartiallySupported,
 }
 
-/// Dual-batch payload emitted by batcher each cycle.
-/// rust_batch is empty by construction when mode == BlockifierOnly.
+/// Why a complete logical batch is executed by Blockifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockifierRouteCause {
+    Classifier(RouteFallbackReason),
+    FrozenBlockMode,
+    StaleEpoch,
+    FallbackRecovery,
+    RustRuntimeFailure,
+}
+
+/// Source-ordered execution plan with at most one Rust -> Blockifier transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BatchRoute {
+    RustOnly,
+    BlockifierOnly { cause: BlockifierRouteCause },
+    RustThenBlockifier { split_at: NonZeroUsize, trigger: RouteFallbackReason },
+}
+
+impl Default for BatchRoute {
+    fn default() -> Self {
+        Self::BlockifierOnly { cause: BlockifierRouteCause::FrozenBlockMode }
+    }
+}
+
+/// One source-ordered logical batch emitted by the batcher.
 #[derive(Debug)]
 pub(crate) struct RoutedBatchToExecute {
-    pub rust_batch: BatchToExecute,
-    pub blockifier_batch: BatchToExecute,
-    /// Original submitted order before backend routing grouped the physical batches.
+    pub transactions: BatchToExecute,
+    pub route: BatchRoute,
+    /// Submitted order retained as an integrity assertion during rollout.
     pub original_tx_hashes: Vec<Felt>,
     /// Initial execution-frontier block number captured by the batcher when this routed
     /// payload was built. The executor rebinds this to the authoritative block frontier
@@ -443,8 +467,8 @@ pub(crate) struct RoutedBatchToExecute {
 impl Default for RoutedBatchToExecute {
     fn default() -> Self {
         Self {
-            rust_batch: BatchToExecute::default(),
-            blockifier_batch: BatchToExecute::default(),
+            transactions: BatchToExecute::default(),
+            route: BatchRoute::default(),
             original_tx_hashes: Vec::new(),
             block_n: 0,
             execution_mode: ExecutionMode::BlockifierOnly,
@@ -455,66 +479,147 @@ impl Default for RoutedBatchToExecute {
 
 impl RoutedBatchToExecute {
     pub fn is_empty(&self) -> bool {
-        self.rust_batch.is_empty() && self.blockifier_batch.is_empty()
+        self.transactions.is_empty()
     }
+
     pub fn total_len(&self) -> usize {
-        self.rust_batch.len() + self.blockifier_batch.len()
+        self.transactions.len()
     }
 
-    pub fn normalize_original_tx_hashes(&mut self) {
-        let mut present: BTreeMap<Felt, usize> =
-            self.blockifier_batch.txs.iter().chain(&self.rust_batch.txs).map(|tx| tx.tx_hash().to_felt()).fold(
-                BTreeMap::new(),
-                |mut counts, hash| {
-                    *counts.entry(hash).or_default() += 1usize;
-                    counts
-                },
-            );
-        if self.original_tx_hashes.is_empty() {
-            self.original_tx_hashes =
-                self.blockifier_batch.txs.iter().chain(&self.rust_batch.txs).map(|tx| tx.tx_hash().to_felt()).collect();
-            return;
+    pub fn rust_prefix_len(&self) -> usize {
+        match self.route {
+            BatchRoute::RustOnly => self.total_len(),
+            BatchRoute::BlockifierOnly { .. } => 0,
+            BatchRoute::RustThenBlockifier { split_at, .. } => split_at.get(),
         }
-        self.original_tx_hashes.retain(|hash| {
-            present.get_mut(hash).is_some_and(|count| {
-                let keep = *count > 0;
-                *count = count.saturating_sub(1);
-                keep
-            })
-        });
     }
 
-    pub fn take_processed_original_hashes(&mut self, processed: &[Transaction]) -> Vec<Felt> {
-        let mut processed: BTreeMap<Felt, usize> =
-            processed.iter().map(|tx| tx.tx_hash().to_felt()).fold(BTreeMap::new(), |mut counts, hash| {
-                *counts.entry(hash).or_default() += 1usize;
-                counts
-            });
-        let mut included = Vec::with_capacity(processed.len());
-        self.original_tx_hashes.retain(|hash| {
-            let is_processed = processed.get_mut(hash).is_some_and(|count| {
-                let found = *count > 0;
-                *count = count.saturating_sub(1);
-                found
-            });
-            if is_processed {
-                included.push(*hash);
+    pub fn blockifier_suffix_len(&self) -> usize {
+        self.total_len().saturating_sub(self.rust_prefix_len())
+    }
+
+    pub fn rust_prefix(&self) -> &[Transaction] {
+        &self.transactions.txs[..self.rust_prefix_len()]
+    }
+
+    pub fn blockifier_suffix(&self) -> &[Transaction] {
+        &self.transactions.txs[self.rust_prefix_len()..]
+    }
+
+    pub fn remove_n_front(&mut self, n_to_remove: usize) -> BatchToExecute {
+        assert!(n_to_remove <= self.total_len(), "cannot remove more transactions than the routed batch contains");
+        let removed = self.transactions.remove_n_front(n_to_remove);
+        if self.transactions.is_empty() {
+            return removed;
+        }
+
+        if let BatchRoute::RustThenBlockifier { split_at, trigger } = self.route {
+            self.route = if n_to_remove < split_at.get() {
+                BatchRoute::RustThenBlockifier {
+                    split_at: NonZeroUsize::new(split_at.get() - n_to_remove)
+                        .expect("remaining Rust prefix is non-zero"),
+                    trigger,
+                }
+            } else {
+                BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::Classifier(trigger) }
+            };
+        }
+        removed
+    }
+
+    pub fn retain_ordered(&mut self, mut predicate: impl FnMut(&Transaction) -> bool) {
+        let rust_prefix_len = self.rust_prefix_len();
+        let old_route = self.route;
+        let mut retained = BatchToExecute::with_capacity(self.total_len());
+        let mut retained_hashes = Vec::with_capacity(self.total_len());
+        let mut retained_rust = 0usize;
+        let mut retained_blockifier = 0usize;
+        for (index, (tx, info)) in std::mem::take(&mut self.transactions).into_iter().enumerate() {
+            if predicate(&tx) {
+                if index < rust_prefix_len {
+                    retained_rust += 1;
+                } else {
+                    retained_blockifier += 1;
+                }
+                retained_hashes.push(tx.tx_hash().to_felt());
+                retained.push(tx, info);
             }
-            !is_processed
-        });
-        included
+        }
+        self.transactions = retained;
+        self.original_tx_hashes = retained_hashes;
+        self.route = match old_route {
+            BatchRoute::RustOnly => BatchRoute::RustOnly,
+            BatchRoute::BlockifierOnly { cause } => BatchRoute::BlockifierOnly { cause },
+            BatchRoute::RustThenBlockifier { trigger, .. } if retained_rust == 0 => {
+                BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::Classifier(trigger) }
+            }
+            BatchRoute::RustThenBlockifier { .. } if retained_blockifier == 0 => BatchRoute::RustOnly,
+            BatchRoute::RustThenBlockifier { trigger, .. } => BatchRoute::RustThenBlockifier {
+                split_at: NonZeroUsize::new(retained_rust).expect("retained Rust prefix is non-zero"),
+                trigger,
+            },
+        };
+    }
+
+    pub fn normalize_to_blockifier_only(&mut self, cause: BlockifierRouteCause) {
+        self.route = BatchRoute::BlockifierOnly { cause };
+    }
+
+    pub fn drain_ordered(&mut self) -> BatchToExecute {
+        self.original_tx_hashes.clear();
+        std::mem::take(&mut self.transactions)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.transactions.txs.len() == self.transactions.additional_info.len(),
+            "transaction and additional-info lengths differ"
+        );
+        if let BatchRoute::RustThenBlockifier { split_at, .. } = self.route {
+            anyhow::ensure!(
+                split_at.get() < self.total_len(),
+                "mixed route split {} must be smaller than transaction count {}",
+                split_at,
+                self.total_len()
+            );
+        }
+        if !self.original_tx_hashes.is_empty() {
+            let transaction_hashes = self.transactions.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>();
+            anyhow::ensure!(
+                self.original_tx_hashes == transaction_hashes,
+                "routed hash metadata does not match physical transaction order"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn take_processed_original_hashes(&mut self, processed: &[Transaction]) -> anyhow::Result<Vec<Felt>> {
+        anyhow::ensure!(
+            processed.len() <= self.original_tx_hashes.len(),
+            "processed transaction count {} exceeds ordered hash metadata count {}",
+            processed.len(),
+            self.original_tx_hashes.len()
+        );
+        for (index, (tx, expected_hash)) in processed.iter().zip(&self.original_tx_hashes).enumerate() {
+            let actual_hash = tx.tx_hash().to_felt();
+            anyhow::ensure!(
+                actual_hash == *expected_hash,
+                "processed transaction order mismatch at index {index}: expected {expected_hash:#x}, got {actual_hash:#x}"
+            );
+        }
+        Ok(self.original_tx_hashes.drain(..processed.len()).collect())
     }
 }
 
-/// Convenience conversion: all items go to `blockifier_batch`.
+/// Convenience conversion: all items use Blockifier.
 /// Used by executor tests and other code that creates a single-branch payload.
 impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
     fn from_iter<T: IntoIterator<Item = (Transaction, AdditionalTxInfo)>>(iter: T) -> Self {
-        let blockifier_batch = iter.into_iter().collect::<BatchToExecute>();
-        let original_tx_hashes = blockifier_batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
+        let transactions = iter.into_iter().collect::<BatchToExecute>();
+        let original_tx_hashes = transactions.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
         Self {
-            blockifier_batch,
-            rust_batch: BatchToExecute::default(),
+            transactions,
+            route: BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::FrozenBlockMode },
             original_tx_hashes,
             block_n: 0,
             execution_mode: ExecutionMode::BlockifierOnly,
@@ -526,6 +631,7 @@ impl FromIterator<(Transaction, AdditionalTxInfo)> for RoutedBatchToExecute {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::num::NonZeroUsize;
     use std::time::Duration;
 
     use mc_exec::execution::TxInfo;
@@ -535,9 +641,10 @@ mod tests {
     use starknet_types_core::felt::Felt;
 
     use super::{
-        build_rust_exec_runtime_config, AdditionalTxInfo, BatchToExecute, ExecutionStats, RoutedBatchToExecute,
-        RustExecRoutingConfig,
+        build_rust_exec_runtime_config, AdditionalTxInfo, BatchRoute, BatchToExecute, BlockifierRouteCause,
+        ExecutionStats, RouteFallbackReason, RoutedBatchToExecute, RustExecRoutingConfig,
     };
+    use crate::fallback::types::ExecutionMode;
 
     fn blockifier_tx(hash_marker: u64) -> blockifier::transaction::transaction_execution::Transaction {
         L1HandlerTransactionWithFee::new(
@@ -608,24 +715,90 @@ mod tests {
         let hash_1 = tx_1.tx_hash().to_felt();
         let hash_2 = tx_2.tx_hash().to_felt();
         let mut routed = RoutedBatchToExecute {
-            rust_batch: BatchToExecute {
-                txs: vec![tx_1.clone()],
-                additional_info: vec![AdditionalTxInfo::default()].into(),
+            transactions: BatchToExecute {
+                txs: vec![tx_1.clone(), tx_2.clone()],
+                additional_info: vec![AdditionalTxInfo::default(), AdditionalTxInfo::default()].into(),
             },
-            blockifier_batch: BatchToExecute {
-                txs: vec![tx_2.clone()],
-                additional_info: vec![AdditionalTxInfo::default()].into(),
+            route: BatchRoute::RustThenBlockifier {
+                split_at: NonZeroUsize::new(1).unwrap(),
+                trigger: RouteFallbackReason::NotInvoke,
             },
             original_tx_hashes: vec![hash_1, hash_2],
             ..Default::default()
         };
 
-        assert_eq!(routed.take_processed_original_hashes(&[tx_2]), vec![hash_2]);
-        assert_eq!(routed.original_tx_hashes, vec![hash_1]);
+        assert_eq!(routed.take_processed_original_hashes(&[tx_1.clone()]).unwrap(), vec![hash_1]);
+        assert_eq!(routed.original_tx_hashes, vec![hash_2]);
+        assert!(
+            routed.take_processed_original_hashes(&[tx_1]).is_err(),
+            "a non-prefix processed transaction must fail loudly"
+        );
+    }
 
-        routed.rust_batch.txs.clear();
-        routed.rust_batch.additional_info.clear();
-        routed.normalize_original_tx_hashes();
-        assert!(routed.original_tx_hashes.is_empty());
+    fn mixed_routed_batch() -> RoutedBatchToExecute {
+        let transactions =
+            (1..=5).map(|marker| (blockifier_tx(marker), AdditionalTxInfo::default())).collect::<BatchToExecute>();
+        let original_tx_hashes = transactions.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
+        RoutedBatchToExecute {
+            transactions,
+            route: BatchRoute::RustThenBlockifier {
+                split_at: NonZeroUsize::new(2).unwrap(),
+                trigger: RouteFallbackReason::SelectorNotSupported,
+            },
+            original_tx_hashes,
+            execution_mode: ExecutionMode::Mixed,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn route_prefix_removal_adjusts_the_boundary_without_reordering() {
+        let mut routed = mixed_routed_batch();
+
+        let first = routed.remove_n_front(1);
+        assert_eq!(first.txs[0].nonce().to_felt(), Felt::ONE);
+        assert_eq!(routed.rust_prefix_len(), 1);
+        assert_eq!(routed.blockifier_suffix_len(), 3);
+        assert!(matches!(routed.route, BatchRoute::RustThenBlockifier { split_at, .. } if split_at.get() == 1));
+
+        let through_boundary = routed.remove_n_front(1);
+        assert_eq!(through_boundary.txs[0].nonce().to_felt(), Felt::from(2u64));
+        assert!(matches!(
+            routed.route,
+            BatchRoute::BlockifierOnly {
+                cause: BlockifierRouteCause::Classifier(RouteFallbackReason::SelectorNotSupported)
+            }
+        ));
+        assert_eq!(
+            routed.transactions.txs.iter().map(|tx| tx.nonce().to_felt()).collect::<Vec<_>>(),
+            vec![Felt::from(3u64), Felt::from(4u64), Felt::from(5u64)]
+        );
+    }
+
+    #[test]
+    fn ordered_retention_keeps_a_conservative_mixed_suffix() {
+        let mut routed = mixed_routed_batch();
+
+        routed.retain_ordered(|tx| tx.nonce().to_felt() != Felt::from(3u64));
+
+        assert_eq!(routed.rust_prefix_len(), 2);
+        assert_eq!(routed.blockifier_suffix_len(), 2);
+        assert_eq!(
+            routed.transactions.txs.iter().map(|tx| tx.nonce().to_felt()).collect::<Vec<_>>(),
+            vec![Felt::ONE, Felt::from(2u64), Felt::from(4u64), Felt::from(5u64)]
+        );
+        routed.validate().expect("retained route should remain valid");
+    }
+
+    #[test]
+    fn route_validation_rejects_a_split_at_the_end() {
+        let mut routed = mixed_routed_batch();
+        routed.route = BatchRoute::RustThenBlockifier {
+            split_at: NonZeroUsize::new(routed.total_len()).unwrap(),
+            trigger: RouteFallbackReason::NotInvoke,
+        };
+
+        assert!(routed.validate().is_err());
+        assert!(RoutedBatchToExecute::default().validate().is_ok());
     }
 }

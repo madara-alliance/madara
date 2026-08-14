@@ -3,8 +3,8 @@
 use crate::fallback::types::{ExecutionMode, RuntimeReplayStatus};
 use crate::metrics::BlockProductionMetrics;
 use crate::util::{
-    create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats, RoutedBatchToExecute,
-    TaintedRebuildCarryTx,
+    create_execution_context, BatchRoute, BatchToExecute, BlockExecutionContext, BlockifierRouteCause, ExecutionStats,
+    RoutedBatchToExecute, TaintedRebuildCarryTx,
 };
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
@@ -12,7 +12,7 @@ use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
-use mc_rust_exec::{RustDeferredReason, RustExecRuntimeConfig, RustPhaseState};
+use mc_rust_exec::{RustDeferredReason, RustExecRuntimeConfig, RustPhaseState, ScopedBlockifierCapacity};
 use mp_convert::{Felt, ToFelt};
 use opentelemetry::KeyValue;
 use starknet_api::contract_class::ContractClass;
@@ -45,7 +45,6 @@ struct ExecutorStateExecuting {
     declared_classes: HashMap<ClassHash, ContractClass>,
     consumed_l1_to_l2_nonces: HashSet<u64>,
     rust_phase_state: RustPhaseState,
-    saw_blockifier_txs: bool,
     executed_in_block: BatchToExecute,
 }
 
@@ -108,6 +107,7 @@ pub struct ExecutorThread {
     execution_epoch_rx: watch::Receiver<u64>,
     start_tainted_rebuild_parked: bool,
     pipeline_mode: crate::BlockPipelineMode,
+    rust_exec_blockifier_batch_size: usize,
     rust_exec_runtime_config: RustExecRuntimeConfig,
 
     /// See `take_tx_batch`. When the mempool is empty, we will not be getting transactions.
@@ -120,7 +120,7 @@ enum WaitTxBatchOutcome {
     Exit,
     /// Got a command to execute.
     Command(super::ExecutorCommand),
-    /// Batch (routed; executor merges branches until T-031 two-phase execution is wired)
+    /// Source-ordered routed logical batch.
     Batch(RoutedBatchToExecute),
 }
 
@@ -146,16 +146,26 @@ fn summarize_batch(batch: &BatchToExecute) -> BatchBoundarySummary {
 }
 
 fn summarize_routed_batch(batch: &RoutedBatchToExecute) -> BatchBoundarySummary {
-    let mut combined = BatchToExecute::default();
-    combined.extend(batch.blockifier_batch.clone());
-    combined.extend(batch.rust_batch.clone());
-    summarize_batch(&combined)
+    summarize_batch(&batch.transactions)
 }
 
 fn summarize_carry_txs(carry: &[TaintedRebuildCarryTx]) -> BatchBoundarySummary {
     let mut combined = BatchToExecute::default();
     combined.extend(carry.iter().cloned().map(|carry_tx| (carry_tx.tx, carry_tx.additional_info)));
     summarize_batch(&combined)
+}
+
+fn next_block_local_batch_number(sequence: &mut Option<(u64, u64)>, block_n: u64) -> u64 {
+    match sequence {
+        Some((current_block_n, batch_n)) if *current_block_n == block_n => {
+            *batch_n = batch_n.saturating_add(1);
+            *batch_n
+        }
+        _ => {
+            *sequence = Some((block_n, 1));
+            1
+        }
+    }
 }
 
 fn extend_carry_txs(carry: &mut Vec<TaintedRebuildCarryTx>, batch: BatchToExecute, source_block_n: Option<u64>) {
@@ -209,6 +219,7 @@ impl ExecutorThread {
         execution_epoch_rx: watch::Receiver<u64>,
         start_tainted_rebuild_parked: bool,
         pipeline_mode: crate::BlockPipelineMode,
+        blockifier_batch_size: usize,
         rust_exec_runtime_config: RustExecRuntimeConfig,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -224,6 +235,7 @@ impl ExecutorThread {
             execution_epoch_rx,
             start_tainted_rebuild_parked,
             pipeline_mode,
+            rust_exec_blockifier_batch_size: blockifier_batch_size.max(1),
             rust_exec_runtime_config,
             wait_rt: tokio::runtime::Builder::new_current_thread()
                 .enable_time()

@@ -1,4 +1,5 @@
 use super::*;
+use crate::BlockPipelineMode;
 
 #[test]
 fn optimistic_window_configures_serial_close_queue_capacity() {
@@ -239,7 +240,7 @@ async fn stale_batch_executed_is_dropped_after_fallback() {
         super::ExecutorMessage::BatchExecuted(super::BatchExecutionResult {
             executed_txs: crate::util::BatchToExecute::default(),
             original_tx_hashes: vec![],
-            blockifier_results: vec![],
+            execution_results: vec![],
             stats: crate::util::ExecutionStats { n_executed: 1, n_added_to_block: 1, ..Default::default() },
             execution_mode: crate::fallback::types::ExecutionMode::Mixed,
             execution_epoch: 0,
@@ -256,6 +257,35 @@ async fn stale_batch_executed_is_dropped_after_fallback() {
     assert_eq!(state.block_number, 1);
     assert!(state.speculative_executed_txs.is_empty(), "stale mixed batch must not be appended");
     assert_eq!(state.accumulated_stats.n_executed, 0, "stale mixed batch must not affect close stats");
+
+    drop(close_queue_handle);
+    close_queue_task.join().await.expect("finalizer should shut down cleanly");
+}
+
+#[tokio::test]
+async fn rust_runtime_failure_updates_task_owned_persistent_fallback_state() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_devnet()));
+    let metrics = Arc::new(BlockProductionMetrics::register());
+    let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+    let mut task =
+        BlockProductionTask::new(backend, mempool, metrics.clone(), Arc::new(L1ClientMock::new()), false, false);
+    task.fallback.on_startup_recovery_complete();
+    let _ = task.execution_mode_tx.send(crate::fallback::types::ExecutionMode::Mixed);
+    let (close_queue_handle, close_queue_task) =
+        crate::finalizer::FinalizerHandle::spawn(1, metrics, BlockProductionTask::execute_close_payload);
+
+    task.process_reply(
+        super::ExecutorMessage::RuntimeFallbackEntered { block_number: 4, execution_epoch: 0 },
+        &close_queue_handle,
+    )
+    .await
+    .expect("runtime fallback event should be accepted");
+
+    let status = task.executionbox_status_snapshot();
+    assert_eq!(status.mode, crate::fallback::types::ExecutionMode::BlockifierOnly);
+    assert_eq!(status.reason, Some(crate::fallback::types::FallbackReason::RustRuntimeFailure));
+    assert!(!status.comparator_enabled);
+    assert_eq!(*task.execution_mode_rx.borrow(), crate::fallback::types::ExecutionMode::BlockifierOnly);
 
     drop(close_queue_handle);
     close_queue_task.join().await.expect("finalizer should shut down cleanly");

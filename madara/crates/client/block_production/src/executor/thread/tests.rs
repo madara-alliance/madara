@@ -41,6 +41,7 @@ fn make_executor_thread() -> (
         execution_epoch_rx,
         false,
         crate::BlockPipelineMode::Optimistic,
+        16,
         RustExecRuntimeConfig::default(),
     )
     .expect("executor thread");
@@ -79,6 +80,33 @@ fn make_fallback_carry_tx(backend: &MadaraBackend, nonce: u64) -> (Transaction, 
     .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
     .expect("l1 handler tx");
     (tx, crate::util::AdditionalTxInfo { declared_class, arrived_at: Default::default() })
+}
+
+fn blockifier_only_batch(
+    txs: impl IntoIterator<Item = (Transaction, crate::util::AdditionalTxInfo)>,
+    block_n: u64,
+    execution_mode: ExecutionMode,
+    execution_epoch: u64,
+) -> RoutedBatchToExecute {
+    RoutedBatchToExecute {
+        transactions: txs.into_iter().collect(),
+        route: BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::FrozenBlockMode },
+        original_tx_hashes: Vec::new(),
+        block_n,
+        execution_mode,
+        execution_epoch,
+    }
+}
+
+#[test]
+fn block_local_batch_number_resets_for_each_rebound_block() {
+    let mut sequence = None;
+
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 1);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 2);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 42), 1);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 42), 2);
+    assert_eq!(next_block_local_batch_number(&mut sequence, 41), 1);
 }
 
 #[test]
@@ -195,14 +223,7 @@ fn deferred_suffix_rebinds_to_next_block_after_rollover() {
 
     let backend = thread.backend.clone();
     let (tx, info) = make_fallback_carry_tx(&backend, 1);
-    let mut pending_routed = RoutedBatchToExecute {
-        blockifier_batch: [(tx, info)].into_iter().collect(),
-        rust_batch: BatchToExecute::default(),
-        original_tx_hashes: Vec::new(),
-        block_n: 999,
-        execution_mode: ExecutionMode::Mixed,
-        execution_epoch: 0,
-    };
+    let mut pending_routed = blockifier_only_batch([(tx, info)], 999, ExecutionMode::Mixed, 0);
 
     ExecutorThread::rebind_routed_batch_to_block(&mut pending_routed, current_block_n);
     assert_eq!(pending_routed.block_n, 0, "accepted routed work must bind to the current executing block");
@@ -230,23 +251,10 @@ fn prepare_tainted_rebuild_fallback_rebinds_unaccepted_queued_batches_to_the_fut
     let backend = thread.backend.clone();
     let (pending_tx, pending_info) = make_fallback_carry_tx(&backend, 1);
     let (queued_tx, queued_info) = make_fallback_carry_tx(&backend, 2);
-    let mut pending_routed = RoutedBatchToExecute {
-        blockifier_batch: [(pending_tx, pending_info)].into_iter().collect(),
-        rust_batch: BatchToExecute::default(),
-        original_tx_hashes: Vec::new(),
-        block_n: current_block_n,
-        execution_mode: ExecutionMode::Mixed,
-        execution_epoch: 7,
-    };
+    let mut pending_routed =
+        blockifier_only_batch([(pending_tx, pending_info)], current_block_n, ExecutionMode::Mixed, 7);
     incoming_tx
-        .try_send(RoutedBatchToExecute {
-            blockifier_batch: [(queued_tx, queued_info)].into_iter().collect(),
-            rust_batch: BatchToExecute::default(),
-            original_tx_hashes: Vec::new(),
-            block_n: 0,
-            execution_mode: ExecutionMode::Mixed,
-            execution_epoch: 7,
-        })
+        .try_send(blockifier_only_batch([(queued_tx, queued_info)], 0, ExecutionMode::Mixed, 7))
         .expect("enqueue stale routed batch");
 
     let mut next_block_deadline = Instant::now();
@@ -333,14 +341,7 @@ fn resync_to_backend_head_reanchors_next_block_to_backend_tip() {
         .expect("create stale execution state");
     let mut state = ExecutorThreadState::Executing(executing_state);
     let (pending_tx, pending_info) = make_fallback_carry_tx(&backend, 9);
-    let mut pending_routed = RoutedBatchToExecute {
-        blockifier_batch: [(pending_tx, pending_info)].into_iter().collect(),
-        rust_batch: BatchToExecute::default(),
-        original_tx_hashes: Vec::new(),
-        block_n: 0,
-        execution_mode: ExecutionMode::BlockifierOnly,
-        execution_epoch: 9,
-    };
+    let mut pending_routed = blockifier_only_batch([(pending_tx, pending_info)], 0, ExecutionMode::BlockifierOnly, 9);
 
     seed_confirmed_blocks(&backend, 3);
 
@@ -443,7 +444,7 @@ fn stale_forward_reply_does_not_block_fallback_handoff() {
         ExecutorMessage::BatchExecuted(BatchExecutionResult {
             executed_txs: BatchToExecute::default(),
             original_tx_hashes: vec![],
-            blockifier_results: vec![],
+            execution_results: vec![],
             stats: ExecutionStats::default(),
             execution_mode: ExecutionMode::Mixed,
             execution_epoch: 0,
@@ -502,14 +503,7 @@ fn fallback_command_interrupts_wait_for_confirmed_hash() {
     assert_eq!(current_block_n, 13, "seeded internal preconfirmed tip must advance the next executor block");
 
     let (carry_tx, carry_info) = make_fallback_carry_tx(&backend, 17);
-    let mut pending_routed = RoutedBatchToExecute {
-        blockifier_batch: [(carry_tx, carry_info)].into_iter().collect(),
-        rust_batch: BatchToExecute::default(),
-        original_tx_hashes: Vec::new(),
-        block_n: current_block_n,
-        execution_mode: ExecutionMode::Mixed,
-        execution_epoch: 0,
-    };
+    let mut pending_routed = blockifier_only_batch([(carry_tx, carry_info)], current_block_n, ExecutionMode::Mixed, 0);
     let mut desired_execution_mode = ExecutionMode::Mixed;
     let mut execution_epoch = 0;
     let mut tainted_rebuild_parked = false;

@@ -289,7 +289,26 @@ async fn strict_stop_handoff_can_drain_stale_replies_before_carry_completion() {
     assert!(task.pending_stop_fallback_handoff.is_none(), "carry completion must clear the pending handoff");
     assert_eq!(task.pending_completions.len(), 1, "strict stop close payload should enqueue after carry completion");
 
+    let mut executor_commands_recv = task.executor_commands_recv.take().expect("executor command receiver");
+    let resume_responder = tokio::spawn(async move {
+        let command = executor_commands_recv.recv().await.expect("resume command");
+        let crate::executor::ExecutorCommand::ResumeAfterTaintedRebuild {
+            expected_confirmed_head,
+            execution_epoch,
+            reply,
+        } = command
+        else {
+            panic!("expected tainted rebuild resume command");
+        };
+        assert_eq!(expected_confirmed_head, 0);
+        assert_eq!(execution_epoch, 1);
+        reply
+            .send(Ok(crate::executor::TaintedRebuildResumeAck { confirmed_head: 0, next_block_n: 1, execution_epoch }))
+            .expect("send resume acknowledgement");
+    });
+
     drain_next_pending_close_completion(&mut task, &close_queue_handle).await;
+    resume_responder.await.expect("resume responder");
     assert_eq!(
         backend.latest_confirmed_block_n(),
         Some(0),
@@ -397,7 +416,7 @@ async fn accepted_blockifier_canonical_handoff_fences_late_successor_batch() {
     task.process_reply(
         ExecutorMessage::BatchExecuted(BatchExecutionResult {
             executed_txs: crate::util::BatchToExecute::default(),
-            blockifier_results: vec![],
+            execution_results: vec![],
             original_tx_hashes: vec![],
             stats: crate::util::ExecutionStats { n_executed: 1, n_added_to_block: 1, ..Default::default() },
             execution_mode: crate::fallback::types::ExecutionMode::Mixed,
@@ -442,7 +461,7 @@ pub(super) fn make_validated_invoke_tx(
 pub(super) fn rust_transfer_routing_cfg(
     backend: &Arc<MadaraBackend>,
     executor: &DevnetPredeployedContract,
-    rust_batch_size: usize,
+    mixed_batch_size: usize,
     blockifier_batch_size: usize,
 ) -> crate::util::RustExecRoutingConfig {
     let transfer_selector = get_selector_from_name("transfer").expect("transfer selector");
@@ -458,7 +477,7 @@ pub(super) fn rust_transfer_routing_cfg(
         executor_addresses: HashSet::from([executor.address]),
         supported_selectors: HashSet::from([transfer_selector]),
         supported_class_hashes: HashSet::from([fee_token_class_hash]),
-        rust_batch_size,
+        mixed_batch_size,
         blockifier_batch_size,
         runtime_options: Default::default(),
     }
@@ -497,8 +516,8 @@ pub(super) async fn recv_routed_batch(
 }
 
 pub(super) fn routed_batch_hashes(batch: &crate::util::RoutedBatchToExecute) -> (Vec<Felt>, Vec<Felt>) {
-    let blockifier_hashes = batch.blockifier_batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
-    let rust_hashes = batch.rust_batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect();
+    let blockifier_hashes = batch.blockifier_suffix().iter().map(|tx| tx.tx_hash().to_felt()).collect();
+    let rust_hashes = batch.rust_prefix().iter().map(|tx| tx.tx_hash().to_felt()).collect();
     (blockifier_hashes, rust_hashes)
 }
 
@@ -508,6 +527,7 @@ pub(super) fn spawn_batcher_with_bypass_txs(
     routing_cfg: crate::util::RustExecRoutingConfig,
     bypass_txs: Vec<mp_transactions::validated::ValidatedTransaction>,
     mempool_mode: crate::MempoolIntakeMode,
+    replay_mode_enabled: bool,
 ) -> (ServiceContext, tokio::task::JoinHandle<()>, mpsc::Receiver<crate::util::RoutedBatchToExecute>) {
     use crate::batcher::Batcher;
 
@@ -538,7 +558,7 @@ pub(super) fn spawn_batcher_with_bypass_txs(
         execution_epoch_rx,
         routing_cfg,
         devnet_setup.metrics.clone(),
-        false,
+        replay_mode_enabled,
     );
     let batcher_task = tokio::spawn(async move { batcher.run().await.unwrap() });
     (ctx_for_cancel, batcher_task, out_rx)
@@ -614,7 +634,11 @@ fn stop_on_anchor_drops_stale_queue_entries_but_preserves_descendant_buckets() {
         });
     }
 
-    task.drop_descendant_pending_canonicalizations(5);
+    let recovered = task.recover_descendant_pending_canonicalizations(5).expect("recover descendant rows");
+    assert_eq!(
+        recovered.iter().map(|row| (row.source_block_n, row.tx.hash)).collect::<Vec<_>>(),
+        vec![(Some(6), Felt::from(0x66u64)), (Some(7), Felt::from(0x77u64))]
+    );
     task.install_tainted_rebuild_session(
         5,
         anchor_header,
