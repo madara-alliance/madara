@@ -855,11 +855,7 @@ mod tests {
             .write_access()
             .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
             .expect("preconfirmed block creation");
-        let preconfirmed = backend
-            .block_view_on_preconfirmed(1)
-            .expect("runtime preconfirmed block")
-            .block()
-            .clone();
+        let preconfirmed = backend.block_view_on_preconfirmed(1).expect("runtime preconfirmed block").block().clone();
 
         let watcher = {
             let mempool = mempool.clone();
