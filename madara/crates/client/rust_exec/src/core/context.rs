@@ -179,6 +179,16 @@ impl ExecutionContext {
         self.storage_write(contract, key, value);
         if value == Felt::ZERO {
             self.preserved_nested_zero_writes.insert((contract, key));
+            if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    "execution_context_zero_write block_number={} tx_hash={:#x} stage=explicit_write_preserved contract_address={:#x} storage_key={:#x} value=0x0",
+                    diagnostic.block_number,
+                    diagnostic.tx_hash,
+                    contract.0,
+                    key.0,
+                );
+            }
         }
     }
 
@@ -239,6 +249,16 @@ impl ExecutionContext {
             for (key, value) in updates {
                 if *value == Felt::ZERO {
                     self.preserved_nested_zero_writes.insert((*contract, *key));
+                    if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
+                        tracing::info!(
+                            target: "RUST_EXEC",
+                            "execution_context_zero_write block_number={} tx_hash={:#x} stage=nested_diff_merged contract_address={:#x} storage_key={:#x} value=0x0",
+                            diagnostic.block_number,
+                            diagnostic.tx_hash,
+                            contract.0,
+                            key.0,
+                        );
+                    }
                 } else {
                     self.preserved_nested_zero_writes.remove(&(*contract, *key));
                 }
@@ -275,6 +295,32 @@ impl ExecutionContext {
         let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
 
         for ((contract, key), new_value) in &self.storage_writes {
+            if let Some(diagnostic) = crate::telemetry::tx_diff::current().filter(|_| *new_value == Felt::ZERO) {
+                let initial_value = self.initial_reads.get(&(*contract, *key));
+                let preserved = self.preserved_nested_zero_writes.contains(&(*contract, *key));
+                let included = preserved || initial_value.is_some_and(|old_value| old_value != new_value);
+                let reason = if preserved {
+                    "preserved_explicit_or_nested"
+                } else if initial_value.is_some_and(|old_value| old_value != new_value) {
+                    "changed_from_initial_read"
+                } else if initial_value.is_some() {
+                    "unchanged_from_initial_read"
+                } else {
+                    "unread_zero"
+                };
+                tracing::info!(
+                    target: "RUST_EXEC",
+                    "execution_context_zero_write block_number={} tx_hash={:#x} stage=state_diff_decision contract_address={:#x} storage_key={:#x} initial_value={:?} preserved={} included={} reason={}",
+                    diagnostic.block_number,
+                    diagnostic.tx_hash,
+                    contract.0,
+                    key.0,
+                    initial_value,
+                    preserved,
+                    included,
+                    reason,
+                );
+            }
             if self.preserved_nested_zero_writes.contains(&(*contract, *key)) {
                 storage_updates.entry(*contract).or_default().insert(*key, *new_value);
                 continue;

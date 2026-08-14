@@ -4,7 +4,36 @@ impl ExecutorThread {
     pub(super) fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorThreadState> {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
+        let block_number = state.exec_ctx.block_number;
         let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
+        if mc_rust_exec::config::tx_diff_log_enabled()
+            || mc_rust_exec::config::debug_block().is_some_and(|debug_block| debug_block == block_number)
+        {
+            let zero_entries =
+                state_diff.storage_updates.values().flatten().filter(|(_, value)| **value == Felt::ZERO).count();
+            tracing::info!(
+                target: "RUST_EXEC",
+                "final_block_state_diff block_number={} stage=finalized storage_entries={} storage_contracts={} nonce_updates={} zero_entries={}",
+                block_number,
+                state_diff.storage_updates.values().map(|updates| updates.len()).sum::<usize>(),
+                state_diff.storage_updates.len(),
+                state_diff.address_to_nonce.len(),
+                zero_entries,
+            );
+            for (contract_address, updates) in &state_diff.storage_updates {
+                for (storage_key, value) in updates {
+                    if *value == Felt::ZERO {
+                        tracing::info!(
+                            target: "RUST_EXEC",
+                            "final_block_state_diff_entry block_number={} contract_address={:#x} storage_key={:#x} value=0x0",
+                            block_number,
+                            contract_address.to_felt(),
+                            storage_key.to_felt(),
+                        );
+                    }
+                }
+            }
+        }
         let mut cached_adapter = cached_state.state;
         cached_adapter.finish_block(
             state_diff,

@@ -74,6 +74,71 @@ pub(crate) fn rust_tx_diff_log_enabled(block_number: u64) -> bool {
     crate::config::debug_block().is_some_and(|debug_block| debug_block == block_number)
 }
 
+fn log_rust_state_diff_entries(block_number: u64, tx_hash: Felt, stage: &str, diff: &RustStateDiff) {
+    if !rust_tx_diff_log_enabled(block_number) {
+        return;
+    }
+
+    let storage_entry_count = diff.storage_updates.values().map(|updates| updates.len()).sum::<usize>();
+    tracing::info!(
+        target: "RUST_EXEC",
+        "tx_state_diff_stage block_number={} tx_hash={:#x} stage={} storage_entries={} nonce_updates={} class_hash_updates={} compiled_class_hash_updates={}",
+        block_number,
+        tx_hash,
+        stage,
+        storage_entry_count,
+        diff.address_to_nonce.len(),
+        diff.address_to_class_hash.len(),
+        diff.class_hash_to_compiled_class_hash.len(),
+    );
+    for (contract_address, updates) in &diff.storage_updates {
+        for (storage_key, value) in updates {
+            tracing::info!(
+                target: "RUST_EXEC",
+                "tx_state_diff_entry block_number={} tx_hash={:#x} stage={} contract_address={:#x} storage_key={:#x} value={:#x} is_zero={}",
+                block_number,
+                tx_hash,
+                stage,
+                contract_address.0,
+                storage_key.0,
+                value,
+                *value == Felt::ZERO,
+            );
+        }
+    }
+}
+
+fn log_state_maps_entries(block_number: u64, tx_hash: Felt, stage: &str, maps: &StateMaps) {
+    if !rust_tx_diff_log_enabled(block_number) {
+        return;
+    }
+
+    tracing::info!(
+        target: "RUST_EXEC",
+        "tx_state_maps_stage block_number={} tx_hash={:#x} stage={} storage_entries={} nonce_updates={} class_hash_updates={} compiled_class_hash_updates={}",
+        block_number,
+        tx_hash,
+        stage,
+        maps.storage.len(),
+        maps.nonces.len(),
+        maps.class_hashes.len(),
+        maps.compiled_class_hashes.len(),
+    );
+    for ((contract_address, storage_key), value) in &maps.storage {
+        tracing::info!(
+            target: "RUST_EXEC",
+            "tx_state_maps_entry block_number={} tx_hash={:#x} stage={} contract_address={:#x} storage_key={:#x} value={:#x} is_zero={}",
+            block_number,
+            tx_hash,
+            stage,
+            contract_address.to_felt(),
+            storage_key.to_felt(),
+            value,
+            *value == Felt::ZERO,
+        );
+    }
+}
+
 fn log_rust_tx_diff_summary(
     block_number: u64,
     tx_hash: Felt,
@@ -346,7 +411,21 @@ pub fn rust_execute_transaction_blockifier_output<S: StateReader>(
     block_context: &BlockContext,
     tx_hash: Felt,
 ) -> RustBlockifierOutput {
+    let block_number = block_context.block_info().block_number.0;
+    let tx_diff_log_enabled = rust_tx_diff_log_enabled(block_number);
+    let _tx_diff_context = tx_diff_log_enabled.then(|| crate::telemetry::tx_diff::enter(block_number, tx_hash));
+    if tx_diff_log_enabled {
+        tracing::info!(
+            target: "RUST_EXEC",
+            "tx_execution_stage block_number={} tx_hash={:#x} stage=rust_execution_started",
+            block_number,
+            tx_hash,
+        );
+    }
     let outcome = rust_execute_transaction_with_info(state, tx, block_context, tx_hash);
+    if let RustExecutionOutcome::Executed(data) = &outcome {
+        log_rust_state_diff_entries(block_number, tx_hash, "rust_execution_result", &data.result.state_diff);
+    }
     let output = if crate::config::conversion_log_enabled() {
         let start = Instant::now();
         let output = rust_execution_outcome_to_blockifier_output(&outcome);
@@ -356,6 +435,18 @@ pub fn rust_execute_transaction_blockifier_output<S: StateReader>(
     } else {
         rust_execution_outcome_to_blockifier_output(&outcome)
     };
+    if let Ok((_, maps)) = &output {
+        log_state_maps_entries(block_number, tx_hash, "blockifier_state_maps", maps);
+    }
+    if tx_diff_log_enabled {
+        tracing::info!(
+            target: "RUST_EXEC",
+            "tx_execution_stage block_number={} tx_hash={:#x} stage=blockifier_output_conversion_complete outcome={}",
+            block_number,
+            tx_hash,
+            if output.is_ok() { "success" } else { "error" },
+        );
+    }
     RustBlockifierOutput { outcome, output }
 }
 
