@@ -727,7 +727,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(routed.take_processed_original_hashes(&[tx_1.clone()]).unwrap(), vec![hash_1]);
+        assert_eq!(routed.take_processed_original_hashes(std::slice::from_ref(&tx_1)).unwrap(), vec![hash_1]);
         assert_eq!(routed.original_tx_hashes, vec![hash_2]);
         assert!(
             routed.take_processed_original_hashes(&[tx_1]).is_err(),
