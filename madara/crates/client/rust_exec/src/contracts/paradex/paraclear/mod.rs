@@ -3993,10 +3993,13 @@ fn add_pending_transfer<S: StateReader>(
     ctx.storage_write(contract, count_key, Felt::from(next));
 
     let base = layout::pending_transfers_key2(executor.0, Felt::from(next));
-    ctx.storage_write(contract, base, trade_id);
-    ctx.storage_write(contract, storage_key_with_offset(base, 1), recipient.0);
-    ctx.storage_write(contract, storage_key_with_offset(base, 2), token_address.0);
-    ctx.storage_write(contract, storage_key_with_offset(base, 3), i128_to_felt(amount));
+    for (offset, value) in [(0, trade_id), (1, recipient.0), (2, token_address.0), (3, i128_to_felt(amount))] {
+        let key = storage_key_with_offset(base, offset);
+        if value == Felt::ZERO {
+            ctx.storage_read(state, contract, key)?;
+        }
+        ctx.storage_write(contract, key, value);
+    }
     Ok(())
 }
 
