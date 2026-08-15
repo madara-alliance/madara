@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   test-end-to-end:
@@ -18,6 +19,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -43,6 +47,13 @@ jobs:
 
       - name: Setup Python Cairo (needed for orchestrator build)
         uses: ./.github/actions/setup-python-cairo
+
+      - name: Log in to the artifact registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Madara
         run: CARGO_TARGET_DIR=target cargo build --bin madara --release
