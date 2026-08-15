@@ -341,7 +341,7 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
 
         // Use ERC20 transfer to move funds
         // This requires knowing the ERC20 storage layout
-        let mut transfer_result = crate::contracts::erc20::transfer_internal(
+        let transfer_result = crate::contracts::erc20::transfer_internal(
             self.state,
             fee_token_address,
             tx.sender_address,
@@ -349,16 +349,6 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             amount,
             state_diff,
         )?;
-        if matches!(tx.fee_type, FeeType::Strk) {
-            // STRK is a Cairo 1 ERC20: indexed `from` and `to` belong in the
-            // event keys. ETH fee tokens retain the legacy Cairo 0 layout.
-            let event = transfer_result
-                .events
-                .first_mut()
-                .ok_or_else(|| ExecutionError::ExecutionFailed("fee transfer emitted no event".to_string()))?;
-            event.keys.extend([tx.sender_address.0, self.block_context.sequencer_address.0]);
-            event.data = vec![Felt::from(amount), Felt::ZERO];
-        }
 
         self.gas_tracker.charge_call_contract();
         self.gas_tracker.charge_storage_read(); // Read sender balance
@@ -436,6 +426,35 @@ mod tests {
             second.state_diff.storage_updates[&contract][&storage_key_for_variable("transfer_count")],
             Felt::TWO
         );
+    }
+
+    #[test]
+    fn strk_fee_type_does_not_change_the_fee_token_event_abi() {
+        let sender = ContractAddress(Felt::from(0x100u64));
+        let token = ContractAddress(Felt::from(0x200u64));
+        let sequencer = ContractAddress(Felt::from(0x300u64));
+        let mut state = MockStateReader::new();
+        state.set_storage(token, crate::contracts::erc20::layout::balance_key(sender), Felt::from(100u64));
+        let block_context =
+            BlockContext { sequencer_address: sequencer, strk_fee_token_address: token, ..BlockContext::default() };
+        let mut executor = TransactionExecutor::new(&state, &block_context);
+        let tx = InvokeTransaction {
+            tx_hash: Felt::from(0x123u64),
+            version: Felt::ZERO,
+            sender_address: sender,
+            calls: Vec::new(),
+            signature: Vec::new(),
+            nonce: Nonce(Felt::ZERO),
+            fee_type: FeeType::Strk,
+            resource_bounds: ResourceBounds::default(),
+        };
+        let mut state_diff = StateDiff::default();
+
+        let result = executor.transfer_fee(&tx, 10, &mut state_diff).unwrap().unwrap();
+        let event = result.events.first().unwrap();
+
+        assert_eq!(event.keys, vec![crate::core::storage::event_selector("Transfer")]);
+        assert_eq!(event.data, vec![sender.0, sequencer.0, Felt::from(10u64), Felt::ZERO]);
     }
 
     #[test]

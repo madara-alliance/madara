@@ -998,6 +998,17 @@ impl BlockProductionTask {
         let allowed_fee_difference_count = comparison_report.allowed_mismatches.len() as u64;
         metrics.comparator_allowed_fee_differences_total.add(allowed_fee_difference_count, &[]);
         if comparison_report.mismatch_count() > 0 {
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "execution_box_state_diff_json={}",
+                serde_json::to_string(sd_x1).unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "blockifier_recomputation_state_diff_json={}",
+                serde_json::to_string(&reexec_result.state_diff)
+                    .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
             let categories = comparison_report
                 .iter_mismatches()
                 .map(|mismatch| mismatch.category.as_str())
