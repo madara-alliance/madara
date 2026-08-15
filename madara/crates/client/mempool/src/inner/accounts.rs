@@ -184,6 +184,12 @@ impl Accounts {
     pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {
         self.accounts.keys()
     }
+
+    pub fn is_ready_tx(&self, tx_key: &TxKey) -> bool {
+        self.accounts
+            .get(&tx_key.0)
+            .is_some_and(|account| account.current_nonce == tx_key.1 && account.first_queued_nonce() == Some(tx_key.1))
+    }
 }
 
 #[cfg(any(test, feature = "testing"))]

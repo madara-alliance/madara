@@ -164,7 +164,12 @@ pub struct UnsupportedProtocolVersion(StarknetVersion);
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 pub enum MempoolMode {
     #[default]
+    #[serde(alias = "Fcfs", alias = "fcfs")]
     Timestamp,
+    /// Preserve global arrival order, even when the oldest transaction is not yet nonce-ready.
+    /// Intended for trusted replay environments; an untrusted future-nonce transaction can block intake.
+    #[serde(alias = "strict_fcfs")]
+    StrictFcfs,
     Tip,
 }
 
@@ -889,6 +894,12 @@ mod tests {
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn test_mempool_mode_aliases() {
+        assert!(matches!(serde_yaml::from_str::<MempoolMode>("fcfs").unwrap(), MempoolMode::Timestamp));
+        assert!(matches!(serde_yaml::from_str::<MempoolMode>("strict_fcfs").unwrap(), MempoolMode::StrictFcfs));
+    }
 
     #[rstest]
     fn test_mainnet_from_yaml() {
