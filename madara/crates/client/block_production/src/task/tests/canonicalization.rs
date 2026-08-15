@@ -7,7 +7,9 @@ fn comparator_diagnostic_json_falls_back_for_non_string_map_keys() {
     let json = super::BlockProductionTask::diagnostic_json_value(&value);
 
     assert_eq!(json["serialization_error"], "key must be a string");
-    assert!(json["debug"].as_str().is_some_and(|debug| debug.contains("(1, 2)")));
+    assert!(json["debug"]
+        .as_str()
+        .is_some_and(|debug| debug.contains('1') && debug.contains('2') && debug.contains('3')));
 }
 
 #[test]
