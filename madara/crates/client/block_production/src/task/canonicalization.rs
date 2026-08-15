@@ -1009,6 +1009,38 @@ impl BlockProductionTask {
                 serde_json::to_string(&reexec_result.state_diff)
                     .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
             );
+            let execution_box_per_tx = state
+                .speculative_executed_txs
+                .iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "transaction_hash": row.transaction.receipt.transaction_hash(),
+                        "state_diff": &row.state_diff,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let blockifier_per_tx = reexec_result
+                .per_tx
+                .iter()
+                .map(|row| {
+                    serde_json::json!({
+                        "transaction_hash": row.receipt.transaction_hash(),
+                        "state_diff": &row.tx_state_update,
+                    })
+                })
+                .collect::<Vec<_>>();
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "execution_box_per_transaction_state_diffs_json={}",
+                serde_json::to_string(&execution_box_per_tx)
+                    .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "blockifier_recomputation_per_transaction_state_diffs_json={}",
+                serde_json::to_string(&blockifier_per_tx)
+                    .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
             let categories = comparison_report
                 .iter_mismatches()
                 .map(|mismatch| mismatch.category.as_str())
