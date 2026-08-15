@@ -92,7 +92,7 @@ fn test_unrealized_funding_pnl_positive() {
 }
 
 #[test]
-fn test_is_risky_after_trade_spot_false() {
+fn test_is_risky_after_trade_spot_accounts_for_trade_fee() {
     let mut state = crate::core::state::mock::MockStateReader::new();
     let contract = addr(0x6000);
     let assets_manager = addr(0x6001);
@@ -125,6 +125,22 @@ fn test_is_risky_after_trade_spot_false() {
     .expect("risk");
 
     assert!(!risky);
+
+    let risky = paraclear::is_risky_after_trade_spot_for_test(
+        &mut crate::ExecutionContext::new(),
+        &state,
+        contract,
+        account,
+        settlement_token,
+        base_token,
+        0,
+        1 * SCALE,
+        2 * SCALE,
+        4 * SCALE,
+    )
+    .expect("risk with fee");
+
+    assert!(risky);
 }
 
 #[test]

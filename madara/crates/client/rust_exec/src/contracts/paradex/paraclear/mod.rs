@@ -2944,11 +2944,10 @@ fn is_risky_after_trade_from_state<S: StateReader>(
         }
     }
 
-    let _ = trade_fee;
     let (margin_requirement, total_upnl) = margin_requirement_and_total_upnl(&account_state, true)?;
     let asset_value = get_asset_value(&account_state)?;
     let account_value = asset_value + total_upnl;
-    let free_balance = account_value - margin_requirement;
+    let free_balance = account_value - margin_requirement - trade_fee;
     if free_balance >= 0 {
         return Ok(false);
     }
