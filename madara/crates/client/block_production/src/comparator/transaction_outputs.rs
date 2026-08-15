@@ -134,13 +134,6 @@ impl BlockComparisonReport {
         self.strict_mismatches.iter().any(|mismatch| mismatch.category == category)
     }
 
-    pub fn mismatch_count(&self) -> usize {
-        self.strict_mismatches.len()
-            + self.allowed_mismatches.len()
-            + self.resource_warnings.len()
-            + self.diagnostics.len()
-    }
-
     pub fn strict_summary(&self) -> OutputMismatchSummary {
         OutputMismatchSummary {
             categories: self.strict_mismatches.iter().map(|mismatch| mismatch.category).collect(),
