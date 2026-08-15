@@ -51,4 +51,4 @@ jobs:
         with:
           name: build-artifacts-${{ steps.generate-artifact-hash.outputs.cairo-hash }}
           path: build-artifacts/**
-          retention-days: 3
+          retention-days: 1

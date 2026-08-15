@@ -105,4 +105,4 @@ jobs:
         with:
           name: ${{ inputs.binary-name }}-binary-${{ steps.generate-binary-hash.outputs.binary-hash }}
           path: target/release/${{ inputs.binary-name }}
-          retention-days: 3
+          retention-days: 1
