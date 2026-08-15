@@ -328,11 +328,11 @@ fn test_ensure_perpetual_balance_creates_empty_position() {
 
     assert_eq!(updates.get(&base).copied(), Some(market));
     assert_eq!(updates.get(&tail_key).copied(), Some(market));
-    assert_eq!(updates.get(&storage_key_with_offset(base, 1)).copied(), None);
-    assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), None);
-    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), None);
-    assert_eq!(updates.get(&storage_key_with_offset(base, 4)).copied(), None);
-    assert_eq!(updates.get(&storage_key_with_offset(base, 5)).copied(), None);
+    assert_eq!(updates.get(&storage_key_with_offset(base, 1)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 2)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 3)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 4)).copied(), Some(felt(0)));
+    assert_eq!(updates.get(&storage_key_with_offset(base, 5)).copied(), Some(felt(0)));
 }
 
 #[test]
