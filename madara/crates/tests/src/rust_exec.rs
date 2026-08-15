@@ -63,6 +63,7 @@ async fn devnet_routes_only_supported_transfer_through_rust_exec() {
     let executor_addresses = format!("{ACCOUNT_ADDRESS:#x},{:#x}", ACCOUNTS[1]);
     let mut node = MadaraCmdBuilder::new()
         .capture_logs()
+        .env([("RUST_LOG", "debug")])
         .args([
             "--devnet".to_string(),
             "--no-l1-sync".to_string(),
@@ -191,6 +192,7 @@ async fn devnet_batch_barrier_resets_for_the_next_logical_batch(#[case] pipeline
     let executor_addresses = format!("{:#x},{:#x},{:#x}", ACCOUNTS[0], ACCOUNTS[1], ACCOUNTS[2]);
     let mut node = MadaraCmdBuilder::new()
         .capture_logs()
+        .env([("RUST_LOG", "debug")])
         .args([
             "--devnet".to_string(),
             "--no-l1-sync".to_string(),
@@ -323,6 +325,7 @@ async fn devnet_comparator_mismatch_promotes_blockifier_and_disables_rust_exec()
     let executor_address = format!("{ACCOUNT_ADDRESS:#x}");
     let mut node = MadaraCmdBuilder::new()
         .capture_logs()
+        .env([("RUST_LOG", "debug")])
         .args([
             "--devnet".to_string(),
             "--no-l1-sync".to_string(),
