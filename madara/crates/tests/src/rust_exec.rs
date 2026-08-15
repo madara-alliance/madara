@@ -848,8 +848,6 @@ async fn devnet_manual_disable_then_enable_switches_engines_at_block_boundaries(
     )
     .await;
     assert!(!node.logs_since(disabled_cursor).iter().any(|line| line.contains("executed_with_rust_exec")));
-    close_block(&node.rpc_admin_url()).await;
-    wait_for_confirmed_success(&provider, disabled_tx.transaction_hash).await;
 
     admin_rpc(&node.rpc_admin_url(), "madara_executionboxEnable").await;
     wait_for_cond(
@@ -861,6 +859,9 @@ async fn devnet_manual_disable_then_enable_switches_engines_at_block_boundaries(
         100,
     )
     .await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, disabled_tx.transaction_hash).await;
+
     let enabled_cursor = node.log_cursor();
     let enabled_tx = account
         .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::from(52u64))])

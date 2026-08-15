@@ -10,3 +10,4 @@ test-group = 'eth-rpc'
 [[profile.default.overrides]]
 filter = '(package(mc-e2e-tests) & test(rust_exec::)) | (package(mc-block-production) & test(task::tests::optimistic_pipeline))'
 test-group = 'rust-exec-pipeline'
+threads-required = 'num-test-threads'
