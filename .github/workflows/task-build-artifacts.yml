@@ -105,4 +105,4 @@ jobs:
         with:
           name: artifacts
           path: ${{ runner.temp }}/artifacts.tar
-          retention-days: 3
+          retention-days: 1

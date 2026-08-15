@@ -70,4 +70,4 @@ jobs:
         with:
           name: migration-tests-${{ steps.generate-hash.outputs.migration-tests-hash }}
           path: target/nextest/migration-tests.tar.zst
-          retention-days: 3
+          retention-days: 1

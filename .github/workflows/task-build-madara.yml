@@ -79,4 +79,4 @@ jobs:
         with:
           name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
           path: target/release/madara
-          retention-days: 3
+          retention-days: 1
