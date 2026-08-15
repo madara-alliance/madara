@@ -122,6 +122,10 @@ impl ChainHeadState {
                 .internal_preconfirmed_tip
                 .context("internal_preconfirmed_tip must be present when external_preconfirmed_tip is present")?;
             if preconfirmed_block_n == internal_preconfirmed {
+                ensure!(
+                    current_preconfirmed == internal_preconfirmed,
+                    "Replacing the current internal preconfirmed block is only supported when it is also the external tip. [current_head={self:?}, new_preconfirmed={preconfirmed_block_n}]"
+                );
                 return Ok(self);
             }
             let expected_next = internal_preconfirmed
@@ -194,6 +198,7 @@ mod tests {
     #[case::invalid_gap(Some(3), None, None, 6, None, None, None, false)]
     #[case::invalid_behind(Some(3), None, None, 2, None, None, None, false)]
     #[case::valid_replace_same_preconfirmed(Some(3), Some(4), Some(4), 4, Some(3), Some(4), Some(4), true)]
+    #[case::invalid_replace_internal_runahead(Some(3), Some(4), Some(5), 5, None, None, None, false)]
     #[case::invalid_skip_internal(Some(3), Some(4), Some(4), 6, None, None, None, false)]
     fn confirmed_to_preconfirmed(
         #[case] confirmed_tip: Option<u64>,
