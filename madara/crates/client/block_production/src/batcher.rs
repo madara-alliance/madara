@@ -413,9 +413,16 @@ impl Batcher {
                 tokio::pin!(tx_stream);
 
                 tokio::select! {
+                    biased;
                     _ = self.ctx.cancelled() => {
                         // Stop condition: cancelled.
                         return anyhow::Ok(());
+                    }
+                    res = self.execution_mode_rx.changed() => {
+                        if res.is_err() {
+                            return anyhow::Ok(());
+                        }
+                        continue;
                     }
                     res = self.mempool_intake_rx.changed() => {
                         if res.is_err() {
@@ -796,6 +803,31 @@ mod tests {
             .expect("batcher output open");
         assert_eq!(batch_hashes(&second_batch), vec![tx2.hash]);
         assert!(harness.mempool.is_empty().await, "suffix should remain outside mempool across cycles");
+
+        harness.cancel_ctx.cancel_global();
+        timeout(Duration::from_secs(2), async { harness.task.await.expect("batcher task join") })
+            .await
+            .expect("batcher shutdown timeout")
+            .expect("batcher task result");
+    }
+
+    #[tokio::test]
+    async fn mode_change_while_waiting_routes_next_batch_with_fresh_mode() {
+        let mut harness = spawn_batcher_harness(ExecutionMode::BlockifierOnly, RustExecRoutingConfig::default());
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        harness._execution_mode_tx.send(ExecutionMode::Mixed).expect("update execution mode");
+        harness
+            .bypass_tx
+            .send(validated_invoke(Felt::from(0x111u64), 0, 0xaaa1))
+            .await
+            .expect("enqueue bypass transaction");
+
+        let batch = timeout(Duration::from_secs(2), harness.out_rx.recv())
+            .await
+            .expect("routed batch timeout")
+            .expect("batcher output open");
+        assert_eq!(batch.execution_mode, ExecutionMode::Mixed);
 
         harness.cancel_ctx.cancel_global();
         timeout(Duration::from_secs(2), async { harness.task.await.expect("batcher task join") })
