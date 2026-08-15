@@ -462,6 +462,63 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
 
 #[rstest::rstest]
 #[tokio::test]
+async fn mixed_block_stays_on_blockifier_after_a_blockifier_batch(
+    #[with(Duration::from_secs(30000))]
+    #[future]
+    devnet_setup: DevnetSetup,
+) {
+    let setup = devnet_setup.await;
+    let (commands_sender, commands) = mpsc::unbounded_channel();
+    let mut handle = start_executor_thread_for_tests(setup.backend.clone(), commands, ExecutionMode::Mixed);
+
+    let (blockifier_tx, blockifier_info) = make_tx(
+        &setup.backend,
+        BroadcastedTxn::Declare(make_declare_tx(&setup.contracts.0[0], &setup.backend, Felt::ZERO)),
+    );
+    let blockifier_hash = blockifier_tx.tx_hash().to_felt();
+    handle
+        .send_batch
+        .as_mut()
+        .unwrap()
+        .send(routed_batch(
+            [(blockifier_tx, blockifier_info)],
+            BatchRoute::BlockifierOnly { cause: BlockifierRouteCause::Classifier(RouteFallbackReason::NotInvoke) },
+            vec![blockifier_hash],
+            0,
+            ExecutionMode::Mixed,
+        ))
+        .await
+        .unwrap();
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.stats.n_added_by_blockifier, 1);
+    });
+
+    let (rust_tx, rust_info) = make_rust_transfer_tx(&setup, 1, 2, Felt::ZERO, 42);
+    let rust_hash = rust_tx.tx_hash().to_felt();
+    handle
+        .send_batch
+        .as_mut()
+        .unwrap()
+        .send(routed_batch([(rust_tx, rust_info)], BatchRoute::RustOnly, vec![rust_hash], 0, ExecutionMode::Mixed))
+        .await
+        .unwrap();
+
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.executed_txs.txs[0].tx_hash().to_felt(), rust_hash);
+        assert_eq!(res.stats.n_added_by_rust_exec, 0);
+        assert_eq!(res.stats.n_added_by_blockifier, 1);
+    });
+
+    let (sender, receiver) = oneshot::channel();
+    commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    receiver.await.unwrap().unwrap();
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock { .. }));
+}
+
+#[rstest::rstest]
+#[tokio::test]
 async fn same_sender_nonce_chain_crosses_the_engine_boundary_in_source_order(
     #[with(Duration::from_secs(30000))]
     #[future]

@@ -75,6 +75,7 @@ impl ExecutorThread {
             consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
             declared_classes: HashMap::new(),
             rust_phase_state: RustPhaseState { first_tx_in_block: true, projected_bouncer_weights: None },
+            saw_blockifier_txs: false,
             executed_in_block: BatchToExecute::default(),
         })
     }

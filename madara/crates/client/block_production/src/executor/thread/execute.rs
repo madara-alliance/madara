@@ -338,6 +338,9 @@ impl ExecutorThread {
                 if rust_runtime_fallback_active {
                     pending_routed.normalize_to_blockifier_only(BlockifierRouteCause::RustRuntimeFailure);
                 }
+                if matches!(&state, ExecutorThreadState::Executing(s) if s.saw_blockifier_txs) {
+                    pending_routed.normalize_to_blockifier_only(BlockifierRouteCause::BlockifierAlreadyExecuted);
+                }
 
                 if !pending_routed.is_empty() {
                     let summary = summarize_routed_batch(&pending_routed);
@@ -760,6 +763,9 @@ impl ExecutorThread {
                         stats.exec_duration += phase_duration;
                         stats.n_added_by_blockifier += blockifier_added;
                         stats.blockifier_exec_duration += phase_duration;
+                        if results_len > 0 {
+                            execution_state.saw_blockifier_txs = true;
+                        }
                         self.record_replay_executed_hashes(block_n, &replay_executed_hashes);
                         combined_results.extend(blockifier_results);
                         combined_executed.extend(executed_b);
