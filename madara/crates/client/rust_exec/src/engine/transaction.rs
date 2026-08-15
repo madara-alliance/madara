@@ -71,6 +71,43 @@ pub struct TransactionExecutionResult {
     pub revert_error: Option<String>,
 }
 
+/// Read-through view that makes writes from earlier calls in the same account
+/// multicall visible to later calls before the transaction diff is committed.
+struct TransactionOverlayState<'a, S> {
+    base: &'a S,
+    overlay: &'a StateDiff,
+}
+
+impl<S: StateReader> StateReader for TransactionOverlayState<'_, S> {
+    fn get_storage_at(
+        &self,
+        contract_address: ContractAddress,
+        key: crate::core::types::StorageKey,
+    ) -> Result<Felt, crate::core::state::StateError> {
+        if let Some(value) = self.overlay.storage_updates.get(&contract_address).and_then(|updates| updates.get(&key)) {
+            return Ok(*value);
+        }
+        self.base.get_storage_at(contract_address, key)
+    }
+
+    fn get_nonce_at(&self, contract_address: ContractAddress) -> Result<Nonce, crate::core::state::StateError> {
+        if let Some(nonce) = self.overlay.address_to_nonce.get(&contract_address) {
+            return Ok(*nonce);
+        }
+        self.base.get_nonce_at(contract_address)
+    }
+
+    fn get_class_hash_at(
+        &self,
+        contract_address: ContractAddress,
+    ) -> Result<Option<Felt>, crate::core::state::StateError> {
+        if let Some(class_hash) = self.overlay.address_to_class_hash.get(&contract_address) {
+            return Ok(Some(*class_hash));
+        }
+        self.base.get_class_hash_at(contract_address)
+    }
+}
+
 impl TransactionExecutionResult {
     /// Check if transaction succeeded
     pub fn is_success(&self) -> bool {
@@ -149,7 +186,10 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
                 );
             }
             // Execute each call and collect its state diff + events
-            let call_result = self.execute_single_call(call, tx.sender_address)?;
+            let overlay_state = TransactionOverlayState { base: self.state, overlay: &combined_state_diff };
+            let call_result =
+                Self::execute_single_call(&overlay_state, call, tx.sender_address, self.block_context.block_timestamp)?;
+            self.gas_tracker.charge_computation(call_result.call_result.gas_consumed);
             if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
                 let storage_entries =
                     call_result.state_diff.storage_updates.values().map(|updates| updates.len()).sum::<usize>();
@@ -251,21 +291,25 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
     }
 
     /// Execute a single call to a contract.
-    fn execute_single_call(&mut self, call: &Call, caller: ContractAddress) -> Result<ExecutionResult, ExecutionError> {
+    fn execute_single_call<R: StateReader>(
+        state: &R,
+        call: &Call,
+        caller: ContractAddress,
+        block_timestamp: u64,
+    ) -> Result<ExecutionResult, ExecutionError> {
         // Get the class hash for the target contract
-        let class_hash = self
-            .state
+        let class_hash = state
             .get_class_hash_at(call.to)?
             .ok_or_else(|| ExecutionError::ExecutionFailed(format!("Contract not deployed: {:?}", call.to)))?;
         // Try to execute with our Rust implementation
         if let Some(result) = crate::contracts::ContractRegistry::execute_with_timestamp(
-            self.state,
+            state,
             call.to,
             class_hash,
             call.selector,
             &call.calldata,
             caller, // ← FIXED: Pass the real caller (account), not the contract
-            self.block_context.block_timestamp,
+            block_timestamp,
         ) {
             let exec_result = match result {
                 Ok(ok) => ok,
@@ -273,9 +317,6 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
                     return Err(err);
                 }
             };
-
-            // Charge gas for this call
-            self.gas_tracker.charge_computation(exec_result.call_result.gas_consumed);
 
             return Ok(exec_result);
         }
@@ -300,7 +341,7 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
 
         // Use ERC20 transfer to move funds
         // This requires knowing the ERC20 storage layout
-        let transfer_result = crate::contracts::erc20::transfer_internal(
+        let mut transfer_result = crate::contracts::erc20::transfer_internal(
             self.state,
             fee_token_address,
             tx.sender_address,
@@ -308,6 +349,16 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
             amount,
             state_diff,
         )?;
+        if matches!(tx.fee_type, FeeType::Strk) {
+            // STRK is a Cairo 1 ERC20: indexed `from` and `to` belong in the
+            // event keys. ETH fee tokens retain the legacy Cairo 0 layout.
+            let event = transfer_result
+                .events
+                .first_mut()
+                .ok_or_else(|| ExecutionError::ExecutionFailed("fee transfer emitted no event".to_string()))?;
+            event.keys.extend([tx.sender_address.0, self.block_context.sequencer_address.0]);
+            event.data = vec![Felt::from(amount), Felt::ZERO];
+        }
 
         self.gas_tracker.charge_call_contract();
         self.gas_tracker.charge_storage_read(); // Read sender balance
@@ -322,7 +373,10 @@ impl<'a, S: StateReader> TransactionExecutor<'a, S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contracts::devnet::rust_exec_transfer;
     use crate::core::state::mock::MockStateReader;
+    use crate::core::storage::{function_selector, storage_key_for_variable};
+    use crate::core::types::StorageKey;
 
     #[test]
     fn test_call_creation() {
@@ -332,6 +386,56 @@ mod tests {
             calldata: vec![Felt::from(3u64)],
         };
         assert_eq!(call.calldata.len(), 1);
+    }
+
+    #[test]
+    fn transaction_overlay_exposes_prior_call_writes() {
+        let mut state = MockStateReader::new();
+        let contract = ContractAddress(Felt::from(0x100u64));
+        let key = StorageKey(Felt::from(0x200u64));
+        state.set_storage(contract, key, Felt::from(3u64));
+        state.set_nonce(contract, Nonce(Felt::from(4u64)));
+        state.set_class_hash(contract, Felt::from(5u64));
+
+        let mut overlay = StateDiff::default();
+        overlay.storage_updates.entry(contract).or_default().insert(key, Felt::ZERO);
+        overlay.address_to_nonce.insert(contract, Nonce(Felt::from(6u64)));
+        overlay.address_to_class_hash.insert(contract, Felt::from(7u64));
+        let view = TransactionOverlayState { base: &state, overlay: &overlay };
+
+        assert_eq!(view.get_storage_at(contract, key).unwrap(), Felt::ZERO);
+        assert_eq!(view.get_nonce_at(contract).unwrap(), Nonce(Felt::from(6u64)));
+        assert_eq!(view.get_class_hash_at(contract).unwrap(), Some(Felt::from(7u64)));
+    }
+
+    #[test]
+    fn transaction_overlay_feeds_prior_fixture_call_into_the_next_call() {
+        let state = MockStateReader::new();
+        let contract = ContractAddress(Felt::from(0x100u64));
+        let caller = ContractAddress(Felt::from(0x200u64));
+        let first = rust_exec_transfer::execute(
+            &state,
+            contract,
+            function_selector("transfer"),
+            &[Felt::from(0x300u64), Felt::from(11u64)],
+            caller,
+        )
+        .expect("first fixture call should execute");
+        let overlay = TransactionOverlayState { base: &state, overlay: &first.state_diff };
+
+        let second = rust_exec_transfer::execute(
+            &overlay,
+            contract,
+            function_selector("transfer"),
+            &[Felt::from(0x400u64), Felt::from(22u64)],
+            caller,
+        )
+        .expect("second fixture call should execute against the first call overlay");
+
+        assert_eq!(
+            second.state_diff.storage_updates[&contract][&storage_key_for_variable("transfer_count")],
+            Felt::TWO
+        );
     }
 
     #[test]

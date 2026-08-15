@@ -520,6 +520,7 @@ impl BlockProductionTask {
                             );
                             let mode_val: u64 = if self.fallback.mode == ExecutionMode::Mixed { 1 } else { 0 };
                             self.metrics.execution_mode_current.record(mode_val, &[]);
+                            let _ = self.execution_mode_tx.send(self.fallback.mode);
                             if let Err(err) = self.handle.set_desired_execution_mode(self.fallback.mode) {
                                 tracing::warn!("Failed to propagate desired execution mode to executor: {err:#}");
                             }
@@ -530,6 +531,7 @@ impl BlockProductionTask {
                             self.fallback.executionbox_disable();
                             self.metrics.executionbox_manual_disable_total.add(1, &[]);
                             self.metrics.execution_mode_current.record(0, &[]);
+                            let _ = self.execution_mode_tx.send(self.fallback.mode);
                             if let Err(err) = self.handle.set_desired_execution_mode(self.fallback.mode) {
                                 tracing::warn!("Failed to propagate desired execution mode to executor: {err:#}");
                             }

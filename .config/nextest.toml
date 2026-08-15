@@ -1,7 +1,12 @@
 [test-groups]
 eth-rpc = { max-threads = 1 }
+rust-exec-pipeline = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = 'test(eth_client)'
 retries = { backoff = "exponential", count = 5, delay = "10s", max-delay = "60s", jitter = true }
 test-group = 'eth-rpc'
+
+[[profile.default.overrides]]
+filter = '(package(mc-e2e-tests) & test(rust_exec::)) | (package(mc-block-production) & test(task::tests::optimistic_pipeline))'
+test-group = 'rust-exec-pipeline'

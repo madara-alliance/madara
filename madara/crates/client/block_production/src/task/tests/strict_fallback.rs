@@ -538,9 +538,9 @@ pub(super) fn spawn_batcher_with_bypass_txs(
     }
     drop(bypass_tx);
     let (mempool_intake_tx, mempool_intake_rx) = watch::channel(mempool_mode);
-    let (_tainted_rebuild_active_tx, tainted_rebuild_active_rx) = watch::channel(false);
-    let (_execution_mode_tx, execution_mode_rx) = watch::channel(execution_mode);
-    let (_execution_epoch_tx, execution_epoch_rx) = watch::channel(0u64);
+    let (tainted_rebuild_active_tx, tainted_rebuild_active_rx) = watch::channel(false);
+    let (execution_mode_tx, execution_mode_rx) = watch::channel(execution_mode);
+    let (execution_epoch_tx, execution_epoch_rx) = watch::channel(0u64);
     let ctx = ServiceContext::new_for_testing();
     let ctx_for_cancel = ctx.clone();
 
@@ -560,7 +560,10 @@ pub(super) fn spawn_batcher_with_bypass_txs(
         devnet_setup.metrics.clone(),
         replay_mode_enabled,
     );
-    let batcher_task = tokio::spawn(async move { batcher.run().await.unwrap() });
+    let batcher_task = tokio::spawn(async move {
+        let _watch_senders = (tainted_rebuild_active_tx, execution_mode_tx, execution_epoch_tx);
+        batcher.run().await.unwrap()
+    });
     (ctx_for_cancel, batcher_task, out_rx)
 }
 
