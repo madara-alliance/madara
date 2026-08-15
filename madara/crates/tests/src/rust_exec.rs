@@ -77,7 +77,7 @@ fn mixed_node_builder(executor_addresses: &[Felt], extra_args: &[&str]) -> Madar
         "--rpc-unsafe".to_string(),
     ];
     args.extend(extra_args.iter().map(|arg| (*arg).to_string()));
-    MadaraCmdBuilder::new().capture_logs().args(args)
+    MadaraCmdBuilder::new().capture_logs().env([("RUST_LOG", "debug")]).args(args)
 }
 
 async fn start_mixed_node(executor_addresses: &[Felt], extra_args: &[&str]) -> (crate::MadaraCmd, Felt) {
@@ -601,18 +601,36 @@ async fn devnet_zero_write_then_later_overwrite_preserves_logical_batch_order() 
     let first = account
         .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(7u64))])
         .nonce(Felt::ZERO)
+        .l1_gas(1_000_000)
+        .l1_gas_price(1)
+        .l2_gas(2_000_000)
+        .l2_gas_price(1)
+        .l1_data_gas(1_000_000)
+        .l1_data_gas_price(1)
         .send()
         .await
         .expect("first transfer should enter the paused mempool");
     let clear = account
         .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::ZERO)])
         .nonce(Felt::ONE)
+        .l1_gas(1_000_000)
+        .l1_gas_price(1)
+        .l2_gas(2_000_000)
+        .l2_gas_price(1)
+        .l1_data_gas(1_000_000)
+        .l1_data_gas_price(1)
         .send()
         .await
         .expect("zero transfer should enter the paused mempool");
     let overwrite = account
         .execute_v3(vec![rust_transfer(ACCOUNTS[3], Felt::from(9u64))])
         .nonce(Felt::TWO)
+        .l1_gas(1_000_000)
+        .l1_gas_price(1)
+        .l2_gas(2_000_000)
+        .l2_gas_price(1)
+        .l1_data_gas(1_000_000)
+        .l1_data_gas_price(1)
         .send()
         .await
         .expect("later overwrite should enter the paused mempool");
