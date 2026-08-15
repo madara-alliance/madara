@@ -1015,7 +1015,9 @@ impl BlockProductionTask {
                 .map(|row| {
                     serde_json::json!({
                         "transaction_hash": row.transaction.receipt.transaction_hash(),
+                        "transaction_with_receipt": &row.transaction,
                         "state_diff": &row.state_diff,
+                        "paid_fee_on_l1": row.paid_fee_on_l1,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1025,20 +1027,46 @@ impl BlockProductionTask {
                 .map(|row| {
                     serde_json::json!({
                         "transaction_hash": row.receipt.transaction_hash(),
+                        "receipt": &row.receipt,
                         "state_diff": &row.tx_state_update,
                     })
                 })
                 .collect::<Vec<_>>();
             tracing::warn!(
                 target: "RUST_EXEC",
-                "execution_box_per_transaction_state_diffs_json={}",
+                "execution_box_per_transaction_outputs_json={}",
                 serde_json::to_string(&execution_box_per_tx)
                     .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
             );
             tracing::warn!(
                 target: "RUST_EXEC",
-                "blockifier_recomputation_per_transaction_state_diffs_json={}",
+                "blockifier_recomputation_per_transaction_outputs_json={}",
                 serde_json::to_string(&blockifier_per_tx)
+                    .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "comparator_full_mismatch_report_json={}",
+                serde_json::to_string(&comparison_report)
+                    .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
+            );
+            let failure_context = serde_json::json!({
+                "block_number": block_n,
+                "header": header,
+                "execution_mode": format!("{:?}", state.execution_snapshot.execution_mode),
+                "transaction_count": tx_count,
+                "original_transaction_hashes": &state.original_tx_hashes,
+                "execution_box_bouncer_weights": format!("{:?}", summary.bouncer_weights),
+                "blockifier_bouncer_weights": format!("{:?}", reexec_result.exec_resources),
+                "block_limit": format!("{block_limit:?}"),
+                "no_charge_fee": no_charge_fee,
+                "ignore_fee_token_mismatch": ignore_fee_token_mismatch,
+                "allowed_fee_balance_keys": &allowed_fee_balance_keys,
+            });
+            tracing::warn!(
+                target: "RUST_EXEC",
+                "comparator_failure_context_json={}",
+                serde_json::to_string(&failure_context)
                     .unwrap_or_else(|error| format!("{{\"serialization_error\":{error:?}}}"))
             );
             let categories = comparison_report

@@ -19,7 +19,7 @@ pub struct TransactionOutputComparisonConfig {
     pub chain_id: Felt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum MismatchCategory {
     TransactionAlignment,
     ExecutionResult,
@@ -48,7 +48,7 @@ impl MismatchCategory {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum MismatchPolicy {
     Strict,
     Allowed,
@@ -67,7 +67,7 @@ impl MismatchPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FieldMismatch {
     pub category: MismatchCategory,
     pub policy: MismatchPolicy,
@@ -78,7 +78,7 @@ pub struct FieldMismatch {
     pub blockifier_value: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct CandidateCommitments {
     pub transaction: Felt,
     pub receipt: Felt,
@@ -86,13 +86,13 @@ pub struct CandidateCommitments {
     pub state_diff: Felt,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct CandidateCommitmentComparison {
     pub execution_box: CandidateCommitments,
     pub blockifier: CandidateCommitments,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct BlockComparisonReport {
     pub strict_mismatches: Vec<FieldMismatch>,
     pub allowed_mismatches: Vec<FieldMismatch>,
