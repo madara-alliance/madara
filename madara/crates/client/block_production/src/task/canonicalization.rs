@@ -1013,10 +1013,12 @@ impl BlockProductionTask {
                 .speculative_executed_txs
                 .iter()
                 .map(|row| {
+                    let transaction_with_receipt = Self::diagnostic_json_value(&row.transaction);
+                    let state_diff = Self::diagnostic_json_value(&row.state_diff.to_state_diff());
                     serde_json::json!({
                         "transaction_hash": row.transaction.receipt.transaction_hash(),
-                        "transaction_with_receipt": &row.transaction,
-                        "state_diff": &row.state_diff,
+                        "transaction_with_receipt": transaction_with_receipt,
+                        "state_diff": state_diff,
                         "paid_fee_on_l1": row.paid_fee_on_l1,
                     })
                 })
@@ -1025,10 +1027,12 @@ impl BlockProductionTask {
                 .per_tx
                 .iter()
                 .map(|row| {
+                    let receipt = Self::diagnostic_json_value(&row.receipt);
+                    let state_diff = Self::diagnostic_json_value(&row.tx_state_update.to_state_diff());
                     serde_json::json!({
                         "transaction_hash": row.receipt.transaction_hash(),
-                        "receipt": &row.receipt,
-                        "state_diff": &row.tx_state_update,
+                        "receipt": receipt,
+                        "state_diff": state_diff,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1052,16 +1056,16 @@ impl BlockProductionTask {
             );
             let failure_context = serde_json::json!({
                 "block_number": block_n,
-                "header": header,
+                "header": Self::diagnostic_json_value(header),
                 "execution_mode": format!("{:?}", state.execution_snapshot.execution_mode),
                 "transaction_count": tx_count,
-                "original_transaction_hashes": &state.original_tx_hashes,
+                "original_transaction_hashes": Self::diagnostic_json_value(&state.original_tx_hashes),
                 "execution_box_bouncer_weights": format!("{:?}", summary.bouncer_weights),
                 "blockifier_bouncer_weights": format!("{:?}", reexec_result.exec_resources),
                 "block_limit": format!("{block_limit:?}"),
                 "no_charge_fee": no_charge_fee,
                 "ignore_fee_token_mismatch": ignore_fee_token_mismatch,
-                "allowed_fee_balance_keys": &allowed_fee_balance_keys,
+                "allowed_fee_balance_keys": Self::diagnostic_json_value(&allowed_fee_balance_keys),
             });
             tracing::warn!(
                 target: "RUST_EXEC",
@@ -1615,6 +1619,18 @@ impl BlockProductionTask {
         );
 
         Ok(canonical)
+    }
+
+    pub(super) fn diagnostic_json_value<T>(value: &T) -> serde_json::Value
+    where
+        T: serde::Serialize + std::fmt::Debug,
+    {
+        serde_json::to_value(value).unwrap_or_else(|error| {
+            serde_json::json!({
+                "serialization_error": error.to_string(),
+                "debug": format!("{value:#?}"),
+            })
+        })
     }
 
     fn log_state_diff_mismatch_details(

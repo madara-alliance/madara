@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn comparator_diagnostic_json_falls_back_for_non_string_map_keys() {
+    let value = std::collections::BTreeMap::from([((1u8, 2u8), 3u8)]);
+
+    let json = super::BlockProductionTask::diagnostic_json_value(&value);
+
+    assert_eq!(json["serialization_error"], "key must be a string");
+    assert!(json["debug"].as_str().is_some_and(|debug| debug.contains("(1, 2)")));
+}
+
+#[test]
 fn build_parent_overlays_empty_when_no_runahead() {
     // confirmed = 5, target = 6, diffs_since_snapshot has block 5 → no overlays needed.
     let diffs = vec![(5, empty_state_diff())];
