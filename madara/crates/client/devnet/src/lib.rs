@@ -419,8 +419,8 @@ mod tests {
             Arc::clone(&mempool),
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
-            true,
             false,
+            true,
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(
