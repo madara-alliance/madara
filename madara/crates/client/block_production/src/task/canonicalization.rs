@@ -997,7 +997,7 @@ impl BlockProductionTask {
         }
         let allowed_fee_difference_count = comparison_report.allowed_mismatches.len() as u64;
         metrics.comparator_allowed_fee_differences_total.add(allowed_fee_difference_count, &[]);
-        if comparison_report.mismatch_count() > 0 {
+        if !comparison_report.strict_mismatches.is_empty() {
             tracing::warn!(
                 target: "RUST_EXEC",
                 "execution_box_state_diff_json={}",
