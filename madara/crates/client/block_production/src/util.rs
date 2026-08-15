@@ -425,7 +425,6 @@ pub(crate) enum RouteFallbackReason {
 pub(crate) enum BlockifierRouteCause {
     Classifier(RouteFallbackReason),
     FrozenBlockMode,
-    BlockifierAlreadyExecuted,
     StaleEpoch,
     FallbackRecovery,
     RustRuntimeFailure,

@@ -808,8 +808,8 @@ impl MadaraStorageWrite for RocksDBStorage {
     ///
     /// # Notes
     ///
-    /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
-    ///   are missing source-block mappings, this function fails early without mutating chain state.
+    /// * L1-message preflight runs before destructive writes. Legacy messages without source-block
+    ///   mappings force a conservative replay from L1 block zero after their indices are cleaned.
     /// * After calling this function, the caller MUST refresh the backend's head projection
     ///   by reading from the database, as this function only updates the database state.
     /// * This function does not stop services or shutdown the process. Lifecycle side-effects
@@ -893,12 +893,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         if !missing_source_block_nonces.is_empty() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
             tracing::warn!(
-                "Revert: {} L1 message nonce(s) have no L1 block mapping (sample={sample:?}). These nonces will still be cleaned up but won't affect L1 sync rewind.",
+                "Revert: {} L1 message nonce(s) have no L1 block mapping (sample={sample:?}). These nonces will be cleaned up and force an L1 replay from block zero.",
                 missing_source_block_nonces.len()
             );
         }
 
-        let rewind_from_l1_block = min_source_l1_block;
+        let rewind_from_l1_block = if missing_source_block_nonces.is_empty() { min_source_l1_block } else { Some(0) };
         // Persist the tip one block before the chosen rewind point so next sync replays boundary events.
         // This is intentional: L1 message ingestion/execution is idempotent by nonce and filters duplicates.
         let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));

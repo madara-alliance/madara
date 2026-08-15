@@ -462,7 +462,7 @@ async fn test_mixed_mode_both_branches_produce_combined_result(
 
 #[rstest::rstest]
 #[tokio::test]
-async fn mixed_block_stays_on_blockifier_after_a_blockifier_batch(
+async fn mixed_block_returns_to_rust_after_a_blockifier_batch(
     #[with(Duration::from_secs(30000))]
     #[future]
     devnet_setup: DevnetSetup,
@@ -507,8 +507,8 @@ async fn mixed_block_stays_on_blockifier_after_a_blockifier_batch(
 
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         assert_eq!(res.executed_txs.txs[0].tx_hash().to_felt(), rust_hash);
-        assert_eq!(res.stats.n_added_by_rust_exec, 0);
-        assert_eq!(res.stats.n_added_by_blockifier, 1);
+        assert_eq!(res.stats.n_added_by_rust_exec, 1);
+        assert_eq!(res.stats.n_added_by_blockifier, 0);
     });
 
     let (sender, receiver) = oneshot::channel();

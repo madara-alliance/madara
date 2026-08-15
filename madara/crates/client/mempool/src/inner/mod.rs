@@ -373,7 +373,11 @@ impl InnerMempool {
     }
 
     pub fn ready_transactions(&self) -> usize {
-        self.ready_queue.ready_transactions()
+        if matches!(&self.config.score_function, ScoreFunction::StrictFcfs) {
+            self.timestamp_queue.iter_inserted().take_while(|tx| self.accounts.is_ready_tx(tx)).count()
+        } else {
+            self.ready_queue.ready_transactions()
+        }
     }
 
     pub fn is_empty(&self) -> bool {

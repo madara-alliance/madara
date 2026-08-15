@@ -39,6 +39,10 @@ impl TimestampQueue {
         self.by_insertion.first_key_value().map(|(_, tx_key)| tx_key)
     }
 
+    pub fn iter_inserted(&self) -> impl Iterator<Item = &TxKey> {
+        self.by_insertion.values()
+    }
+
     pub fn apply_account_update(&mut self, account_update: &AccountUpdate) {
         for removed_tx in &account_update.removed_txs {
             let tx_key = removed_tx.tx_key();

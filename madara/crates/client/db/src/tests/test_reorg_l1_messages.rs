@@ -108,5 +108,5 @@ async fn revert_cleans_l1_message_state_without_source_metadata() {
     assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_l1_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).expect("DB read should succeed").is_none());
-    assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(10_000));
+    assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(0));
 }

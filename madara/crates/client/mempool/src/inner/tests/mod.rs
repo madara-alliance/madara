@@ -904,12 +904,15 @@ fn test_strict_fcfs_blocks_younger_accounts_until_oldest_tx_is_ready(mut strict_
     assert_matches!(strict_fcfs_mempool.insert_tx(blocked_same_account.clone(), felt!("0x1")), Ok(()));
     assert_matches!(strict_fcfs_mempool.insert_tx(younger_other_account.clone(), felt!("0x1")), Ok(()));
 
+    assert_eq!(strict_fcfs_mempool.inner.ready_transactions(), 1);
     assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(first));
     assert!(!strict_fcfs_mempool.inner.has_ready_transactions());
+    assert_eq!(strict_fcfs_mempool.inner.ready_transactions(), 0);
     assert_eq!(strict_fcfs_mempool.pop_next_ready(), None);
 
     strict_fcfs_mempool.update_account_nonce(felt!("0x100"), felt!("0x2"));
     assert!(strict_fcfs_mempool.inner.has_ready_transactions());
+    assert_eq!(strict_fcfs_mempool.inner.ready_transactions(), 2);
     assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(blocked_same_account));
     assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(younger_other_account));
 }
