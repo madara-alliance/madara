@@ -92,6 +92,8 @@ impl MempoolTransaction {
 pub enum ScoreFunction {
     /// FCFS mode. Transaction that have arrived earlier will be prioritised.
     Timestamp,
+    /// Strict FCFS mode. The oldest transaction blocks younger transactions until it is nonce-ready.
+    StrictFcfs,
     /// Tip mode. Transactions with higher tip will be prioritised.
     Tip {
         /// Min tip bump to replace a transaction, as ratio.
@@ -107,7 +109,7 @@ impl ScoreFunction {
     pub fn get_score(&self, tx: &ValidatedTransaction) -> Score {
         match self {
             // Reverse the order, so that higher score means priority.
-            Self::Timestamp => Score(u64::MAX - tx.arrived_at.0),
+            Self::Timestamp | Self::StrictFcfs => Score(u64::MAX - tx.arrived_at.0),
             Self::Tip { .. } => Score(tx.transaction.tip().unwrap_or(0)),
         }
     }
@@ -118,7 +120,7 @@ impl ScoreFunction {
         new_tx: &MempoolTransaction,
     ) -> Result<(), TxInsertionError> {
         match self {
-            Self::Timestamp => {
+            Self::Timestamp | Self::StrictFcfs => {
                 // FCFS will always replace newer txs with older txs. This is important when re-adding transactions if a
                 // pre-confirmed block is not confirmed, for example. The transactions will be re-added to the mempool.
                 if new_tx.arrived_at() >= previous_tx.arrived_at() {

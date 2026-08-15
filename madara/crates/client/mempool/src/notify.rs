@@ -45,6 +45,7 @@ impl MempoolInnerWithNotify {
             inner: RwLock::new(InnerMempool::new(crate::InnerMempoolConfig {
                 score_function: match config.mempool_mode {
                     MempoolMode::Timestamp => ScoreFunction::Timestamp,
+                    MempoolMode::StrictFcfs => ScoreFunction::StrictFcfs,
                     MempoolMode::Tip => ScoreFunction::Tip { min_tip_bump: config.mempool_min_tip_bump },
                 },
                 max_transactions: config.mempool_max_transactions,

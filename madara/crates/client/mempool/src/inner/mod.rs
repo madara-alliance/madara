@@ -5,7 +5,7 @@ use crate::inner::{
     limits::{MempoolLimitReached, MempoolLimiter},
     ready_queue::ReadyQueue,
     timestamp_queue::TimestampQueue,
-    tx::{EvictionScore, MempoolTransaction, ScoreFunction},
+    tx::{AccountKey, EvictionScore, MempoolTransaction, ScoreFunction},
 };
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
@@ -310,10 +310,15 @@ impl InnerMempool {
     /// `update_account_nonce` is issued.
     pub fn pop_next_ready(&mut self) -> Option<ValidatedTransaction> {
         // Get the next ready account,
-        let account_key = self.ready_queue.get_next_ready()?;
+        let account_key = if matches!(&self.config.score_function, ScoreFunction::StrictFcfs) {
+            let tx_key = self.timestamp_queue.first_inserted()?;
+            self.accounts.is_ready_tx(tx_key).then_some(AccountKey(tx_key.0))?
+        } else {
+            *self.ready_queue.get_next_ready()?
+        };
 
         // Remove from the backing datastructure.
-        let mut account_update = self.accounts.remove_ready_tx(account_key);
+        let mut account_update = self.accounts.remove_ready_tx(&account_key);
 
         // Update indices.
         tracing::debug!("Pop next ready apply update {account_update:#?}");
@@ -360,7 +365,11 @@ impl InnerMempool {
     }
 
     pub fn has_ready_transactions(&self) -> bool {
-        self.ready_queue.has_ready_transactions()
+        if matches!(&self.config.score_function, ScoreFunction::StrictFcfs) {
+            self.timestamp_queue.first_inserted().is_some_and(|tx| self.accounts.is_ready_tx(tx))
+        } else {
+            self.ready_queue.has_ready_transactions()
+        }
     }
 
     pub fn ready_transactions(&self) -> usize {

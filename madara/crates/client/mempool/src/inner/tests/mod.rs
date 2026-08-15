@@ -213,6 +213,20 @@ pub fn fcfs_mempool(
 }
 
 #[fixture]
+pub fn strict_fcfs_mempool(
+    #[default(4)] max_transactions: usize,
+    #[default(Some(2))] max_declare_transactions: Option<usize>,
+    #[default(Duration::from_secs(20))] ttl: Duration,
+) -> MempoolTester {
+    MempoolTester::new(InnerMempoolConfig {
+        score_function: ScoreFunction::StrictFcfs,
+        max_transactions,
+        max_declare_transactions,
+        ttl: Some(ttl),
+    })
+}
+
+#[fixture]
 pub fn tip_mempool(
     #[default(4)] max_transactions: usize,
     #[default(0.1)] min_tip_bump: f64,
@@ -857,6 +871,73 @@ fn test_pop_next_ready_skips_not_ready_txs(mut fcfs_mempool: MempoolTester) {
     assert_eq!(fcfs_mempool.pop_next_ready(), Some(ready_tx));
     assert_eq!(fcfs_mempool.pop_next_ready(), None); // not_ready_tx still in mempool but not poppable
     assert_eq!(fcfs_mempool.transactions(), [not_ready_tx].into());
+}
+
+#[rstest]
+fn test_strict_fcfs_blocks_younger_accounts_until_oldest_tx_is_ready(mut strict_fcfs_mempool: MempoolTester) {
+    let first = TestTx {
+        nonce: felt!("0x1"),
+        contract_address: felt!("0x100"),
+        arrived_at: 100,
+        tip: None,
+        tx_hash: felt!("0x101"),
+        is_declare: false,
+    };
+    let blocked_same_account = TestTx {
+        nonce: felt!("0x2"),
+        contract_address: felt!("0x100"),
+        arrived_at: 200,
+        tip: None,
+        tx_hash: felt!("0x102"),
+        is_declare: false,
+    };
+    let younger_other_account = TestTx {
+        nonce: felt!("0x1"),
+        contract_address: felt!("0x200"),
+        arrived_at: 300,
+        tip: None,
+        tx_hash: felt!("0x201"),
+        is_declare: false,
+    };
+
+    assert_matches!(strict_fcfs_mempool.insert_tx(first.clone(), felt!("0x1")), Ok(()));
+    assert_matches!(strict_fcfs_mempool.insert_tx(blocked_same_account.clone(), felt!("0x1")), Ok(()));
+    assert_matches!(strict_fcfs_mempool.insert_tx(younger_other_account.clone(), felt!("0x1")), Ok(()));
+
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(first));
+    assert!(!strict_fcfs_mempool.inner.has_ready_transactions());
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), None);
+
+    strict_fcfs_mempool.update_account_nonce(felt!("0x100"), felt!("0x2"));
+    assert!(strict_fcfs_mempool.inner.has_ready_transactions());
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(blocked_same_account));
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(younger_other_account));
+}
+
+#[rstest]
+fn test_strict_fcfs_preserves_insertion_order_when_timestamps_match(mut strict_fcfs_mempool: MempoolTester) {
+    let first = TestTx {
+        nonce: felt!("0x1"),
+        contract_address: felt!("0x200"),
+        arrived_at: 100,
+        tip: None,
+        tx_hash: felt!("0x201"),
+        is_declare: false,
+    };
+    let second = TestTx {
+        nonce: felt!("0x1"),
+        contract_address: felt!("0x100"),
+        arrived_at: 100,
+        tip: None,
+        tx_hash: felt!("0x101"),
+        is_declare: false,
+    };
+
+    assert_matches!(strict_fcfs_mempool.insert_tx(first.clone(), felt!("0x1")), Ok(()));
+    assert_matches!(strict_fcfs_mempool.insert_tx(second.clone(), felt!("0x1")), Ok(()));
+
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(first));
+    assert_eq!(strict_fcfs_mempool.pop_next_ready(), Some(second));
 }
 
 #[rstest]
