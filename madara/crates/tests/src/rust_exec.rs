@@ -58,6 +58,84 @@ fn devnet_account(
     account
 }
 
+fn mixed_node_builder(executor_addresses: &[Felt], extra_args: &[&str]) -> MadaraCmdBuilder {
+    let executor_addresses =
+        executor_addresses.iter().map(|address| format!("{address:#x}")).collect::<Vec<_>>().join(",");
+    let mut args = vec![
+        "--devnet".to_string(),
+        "--no-l1-sync".to_string(),
+        "--no-charge-fee".to_string(),
+        "--chain-config-path".to_string(),
+        "test_devnet.yaml".to_string(),
+        "--chain-config-override".to_string(),
+        "block_time=30s".to_string(),
+        "--startup-execution-mode".to_string(),
+        "mixed".to_string(),
+        "--executor-addresses".to_string(),
+        executor_addresses,
+        "--rpc-admin".to_string(),
+        "--rpc-unsafe".to_string(),
+    ];
+    args.extend(extra_args.iter().map(|arg| (*arg).to_string()));
+    MadaraCmdBuilder::new().capture_logs().args(args)
+}
+
+async fn start_mixed_node(executor_addresses: &[Felt], extra_args: &[&str]) -> (crate::MadaraCmd, Felt) {
+    let mut node = mixed_node_builder(executor_addresses, extra_args).run();
+    node.wait_for_ready().await;
+    let chain_id = json_rpc_v0_10_0(&node).chain_id().await.expect("devnet chain id");
+    (node, chain_id)
+}
+
+fn rust_transfer(recipient: Felt, amount: Felt) -> Call {
+    Call {
+        to: RUST_EXEC_TRANSFER_CONTRACT_ADDRESS,
+        selector: starknet_keccak(b"transfer"),
+        calldata: vec![recipient, amount],
+    }
+}
+
+async fn wait_for_rust_executions(node: &crate::MadaraCmd, cursor: usize, expected: usize) {
+    wait_for_cond(
+        || async {
+            let count = node.logs_since(cursor).iter().filter(|line| line.contains("executed_with_rust_exec")).count();
+            ensure!(count >= expected, "expected {expected} Rust executions, observed {count}");
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+}
+
+async fn wait_for_confirmed_success(provider: &JsonRpcClient<HttpTransport>, transaction_hash: Felt) {
+    wait_for_cond(
+        || async {
+            let receipt = provider.get_transaction_receipt(transaction_hash).await?;
+            ensure!(!receipt.block.is_pre_confirmed());
+            ensure!(receipt.receipt.execution_result() == &ExecutionResult::Succeeded);
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+}
+
+async fn last_transfer(provider: &JsonRpcClient<HttpTransport>) -> Vec<Felt> {
+    provider
+        .call(
+            &FunctionCall {
+                contract_address: RUST_EXEC_TRANSFER_CONTRACT_ADDRESS,
+                entry_point_selector: starknet_keccak(b"get_last_transfer"),
+                calldata: vec![],
+            },
+            BlockId::Tag(BlockTag::Latest),
+        )
+        .await
+        .expect("transfer fixture state should be readable")
+}
+
 #[tokio::test]
 async fn devnet_routes_only_supported_transfer_through_rust_exec() {
     let executor_addresses = format!("{ACCOUNT_ADDRESS:#x},{:#x}", ACCOUNTS[1]);
@@ -469,5 +547,348 @@ async fn devnet_comparator_mismatch_promotes_blockifier_and_disables_rust_exec()
         !fallback_logs.iter().any(|line| line.contains("executed_with_rust_exec")),
         "Rust Exec was used after strict fallback:\n{}",
         fallback_logs.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn devnet_preserves_unread_zero_write_against_confirmed_parent() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+
+    let seed_cursor = node.log_cursor();
+    let seed = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(55u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("nonzero seed transfer should be accepted");
+    wait_for_rust_executions(&node, seed_cursor, 1).await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, seed.transaction_hash).await;
+    assert_eq!(last_transfer(&provider).await, vec![ACCOUNT_ADDRESS, ACCOUNTS[1], Felt::from(55u64), Felt::ONE]);
+
+    let clear_cursor = node.log_cursor();
+    let clear = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::ZERO)])
+        .nonce(Felt::ONE)
+        .send()
+        .await
+        .expect("zero transfer should be accepted");
+    wait_for_rust_executions(&node, clear_cursor, 1).await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, clear.transaction_hash).await;
+
+    assert_eq!(
+        last_transfer(&provider).await,
+        vec![ACCOUNT_ADDRESS, ACCOUNTS[1], Felt::ZERO, Felt::TWO],
+        "an unread Rust write of zero must clear the nonzero parent value"
+    );
+    let logs = node.logs_since(clear_cursor);
+    assert!(logs.iter().any(|line| line.contains("comparator_passed")), "zero-write block was not accepted");
+    assert!(!logs.iter().any(|line| line.contains("comparator_failed")), "zero-write block mismatched");
+    let status = admin_rpc(&node.rpc_admin_url(), "madara_executionboxStatus").await;
+    assert_eq!(status["mode"], "mixed");
+}
+
+#[tokio::test]
+async fn devnet_zero_write_then_later_overwrite_preserves_logical_batch_order() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &["--mempool-paused", "--batch-size", "1"]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+    let log_cursor = node.log_cursor();
+
+    let first = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(7u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("first transfer should enter the paused mempool");
+    let clear = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::ZERO)])
+        .nonce(Felt::ONE)
+        .send()
+        .await
+        .expect("zero transfer should enter the paused mempool");
+    let overwrite = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[3], Felt::from(9u64))])
+        .nonce(Felt::TWO)
+        .send()
+        .await
+        .expect("later overwrite should enter the paused mempool");
+
+    flush_mempool(&node.rpc_admin_url()).await;
+    wait_for_rust_executions(&node, log_cursor, 3).await;
+    close_block(&node.rpc_admin_url()).await;
+    for hash in [first.transaction_hash, clear.transaction_hash, overwrite.transaction_hash] {
+        wait_for_confirmed_success(&provider, hash).await;
+    }
+
+    assert_eq!(
+        last_transfer(&provider).await,
+        vec![ACCOUNT_ADDRESS, ACCOUNTS[3], Felt::from(9u64), Felt::from(3u64)],
+        "the later transaction must win without hiding the intermediate zero write from comparison"
+    );
+    let logs = node.logs_since(log_cursor);
+    assert!(logs.iter().filter(|line| line.contains("batch_routed")).count() >= 3);
+    assert!(logs.iter().any(|line| line.contains("comparator_passed")));
+    assert!(!logs.iter().any(|line| line.contains("comparator_failed")));
+}
+
+#[tokio::test]
+async fn devnet_supported_multicall_observes_prior_call_writes() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+    let log_cursor = node.log_cursor();
+
+    let tx = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(11u64)), rust_transfer(ACCOUNTS[2], Felt::from(22u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("supported multicall should be accepted");
+    wait_for_rust_executions(&node, log_cursor, 1).await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, tx.transaction_hash).await;
+
+    assert_eq!(
+        last_transfer(&provider).await,
+        vec![ACCOUNT_ADDRESS, ACCOUNTS[2], Felt::from(22u64), Felt::TWO],
+        "the second Rust call must read the first call's transfer_count write"
+    );
+    let logs = node.logs_since(log_cursor);
+    assert!(logs.iter().any(|line| line.contains("comparator_passed")));
+    assert!(!logs.iter().any(|line| line.contains("comparator_failed")));
+}
+
+#[tokio::test]
+async fn devnet_partially_supported_multicall_fails_closed_to_blockifier() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+    let log_cursor = node.log_cursor();
+
+    let tx = account
+        .execute_v3(vec![
+            rust_transfer(ACCOUNTS[1], Felt::from(31u64)),
+            Call {
+                to: RUST_EXEC_TRANSFER_CONTRACT_ADDRESS,
+                selector: starknet_keccak(b"get_last_transfer"),
+                calldata: vec![],
+            },
+        ])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("partially supported multicall should be accepted by Blockifier");
+    wait_for_cond(
+        || async {
+            ensure!(node.logs_since(log_cursor).iter().any(|line| line.contains("executed_with_blockifier")));
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+    assert!(
+        !node.logs_since(log_cursor).iter().any(|line| line.contains("executed_with_rust_exec")),
+        "a partially supported multicall must fail closed as one Blockifier transaction"
+    );
+
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, tx.transaction_hash).await;
+    assert_eq!(last_transfer(&provider).await, vec![ACCOUNT_ADDRESS, ACCOUNTS[1], Felt::from(31u64), Felt::ONE]);
+    assert_eq!(admin_rpc(&node.rpc_admin_url(), "madara_executionboxStatus").await["mode"], "mixed");
+}
+
+#[tokio::test]
+async fn devnet_unlisted_executor_fails_closed_to_blockifier() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 1, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+    let log_cursor = node.log_cursor();
+
+    let tx = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::from(41u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("unlisted executor transaction should be accepted by Blockifier");
+    wait_for_cond(
+        || async {
+            ensure!(node.logs_since(log_cursor).iter().any(|line| line.contains("executed_with_blockifier")));
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+    assert!(
+        !node.logs_since(log_cursor).iter().any(|line| line.contains("executed_with_rust_exec")),
+        "an unlisted account must not route through Rust Exec"
+    );
+
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, tx.transaction_hash).await;
+    assert_eq!(last_transfer(&provider).await, vec![ACCOUNTS[1], ACCOUNTS[2], Felt::from(41u64), Felt::ONE]);
+}
+
+#[tokio::test]
+async fn devnet_rust_runtime_failure_reexecutes_with_blockifier_and_stays_safe() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+    let log_cursor = node.log_cursor();
+
+    let failed = account
+        .execute_v3(vec![Call {
+            to: RUST_EXEC_TRANSFER_CONTRACT_ADDRESS,
+            selector: starknet_keccak(b"transfer"),
+            calldata: vec![ACCOUNTS[1]],
+        }])
+        .nonce(Felt::ZERO)
+        .l1_gas(1_000_000)
+        .l1_gas_price(1)
+        .l2_gas(2_000_000)
+        .l2_gas_price(1)
+        .l1_data_gas(1_000_000)
+        .l1_data_gas_price(1)
+        .send()
+        .await
+        .expect("malformed supported call should enter the block");
+
+    wait_for_cond(
+        || async {
+            let status = admin_rpc(&node.rpc_admin_url(), "madara_executionboxStatus").await;
+            ensure!(status["mode"] == "blockifier_only");
+            ensure!(status["reason"] == "rust_runtime_failure");
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_cond(
+        || async {
+            let receipt = provider.get_transaction_receipt(failed.transaction_hash).await?;
+            ensure!(!receipt.block.is_pre_confirmed());
+            ensure!(matches!(receipt.receipt.execution_result(), ExecutionResult::Reverted { .. }));
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+
+    let fallback_cursor = node.log_cursor();
+    let valid = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::from(42u64))])
+        .nonce(Felt::ONE)
+        .send()
+        .await
+        .expect("post-fallback transaction should be accepted");
+    wait_for_cond(
+        || async {
+            ensure!(node.logs_since(fallback_cursor).iter().any(|line| line.contains("executed_with_blockifier")));
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+    assert!(!node.logs_since(fallback_cursor).iter().any(|line| line.contains("executed_with_rust_exec")));
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, valid.transaction_hash).await;
+    assert_eq!(last_transfer(&provider).await, vec![ACCOUNT_ADDRESS, ACCOUNTS[2], Felt::from(42u64), Felt::ONE]);
+    assert!(node.logs_since(log_cursor).iter().any(|line| line.contains("executed_with_blockifier")));
+}
+
+#[tokio::test]
+async fn devnet_manual_disable_then_enable_switches_engines_at_block_boundaries() {
+    let (node, chain_id) = start_mixed_node(&[ACCOUNT_ADDRESS], &[]).await;
+    let account = devnet_account(&node, 0, chain_id);
+    let provider = json_rpc_v0_10_0(&node);
+
+    admin_rpc(&node.rpc_admin_url(), "madara_executionboxDisable").await;
+    assert_eq!(admin_rpc(&node.rpc_admin_url(), "madara_executionboxStatus").await["mode"], "blockifier_only");
+    let disabled_cursor = node.log_cursor();
+    let disabled_tx = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(51u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("disabled-mode transaction should be accepted");
+    wait_for_cond(
+        || async {
+            ensure!(node.logs_since(disabled_cursor).iter().any(|line| line.contains("executed_with_blockifier")));
+            Ok(())
+        },
+        Duration::from_millis(100),
+        200,
+    )
+    .await;
+    assert!(!node.logs_since(disabled_cursor).iter().any(|line| line.contains("executed_with_rust_exec")));
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, disabled_tx.transaction_hash).await;
+
+    admin_rpc(&node.rpc_admin_url(), "madara_executionboxEnable").await;
+    wait_for_cond(
+        || async {
+            ensure!(admin_rpc(&node.rpc_admin_url(), "madara_executionboxStatus").await["mode"] == "mixed");
+            Ok(())
+        },
+        Duration::from_millis(100),
+        100,
+    )
+    .await;
+    let enabled_cursor = node.log_cursor();
+    let enabled_tx = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[2], Felt::from(52u64))])
+        .nonce(Felt::ONE)
+        .send()
+        .await
+        .expect("re-enabled transaction should be accepted");
+    wait_for_rust_executions(&node, enabled_cursor, 1).await;
+    close_block(&node.rpc_admin_url()).await;
+    wait_for_confirmed_success(&provider, enabled_tx.transaction_hash).await;
+
+    assert_eq!(last_transfer(&provider).await, vec![ACCOUNT_ADDRESS, ACCOUNTS[2], Felt::from(52u64), Felt::TWO]);
+    assert!(node.logs_since(enabled_cursor).iter().any(|line| line.contains("comparator_passed")));
+}
+
+#[tokio::test]
+async fn devnet_restart_recovers_unconfirmed_rust_block_with_blockifier() {
+    let builder = mixed_node_builder(&[ACCOUNT_ADDRESS], &[]);
+    let mut node = builder.clone().run();
+    node.wait_for_ready().await;
+    let chain_id = json_rpc_v0_10_0(&node).chain_id().await.expect("devnet chain id");
+    let account = devnet_account(&node, 0, chain_id);
+    let log_cursor = node.log_cursor();
+
+    let tx = account
+        .execute_v3(vec![rust_transfer(ACCOUNTS[1], Felt::from(61u64))])
+        .nonce(Felt::ZERO)
+        .send()
+        .await
+        .expect("Rust transaction should enter the preconfirmed block");
+    wait_for_rust_executions(&node, log_cursor, 1).await;
+    node.kill();
+    drop(node);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let mut restarted = builder.run();
+    restarted.wait_for_ready().await;
+    let provider = json_rpc_v0_10_0(&restarted);
+    wait_for_confirmed_success(&provider, tx.transaction_hash).await;
+    assert_eq!(
+        last_transfer(&provider).await,
+        vec![ACCOUNT_ADDRESS, ACCOUNTS[1], Felt::from(61u64), Felt::ONE],
+        "startup recovery must rebuild the persisted mixed block from Blockifier output"
+    );
+    assert!(
+        !restarted.logs_since(0).iter().any(|line| line.contains("executed_with_rust_exec")),
+        "startup recovery must not trust and rerun speculative Rust output"
     );
 }

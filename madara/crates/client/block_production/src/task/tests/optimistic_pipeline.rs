@@ -198,6 +198,55 @@ async fn next_block_executes_while_previous_comparator_is_gated(
 #[rstest::rstest]
 #[timeout(Duration::from_secs(30))]
 #[tokio::test]
+async fn zero_write_between_later_overwrites_remains_comparator_clean(
+    #[future]
+    #[with(Duration::from_secs(3_000), false, true)]
+    devnet_setup: DevnetSetup,
+) {
+    let mut devnet_setup = devnet_setup.await;
+    let mempool = devnet_setup.mempool.clone();
+    let _mempool_task = AbortOnDrop::spawn(async move {
+        mempool.run_mempool_task(ServiceContext::new_for_testing()).await.expect("mempool service should run")
+    });
+    tokio::task::yield_now().await;
+
+    let executor = devnet_setup.contracts.0[0].address;
+    let first = submit_rust_exec_transfer(&devnet_setup, Felt::ZERO, "transfer", Felt::from(7u64)).await;
+    let clear = submit_rust_exec_transfer(&devnet_setup, Felt::ONE, "transfer", Felt::ZERO).await;
+    let overwrite = submit_rust_exec_transfer(&devnet_setup, Felt::TWO, "transfer", Felt::from(9u64)).await;
+
+    let task = devnet_setup
+        .block_prod_task()
+        .with_startup_execution_mode(crate::fallback::types::StartupExecutionMode::Mixed)
+        .with_rust_exec_executor_addresses([executor])
+        .with_rust_exec_batch_size(1);
+    let control = task.handle();
+    let _task = AbortOnDrop::spawn(async move {
+        task.run(ServiceContext::new_for_testing()).await.expect("block production should run")
+    });
+
+    wait_for_preconfirmed_tx_count(&devnet_setup.backend, 1, 3).await;
+    control.close_block().await.expect("incident-shaped block should close");
+    wait_for_confirmed_block(&devnet_setup.backend, 1).await;
+
+    assert_eq!(block_tx_hashes(&devnet_setup.backend, 1), vec![first, clear, overwrite]);
+    assert_eq!(
+        block_storage_value(&devnet_setup.backend, 1, get_storage_var_address("last_amount", &[]).to_felt()),
+        Felt::from(9u64)
+    );
+    assert_eq!(
+        block_storage_value(&devnet_setup.backend, 1, get_storage_var_address("transfer_count", &[]).to_felt()),
+        Felt::from(3u64)
+    );
+    let status = control.executionbox_status().await.expect("execution status should be available");
+    assert_eq!(status.mode, crate::fallback::types::ExecutionMode::Mixed);
+    assert!(status.comparator_enabled);
+    assert_eq!(status.reason, None);
+}
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(30))]
+#[tokio::test]
 async fn sequential_mode_waits_for_previous_comparator_and_close(
     #[future]
     #[with(Duration::from_secs(3_000), false)]

@@ -62,10 +62,13 @@ fn parse_multicall_calldata(calldata: &[Felt]) -> Option<Vec<ParsedCall>> {
         let contract_address = calldata[i];
         let selector = calldata[i + 1];
         let cd_len: usize = u64::try_from(calldata[i + 2]).ok()? as usize;
-        i += 3 + cd_len;
+        i = i.checked_add(3)?.checked_add(cd_len)?;
+        if i > calldata.len() {
+            return None;
+        }
         calls.push(ParsedCall { contract_address, selector });
     }
-    Some(calls)
+    (i == calldata.len()).then_some(calls)
 }
 
 /// Extract (sender_address, calls) from a blockifier Transaction.
@@ -367,6 +370,30 @@ mod tests {
     fn parse_multicall_truncated_calldata_returns_none() {
         // n_calls=1 but only 2 more felts (need at least 3: to, sel, cd_len)
         let data = vec![Felt::ONE, Felt::from_hex_unchecked("0xAA"), Felt::from_hex_unchecked("0xBB")];
+        assert!(parse_multicall_calldata(&data).is_none());
+    }
+
+    #[test]
+    fn parse_multicall_rejects_declared_calldata_past_end() {
+        let data = vec![
+            Felt::ONE,
+            Felt::from_hex_unchecked("0xAA"),
+            Felt::from_hex_unchecked("0xBB"),
+            Felt::TWO,
+            Felt::from_hex_unchecked("0xCC"),
+        ];
+        assert!(parse_multicall_calldata(&data).is_none());
+    }
+
+    #[test]
+    fn parse_multicall_rejects_unparsed_trailing_felts() {
+        let data = vec![
+            Felt::ONE,
+            Felt::from_hex_unchecked("0xAA"),
+            Felt::from_hex_unchecked("0xBB"),
+            Felt::ZERO,
+            Felt::from_hex_unchecked("0xCC"),
+        ];
         assert!(parse_multicall_calldata(&data).is_none());
     }
 }
