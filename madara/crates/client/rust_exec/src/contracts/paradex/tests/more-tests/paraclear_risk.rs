@@ -181,5 +181,5 @@ fn test_is_risky_after_trade_perp_true() {
     )
     .expect("risk");
 
-    assert!(!risky);
+    assert!(risky);
 }
