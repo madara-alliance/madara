@@ -2819,7 +2819,7 @@ fn is_risky_after_trade_from_state<S: StateReader>(
     ctx: &mut ExecutionContext,
     state: &S,
     contract: ContractAddress,
-    _account: ContractAddress,
+    account: ContractAddress,
     settlement_token_address: ContractAddress,
     overrides: RiskOverrides,
     trade_fee: i128,
@@ -2947,10 +2947,7 @@ fn is_risky_after_trade_from_state<S: StateReader>(
     let (margin_requirement, total_upnl) = margin_requirement_and_total_upnl(&account_state, true)?;
     let asset_value = get_asset_value(&account_state)?;
     let account_value = asset_value + total_upnl;
-    let free_balance = account_value - margin_requirement - trade_fee;
-    if free_balance >= 0 {
-        return Ok(false);
-    }
+    let free_balance = account_value - margin_requirement;
 
     let (before, after) = if let Some((_, before, after)) = overrides.spot_token {
         (before, after)
@@ -2960,11 +2957,41 @@ fn is_risky_after_trade_from_state<S: StateReader>(
         (0, 0)
     };
     let position_decrease = abs_128(before) - abs_128(after);
-    if position_decrease >= 0 && account_value >= 0 {
-        return Ok(false);
+    let risky = free_balance < 0 && !(position_decrease >= 0 && account_value >= 0);
+
+    if let Some(diagnostic) = crate::telemetry::tx_diff::current() {
+        tracing::info!(
+            target: "RUST_EXEC",
+            "paraclear_risk_state block_number={} tx_hash={:#x} account={:#x} asset_value={} total_upnl={} account_value={} margin_requirement={} free_balance={} trade_fee={} position_before={} position_after={} position_decrease={} risky={} settlement_token_index={} token_balances={:?} token_prices={:?} perp_balances={:?} perp_prices={:?} perp_funding_indices={:?} perp_imf_base={:?} perp_fee_provision_rate={:?} perp_asset_kinds={:?} margin_methodology={:?} settlement_token_price={} perp_mmf_factor={}",
+            diagnostic.block_number,
+            diagnostic.tx_hash,
+            account.0,
+            asset_value,
+            total_upnl,
+            account_value,
+            margin_requirement,
+            free_balance,
+            trade_fee,
+            before,
+            after,
+            position_decrease,
+            risky,
+            account_state.settlement_token_index,
+            account_state.token_balances,
+            account_state.token_prices,
+            account_state.perp_balances,
+            account_state.perp_prices,
+            account_state.perp_funding_indices,
+            account_state.perp_imf_base,
+            account_state.perp_fee_provision_rate,
+            account_state.perp_asset_kinds,
+            account_state.margin_methodology,
+            account_state.settlement_token_price,
+            account_state.perp_mmf_factor,
+        );
     }
 
-    Ok(true)
+    Ok(risky)
 }
 
 fn is_risky_after_trade_loaded<S: StateReader>(
