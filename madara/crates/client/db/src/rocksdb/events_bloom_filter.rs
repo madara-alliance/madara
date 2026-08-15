@@ -428,16 +428,21 @@ mod tests {
         num_tests: usize,
     ) -> f64 {
         let mut false_positives = 0;
-        let max_existing = existing_values.iter().max().map(|f| f.to_bytes_be()[0] as u64).unwrap_or(0);
+        let mut tested = 0;
+        let mut candidate = 0x9e37_79b9_7f4a_7c15u64;
 
-        // Generate test values that don't exist in our set
-        for i in 0..num_tests {
-            let test_value = Felt::from(max_existing + 1000 + i as u64);
-            if !existing_values.contains(&test_value) {
-                let searcher = EventBloomSearcher::new(Some(&test_value), None);
-                if searcher.search(reader) {
-                    false_positives += 1;
-                }
+        // Sample a deterministic spread of absent values rather than one short,
+        // sequential range, whose hash distribution can skew a small sample.
+        while tested < num_tests {
+            candidate = candidate.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let test_value = Felt::from(candidate);
+            if existing_values.contains(&test_value) {
+                continue;
+            }
+            tested += 1;
+            let searcher = EventBloomSearcher::new(Some(&test_value), None);
+            if searcher.search(reader) {
+                false_positives += 1;
             }
         }
 
@@ -461,8 +466,8 @@ mod tests {
                 let serialized = serde_json::to_string(&writer).unwrap();
                 let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-                // Measure false positive rate with 1000 test values
-                let false_positive_rate = measure_false_positive_rate(&reader, &existing_values, 1000);
+                // Use enough probes to keep the 2% bound statistically meaningful.
+                let false_positive_rate = measure_false_positive_rate(&reader, &existing_values, 10_000);
 
                 // Log performance metrics
                 let duration = start_time.elapsed();
