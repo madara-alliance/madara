@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::{test_utils::add_test_block, test_utils::l1_handler_tx_with_receipt, MadaraBackend};
+use crate::{
+    storage::StorageHeadProjection, test_utils::add_test_block, test_utils::l1_handler_tx_with_receipt, MadaraBackend,
+    MadaraStorageRead,
+};
 use mp_chain_config::ChainConfig;
 use mp_convert::{Felt, L1TransactionHash};
 use mp_transactions::L1HandlerTransactionWithFee;
@@ -59,7 +62,10 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
 
     assert_eq!(new_tip_n, 0);
     assert_eq!(new_tip_hash, block_0_hash);
-    assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+    assert!(matches!(
+        backend.db.get_head_projection().expect("DB read should succeed"),
+        StorageHeadProjection::Confirmed(0)
+    ));
 
     assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_pending_message_to_l2(reverted_nonce).expect("DB read should succeed").is_none());
