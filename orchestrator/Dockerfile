@@ -202,7 +202,7 @@ RUN echo '#!/bin/bash\n\
   set -e\n\
   \n\
   # Run database migrations if MongoDB connection is configured\n\
-  if [ -n "$MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL" ] && [ -n "$MADARA_ORCHESTRATOR_DATABASE_NAME" ]; then\n\
+  if { [ -n "$MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL" ] || [ -n "$MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL_FILE" ]; } && [ -n "$MADARA_ORCHESTRATOR_DATABASE_NAME" ]; then\n\
   echo "Running database migrations..."\n\
   cd /app && npx migrate-mongo up\n\
   echo "Migrations complete"\n\
