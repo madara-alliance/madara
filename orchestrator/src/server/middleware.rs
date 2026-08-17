@@ -1,7 +1,7 @@
 use axum::{body::Body, http::HeaderValue, http::Request, middleware::Next, response::Response};
 use opentelemetry::{global, propagation::Extractor, trace::TraceContextExt, Context as OtelContext};
 use rand::RngCore;
-use tracing::info_span;
+use tracing::{info_span, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
@@ -56,7 +56,9 @@ pub async fn trace_context(mut req: Request<Body>, next: Next) -> Response {
         otel_trace_id = tracing::field::Empty,
         job_id = tracing::field::Empty
     );
-    span.set_parent(parent_cx);
+    if let Err(error) = span.set_parent(parent_cx) {
+        warn!("failed to set OpenTelemetry span parent: {error}");
+    }
 
     // Record ids for log visibility
     let otel_trace_id_str = span.context().span().span_context().trace_id().to_string();

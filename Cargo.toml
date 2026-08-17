@@ -142,42 +142,42 @@ alloy = { version = "1.1.0", features = [
 ] }
 
 # Instrumentation
-opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
-opentelemetry_sdk = { version = "0.30.0", features = [
+opentelemetry = { version = "0.32.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.32.1", features = [
   "rt-tokio",
   "logs",
   "experimental_metrics_custom_reader",
 ] }
-opentelemetry-stdout = { version = "0.30.0" }
-opentelemetry-otlp = { version = "0.30.0", features = [
+opentelemetry-stdout = { version = "0.32.0" }
+opentelemetry-otlp = { version = "0.32.0", features = [
   "grpc-tonic",
   "metrics",
   "logs",
 ] }
-opentelemetry-semantic-conventions = { version = "0.30.0" }
-opentelemetry-appender-tracing = { version = "0.30.0", default-features = false }
-tracing = { version = "0.1.40", default-features = false }
-tracing-core = { version = "0.1.32", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.32.0" }
+opentelemetry-appender-tracing = { version = "0.32.0", default-features = false }
+tracing = { version = "0.1.44", default-features = false }
+tracing-core = { version = "0.1.36", default-features = false }
 tracing-subscriber = { version = "0.3.18", features = [
   "env-filter",
   "registry",
   "std",
 ] }
 tracing-test = "0.2.5"
-tracing-opentelemetry = "0.31.0"
+tracing-opentelemetry = "0.33.0"
 
 # Networking
-jsonrpsee = { version = "0.22", default-features = false, features = [
+jsonrpsee = { version = "0.26", default-features = false, features = [
   "server",
   "client",
 ] }
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.4", features = ["cors"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["cors"] }
 governor = "0.6"
-hyper = { version = "1.5.0", features = ["full"] }
+hyper = { version = "=1.8.1", features = ["full"] }
 hyper-tls = "0.6"
 hyper-util = "0.1.9"
-http = "1.1.0"
+http = "1.4.2"
 http-body-util = "0.1.2"
 ip_network = "0.4"
 reqwest = { version = "0.12.7", features = [
@@ -223,7 +223,7 @@ num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
-zeroize = "1.8"
+zeroize = "1.9"
 ahash = "0.8"
 twox-hash = "2.1"
 rustc-hash = "2.1"
@@ -249,7 +249,7 @@ anyhow = "1.0"
 # Testing
 rstest = "0.26"
 proptest = "1.5.0"
-proptest-derive = "0.5.0"
+proptest-derive = "0.8.0"
 proptest-state-machine = "0.3.1"
 tempfile = "3.10.1"
 httpmock = "0.7.0"
@@ -266,7 +266,7 @@ syn = { version = "2.0.39", features = ["full"] }
 paste = "1.0.15"
 
 # Setup
-clap = { version = "4.4", features = ["derive", "env"] }
+clap = { version = "4.6.1", features = ["derive", "env"] }
 dotenv = "0.15.0"
 figment = "0.10.19"
 

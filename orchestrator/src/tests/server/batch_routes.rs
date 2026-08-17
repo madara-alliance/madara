@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chrono::{Duration, SubsecRound, Utc};
-use hyper::{Body, Request};
 use rstest::*;
 use starknet_api::execution_resources::GasAmount;
 
@@ -57,20 +56,10 @@ async fn test_query_snos_batches_by_index(#[future] setup_batches_server: (Socke
     config.database().create_aggregator_batch(aggregator_batch.clone()).await.unwrap();
     config.database().create_snos_batch(snos_batch.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/batches/snos?index={}", addr, snos_batch.index))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/batches/snos?index={}", addr, snos_batch.index)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<SnosBatchListResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<SnosBatchListResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     let batches = response_body.data.expect("missing snos batches payload").batches;
@@ -111,17 +100,10 @@ async fn test_query_snos_batches_closed_filter_includes_closed_batches(
     config.database().create_snos_batch(completed_batch.clone()).await.unwrap();
     config.database().create_snos_batch(open_batch).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder().uri(format!("http://{}/batches/snos?status=closed", addr)).body(Body::empty()).unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/batches/snos?status=closed", addr)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<SnosBatchListResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<SnosBatchListResponse> = response.json().await.unwrap();
 
     let batches = response_body.data.expect("missing snos batches payload").batches;
     assert_eq!(batches.iter().map(|batch| batch.batch.index).collect::<Vec<_>>(), vec![31, 33, 34]);
@@ -152,20 +134,11 @@ async fn test_query_aggregator_batches_closed_filter_returns_latest_closed(
     config.database().create_aggregator_batch(latest_closed_batch.clone()).await.unwrap();
     config.database().create_aggregator_batch(open_batch.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/batches/aggregator?status=closed&limit=1&sort=desc", addr))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response =
+        reqwest::get(format!("http://{}/batches/aggregator?status=closed&limit=1&sort=desc", addr)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<AggregatorBatchListResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<AggregatorBatchListResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     let batches = response_body.data.expect("missing aggregator batches payload").batches;
@@ -189,20 +162,10 @@ async fn test_query_snos_batches_sort_order(#[future] setup_batches_server: (Soc
     config.database().create_snos_batch(build_snos_batch(42, None, 410)).await.unwrap();
     config.database().create_snos_batch(build_snos_batch(43, None, 420)).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/batches/snos?limit=2&sort=desc", addr))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/batches/snos?limit=2&sort=desc", addr)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<SnosBatchListResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<SnosBatchListResponse> = response.json().await.unwrap();
 
     let batches = response_body.data.expect("missing snos batches payload").batches;
     assert_eq!(batches.iter().map(|batch| batch.batch.index).collect::<Vec<_>>(), vec![43, 42]);
@@ -218,15 +181,10 @@ async fn test_query_batches_rejects_invalid_status(
 ) {
     let (addr, _config) = setup_batches_server.await;
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().uri(format!("http://{}{}", addr, path)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}{}", addr, path)).await.unwrap();
 
     assert_eq!(response.status(), 400);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse = response.json().await.unwrap();
 
     assert!(!response_body.success);
     assert!(response_body.message.expect("missing error message").contains("unsupported"));
@@ -243,15 +201,10 @@ async fn test_query_batches_rejects_invalid_limit(
 ) {
     let (addr, _config) = setup_batches_server.await;
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().uri(format!("http://{}{}", addr, path)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}{}", addr, path)).await.unwrap();
 
     assert_eq!(response.status(), 400);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse = response.json().await.unwrap();
 
     assert!(!response_body.success);
     assert!(response_body.message.expect("missing error message").contains(expected_message));
@@ -264,20 +217,10 @@ async fn test_query_aggregator_batches_accepts_max_limit(#[future] setup_batches
 
     config.database().create_aggregator_batch(build_batch(51, 500, 509)).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/batches/aggregator?limit=500", addr))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/batches/aggregator?limit=500", addr)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<AggregatorBatchListResponse> = serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<AggregatorBatchListResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     assert_eq!(response_body.data.expect("missing aggregator batches payload").batches.len(), 1);

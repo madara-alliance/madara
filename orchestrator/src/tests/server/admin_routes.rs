@@ -17,7 +17,6 @@ use crate::tests::utils::build_job_item;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
-use hyper::{Body, Request};
 use orchestrator_da_client_interface::MockDaClient;
 use orchestrator_prover_client_interface::MockProverClient;
 use orchestrator_settlement_client_interface::MockSettlementClient;
@@ -48,14 +47,9 @@ async fn build_test_config(db: MockDatabaseClient, queue: MockQueueClient) -> St
 }
 
 async fn call_endpoint(addr: &str, path: &str) -> ApiResponse<BulkJobResponse> {
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().method("POST").uri(format!("http://{}{}", addr, path)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::Client::new().post(format!("http://{}{}", addr, path)).send().await.unwrap();
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    serde_json::from_slice(&body_bytes).unwrap()
+    response.json().await.unwrap()
 }
 
 #[tokio::test]

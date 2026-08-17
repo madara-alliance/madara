@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use hyper::{Body, Request};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -49,16 +48,10 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     let success_job = build_job_item(JobType::ProofCreation, JobStatus::Completed, 2);
     config.database().create_job(success_job.clone()).await.unwrap();
 
-    let client = hyper::Client::new();
-    let response = client
-        .request(Request::builder().uri(format!("http://{}/jobs?status=Failed", addr)).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = reqwest::get(format!("http://{}/jobs?status=Failed", addr)).await.unwrap();
 
     assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
-        serde_json::from_slice(&body_bytes).unwrap();
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> = response.json().await.unwrap();
 
     assert!(response_body.success);
     let failed_jobs_data = response_body.data.unwrap();
