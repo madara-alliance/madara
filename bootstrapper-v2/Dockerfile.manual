@@ -1,0 +1,11 @@
+ARG BOOTSTRAPPER_V2_RUNTIME_BASE=ghcr.io/madara-alliance/bootstrapper-v2-runtime-base:bookworm-tini0.19-v1
+FROM ${BOOTSTRAPPER_V2_RUNTIME_BASE} AS runner
+
+WORKDIR /app
+
+COPY ci-binaries/bootstrapper-v2 /bin/bootstrapper-v2
+COPY build-artifacts /app/build-artifacts
+RUN chmod +x /bin/bootstrapper-v2
+
+ENTRYPOINT ["tini", "--", "bootstrapper-v2"]
+CMD ["--help"]

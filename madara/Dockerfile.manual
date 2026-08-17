@@ -1,0 +1,10 @@
+ARG MADARA_RUNTIME_BASE=ghcr.io/madara-alliance/madara-runtime-base:bookworm-llvm19-tini0.19-v1
+FROM ${MADARA_RUNTIME_BASE} AS runner
+
+WORKDIR /app
+
+COPY ci-binaries/madara /bin/madara
+RUN chmod +x /bin/madara
+
+ENTRYPOINT ["tini", "--", "madara"]
+CMD ["--help"]

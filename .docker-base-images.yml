@@ -1,0 +1,8 @@
+builder:
+  madara: ghcr.io/madara-alliance/madara-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-v1
+  orchestrator: ghcr.io/madara-alliance/orchestrator-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-blst0.3.15-v1
+  bootstrapper-v2: ghcr.io/madara-alliance/bootstrapper-v2-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-v1
+runtime:
+  madara: ghcr.io/madara-alliance/madara-runtime-base:bookworm-llvm19-tini0.19-v1
+  orchestrator: ghcr.io/madara-alliance/orchestrator-runtime-base:bookworm-node18-tini0.19-v1
+  bootstrapper-v2: ghcr.io/madara-alliance/bootstrapper-v2-runtime-base:bookworm-tini0.19-v1
