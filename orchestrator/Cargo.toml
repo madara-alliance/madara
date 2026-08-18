@@ -70,7 +70,10 @@ orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-reqwest_13 = { package = "reqwest", version = "0.13.2", default-features = false, features = ["json", "rustls"] }
+reqwest_13 = { package = "reqwest", version = "0.13.2", default-features = false, features = [
+  "json",
+  "rustls",
+] }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
