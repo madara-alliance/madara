@@ -9,6 +9,7 @@ use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::utils::metrics_recorder::MetricsRecorder;
+use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
@@ -303,12 +304,11 @@ impl AggregatorHandler {
         operation: &str,
     ) -> Result<MaybePreConfirmedStateUpdate, JobError> {
         let started_at = Instant::now();
-        let update = self
-            .config
-            .madara_rpc_client()
-            .get_state_update(BlockId::Number(block_num))
-            .await
-            .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let provider = self.config.madara_rpc_client();
+        let update =
+            retry_provider_read("madara_get_state_update", || provider.get_state_update(BlockId::Number(block_num)))
+                .await
+                .map_err(|e| JobError::ProviderError(e.to_string()))?;
         match &update {
             Update(state_update) => {
                 let (modified_contracts, storage_updates, declared_classes) =

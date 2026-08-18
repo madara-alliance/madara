@@ -1,6 +1,7 @@
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::utils::provider_retry::retry_http_read;
 use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use blockifier::bouncer::BouncerWeights;
@@ -20,9 +21,8 @@ pub async fn get_block_builtin_weights(
         "Requesting block bouncer weights via REST"
     );
 
-    // Use the RestClient with query parameters
-    let response = fgw
-        .get(&format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number))
+    let path = format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number);
+    let response = retry_http_read("madara_get_block_bouncer_weights", || fgw.get(&path))
         .await
         .map_err(|e| JobError::Other(OtherError(eyre!("Failed to send REST request: {}", e))))?;
 
