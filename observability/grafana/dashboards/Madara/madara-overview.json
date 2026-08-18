@@ -2539,11 +2539,7 @@
               },
               {
                 "color": "yellow",
-                "value": 34359738368
-              },
-              {
-                "color": "red",
-                "value": 68719476736
+                "value": 4294967296
               }
             ]
           },
@@ -2558,6 +2554,7 @@
         "y": 71
       },
       "id": 72,
+      "description": "Worst selected pod's synthetic `column=\"total\"` backlog. Yellow at the current 4 GiB global warning threshold; per-column RocksDB soft/hard limits are shown in the focused compaction dashboard.",
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -2579,7 +2576,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column=\"total\"})",
           "legendFormat": "Pending Compaction",
           "refId": "A"
         }
@@ -2647,12 +2644,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
+          "expr": "max(db_column_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
           "legendFormat": "L0 Files",
           "refId": "A"
         }
       ],
-      "title": "L0 Files",
+      "title": "Worst CF L0 Files",
       "type": "stat"
     },
     {
@@ -2715,12 +2712,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_column_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Immutable MemTables",
           "refId": "A"
         }
       ],
-      "title": "Immutable MemTables",
+      "title": "Worst CF Immutable MemTables",
       "type": "stat"
     },
     {
@@ -2891,7 +2888,7 @@
         "y": 76
       },
       "id": 76,
-      "description": "Monitors RocksDB write stall risk.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
+      "description": "Monitors the worst single column family across the selected pods, matching RocksDB's per-column-family write-stall thresholds.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
       "options": {
         "legend": {
           "calcs": [
@@ -2914,7 +2911,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
+          "expr": "max(db_column_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})",
           "legendFormat": "L0 Files",
           "refId": "A"
         },
@@ -2923,7 +2920,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_column_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Immutable MemTables",
           "refId": "B"
         }
@@ -2983,11 +2980,7 @@
               },
               {
                 "color": "yellow",
-                "value": 34359738368
-              },
-              {
-                "color": "red",
-                "value": 68719476736
+                "value": 4294967296
               }
             ]
           },
@@ -3003,7 +2996,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#C4162A",
+                  "fixedColor": "#FF9830",
                   "mode": "fixed"
                 }
               }
@@ -3039,7 +3032,7 @@
         "y": 76
       },
       "id": 77,
-      "description": "Monitors compaction backlog and memtable data size.\n\n**Pending Compaction Thresholds:**\n- Yellow line (32 GiB): Warning - compaction falling behind\n- Red line (64 GiB): Critical - risk of write stalls\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
+      "description": "Monitors database-wide compaction backlog and memtable data size.\n\n**Pending Compaction:**\n- Uses only the synthetic `column=\"total\"` series; summing it with per-column series double-counts backlog\n- Yellow line (4 GiB): current global warning alert\n- RocksDB's 6/12 GiB soft/hard limits apply per column family, not to this total\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
       "options": {
         "legend": {
           "calcs": [
@@ -3062,7 +3055,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "expr": "max(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column=\"total\"})",
           "legendFormat": "Pending Compaction",
           "refId": "A"
         },
@@ -3237,7 +3230,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Flush Rate (ingest \u2192 L0)",
           "refId": "A"
         },
@@ -3246,7 +3239,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Compaction Write Rate",
           "refId": "B"
         },
@@ -3255,7 +3248,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_read_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_read_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Compaction Read Rate",
           "refId": "C"
         },
@@ -3264,7 +3257,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_bytes_written_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_bytes_written{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "App Write Rate",
           "refId": "D"
         }
@@ -3326,7 +3319,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_compact_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / rate(db_flush_write_bytes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
+          "expr": "rate(db_compact_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / clamp_min(rate(db_flush_write_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]), 1)",
           "legendFormat": "Write Amplification (compact/flush)",
           "refId": "A"
         }
@@ -3389,7 +3382,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_stall_micros_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / 1e6",
+          "expr": "rate(db_stall_micros{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / 1e6",
           "legendFormat": "Stall Fraction",
           "refId": "A"
         }
@@ -3452,7 +3445,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(db_block_cache_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(db_block_cache_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "expr": "rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / clamp_min(rate(db_block_cache_hit{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(db_block_cache_miss{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]), 1)",
           "legendFormat": "Cache Hit Rate",
           "refId": "A"
         }
@@ -3576,7 +3569,7 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "spanNulls": true
+            "spanNulls": false
           },
           "unit": "bytes",
           "min": 0
@@ -3609,7 +3602,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"} > 0",
+          "expr": "db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column!=\"total\"}",
           "legendFormat": "{{column}}",
           "refId": "A"
         }
@@ -7841,6 +7834,638 @@
       ],
       "title": "Exec Read Cache Hit Ratio",
       "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 250
+      },
+      "id": 430,
+      "panels": [],
+      "title": "RocksDB & Bonsai Compaction Diagnostics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "L0 file count for every column family. RocksDB's slowdown and stop thresholds apply per column family, so this view identifies the CF creating pressure.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 251
+      },
+      "id": 431,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"}",
+          "legendFormat": "{{pod}} {{column}}",
+          "refId": "A"
+        }
+      ],
+      "title": "L0 Files by Column Family",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Current RocksDB compaction and memtable-flush pending flags for the three leveled Bonsai log column families.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "min": 0,
+          "max": 1,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 251
+      },
+      "id": 432,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_compaction_pending{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "compaction {{pod}} {{column}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_memtable_flush_pending{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "flush {{pod}} {{column}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Bonsai Compaction & Flush Pending",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Entries and point-delete tombstones in active and immutable memtables for the leveled Bonsai log CFs.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 259
+      },
+      "id": 433,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_memtable_entries{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "entries {{pod}} {{column}} {{state}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_memtable_deletes{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "deletes {{pod}} {{column}} {{state}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Bonsai Memtable Entries & Tombstones",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Estimated live bytes compared with physical SST size. A widening gap indicates retained versions or compaction debt.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 259
+      },
+      "id": 434,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "db_column_estimated_live_data_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "live {{pod}} {{column}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "column_sizes{namespace=~\"$namespace\", pod=~\"$pod\", column=~\"bonsai_(class|contract|contract_storage)_log\"}",
+          "legendFormat": "physical {{pod}} {{column}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Bonsai Live Data vs Physical Size",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 267
+      },
+      "id": 435,
+      "panels": [],
+      "title": "Bonsai Prefix Pruning",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Prefix-pruning operation rate split by outcome. Any non-success outcome is actionable.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 268
+      },
+      "id": 436,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (pod, column, outcome) (rate(bonsai_prefix_prune_operations_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "{{pod}} {{column}} {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Prefix-Prune Operations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.000001
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 268
+      },
+      "id": 437,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(bonsai_prefix_prune_operations_total{namespace=~\"$namespace\", pod=~\"$pod\", outcome!=\"success\"}[$__rate_interval]))",
+          "legendFormat": "Errors/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Prefix-Prune Errors",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 268
+      },
+      "id": 438,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "bonsai_prefix_prune_last_revision{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "{{pod}} {{column}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Last Pruned Revision",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 272
+      },
+      "id": 439,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, pod, column) (rate(bonsai_prefix_prune_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{pod}} {{column}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Successful Prune Duration p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 276
+      },
+      "id": 440,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, pod, column) (rate(bonsai_prefix_prune_entries_scanned_bucket{namespace=~\"$namespace\", pod=~\"$pod\", outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "entries p95 {{pod}} {{column}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, pod, column) (rate(bonsai_prefix_prune_batch_operations_bucket{namespace=~\"$namespace\", pod=~\"$pod\", outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "deletes p95 {{pod}} {{column}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Entries Scanned & Deletes per Prune p95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 280
+      },
+      "id": 441,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, pod, column) (rate(bonsai_prefix_prune_batch_bytes_bucket{namespace=~\"$namespace\", pod=~\"$pod\", outcome=\"success\"}[$__rate_interval])))",
+          "legendFormat": "p95 {{pod}} {{column}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Deletion Batch Bytes per Prune p95",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

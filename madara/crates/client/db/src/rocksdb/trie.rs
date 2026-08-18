@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::rocksdb::column::Column;
 use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
@@ -5,11 +6,13 @@ use bonsai_trie::id::Id;
 use bonsai_trie::{
     BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
 };
+use opentelemetry::KeyValue;
 use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub const BONSAI_CONTRACT_FLAT_COLUMN: Column = Column::new("bonsai_contract_flat").set_point_lookup();
 pub const BONSAI_CONTRACT_TRIE_COLUMN: Column = Column::new("bonsai_contract_trie").set_point_lookup();
@@ -91,6 +94,54 @@ impl DatabaseKeyMapping {
             DatabaseKey::Trie(_) => &self.trie,
             DatabaseKey::Flat(_) => &self.flat,
             DatabaseKey::TrieLog(_) => &self.log,
+        }
+    }
+}
+
+fn trie_log_revision(prefix: &DatabaseKey) -> Option<u64> {
+    let DatabaseKey::TrieLog(prefix) = prefix else { return None };
+    let revision: [u8; 8] = prefix.get(..8)?.try_into().ok()?;
+    Some(u64::from_be_bytes(revision))
+}
+
+fn prefix_prune_outcome(scan_error: bool, write_succeeded: bool) -> &'static str {
+    match (scan_error, write_succeeded) {
+        (false, true) => "success",
+        (true, true) => "scan_error",
+        (false, false) => "write_error",
+        (true, false) => "scan_and_write_error",
+    }
+}
+
+struct PrefixPruneObservation {
+    column: &'static str,
+    revision: Option<u64>,
+    started_at: Instant,
+    entries_scanned: u64,
+    batch_operations: u64,
+    batch_bytes: u64,
+    scan_error: bool,
+}
+
+impl PrefixPruneObservation {
+    fn record(self, write_succeeded: bool) {
+        let outcome = prefix_prune_outcome(self.scan_error, write_succeeded);
+        let attributes = [
+            KeyValue::new("column", self.column),
+            KeyValue::new("strategy", "point_delete"),
+            KeyValue::new("outcome", outcome),
+        ];
+
+        metrics().bonsai_prefix_prune_operations.add(1, &attributes);
+        metrics().bonsai_prefix_prune_entries_scanned.record(self.entries_scanned, &attributes);
+        metrics().bonsai_prefix_prune_batch_operations.record(self.batch_operations, &attributes);
+        metrics().bonsai_prefix_prune_batch_bytes.record(self.batch_bytes, &attributes);
+        metrics().bonsai_prefix_prune_duration.record(self.started_at.elapsed().as_secs_f64(), &attributes);
+
+        if outcome == "success" {
+            if let Some(revision) = self.revision {
+                metrics().bonsai_prefix_prune_last_revision.record(revision, &[KeyValue::new("column", self.column)]);
+            }
         }
     }
 }
@@ -190,23 +241,39 @@ impl BonsaiDatabase for BonsaiDB {
     #[tracing::instrument(skip(self, prefix))]
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         tracing::trace!("Getting from RocksDB: {:?}", prefix);
-        let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
+        let started_at = Instant::now();
+        let column = self.column_mapping.map(prefix);
+        let handle = self.backend.get_column(column.clone());
         let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
         let mut batch = self.create_batch();
+        let mut entries_scanned = 0u64;
+        let mut scan_error = false;
         for kv in iter {
             if let Ok((key, _)) = kv {
+                entries_scanned = entries_scanned.saturating_add(1);
                 if key.starts_with(prefix.as_slice()) {
                     batch.delete_cf(&handle, &key);
                 } else {
                     break;
                 }
             } else {
+                scan_error = true;
                 break;
             }
         }
+        let observation = PrefixPruneObservation {
+            column: column.rocksdb_name,
+            revision: trie_log_revision(prefix),
+            started_at,
+            entries_scanned,
+            batch_operations: u64::try_from(batch.len()).unwrap_or(u64::MAX),
+            batch_bytes: u64::try_from(batch.size_in_bytes()).unwrap_or(u64::MAX),
+            scan_error,
+        };
         drop(handle);
-        self.write_batch(batch)?;
-        Ok(())
+        let result = self.write_batch(batch);
+        observation.record(result.is_ok());
+        result
     }
 
     #[tracing::instrument(skip(self, batch))]
@@ -344,5 +411,60 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
         Self: 'a,
     {
         unreachable!("unused for now")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rocksdb::RocksDBConfig;
+
+    #[test]
+    fn trie_log_revision_valid_prefix_returns_revision() {
+        let revision = 42u64.to_be_bytes();
+
+        assert_eq!(trie_log_revision(&DatabaseKey::TrieLog(&revision)), Some(42));
+        assert_eq!(trie_log_revision(&DatabaseKey::Trie(&revision)), None);
+        assert_eq!(trie_log_revision(&DatabaseKey::TrieLog(&revision[..7])), None);
+    }
+
+    #[test]
+    fn prefix_prune_outcome_preserves_scan_and_write_failures() {
+        assert_eq!(prefix_prune_outcome(false, true), "success");
+        assert_eq!(prefix_prune_outcome(true, true), "scan_error");
+        assert_eq!(prefix_prune_outcome(false, false), "write_error");
+        assert_eq!(prefix_prune_outcome(true, false), "scan_and_write_error");
+    }
+
+    #[test]
+    fn remove_by_prefix_point_delete_removes_only_matching_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(directory.path(), RocksDBConfig::default()).unwrap();
+        let mapping = DatabaseKeyMapping {
+            flat: BONSAI_CONTRACT_FLAT_COLUMN,
+            trie: BONSAI_CONTRACT_TRIE_COLUMN,
+            log: BONSAI_CONTRACT_LOG_COLUMN,
+        };
+        let mut bonsai_db = BonsaiDB {
+            backend: Arc::clone(&storage.inner),
+            snapshots: Arc::clone(&storage.snapshots),
+            column_mapping: mapping,
+        };
+        let handle = storage.inner.get_column(BONSAI_CONTRACT_LOG_COLUMN);
+
+        let revision = 7u64.to_be_bytes();
+        let next_revision = 8u64.to_be_bytes();
+        let first_key = [revision.as_slice(), b"first"].concat();
+        let second_key = [revision.as_slice(), b"second"].concat();
+        let next_key = [next_revision.as_slice(), b"next"].concat();
+        storage.inner.db.put_cf(&handle, &first_key, b"value").unwrap();
+        storage.inner.db.put_cf(&handle, &second_key, b"value").unwrap();
+        storage.inner.db.put_cf(&handle, &next_key, b"value").unwrap();
+
+        bonsai_db.remove_by_prefix(&DatabaseKey::TrieLog(&revision)).unwrap();
+
+        assert!(storage.inner.db.get_cf(&handle, first_key).unwrap().is_none());
+        assert!(storage.inner.db.get_cf(&handle, second_key).unwrap().is_none());
+        assert_eq!(storage.inner.db.get_cf(&handle, next_key).unwrap().as_deref(), Some(b"value".as_slice()));
     }
 }
