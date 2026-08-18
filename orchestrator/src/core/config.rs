@@ -32,6 +32,7 @@ use crate::core::error::OrchestratorCoreResult;
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
+use crate::utils::provider_retry::UpstreamReadRetryConfig;
 use crate::{
     cli::RunCmd,
     core::client::{
@@ -197,6 +198,8 @@ pub struct Config {
     prover_kind: ProverKind,
     /// The orchestrator config
     pub params: ConfigParam,
+    /// Retry policy for idempotent reads from Madara and reference nodes.
+    upstream_read_retry_config: UpstreamReadRetryConfig,
     /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
     chain_details: ChainDetails,
     /// The Madara client to get data from the node
@@ -249,6 +252,11 @@ impl Config {
             layer,
             prover_kind,
             params,
+            upstream_read_retry_config: UpstreamReadRetryConfig::new(
+                std::num::NonZeroUsize::new(3).unwrap(),
+                std::time::Duration::from_secs(30),
+                std::time::Duration::from_millis(200),
+            ),
             chain_details,
             madara_rpc_client,
             replay_bounds_client: None,
@@ -290,6 +298,20 @@ impl Config {
         let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
 
         let layer = run_cmd.layer.clone();
+        let upstream_read_retry_config = UpstreamReadRetryConfig::new(
+            run_cmd.upstream_read_retry_args.upstream_read_max_attempts,
+            std::time::Duration::from_secs(run_cmd.upstream_read_retry_args.upstream_read_timeout_secs.get()),
+            std::time::Duration::from_millis(
+                run_cmd.upstream_read_retry_args.upstream_read_initial_backoff_millis.get(),
+            ),
+        );
+
+        info!(
+            upstream_read_max_attempts = upstream_read_retry_config.max_attempts(),
+            upstream_read_timeout_secs = upstream_read_retry_config.timeout().as_secs(),
+            upstream_read_initial_backoff_millis = upstream_read_retry_config.initial_backoff().as_millis(),
+            "Configured upstream read resilience"
+        );
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
@@ -357,6 +379,7 @@ impl Config {
             layer,
             prover_kind,
             params,
+            upstream_read_retry_config,
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
             replay_bounds_client,
@@ -386,6 +409,11 @@ impl Config {
     /// Which prover backend is active.
     pub fn prover_kind(&self) -> ProverKind {
         self.prover_kind
+    }
+
+    /// Returns the retry policy for idempotent upstream reads.
+    pub fn upstream_read_retry_config(&self) -> &UpstreamReadRetryConfig {
+        &self.upstream_read_retry_config
     }
 
     pub(crate) async fn build_database_client(

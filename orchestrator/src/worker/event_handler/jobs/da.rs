@@ -138,13 +138,15 @@ impl DAJobHandler {
             if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE && address != Felt::TWO {
                 let provider = config.madara_rpc_client();
                 let get_current_nonce_result =
-                    retry_provider_read("madara_get_nonce", || provider.get_nonce(BlockId::Number(block_no), address))
-                        .await
-                        .map_err(|e| {
-                            JobError::ProviderError(format!(
-                                "Failed to get nonce for address {address} at block {block_no}: {e}"
-                            ))
-                        })?;
+                    retry_provider_read("madara_get_nonce", config.upstream_read_retry_config(), || {
+                        provider.get_nonce(BlockId::Number(block_no), address)
+                    })
+                    .await
+                    .map_err(|e| {
+                        JobError::ProviderError(format!(
+                            "Failed to get nonce for address {address} at block {block_no}: {e}"
+                        ))
+                    })?;
 
                 nonce = Some(get_current_nonce_result);
             }
@@ -240,10 +242,11 @@ impl JobHandlerTrait for DAJobHandler {
         let block_no = internal_id;
 
         let provider = config.madara_rpc_client();
-        let state_update =
-            retry_provider_read("madara_get_state_update", || provider.get_state_update(BlockId::Number(block_no)))
-                .await
-                .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let state_update = retry_provider_read("madara_get_state_update", config.upstream_read_retry_config(), || {
+            provider.get_state_update(BlockId::Number(block_no))
+        })
+        .await
+        .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         let state_update = match state_update {
             MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {

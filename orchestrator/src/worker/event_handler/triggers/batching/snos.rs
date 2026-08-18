@@ -120,7 +120,9 @@ impl SnosHandler {
         info!("Including block {} in snos batch", block_num);
 
         // Get the starknet version of the current block (applies to all states)
-        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        let block_version =
+            get_block_version(block_num, self.config.madara_rpc_client(), self.config.upstream_read_retry_config())
+                .await?;
 
         // Check if block's Starknet version is supported (applies to all states)
         if !block_version.is_supported() {
@@ -146,6 +148,7 @@ impl SnosHandler {
                     block_num,
                     self.config.madara_feeder_gateway_client(),
                     self.empty_block_proving_gas,
+                    self.config.upstream_read_retry_config(),
                 )
                 .await?;
                 let new_state = NonEmptySnosState::new(SnosBatch::new(
@@ -197,10 +200,13 @@ impl SnosHandler {
             block_num,
             self.config.madara_feeder_gateway_client(),
             self.empty_block_proving_gas,
+            self.config.upstream_read_retry_config(),
         )
         .await?;
         // Get the starknet version of the current block
-        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        let block_version =
+            get_block_version(block_num, self.config.madara_rpc_client(), self.config.upstream_read_retry_config())
+                .await?;
 
         match state
             .checked_add_block_with_limits(

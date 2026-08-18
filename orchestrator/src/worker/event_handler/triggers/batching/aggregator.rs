@@ -266,7 +266,9 @@ impl AggregatorHandler {
 
     async fn fetch_block_version(&self, block_num: u64, operation: &str) -> Result<StarknetVersion, JobError> {
         let started_at = Instant::now();
-        let version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+        let version =
+            get_block_version(block_num, self.config.madara_rpc_client(), self.config.upstream_read_retry_config())
+                .await?;
         info!(
             block_num,
             operation,
@@ -284,6 +286,7 @@ impl AggregatorHandler {
                 block_num,
                 self.config.madara_feeder_gateway_client(),
                 self.batch_config.empty_block_proving_gas,
+                self.config.upstream_read_retry_config(),
             )
             .await?,
         );
@@ -305,10 +308,11 @@ impl AggregatorHandler {
     ) -> Result<MaybePreConfirmedStateUpdate, JobError> {
         let started_at = Instant::now();
         let provider = self.config.madara_rpc_client();
-        let update =
-            retry_provider_read("madara_get_state_update", || provider.get_state_update(BlockId::Number(block_num)))
-                .await
-                .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let update = retry_provider_read("madara_get_state_update", self.config.upstream_read_retry_config(), || {
+            provider.get_state_update(BlockId::Number(block_num))
+        })
+        .await
+        .map_err(|e| JobError::ProviderError(e.to_string()))?;
         match &update {
             Update(state_update) => {
                 let (modified_contracts, storage_updates, declared_classes) =

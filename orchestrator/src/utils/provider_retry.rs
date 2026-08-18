@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::future::Future;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use rand::Rng;
@@ -9,14 +10,29 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::warn;
 
-const READ_RETRY_CONFIG: ReadRetryConfig =
-    ReadRetryConfig { max_attempts: 3, timeout: Duration::from_secs(30), initial_backoff: Duration::from_millis(200) };
-
-#[derive(Clone, Copy)]
-struct ReadRetryConfig {
-    max_attempts: usize,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpstreamReadRetryConfig {
+    max_attempts: NonZeroUsize,
     timeout: Duration,
     initial_backoff: Duration,
+}
+
+impl UpstreamReadRetryConfig {
+    pub fn new(max_attempts: NonZeroUsize, timeout: Duration, initial_backoff: Duration) -> Self {
+        Self { max_attempts, timeout, initial_backoff }
+    }
+
+    pub fn max_attempts(&self) -> usize {
+        self.max_attempts.get()
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    pub fn initial_backoff(&self) -> Duration {
+        self.initial_backoff
+    }
 }
 
 #[derive(Debug)]
@@ -41,17 +57,21 @@ pub enum HttpReadError {
     Request(#[from] reqwest::Error),
 }
 
-pub async fn retry_provider_read<F, Fut, T>(operation: &'static str, request: F) -> Result<T, ProviderReadError>
+pub async fn retry_provider_read<F, Fut, T>(
+    operation: &'static str,
+    config: &UpstreamReadRetryConfig,
+    request: F,
+) -> Result<T, ProviderReadError>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, ProviderError>>,
 {
-    retry_provider_read_with_config(operation, READ_RETRY_CONFIG, request).await
+    retry_provider_read_with_config(operation, config, request).await
 }
 
 async fn retry_provider_read_with_config<F, Fut, T>(
     operation: &'static str,
-    config: ReadRetryConfig,
+    config: &UpstreamReadRetryConfig,
     request: F,
 ) -> Result<T, ProviderReadError>
 where
@@ -65,14 +85,18 @@ where
     }
 }
 
-pub async fn retry_http_read<F, Fut>(operation: &'static str, request: F) -> Result<Response, HttpReadError>
+pub async fn retry_http_read<F, Fut>(
+    operation: &'static str,
+    config: &UpstreamReadRetryConfig,
+    request: F,
+) -> Result<Response, HttpReadError>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = reqwest::Result<Response>>,
 {
     match retry_read_with_config(
         operation,
-        READ_RETRY_CONFIG,
+        config,
         request,
         |response| is_retryable_http_status(response.status()),
         is_retryable_http_error,
@@ -80,14 +104,14 @@ where
     .await
     {
         Ok(response) => Ok(response),
-        Err(ReadRetryError::Timeout) => Err(HttpReadError::Timeout { timeout: READ_RETRY_CONFIG.timeout }),
+        Err(ReadRetryError::Timeout) => Err(HttpReadError::Timeout { timeout: config.timeout }),
         Err(ReadRetryError::Request(error)) => Err(HttpReadError::Request(error)),
     }
 }
 
 async fn retry_read_with_config<F, Fut, T, E, RetryResponse, RetryError>(
     operation: &'static str,
-    config: ReadRetryConfig,
+    config: &UpstreamReadRetryConfig,
     mut request: F,
     mut should_retry_response: RetryResponse,
     mut should_retry_error: RetryError,
@@ -101,25 +125,25 @@ where
 {
     let mut backoff = config.initial_backoff;
 
-    for attempt in 1..=config.max_attempts {
+    for attempt in 1..=config.max_attempts.get() {
         match timeout(config.timeout, request()).await {
             Ok(Ok(value)) => {
-                if attempt == config.max_attempts || !should_retry_response(&value) {
+                if attempt == config.max_attempts.get() || !should_retry_response(&value) {
                     return Ok(value);
                 }
-                warn!(operation, attempt, max_attempts = config.max_attempts, "Retrying transient read response");
+                warn!(operation, attempt, max_attempts = config.max_attempts.get(), "Retrying transient read response");
             }
             Ok(Err(error)) => {
-                if attempt == config.max_attempts || !should_retry_error(&error) {
+                if attempt == config.max_attempts.get() || !should_retry_error(&error) {
                     return Err(ReadRetryError::Request(error));
                 }
-                warn!(operation, attempt, max_attempts = config.max_attempts, error = ?error, "Retrying transient read error");
+                warn!(operation, attempt, max_attempts = config.max_attempts.get(), error = ?error, "Retrying transient read error");
             }
             Err(_) => {
-                if attempt == config.max_attempts {
+                if attempt == config.max_attempts.get() {
                     return Err(ReadRetryError::Timeout);
                 }
-                warn!(operation, attempt, max_attempts = config.max_attempts, timeout = ?config.timeout, "Retrying timed out read");
+                warn!(operation, attempt, max_attempts = config.max_attempts.get(), timeout = ?config.timeout, "Retrying timed out read");
             }
         }
 
@@ -171,6 +195,7 @@ fn is_retryable_provider_error(error: &ProviderError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
     use std::sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -183,13 +208,14 @@ mod tests {
 
     use super::{
         is_retryable_http_status, retry_provider_read_with_config, retry_read_with_config, ProviderReadError,
-        ReadRetryConfig,
+        UpstreamReadRetryConfig,
     };
 
     #[tokio::test]
     async fn retries_retryable_errors_then_succeeds() {
         let attempts = Arc::new(AtomicUsize::new(0));
-        let result = retry_provider_read_with_config("test", test_config(), || {
+        let config = test_config();
+        let result = retry_provider_read_with_config("test", &config, || {
             let attempts = attempts.clone();
             async move {
                 if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
@@ -208,7 +234,8 @@ mod tests {
     #[tokio::test]
     async fn does_not_retry_non_retryable_errors() {
         let attempts = Arc::new(AtomicUsize::new(0));
-        let result = retry_provider_read_with_config("test", test_config(), || {
+        let config = test_config();
+        let result = retry_provider_read_with_config("test", &config, || {
             let attempts = attempts.clone();
             async move {
                 attempts.fetch_add(1, Ordering::SeqCst);
@@ -224,7 +251,8 @@ mod tests {
     #[tokio::test]
     async fn retries_timeouts_until_exhausted() {
         let attempts = Arc::new(AtomicUsize::new(0));
-        let result = retry_provider_read_with_config("test", test_config(), || {
+        let config = test_config();
+        let result = retry_provider_read_with_config("test", &config, || {
             let attempts = attempts.clone();
             async move {
                 attempts.fetch_add(1, Ordering::SeqCst);
@@ -240,9 +268,10 @@ mod tests {
     #[tokio::test]
     async fn retries_retryable_responses_then_succeeds() {
         let attempts = Arc::new(AtomicUsize::new(0));
+        let config = test_config();
         let result = retry_read_with_config(
             "test",
-            test_config(),
+            &config,
             || {
                 let attempts = attempts.clone();
                 async move {
@@ -270,7 +299,7 @@ mod tests {
         assert!(!is_retryable_http_status(StatusCode::NOT_FOUND));
     }
 
-    fn test_config() -> ReadRetryConfig {
-        ReadRetryConfig { max_attempts: 3, timeout: Duration::from_millis(1), initial_backoff: Duration::ZERO }
+    fn test_config() -> UpstreamReadRetryConfig {
+        UpstreamReadRetryConfig::new(NonZeroUsize::new(3).unwrap(), Duration::from_millis(1), Duration::ZERO)
     }
 }
