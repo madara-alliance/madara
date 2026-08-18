@@ -2,7 +2,6 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::utils::metrics_recorder::MetricsRecorder;
-use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::triggers::batching::aggregator::{
     AggregatorBatchConfig, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
@@ -78,13 +77,8 @@ impl JobTrigger for AggregatorBatchingTrigger {
             for block_num in start_block..=end_block {
                 let block_started_at = Instant::now();
                 if let Some(ref_client) = config.replay_bounds_client() {
-                    if let Err(e) = replay_bounds::validate_block_hash(
-                        config.madara_rpc_client(),
-                        ref_client,
-                        block_num,
-                        config.upstream_read_retry_config(),
-                    )
-                    .await
+                    if let Err(e) =
+                        replay_bounds::validate_block_hash(config.madara_rpc_client(), ref_client, block_num).await
                     {
                         error!(block_num, "Replay bounds: {}, stopping aggregator batching", e);
                         replay_bounds_error = Some(e);
@@ -184,9 +178,7 @@ impl AggregatorBatchingTrigger {
         // Getting the latest block number from the sequencer
         let provider = config.madara_rpc_client();
         let last_block_in_provider =
-            retry_provider_read("madara_block_number", config.upstream_read_retry_config(), || provider.block_number())
-                .await
-                .map_err(|e| JobError::ProviderError(e.to_string()))?;
+            provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         // Calculating the last block number that needs to be assigned to a batch
         let last_block = config

@@ -11289,6 +11289,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.26",
+ "reqwest 0.13.2",
  "rstest 0.26.1",
  "serde",
  "serde_json",

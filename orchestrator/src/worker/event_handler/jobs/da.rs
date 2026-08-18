@@ -9,7 +9,6 @@ use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata}
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
-use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
@@ -136,13 +135,8 @@ impl DAJobHandler {
             // nonce for the block
 
             if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE && address != Felt::TWO {
-                let provider = config.madara_rpc_client();
                 let get_current_nonce_result =
-                    retry_provider_read("madara_get_nonce", config.upstream_read_retry_config(), || {
-                        provider.get_nonce(BlockId::Number(block_no), address)
-                    })
-                    .await
-                    .map_err(|e| {
+                    config.madara_rpc_client().get_nonce(BlockId::Number(block_no), address).await.map_err(|e| {
                         JobError::ProviderError(format!(
                             "Failed to get nonce for address {address} at block {block_no}: {e}"
                         ))
@@ -241,12 +235,11 @@ impl JobHandlerTrait for DAJobHandler {
         let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
         let block_no = internal_id;
 
-        let provider = config.madara_rpc_client();
-        let state_update = retry_provider_read("madara_get_state_update", config.upstream_read_retry_config(), || {
-            provider.get_state_update(BlockId::Number(block_no))
-        })
-        .await
-        .map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let state_update = config
+            .madara_rpc_client()
+            .get_state_update(BlockId::Number(block_no))
+            .await
+            .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         let state_update = match state_update {
             MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {

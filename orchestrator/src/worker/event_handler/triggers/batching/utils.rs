@@ -1,7 +1,6 @@
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::utils::provider_retry::{retry_http_read, UpstreamReadRetryConfig};
 use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use blockifier::bouncer::BouncerWeights;
@@ -15,15 +14,15 @@ pub async fn get_block_builtin_weights(
     block_number: u64,
     fgw: &Arc<RestClient>,
     empty_block_proving_gas: u64,
-    retry_config: &UpstreamReadRetryConfig,
 ) -> Result<BouncerWeights, JobError> {
     debug!(
         block_number = %block_number,
         "Requesting block bouncer weights via REST"
     );
 
-    let path = format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number);
-    let response = retry_http_read("madara_get_block_bouncer_weights", retry_config, || fgw.get(&path))
+    // Use the RestClient with query parameters
+    let response = fgw
+        .get(&format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number))
         .await
         .map_err(|e| JobError::Other(OtherError(eyre!("Failed to send REST request: {}", e))))?;
 
@@ -57,9 +56,8 @@ pub async fn get_block_builtin_weights(
 pub async fn get_block_version(
     block_num: u64,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
-    retry_config: &UpstreamReadRetryConfig,
 ) -> Result<StarknetVersion, JobError> {
-    fetch_block_starknet_version(provider, block_num, retry_config).await.map_err(|e| {
+    fetch_block_starknet_version(provider, block_num).await.map_err(|e| {
         JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
     })
 }
