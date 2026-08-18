@@ -3,6 +3,8 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use std::sync::Arc;
 
+use crate::utils::provider_retry::retry_provider_read;
+
 #[derive(Debug)]
 pub enum ReplayBoundsError {
     HashMismatch { block_number: u64, madara_hash: String, reference_hash: String },
@@ -47,11 +49,13 @@ pub async fn validate_block_hash(
     reference_client: &Arc<JsonRpcClient<HttpTransport>>,
     block_number: u64,
 ) -> Result<(), ReplayBoundsError> {
-    let block_id = BlockId::Number(block_number);
-
     let (madara_result, reference_result) = tokio::join!(
-        madara_client.get_block_with_tx_hashes(block_id),
-        reference_client.get_block_with_tx_hashes(block_id),
+        retry_provider_read("madara_replay_bounds_get_block_with_tx_hashes", || {
+            madara_client.get_block_with_tx_hashes(BlockId::Number(block_number))
+        }),
+        retry_provider_read("reference_replay_bounds_get_block_with_tx_hashes", || {
+            reference_client.get_block_with_tx_hashes(BlockId::Number(block_number))
+        }),
     );
 
     let madara_hash = extract_block_hash(madara_result, block_number, "madara")?;
