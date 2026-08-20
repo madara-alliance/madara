@@ -29,6 +29,7 @@ pub mod prover;
 pub mod prover_layout;
 pub mod provider;
 pub mod queue;
+pub mod retry;
 pub mod server;
 pub mod service;
 pub mod settlement;
@@ -162,6 +163,9 @@ pub struct RunCmd {
 
     #[clap(flatten)]
     pub batching_args: batching::BatchingCliArgs,
+
+    #[clap(flatten)]
+    pub upstream_read_retry_args: retry::UpstreamReadRetryCliArgs,
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
