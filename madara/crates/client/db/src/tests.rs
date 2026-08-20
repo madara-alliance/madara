@@ -5,4 +5,4 @@ pub mod test_messages_status;
 pub mod test_migration;
 pub mod test_open;
 pub mod test_reorg_l1_messages;
-pub mod test_runtime_exec_config;
+pub mod test_reorg_notifications;

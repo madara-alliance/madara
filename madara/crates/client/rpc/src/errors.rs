@@ -521,9 +521,11 @@ mod tests {
 pub enum StarknetWsApiError {
     TooManyBlocksBack,
     TooManyAddressesInFilter,
+    TooManyKeysInFilter,
     NoBlocks,
     BlockNotFound,
     Pending,
+    SubscriptionClosed,
     Internal,
 }
 
@@ -533,9 +535,11 @@ impl StarknetWsApiError {
         match self {
             Self::TooManyBlocksBack => 68,
             Self::TooManyAddressesInFilter => 67,
+            Self::TooManyKeysInFilter => 34,
             Self::NoBlocks => 32,
             Self::BlockNotFound => 24,
             Self::Pending => 69,
+            Self::SubscriptionClosed => jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE,
             Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_CODE,
         }
     }
@@ -544,10 +548,12 @@ impl StarknetWsApiError {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
             Self::TooManyAddressesInFilter => "Too many addresses in filter sender_address filter",
+            Self::TooManyKeysInFilter => "Too many keys provided in a filter",
             Self::NoBlocks => "There are no blocks",
             Self::BlockNotFound => "Block not found",
             // See https://github.com/starkware-libs/starknet-specs/pull/237
             Self::Pending => "The pending block is not supported on this method call",
+            Self::SubscriptionClosed => "Subscription closed",
             Self::Internal => jsonrpsee::types::error::INTERNAL_ERROR_MSG,
         }
     }

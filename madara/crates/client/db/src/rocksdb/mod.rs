@@ -849,12 +849,17 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Getting target block info")?
             .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
 
-        let current_tip = match self.inner.get_chain_tip()? {
+        let current_chain_tip = self.inner.get_chain_tip()?;
+        let (current_tip, had_preconfirmed_tip) = match current_chain_tip {
             StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
-            StorageChainTip::Confirmed(block_n) => block_n,
-            StorageChainTip::Preconfirmed { header, .. } => {
-                header.block_number.checked_sub(1).ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?
-            }
+            StorageChainTip::Confirmed(block_n) => (block_n, false),
+            StorageChainTip::Preconfirmed { header, .. } => (
+                header
+                    .block_number
+                    .checked_sub(1)
+                    .ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?,
+                true,
+            ),
         };
 
         let current_tip_info = self
@@ -864,7 +869,16 @@ impl MadaraStorageWrite for RocksDBStorage {
             .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
 
         if target_block_n == current_tip {
-            tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
+            if had_preconfirmed_tip {
+                tracing::info!(
+                    "🔄 REORG: Clearing preconfirmed tip while keeping confirmed head at block_n={target_block_n}"
+                );
+                self.replace_chain_tip(&StorageChainTip::Confirmed(target_block_n))
+                    .context("Clearing preconfirmed chain tip during revert")?;
+                self.flush().context("Flushing database after clearing preconfirmed tip")?;
+            } else {
+                tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
+            }
             return Ok((target_block_n, *new_tip_block_hash));
         }
 

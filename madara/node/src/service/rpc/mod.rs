@@ -29,6 +29,7 @@ pub struct RpcService {
     backend: Arc<MadaraBackend>,
     submit_tx_provider: MakeSubmitTransactionSwitch,
     transaction_lookup_provider: MakeTransactionLookupSwitch,
+    tx_status_watcher: Option<Arc<Mempool>>,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
@@ -41,12 +42,14 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
         transaction_lookup_provider: MakeTransactionLookupSwitch,
+        tx_status_watcher: Option<Arc<Mempool>>,
     ) -> Self {
         Self {
             config,
             backend,
             submit_tx_provider,
             transaction_lookup_provider,
+            tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
@@ -59,6 +62,7 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
         transaction_lookup_provider: MakeTransactionLookupSwitch,
+        tx_status_watcher: Option<Arc<Mempool>>,
         block_prod_handle: BlockProductionHandle,
         mempool: Arc<Mempool>,
     ) -> Self {
@@ -67,6 +71,7 @@ impl RpcService {
             backend,
             submit_tx_provider,
             transaction_lookup_provider,
+            tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
@@ -82,6 +87,7 @@ impl Service for RpcService {
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
         let transaction_lookup_provider = self.transaction_lookup_provider.clone();
+        let tx_status_watcher = self.tx_status_watcher.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -105,6 +111,10 @@ impl Service for RpcService {
                 block_prod_handle,
                 ctx.clone(),
             );
+            if let Some(mempool_watcher) = tx_status_watcher.clone() {
+                starknet.set_tx_status_watcher(Some(mempool_watcher.clone()));
+                starknet.set_new_transactions_watcher(Some(mempool_watcher));
+            }
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
             if let Some(mempool) = mempool.clone() {
@@ -146,6 +156,7 @@ impl Service for RpcService {
                     max_payload_in_mib: config.rpc_max_request_size,
                     max_payload_out_mib: config.rpc_max_response_size,
                     max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
+                    ws_inactive_timeout_secs: config.rpc_ws_inactive_timeout_secs,
                     message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
                     methods,
                     metrics,

@@ -1,15 +1,20 @@
 //! # Caution
 //!
 //! This is a temporary workaround due to limitations in the way in which [jsonrpsee] works. If
-//! possible at all, clients should prefer to use the unsubscribe methods defined in [api.rs]. These
-//! follow the structure `starknet_unsubscribeMethodName`, so for example
-//! `starknet_unsubscribeNewHeads`.
+//! possible at all, clients should prefer the generated `starknet_unsubscribe` RPC method defined
+//! in [api.rs].
 //!
 //! Use these if you encounter any strange edge cases such as 500 error codes on unsubscribe.
 //!
 //! [api.rs]: super::super::super::api
 
-pub async fn starknet_unsubscribe(starknet: &crate::Starknet, subscription_id: u64) -> crate::StarknetRpcResult<bool> {
+pub async fn starknet_unsubscribe(
+    starknet: &crate::Starknet,
+    subscription_id: String,
+) -> crate::StarknetRpcResult<bool> {
+    let subscription_id =
+        subscription_id.parse::<u64>().map_err(|_| crate::StarknetRpcApiError::InvalidSubscriptionId)?;
+
     if starknet.ws_handles.subscription_close(subscription_id).await {
         Ok(true)
     } else {
@@ -56,7 +61,7 @@ mod test {
     #[rstest::rstest]
     async fn starknet_unsubscribe_err(_logs: (), starknet: crate::Starknet) {
         assert_eq!(
-            super::starknet_unsubscribe(&starknet, 0).await,
+            super::starknet_unsubscribe(&starknet, "0".into()).await,
             Err(crate::StarknetRpcApiError::InvalidSubscriptionId)
         )
     }

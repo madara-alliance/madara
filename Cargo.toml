@@ -340,5 +340,7 @@ time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]
+jsonrpsee-core = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
+jsonrpsee-types = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

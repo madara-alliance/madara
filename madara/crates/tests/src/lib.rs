@@ -204,6 +204,8 @@ mod preconfirmed_recovery;
 #[cfg(test)]
 mod rpc;
 #[cfg(test)]
+mod starknetgo_ws;
+#[cfg(test)]
 mod storage_proof;
 #[cfg(test)]
 mod transaction_flow;
@@ -391,6 +393,7 @@ impl MadaraCmd {
 
             for line in reader.lines().map_while(Result::ok) {
                 // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
+                // [2026-08-10 15:28:40:552] INFO 📱 Running JSON-RPC WebSocket server at ws://127.0.0.1:61598/rpc/v0.10.2/ [...]
                 // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
                 fn get_port(line: &str, prefix: &str) -> Option<u16> {
                     line.split_once(prefix).map(|(_, rest)| rest.split_once(' ').unwrap_or((rest, ""))).and_then(
@@ -403,8 +406,12 @@ impl MadaraCmd {
                     )
                 }
 
-                rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
-                rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
+                rpc_port = rpc_port
+                    .or_else(|| get_port(&line, "Running JSON-RPC server at "))
+                    .or_else(|| get_port(&line, "Running JSON-RPC WebSocket server at "));
+                rpc_admin_port = rpc_admin_port
+                    .or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "))
+                    .or_else(|| get_port(&line, "Running JSON-RPC (Admin) WebSocket server at "));
                 gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
 
                 if (!rpc && rpc_port.is_some())

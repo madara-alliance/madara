@@ -1,4 +1,8 @@
 use crate::Starknet;
+use crate::{
+    NewTransactionsWatch, NewTransactionsWatchError, NewTransactionsWatcher, TxStatusSnapshot, TxStatusWatch,
+    TxStatusWatchUpdate, TxStatusWatcher,
+};
 use jsonrpsee::core::async_trait;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
@@ -32,7 +36,7 @@ use mp_transactions::{validated::TxTimestamp, InvokeTransaction, InvokeTransacti
 use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
 pub struct TestTransactionProvider;
@@ -164,6 +168,100 @@ pub fn devnet_transfer_tx(
     BroadcastedTxn::Invoke(BroadcastedInvokeTxn::V3(tx))
 }
 
+#[cfg(test)]
+pub struct TestTxStatusWatcher {
+    sender: Mutex<Option<tokio::sync::watch::Sender<Option<TxStatusSnapshot>>>>,
+}
+
+#[cfg(test)]
+pub struct TestTxStatusWatch {
+    receiver: tokio::sync::watch::Receiver<Option<TxStatusSnapshot>>,
+}
+
+#[cfg(test)]
+pub struct TestNewTransactionsWatcher {
+    sender: tokio::sync::broadcast::Sender<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+pub struct TestNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<mp_transactions::validated::ValidatedTransaction>>,
+}
+
+#[cfg(test)]
+impl TestTxStatusWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, _receiver) = tokio::sync::watch::channel(None);
+        Arc::new(Self { sender: Mutex::new(Some(sender)) })
+    }
+
+    pub fn set_status(&self, status: Option<TxStatusSnapshot>) {
+        if let Some(sender) = self.sender.lock().expect("Locking test tx status watcher").as_ref() {
+            let _ = sender.send_replace(status);
+        }
+    }
+
+    pub fn close(&self) {
+        let _ = self.sender.lock().expect("Locking test tx status watcher").take();
+    }
+}
+
+#[cfg(test)]
+impl TestNewTransactionsWatcher {
+    pub fn new() -> Arc<Self> {
+        let (sender, _) = tokio::sync::broadcast::channel(32);
+        Arc::new(Self { sender })
+    }
+
+    pub fn send_transaction(&self, tx: mp_transactions::validated::ValidatedTransaction) {
+        let _ = self.sender.send(Arc::new(tx));
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatcher for TestTxStatusWatcher {
+    fn watch_transaction_status(&self, _transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        let receiver = self.sender.lock().expect("Locking test tx status watcher").as_ref()?.subscribe();
+        Some(Box::new(TestTxStatusWatch { receiver }))
+    }
+}
+
+#[cfg(test)]
+impl TxStatusWatch for TestTxStatusWatch {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
+        *self.receiver.borrow_and_update()
+    }
+
+    fn recv(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = TxStatusWatchUpdate> + Send + '_>> {
+        Box::pin(async move {
+            match self.receiver.changed().await {
+                Ok(()) => TxStatusWatchUpdate::Status(*self.receiver.borrow_and_update()),
+                Err(_) => TxStatusWatchUpdate::Closed,
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatcher for TestNewTransactionsWatcher {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(TestNewTransactionsWatch { receiver: self.sender.subscribe() }))
+    }
+}
+
+#[cfg(test)]
+impl NewTransactionsWatch for TestNewTransactionsWatch {
+    fn recv(&mut self) -> crate::NewTransactionsWatchFuture<'_> {
+        Box::pin(async move {
+            match self.receiver.recv().await {
+                Ok(tx) => Ok(Some(tx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Err(NewTransactionsWatchError::Lagged),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => Ok(None),
+            }
+        })
+    }
+}
+
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
@@ -191,6 +289,7 @@ pub struct SampleChainForBlockGetters {
     pub expected_receipts_v0_7: Vec<mp_rpc::v0_7_1::TxnReceipt>,
     pub expected_receipts_v0_8: Vec<mp_rpc::v0_8_1::TxnReceipt>,
     pub expected_receipts_v0_9: Vec<mp_rpc::v0_9_0::TxnReceipt>,
+    pub expected_receipts_v0_10: Vec<mp_rpc::v0_10_0::TxnReceipt>,
 }
 
 #[fixture]
@@ -466,6 +565,70 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
             }),
         ]
     };
+    let expected_receipts_v0_10 = {
+        use mp_rpc::v0_10_0::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, PriceUnitFri, PriceUnitWei,
+            TxnFinalityStatus, TxnReceipt,
+        };
+        vec![
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x9"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L1,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94dd"),
+                        unit: PriceUnit::Fri(PriceUnitFri::Fri),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Reverted("too bad".into()),
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources_v0_10(),
+                    finality_status: TxnFinalityStatus::PreConfirmed,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+        ]
+    };
 
     {
         // Block 0
@@ -654,6 +817,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         expected_receipts_v0_7,
         expected_receipts_v0_8,
         expected_receipts_v0_9,
+        expected_receipts_v0_10,
     }
 }
 
@@ -675,6 +839,10 @@ fn defaut_execution_resources_v0_7() -> mp_rpc::v0_7_1::ExecutionResources {
 
 fn defaut_execution_resources_v0_8() -> mp_rpc::v0_8_1::ExecutionResources {
     mp_rpc::v0_8_1::ExecutionResources { l1_gas: 0, l2_gas: 0, l1_data_gas: 0 }
+}
+
+fn defaut_execution_resources_v0_10() -> mp_rpc::v0_10_0::ExecutionResources {
+    mp_rpc::v0_10_0::ExecutionResources { l1_gas: 0, l2_gas: 0, l1_data_gas: 0 }
 }
 
 // This sample chain is used for every rpcs that query info gotten from state updates.

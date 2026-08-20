@@ -1,36 +1,44 @@
 pub mod lib;
 pub mod starknet_unsubscribe;
-// FIXME(subscriptions): Re-add subscriptions.
-// pub mod subscribe_events;
-// FIXME(subscriptions): Re-add subscriptions.
-// pub mod subscribe_new_heads;
-// FIXME(subscriptions): Re-add subscriptions.
-// pub mod subscribe_pending_transactions;
-// FIXME(subscriptions): Re-add subscriptions.
-// pub mod subscribe_transaction_status;
+pub mod subscribe_new_transaction_receipts;
+pub mod subscribe_new_transactions;
 
-// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-#[allow(unused)]
-const BLOCK_PAST_LIMIT: u64 = 1024;
-// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-#[allow(unused)]
 const ADDRESS_FILTER_LIMIT: u64 = 128;
+const REORG_NOTIFICATION_METHOD: &str = "starknet_subscriptionReorg";
+const NEW_TRANSACTION_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransaction";
+const NEW_TRANSACTION_RECEIPTS_NOTIFICATION_METHOD: &str = "starknet_subscriptionNewTransactionReceipts";
 
-#[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
-pub struct SubscriptionItem<T> {
-    subscription_id: u64,
-    result: T,
+pub fn reorg_data(reorg: &mc_db::ReorgNotification) -> mp_rpc::v0_10_0::ReorgData {
+    mp_rpc::v0_10_0::ReorgData {
+        starting_block_hash: reorg.first_reverted_block_hash,
+        starting_block_number: reorg.first_reverted_block_n,
+        ending_block_hash: reorg.previous_head.latest_confirmed_block_hash,
+        ending_block_number: reorg.previous_head.latest_confirmed_block_n,
+    }
 }
 
-impl<T> SubscriptionItem<T> {
-    pub fn new(subscription_id: jsonrpsee::types::SubscriptionId, result: T) -> Self {
-        let subscription_id = match subscription_id {
-            jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
-            }
-        };
+pub async fn send_reorg_notification(
+    sink: &jsonrpsee::core::server::SubscriptionSink,
+    reorg: &mc_db::ReorgNotification,
+) -> Result<(), crate::errors::StarknetWsApiError> {
+    crate::versions::user::v0_10_2::methods::ws::send_starknet_subscription(
+        sink,
+        REORG_NOTIFICATION_METHOD,
+        &reorg_data(reorg),
+    )
+    .await?;
+    crate::metrics::ws_metrics().record_reorg_notification_sent();
+    Ok(())
+}
 
-        Self { subscription_id, result }
-    }
+pub fn missed_reorg_notifications_error() -> crate::errors::StarknetWsApiError {
+    crate::errors::StarknetWsApiError::internal_server_error(
+        "Missed reorg notifications; websocket subscription can no longer guarantee canonical state",
+    )
+}
+
+pub fn missed_received_transaction_notifications_error() -> crate::errors::StarknetWsApiError {
+    crate::errors::StarknetWsApiError::internal_server_error(
+        "Missed new-transaction notifications; websocket subscription can no longer guarantee received transaction updates",
+    )
 }

@@ -106,6 +106,7 @@
     "rpc_port": 9944,
     "rpc_admin_port": 9943,
     "rpc_max_connections": 100,
+    "rpc_ws_inactive_timeout_secs": 3600,
     "rpc_message_buffer_capacity_per_connection": 64,
     "rpc_disable_batch_requests": false,
     "rpc_max_batch_request_len": null,
