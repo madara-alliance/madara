@@ -8,9 +8,10 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::{BlockId, Felt};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::error::Error as StdError;
+use std::time::{Duration, Instant};
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 /// Default batch size (number of RPC calls per HTTP request)
@@ -73,6 +74,26 @@ pub enum BatchRpcError {
     InvalidResponse(String),
 }
 
+impl BatchRpcError {
+    fn reqwest_error(&self) -> Option<&reqwest::Error> {
+        match self {
+            Self::HttpError(err) => Some(err),
+            _ => None,
+        }
+    }
+
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::HttpError(_) => "http",
+            Self::SerializationError(_) => "serialization",
+            Self::RpcError { .. } => "rpc",
+            Self::MissingResponse(_) => "missing_response",
+            Self::RetriesExhausted(_) => "retries_exhausted",
+            Self::InvalidResponse(_) => "invalid_response",
+        }
+    }
+}
+
 /// A single JSON-RPC request
 #[derive(Serialize, Debug)]
 struct JsonRpcRequest<'a> {
@@ -98,6 +119,75 @@ struct JsonRpcErrorData {
 
 /// Starknet error code for contract not found
 const CONTRACT_NOT_FOUND_CODE: i64 = 20;
+const STORAGE_METHOD: &str = "starknet_getStorageAt";
+const CLASS_HASH_METHOD: &str = "starknet_getClassHashAt";
+const SLOW_BATCH_RPC_LOG_THRESHOLD_MS: u64 = 1_000;
+const MAX_ERROR_DETAIL_LEN: usize = 512;
+
+#[derive(Clone, Copy)]
+struct BatchRpcLogContext {
+    method: &'static str,
+    total_query_count: usize,
+    chunk_index: usize,
+    chunk_count: usize,
+    chunk_size: usize,
+}
+
+fn elapsed_ms(started_at: Instant) -> u64 {
+    started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn sanitize_error_detail(input: &str) -> String {
+    let mut out = input.to_string();
+    for scheme in ["http://", "https://"] {
+        let mut pos = 0;
+        while let Some(offset) = out[pos..].find(scheme) {
+            let start = pos + offset;
+            let end = out[start..]
+                .find(|c: char| c.is_whitespace() || matches!(c, ')' | ']' | '}' | ',' | ';'))
+                .map(|offset| start + offset)
+                .unwrap_or(out.len());
+            if let Ok(url) = Url::parse(&out[start..end]) {
+                let replacement = redacted_url(&url);
+                out.replace_range(start..end, &replacement);
+                pos = start + replacement.len();
+            } else {
+                pos = end;
+            }
+        }
+    }
+    if out.len() > MAX_ERROR_DETAIL_LEN {
+        let mut end = MAX_ERROR_DETAIL_LEN;
+        while !out.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.truncate(end);
+        out.push_str("...");
+    }
+    out
+}
+
+fn reqwest_source_chain(error: &reqwest::Error) -> String {
+    let mut sources = Vec::new();
+    let mut current = error.source();
+
+    while let Some(source) = current {
+        sources.push(sanitize_error_detail(&source.to_string()));
+        current = source.source();
+    }
+
+    sources.join(" | ")
+}
+
+fn redacted_url(url: &Url) -> String {
+    let mut url = url.clone();
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_path("/");
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
 
 /// Batch RPC client for efficient Starknet queries
 #[derive(Clone)]
@@ -142,13 +232,23 @@ impl BatchRpcClient {
         // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
         let chunks: Vec<Vec<(Felt, Felt)>> = queries.chunks(self.config.batch_size).map(|c| c.to_vec()).collect();
 
-        debug!("Executing {} storage queries in {} batches", queries.len(), chunks.len());
+        let total_query_count = queries.len();
+        let chunk_count = chunks.len();
+        debug!("Executing {} storage queries in {} batches", total_query_count, chunk_count);
 
         // Execute batches concurrently and merge results incrementally to reduce memory pressure
         let merged = stream::iter(chunks)
-            .map(|chunk| {
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
                 let block_param = block_param.clone();
-                async move { self.execute_storage_batch(&chunk, &block_param).await }
+                let context = BatchRpcLogContext {
+                    method: STORAGE_METHOD,
+                    total_query_count,
+                    chunk_index: chunk_index + 1,
+                    chunk_count,
+                    chunk_size: chunk.len(),
+                };
+                async move { self.execute_storage_batch(&chunk, &block_param, context).await }
             })
             .buffer_unordered(self.config.max_concurrent_batches)
             .try_fold(HashMap::new(), |mut acc, batch_result| async move {
@@ -179,13 +279,23 @@ impl BatchRpcClient {
         // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
         let chunks: Vec<Vec<Felt>> = contracts.chunks(self.config.batch_size).map(|c| c.to_vec()).collect();
 
-        debug!("Executing {} class hash queries in {} batches", contracts.len(), chunks.len());
+        let total_query_count = contracts.len();
+        let chunk_count = chunks.len();
+        debug!("Executing {} class hash queries in {} batches", total_query_count, chunk_count);
 
         // Execute batches concurrently and merge results incrementally to reduce memory pressure
         let merged = stream::iter(chunks)
-            .map(|chunk| {
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
                 let block_param = block_param.clone();
-                async move { self.execute_class_hash_batch(&chunk, &block_param).await }
+                let context = BatchRpcLogContext {
+                    method: CLASS_HASH_METHOD,
+                    total_query_count,
+                    chunk_index: chunk_index + 1,
+                    chunk_count,
+                    chunk_size: chunk.len(),
+                };
+                async move { self.execute_class_hash_batch(&chunk, &block_param, context).await }
             })
             .buffer_unordered(self.config.max_concurrent_batches)
             .try_fold(HashMap::new(), |mut acc, batch_result| async move {
@@ -202,42 +312,68 @@ impl BatchRpcClient {
         &self,
         queries: &[(Felt, Felt)],
         block_param: &serde_json::Value,
+        context: BatchRpcLogContext,
     ) -> Result<HashMap<(Felt, Felt), Felt>, BatchRpcError> {
+        let started_at = Instant::now();
+
         // Build batch request with positional array params: [contract_address, key, block_id]
         let requests: Vec<JsonRpcRequest<'_>> = queries
             .iter()
             .enumerate()
             .map(|(idx, (contract_addr, key))| JsonRpcRequest {
                 jsonrpc: "2.0",
-                method: "starknet_getStorageAt",
+                method: STORAGE_METHOD,
                 params: serde_json::json!([format!("{:#x}", contract_addr), format!("{:#x}", key), block_param]),
                 id: idx as u64,
             })
             .collect();
 
         // Send batch with retry
-        let responses = self.send_batch_with_retry(&requests).await?;
+        let responses = self.send_batch_with_retry(&requests, context).await?;
+        let rpc_error_count = responses.values().filter(|response| response.is_err()).count();
 
         // Parse responses
         let mut results = HashMap::new();
         for (idx, (contract_addr, key)) in queries.iter().enumerate() {
-            let response = responses.get(&(idx as u64)).ok_or(BatchRpcError::MissingResponse(idx as u64))?;
+            let request_id = idx as u64;
+            let response = responses.get(&request_id).ok_or(BatchRpcError::MissingResponse(request_id))?;
 
             let value = match response {
                 Ok(val) => Self::parse_felt_result(val)?,
                 Err(err) => {
                     error!(
-                        "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {:?}",
-                        contract_addr, key, block_param, err
+                        method = context.method,
+                        chunk_index = context.chunk_index,
+                        chunk_count = context.chunk_count,
+                        chunk_size = context.chunk_size,
+                        request_id,
+                        rpc_error_code = err.code,
+                        rpc_error_message_len = err.message.len(),
+                        "Batch RPC storage query returned an RPC error"
                     );
                     return Err(BatchRpcError::RpcError {
-                        id: idx as u64,
+                        id: request_id,
                         code: err.code,
                         message: err.message.clone(),
                     });
                 }
             };
             results.insert((*contract_addr, *key), value);
+        }
+
+        let duration_ms = elapsed_ms(started_at);
+        if duration_ms >= SLOW_BATCH_RPC_LOG_THRESHOLD_MS {
+            info!(
+                method = context.method,
+                total_query_count = context.total_query_count,
+                chunk_index = context.chunk_index,
+                chunk_count = context.chunk_count,
+                chunk_size = context.chunk_size,
+                response_count = responses.len(),
+                rpc_error_count,
+                duration_ms,
+                "Completed slow batch RPC storage chunk"
+            );
         }
 
         Ok(results)
@@ -248,26 +384,31 @@ impl BatchRpcClient {
         &self,
         contracts: &[Felt],
         block_param: &serde_json::Value,
+        context: BatchRpcLogContext,
     ) -> Result<HashMap<Felt, Option<Felt>>, BatchRpcError> {
+        let started_at = Instant::now();
+
         // Build batch request with positional array params: [block_id, contract_address]
         let requests: Vec<JsonRpcRequest<'_>> = contracts
             .iter()
             .enumerate()
             .map(|(idx, contract_addr)| JsonRpcRequest {
                 jsonrpc: "2.0",
-                method: "starknet_getClassHashAt",
+                method: CLASS_HASH_METHOD,
                 params: serde_json::json!([block_param, format!("{:#x}", contract_addr)]),
                 id: idx as u64,
             })
             .collect();
 
         // Send batch with retry
-        let responses = self.send_batch_with_retry(&requests).await?;
+        let responses = self.send_batch_with_retry(&requests, context).await?;
+        let rpc_error_count = responses.values().filter(|response| response.is_err()).count();
 
         // Parse responses
         let mut results = HashMap::new();
         for (idx, contract_addr) in contracts.iter().enumerate() {
-            let response = responses.get(&(idx as u64)).ok_or(BatchRpcError::MissingResponse(idx as u64))?;
+            let request_id = idx as u64;
+            let response = responses.get(&request_id).ok_or(BatchRpcError::MissingResponse(request_id))?;
 
             let value = match response {
                 Ok(val) => Some(Self::parse_felt_result(val)?),
@@ -277,13 +418,18 @@ impl BatchRpcClient {
                         None
                     } else {
                         // Unexpected error, log but return None to not block processing
-                        let err_message = format!(
-                            "Failed to get class hash for contract: {} at block {}: {:?}",
-                            contract_addr, block_param, err
+                        error!(
+                            method = context.method,
+                            chunk_index = context.chunk_index,
+                            chunk_count = context.chunk_count,
+                            chunk_size = context.chunk_size,
+                            request_id,
+                            rpc_error_code = err.code,
+                            rpc_error_message_len = err.message.len(),
+                            "Batch RPC class hash query returned an unexpected RPC error"
                         );
-                        error!("{}", &err_message);
                         return Err(BatchRpcError::RpcError {
-                            id: idx as u64,
+                            id: request_id,
                             code: err.code,
                             message: err.message.clone(),
                         });
@@ -293,6 +439,21 @@ impl BatchRpcClient {
             results.insert(*contract_addr, value);
         }
 
+        let duration_ms = elapsed_ms(started_at);
+        if duration_ms >= SLOW_BATCH_RPC_LOG_THRESHOLD_MS {
+            info!(
+                method = context.method,
+                total_query_count = context.total_query_count,
+                chunk_index = context.chunk_index,
+                chunk_count = context.chunk_count,
+                chunk_size = context.chunk_size,
+                response_count = responses.len(),
+                rpc_error_count,
+                duration_ms,
+                "Completed slow batch RPC class hash chunk"
+            );
+        }
+
         Ok(results)
     }
 
@@ -300,32 +461,123 @@ impl BatchRpcClient {
     async fn send_batch_with_retry(
         &self,
         requests: &[JsonRpcRequest<'_>],
+        context: BatchRpcLogContext,
     ) -> Result<HashMap<u64, Result<serde_json::Value, JsonRpcErrorData>>, BatchRpcError> {
         let mut attempts = 0;
         let mut last_error = None;
 
         while attempts < self.config.max_retries {
-            match self.send_batch(requests).await {
-                Ok(responses) => return Ok(responses),
+            attempts += 1;
+            let attempt_started_at = Instant::now();
+
+            match self.send_batch(requests, context, attempts).await {
+                Ok(responses) => {
+                    let rpc_error_count = responses.values().filter(|response| response.is_err()).count();
+                    let missing_response_count = Self::missing_response_count(requests, &responses);
+                    let duration_ms = elapsed_ms(attempt_started_at);
+                    if attempts > 1 || duration_ms >= SLOW_BATCH_RPC_LOG_THRESHOLD_MS || missing_response_count > 0 {
+                        info!(
+                            method = context.method,
+                            total_query_count = context.total_query_count,
+                            chunk_index = context.chunk_index,
+                            chunk_count = context.chunk_count,
+                            chunk_size = context.chunk_size,
+                            attempt = attempts,
+                            max_retries = self.config.max_retries,
+                            duration_ms,
+                            response_count = responses.len(),
+                            rpc_error_count,
+                            missing_response_count,
+                            "Batch RPC request attempt succeeded"
+                        );
+                    }
+                    return Ok(responses);
+                }
                 Err(e) => {
-                    attempts += 1;
-                    warn!("Batch RPC request failed (attempt {}/{}): {}", attempts, self.config.max_retries, e);
+                    let reqwest_error = e.reqwest_error();
+                    let error_source_chain = reqwest_error.map(reqwest_source_chain).unwrap_or_default();
+                    let reqwest_url = reqwest_error.and_then(|err| err.url()).map(redacted_url).unwrap_or_default();
+                    warn!(
+                        method = context.method,
+                        total_query_count = context.total_query_count,
+                        chunk_index = context.chunk_index,
+                        chunk_count = context.chunk_count,
+                        chunk_size = context.chunk_size,
+                        attempt = attempts,
+                        max_retries = self.config.max_retries,
+                        duration_ms = elapsed_ms(attempt_started_at),
+                        error_kind = e.kind(),
+                        error_source_chain = %error_source_chain,
+                        reqwest_is_error = reqwest_error.is_some(),
+                        reqwest_is_timeout = reqwest_error.map(|err| err.is_timeout()).unwrap_or(false),
+                        reqwest_is_connect = reqwest_error.map(|err| err.is_connect()).unwrap_or(false),
+                        reqwest_is_request = reqwest_error.map(|err| err.is_request()).unwrap_or(false),
+                        reqwest_is_body = reqwest_error.map(|err| err.is_body()).unwrap_or(false),
+                        reqwest_is_decode = reqwest_error.map(|err| err.is_decode()).unwrap_or(false),
+                        reqwest_is_status = reqwest_error.map(|err| err.is_status()).unwrap_or(false),
+                        reqwest_status = ?reqwest_error.and_then(|err| err.status()),
+                        reqwest_url = %reqwest_url,
+                        "Batch RPC request attempt failed"
+                    );
                     last_error = Some(e);
 
                     if attempts < self.config.max_retries {
+                        info!(
+                            method = context.method,
+                            total_query_count = context.total_query_count,
+                            chunk_index = context.chunk_index,
+                            chunk_count = context.chunk_count,
+                            chunk_size = context.chunk_size,
+                            next_attempt = attempts + 1,
+                            max_retries = self.config.max_retries,
+                            retry_delay_secs = self.config.retry_delay_secs,
+                            "Retrying batch RPC request after delay"
+                        );
                         tokio::time::sleep(Duration::from_secs(self.config.retry_delay_secs)).await;
                     }
                 }
             }
         }
 
-        Err(BatchRpcError::RetriesExhausted(last_error.map(|e| e.to_string()).unwrap_or_default()))
+        let last_error_ref = last_error.as_ref();
+        let last_reqwest_error = last_error_ref.and_then(|err| err.reqwest_error());
+        let last_error_kind = last_error_ref.map(BatchRpcError::kind).unwrap_or("unknown");
+        let last_error_source_chain = last_reqwest_error.map(reqwest_source_chain).unwrap_or_default();
+        let last_reqwest_url = last_reqwest_error.and_then(|err| err.url()).map(redacted_url).unwrap_or_default();
+
+        info!(
+            method = context.method,
+            total_query_count = context.total_query_count,
+            chunk_index = context.chunk_index,
+            chunk_count = context.chunk_count,
+            chunk_size = context.chunk_size,
+            attempts,
+            max_retries = self.config.max_retries,
+            error_kind = last_error_kind,
+            error_source_chain = %last_error_source_chain,
+            reqwest_is_error = last_reqwest_error.is_some(),
+            reqwest_is_timeout = last_reqwest_error.map(|err| err.is_timeout()).unwrap_or(false),
+            reqwest_is_connect = last_reqwest_error.map(|err| err.is_connect()).unwrap_or(false),
+            reqwest_is_request = last_reqwest_error.map(|err| err.is_request()).unwrap_or(false),
+            reqwest_is_body = last_reqwest_error.map(|err| err.is_body()).unwrap_or(false),
+            reqwest_is_decode = last_reqwest_error.map(|err| err.is_decode()).unwrap_or(false),
+            reqwest_is_status = last_reqwest_error.map(|err| err.is_status()).unwrap_or(false),
+            reqwest_status = ?last_reqwest_error.and_then(|err| err.status()),
+            reqwest_url = %last_reqwest_url,
+            "Batch RPC retries exhausted"
+        );
+
+        Err(BatchRpcError::RetriesExhausted(
+            last_error.map(|e| sanitize_error_detail(&e.to_string())).unwrap_or_default(),
+        ))
     }
 
     /// Send a single batch request
     async fn send_batch(
         &self,
         requests: &[JsonRpcRequest<'_>],
+        context: BatchRpcLogContext,
+        attempt: u64,
     ) -> Result<HashMap<u64, Result<serde_json::Value, JsonRpcErrorData>>, BatchRpcError> {
         let body = serde_json::to_string(requests)?;
 
@@ -338,25 +590,77 @@ impl BatchRpcClient {
             .await?
             .error_for_status()?;
 
+        let response_started_at = Instant::now();
         let response_text = response.text().await?;
+        let response_duration_ms = elapsed_ms(response_started_at);
+
+        let parse_started_at = Instant::now();
         let responses: Vec<JsonRpcResponse> = serde_json::from_str(&response_text).map_err(|e| {
-            error!("Failed to parse batch response: {}", response_text);
+            error!(
+                method = context.method,
+                total_query_count = context.total_query_count,
+                chunk_index = context.chunk_index,
+                chunk_count = context.chunk_count,
+                chunk_size = context.chunk_size,
+                attempt,
+                max_retries = self.config.max_retries,
+                response_body_bytes = response_text.len(),
+                error = %e,
+                "Failed to parse batch RPC response body"
+            );
             BatchRpcError::InvalidResponse(e.to_string())
         })?;
 
         let mut result_map = HashMap::new();
+        let mut rpc_error_count = 0;
+        let mut invalid_response_count = 0;
         for resp in responses {
             if let Some(err) = resp.error {
+                rpc_error_count += 1;
                 result_map.insert(resp.id, Err(err));
             } else if let Some(val) = resp.result {
                 result_map.insert(resp.id, Ok(val));
             } else {
+                invalid_response_count += 1;
                 result_map
                     .insert(resp.id, Err(JsonRpcErrorData { code: -1, message: "No result or error".to_string() }));
             }
         }
+        let missing_response_count = Self::missing_response_count(requests, &result_map);
+        let parse_duration_ms = elapsed_ms(parse_started_at);
+
+        if response_duration_ms >= SLOW_BATCH_RPC_LOG_THRESHOLD_MS
+            || parse_duration_ms >= SLOW_BATCH_RPC_LOG_THRESHOLD_MS
+            || missing_response_count > 0
+            || invalid_response_count > 0
+        {
+            info!(
+                method = context.method,
+                total_query_count = context.total_query_count,
+                chunk_index = context.chunk_index,
+                chunk_count = context.chunk_count,
+                chunk_size = context.chunk_size,
+                attempt,
+                max_retries = self.config.max_retries,
+                response_duration_ms,
+                parse_duration_ms,
+                response_body_bytes = response_text.len(),
+                response_count = result_map.len(),
+                rpc_error_count,
+                missing_response_count,
+                invalid_response_count,
+                "Parsed notable batch RPC response"
+            );
+        }
 
         Ok(result_map)
+    }
+
+    fn missing_response_count(
+        requests: &[JsonRpcRequest<'_>],
+        responses: &HashMap<u64, Result<serde_json::Value, JsonRpcErrorData>>,
+    ) -> usize {
+        requests.iter().filter(|request| !responses.contains_key(&request.id)).count()
     }
 
     /// Parse a Felt from JSON-RPC response value
