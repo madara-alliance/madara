@@ -6,6 +6,7 @@ use crate::types::constant::{
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics_recorder::MetricsRecorder;
+use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::{
     calculate_jobs_to_create, first_unsettled_snos_batch_index_or_zero, JobTrigger,
@@ -138,10 +139,11 @@ pub async fn fetch_block_starknet_version(
     debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
     // Fetch block with transaction hashes (lighter than full txs)
-    let block = provider
-        .get_block_with_tx_hashes(BlockId::Number(block_number))
-        .await
-        .map_err(|e| eyre!("Failed to fetch block {} from sequencer: {}", block_number, e))?;
+    let block = retry_provider_read("madara_get_block_with_tx_hashes", || {
+        provider.get_block_with_tx_hashes(BlockId::Number(block_number))
+    })
+    .await
+    .map_err(|e| eyre!("Failed to fetch block {} from sequencer: {}", block_number, e))?;
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
