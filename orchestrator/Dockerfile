@@ -1,104 +1,10 @@
-# Step 0: setup tooling (rust)
-FROM rust:1.89-bookworm AS base-rust
+ARG ORCHESTRATOR_BUILDER_BASE=ghcr.io/madara-alliance/orchestrator-rust-builder-base:rust-1.89-bookworm-llvm19-python3.9.16-sccache0.10.0-chef0.1.71-blst0.3.15-v1
+ARG ORCHESTRATOR_RUNTIME_BASE=ghcr.io/madara-alliance/orchestrator-runtime-base:bookworm-node18-tini0.19-v1
+FROM ${ORCHESTRATOR_BUILDER_BASE} AS base-rust
+ARG SCCACHE_DIR=/sccache
 WORKDIR /app
 
-# Note that we do not install cargo chef and sccache through docker to avoid
-# having to compile them from source
-ENV SCCACHE_VERSION=v0.10.0
-ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_BIN=/bin/sccache
-ENV SCCACHE_DIR=/sccache
-ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
-
-ENV CHEF_VERSION=v0.1.71
-ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
-
-ENV RUSTC_WRAPPER=/bin/sccache
-
-ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
-
-# Copy Makefile for LLVM installation
-COPY Makefile /tmp/Makefile
-
-# Install LLVM 19 for Cairo Native support using Makefile target
-RUN apt-get update -y && apt-get install -y \
-  bash \
-  build-essential \
-  ca-certificates \
-  curl \
-  git \
-  gnupg \
-  libgmp3-dev \
-  libssl-dev \
-  make \
-  openssl \
-  software-properties-common \
-  wget && \
-  cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
-  apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Set LLVM environment variables for Cairo Native
-ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
-ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
-ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
-ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
-
-# Set explicit compilers for Cairo Native runtime compilation
-ENV CC=clang-19
-ENV CXX=clang++-19
-
-# Configure linker search paths for Cairo Native runtime compilation.
-# DEB_HOST_MULTIARCH resolves to the correct lib directory for the build runner architecture.
-RUN DEB_HOST_MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" && \
-  printf '%s\n' \
-    "export LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
-    "export LD_LIBRARY_PATH=/usr/lib/${DEB_HOST_MULTIARCH}:/usr/lib:/lib/${DEB_HOST_MULTIARCH}:/lib" \
-    > /etc/profile.d/cairo-native-libs.sh
-# Use bash (non-login) so BASH_ENV is honored. A login shell would source
-# /etc/profile, which on Debian unconditionally resets PATH and would wipe
-# /usr/local/cargo/bin and /usr/lib/llvm-19/bin from PATH for every later RUN.
-ENV BASH_ENV=/etc/profile.d/cairo-native-libs.sh
 SHELL ["/bin/bash", "-c"]
-
-# Install BLST from source
-RUN git clone --depth 1 --branch v0.3.15 https://github.com/supranational/blst.git /tmp/blst && \
-  cd /tmp/blst && \
-  ./build.sh && \
-  mkdir -p /usr/local/lib /usr/local/include && \
-  cp libblst.a /usr/local/lib/ && \
-  cp bindings/blst.h /usr/local/include/ && \
-  cp bindings/blst_aux.h /usr/local/include/ && \
-  rm -rf /tmp/blst
-
-# ENV to link BLST dependency
-ENV RUSTFLAGS="-L /usr/local/lib -l blst"
-
-# Update linker cache
-RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
-
-# Install Python 3.9
-# Note: --enable-optimizations (PGO) is intentionally omitted. Python here is
-# only used at build time to run cairo-compile for SNOS dependencies, so
-# runtime perf is irrelevant and skipping PGO halves this step's build time
-# (PGO builds Python twice).
-RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
-  && tar xzf Python-3.9.16.tgz \
-  && cd Python-3.9.16 \
-  && ./configure \
-  && make altinstall \
-  && cd .. \
-  && rm -rf Python-3.9.16 Python-3.9.16.tgz
-
-# Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/pip/3.9/get-pip.py \
-  && python3.9 get-pip.py \
-  && rm get-pip.py \
-  && python3.9 -m pip install virtualenv
-
-RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
-RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
@@ -162,16 +68,8 @@ RUN mkdir -p /tmp && \
   touch /tmp/kzg_dirs.txt)
 
 # Step 3: runner
-FROM debian:bookworm-slim AS runner
-
-RUN apt-get -y update && \
-  apt-get install -y openssl ca-certificates tini curl jq && \
-  curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-  apt-get update && \
-  apt-get install -y nodejs && \
-  apt-get autoremove -y; \
-  apt-get clean; \
-  rm -rf /var/lib/apt/lists/*
+ARG ORCHESTRATOR_RUNTIME_BASE
+FROM ${ORCHESTRATOR_RUNTIME_BASE} AS runner
 
 WORKDIR /app
 
@@ -213,10 +111,6 @@ RUN echo '#!/bin/bash\n\
   ' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 EXPOSE 3000
-
-ENV TINI_VERSION=v0.19.0
-ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
-RUN chmod +x /bin/tini
 
 # Set the entrypoint
 ENTRYPOINT ["tini", "--", "/app/entrypoint.sh"]

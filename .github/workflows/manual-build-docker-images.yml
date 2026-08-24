@@ -27,12 +27,30 @@ on:
         default: true
 
 jobs:
+  build_madara_binary:
+    if: ${{ inputs.build-madara }}
+    uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
+
+  build_orchestrator_binary:
+    if: ${{ inputs.build-orchestrator }}
+    uses: ./.github/workflows/task-build-orchestrator.yml
+    secrets: inherit
+
+  build_bootstrapper_v2_binary:
+    if: ${{ inputs.build-bootstrapper-v2 }}
+    uses: ./.github/workflows/task-build-bootstrapper-v2.yml
+    secrets: inherit
+
   build-and-publish-madara:
     if: ${{ inputs.build-madara }}
-    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    needs: build_madara_binary
+    uses: ./.github/workflows/task-package-manual-and-publish.yml
     with:
       image-name: madara
-      image-file: ./madara/Dockerfile
+      image-file: ./madara/Dockerfile.manual
+      binary-name: madara
+      binary-artifact-name: madara-binary-${{ needs.build_madara_binary.outputs['madara-binary-hash'] }}
     permissions:
       contents: read
       packages: write
@@ -42,10 +60,13 @@ jobs:
 
   build-and-publish-orchestrator:
     if: ${{ inputs.build-orchestrator }}
-    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    needs: build_orchestrator_binary
+    uses: ./.github/workflows/task-package-manual-and-publish.yml
     with:
       image-name: orchestrator
-      image-file: ./orchestrator/Dockerfile
+      image-file: ./orchestrator/Dockerfile.manual
+      binary-name: orchestrator
+      binary-artifact-name: orchestrator-binary-${{ needs.build_orchestrator_binary.outputs['orchestrator-binary-hash'] }}
     permissions:
       contents: read
       packages: write
@@ -68,10 +89,14 @@ jobs:
 
   build-and-publish-bootstrapper-v2:
     if: ${{ inputs.build-bootstrapper-v2 }}
-    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    needs: build_bootstrapper_v2_binary
+    uses: ./.github/workflows/task-package-manual-and-publish.yml
     with:
       image-name: bootstrapper-v2
-      image-file: ./bootstrapper-v2/Dockerfile
+      image-file: ./bootstrapper-v2/Dockerfile.manual
+      binary-name: bootstrapper-v2
+      binary-artifact-name: bootstrapper-v2-binary-${{ needs.build_bootstrapper_v2_binary.outputs['bootstrapper-v2-binary-hash'] }}
+      include-build-artifacts: true
     permissions:
       contents: read
       packages: write

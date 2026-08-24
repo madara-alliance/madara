@@ -1,0 +1,82 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Docker Base Images
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .docker-base-images.yml
+      - .github/workflows/task-build-docker-base-images.yml
+      - docker/base/**
+      - Makefile
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build-base-images:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: madara-builder
+            tag-path: .builder.madara
+            dockerfile: docker/base/madara-builder.Dockerfile
+          - component: madara-runtime
+            tag-path: .runtime.madara
+            dockerfile: docker/base/madara-runtime.Dockerfile
+          - component: orchestrator-builder
+            tag-path: .builder.orchestrator
+            dockerfile: docker/base/orchestrator-builder.Dockerfile
+          - component: orchestrator-runtime
+            tag-path: .runtime.orchestrator
+            dockerfile: docker/base/orchestrator-runtime.Dockerfile
+          - component: bootstrapper-v2-builder
+            tag-path: '.builder["bootstrapper-v2"]'
+            dockerfile: docker/base/bootstrapper-v2-builder.Dockerfile
+          - component: bootstrapper-v2-runtime
+            tag-path: '.runtime["bootstrapper-v2"]'
+            dockerfile: docker/base/bootstrapper-v2-runtime.Dockerfile
+
+    env:
+      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-base-${{ matrix.component }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          IMAGE=$(yq -e '${{ matrix.tag-path }}' .docker-base-images.yml)
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Building $IMAGE"
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: useblacksmith/setup-docker-builder@v1
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
+
+      - name: Build and publish base image
+        uses: useblacksmith/build-push-action@v2
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.tag.outputs.image }}

@@ -1,0 +1,165 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Package And Publish Manual Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: Name of the Docker image
+        required: true
+        type: string
+      image-file:
+        description: Dockerfile used to package the image
+        required: true
+        type: string
+      binary-name:
+        description: Name of the prebuilt binary to copy into the image
+        required: true
+        type: string
+      binary-artifact-name:
+        description: GitHub Actions artifact containing the prebuilt binary
+        required: true
+        type: string
+      include-build-artifacts:
+        description: Whether to fetch build-artifacts from the published artifacts image
+        required: false
+        default: false
+        type: boolean
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
+    outputs:
+      manual-sha:
+        description: Manual image tag (with commit sha)
+        value: ${{ jobs.package-manual-and-publish.outputs.manual-sha }}
+      manual-latest:
+        description: Manual latest image tag (only set when built from main)
+        value: ${{ jobs.package-manual-and-publish.outputs.manual-latest }}
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  package-manual-and-publish:
+    runs-on: blacksmith-4vcpu-ubuntu-2204
+    env:
+      BLACKSMITH_DOCKER_CACHE_KEY: ${{ github.repository }}-docker-manual-package-${{ inputs.image-name }}
+    outputs:
+      manual-sha: ${{ steps.tag.outputs.manual-sha }}
+      manual-latest: ${{ steps.tag.outputs.manual-latest }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download prebuilt binary
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.binary-artifact-name }}
+          path: ci-binaries
+
+      - name: Prepare prebuilt binary
+        run: chmod +x ci-binaries/${{ inputs.binary-name }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch build artifacts
+        if: ${{ inputs.include-build-artifacts }}
+        env:
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          VERSION=$(yq -e '.current_version' .artifact-versions.yml)
+          IMAGE="$REGISTRY/${{ github.repository_owner }}/artifacts:$VERSION"
+          echo "Fetching build artifacts from $IMAGE"
+          docker pull "$IMAGE"
+          CONTAINER_ID=$(docker create "$IMAGE" do-nothing)
+          trap 'docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true' EXIT
+          docker cp "$CONTAINER_ID:/artifacts.tar.gz" artifacts.tar.gz
+          tar -xzf artifacts.tar.gz
+
+      - name: Resolve base image pins
+        id: base
+        run: |
+          MADARA_RUNTIME_BASE=$(yq -e '.runtime.madara' .docker-base-images.yml)
+          ORCHESTRATOR_RUNTIME_BASE=$(yq -e '.runtime.orchestrator' .docker-base-images.yml)
+          BOOTSTRAPPER_V2_RUNTIME_BASE=$(yq -e '.runtime["bootstrapper-v2"]' .docker-base-images.yml)
+
+          case "${{ inputs.image-name }}" in
+            madara)
+              SELECTED_RUNTIME_BASE="$MADARA_RUNTIME_BASE"
+              ;;
+            orchestrator)
+              SELECTED_RUNTIME_BASE="$ORCHESTRATOR_RUNTIME_BASE"
+              ;;
+            bootstrapper-v2)
+              SELECTED_RUNTIME_BASE="$BOOTSTRAPPER_V2_RUNTIME_BASE"
+              ;;
+            *)
+              echo "Unsupported image-name: ${{ inputs.image-name }}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "madara-runtime-base=$MADARA_RUNTIME_BASE" >> "$GITHUB_OUTPUT"
+          echo "orchestrator-runtime-base=$ORCHESTRATOR_RUNTIME_BASE" >> "$GITHUB_OUTPUT"
+          echo "bootstrapper-v2-runtime-base=$BOOTSTRAPPER_V2_RUNTIME_BASE" >> "$GITHUB_OUTPUT"
+          echo "selected-runtime-base=$SELECTED_RUNTIME_BASE" >> "$GITHUB_OUTPUT"
+
+      - name: Check runtime base image
+        run: |
+          if ! docker buildx imagetools inspect "${{ steps.base.outputs.selected-runtime-base }}" >/dev/null; then
+            echo "Runtime base image is missing: ${{ steps.base.outputs.selected-runtime-base }}" >&2
+            echo "Run the 'Task - Build Docker Base Images' workflow before packaging manual images." >&2
+            exit 1
+          fi
+
+      - name: Tags
+        id: tag
+        run: |
+          IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}"
+          SHA=$(git rev-parse --short=7 "$GITHUB_SHA")
+          MANUAL_SHA="$IMAGE:manual-$SHA"
+          TAGS="$MANUAL_SHA"
+
+          echo "manual-sha=$MANUAL_SHA" >> "$GITHUB_OUTPUT"
+
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            MANUAL_LATEST="$IMAGE:manual-latest"
+            echo "manual-latest=$MANUAL_LATEST" >> "$GITHUB_OUTPUT"
+            TAGS="$TAGS"$'\n'"$MANUAL_LATEST"
+          fi
+
+          echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$TAGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: useblacksmith/setup-docker-builder@v1
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
+
+      - name: Build Docker Image and Publish
+        id: push
+        uses: useblacksmith/build-push-action@v2
+        env:
+          GITHUB_REPO_NAME: ${{ env.BLACKSMITH_DOCKER_CACHE_KEY }}
+        with:
+          context: .
+          push: true
+          file: ${{ inputs.image-file }}
+          tags: ${{ steps.tag.outputs.tags }}
+          build-args: |
+            MADARA_RUNTIME_BASE=${{ steps.base.outputs.madara-runtime-base }}
+            ORCHESTRATOR_RUNTIME_BASE=${{ steps.base.outputs.orchestrator-runtime-base }}
+            BOOTSTRAPPER_V2_RUNTIME_BASE=${{ steps.base.outputs.bootstrapper-v2-runtime-base }}
