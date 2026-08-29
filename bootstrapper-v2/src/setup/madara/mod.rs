@@ -108,7 +108,7 @@ impl MadaraSetup {
         let madara_factory_address =
             self.deploy_madara_factory(udc_address, l1_eth_bridge_address, l1_erc20_bridge_address).await?;
 
-        log::info!("MadaraFactory deployed successfully at address: 0x{:x}", madara_factory_address);
+        log::info!("MadaraFactory deployment completed successfully");
 
         // Call MadaraFactory.deploy_bridges() to deploy bridge contracts
         self.deploy_bridges_via_madara_factory(madara_factory_address).await?;
@@ -133,7 +133,7 @@ impl MadaraSetup {
         let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await?;
 
         self.insert_address(DeployedContract::UniversalDeployer, udc_address);
-        log::info!("Universal deployer deployed successfully at address: 0x{:x}", udc_address);
+        log::info!("Universal deployer deployment completed successfully");
 
         Ok(udc_address)
     }
@@ -200,7 +200,7 @@ impl MadaraSetup {
             get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await?;
         self.insert_address(DeployedContract::MadaraFactory, madara_factory_address);
 
-        log::info!("MadaraFactory deployed successfully at address: 0x{:x}", madara_factory_address);
+        log::info!("MadaraFactory deployment completed successfully");
 
         Ok(madara_factory_address)
     }
