@@ -206,7 +206,7 @@ pub(crate) async fn deploy_account_using_priv_key(
 
     let deploy_txn = oz_account_factory.deploy_v3(Felt::ZERO).l1_gas(0).l2_gas(0).l1_data_gas(0);
     let account_address = deploy_txn.address();
-    log::debug!("OZ Account will be deployed at the address: {:?}", account_address);
+    log::debug!("OZ Account deployment address derived successfully");
     save_to_json("account_address", &JsonValueType::StringType(account_address.to_string())).unwrap();
 
     if provider.get_class_at(BlockId::Tag(BlockTag::PreConfirmed), account_address).await.is_ok() {
