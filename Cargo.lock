@@ -1073,7 +1073,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1084,7 +1084,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1096,7 +1096,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 [[package]]
 name = "apollo_compilation_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.17.0",
@@ -1114,7 +1114,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_compile_to_native_types",
@@ -1127,7 +1127,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native_types"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_config",
  "serde",
@@ -1137,7 +1137,7 @@ dependencies = [
 [[package]]
 name = "apollo_config"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -1155,7 +1155,7 @@ dependencies = [
 [[package]]
 name = "apollo_infra_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -1177,7 +1177,7 @@ dependencies = [
 [[package]]
 name = "apollo_metrics"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_time",
  "indexmap 2.13.1",
@@ -1191,7 +1191,7 @@ dependencies = [
 [[package]]
 name = "apollo_proc_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1202,7 +1202,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_sizeof_macros",
  "starknet-types-core 0.2.4",
@@ -1211,7 +1211,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof_macros"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1221,7 +1221,7 @@ dependencies = [
 [[package]]
 name = "apollo_starknet_os_program"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_infra_utils",
  "cairo-vm",
@@ -1236,7 +1236,7 @@ dependencies = [
 [[package]]
 name = "apollo_time"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "chrono",
 ]
@@ -2772,7 +2772,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2792,7 +2792,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2812,7 +2812,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2930,7 +2930,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -2981,7 +2981,7 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -4998,8 +4998,7 @@ dependencies = [
 [[package]]
 name = "cairo-native"
 version = "0.9.0-rc.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe61376fbdfb4c121e4d5ca997fa6eee18b4891d8fe22226f60fe27983467339"
+source = "git+https://github.com/karnotxyz/cairo_native?rev=76dec034da93e4f7ef93c5fda83ded540d77fc14#76dec034da93e4f7ef93c5fda83ded540d77fc14"
 dependencies = [
  "aquamarine",
  "ark-ec",
@@ -5307,7 +5306,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5316,7 +5315,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6557,7 +6556,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7836,7 +7835,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -8007,7 +8006,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8425,7 +8424,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi 0.5.2",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10329,7 +10328,7 @@ checksum = "7e0603425789b4a70fcc4ac4f5a46a566c116ee3e2a6b768dc623f7719c611de"
 dependencies = [
  "assert-json-diff",
  "bytes",
- "colored 3.0.0",
+ "colored 2.2.0",
  "futures-core",
  "http 1.4.0",
  "http-body 1.0.1",
@@ -10852,7 +10851,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11700,7 +11699,7 @@ dependencies = [
 [[package]]
 name = "papyrus_common"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "cairo-lang-starknet-classes",
  "indexmap 2.13.1",
@@ -12480,7 +12479,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12529,7 +12528,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.35",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -12567,9 +12566,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.1",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13352,7 +13351,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13493,7 +13492,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -14184,7 +14183,7 @@ dependencies = [
 [[package]]
 name = "shared_execution_objects"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "blockifier",
  "serde",
@@ -14806,7 +14805,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_infra_utils",
  "apollo_sizeof",
@@ -14816,6 +14815,7 @@ dependencies = [
  "cairo-lang-runner",
  "cairo-lang-starknet-classes",
  "cairo-lang-utils 2.17.0",
+ "dashmap 6.1.0",
  "derive_more 2.1.1",
  "expect-test",
  "flate2",
@@ -14844,7 +14844,7 @@ dependencies = [
 [[package]]
 name = "starknet_committer"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_config",
  "async-trait",
@@ -14870,7 +14870,7 @@ dependencies = [
 [[package]]
 name = "starknet_os"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_starknet_os_program",
  "ark-bls12-381",
@@ -14918,7 +14918,7 @@ dependencies = [
 [[package]]
 name = "starknet_patricia"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "async-recursion",
  "derive_more 2.1.1",
@@ -14939,7 +14939,7 @@ dependencies = [
 [[package]]
 name = "starknet_patricia_storage"
 version = "0.18.0-rc.1"
-source = "git+https://github.com/starkware-libs/sequencer?tag=APOLLO-0.14.2-RC.7-fix#4251763b664ee50a76889a800b801627f31bfd1c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=9a4336dc1b36943fb77ddfc5becd2370e61d37e1#9a4336dc1b36943fb77ddfc5becd2370e61d37e1"
 dependencies = [
  "apollo_config",
  "hex",
@@ -15277,7 +15277,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -15297,7 +15297,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8c27177b12a6399ffc08b98f76f7c9a1f4fe9fc967c784c5a071fa8d93cf7e1"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -16699,7 +16699,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

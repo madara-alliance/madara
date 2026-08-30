@@ -6,7 +6,7 @@
 use mc_telemetry::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
 };
-use opentelemetry::metrics::{Counter, Gauge, Histogram};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, ObservableCounter};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use starknet_api::executable_transaction::TransactionType;
 use std::time::Instant;
@@ -74,6 +74,11 @@ pub struct ExecutionMetrics {
     read_cache_misses_counter: Counter<u64>,
     /// Current read cache size in bytes.
     read_cache_size_bytes: Gauge<u64>,
+    /// Process-wide hash cache counters are observed from dependency-owned atomics.
+    _hash_cache_total_calls_counter: ObservableCounter<u64>,
+    _hash_cache_hits_counter: ObservableCounter<u64>,
+    _hash_cache_misses_counter: ObservableCounter<u64>,
+    _hash_cache_capacity_clears_counter: ObservableCounter<u64>,
 }
 
 impl ExecutionMetrics {
@@ -113,7 +118,68 @@ impl ExecutionMetrics {
             "bytes".to_string(),
         );
 
-        Self { tx_execution_time_histogram, read_cache_hits_counter, read_cache_misses_counter, read_cache_size_bytes }
+        let hash_cache_total_calls_counter = meter
+            .u64_observable_counter("exec_hash_cache_calls_total")
+            .with_description("Execution hash cache calls by hash kind")
+            .with_unit("call")
+            .with_callback(|observer| {
+                for cache in starknet_api::hash_cache_metrics() {
+                    observer.observe(cache.total_calls, &[KeyValue::new("kind", cache.kind.as_str())]);
+                }
+                let cache = mc_class_exec::pedersen_cache_metrics();
+                observer.observe(cache.total_calls, &[KeyValue::new("kind", "cairo_native_pedersen")]);
+            })
+            .build();
+
+        let hash_cache_hits_counter = meter
+            .u64_observable_counter("exec_hash_cache_hits_total")
+            .with_description("Execution hash cache hits by hash kind")
+            .with_unit("hit")
+            .with_callback(|observer| {
+                for cache in starknet_api::hash_cache_metrics() {
+                    observer.observe(cache.hits, &[KeyValue::new("kind", cache.kind.as_str())]);
+                }
+                let cache = mc_class_exec::pedersen_cache_metrics();
+                observer.observe(cache.hits, &[KeyValue::new("kind", "cairo_native_pedersen")]);
+            })
+            .build();
+
+        let hash_cache_misses_counter = meter
+            .u64_observable_counter("exec_hash_cache_misses_total")
+            .with_description("Execution hash cache misses by hash kind")
+            .with_unit("miss")
+            .with_callback(|observer| {
+                for cache in starknet_api::hash_cache_metrics() {
+                    observer.observe(cache.misses, &[KeyValue::new("kind", cache.kind.as_str())]);
+                }
+                let cache = mc_class_exec::pedersen_cache_metrics();
+                observer.observe(cache.misses, &[KeyValue::new("kind", "cairo_native_pedersen")]);
+            })
+            .build();
+
+        let hash_cache_capacity_clears_counter = meter
+            .u64_observable_counter("exec_hash_cache_capacity_clears_total")
+            .with_description("Execution hash cache clears caused by reaching configured capacity")
+            .with_unit("clear")
+            .with_callback(|observer| {
+                for cache in starknet_api::hash_cache_metrics() {
+                    observer.observe(cache.capacity_clears, &[KeyValue::new("kind", cache.kind.as_str())]);
+                }
+                let cache = mc_class_exec::pedersen_cache_metrics();
+                observer.observe(cache.capacity_clears, &[KeyValue::new("kind", "cairo_native_pedersen")]);
+            })
+            .build();
+
+        Self {
+            tx_execution_time_histogram,
+            read_cache_hits_counter,
+            read_cache_misses_counter,
+            read_cache_size_bytes,
+            _hash_cache_total_calls_counter: hash_cache_total_calls_counter,
+            _hash_cache_hits_counter: hash_cache_hits_counter,
+            _hash_cache_misses_counter: hash_cache_misses_counter,
+            _hash_cache_capacity_clears_counter: hash_cache_capacity_clears_counter,
+        }
     }
 
     /// Record transaction execution time with type and context labels.

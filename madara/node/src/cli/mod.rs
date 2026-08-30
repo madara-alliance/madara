@@ -405,6 +405,48 @@ mod tests {
     }
 
     #[test]
+    fn execution_hash_cache_is_opt_in() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        assert!(!disabled.backend_params.exec_hash_cache_enabled);
+
+        let enabled = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--exec-hash-cache-enabled",
+            "--exec-hash-cache-starknet-keccak-capacity",
+            "101",
+            "--exec-hash-cache-pedersen-pair-capacity",
+            "102",
+            "--exec-hash-cache-pedersen-array-capacity",
+            "103",
+            "--exec-hash-cache-poseidon-array-capacity",
+            "104",
+            "--exec-hash-cache-cairo-native-pedersen-capacity",
+            "105",
+        ]);
+        assert!(enabled.backend_params.exec_hash_cache_enabled);
+        assert_eq!(enabled.backend_params.exec_hash_cache_starknet_keccak_capacity, 101);
+        assert_eq!(enabled.backend_params.exec_hash_cache_pedersen_pair_capacity, 102);
+        assert_eq!(enabled.backend_params.exec_hash_cache_pedersen_array_capacity, 103);
+        assert_eq!(enabled.backend_params.exec_hash_cache_poseidon_array_capacity, 104);
+        assert_eq!(enabled.backend_params.exec_hash_cache_cairo_native_pedersen_capacity, 105);
+        enabled.backend_params.validate().expect("positive hash cache capacities should be valid");
+
+        let invalid = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--exec-hash-cache-enabled",
+            "--exec-hash-cache-starknet-keccak-capacity",
+            "0",
+        ]);
+        assert!(invalid.backend_params.validate().is_err());
+    }
+
+    #[test]
     fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
         let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
         let run_cmd: RunCmd =
