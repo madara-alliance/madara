@@ -27,6 +27,27 @@ struct TestContext {
     gateway_mock: GatewayMock,
 }
 
+async fn poll_preconfirmed(
+    gateway_mock: &GatewayMock,
+    importer: &Arc<BlockImporter>,
+    backend: &Arc<MadaraBackend>,
+    disable_reorg_preconfirmed: bool,
+) -> bool {
+    let mut sync = crate::gateway::blocks::gateway_preconfirmed_block_sync(
+        gateway_mock.client(),
+        importer.clone(),
+        backend.clone(),
+        disable_reorg_preconfirmed,
+    );
+    sync.run().await.unwrap().is_some()
+}
+
+fn preconfirmed_state(backend: &Arc<MadaraBackend>) -> (u64, usize, usize) {
+    let mut block = backend.block_view_on_preconfirmed().unwrap();
+    block.refresh_with_candidates();
+    (block.header().block_timestamp.0, block.num_executed_transactions(), block.candidate_transactions().len())
+}
+
 #[fixture]
 fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
@@ -174,6 +195,54 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 
     assert!(ctx.backend.has_preconfirmed_block());
     assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_timestamp.0, 1999999999999);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_pending_block_reorg_disabled(mut ctx: TestContext) {
+    ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
+    ctx.gateway_mock.mock_block(1, felt!("0x11"), felt!("0x10"));
+    ctx.gateway_mock.mock_header_latest(1, felt!("0x11"));
+    let mut pending_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_counts(2, 1000000000000, 2, 1);
+
+    let mut sync = crate::gateway::forward_sync(
+        ctx.backend.clone(),
+        ctx.importer.clone(),
+        ctx.gateway_mock.client(),
+        SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
+        ForwardSyncConfig::default().disable_reorg_preconfirmed(true),
+    );
+
+    let task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await.unwrap() });
+
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Starting);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 1 });
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
+
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 1, 1));
+    drop(task);
+
+    pending_block_mock.delete();
+    let mut grown_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_counts(2, 1000000000000, 3, 2);
+    assert!(poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
+
+    grown_block_mock.delete();
+    let mut shrunk_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_count(2, 1000000000000, 2);
+    assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
+
+    shrunk_block_mock.delete();
+    let mut empty_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_count(2, 1000000000000, 0);
+    assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
+
+    empty_block_mock.delete();
+    ctx.gateway_mock.mock_block_pending_with_ts_and_counts(2, 1999999999999, 3, 2);
+    assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
 }
 
 #[rstest]

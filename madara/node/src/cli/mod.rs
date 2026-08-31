@@ -371,6 +371,14 @@ mod tests {
     }
 
     #[test]
+    fn full_node_can_disable_preconfirmed_reorgs_independently() {
+        let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia", "--disable-reorg-preconfirmed"]);
+
+        assert!(run_cmd.l2_sync_params.disable_reorg_preconfirmed);
+        assert!(!run_cmd.l2_sync_params.disable_reorg);
+    }
+
+    #[test]
     fn sequencer_runs_and_saves_mempool_by_default() {
         let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
 

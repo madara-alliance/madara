@@ -464,6 +464,7 @@ pub fn gateway_preconfirmed_block_sync(
     client: Arc<GatewayProvider>,
     _importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
+    disable_reorg_preconfirmed: bool,
 ) -> ThrottledRepeatedFuture<()> {
     ThrottledRepeatedFuture::new(
         move |_| {
@@ -517,19 +518,43 @@ pub fn gateway_preconfirmed_block_sync(
                         return Ok(None);
                     }
 
-                    // True if this gateway block should be considered as a new pre-confirmed block entirely.
-                    let new_preconfirmed = in_backend.header() != &header
-                        || in_backend.num_executed_transactions() > n_executed
+                    let local_executed = in_backend.num_executed_transactions();
+                    let executed_prefix_changed = local_executed > n_executed
                         ||
                         // Compare hashes
                         // TODO: should we compute these hashes? probably not?
                         Iterator::ne(
                             in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
-                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
+                            block.transactions[..local_executed].iter().map(|tx| tx.transaction_hash()),
+                        );
+                    let local_candidates = in_backend.candidate_transactions();
+                    let local_transaction_count = local_executed + local_candidates.len();
+                    let candidate_prefix_changed = local_transaction_count > block.transactions.len()
+                        || Iterator::ne(
+                            local_candidates.iter().map(|tx| &tx.hash),
+                            block.transactions[local_executed..local_transaction_count]
+                                .iter()
+                                .map(|tx| tx.transaction_hash()),
                         );
 
+                    // True if this gateway block should be considered as a new pre-confirmed block entirely.
+                    let new_preconfirmed = in_backend.header() != &header || executed_prefix_changed;
+                    let preconfirmed_reorg = new_preconfirmed || candidate_prefix_changed;
+
+                    if disable_reorg_preconfirmed && preconfirmed_reorg {
+                        tracing::debug!(
+                            block_number,
+                            local_executed,
+                            local_candidates = local_candidates.len(),
+                            upstream_executed = n_executed,
+                            upstream_candidates = block.transactions.len().saturating_sub(n_executed),
+                            "Ignoring upstream preconfirmed block replacement because preconfirmed reorgs are disabled"
+                        );
+                        return Ok(None);
+                    }
+
                     if !new_preconfirmed {
-                        common_prefix = Some(in_backend.num_executed_transactions());
+                        common_prefix = Some(local_executed);
                     }
 
                     // Whether there was no change at all (no need to update the backend)
