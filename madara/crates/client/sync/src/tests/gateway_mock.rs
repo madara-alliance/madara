@@ -217,6 +217,27 @@ impl GatewayMock {
         transaction_count: usize,
         executed_count: usize,
     ) -> Mock<'_> {
+        self.mock_block_pending_custom(block_number, timestamp, transaction_count, executed_count, 0)
+    }
+
+    pub fn mock_block_pending_custom(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+        executed_count: usize,
+        hash_offset: usize,
+    ) -> Mock<'_> {
+        let transaction_hashes = (0..transaction_count)
+            .map(|index| {
+                if hash_offset == 0 && index == 0 {
+                    "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1".to_owned()
+                } else {
+                    format!("0x{:x}", hash_offset + index + 1)
+                }
+            })
+            .collect::<Vec<_>>();
+
         // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
             when.method("GET")
@@ -244,8 +265,8 @@ impl GatewayMock {
                 },
                 "timestamp": timestamp,
                 "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                "transactions": (0..transaction_count).map(|_| json!({
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                "transactions": transaction_hashes.iter().map(|transaction_hash| json!({
+                        "transaction_hash": transaction_hash,
                         "version": "0x1",
                         "max_fee": "0x0",
                         "signature": [
@@ -271,8 +292,8 @@ impl GatewayMock {
                     })).collect::<Vec<_>>(),
                 "transaction_receipts": (0..transaction_count).map(|index| if index < executed_count { json!({
                         "execution_status": "SUCCEEDED",
-                        "transaction_index": 3,
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                        "transaction_index": index,
+                        "transaction_hash": transaction_hashes[index],
                         "l2_to_l1_messages": [],
                         "events": [],
                         "execution_resources": {

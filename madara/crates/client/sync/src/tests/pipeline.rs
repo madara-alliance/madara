@@ -235,6 +235,11 @@ async fn test_pending_block_reorg_disabled(mut ctx: TestContext) {
     assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
 
     shrunk_block_mock.delete();
+    let mut replaced_block_mock = ctx.gateway_mock.mock_block_pending_custom(2, 1000000000000, 3, 2, 100);
+    assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
+
+    replaced_block_mock.delete();
     let mut empty_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_count(2, 1000000000000, 0);
     assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
     assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
