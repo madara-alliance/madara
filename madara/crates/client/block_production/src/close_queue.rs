@@ -3,6 +3,7 @@ use anyhow::Result;
 use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use mc_db::close_pipeline_contract::CloseJobPayload;
 use mc_db::rocksdb::SnapshotRef;
+use mp_chain_config::StarknetVersion;
 use mp_state_update::StateDiff;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -22,6 +23,7 @@ pub(crate) struct QueuedClosePayload {
     pub root_base_block_n: Option<u64>,
     pub root_snapshot: Option<SnapshotRef>,
     pub root_state_diffs: Vec<StateDiff>,
+    pub protocol_version: StarknetVersion,
     pub last_execution_finished_at: Option<Instant>,
     pub close_block_received_at: Instant,
     pub enqueued_at: Instant,

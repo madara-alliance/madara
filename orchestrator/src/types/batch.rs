@@ -1,5 +1,7 @@
 use crate::core::config::StarknetVersion;
-use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file};
+use crate::types::constant::{
+    get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file, DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT,
+};
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
@@ -26,12 +28,13 @@ pub enum AggregatorBatchStatus {
     Open,
     /// Batch is closed and no new blocks can be added to it
     Closed,
-    /// Batch can be processed by the aggregator job
-    /// This means that all the child jobs completed by the prover client, and we can close the bucket
+    /// Batch can be processed by the aggregator job.
+    /// This means all child proofs are ready, so we can submit aggregation:
+    /// close the Atlantic bucket, or run local aggregation for SHARP / Mock.
     PendingAggregatorRun,
-    /// Batch is closed, and we are waiting for SUCCESS from the prover client for the bucket ID
+    /// Aggregation has been submitted, and we are waiting for prover-side success.
     PendingAggregatorVerification,
-    /// Bucket is verified and is ready for state update
+    /// Aggregation is verified and ready for state update.
     ReadyForStateUpdate,
     /// Batch processing is complete and state update is done
     Completed,
@@ -106,9 +109,10 @@ pub struct AggregatorBatch {
     /// Used for ordering and referencing batches
     pub index: u64,
 
-    /// Bucket ID for the batch, received from the prover client
-    /// Used to track the batch in the proving system
-    pub bucket_id: String,
+    /// Atlantic bucket ID for the batch.
+    /// `None` for provers without a bucket concept (SHARP, Mock).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_id: Option<String>,
 
     /// Path to the squashed state updates file
     /// This is done for optimization so we don't have to create a new squashed
@@ -144,6 +148,10 @@ pub struct AggregatorBatch {
     /// Length of vector of felts representing the compressed blob data for the batch
     pub blob_len: usize,
 
+    /// Conservative upper bound for the aggregator bootloader input size.
+    #[serde(default = "default_aggregator_input_size_upper_bound")]
+    pub aggregator_input_size_upper_bound: usize,
+
     /// Builtin weights for the batch. We decide when to close a batch based on this.
     pub builtin_weights: AggregatorBatchWeights,
 
@@ -158,6 +166,10 @@ pub struct AggregatorBatch {
     /// Timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_aggregator_input_size_upper_bound() -> usize {
+    DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT
 }
 
 impl AggregatorBatchWeights {
@@ -194,7 +206,7 @@ impl AggregatorBatch {
     /// * `start_block` - Starting block number for the batch
     /// * `squashed_state_updates_path` - Path to store squashed state updates
     /// * `blob_path` - Path to store blob data
-    /// * `bucket_id` - Identifier from the prover client
+    /// * `bucket_id` - Atlantic bucket identifier from the prover client, if applicable
     ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
@@ -202,8 +214,9 @@ impl AggregatorBatch {
     pub fn new(
         index: u64,
         start_block: u64,
-        bucket_id: String,
+        bucket_id: Option<String>,
         blob_len: usize,
+        aggregator_input_size_upper_bound: usize,
         builtin_weights: AggregatorBatchWeights,
         starknet_version: StarknetVersion,
     ) -> Self {
@@ -216,6 +229,7 @@ impl AggregatorBatch {
             squashed_state_updates_path: Self::get_state_update_file_path(index),
             blob_path: Self::get_blob_dir_path(index),
             blob_len,
+            aggregator_input_size_upper_bound,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
@@ -230,6 +244,7 @@ impl AggregatorBatch {
         &self,
         end_block: u64,
         blob_len: usize,
+        aggregator_input_size_upper_bound: usize,
         weights: AggregatorBatchWeights,
         status: Option<AggregatorBatchStatus>,
     ) -> AggregatorBatch {
@@ -237,6 +252,7 @@ impl AggregatorBatch {
         updated_batch.end_block = end_block;
         updated_batch.num_blocks = end_block - updated_batch.start_block + 1;
         updated_batch.blob_len = blob_len;
+        updated_batch.aggregator_input_size_upper_bound = aggregator_input_size_upper_bound;
         updated_batch.builtin_weights = weights;
         if let Some(status) = status {
             updated_batch.status = status;

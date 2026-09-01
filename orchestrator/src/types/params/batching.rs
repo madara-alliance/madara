@@ -9,6 +9,7 @@ pub struct BatchingParams {
     pub max_blocks_per_snos_batch: u64,
     pub fixed_blocks_per_snos_batch: Option<u64>,
     pub max_snos_batches_per_aggregator_batch: u64,
+    pub max_aggregator_input_size: usize,
     pub max_num_blobs: usize,
     /// Buffer (in number of felts) subtracted from the maximum blob capacity.
     ///
@@ -39,6 +40,7 @@ impl From<BatchingCliArgs> for BatchingParams {
             max_blocks_per_snos_batch: args.max_blocks_per_snos_batch,
             fixed_blocks_per_snos_batch: args.fixed_blocks_per_snos_batch,
             max_snos_batches_per_aggregator_batch: args.max_snos_batches_per_aggregator_batch,
+            max_aggregator_input_size: args.max_aggregator_input_size,
             max_num_blobs: args.max_num_blobs,
             blob_size_buffer: args.blob_size_buffer,
             max_blob_size: args.max_num_blobs * BLOB_LEN - args.blob_size_buffer,
@@ -63,6 +65,7 @@ mod tests {
             max_blocks_per_snos_batch: 10,
             fixed_blocks_per_snos_batch: None,
             max_snos_batches_per_aggregator_batch: 50,
+            max_aggregator_input_size: crate::types::constant::DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT,
             default_empty_block_proving_gas: 1500000,
             max_batch_processing_size: 10,
         }
@@ -75,5 +78,6 @@ mod tests {
     fn test_max_blob_size(#[case] max_num_blobs: usize, #[case] blob_size_buffer: usize, #[case] expected: usize) {
         let params = BatchingParams::from(make_cli_args(max_num_blobs, blob_size_buffer));
         assert_eq!(params.max_blob_size, expected);
+        assert_eq!(params.max_aggregator_input_size, crate::types::constant::DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT);
     }
 }

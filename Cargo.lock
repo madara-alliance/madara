@@ -7075,7 +7075,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-rc.5#7da559392a1ea3ec9048cc62d8c5a75ebc0aad1d"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8007,7 +8007,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -8660,8 +8660,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-core"
 version = "0.22.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4b257e1ec385e07b0255dde0b933f948b5c8b8c28d42afda9587c3a967b896d"
+source = "git+https://github.com/madara-alliance/jsonrpsee?rev=52c76441b922b9d1c6b260fcb29d62e94a8ca57c#52c76441b922b9d1c6b260fcb29d62e94a8ca57c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8743,8 +8742,7 @@ dependencies = [
 [[package]]
 name = "jsonrpsee-types"
 version = "0.22.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "150d6168405890a7a3231a3c74843f58b8959471f6df76078db2619ddee1d07d"
+source = "git+https://github.com/madara-alliance/jsonrpsee?rev=52c76441b922b9d1c6b260fcb29d62e94a8ca57c#52c76441b922b9d1c6b260fcb29d62e94a8ca57c"
 dependencies = [
  "anyhow",
  "beef",
@@ -9886,6 +9884,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-receipt",
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
@@ -9932,6 +9931,7 @@ dependencies = [
  "mc-mempool",
  "mc-settlement-client",
  "mc-submit-tx",
+ "mc-telemetry",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -9942,6 +9942,7 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
+ "opentelemetry",
  "rstest 0.26.1",
  "serde",
  "serde_json",
@@ -10667,6 +10668,7 @@ dependencies = [
  "mp-transactions",
  "rstest 0.26.1",
  "serde",
+ "serde_json",
  "serde_with 3.16.1",
  "sha3 0.12.0",
  "starknet-rust-core 0.19.0-rc.2",
@@ -12528,7 +12530,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.35",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -12566,7 +12568,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -13081,7 +13083,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-rc.5#7da559392a1ea3ec9048cc62d8c5a75ebc0aad1d"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -14524,7 +14526,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?tag=v0.14.2-rc.5#7da559392a1ea3ec9048cc62d8c5a75ebc0aad1d"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -16698,7 +16700,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

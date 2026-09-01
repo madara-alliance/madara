@@ -935,9 +935,7 @@ impl BlockProductionTask {
             let preconfirmed_view = self
                 .backend
                 .block_view_on_preconfirmed(internal_preconfirmed_tip)
-                .with_context(|| {
-                    format!("Getting preconfirmed block view for block #{internal_preconfirmed_tip}")
-                })?;
+                .with_context(|| format!("Getting preconfirmed block view for block #{internal_preconfirmed_tip}"))?;
             let block_number = preconfirmed_view.block_number();
             let n_txs = preconfirmed_view.num_executed_transactions();
             let tx_hashes: Vec<_> = preconfirmed_view
@@ -1156,6 +1154,7 @@ impl BlockProductionTask {
             .backend
             .block_view_on_preconfirmed(block_n)
             .with_context(|| format!("No pre-confirmed block #{block_n}"))?;
+        let protocol_version = preconfirmed_view.block().header.protocol_version;
         let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
         let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
             .compiled_class_hashes_for_migration
@@ -1221,6 +1220,7 @@ impl BlockProductionTask {
             root_base_block_n,
             root_snapshot,
             root_state_diffs,
+            protocol_version,
             last_execution_finished_at,
             close_block_received_at,
             enqueued_at,
@@ -1467,6 +1467,7 @@ impl BlockProductionTask {
             root_base_block_n,
             root_snapshot,
             root_state_diffs,
+            protocol_version,
             last_execution_finished_at,
             close_block_received_at,
             enqueued_at,
@@ -1522,6 +1523,7 @@ impl BlockProductionTask {
                 snapshot,
                 block_n,
                 &cumulative_state_diff,
+                protocol_version,
                 is_boundary,
                 trie_log_mode,
                 compare_parallel_with_sequential,
@@ -1594,6 +1596,7 @@ impl BlockProductionTask {
                 root_base_block_n,
                 root_snapshot: None,
                 root_state_diffs: Vec::new(),
+                protocol_version,
                 last_execution_finished_at,
                 close_block_received_at,
                 enqueued_at,
@@ -3335,6 +3338,7 @@ pub(crate) mod tests {
             devnet_setup.mempool.clone(),
             devnet_setup.metrics.clone(),
             Arc::new(devnet_setup.l1_client.clone()),
+            false,
             current_no_charge_fee,
             true,
         );
@@ -3518,10 +3522,10 @@ pub(crate) mod tests {
 
         // Block 1: non-empty (has our tx), closes after block_time.
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 1 });
 
         // Block 2: empty, closes after another block_time.
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 2 });
 
         let block_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
         let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
@@ -3580,7 +3584,7 @@ pub(crate) mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         control.close_block().await.unwrap();
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 1 });
 
         // Wait 3 seconds before submitting the next tx. With no_empty_blocks=true,
         // the executor waits indefinitely. The block timestamp should reflect
@@ -3601,7 +3605,7 @@ pub(crate) mod tests {
 
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         control.close_block().await.unwrap();
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock { block_n: 2 });
 
         let block_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
         let ts_2 = block_2.get_block_info().unwrap().header.block_timestamp.0;

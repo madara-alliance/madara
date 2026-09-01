@@ -5,6 +5,7 @@ use opentelemetry::metrics::{Meter, ObservableGauge};
 use opentelemetry::KeyValue;
 use std::time::Instant;
 
+use crate::core::config::StarknetVersion;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -466,6 +467,14 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
     }
 
+    pub fn record_snos_batch_blocks(num_blocks: u64, starknet_version: StarknetVersion) {
+        let attributes = [
+            KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+            KeyValue::new("starknet_version", starknet_version.to_string()),
+        ];
+        ORCHESTRATOR_METRICS.snos_batch_blocks.record(num_blocks as f64, &attributes);
+    }
+
     pub fn record_snos_rpc_fallback(job: &JobItem) {
         let attributes = [KeyValue::new("operation_job_type", format!("{:?}", job.job_type))];
         ORCHESTRATOR_METRICS.snos_rpc_fallback_total.add(1.0, &attributes);
@@ -613,6 +622,12 @@ impl MetricsRecorder {
             .record(count as f64, &[KeyValue::new("prover", prover.to_string())]);
     }
 
+    pub fn record_aggregator_input_size_upper_bound(status: &str, input_size: usize) {
+        ORCHESTRATOR_METRICS
+            .aggregator_input_size_upper_bound
+            .record(input_size as f64, &[KeyValue::new("status", status.to_string())]);
+    }
+
     pub fn record_aggregator_failure(prover: &str, stage: &str, error_type: &str) {
         ORCHESTRATOR_METRICS.aggregator_local_run_failures_total.add(
             1.0,
@@ -634,6 +649,14 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.aggregator_program_output_bytes.record(program_output_bytes as f64, &attrs);
         ORCHESTRATOR_METRICS.aggregator_da_segment_bytes.record(da_segment_bytes as f64, &attrs);
         ORCHESTRATOR_METRICS.aggregator_pie_zip_bytes.record(pie_zip_bytes as f64, &attrs);
+    }
+
+    pub fn record_aggregator_batching_duration(duration_seconds: f64) {
+        ORCHESTRATOR_METRICS.aggregator_batching_duration_seconds.record(duration_seconds, &[]);
+    }
+
+    pub fn record_aggregator_batching_batch_number(batch_number: u64) {
+        ORCHESTRATOR_METRICS.aggregator_batching_batch_number.record(batch_number as f64, &[]);
     }
 }
 

@@ -68,7 +68,13 @@ fn create_non_durable_confirmed_head(backend: &Arc<MadaraBackend>) -> Felt {
 
     let computed = backend
         .db
-        .compute_root_from_latest_snapshot(1, &diff1, false, TrieLogMode::Checkpoint)
+        .compute_root_from_latest_snapshot(
+            1,
+            &diff1,
+            backend.chain_config().latest_protocol_version,
+            false,
+            TrieLogMode::Checkpoint,
+        )
         .expect("precomputing block 1 root should succeed");
     let expected_root = computed.state_root;
 

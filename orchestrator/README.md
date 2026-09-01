@@ -461,6 +461,9 @@ MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL=<ethereum-rpc-url>
 MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY=<ethereum-private-key>
 MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS=<l1-core-contract-address>
 MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS=<starknet-operator-address>
+# Maximum signed execution plus six-blob liability. The 0.01 ETH default intentionally
+# pauses settlement during high-fee periods; operators prioritizing liveness should raise it.
+MADARA_ORCHESTRATOR_ETHEREUM_L2_STATE_UPDATE_MAX_FEE_WEI=10000000000000000
 # or
 MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL=<starknet-rpc-url>
 MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY=<starknet-private-key>

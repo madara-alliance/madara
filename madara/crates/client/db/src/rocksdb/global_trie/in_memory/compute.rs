@@ -8,6 +8,7 @@ use crate::rocksdb::trie::BasicId;
 use crate::rocksdb::RocksDBStorage;
 use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
 use bonsai_trie::BonsaiStorageConfig;
+use mp_chain_config::StarknetVersion;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
     ReplacedClassItem, StateDiff, StorageEntry,
@@ -464,6 +465,7 @@ pub fn compute_root_from_snapshot(
     snapshot: SnapshotRef,
     block_n: u64,
     state_diff: &StateDiff,
+    protocol_version: StarknetVersion,
     include_overlay: bool,
     trie_log_mode: TrieLogMode,
 ) -> Result<InMemoryRootComputation> {
@@ -502,7 +504,7 @@ pub fn compute_root_from_snapshot(
 
     let (contract_root, contract_trie_timings) = contract_result?;
     let (class_root, class_trie_timings) = class_result?;
-    let state_root = super::super::calculate_state_root(contract_root, class_root);
+    let state_root = super::super::calculate_state_root(contract_root, class_root, protocol_version);
     tracing::debug!(
         "parallel_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={} trie_log_mode={:?}",
         block_n,
@@ -539,6 +541,7 @@ pub fn compute_root_from_snapshot_sequential(
     snapshot: SnapshotRef,
     block_n: u64,
     state_diff: &StateDiff,
+    protocol_version: StarknetVersion,
     trie_log_mode: TrieLogMode,
 ) -> Result<InMemoryRootComputation> {
     let config = bonsai_storage_config_for_mode(backend, trie_log_mode);
@@ -569,7 +572,7 @@ pub fn compute_root_from_snapshot_sequential(
     let (class_root, class_trie_timings) = in_memory_class_trie_root_sequential(&mut class_trie, state_diff, block_n)?;
     let class_duration = class_started_at.elapsed();
 
-    let state_root = super::super::calculate_state_root(contract_root, class_root);
+    let state_root = super::super::calculate_state_root(contract_root, class_root, protocol_version);
     tracing::debug!(
         "sequential_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} trie_log_mode={:?}",
         block_n,
@@ -603,6 +606,7 @@ pub fn compute_roots_in_parallel_from_snapshot(
     snapshot: SnapshotRef,
     start_block_n: u64,
     state_diffs: &[StateDiff],
+    protocol_version: StarknetVersion,
     boundary_block_n: Option<u64>,
     trie_log_mode: TrieLogMode,
 ) -> Result<Vec<InMemoryRootComputation>> {
@@ -618,6 +622,7 @@ pub fn compute_roots_in_parallel_from_snapshot(
                 Arc::clone(&snapshot),
                 block_n,
                 &state_diff,
+                protocol_version,
                 boundary_block_n == Some(block_n),
                 trie_log_mode,
             )

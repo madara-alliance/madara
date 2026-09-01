@@ -33,6 +33,7 @@ pub struct OrchestratorMetrics {
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
     pub snos_job_processing_time: Histogram<f64>,
+    pub snos_batch_blocks: Histogram<f64>,
     pub snos_rpc_fallback_total: Counter<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
@@ -66,6 +67,7 @@ pub struct OrchestratorMetrics {
     pub aggregator_local_run_duration: Gauge<f64>,
     pub aggregator_local_run_total: Counter<f64>,
     pub aggregator_child_count: Gauge<f64>,
+    pub aggregator_input_size_upper_bound: Gauge<f64>,
     /// Failures per stage of `run_and_submit_with_local_aggregation`, labeled
     /// by `prover`, `stage` (load_children/run_aggregator/fact_hash/
     /// store_artifacts/submit_prover), and bounded `error_type`.
@@ -73,6 +75,8 @@ pub struct OrchestratorMetrics {
     pub aggregator_program_output_bytes: Gauge<f64>,
     pub aggregator_da_segment_bytes: Gauge<f64>,
     pub aggregator_pie_zip_bytes: Gauge<f64>,
+    pub aggregator_batching_batch_number: Gauge<f64>,
+    pub aggregator_batching_duration_seconds: Histogram<f64>,
     // Storage cleanup metrics
     pub cleanup_runs_total: Counter<f64>,
     pub cleanup_jobs_attempted: Counter<f64>,
@@ -215,6 +219,13 @@ impl Metrics for OrchestratorMetrics {
             "snos_job_processing_time".to_string(),
             "Time to process SNOS jobs".to_string(),
             "s".to_string(),
+        );
+
+        let snos_batch_blocks = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_batch_blocks".to_string(),
+            "Number of blocks included in closed SNOS batches".to_string(),
+            "blocks".to_string(),
         );
 
         let snos_rpc_fallback_total = register_counter_metric_instrument(
@@ -389,6 +400,13 @@ impl Metrics for OrchestratorMetrics {
             "children".to_string(),
         );
 
+        let aggregator_input_size_upper_bound = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_input_size_upper_bound".to_string(),
+            "Conservative upper bound for the aggregator bootloader input size".to_string(),
+            "felts".to_string(),
+        );
+
         let aggregator_local_run_failures_total = register_counter_metric_instrument(
             &orchestrator_meter,
             "aggregator_local_run_failures_total".to_string(),
@@ -415,6 +433,20 @@ impl Metrics for OrchestratorMetrics {
             "aggregator_pie_zip_bytes".to_string(),
             "Aggregator CairoPIE zip size per run".to_string(),
             "bytes".to_string(),
+        );
+
+        let aggregator_batching_batch_number = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_batching_batch_number".to_string(),
+            "Latest aggregator batch number handled by the batching worker".to_string(),
+            "batch".to_string(),
+        );
+
+        let aggregator_batching_duration_seconds = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "aggregator_batching_duration_seconds".to_string(),
+            "Duration of aggregator batching worker runs".to_string(),
+            "s".to_string(),
         );
 
         // Storage cleanup metrics
@@ -494,6 +526,7 @@ impl Metrics for OrchestratorMetrics {
             job_e2e_latency,
             proof_generation_time,
             snos_job_processing_time,
+            snos_batch_blocks,
             snos_rpc_fallback_total,
             settlement_time,
             jobs_per_minute,
@@ -508,10 +541,13 @@ impl Metrics for OrchestratorMetrics {
             aggregator_local_run_duration,
             aggregator_local_run_total,
             aggregator_child_count,
+            aggregator_input_size_upper_bound,
             aggregator_local_run_failures_total,
             aggregator_program_output_bytes,
             aggregator_da_segment_bytes,
             aggregator_pie_zip_bytes,
+            aggregator_batching_batch_number,
+            aggregator_batching_duration_seconds,
             job_status_tracker,
             atlantic_api_call_duration,
             atlantic_api_calls_total,

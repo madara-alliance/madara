@@ -6,12 +6,12 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam};
+use crate::core::config::{Config, ConfigParam, ProverKind};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
 use crate::types::batch::AggregatorBatchWeights;
-use crate::types::constant::BLOB_LEN;
+use crate::types::constant::{BLOB_LEN, DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT};
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
 use crate::types::params::da::DAConfig;
@@ -31,7 +31,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
-use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
+use orchestrator_ethereum_settlement_client::{EthereumSettlementValidatedArgs, DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI};
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
@@ -118,6 +118,8 @@ pub struct TestConfigBuilder {
     da_client_type: ConfigType,
     /// The service that produces proof and registers it on chain
     prover_client_type: ConfigType,
+    /// Which prover backend the Config should expose
+    prover_kind: Option<ProverKind>,
     /// Settlement client
     settlement_client_type: ConfigType,
 
@@ -199,6 +201,7 @@ impl TestConfigBuilder {
             starknet_client_type: ConfigType::default(),
             da_client_type: ConfigType::default(),
             prover_client_type: ConfigType::default(),
+            prover_kind: None,
             settlement_client_type: ConfigType::default(),
             database_type: ConfigType::default(),
             lock_type: ConfigType::default(),
@@ -236,6 +239,11 @@ impl TestConfigBuilder {
 
     pub fn configure_prover_client(mut self, prover_client_type: ConfigType) -> TestConfigBuilder {
         self.prover_client_type = prover_client_type;
+        self
+    }
+
+    pub fn configure_prover_kind(mut self, prover_kind: ProverKind) -> TestConfigBuilder {
+        self.prover_kind = Some(prover_kind);
         self
     }
 
@@ -309,6 +317,7 @@ impl TestConfigBuilder {
             alerts_type,
             da_client_type,
             prover_client_type,
+            prover_kind,
             settlement_client_type,
             database_type,
             lock_type,
@@ -390,6 +399,7 @@ impl TestConfigBuilder {
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
+            prover_kind.unwrap_or(ProverKind::Atlantic),
             params.orchestrator_params,
             chain_details,
             starknet_client.clone(),
@@ -729,6 +739,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         ethereum_finality_retry_wait_in_secs: 60u64,
         ethereum_tx_confirmation_timeout_secs: 300,
         ethereum_max_fee_bumps: 2,
+        ethereum_l2_state_update_max_fee_wei: DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
         disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
@@ -772,6 +783,12 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             "50",
         )
         .parse::<u64>()
+        .unwrap(),
+        max_aggregator_input_size: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MAX_AGGREGATOR_INPUT_SIZE",
+            &DEFAULT_AGGREGATOR_INPUT_SIZE_LIMIT.to_string(),
+        )
+        .parse::<usize>()
         .unwrap(),
         max_num_blobs,
         blob_size_buffer,

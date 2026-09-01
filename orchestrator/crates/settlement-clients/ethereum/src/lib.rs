@@ -3,14 +3,15 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::consensus::{SignableTransaction, Signed, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar};
+use alloy::consensus::{BlockHeader, SignableTransaction, Signed, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar};
 #[cfg(not(feature = "testing"))]
 use alloy::eips::eip2718::Encodable2718;
 use alloy::eips::eip2930::AccessList;
-use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::eips::eip4844::{BYTES_PER_BLOB, DATA_GAS_PER_BLOB};
 use alloy::eips::eip7594::BlobTransactionSidecarVariant;
+use alloy::eips::BlockNumberOrTag;
 use alloy::hex;
-use alloy::network::{Ethereum, EthereumWallet};
+use alloy::network::{BlockResponse, Ethereum, EthereumWallet};
 use alloy::primitives::{Address, Bytes, B256, I256, U256};
 use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
@@ -50,6 +51,9 @@ use tracing::{debug, info};
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
 
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
+/// Conservative default maximum signed liability for one L2 Ethereum state-update transaction (0.01 ETH).
+/// Operators prioritizing settlement liveness during high-fee periods should override this value.
+pub const DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI: u128 = 10_000_000_000_000_000;
 pub const N_BLOBS_OFFSET: usize = 11;
 pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
 pub const Y_LOW_POINT_OFFSET: usize = 11;
@@ -64,15 +68,22 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
 // See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
 // See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
-// With 1.1x start, 2.0x increment, and the default max of 2 fee bumps: 1.1 -> 2.2 -> 4.4.
-// The number of replacements is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
+// EIP-4844 state-update fee policy:
+// - Attempt 1: priority = 0.2 Gwei, max execution = ceil(2 * base * 1.1) + priority,
+//   and max blob = ceil(blob base * 1.1).
+// - Replacement: apply a 2.1x floor to every previously signed fee cap, then take
+//   the component-wise maximum with a fresh 1.1x network estimate. With the default
+//   two replacements, priority progresses 0.2 -> 0.42 -> 0.882 Gwei.
+// - Before signing, the execution and actual blob liabilities must fit the configured total cap.
+// The replacement count is configurable via MADARA_ORCHESTRATOR_ETHEREUM_MAX_FEE_BUMPS.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 const REPLACEMENT_FEE_BUMP_NUMERATOR: u128 = 21;
 const REPLACEMENT_FEE_BUMP_DENOMINATOR: u128 = 10;
-/// we noticed Starknet uses the same limit on the mainnet
-/// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
-const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
+const INITIAL_MAX_PRIORITY_FEE_PER_GAS: u128 = 200_000_000;
+/// Fixed limit with headroom over the 1,050,798 gas maximum observed in StarkWare
+/// `updateStateKzgDA` transactions during the 90 days ending 2026-07-14.
+const GAS_LIMIT_STATE_UPDATE: u64 = 1_500_000;
 
 #[derive(Clone, Copy, Debug)]
 struct StateUpdateFeeCaps {
@@ -158,6 +169,20 @@ fn state_update_tx_error(
     }
 }
 
+fn state_update_replacement_preparation_error(
+    attempts: &[StateUpdateTxAttempt],
+    timeout_seconds: u64,
+    error: &color_eyre::Report,
+) -> StateUpdateTxError {
+    StateUpdateTxError {
+        message: format!(
+            "State update replacement preparation failed after a prior transaction attempt. The existing transaction will be reconciled on job retry.\nPreparation failure: {error}\nFee attempts:\n{}",
+            format_tx_attempts(attempts, timeout_seconds)
+        ),
+        attempts: attempts.to_vec(),
+    }
+}
+
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
     pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
@@ -183,6 +208,8 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub ethereum_max_fee_bumps: u64,
 
+    pub ethereum_l2_state_update_max_fee_wei: u128,
+
     pub disable_peerdas: bool,
 }
 
@@ -196,6 +223,7 @@ pub struct EthereumSettlementClient {
     tx_finality_retry_wait_in_seconds: u64,
     tx_confirmation_timeout_seconds: u64,
     max_fee_bumps: u64,
+    l2_state_update_max_fee_wei: u128,
     disable_peerdas: bool,
 }
 
@@ -226,6 +254,7 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
             tx_confirmation_timeout_seconds: settlement_cfg.ethereum_tx_confirmation_timeout_secs,
             max_fee_bumps: settlement_cfg.ethereum_max_fee_bumps,
+            l2_state_update_max_fee_wei: settlement_cfg.ethereum_l2_state_update_max_fee_wei,
             disable_peerdas: settlement_cfg.disable_peerdas,
         }
     }
@@ -236,6 +265,7 @@ impl EthereumSettlementClient {
         core_contract_address: Address,
         rpc_url: Url,
         impersonate_account: Option<Address>,
+        l2_state_update_max_fee_wei: u128,
     ) -> Self {
         let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
@@ -255,6 +285,7 @@ impl EthereumSettlementClient {
             tx_finality_retry_wait_in_seconds: 10,
             tx_confirmation_timeout_seconds: 300,
             max_fee_bumps: 2,
+            l2_state_update_max_fee_wei,
             disable_peerdas: true,
         }
     }
@@ -381,15 +412,21 @@ impl SettlementClient for EthereumSettlementClient {
             );
 
             let replacement_fee_floor = previous_fee_caps.map(Self::replacement_fee_floor);
-            let prepared_transaction = self
-                .create_transaction(
-                    program_output.clone(),
-                    state_diff.clone(),
-                    nonce,
-                    gas_multiplier,
-                    replacement_fee_floor,
-                )
-                .await?;
+            let prepared_transaction = match self
+                .create_transaction(program_output.clone(), state_diff.clone(), nonce, replacement_fee_floor)
+                .await
+            {
+                Result::Ok(transaction) => transaction,
+                Result::Err(error) if attempts.is_empty() => return Err(error),
+                Result::Err(error) => {
+                    return Err(state_update_replacement_preparation_error(
+                        &attempts,
+                        self.tx_confirmation_timeout_seconds,
+                        &error,
+                    )
+                    .into());
+                }
+            };
             let attempted_fee_caps = prepared_transaction.fee_caps;
             previous_fee_caps = Some(attempted_fee_caps);
 
@@ -726,7 +763,6 @@ impl EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
-        mul_factor: f64,
         replacement_fee_floor: Option<StateUpdateFeeCaps>,
     ) -> Result<PreparedStateUpdateTransaction> {
         // Prepare the sidecar based on the chain ID
@@ -736,19 +772,19 @@ impl EthereumSettlementClient {
         // replacements target the same pending transaction.
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
-        // For replacement transactions, the multiplier applies to the previously attempted fee
-        // caps through `replacement_fee_floor`. The fresh network estimate is kept at the normal
-        // safety margin so replacements do not overpay by multiplying both paths.
-        let estimate_mul_factor = if replacement_fee_floor.is_some() { GAS_PRICE_MULTIPLIER_START } else { mul_factor };
-        let fee_caps = self.get_gas_price_estimates(estimate_mul_factor).await?;
+        // Fresh network caps always use the normal safety margin. Replacements take their
+        // component-wise maximum with the 2.1x floor calculated from the previous signed caps.
+        let fee_caps = self.get_gas_price_estimates().await?;
         let fee_caps = replacement_fee_floor.map(|floor| Self::max_fee_caps(fee_caps, floor)).unwrap_or(fee_caps);
+        let max_total_fee_wei =
+            Self::ensure_l2_state_update_fee_within_cap(fee_caps, state_diff.len(), self.l2_state_update_max_fee_wei)?;
         debug!(
             nonce = nonce,
-            gas_multiplier = %mul_factor,
-            estimate_multiplier = %estimate_mul_factor,
             max_fee_per_gas = fee_caps.max_fee_per_gas,
             max_priority_fee_per_gas = fee_caps.max_priority_fee_per_gas,
             max_fee_per_blob_gas = fee_caps.max_fee_per_blob_gas,
+            max_total_fee_wei = %max_total_fee_wei,
+            max_total_fee_cap_wei = self.l2_state_update_max_fee_wei,
             replacement_fee_floor = ?replacement_fee_floor,
             "Resolved state update transaction fee caps"
         );
@@ -779,19 +815,30 @@ impl EthereumSettlementClient {
         Ok(PreparedStateUpdateTransaction { tx_envelope: variant.into_signed(signature), fee_caps })
     }
 
-    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<StateUpdateFeeCaps> {
-        let eip1559_est = self.provider.estimate_eip1559_fees().await?;
+    async fn get_gas_price_estimates(&self) -> Result<StateUpdateFeeCaps> {
+        let base_fee_per_gas = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or_else(|| eyre!("Latest Ethereum block not found"))?
+            .header()
+            .base_fee_per_gas()
+            .ok_or_else(|| eyre!("Latest Ethereum block does not contain an EIP-1559 base fee"))?;
 
-        let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
-        let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
-        let max_fee_per_blob_gas: u128 = self.add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
-
-        Ok(StateUpdateFeeCaps { max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas })
+        Ok(StateUpdateFeeCaps {
+            max_fee_per_gas: Self::initial_max_fee_per_gas(u128::from(base_fee_per_gas)),
+            max_priority_fee_per_gas: INITIAL_MAX_PRIORITY_FEE_PER_GAS,
+            max_fee_per_blob_gas: Self::add_safety_margin(self.provider.get_blob_base_fee().await?),
+        })
     }
 
-    // add a safety margin to the gas price to handle fluctuations
-    fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
-        (value as f64 * mul_factor).ceil() as u128
+    fn initial_max_fee_per_gas(base_fee_per_gas: u128) -> u128 {
+        Self::add_safety_margin(base_fee_per_gas.saturating_mul(2)).saturating_add(INITIAL_MAX_PRIORITY_FEE_PER_GAS)
+    }
+
+    // Add a safety margin to the gas price to handle fluctuations.
+    fn add_safety_margin(value: u128) -> u128 {
+        (value as f64 * GAS_PRICE_MULTIPLIER_START).ceil() as u128
     }
 
     fn replacement_fee_floor(previous_fee_caps: StateUpdateFeeCaps) -> StateUpdateFeeCaps {
@@ -815,6 +862,28 @@ impl EthereumSettlementClient {
             max_priority_fee_per_gas: left.max_priority_fee_per_gas.max(right.max_priority_fee_per_gas),
             max_fee_per_blob_gas: left.max_fee_per_blob_gas.max(right.max_fee_per_blob_gas),
         }
+    }
+
+    fn ensure_l2_state_update_fee_within_cap(
+        fee_caps: StateUpdateFeeCaps,
+        blob_count: usize,
+        max_fee_wei: u128,
+    ) -> Result<U256> {
+        // EIP-1559 max_fee_per_gas already includes both base and priority fees.
+        let execution_fee = U256::from(GAS_LIMIT_STATE_UPDATE) * U256::from(fee_caps.max_fee_per_gas);
+        let blob_fee =
+            U256::from(blob_count) * U256::from(DATA_GAS_PER_BLOB) * U256::from(fee_caps.max_fee_per_blob_gas);
+        let total_fee = execution_fee + blob_fee;
+
+        if total_fee > U256::from(max_fee_wei) {
+            bail!(
+                "L2 state update signed fee liability {} wei exceeds configured hard cap {} wei",
+                total_fee,
+                max_fee_wei
+            );
+        }
+
+        Ok(total_fee)
     }
 
     /// Method to send blob transaction (standard EIP4844)
@@ -920,5 +989,77 @@ mod gas_multiplier_tests {
     fn test_fee_bump_policy_stops_after_max_bumps() {
         let result = calculate_next_fee_bump_mul_factor(4.4, 2, 2);
         assert!(result.is_none(), "Expected None when fee bump budget is exhausted");
+    }
+}
+
+#[cfg(test)]
+mod priority_fee_tests {
+    use super::*;
+
+    #[test]
+    fn initial_max_fee_per_gas_buffers_base_and_adds_fixed_priority() {
+        assert_eq!(EthereumSettlementClient::initial_max_fee_per_gas(1_000_000_000), 2_400_000_000);
+    }
+
+    #[test]
+    fn priority_fee_replacements_follow_fixed_policy() {
+        let first = INITIAL_MAX_PRIORITY_FEE_PER_GAS;
+        let second = EthereumSettlementClient::replacement_fee_cap_floor(first);
+        let third = EthereumSettlementClient::replacement_fee_cap_floor(second);
+
+        assert_eq!([first, second, third], [200_000_000, 420_000_000, 882_000_000]);
+    }
+}
+
+#[cfg(test)]
+mod fee_cap_tests {
+    use super::*;
+
+    #[test]
+    fn state_update_gas_limit_has_observed_usage_headroom() {
+        assert_eq!(GAS_LIMIT_STATE_UPDATE, 1_500_000);
+    }
+
+    #[test]
+    fn l2_state_update_fee_cap_is_inclusive_and_uses_actual_blob_count() {
+        let blob_count = 2;
+        let fee_caps = StateUpdateFeeCaps {
+            max_fee_per_gas: 1,
+            // Priority fee is already included in max_fee_per_gas.
+            max_priority_fee_per_gas: u128::MAX,
+            max_fee_per_blob_gas: 1,
+        };
+        let expected_fee = U256::from(GAS_LIMIT_STATE_UPDATE) + U256::from(blob_count) * U256::from(DATA_GAS_PER_BLOB);
+        let exact_cap = expected_fee.to::<u128>();
+
+        assert_eq!(
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, blob_count, exact_cap).unwrap(),
+            expected_fee
+        );
+
+        let error =
+            EthereumSettlementClient::ensure_l2_state_update_fee_within_cap(fee_caps, blob_count, exact_cap - 1)
+                .unwrap_err();
+        assert!(error.to_string().contains("exceeds configured hard cap"));
+    }
+
+    #[test]
+    fn replacement_preparation_error_preserves_pending_attempt_for_job_retry() {
+        let attempts = vec![StateUpdateTxAttempt {
+            attempt_no: 1,
+            tx_hash: Some("0xabc".to_string()),
+            nonce: 7,
+            gas_multiplier: GAS_PRICE_MULTIPLIER_START,
+            status: StateUpdateTxAttemptStatus::TimedOut,
+            error: None,
+        }];
+
+        let source = eyre!("signed fee liability exceeds configured hard cap");
+        let error = state_update_replacement_preparation_error(&attempts, 300, &source);
+
+        assert_eq!(error.attempts, attempts);
+        assert!(error.message.contains("reconciled on job retry"));
+        assert!(error.message.contains("0xabc"));
+        assert!(error.message.contains("signed fee liability exceeds configured hard cap"));
     }
 }

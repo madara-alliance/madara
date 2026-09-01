@@ -62,22 +62,10 @@ pub async fn state_update_worker(
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
-    let state = StateUpdateWorker {
-        block_metrics: block_metrics.clone(),
-        backend: backend.clone(),
-        l1_head_sender: l1_head_sender.clone(),
-    };
-
-    // Clear L1 confirmed block at startup
-    // TODO: remove this
-    state.backend.set_latest_l1_confirmed(None).map_err(|e| {
-        SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
-    })?;
-    tracing::debug!("update_l1: cleared confirmed block number");
-
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
     loop {
+        let session_start = std::time::Instant::now();
         match ctx
             .run_until_cancelled(try_sync_once(
                 &settlement_client,
@@ -90,12 +78,25 @@ pub async fn state_update_worker(
         {
             None => return Ok(()),         // Service shutdown
             Some(Ok(())) => return Ok(()), // Clean exit
-            Some(Err(e)) if e.is_recoverable() => {
-                tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
-                tokio::time::sleep(reconnect_delay).await;
+            // This worker only observes L1 confirmations: an outage degrades finality
+            // reporting but is never unsafe, so every error is retried rather than
+            // aborting the node (which a returned Err would do via the ServiceMonitor).
+            Some(Err(e)) => {
+                if session_start.elapsed() >= RECONNECT_MAX_DELAY {
+                    reconnect_delay = RECONNECT_BASE_DELAY;
+                }
+                if e.is_recoverable() {
+                    tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
+                } else {
+                    tracing::error!(
+                        "L1 state sync failed with an unexpected error: {e:#}, reconnecting in {reconnect_delay:?}"
+                    );
+                }
+                if ctx.run_until_cancelled(tokio::time::sleep(reconnect_delay)).await.is_none() {
+                    return Ok(());
+                }
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
             }
-            Some(Err(e)) => return Err(e), // Non-recoverable
         }
     }
 }
@@ -122,8 +123,64 @@ mod state_update_worker_tests {
     use super::*;
     use crate::client::MockSettlementLayerProvider;
     use mp_chain_config::ChainConfig;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Mutex,
+    };
     use std::time::Duration;
+
+    #[test]
+    fn worker_preserves_persisted_l1_cursor_while_fetching_current_state() {
+        const PERSISTED_CURSOR: u64 = 123;
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        backend.set_latest_l1_confirmed(Some(PERSISTED_CURSOR)).expect("cursor should be persisted");
+
+        let (fetch_started_tx, fetch_started_rx) = mpsc::channel();
+        let (release_fetch_tx, release_fetch_rx) = mpsc::channel();
+        let release_fetch_rx = Arc::new(Mutex::new(release_fetch_rx));
+
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_current_core_contract_state().times(1).returning({
+            let release_fetch_rx = Arc::clone(&release_fetch_rx);
+            move || {
+                fetch_started_tx.send(()).expect("test should still be waiting for the fetch");
+                release_fetch_rx
+                    .lock()
+                    .expect("release channel lock should not be poisoned")
+                    .recv()
+                    .expect("test should release the mocked fetch after observing the cursor");
+                Ok(StateUpdate {
+                    block_number: Some(PERSISTED_CURSOR),
+                    global_root: Felt::ZERO,
+                    block_hash: Felt::ZERO,
+                })
+            }
+        });
+        mock.expect_listen_for_update_state_events().times(1).returning(|_ctx, _worker| Ok(()));
+
+        let worker_backend = Arc::clone(&backend);
+        let worker = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread().enable_all().build().expect("runtime should build").block_on(
+                state_update_worker(
+                    worker_backend,
+                    Arc::new(mock),
+                    ServiceContext::new_for_testing(),
+                    tokio::sync::watch::channel(None).0,
+                    Arc::new(L1BlockMetrics::register().expect("metrics should register")),
+                ),
+            )
+        });
+
+        fetch_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("worker should start fetching the current L1 state");
+        let cursor_during_fetch = backend.latest_l1_confirmed_block_n();
+        release_fetch_tx.send(()).expect("worker should still be waiting for the mocked fetch");
+        worker.join().expect("worker thread should not panic").expect("worker should exit cleanly");
+
+        assert_eq!(cursor_during_fetch, Some(PERSISTED_CURSOR));
+    }
 
     /// End-to-end recovery test: when a state update subscription dies with the
     /// recoverable error produced by the liveness watchdog terminating a stuck
@@ -186,5 +243,53 @@ mod state_update_worker_tests {
         // #100 (initial, session 1) → #200 (event) → reconnect → #101 (initial,
         // session 2): the last head proves the fresh subscription was used.
         assert_eq!(l1_head_rx.borrow().as_ref().and_then(|s| s.block_number), Some(101));
+    }
+
+    /// The worker must retry even on errors that are not classified recoverable:
+    /// a transient RPC failure surfacing through an unclassified path previously
+    /// propagated out of the worker and took down the whole node via the
+    /// ServiceMonitor.
+    #[tokio::test(start_paused = true)]
+    async fn worker_retries_after_unclassified_error() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_metrics = Arc::new(L1BlockMetrics::register().expect("metrics should register"));
+        let ctx = ServiceContext::new_for_testing();
+        let (l1_head_tx, l1_head_rx) = tokio::sync::watch::channel(None);
+
+        let sessions = Arc::new(AtomicUsize::new(0));
+        let mut mock = MockSettlementLayerProvider::new();
+        mock.expect_get_current_core_contract_state().times(2).returning({
+            let sessions = Arc::clone(&sessions);
+            move || match sessions.fetch_add(1, Ordering::SeqCst) {
+                0 => Err(SettlementClientError::Other("transient failure on an unclassified path".to_string())),
+                _ => Ok(StateUpdate { block_number: Some(100), global_root: Felt::ZERO, block_hash: Felt::ZERO }),
+            }
+        });
+        mock.expect_listen_for_update_state_events().times(1).returning(|_ctx, _worker| Ok(()));
+
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            state_update_worker(backend, Arc::new(mock), ctx, l1_head_tx, block_metrics),
+        )
+        .await
+        .expect("worker should not hang after an unclassified error")
+        .expect("worker should exit cleanly after the second session");
+
+        assert_eq!(l1_head_rx.borrow().as_ref().and_then(|s| s.block_number), Some(100));
+    }
+
+    #[test]
+    fn transport_failures_in_contract_calls_are_recoverable() {
+        use crate::eth::error::EthereumClientError;
+        use crate::starknet::error::StarknetClientError;
+
+        assert!(SettlementClientError::from(EthereumClientError::Contract(
+            "Failed to get state root: transport error".to_string()
+        ))
+        .is_recoverable());
+        assert!(SettlementClientError::from(StarknetClientError::StateInitialization {
+            message: "Failed to get state: transport error".to_string()
+        })
+        .is_recoverable());
     }
 }

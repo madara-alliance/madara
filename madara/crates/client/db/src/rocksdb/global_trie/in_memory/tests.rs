@@ -9,7 +9,7 @@ use crate::rocksdb::trie::{
 use crate::rocksdb::RocksDBStorage;
 use crate::MadaraBackend;
 use bonsai_trie::{BonsaiDatabase, ByteVec, DatabaseKey};
-use mp_chain_config::ChainConfig;
+use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
     ReplacedClassItem, StateDiff, StorageEntry,
@@ -28,6 +28,10 @@ fn setup_backend() -> Arc<MadaraBackend> {
 
 fn setup_snapshot_db() -> Arc<MadaraBackend> {
     setup_backend()
+}
+
+fn protocol_version() -> StarknetVersion {
+    ChainConfig::madara_test().latest_protocol_version
 }
 
 fn write_snapshot_value(backend: &RocksDBStorage, column: Column, key: &[u8], value: &[u8]) {
@@ -88,7 +92,7 @@ fn sequential_roots(backend: &Arc<MadaraBackend>, diffs: &[StateDiff]) -> Vec<Fe
         let block_n = u64::try_from(index).expect("index fits into u64");
         let (root, _timings) = backend
             .write_access()
-            .apply_to_global_trie(block_n, [diff])
+            .apply_to_global_trie(block_n, [diff], protocol_version())
             .expect("sequential apply_to_global_trie should succeed");
         roots.push(root);
     }
@@ -172,8 +176,17 @@ fn in_memory_single_block_root_matches_sequential_apply() {
 
     let expected_root = sequential_roots(&backend_seq, std::slice::from_ref(&diff))[0];
     let snapshot = fresh_snapshot(&backend_mem.db);
-    let computed = compute_root_from_snapshot(&backend_mem.db, None, snapshot, 0, &diff, false, TrieLogMode::Off)
-        .expect("compute");
+    let computed = compute_root_from_snapshot(
+        &backend_mem.db,
+        None,
+        snapshot,
+        0,
+        &diff,
+        protocol_version(),
+        false,
+        TrieLogMode::Off,
+    )
+    .expect("compute");
 
     assert_eq!(computed.state_root, expected_root);
     assert!(computed.overlay.is_none(), "overlay should be absent when include_overlay=false");
@@ -217,8 +230,10 @@ fn in_memory_single_block_root_preserves_existing_contract_storage() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) =
-        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
+    let (expected_root, _timings) = backend_expected
+        .write_access()
+        .apply_to_global_trie(1, [&current_diff], protocol_version())
+        .expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -228,6 +243,7 @@ fn in_memory_single_block_root_preserves_existing_contract_storage() {
         fresh_snapshot(&backend_actual.db),
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -315,8 +331,10 @@ fn in_memory_single_block_root_preserves_existing_storage_across_multiple_contra
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) =
-        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
+    let (expected_root, _timings) = backend_expected
+        .write_access()
+        .apply_to_global_trie(1, [&current_diff], protocol_version())
+        .expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -326,6 +344,7 @@ fn in_memory_single_block_root_preserves_existing_storage_across_multiple_contra
         fresh_snapshot(&backend_actual.db),
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -505,8 +524,10 @@ fn replay_regression_contract_2860_storage_root_matches_sequential_apply() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    let (expected_root, _timings) =
-        backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
+    let (expected_root, _timings) = backend_expected
+        .write_access()
+        .apply_to_global_trie(1, [&current_diff], protocol_version())
+        .expect("sequential apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -516,6 +537,7 @@ fn replay_regression_contract_2860_storage_root_matches_sequential_apply() {
         fresh_snapshot(&backend_actual.db),
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -692,21 +714,28 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_expected.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
+    backend_expected
+        .write_access()
+        .apply_to_global_trie(0, [&base_diff], protocol_version())
+        .expect("build persisted base trie");
     let (expected_root, _timings) = backend_expected
         .write_access()
-        .apply_to_global_trie(1, [&current_diff])
+        .apply_to_global_trie(1, [&current_diff], protocol_version())
         .expect("sequential apply from persisted base");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_actual.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
+    backend_actual
+        .write_access()
+        .apply_to_global_trie(0, [&base_diff], protocol_version())
+        .expect("build persisted base trie");
     let actual = compute_root_from_snapshot(
         &backend_actual.db,
         Some(0),
         fresh_snapshot(&backend_actual.db),
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -726,16 +755,27 @@ fn debug_replay_regression_669160_full_window_matches_sequential_apply() {
 
     let backend_expected = setup_backend();
     backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_expected.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
+    backend_expected
+        .write_access()
+        .apply_to_global_trie(0, [&base_diff], protocol_version())
+        .expect("build persisted base trie");
     backend_expected.db.inner.state_apply_state_diff(1, &diff_159).expect("seed 669159 history");
-    backend_expected.write_access().apply_to_global_trie(1, [&diff_159]).expect("sequential 669159 apply");
+    backend_expected
+        .write_access()
+        .apply_to_global_trie(1, [&diff_159], protocol_version())
+        .expect("sequential 669159 apply");
     backend_expected.db.inner.state_apply_state_diff(2, &diff_160).expect("seed 669160 history");
-    let (expected_root, _timings) =
-        backend_expected.write_access().apply_to_global_trie(2, [&diff_160]).expect("sequential 669160 apply");
+    let (expected_root, _timings) = backend_expected
+        .write_access()
+        .apply_to_global_trie(2, [&diff_160], protocol_version())
+        .expect("sequential 669160 apply");
 
     let backend_actual = setup_backend();
     backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-    backend_actual.write_access().apply_to_global_trie(0, [&base_diff]).expect("build persisted base trie");
+    backend_actual
+        .write_access()
+        .apply_to_global_trie(0, [&base_diff], protocol_version())
+        .expect("build persisted base trie");
 
     let squashed = cumulative_squashed_state_diffs([&diff_159, &diff_160]);
     let cumulative = squashed.last().expect("cumulative diff for 669160");
@@ -745,6 +785,7 @@ fn debug_replay_regression_669160_full_window_matches_sequential_apply() {
         fresh_snapshot(&backend_actual.db),
         2,
         cumulative,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -818,6 +859,7 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
         snapshot,
         0,
         &diffs,
+        protocol_version(),
         Some(2),
         TrieLogMode::Checkpoint,
     )
@@ -867,6 +909,7 @@ fn contract_leaf_fallback_reads_nonce_and_class_from_snapshot_state() {
         fresh_snapshot(&backend_expected.db),
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -905,6 +948,7 @@ fn contract_leaf_fallback_reads_nonce_and_class_from_snapshot_state() {
         snapshot,
         1,
         &current_diff,
+        protocol_version(),
         false,
         TrieLogMode::Checkpoint,
     )
@@ -925,6 +969,7 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
         snapshot,
         0,
         &diffs,
+        protocol_version(),
         Some(2),
         TrieLogMode::Checkpoint,
     )
@@ -935,7 +980,8 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
     flush_overlay_and_checkpoint(&backend.db, boundary.block_n, overlay, TrieLogMode::Checkpoint)
         .expect("flush and checkpoint");
 
-    let persisted_root = crate::rocksdb::global_trie::get_state_root(&backend.db).expect("read persisted root");
+    let persisted_root =
+        crate::rocksdb::global_trie::get_state_root(&backend.db, protocol_version()).expect("read persisted root");
     assert_eq!(persisted_root, boundary.state_root);
     assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(2));
     assert!(backend.has_parallel_merkle_checkpoint(2).expect("checkpoint marker"));
@@ -948,8 +994,17 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
     let diff = synthetic_state_diff(0);
 
     let off_snapshot = fresh_snapshot(&backend_off.db);
-    let off_result = compute_root_from_snapshot(&backend_off.db, None, off_snapshot, 0, &diff, true, TrieLogMode::Off)
-        .expect("off mode compute");
+    let off_result = compute_root_from_snapshot(
+        &backend_off.db,
+        None,
+        off_snapshot,
+        0,
+        &diff,
+        protocol_version(),
+        true,
+        TrieLogMode::Off,
+    )
+    .expect("off mode compute");
     flush_overlay_and_checkpoint(
         &backend_off.db,
         0,
@@ -965,6 +1020,7 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
         checkpoint_snapshot,
         0,
         &diff,
+        protocol_version(),
         true,
         TrieLogMode::Checkpoint,
     )
@@ -1101,8 +1157,10 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
 
         let backend_expected = setup_backend();
         backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
-        let (expected_root, _timings) =
-            backend_expected.write_access().apply_to_global_trie(1, [&current_diff]).expect("sequential apply");
+        let (expected_root, _timings) = backend_expected
+            .write_access()
+            .apply_to_global_trie(1, [&current_diff], protocol_version())
+            .expect("sequential apply");
 
         let backend_actual = setup_backend();
         backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
@@ -1112,6 +1170,7 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
             fresh_snapshot(&backend_actual.db),
             1,
             &current_diff,
+            protocol_version(),
             false,
             TrieLogMode::Checkpoint,
         )

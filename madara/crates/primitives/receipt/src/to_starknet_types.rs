@@ -3,6 +3,7 @@ use crate::{
     ExecutionResult, FeePayment, GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
     TransactionReceipt,
 };
+use core::convert::TryFrom;
 
 impl TransactionReceipt {
     pub fn to_rpc_v0_7(self, finality_status: mp_rpc::v0_7_1::TxnFinalityStatus) -> mp_rpc::v0_7_1::TxnReceipt {
@@ -62,6 +63,26 @@ impl TransactionReceipt {
             }
         }
     }
+
+    pub fn to_rpc_v0_10(self, finality_status: mp_rpc::v0_10_0::TxnFinalityStatus) -> mp_rpc::v0_10_0::TxnReceipt {
+        match self {
+            TransactionReceipt::Invoke(receipt) => {
+                mp_rpc::v0_10_0::TxnReceipt::Invoke(receipt.to_rpc_v0_10(finality_status))
+            }
+            TransactionReceipt::L1Handler(receipt) => {
+                mp_rpc::v0_10_0::TxnReceipt::L1Handler(receipt.to_rpc_v0_10(finality_status))
+            }
+            TransactionReceipt::Declare(receipt) => {
+                mp_rpc::v0_10_0::TxnReceipt::Declare(receipt.to_rpc_v0_10(finality_status))
+            }
+            TransactionReceipt::Deploy(receipt) => {
+                mp_rpc::v0_10_0::TxnReceipt::Deploy(receipt.to_rpc_v0_10(finality_status))
+            }
+            TransactionReceipt::DeployAccount(receipt) => {
+                mp_rpc::v0_10_0::TxnReceipt::DeployAccount(receipt.to_rpc_v0_10(finality_status))
+            }
+        }
+    }
 }
 
 impl InvokeTransactionReceipt {
@@ -99,6 +120,23 @@ impl InvokeTransactionReceipt {
                 execution_resources: self.execution_resources.into(),
                 finality_status,
                 messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_9_0::MsgToL1::from).collect(),
+                transaction_hash: self.transaction_hash,
+                execution_status: self.execution_result.into(),
+            },
+        }
+    }
+
+    pub fn to_rpc_v0_10(
+        self,
+        finality_status: mp_rpc::v0_10_0::TxnFinalityStatus,
+    ) -> mp_rpc::v0_10_0::InvokeTxnReceipt {
+        mp_rpc::v0_10_0::InvokeTxnReceipt {
+            common_receipt_properties: mp_rpc::v0_10_0::CommonReceiptProperties {
+                actual_fee: self.actual_fee.into(),
+                events: self.events.into_iter().map(mp_rpc::v0_10_0::Event::from).collect(),
+                execution_resources: self.execution_resources.into(),
+                finality_status,
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_10_0::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -167,6 +205,24 @@ impl L1HandlerTransactionReceipt {
             },
         }
     }
+
+    pub fn to_rpc_v0_10(
+        self,
+        finality_status: mp_rpc::v0_10_0::TxnFinalityStatus,
+    ) -> mp_rpc::v0_10_0::L1HandlerTxnReceipt {
+        mp_rpc::v0_10_0::L1HandlerTxnReceipt {
+            message_hash: format!("{}", self.message_hash),
+            common_receipt_properties: mp_rpc::v0_10_0::CommonReceiptProperties {
+                actual_fee: self.actual_fee.into(),
+                events: self.events.into_iter().map(mp_rpc::v0_10_0::Event::from).collect(),
+                execution_resources: self.execution_resources.into(),
+                finality_status,
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_10_0::MsgToL1::from).collect(),
+                transaction_hash: self.transaction_hash,
+                execution_status: self.execution_result.into(),
+            },
+        }
+    }
 }
 
 impl DeclareTransactionReceipt {
@@ -204,6 +260,23 @@ impl DeclareTransactionReceipt {
                 execution_resources: self.execution_resources.into(),
                 finality_status,
                 messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_9_0::MsgToL1::from).collect(),
+                transaction_hash: self.transaction_hash,
+                execution_status: self.execution_result.into(),
+            },
+        }
+    }
+
+    pub fn to_rpc_v0_10(
+        self,
+        finality_status: mp_rpc::v0_10_0::TxnFinalityStatus,
+    ) -> mp_rpc::v0_10_0::DeclareTxnReceipt {
+        mp_rpc::v0_10_0::DeclareTxnReceipt {
+            common_receipt_properties: mp_rpc::v0_10_0::CommonReceiptProperties {
+                actual_fee: self.actual_fee.into(),
+                events: self.events.into_iter().map(mp_rpc::v0_10_0::Event::from).collect(),
+                execution_resources: self.execution_resources.into(),
+                finality_status,
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_10_0::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -249,6 +322,24 @@ impl DeployTransactionReceipt {
                 execution_resources: self.execution_resources.into(),
                 finality_status,
                 messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_9_0::MsgToL1::from).collect(),
+                transaction_hash: self.transaction_hash,
+                execution_status: self.execution_result.into(),
+            },
+        }
+    }
+
+    pub fn to_rpc_v0_10(
+        self,
+        finality_status: mp_rpc::v0_10_0::TxnFinalityStatus,
+    ) -> mp_rpc::v0_10_0::DeployTxnReceipt {
+        mp_rpc::v0_10_0::DeployTxnReceipt {
+            contract_address: self.contract_address,
+            common_receipt_properties: mp_rpc::v0_10_0::CommonReceiptProperties {
+                actual_fee: self.actual_fee.into(),
+                events: self.events.into_iter().map(mp_rpc::v0_10_0::Event::from).collect(),
+                execution_resources: self.execution_resources.into(),
+                finality_status,
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_10_0::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -303,6 +394,24 @@ impl DeployAccountTransactionReceipt {
                 execution_resources: self.execution_resources.into(),
                 finality_status,
                 messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_9_0::MsgToL1::from).collect(),
+                transaction_hash: self.transaction_hash,
+                execution_status: self.execution_result.into(),
+            },
+        }
+    }
+
+    pub fn to_rpc_v0_10(
+        self,
+        finality_status: mp_rpc::v0_10_0::TxnFinalityStatus,
+    ) -> mp_rpc::v0_10_0::DeployAccountTxnReceipt {
+        mp_rpc::v0_10_0::DeployAccountTxnReceipt {
+            contract_address: self.contract_address,
+            common_receipt_properties: mp_rpc::v0_10_0::CommonReceiptProperties {
+                actual_fee: self.actual_fee.into(),
+                events: self.events.into_iter().map(mp_rpc::v0_10_0::Event::from).collect(),
+                execution_resources: self.execution_resources.into(),
+                finality_status,
+                messages_sent: self.messages_sent.into_iter().map(mp_rpc::v0_10_0::MsgToL1::from).collect(),
                 transaction_hash: self.transaction_hash,
                 execution_status: self.execution_result.into(),
             },
@@ -379,6 +488,79 @@ impl From<ExecutionResources> for mp_rpc::v0_8_1::ExecutionResources {
             l1_gas: resources.total_gas_consumed.l1_gas,
             l2_gas: resources.total_gas_consumed.l2_gas,
             l1_data_gas: resources.total_gas_consumed.l1_data_gas,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starknet_core::types::{
+        DeclareTransactionReceipt as ClientDeclareTransactionReceipt, ExecutionResources as ClientExecutionResources,
+        ExecutionResult as ClientExecutionResult, FeePayment as ClientFeePayment, PriceUnit as ClientPriceUnit,
+        ReceiptBlock as ClientReceiptBlock, TransactionFinalityStatus as ClientTransactionFinalityStatus,
+        TransactionReceipt as ClientTransactionReceipt,
+        TransactionReceiptWithBlockInfo as ClientTransactionReceiptWithBlockInfo,
+    };
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn v0_10_receipt_serializes_for_starknet_core_clients() {
+        let receipt = TransactionReceipt::Declare(DeclareTransactionReceipt {
+            transaction_hash: Felt::from_hex_unchecked("0x1234"),
+            actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x42"), unit: PriceUnit::Wei },
+            messages_sent: vec![],
+            events: vec![],
+            execution_resources: ExecutionResources {
+                steps: 0,
+                memory_holes: 0,
+                range_check_builtin_applications: 0,
+                pedersen_builtin_applications: 0,
+                poseidon_builtin_applications: 0,
+                ec_op_builtin_applications: 0,
+                ecdsa_builtin_applications: 0,
+                bitwise_builtin_applications: 0,
+                keccak_builtin_applications: 0,
+                segment_arena_builtin: 0,
+                data_availability: GasVector { l1_gas: 0, l1_data_gas: 0, l2_gas: 0 },
+                total_gas_consumed: GasVector { l1_gas: 7, l1_data_gas: 8, l2_gas: 9 },
+            },
+            execution_result: ExecutionResult::Succeeded,
+        });
+
+        let expected = ClientTransactionReceiptWithBlockInfo {
+            receipt: ClientTransactionReceipt::Declare(ClientDeclareTransactionReceipt {
+                transaction_hash: Felt::from_hex_unchecked("0x1234"),
+                actual_fee: ClientFeePayment { amount: Felt::from_hex_unchecked("0x42"), unit: ClientPriceUnit::Wei },
+                finality_status: ClientTransactionFinalityStatus::AcceptedOnL2,
+                messages_sent: vec![],
+                events: vec![],
+                execution_resources: ClientExecutionResources { l1_gas: 7, l1_data_gas: 8, l2_gas: 9 },
+                execution_result: ClientExecutionResult::Succeeded,
+            }),
+            block: ClientReceiptBlock::Block { block_hash: Felt::from_hex_unchecked("0xabcdef"), block_number: 99 },
+        };
+
+        let rpc_receipt = mp_rpc::v0_10_0::TxnReceiptWithBlockInfo {
+            transaction_receipt: receipt.to_rpc_v0_10(mp_rpc::v0_10_0::TxnFinalityStatus::L2),
+            block_hash: Some(Felt::from_hex_unchecked("0xabcdef")),
+            block_number: 99,
+        };
+
+        let json = serde_json::to_value(&rpc_receipt).expect("failed to serialize v0.10 receipt");
+        let deserialized: ClientTransactionReceiptWithBlockInfo =
+            serde_json::from_value(json).expect("failed to deserialize into starknet core receipt");
+
+        assert_eq!(deserialized, expected);
+    }
+}
+
+impl From<ExecutionResources> for mp_rpc::v0_10_0::ExecutionResources {
+    fn from(resources: ExecutionResources) -> Self {
+        Self {
+            l1_gas: u64::try_from(resources.total_gas_consumed.l1_gas).unwrap_or(u64::MAX),
+            l1_data_gas: u64::try_from(resources.total_gas_consumed.l1_data_gas).unwrap_or(u64::MAX),
+            l2_gas: u64::try_from(resources.total_gas_consumed.l2_gas).unwrap_or(u64::MAX),
         }
     }
 }

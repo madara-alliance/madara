@@ -77,6 +77,7 @@ pub trait MadaraWriteRpcApi {
     /// before mutating the DB state, and then exits the process so Kubernetes
     /// (or another supervisor) can restart cleanly.
     ///
+    /// Only available when unsafe RPC methods are enabled.
     #[method(name = "revertToAndShutdown")]
     async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
 
@@ -88,10 +89,12 @@ pub trait MadaraWriteRpcApi {
     ) -> RpcResult<L1HandlerTransactionResult>;
 
     /// Sets custom headers to be used for a specific block number.
+    /// Only available when unsafe RPC methods are enabled.
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 
     /// Flush transactions from the mempool using an admin-only filter.
+    /// Only available when unsafe RPC methods are enabled.
     /// Nonce filters only narrow an explicit base selector and cannot be used on their own.
     /// Nonce-range flushing is surgical: it removes only matching transactions. If that creates an
     /// account nonce gap, higher nonces remain pending so the missing nonce can be resubmitted.

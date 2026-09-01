@@ -214,7 +214,7 @@ mod tests {
             db.put_cf(&preconfirmed_cf, preconfirmed_content_key(block_n, 2), b"tx2").expect("write keyed tx2");
         }
 
-        let ctx = MigrationContext::new(&db, Arc::new(AtomicBool::new(false)));
+        let ctx = MigrationContext::new(&db, tmp.path(), Arc::new(AtomicBool::new(false)));
         migrate(&ctx).expect("first migration");
         migrate(&ctx).expect("second migration (idempotent)");
 
@@ -266,7 +266,7 @@ mod tests {
         )
         .expect("write projection");
 
-        let ctx = MigrationContext::new(&db, Arc::new(AtomicBool::new(false)));
+        let ctx = MigrationContext::new(&db, tmp.path(), Arc::new(AtomicBool::new(false)));
         migrate(&ctx).expect("migration");
 
         assert_eq!(latest_checkpoint(&db), Some(block_n));
@@ -294,7 +294,7 @@ mod tests {
         )
         .expect("write latest applied trie update");
 
-        let ctx = MigrationContext::new(&db, Arc::new(AtomicBool::new(false)));
+        let ctx = MigrationContext::new(&db, tmp.path(), Arc::new(AtomicBool::new(false)));
         migrate(&ctx).expect("migration");
 
         assert_eq!(latest_checkpoint(&db), Some(6));

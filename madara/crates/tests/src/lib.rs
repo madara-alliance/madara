@@ -206,6 +206,8 @@ mod replay_boundary;
 #[cfg(test)]
 mod rpc;
 #[cfg(test)]
+mod starknetgo_ws;
+#[cfg(test)]
 mod storage_proof;
 #[cfg(test)]
 mod transaction_flow;
@@ -430,8 +432,12 @@ impl MadaraCmd {
         while start.elapsed() < timeout {
             match line_rx.try_recv() {
                 Ok(line) => {
-                    rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
-                    rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
+                    rpc_port = rpc_port
+                        .or_else(|| get_port(&line, "Running JSON-RPC server at "))
+                        .or_else(|| get_port(&line, "Running JSON-RPC WebSocket server at "));
+                    rpc_admin_port = rpc_admin_port
+                        .or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "))
+                        .or_else(|| get_port(&line, "Running JSON-RPC (Admin) WebSocket server at "));
                     gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
 
                     if (!rpc && rpc_port.is_some())

@@ -62,10 +62,13 @@ impl<D: MadaraStorageRead> WatchTransactionStatus<D> {
     pub fn refresh(&mut self) {
         self.current_value = self.subscription.borrow_and_update().clone();
     }
-    pub async fn recv(&mut self) -> &Option<TransactionStatus> {
-        self.subscription.changed().await;
+    pub async fn recv(&mut self) -> Option<&Option<TransactionStatus>> {
+        if !self.subscription.changed().await {
+            return None;
+        }
+
         self.current_value = self.subscription.borrow_and_update().clone();
-        &self.current_value
+        Some(&self.current_value)
     }
 }
 
@@ -97,10 +100,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
     }
 
     /// Subscribe to transaction statuses. See [`WatchTransactionStatus`] for more details.
-    pub fn watch_transaction_status(
-        self: &Arc<Self>,
-        transaction_hash: Felt,
-    ) -> anyhow::Result<WatchTransactionStatus<D>> {
+    pub fn watch_transaction_status(&self, transaction_hash: Felt) -> anyhow::Result<WatchTransactionStatus<D>> {
         Ok(WatchTransactionStatus::new(
             &self.backend,
             self.watch_transaction_status.watch(transaction_hash, || self.get_transaction_status(&transaction_hash))?,

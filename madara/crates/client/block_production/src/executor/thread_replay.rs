@@ -43,7 +43,7 @@ impl ExecutorThread {
 
     /// Replay boundaries cap how many transactions the current block may execute.
     /// Excess transactions stay buffered and roll into the next block unchanged.
-    pub(super) fn apply_replay_boundary_capacity(
+    pub(in crate::executor) fn apply_replay_boundary_capacity(
         &self,
         block_n: u64,
         to_exec: &mut BatchToExecute,
@@ -92,7 +92,7 @@ impl ExecutorThread {
     /// Replay boundaries override the normal block-full / block-time close rules.
     /// A replay-capped block closes only when the boundary is met or a force-close
     /// command arrives.
-    pub(super) fn replay_close_decision(
+    pub(in crate::executor) fn replay_close_decision(
         &self,
         block_n: u64,
         force_close: bool,

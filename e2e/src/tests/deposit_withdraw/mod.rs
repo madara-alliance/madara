@@ -31,6 +31,13 @@ use starknet::{
 #[allow(unused_imports)]
 use crate::tests::setup::setup_chain;
 
+const E2E_L1_GAS: u64 = 220_000;
+const E2E_L2_GAS: u64 = 6_000_000_000;
+const E2E_L1_DATA_GAS: u64 = 60_000;
+const E2E_L1_GAS_PRICE: u128 = 1;
+const E2E_L2_GAS_PRICE: u128 = 37_500;
+const E2E_L1_DATA_GAS_PRICE: u128 = 1;
+
 // Define the ERC20Token contract interface
 sol! {
     #[allow(missing_docs)]
@@ -216,7 +223,7 @@ async fn test_erc20_deposit_flow(
     println!("Initial ERC20 L2 balance: {}", initial_l2_balance);
 
     // Execute L1 deposit
-    let deposit_amount = U256::from(10u64);
+    let deposit_amount = U256::from(1_000_000_000_000_000_000u64);
     execute_erc20_l1_deposit(l1_context, deposit_amount, test_config, addresses).await?;
 
     // Wait for message processing
@@ -449,9 +456,12 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let result = l2_context
         .account
         .execute_v3(vec![call])
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(E2E_L1_GAS)
+        .l1_gas_price(E2E_L1_GAS_PRICE)
+        .l2_gas(E2E_L2_GAS)
+        .l2_gas_price(E2E_L2_GAS_PRICE)
+        .l1_data_gas(E2E_L1_DATA_GAS)
+        .l1_data_gas_price(E2E_L1_DATA_GAS_PRICE)
         .send()
         .await
         .map_err(|e| format!("Failed to execute withdrawal transaction: {}", e))?;
@@ -487,9 +497,12 @@ async fn execute_erc20_l2_withdrawal(l2_context: &L2Context, addresses: &Deploye
     let result = l2_context
         .account
         .execute_v3(vec![call])
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(E2E_L1_GAS)
+        .l1_gas_price(E2E_L1_GAS_PRICE)
+        .l2_gas(E2E_L2_GAS)
+        .l2_gas_price(E2E_L2_GAS_PRICE)
+        .l1_data_gas(E2E_L1_DATA_GAS)
+        .l1_data_gas_price(E2E_L1_DATA_GAS_PRICE)
         .send()
         .await
         .map_err(|e| format!("Failed to execute withdrawal transaction: {}", e))?;

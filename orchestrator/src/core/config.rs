@@ -230,6 +230,7 @@ impl Config {
     #[cfg(test)]
     pub(crate) fn new(
         layer: Layer,
+        prover_kind: ProverKind,
         params: ConfigParam,
         chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
@@ -246,7 +247,7 @@ impl Config {
     ) -> Self {
         Self {
             layer,
-            prover_kind: ProverKind::Atlantic,
+            prover_kind,
             params,
             chain_details,
             madara_rpc_client,
@@ -520,6 +521,7 @@ impl Config {
                         ethereum_settlement_params.l1_core_contract_address,
                         ethereum_settlement_params.ethereum_rpc_url.clone(),
                         Some(ethereum_settlement_params.starknet_operator_address),
+                        ethereum_settlement_params.ethereum_l2_state_update_max_fee_wei,
                     )))
                 }
             }

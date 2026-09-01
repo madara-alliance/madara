@@ -67,6 +67,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             end_block: 3,
             num_blocks: 4,
             blob_len: 0,
+            aggregator_input_size_upper_bound: 1,
             squashed_state_updates_path: get_batch_state_update_file(1),
             created_at: chrono::Utc::now(),
             starknet_version: StarknetVersion::V0_13_2,
@@ -503,8 +504,8 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
 
     SnosBatchingTrigger.run_worker(services.config.clone()).await?;
 
-    let snos_batches_closed = database.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None).await?;
-    let snos_batches_open = database.get_snos_batches_without_jobs(SnosBatchStatus::Open, 5, None).await?;
+    let snos_batches_closed = database.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None, 0).await?;
+    let snos_batches_open = database.get_snos_batches_without_jobs(SnosBatchStatus::Open, 5, None, 0).await?;
 
     assert_eq!(snos_batches_closed.len(), 2);
     assert_eq!(snos_batches_open.len(), 1);

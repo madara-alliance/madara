@@ -17,17 +17,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [features]
 default = []
 
-[dev-dependencies]
-
-rstest = { workspace = true }
-mc-db = { workspace = true, features = ["testing"] }
-mp-utils = { workspace = true, features = ["testing"] }
-mc-mempool = { workspace = true, features = ["testing"] }
-mc-devnet = { workspace = true }
-m-cairo-test-contracts = { workspace = true }
-starknet-core = { workspace = true }
-assert_matches = { workspace = true }
-
 [dependencies]
 
 # Madara
@@ -38,6 +27,7 @@ mc-exec = { workspace = true }
 mc-mempool = { workspace = true }
 mc-settlement-client = { workspace = true }
 mc-submit-tx = { workspace = true }
+mc-telemetry = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -63,9 +53,20 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
 ] }
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+assert_matches = { workspace = true }
+m-cairo-test-contracts = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+mc-devnet = { workspace = true }
+mc-mempool = { workspace = true, features = ["testing"] }
+mp-utils = { workspace = true, features = ["testing"] }
+rstest = { workspace = true }
+starknet-core = { workspace = true }

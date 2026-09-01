@@ -18,6 +18,8 @@ use tower::Service;
 
 #[allow(non_upper_case_globals)]
 const MiB: u32 = 1024 * 1024;
+const WS_PING_INTERVAL_SECS: u64 = 30;
+const WS_MAX_PING_FAILURES: usize = 3;
 
 /// RPC server configuration.
 #[derive(Debug, Clone)]
@@ -28,6 +30,7 @@ pub struct ServerConfig {
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
+    pub ws_inactive_timeout_secs: u64,
     pub max_payload_in_mib: u32,
     pub max_payload_out_mib: u32,
     pub metrics: RpcMetrics,
@@ -62,6 +65,7 @@ pub async fn start_server(
         rpc_version_default,
         max_connections,
         max_subs_per_conn,
+        ws_inactive_timeout_secs,
         max_payload_in_mib,
         max_payload_out_mib,
         metrics,
@@ -77,9 +81,9 @@ pub async fn start_server(
     let local_addr = listener.local_addr().context("Failed to retrieve local address after binding TCP listener")?;
 
     let ping_config = jsonrpsee::server::PingConfig::new()
-        .ping_interval(Duration::from_secs(30))
-        .inactive_limit(Duration::from_secs(60))
-        .max_failures(3);
+        .ping_interval(Duration::from_secs(WS_PING_INTERVAL_SECS))
+        .inactive_limit(Duration::from_secs(ws_inactive_timeout_secs))
+        .max_failures(WS_MAX_PING_FAILURES);
 
     let http_middleware = tower::ServiceBuilder::new()
         .option_layer(host_filtering(cors.is_some(), local_addr))
@@ -90,11 +94,11 @@ pub async fn start_server(
         .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
         .max_subscriptions_per_connection(max_subs_per_conn)
+        .set_id_provider(mc_rpc::StarknetSubscriptionIdProvider::default())
         .enable_ws_ping(ping_config)
         .set_message_buffer_capacity(message_buffer_capacity)
         .set_batch_request_config(batch_config)
-        .set_http_middleware(http_middleware)
-        .set_id_provider(jsonrpsee::server::RandomStringIdProvider::new(16));
+        .set_http_middleware(http_middleware);
 
     let cfg = PerConnection {
         methods,
@@ -180,9 +184,25 @@ pub async fn start_server(
         .serve(make_service);
 
     tracing::info!(
-        "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
-        local_addr.to_string(),
-        config.rpc_version_default,
+        "Running {name} HTTP server at http://{}/rpc/v{}/ (max_connections={}, max_request_size_mib={}, max_response_size_mib={}, allowed_origins={}, supported_versions={})",
+        local_addr,
+        rpc_version_default,
+        max_connections,
+        max_payload_in_mib,
+        max_payload_out_mib,
+        format_cors(cors.as_ref()),
+        format_rpc_versions(&supported_versions),
+    );
+    tracing::info!(
+        "Running {name} WebSocket server at ws://{}/rpc/v{}/ (max_connections={}, max_subscriptions_per_connection={}, message_buffer_capacity_per_connection={}, ws_ping_interval_secs={}, ws_inactive_timeout_secs={}, ws_max_ping_failures={}, allowed_origins={}, supported_versions={})",
+        local_addr,
+        rpc_version_default,
+        max_connections,
+        max_subs_per_conn,
+        message_buffer_capacity,
+        WS_PING_INTERVAL_SECS,
+        ws_inactive_timeout_secs,
+        WS_MAX_PING_FAILURES,
         format_cors(cors.as_ref()),
         format_rpc_versions(&supported_versions),
     );

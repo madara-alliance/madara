@@ -4,8 +4,7 @@ use crate::{
     import::{BlockImporter, BlockValidationConfig},
     SyncControllerConfig,
 };
-use anyhow::Context;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
@@ -39,10 +38,7 @@ impl ReorgTestContext {
     }
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
-        let result = self.backend.revert_to(block_hash)?;
-        self.backend.refresh_head_projection_from_db().context("Refreshing head projection after reorg")?;
-
-        Ok(result)
+        self.backend.revert_to(block_hash)
     }
 }
 

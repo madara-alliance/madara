@@ -560,6 +560,7 @@ mod tests {
                 gas_without_casm_hash_computation: Default::default(),
             },
             compiled_class_hashes_for_migration: vec![],
+            block_info: Default::default(),
         }
     }
 
@@ -588,6 +589,7 @@ mod tests {
             root_base_block_n: None,
             root_snapshot: None,
             root_state_diffs: Vec::new(),
+            protocol_version: mp_chain_config::StarknetVersion::LATEST,
             last_execution_finished_at: None,
             close_block_received_at: Instant::now(),
             enqueued_at: Instant::now(),

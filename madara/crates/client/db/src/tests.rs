@@ -8,4 +8,4 @@ pub mod test_open;
 pub mod test_parallel_merkle_restart;
 pub mod test_preconfirmed_gc;
 pub mod test_reorg_l1_messages;
-pub mod test_runtime_exec_config;
+pub mod test_reorg_notifications;

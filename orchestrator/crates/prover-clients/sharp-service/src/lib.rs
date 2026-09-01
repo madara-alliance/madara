@@ -66,7 +66,7 @@ impl ProverClient for SharpProverService {
                     function_type = "cairo_pie",
                     "Submitting Cairo PIE to SHARP."
                 );
-                // Use the orchestrator's dedup_id as the cairo_job_key so retries
+                // Use the caller-provided dedup_id as the cairo_job_key so retries
                 // hit the same SHARP server-side job instead of creating duplicates.
                 let cairo_job_key = dedup_id;
 
@@ -87,11 +87,9 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(cairo_job_key)
             }
-            Task::CreateBucket => {
-                let bucket_id = uuid::Uuid::new_v4().to_string();
-                tracing::debug!(bucket_id = %bucket_id, "Generated local bucket ID (SHARP has no remote buckets)");
-                Ok(bucket_id)
-            }
+            Task::CreateBucket => Err(ProverClientError::TaskInvalid(
+                "SHARP does not support bucket creation. Aggregator batching should skip CreateBucket.".to_string(),
+            )),
             Task::RunAggregation(_) => Err(ProverClientError::TaskInvalid(
                 "SHARP does not support bucket-based aggregation. Use RunAggregationWithPie.".to_string(),
             )),

@@ -41,18 +41,18 @@ impl BlockProductionService {
                     no_charge_fee,
                     config.discard_preconfirmed_on_startup,
                 )
-                    .with_close_queue_capacity(close_queue_capacity)
-                    .with_replay_mode_enabled(config.replay_mode)
-                    .with_parallel_merkle_enabled(config.parallel_merkle_enabled)
-                    .with_parallel_merkle_compare_sequential(config.parallel_merkle_compare_sequential)
-                    .with_parallel_merkle_root_workers(config.parallel_merkle_root_workers)
-                    .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval)
-                    .with_parallel_merkle_trie_log_mode(match config.parallel_merkle_trie_log_mode {
-                        ParallelMerkleTrieLogMode::Off => mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Off,
-                        ParallelMerkleTrieLogMode::Checkpoint => {
-                            mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint
-                        }
-                    }),
+                .with_close_queue_capacity(close_queue_capacity)
+                .with_replay_mode_enabled(config.replay_mode)
+                .with_parallel_merkle_enabled(config.parallel_merkle_enabled)
+                .with_parallel_merkle_compare_sequential(config.parallel_merkle_compare_sequential)
+                .with_parallel_merkle_root_workers(config.parallel_merkle_root_workers)
+                .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval)
+                .with_parallel_merkle_trie_log_mode(match config.parallel_merkle_trie_log_mode {
+                    ParallelMerkleTrieLogMode::Off => mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Off,
+                    ParallelMerkleTrieLogMode::Checkpoint => {
+                        mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint
+                    }
+                }),
             ),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,

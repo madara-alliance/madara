@@ -356,10 +356,6 @@ impl PipelineSteps for GatewaySyncSteps {
                                             self._backend.revert_to(&common_ancestor_hash)?;
 
                                             self._backend.db.flush()?;
-
-                                            self._backend
-                                                .refresh_head_projection_from_db()
-                                                .context("Refreshing head projection after reorg")?;
                                             control_metrics().reorg_processed_total.add(1, &[]);
                                             tracing::info!("✅ Reorg completed successfully, head projection cache refreshed, aborting pipeline to restart from new head projection");
 

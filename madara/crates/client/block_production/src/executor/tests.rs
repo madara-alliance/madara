@@ -379,6 +379,9 @@ async fn replay_boundary_spillover_moves_overflow_suffix(#[future] devnet_setup:
     assert_eq!(replay_next_block_buffer.len(), 1);
     assert_eq!(to_exec.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(), tx_hashes[..2].to_vec());
     assert_eq!(replay_next_block_buffer.txs[0].tx_hash().to_felt(), tx_hashes[2]);
+
+    // ExecutorThread owns a Tokio runtime, which must be dropped outside this async runtime.
+    tokio::task::spawn_blocking(move || drop(thread)).await.unwrap();
 }
 
 #[rstest::rstest]
@@ -417,6 +420,9 @@ async fn replay_close_decision_waits_for_boundary_or_force_close(#[future] devne
     assert!(met.should_close);
     assert!(met.replay_boundary_met);
     assert_eq!(met.reason, Some(thread::CloseReason::ReplayBoundaryMet));
+
+    // ExecutorThread owns a Tokio runtime, which must be dropped outside this async runtime.
+    tokio::task::spawn_blocking(move || drop(thread)).await.unwrap();
 }
 
 #[test]

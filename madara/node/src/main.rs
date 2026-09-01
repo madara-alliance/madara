@@ -416,8 +416,13 @@ async fn main() -> anyhow::Result<()> {
 
     // User-facing RPC
 
-    let service_rpc_user =
-        RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone(), tx_lookup.clone());
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        tx_lookup.clone(),
+        Some(service_mempool.mempool()),
+    );
 
     // Admin-facing RPC (for node operators)
 
@@ -426,6 +431,7 @@ async fn main() -> anyhow::Result<()> {
         backend.clone(),
         tx_submit.clone(),
         tx_lookup.clone(),
+        Some(service_mempool.mempool()),
         service_block_production.handle(),
         service_mempool.mempool(),
     );

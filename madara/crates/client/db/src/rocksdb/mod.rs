@@ -463,7 +463,12 @@ impl RocksDBStorage {
                         )
                     })?;
                 let cumulative_state_diff = squash_state_diffs(replay_diffs.iter().map(|(_, diff)| diff));
-                self.apply_to_global_trie(confirmed_tip, [&cumulative_state_diff]).with_context(|| {
+                self.apply_to_global_trie(
+                    confirmed_tip,
+                    [&cumulative_state_diff],
+                    confirmed_block_info.header.protocol_version,
+                )
+                .with_context(|| {
                     format!(
                         "Applying cumulative state diff for confirmed block #{confirmed_tip} during parallel merkle reconciliation"
                     )
@@ -529,6 +534,7 @@ impl RocksDBStorage {
         snapshot: SnapshotRef,
         block_n: u64,
         state_diff: &StateDiff,
+        protocol_version: mp_chain_config::StarknetVersion,
         include_overlay: bool,
         trie_log_mode: TrieLogMode,
         compare_with_sequential: bool,
@@ -546,6 +552,7 @@ impl RocksDBStorage {
             snapshot,
             block_n,
             state_diff,
+            protocol_version,
             include_overlay,
             trie_log_mode,
         )?;
@@ -557,6 +564,7 @@ impl RocksDBStorage {
                 compare_snapshot,
                 block_n,
                 state_diff,
+                protocol_version,
                 trie_log_mode,
             )?;
             tracing::debug!(
@@ -583,6 +591,7 @@ impl RocksDBStorage {
         &self,
         block_n: u64,
         state_diff: &StateDiff,
+        protocol_version: mp_chain_config::StarknetVersion,
         include_overlay: bool,
         trie_log_mode: TrieLogMode,
     ) -> Result<InMemoryRootComputation> {
@@ -615,13 +624,23 @@ impl RocksDBStorage {
             include_overlay,
             trie_log_mode
         );
-        compute_root_from_snapshot(self, base_block_n, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
+        compute_root_from_snapshot(
+            self,
+            base_block_n,
+            snapshot,
+            block_n,
+            state_diff,
+            protocol_version,
+            include_overlay,
+            trie_log_mode,
+        )
     }
 
     pub fn compute_roots_in_parallel_from_latest_snapshot(
         &self,
         start_block_n: u64,
         state_diffs: &[StateDiff],
+        protocol_version: mp_chain_config::StarknetVersion,
         boundary_block_n: Option<u64>,
         trie_log_mode: TrieLogMode,
     ) -> Result<Vec<InMemoryRootComputation>> {
@@ -668,6 +687,7 @@ impl RocksDBStorage {
             snapshot,
             start_block_n,
             state_diffs,
+            protocol_version,
             boundary_block_n,
             trie_log_mode,
         )
@@ -1251,12 +1271,17 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Getting target block info")?
             .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
 
-        let current_tip = match self.inner.get_head_projection()? {
+        let current_head_projection = self.inner.get_head_projection()?;
+        let (current_tip, had_preconfirmed_tip) = match current_head_projection {
             StorageHeadProjection::Empty => anyhow::bail!("Cannot revert when chain is empty"),
-            StorageHeadProjection::Confirmed(block_n) => block_n,
-            StorageHeadProjection::Preconfirmed { header, .. } => {
-                header.block_number.checked_sub(1).ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?
-            }
+            StorageHeadProjection::Confirmed(block_n) => (block_n, false),
+            StorageHeadProjection::Preconfirmed { header, .. } => (
+                header
+                    .block_number
+                    .checked_sub(1)
+                    .ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?,
+                true,
+            ),
         };
 
         let current_tip_info = self
@@ -1266,7 +1291,16 @@ impl MadaraStorageWrite for RocksDBStorage {
             .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
 
         if target_block_n == current_tip {
-            tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
+            if had_preconfirmed_tip {
+                tracing::info!(
+                    "🔄 REORG: Clearing preconfirmed tip while keeping confirmed head at block_n={target_block_n}"
+                );
+                self.replace_head_projection(&StorageHeadProjection::Confirmed(target_block_n))
+                    .context("Clearing preconfirmed head projection during revert")?;
+                self.flush().context("Flushing database after clearing preconfirmed tip")?;
+            } else {
+                tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
+            }
             return Ok((target_block_n, *new_tip_block_hash));
         }
 
@@ -1432,8 +1466,12 @@ impl MadaraStorageWrite for RocksDBStorage {
             if target_block_n > bonsai_floor {
                 let replay_diffs = self.collect_state_diffs_inclusive(bonsai_floor + 1, target_block_n)?;
                 let cumulative_state_diff = squash_state_diffs(replay_diffs.iter().map(|(_, diff)| diff));
-                self.apply_to_global_trie(target_block_n, [&cumulative_state_diff])
-                    .context("Replaying cumulative state diff after floor revert")?;
+                self.apply_to_global_trie(
+                    target_block_n,
+                    [&cumulative_state_diff],
+                    target_block_info.header.protocol_version,
+                )
+                .context("Replaying cumulative state diff after floor revert")?;
                 self.inner
                     .write_parallel_merkle_checkpoint(target_block_n)
                     .context("Marking replay target as checkpoint after floor revert")?;
@@ -1692,17 +1730,24 @@ mod tests {
         let diff0 = synthetic_state_diff(0);
         let diff1 = synthetic_state_diff(1);
 
-        expected_storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        expected_storage.apply_to_global_trie(0, [&diff0], StarknetVersion::LATEST).expect("apply block 0");
         expected_storage.on_new_confirmed_head(0).expect("confirm block 0");
-        let (expected_root, _) = expected_storage.apply_to_global_trie(1, [&diff1]).expect("apply block 1");
+        let (expected_root, _) =
+            expected_storage.apply_to_global_trie(1, [&diff1], StarknetVersion::LATEST).expect("apply block 1");
 
         let (_temp_actual, storage) = create_test_storage(RocksDBConfig::default());
-        storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        storage.apply_to_global_trie(0, [&diff0], StarknetVersion::LATEST).expect("apply block 0");
         storage.write_parallel_merkle_checkpoint(0).expect("checkpoint 0");
         storage.on_new_confirmed_head(0).expect("confirm block 0");
 
         let results = storage
-            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], None, TrieLogMode::Checkpoint)
+            .compute_roots_in_parallel_from_latest_snapshot(
+                1,
+                &[diff1],
+                StarknetVersion::LATEST,
+                None,
+                TrieLogMode::Checkpoint,
+            )
             .expect("parallel roots");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].state_root, expected_root);
@@ -1714,13 +1759,19 @@ mod tests {
         let diff0 = synthetic_state_diff(0);
         let diff1 = synthetic_state_diff(1);
 
-        storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        storage.apply_to_global_trie(0, [&diff0], StarknetVersion::LATEST).expect("apply block 0");
         storage.on_new_confirmed_head(0).expect("confirm block 0");
-        storage.apply_to_global_trie(1, [&diff1]).expect("apply block 1");
+        storage.apply_to_global_trie(1, [&diff1], StarknetVersion::LATEST).expect("apply block 1");
         storage.on_new_confirmed_head(1).expect("confirm block 1");
 
         let err = storage
-            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], None, TrieLogMode::Checkpoint)
+            .compute_roots_in_parallel_from_latest_snapshot(
+                1,
+                &[diff1],
+                StarknetVersion::LATEST,
+                None,
+                TrieLogMode::Checkpoint,
+            )
             .expect_err("missing exact base snapshot should fail");
         let message = format!("{err:#}");
         assert!(message.contains("Missing exact base snapshot"), "unexpected error: {message}");
@@ -1733,19 +1784,27 @@ mod tests {
         let mut expected_roots = Vec::new();
         for (block_n, diff) in diffs.iter().enumerate() {
             let block_n = block_n as u64;
-            let (root, _) = expected_storage.apply_to_global_trie(block_n, [diff]).expect("sequential apply");
+            let (root, _) = expected_storage
+                .apply_to_global_trie(block_n, [diff], StarknetVersion::LATEST)
+                .expect("sequential apply");
             expected_storage.on_new_confirmed_head(block_n).expect("confirm block");
             expected_roots.push(root);
         }
 
         let (_temp_actual, storage) = create_test_storage(RocksDBConfig::default());
-        storage.apply_to_global_trie(0, [&diffs[0]]).expect("apply block 0");
+        storage.apply_to_global_trie(0, [&diffs[0]], StarknetVersion::LATEST).expect("apply block 0");
         storage.on_new_confirmed_head(0).expect("confirm block 0");
-        storage.apply_to_global_trie(1, [&diffs[1]]).expect("apply block 1");
+        storage.apply_to_global_trie(1, [&diffs[1]], StarknetVersion::LATEST).expect("apply block 1");
         storage.on_new_confirmed_head(1).expect("confirm block 1");
 
         let results = storage
-            .compute_roots_in_parallel_from_latest_snapshot(0, &diffs, None, TrieLogMode::Checkpoint)
+            .compute_roots_in_parallel_from_latest_snapshot(
+                0,
+                &diffs,
+                StarknetVersion::LATEST,
+                None,
+                TrieLogMode::Checkpoint,
+            )
             .expect("parallel roots from empty base");
         let got_roots: Vec<_> = results.into_iter().map(|result| result.state_root).collect();
         assert_eq!(got_roots, expected_roots);

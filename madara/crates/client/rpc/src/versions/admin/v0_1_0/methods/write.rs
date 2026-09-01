@@ -339,11 +339,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
-        self.backend
-            .refresh_head_projection_from_db()
-            .context("Failed to refresh head projection after revert")
-            .map_err(StarknetRpcApiError::from)?;
-
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
 
         // Shut down the process after responding, so the client gets an ACK.
@@ -390,6 +385,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     }
 
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
         let mempool = self.mempool.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
         let flush_mode = FlushMode::from_params(params)?;
         let removed_transactions = match flush_mode {
@@ -497,12 +499,17 @@ mod tests {
         rpc
     }
 
-    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
+    fn make_starknet_with_mempool_and_unsafe(rpc_unsafe_enabled: bool) -> (Arc<Mempool>, Starknet) {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
         let mut rpc = make_starknet(backend, ServiceContext::new_for_testing());
+        rpc.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
         rpc.set_mempool(mempool.clone());
         (mempool, rpc)
+    }
+
+    fn make_starknet_with_mempool() -> (Arc<Mempool>, Starknet) {
+        make_starknet_with_mempool_and_unsafe(true)
     }
 
     fn invoke_v1_tx(sender: Felt, nonce: Felt, hash: Felt, arrived_at: u64) -> ValidatedTransaction {
@@ -645,6 +652,32 @@ mod tests {
 
         assert_eq!(result.removed_transaction_hashes, vec![tx1.hash, tx2.hash]);
         assert!(mempool.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn flush_mempool_txns_requires_unsafe_rpc() {
+        let (mempool, rpc) = make_starknet_with_mempool_and_unsafe(false);
+        let tx = invoke_v1_tx(Felt::from(11_u64), Felt::ZERO, Felt::from(101_u64), TxTimestamp::now().0);
+        mempool.accept_tx(tx.clone()).await.unwrap();
+
+        let err = rpc.flush_mempool_txns(FlushMempoolTxnsParams { all: true, ..Default::default() }).await.unwrap_err();
+
+        assert_eq!(err.code(), 63);
+        assert_eq!(err.message(), "An unexpected error occurred");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(err.data().expect("error data should be present").get())
+                .expect("error data should be valid JSON"),
+            serde_json::json!("This method requires the --rpc-unsafe flag to be enabled")
+        );
+        assert_eq!(
+            mempool
+                .snapshot_transaction_hashes_matching(0, usize::MAX, false, |_| true)
+                .await
+                .into_iter()
+                .map(|tx| tx.transaction_hash)
+                .collect::<Vec<_>>(),
+            vec![tx.hash]
+        );
     }
 
     #[tokio::test]
