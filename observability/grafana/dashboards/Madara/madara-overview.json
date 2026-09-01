@@ -8626,18 +8626,9 @@
           "expr": "sum by (kind) (rate(exec_hash_cache_hits_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / (sum by (kind) (rate(exec_hash_cache_calls_call_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) + 0.001)",
           "legendFormat": "hit {{kind}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum by (kind) (rate(exec_hash_cache_misses_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / (sum by (kind) (rate(exec_hash_cache_calls_call_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) + 0.001)",
-          "legendFormat": "miss {{kind}}",
-          "refId": "B"
         }
       ],
-      "title": "Exec Hash Cache Hit/Miss Ratio",
+      "title": "Exec Hash Cache Hit Ratio",
       "type": "stat"
     }
   ],

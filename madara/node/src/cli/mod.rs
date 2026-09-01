@@ -454,6 +454,45 @@ mod tests {
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
     }
+
+    #[test]
+    fn config_file_without_hash_cache_capacities_uses_defaults() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).expect("config fixture should be readable"))
+                .expect("config fixture should be valid JSON");
+        let backend = config["backend_params"].as_object_mut().expect("backend params should be an object");
+        for key in [
+            "exec_hash_cache_starknet_keccak_capacity",
+            "exec_hash_cache_pedersen_pair_capacity",
+            "exec_hash_cache_pedersen_array_capacity",
+            "exec_hash_cache_poseidon_array_capacity",
+            "exec_hash_cache_cairo_native_pedersen_capacity",
+        ] {
+            backend.remove(key);
+        }
+
+        let run_cmd: RunCmd = Figment::new()
+            .merge(Json::string(&config.to_string()))
+            .extract()
+            .expect("legacy config should deserialize");
+        assert_eq!(
+            [
+                run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+            ],
+            [
+                starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY,
+                starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY,
+                mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY,
+            ]
+        );
+    }
 }
 
 /// Starknet network types.

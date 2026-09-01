@@ -13,6 +13,26 @@ const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 
+fn default_exec_hash_cache_starknet_keccak_capacity() -> usize {
+    starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_pedersen_pair_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_pedersen_array_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_poseidon_array_capacity() -> usize {
+    starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_cairo_native_pedersen_capacity() -> usize {
+    mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
     /// Disable all metrics
@@ -221,6 +241,7 @@ pub struct BackendParams {
         long,
         default_value_t = starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
     )]
+    #[serde(default = "default_exec_hash_cache_starknet_keccak_capacity")]
     pub exec_hash_cache_starknet_keccak_capacity: usize,
 
     /// Maximum two-input Pedersen memoized values.
@@ -229,6 +250,7 @@ pub struct BackendParams {
         long,
         default_value_t = starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
     )]
+    #[serde(default = "default_exec_hash_cache_pedersen_pair_capacity")]
     pub exec_hash_cache_pedersen_pair_capacity: usize,
 
     /// Maximum Pedersen-array memoized values.
@@ -237,6 +259,7 @@ pub struct BackendParams {
         long,
         default_value_t = starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
     )]
+    #[serde(default = "default_exec_hash_cache_pedersen_array_capacity")]
     pub exec_hash_cache_pedersen_array_capacity: usize,
 
     /// Maximum Poseidon-array memoized values.
@@ -245,6 +268,7 @@ pub struct BackendParams {
         long,
         default_value_t = starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
     )]
+    #[serde(default = "default_exec_hash_cache_poseidon_array_capacity")]
     pub exec_hash_cache_poseidon_array_capacity: usize,
 
     /// Maximum Cairo Native Pedersen memoized values retained per execution thread.
@@ -253,6 +277,7 @@ pub struct BackendParams {
         long,
         default_value_t = mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
     )]
+    #[serde(default = "default_exec_hash_cache_cairo_native_pedersen_capacity")]
     pub exec_hash_cache_cairo_native_pedersen_capacity: usize,
 }
 
