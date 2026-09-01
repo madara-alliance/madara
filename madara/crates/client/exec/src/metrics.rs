@@ -79,6 +79,13 @@ pub struct ExecutionMetrics {
     _hash_cache_hits_counter: ObservableCounter<u64>,
     _hash_cache_misses_counter: ObservableCounter<u64>,
     _hash_cache_capacity_clears_counter: ObservableCounter<u64>,
+    /// Process-wide Blockifier executor counters are observed from dependency-owned atomics.
+    _blockifier_transactions_counter: ObservableCounter<u64>,
+    _blockifier_committed_transactions_counter: ObservableCounter<u64>,
+    _blockifier_execution_attempts_counter: ObservableCounter<u64>,
+    _blockifier_validation_attempts_counter: ObservableCounter<u64>,
+    _blockifier_aborts_counter: ObservableCounter<u64>,
+    _blockifier_commit_phase_aborts_counter: ObservableCounter<u64>,
 }
 
 impl ExecutionMetrics {
@@ -170,6 +177,54 @@ impl ExecutionMetrics {
             })
             .build();
 
+        let blockifier_transactions_counter = meter
+            .u64_observable_counter("blockifier_transactions_total")
+            .with_description("Transactions submitted to completed Blockifier execution chunks")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().transactions, &[]);
+            })
+            .build();
+
+        let blockifier_committed_transactions_counter = meter
+            .u64_observable_counter("blockifier_committed_transactions_total")
+            .with_description("Transactions in the committed prefix of completed Blockifier execution chunks")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().committed_transactions, &[]);
+            })
+            .build();
+
+        let blockifier_execution_attempts_counter = meter
+            .u64_observable_counter("blockifier_execution_attempts_total")
+            .with_description("Blockifier transaction execution attempts, including speculative re-execution")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().execution_attempts, &[]);
+            })
+            .build();
+
+        let blockifier_validation_attempts_counter = meter
+            .u64_observable_counter("blockifier_validation_attempts_total")
+            .with_description("Blockifier speculative transaction validation attempts")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().validation_attempts, &[]);
+            })
+            .build();
+
+        let blockifier_aborts_counter = meter
+            .u64_observable_counter("blockifier_aborts_total")
+            .with_description("Blockifier speculative executions invalidated and scheduled for re-execution")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().aborts, &[]);
+            })
+            .build();
+
+        let blockifier_commit_phase_aborts_counter = meter
+            .u64_observable_counter("blockifier_commit_phase_aborts_total")
+            .with_description("Blockifier aborts first discovered while attempting to commit")
+            .with_callback(|observer| {
+                observer.observe(blockifier::metrics::transaction_executor_metrics().commit_phase_aborts, &[]);
+            })
+            .build();
+
         Self {
             tx_execution_time_histogram,
             read_cache_hits_counter,
@@ -179,6 +234,12 @@ impl ExecutionMetrics {
             _hash_cache_hits_counter: hash_cache_hits_counter,
             _hash_cache_misses_counter: hash_cache_misses_counter,
             _hash_cache_capacity_clears_counter: hash_cache_capacity_clears_counter,
+            _blockifier_transactions_counter: blockifier_transactions_counter,
+            _blockifier_committed_transactions_counter: blockifier_committed_transactions_counter,
+            _blockifier_execution_attempts_counter: blockifier_execution_attempts_counter,
+            _blockifier_validation_attempts_counter: blockifier_validation_attempts_counter,
+            _blockifier_aborts_counter: blockifier_aborts_counter,
+            _blockifier_commit_phase_aborts_counter: blockifier_commit_phase_aborts_counter,
         }
     }
 

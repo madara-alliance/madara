@@ -853,6 +853,20 @@ configuration examples also demonstrate three independent execution optimization
    executes Blockifier batches sequentially, avoiding speculative re-execution
    when transactions frequently conflict.
 
+Madara also exports process-lifetime Blockifier executor counters:
+
+- `blockifier_transactions_total`: transactions submitted to completed execution chunks.
+- `blockifier_committed_transactions_total`: transactions in the committed chunk prefixes.
+- `blockifier_execution_attempts_total`: initial and speculative re-execution attempts.
+- `blockifier_validation_attempts_total`: speculative validation attempts.
+- `blockifier_aborts_total`: executions invalidated and scheduled for re-execution.
+- `blockifier_commit_phase_aborts_total`: aborts first discovered during commit.
+
+These raw counters support rates and amplification ratios without adding labels or
+per-transaction metric cardinality. For example, execution amplification is the
+rate of `blockifier_execution_attempts_total` divided by the rate of
+`blockifier_committed_transactions_total`.
+
 All three are opt-in. The read and hash caches store only deterministic results;
 disabling them changes performance, not execution semantics.
 
