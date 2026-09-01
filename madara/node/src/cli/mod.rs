@@ -405,12 +405,93 @@ mod tests {
     }
 
     #[test]
+    fn execution_hash_cache_is_opt_in() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        assert!(!disabled.backend_params.exec_hash_cache_enabled);
+
+        let enabled = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--exec-hash-cache-enabled",
+            "--exec-hash-cache-starknet-keccak-capacity",
+            "101",
+            "--exec-hash-cache-pedersen-pair-capacity",
+            "102",
+            "--exec-hash-cache-pedersen-array-capacity",
+            "103",
+            "--exec-hash-cache-poseidon-array-capacity",
+            "104",
+            "--exec-hash-cache-cairo-native-pedersen-capacity",
+            "105",
+        ]);
+        assert!(enabled.backend_params.exec_hash_cache_enabled);
+        assert_eq!(enabled.backend_params.exec_hash_cache_starknet_keccak_capacity, 101);
+        assert_eq!(enabled.backend_params.exec_hash_cache_pedersen_pair_capacity, 102);
+        assert_eq!(enabled.backend_params.exec_hash_cache_pedersen_array_capacity, 103);
+        assert_eq!(enabled.backend_params.exec_hash_cache_poseidon_array_capacity, 104);
+        assert_eq!(enabled.backend_params.exec_hash_cache_cairo_native_pedersen_capacity, 105);
+        enabled.backend_params.validate().expect("positive hash cache capacities should be valid");
+
+        let invalid = RunCmd::parse_from([
+            "madara",
+            "--sequencer",
+            "--preset",
+            "devnet",
+            "--exec-hash-cache-enabled",
+            "--exec-hash-cache-starknet-keccak-capacity",
+            "0",
+        ]);
+        assert!(invalid.backend_params.validate().is_err());
+    }
+
+    #[test]
     fn config_file_without_discard_preconfirmed_on_startup_defaults_to_false() {
         let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
         let run_cmd: RunCmd =
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
+    }
+
+    #[test]
+    fn config_file_without_hash_cache_capacities_uses_defaults() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).expect("config fixture should be readable"))
+                .expect("config fixture should be valid JSON");
+        let backend = config["backend_params"].as_object_mut().expect("backend params should be an object");
+        for key in [
+            "exec_hash_cache_starknet_keccak_capacity",
+            "exec_hash_cache_pedersen_pair_capacity",
+            "exec_hash_cache_pedersen_array_capacity",
+            "exec_hash_cache_poseidon_array_capacity",
+            "exec_hash_cache_cairo_native_pedersen_capacity",
+        ] {
+            backend.remove(key);
+        }
+
+        let run_cmd: RunCmd = Figment::new()
+            .merge(Json::string(&config.to_string()))
+            .extract()
+            .expect("legacy config should deserialize");
+        assert_eq!(
+            [
+                run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+            ],
+            [
+                starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY,
+                starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY,
+                mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY,
+            ]
+        );
     }
 }
 

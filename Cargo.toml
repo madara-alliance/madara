@@ -340,7 +340,16 @@ time = "0.3"
 zip = "4.3.0"
 
 [patch.crates-io]
+cairo-native = { git = "https://github.com/karnotxyz/cairo_native", rev = "eb59cc0af7d854e60451fe6c6696ead71d2fada7" }
 jsonrpsee-core = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
 jsonrpsee-types = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+
+[patch."https://github.com/starkware-libs/sequencer"]
+apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+apollo_proc_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+apollo_sizeof = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+apollo_sizeof_macros = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }
