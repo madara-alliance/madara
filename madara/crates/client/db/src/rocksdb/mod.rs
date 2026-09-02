@@ -319,6 +319,50 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
     }
 }
 
+/// Verifies that a parallel-Merkle revert stays inside the configured trie-log window.
+///
+/// Boundary logs are sparse, but retention is expressed in block revisions. Reverting by
+/// more blocks than the retained window could make Bonsai treat pruned revisions as empty
+/// change sets and silently reconstruct the wrong trie state.
+fn ensure_parallel_merkle_revert_is_retained(
+    latest_checkpoint: u64,
+    target_block_n: u64,
+    checkpoint_floor: u64,
+    max_saved_trie_logs: Option<usize>,
+) -> Result<()> {
+    let Some(max_saved_trie_logs) = max_saved_trie_logs else {
+        return Ok(());
+    };
+    let retained_block_revisions =
+        u64::try_from(max_saved_trie_logs).context("Converting trie-log retention to u64")?;
+    let first_retained_revision = if retained_block_revisions == 0 {
+        latest_checkpoint.checked_add(1).context("Computing empty trie-log retention floor")?
+    } else {
+        latest_checkpoint.saturating_sub(retained_block_revisions - 1)
+    };
+
+    if checkpoint_floor < first_retained_revision {
+        anyhow::bail!(
+            "Cannot revert parallel Merkle checkpoint from block {latest_checkpoint} to {target_block_n}: checkpoint floor {checkpoint_floor} predates first retained trie-log revision {first_retained_revision} (window={retained_block_revisions})"
+        );
+    }
+
+    Ok(())
+}
+
+/// Rejects a reorg result whose materialized trie root does not match the target block.
+///
+/// The caller must invoke this before advancing the persisted head projection.
+fn ensure_reorg_target_root_matches(target_block_n: u64, expected_root: Felt, actual_root: Felt) -> Result<()> {
+    if actual_root != expected_root {
+        anyhow::bail!(
+            "Reorg target state root mismatch at block {target_block_n}: expected {expected_root:#x}, actual {actual_root:#x}; refusing to advance head projection"
+        );
+    }
+
+    Ok(())
+}
+
 impl RocksDBStorage {
     /// Builds descriptors for every column family already present on disk.
     ///
@@ -1595,6 +1639,12 @@ impl MadaraStorageWrite for RocksDBStorage {
                         "Missing parallel merkle checkpoint floor for revert target {target_block_n} with latest checkpoint {bonsai_ceiling}"
                     )
                 })?;
+            ensure_parallel_merkle_revert_is_retained(
+                bonsai_ceiling,
+                target_block_n,
+                bonsai_floor,
+                self.inner.config.max_saved_trie_logs,
+            )?;
             let floor_id = BasicId::new(bonsai_floor);
 
             tracing::info!(
@@ -1754,6 +1804,7 @@ impl MadaraStorageWrite for RocksDBStorage {
                 actual_target_root
             );
         }
+        ensure_reorg_target_root_matches(target_block_n, expected_target_root, actual_target_root)?;
 
         tracing::info!("🔗 REORG: Updating head projection to block_n={}", target_block_n);
         let new_tip = StorageHeadProjection::Confirmed(target_block_n);
@@ -1837,6 +1888,30 @@ mod tests {
         assert_eq!(trie_revert_action(Some(8), 8), TrieRevertAction::AlreadyAtTarget(8));
         assert_eq!(trie_revert_action(Some(5), 8), TrieRevertAction::OlderThanTarget { current: 5, target: 8 });
         assert_eq!(trie_revert_action(None, 8), TrieRevertAction::Missing);
+    }
+
+    #[test]
+    fn parallel_merkle_revert_rejects_ranges_outside_retained_logs() {
+        ensure_parallel_merkle_revert_is_retained(20_000, 10_001, 10_001, Some(10_000))
+            .expect("the oldest retained target should remain revertible");
+        ensure_parallel_merkle_revert_is_retained(20_000, 0, 0, None)
+            .expect("unbounded retention should permit an older target");
+
+        let error = ensure_parallel_merkle_revert_is_retained(20_000, 10_002, 9_999, Some(10_000))
+            .expect_err("a checkpoint floor older than retained trie logs must be rejected");
+        assert!(error.to_string().contains("checkpoint floor 9999 predates first retained trie-log revision 10001"));
+    }
+
+    #[test]
+    fn reorg_root_mismatch_is_fatal_before_head_advancement() {
+        let expected_root = Felt::from(1_u64);
+        let actual_root = Felt::from(2_u64);
+
+        ensure_reorg_target_root_matches(8, expected_root, expected_root)
+            .expect("matching target root should be accepted");
+        let error = ensure_reorg_target_root_matches(8, expected_root, actual_root)
+            .expect_err("mismatched target root must stop the reorg");
+        assert!(error.to_string().contains("refusing to advance head projection"));
     }
 
     #[test]

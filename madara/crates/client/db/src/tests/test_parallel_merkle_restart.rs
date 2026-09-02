@@ -2,7 +2,10 @@
 
 use crate::{
     preconfirmed::PreconfirmedBlock,
-    rocksdb::{global_trie::in_memory::InMemoryRootComputation, RocksDBConfig},
+    rocksdb::{
+        global_trie::in_memory::{BoundaryFlushOutcome, InMemoryRootComputation},
+        RocksDBConfig,
+    },
     storage::{MadaraStorageRead, MadaraStorageWrite},
     MadaraBackend, MadaraBackendConfig,
 };
@@ -92,6 +95,136 @@ fn write_parallel_block_parts(
         .expect("writing block parts with a precomputed root should succeed");
 
     computed
+}
+
+/// Publishes one prepared boundary overlay against its declared durable base.
+fn publish_boundary(
+    backend: &Arc<MadaraBackend>,
+    block_n: u64,
+    base_block_n: Option<u64>,
+    computed: &InMemoryRootComputation,
+) -> BoundaryFlushOutcome {
+    backend
+        .db
+        .flush_overlay_and_checkpoint(
+            block_n,
+            3,
+            base_block_n,
+            computed.overlay.as_ref().expect("boundary computation should include an overlay"),
+        )
+        .expect("publishing boundary overlay should succeed")
+}
+
+/// Confirms the prepared block and advances snapshot bookkeeping exactly once.
+fn confirm_parallel_block(backend: &Arc<MadaraBackend>, block_n: u64) {
+    backend.write_access().new_confirmed_block(block_n).expect("confirming prepared block should succeed");
+}
+
+/// Builds and publishes the first cumulative boundary at block 2.
+fn confirm_initial_boundary(backend: &Arc<MadaraBackend>, diffs: &[StateDiff]) {
+    for block_n in 0_u64..=2 {
+        let computed = write_parallel_block_parts(backend, block_n, &diffs[..=block_n as usize], block_n == 2);
+        if block_n == 2 {
+            assert_eq!(publish_boundary(backend, block_n, None, &computed), BoundaryFlushOutcome::Persisted);
+        }
+        confirm_parallel_block(backend, block_n);
+    }
+}
+
+/// Computes block 8 from checkpoint 2 before publishing checkpoint 5.
+fn compute_stale_block_8_before_checkpoint_5(
+    backend: &Arc<MadaraBackend>,
+    diffs: &[StateDiff],
+) -> InMemoryRootComputation {
+    for block_n in 3_u64..=4 {
+        write_parallel_block_parts(backend, block_n, &diffs[3..=block_n as usize], false);
+        confirm_parallel_block(backend, block_n);
+    }
+
+    let (base_block_n, snapshot) =
+        backend.db.get_latest_durable_snapshot_floor(Some(2)).expect("checkpoint 2 should have a durable snapshot");
+    assert_eq!(base_block_n, Some(2));
+    let cumulative_diff = crate::rocksdb::global_trie::in_memory::squash_state_diffs(diffs[3..=8].iter());
+    let stale_block_8 = backend
+        .db
+        .compute_root_from_selected_snapshot(
+            base_block_n,
+            snapshot,
+            8,
+            &cumulative_diff,
+            backend.chain_config().latest_protocol_version,
+            true,
+            false,
+        )
+        .expect("computing block 8 from checkpoint 2 should succeed");
+
+    let block_5 = write_parallel_block_parts(backend, 5, &diffs[3..=5], true);
+    assert_eq!(publish_boundary(backend, 5, Some(2), &block_5), BoundaryFlushOutcome::Persisted);
+    confirm_parallel_block(backend, 5);
+    stale_block_8
+}
+
+/// Skips the stale block-8 overlay, then publishes a six-block catch-up at block 11.
+fn confirm_stale_skip_and_catch_up(
+    backend: &Arc<MadaraBackend>,
+    diffs: &[StateDiff],
+    stale_block_8: &InMemoryRootComputation,
+) -> (Felt, Felt) {
+    for block_n in 6_u64..=7 {
+        write_parallel_block_parts(backend, block_n, &diffs[6..=block_n as usize], false);
+        confirm_parallel_block(backend, block_n);
+    }
+
+    let block_8 = write_parallel_block_parts(backend, 8, &diffs[6..=8], true);
+    assert_eq!(block_8.state_root, stale_block_8.state_root);
+    assert_eq!(
+        publish_boundary(backend, 8, Some(2), stale_block_8),
+        BoundaryFlushOutcome::StaleBaseSkipped { latest_checkpoint: 5 }
+    );
+    confirm_parallel_block(backend, 8);
+
+    for block_n in 9_u64..=10 {
+        write_parallel_block_parts(backend, block_n, &diffs[6..=block_n as usize], false);
+        confirm_parallel_block(backend, block_n);
+    }
+
+    let block_11 = write_parallel_block_parts(backend, 11, &diffs[6..=11], true);
+    assert_eq!(publish_boundary(backend, 11, Some(5), &block_11), BoundaryFlushOutcome::Persisted);
+    confirm_parallel_block(backend, 11);
+
+    let target = backend.db.get_block_info(8).expect("reading block 8").expect("block 8 should exist");
+    (target.block_hash, target.header.global_state_root)
+}
+
+/// Reverts twice to block 8 and verifies that the second call is a no-op.
+fn assert_revert_is_idempotent(backend: &Arc<MadaraBackend>, target_hash: Felt, target_root: Felt) {
+    let first_revert = backend.revert_to(&target_hash).expect("reverting to block 8 should succeed");
+    assert_eq!(first_revert, (8, target_hash));
+    assert_eq!(backend.db.get_state_root_hash().expect("reading reverted root"), target_root);
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(8));
+    assert!(!backend.has_parallel_merkle_checkpoint(11).expect("checkpoint 11 should be removed"));
+
+    let repeated_revert = backend.revert_to(&target_hash).expect("repeating the same revert should be a no-op");
+    assert_eq!(repeated_revert, (8, target_hash));
+    assert_eq!(backend.db.get_state_root_hash().expect("reading root after repeated revert"), target_root);
+}
+
+/// Verifies that the reverted target remains canonical after reopening RocksDB.
+fn assert_revert_survives_reopen(path: &Path, target_hash: Felt, target_root: Felt) {
+    let reopened = open_backend(path);
+    assert_eq!(reopened.chain_head_state().confirmed_tip, Some(8));
+    assert_eq!(reopened.db.get_state_root_hash().expect("reading reopened root"), target_root);
+    assert_eq!(reopened.get_parallel_merkle_latest_checkpoint().expect("reopened checkpoint"), Some(8));
+    assert_eq!(
+        reopened
+            .db
+            .get_block_info(8)
+            .expect("reading reopened block 8")
+            .expect("reopened block 8 should exist")
+            .block_hash,
+        target_hash
+    );
+    assert!(reopened.db.get_block_info(9).expect("reading reverted block 9").is_none());
 }
 
 fn assert_boundary_crash_recovered(backend: &Arc<MadaraBackend>, expected_confirmed_root: Felt) {
@@ -255,6 +388,24 @@ fn startup_rolls_boundary_trie_back_to_confirmed_head_and_preserves_preconfirmed
 
     let reopened_again = open_backend(temp_dir.path());
     assert_boundary_crash_recovered(&reopened_again, expected_confirmed_root);
+}
+
+#[test]
+fn stale_boundary_skip_then_cumulative_commit_reverts_idempotently_after_reopen() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let (target_hash, target_root) = {
+        let backend = open_backend(temp_dir.path());
+        let diffs: Vec<_> = (0_u64..=11).map(synthetic_state_diff).collect();
+
+        confirm_initial_boundary(&backend, &diffs);
+        let stale_block_8 = compute_stale_block_8_before_checkpoint_5(&backend, &diffs);
+        let (target_hash, target_root) = confirm_stale_skip_and_catch_up(&backend, &diffs, &stale_block_8);
+        assert_revert_is_idempotent(&backend, target_hash, target_root);
+        backend.flush().expect("flushing reverted database should succeed");
+        (target_hash, target_root)
+    };
+
+    assert_revert_survives_reopen(temp_dir.path(), target_hash, target_root);
 }
 
 #[test]
