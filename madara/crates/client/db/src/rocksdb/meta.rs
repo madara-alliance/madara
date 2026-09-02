@@ -16,7 +16,6 @@ const META_DEVNET_KEYS_KEY: &[u8] = b"DEVNET_KEYS";
 const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_EXTERNAL_DB_RETENTION_CURSOR_KEY: &[u8] = b"EXTERNAL_DB_RETENTION_CURSOR";
-const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_HEAD_PROJECTION_KEY: &[u8] = b"HEAD_PROJECTION";
 // Legacy serialized metadata key used by older nodes before head-projection naming.
 const META_HEAD_PROJECTION_LEGACY_KEY: &[u8] = &[67, 72, 65, 73, 78, 95, 84, 73, 80];
@@ -312,13 +311,12 @@ impl RocksDBStorageInner {
     pub(super) fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let seek_key = meta_key_with_block_n(META_PRECONFIRMED_HEADER_PREFIX, u64::MAX);
-        let iter = self.db.iterator_cf(&meta_col, IteratorMode::From(&seek_key, rocksdb::Direction::Reverse));
-        for entry in iter {
+        let mut iter = self.db.iterator_cf(&meta_col, IteratorMode::From(&seek_key, rocksdb::Direction::Reverse));
+        if let Some(entry) = iter.next() {
             let (key, _value) = entry?;
-            if !key.starts_with(META_PRECONFIRMED_HEADER_PREFIX) {
-                break;
+            if key.starts_with(META_PRECONFIRMED_HEADER_PREFIX) {
+                return Ok(Some(preconfirmed_header_block_n_from_key(&key)?));
             }
-            return Ok(Some(preconfirmed_header_block_n_from_key(&key)?));
         }
         Ok(None)
     }
@@ -499,32 +497,33 @@ impl RocksDBStorageInner {
     pub(super) fn get_parallel_merkle_checkpoint_floor(&self, target_block_n: u64) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let seek_key = meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n);
-        let iter = self.db.iterator_cf(&meta_col, IteratorMode::From(&seek_key, rocksdb::Direction::Reverse));
-        for item in iter {
+        let mut iter = self.db.iterator_cf(&meta_col, IteratorMode::From(&seek_key, rocksdb::Direction::Reverse));
+        if let Some(item) = iter.next() {
             let (key, _value) = item?;
-            if !key.starts_with(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX) {
-                break;
+            if key.starts_with(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX) {
+                let block_n = u64::from_be_bytes(
+                    key[META_PARALLEL_MERKLE_CHECKPOINT_PREFIX.len()..]
+                        .try_into()
+                        .context("Malformed parallel merkle checkpoint key")?,
+                );
+                return Ok(Some(block_n));
             }
-            let block_n = u64::from_be_bytes(
-                key[META_PARALLEL_MERKLE_CHECKPOINT_PREFIX.len()..]
-                    .try_into()
-                    .context("Malformed parallel merkle checkpoint key")?,
-            );
-            return Ok(Some(block_n));
         }
         Ok(None)
     }
 
-    /// Remove checkpoint metadata entries for all blocks > target_block_n.
-    pub(super) fn remove_parallel_merkle_checkpoints_above(&self, target_block_n: u64) -> Result<()> {
+    /// Rewind checkpoint metadata to the latest checkpoint at or below `target_block_n`.
+    /// `None` represents the empty pre-genesis trie state and removes every checkpoint.
+    pub(super) fn rewind_parallel_merkle_checkpoints(&self, target_block_n: Option<u64>) -> Result<()> {
         let meta_col = self.get_column(META_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
 
-        if target_block_n == u64::MAX {
+        if target_block_n == Some(u64::MAX) {
             return Ok(());
         }
 
-        let seek_key = meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n + 1);
+        let seek_block_n = target_block_n.map_or(0, |block_n| block_n + 1);
+        let seek_key = meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, seek_block_n);
         let iter = self.db.iterator_cf(&meta_col, IteratorMode::From(&seek_key, rocksdb::Direction::Forward));
         for item in iter {
             let (key, _value) = item?;
@@ -536,12 +535,15 @@ impl RocksDBStorageInner {
                     .try_into()
                     .context("Malformed parallel merkle checkpoint key")?,
             );
-            if block_n > target_block_n {
+            if target_block_n.is_none_or(|target_block_n| block_n > target_block_n) {
                 batch.delete_cf(&meta_col, key);
             }
         }
 
-        let floor = self.get_parallel_merkle_checkpoint_floor(target_block_n)?;
+        let floor = target_block_n
+            .map(|target_block_n| self.get_parallel_merkle_checkpoint_floor(target_block_n))
+            .transpose()?
+            .flatten();
         match floor {
             Some(checkpoint) => {
                 batch.put_cf(
@@ -555,6 +557,11 @@ impl RocksDBStorageInner {
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
+    }
+
+    /// Remove checkpoint metadata entries for all blocks > target_block_n.
+    pub(super) fn remove_parallel_merkle_checkpoints_above(&self, target_block_n: u64) -> Result<()> {
+        self.rewind_parallel_merkle_checkpoints(Some(target_block_n))
     }
 
     /// Get the latest block number where snap sync computed the trie.

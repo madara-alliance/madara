@@ -8,6 +8,10 @@ use crate::rocksdb::{rocksdb_snapshot::SnapshotWithDBArc, RocksDBStorageInner};
 
 pub type SnapshotRef = Arc<SnapshotWithDBArc>;
 
+// Parallel Merkle root jobs clone the base snapshot before they start, so the shared inventory
+// only needs the newest durable checkpoint. Older in-flight jobs keep their own Arc alive.
+const MAX_DURABLE_EXACT_SNAPSHOTS: usize = 1;
+
 struct SnapshotsInner {
     exact: BTreeMap<u64, SnapshotRef>,
     historical: BTreeMap<u64, SnapshotRef>,
@@ -127,8 +131,15 @@ impl Snapshots {
 
         let head = Arc::clone(&inner.head);
         inner.exact.insert(block_n, head);
+        inner.empty_base = None;
+        let mut pruned_exact_blocks = Vec::new();
+        while inner.exact.len() > MAX_DURABLE_EXACT_SNAPSHOTS {
+            if let Some((pruned_block_n, _)) = inner.exact.pop_first() {
+                pruned_exact_blocks.push(pruned_block_n);
+            }
+        }
         tracing::debug!(
-            "db_snapshot_pinned block_number={} exact_count={} oldest_exact={:?} newest_exact={:?} historical_count={} oldest_snapshot={:?} newest_snapshot={:?}",
+            "db_snapshot_pinned block_number={} exact_count={} oldest_exact={:?} newest_exact={:?} historical_count={} oldest_snapshot={:?} newest_snapshot={:?} pruned_exact_blocks={pruned_exact_blocks:?}",
             block_n,
             inner.exact.len(),
             inner.exact.keys().next().copied(),
@@ -157,6 +168,18 @@ impl Snapshots {
             inner.historical.keys().next().copied(),
             inner.historical.keys().next_back().copied()
         );
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub fn rewind_to_empty(&self) {
+        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
+        let mut inner = self.inner.write().expect("Poisoned lock");
+        inner.exact.clear();
+        inner.historical.clear();
+        inner.head = Arc::clone(&snapshot);
+        inner.head_block_n = None;
+        inner.empty_base = Some(snapshot);
+        tracing::debug!("db_snapshots_rewound_to_empty");
     }
 
     #[tracing::instrument(skip(self))]
@@ -270,6 +293,7 @@ impl Snapshots {
 #[cfg(test)]
 mod tests {
     use crate::rocksdb::{RocksDBConfig, RocksDBStorage};
+    use std::sync::Arc;
 
     fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
         let temp_dir = tempfile::TempDir::with_prefix("snapshot-test").unwrap();
@@ -389,6 +413,7 @@ mod tests {
         storage.snapshots.pin_head(5);
 
         storage.snapshots.rewind_to(4);
+        storage.snapshots.pin_head(4);
 
         assert!(storage.snapshots.get_exact(Some(5)).is_none(), "Future exact snapshot should be pruned");
         assert!(storage.snapshots.get_exact(Some(4)).is_some(), "Target exact snapshot should remain available");
@@ -396,6 +421,28 @@ mod tests {
         assert_eq!(inventory.head_block_n, Some(4));
         assert_eq!(inventory.newest_exact, Some(4));
         assert_eq!(inventory.newest_historical, Some(4));
+    }
+
+    #[test]
+    fn test_pinning_new_durable_head_releases_older_inventory_snapshots() {
+        let (_temp_dir, storage) = create_test_storage(RocksDBConfig::default());
+
+        storage.snapshots.set_new_head(2);
+        storage.snapshots.pin_head(2);
+        let old_snapshot = storage.snapshots.get_exact(Some(2)).expect("checkpoint 2 snapshot");
+
+        storage.snapshots.set_new_head(5);
+        storage.snapshots.pin_head(5);
+
+        let inventory = storage.snapshots.inventory();
+        assert_eq!(inventory.exact_count, 1);
+        assert_eq!(inventory.oldest_exact, Some(5));
+        assert_eq!(inventory.newest_exact, Some(5));
+        assert!(!inventory.has_empty_base, "genesis snapshot must be released after the first durable checkpoint");
+        assert!(storage.snapshots.get_exact(Some(2)).is_none());
+
+        // A root job that cloned the old Arc remains valid even after inventory pruning.
+        assert_eq!(Arc::strong_count(&old_snapshot), 1);
     }
 
     #[test]

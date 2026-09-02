@@ -227,7 +227,7 @@ impl ReplayBoundaryRuntime {
             && self.mismatch.is_none()
     }
 
-    fn into_status(&self) -> ReplayBlockBoundaryStatus {
+    fn to_status(&self) -> ReplayBlockBoundaryStatus {
         ReplayBlockBoundaryStatus {
             block_n: self.boundary.block_n,
             expected_tx_count: self.boundary.expected_tx_count,
@@ -259,12 +259,12 @@ impl ReplayBoundaryRuntime {
         if self.executed_tx_count == self.boundary.expected_tx_count
             && self.last_executed_tx_hash != Some(self.boundary.last_tx_hash)
         {
+            let last_executed_tx_hash =
+                self.last_executed_tx_hash.map(|hash| format!("{hash:#x}")).unwrap_or_else(|| "<none>".to_string());
+            let expected_last_tx_hash = format!("{:#x}", self.boundary.last_tx_hash);
             self.set_mismatch_if_empty(format!(
                 "executed_tx_count reached expected count but last_executed_tx_hash={} does not match expected_last_tx_hash={}",
-                self.last_executed_tx_hash
-                    .map(|hash| format!("{hash:#x}"))
-                    .unwrap_or_else(|| "<none>".to_string()),
-                format!("{:#x}", self.boundary.last_tx_hash)
+                last_executed_tx_hash, expected_last_tx_hash
             ));
         }
     }
@@ -468,7 +468,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             anyhow::anyhow!("Missing block info while verifying confirmed state root for block #{block_n}")
         })?;
         let expected_root = block_info.header.global_state_root;
-        let actual_root = self.db.get_state_root_hash()?;
+        let actual_root = self.db.get_state_root_hash_at_version(block_info.header.protocol_version)?;
         let matches = actual_root == expected_root;
         tracing::info!(
             "confirmed_state_root_consistency context={} block_number={} expected_root={:#x} actual_root={:#x} match={}",
@@ -495,18 +495,16 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         confirmed_tip: Option<u64>,
         context: &str,
     ) -> Result<()> {
-        let Some(confirmed_tip) = confirmed_tip else {
-            return Ok(());
-        };
-
         self.db
             .reconcile_confirmed_parallel_merkle_state(confirmed_tip, context)
-            .with_context(|| format!("Reconciling confirmed trie state for block #{confirmed_tip} during {context}"))?;
+            .with_context(|| format!("Reconciling trie state for confirmed tip {confirmed_tip:?} during {context}"))?;
 
-        ensure!(
-            self.log_confirmed_state_root_consistency(context, confirmed_tip)?,
-            "Confirmed state root mismatch after parallel merkle reconciliation for block #{confirmed_tip} during {context}"
-        );
+        if let Some(confirmed_tip) = confirmed_tip {
+            ensure!(
+                self.log_confirmed_state_root_consistency(context, confirmed_tip)?,
+                "Confirmed state root mismatch after parallel merkle reconciliation for block #{confirmed_tip} during {context}"
+            );
+        }
 
         Ok(())
     }
@@ -566,6 +564,15 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         } else {
             self.db.get_head_projection()?
         };
+        let stored_confirmed_tip = ChainHeadState::from_head_projection(&stored_tip).confirmed_tip;
+        if let Some(confirmed_tip) = stored_confirmed_tip {
+            // A crash can happen after the durable head projection advances but before
+            // confirmed-path preconfirmed GC. Remove those stale rows before rebuilding
+            // the runtime head projection so they cannot be mistaken for a future tip.
+            self.db.delete_preconfirmed_rows_up_to(confirmed_tip).with_context(|| {
+                format!("Cleaning stale preconfirmed rows through confirmed block #{confirmed_tip}")
+            })?;
+        }
         let (chain_head_state, preconfirmed) = self.build_runtime_head_projection(stored_tip)?;
         self.starting_block = chain_head_state.confirmed_tip;
         // On startup, remove all blocks past the head projection, in case we have partial blocks in db.
@@ -573,6 +580,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
         self.reconcile_confirmed_parallel_merkle_state_for_tip(chain_head_state.confirmed_tip, "startup_init")?;
+        if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+            // A crash can happen after the durable head transition but before the derived L1
+            // consumed/pending projection is updated. Re-applying the confirmed tip is safe and
+            // sufficient because block confirmation is serialized.
+            self.db
+                .confirm_l1_messages_in_block(confirmed_tip)
+                .with_context(|| format!("Repairing L1 message confirmation for block #{confirmed_tip}"))?;
+        }
         self.publish_head_projection(chain_head_state, preconfirmed)?;
 
         // Init L1 head
@@ -656,7 +671,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                     existing.last_executed_tx_hash.map(|hash| hash == existing.boundary.last_tx_hash).unwrap_or(false);
                 existing.closed = false;
                 existing.refresh_consistency_flags();
-                let status = existing.into_status();
+                let status = existing.to_status();
                 tracing::info!(
                     "replay_boundary_set block_number={} expected_tx_count={} seeded_executed={} boundary_met={} closed={} mismatch={:?}",
                     status.block_n,
@@ -680,7 +695,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         let runtime = ReplayBoundaryRuntime::from_boundary(boundary.clone(), seed_executed, seed_last_hash);
-        let status = runtime.into_status();
+        let status = runtime.to_status();
         guard.insert(boundary.block_n, runtime);
         tracing::info!(
             "replay_boundary_set block_number={} expected_tx_count={} seeded_executed={} boundary_met={} closed={} mismatch={:?}",
@@ -695,7 +710,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     pub fn get_replay_boundary_status(&self, block_n: u64) -> Option<ReplayBlockBoundaryStatus> {
-        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(ReplayBoundaryRuntime::into_status)
+        self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(ReplayBoundaryRuntime::to_status)
     }
 
     pub fn replay_boundary_exists(&self, block_n: u64) -> bool {
@@ -738,7 +753,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
         let entry = guard.get_mut(&block_n)?;
         if entry.closed {
-            return Some(entry.into_status());
+            return Some(entry.to_status());
         }
 
         entry.dispatched_tx_count = entry.dispatched_tx_count.saturating_add(dispatched_tx_count);
@@ -749,7 +764,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             ));
         }
         entry.refresh_consistency_flags();
-        Some(entry.into_status())
+        Some(entry.to_status())
     }
 
     pub fn replay_boundary_record_executed_hashes(
@@ -774,14 +789,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             }
             entry.refresh_consistency_flags();
         }
-        Some(entry.into_status())
+        Some(entry.to_status())
     }
 
     pub fn replay_boundary_mark_closed(&self, block_n: u64) -> Option<ReplayBlockBoundaryStatus> {
         let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
         let entry = guard.get_mut(&block_n)?;
         entry.closed = true;
-        Some(entry.into_status())
+        Some(entry.to_status())
     }
 
     /// Flush all pending writes to disk. Critical for databases with WAL disabled.
@@ -1266,6 +1281,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         &self.config.execution_read_cache
     }
 
+    pub fn saves_preconfirmed_blocks(&self) -> bool {
+        self.config.save_preconfirmed
+    }
+
     /// Get the runtime execution configuration from the database.
     pub fn get_runtime_exec_config(&self) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
         self.db.get_runtime_exec_config(&self.chain_config)
@@ -1421,7 +1440,31 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
     pub fn clear_preconfirmed(&self) -> Result<()> {
-        self.transition_to_confirmed_or_empty(self.inner.latest_confirmed_block_n())
+        let current_head_state = *self.inner.chain_head_state.borrow();
+        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
+
+        let Some(internal_preconfirmed_tip) = current_head_state.internal_preconfirmed_tip else {
+            return Ok(());
+        };
+        let confirmed_tip = current_head_state.confirmed_tip;
+        let next_chain_head_state =
+            ChainHeadState { confirmed_tip, external_preconfirmed_tip: None, internal_preconfirmed_tip: None };
+        next_chain_head_state.validate_cross_field_invariants()?;
+
+        if self.inner.config.save_preconfirmed {
+            // Explicit discard removes every persisted runahead row before dropping the external
+            // projection. If the process stops between these writes, restart can still rebuild
+            // the projected header as an empty preconfirmed block, which is consistent with the
+            // caller's request to discard its transactions.
+            self.inner.db.delete_preconfirmed_rows_up_to(internal_preconfirmed_tip)?;
+        }
+        let new_tip_in_db = storage_tip_from_confirmed_or_empty(confirmed_tip);
+        if self.inner.db.get_head_projection()? != new_tip_in_db {
+            self.inner.db.replace_head_projection(&new_tip_in_db)?;
+        }
+
+        self.inner.publish_head_projection(next_chain_head_state, None)
     }
 
     /// Write the runtime execution configuration to the database.
@@ -1917,8 +1960,12 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
         self.inner.db.on_new_confirmed_head(block_number)?;
 
-        // Advance chain & clear preconfirmed atomically
+        // Persist and publish the canonical head transition.
         self.transition_to_confirmed_or_empty(Some(block_number))?;
+        // L1 pending/consumed state is a derived projection. Update it only after the durable
+        // canonical head says this block is confirmed; startup re-applies this idempotently if
+        // the process stops between these two operations.
+        self.inner.db.confirm_l1_messages_in_block(block_number)?;
         // Confirmed-path immediate GC for block-keyed preconfirmed persistence.
         self.inner.db.delete_preconfirmed_rows_up_to(block_number)?;
 

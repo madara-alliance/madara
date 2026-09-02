@@ -24,13 +24,6 @@ use std::time::Instant;
 
 type InMemoryTrie<H> = bonsai_trie::BonsaiStorage<BasicId, InMemoryBonsaiDb, H>;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum TrieLogMode {
-    #[default]
-    Off,
-    Checkpoint,
-}
-
 #[derive(Debug, Clone)]
 pub struct InMemoryRootComputation {
     pub block_n: u64,
@@ -48,15 +41,13 @@ struct ContractLeaf {
     nonce: Option<Felt>,
 }
 
-fn bonsai_storage_config_for_mode(backend: &RocksDBStorage, trie_log_mode: TrieLogMode) -> BonsaiStorageConfig {
-    BonsaiStorageConfig {
-        max_saved_trie_logs: match trie_log_mode {
-            TrieLogMode::Off => Some(0),
-            TrieLogMode::Checkpoint => backend.inner.config.max_saved_trie_logs,
-        },
+fn bonsai_storage_config(backend: &RocksDBStorage) -> Result<BonsaiStorageConfig> {
+    backend.ensure_parallel_merkle_recovery_config()?;
+    Ok(BonsaiStorageConfig {
+        max_saved_trie_logs: backend.inner.config.max_saved_trie_logs,
         max_saved_snapshots: Some(0),
         snapshot_interval: backend.inner.config.snapshot_interval,
-    }
+    })
 }
 
 fn contract_state_leaf_hash(
@@ -467,9 +458,8 @@ pub fn compute_root_from_snapshot(
     state_diff: &StateDiff,
     protocol_version: StarknetVersion,
     include_overlay: bool,
-    trie_log_mode: TrieLogMode,
 ) -> Result<InMemoryRootComputation> {
-    let config = bonsai_storage_config_for_mode(backend, trie_log_mode);
+    let config = bonsai_storage_config(backend)?;
     let contract_snapshot = Arc::clone(&snapshot);
     let (contract_db, contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot));
     let (contract_storage_db, contract_storage_changed) = InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot));
@@ -506,7 +496,7 @@ pub fn compute_root_from_snapshot(
     let (class_root, class_trie_timings) = class_result?;
     let state_root = super::super::calculate_state_root(contract_root, class_root, protocol_version);
     tracing::debug!(
-        "parallel_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={} trie_log_mode={:?}",
+        "parallel_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={}",
         block_n,
         snapshot_block.is_some_and(|selected| selected > block_n),
         contract_root,
@@ -518,8 +508,7 @@ pub fn compute_root_from_snapshot(
         state_diff.nonces.len(),
         state_diff.declared_classes.len(),
         state_diff.migrated_compiled_classes.len(),
-        include_overlay,
-        trie_log_mode
+        include_overlay
     );
 
     let timings = crate::rocksdb::global_trie::MerklizationTimings {
@@ -542,9 +531,8 @@ pub fn compute_root_from_snapshot_sequential(
     block_n: u64,
     state_diff: &StateDiff,
     protocol_version: StarknetVersion,
-    trie_log_mode: TrieLogMode,
 ) -> Result<InMemoryRootComputation> {
-    let config = bonsai_storage_config_for_mode(backend, trie_log_mode);
+    let config = bonsai_storage_config(backend)?;
     let contract_snapshot = Arc::clone(&snapshot);
     let (contract_db, _contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot));
     let (contract_storage_db, _contract_storage_changed) = InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot));
@@ -574,7 +562,7 @@ pub fn compute_root_from_snapshot_sequential(
 
     let state_root = super::super::calculate_state_root(contract_root, class_root, protocol_version);
     tracing::debug!(
-        "sequential_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} trie_log_mode={:?}",
+        "sequential_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={}",
         block_n,
         snapshot_block.is_some_and(|selected| selected > block_n),
         contract_root,
@@ -585,8 +573,7 @@ pub fn compute_root_from_snapshot_sequential(
         state_diff.replaced_classes.len(),
         state_diff.nonces.len(),
         state_diff.declared_classes.len(),
-        state_diff.migrated_compiled_classes.len(),
-        trie_log_mode
+        state_diff.migrated_compiled_classes.len()
     );
 
     let timings = crate::rocksdb::global_trie::MerklizationTimings {
@@ -608,7 +595,6 @@ pub fn compute_roots_in_parallel_from_snapshot(
     state_diffs: &[StateDiff],
     protocol_version: StarknetVersion,
     boundary_block_n: Option<u64>,
-    trie_log_mode: TrieLogMode,
 ) -> Result<Vec<InMemoryRootComputation>> {
     let cumulative = cumulative_squashed_state_diffs(state_diffs.iter());
     let mut roots: Vec<_> = cumulative
@@ -624,7 +610,6 @@ pub fn compute_roots_in_parallel_from_snapshot(
                 &state_diff,
                 protocol_version,
                 boundary_block_n == Some(block_n),
-                trie_log_mode,
             )
         })
         .collect::<Result<_>>()?;

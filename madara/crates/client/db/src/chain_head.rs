@@ -155,6 +155,8 @@ impl ChainHeadState {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::too_many_arguments)]
+
     use super::*;
     use rstest::rstest;
 

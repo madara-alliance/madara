@@ -1,4 +1,4 @@
-use crate::cli::block_production::{BlockProductionParams, ParallelMerkleTrieLogMode};
+use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
 use mc_db::MadaraBackend;
@@ -23,6 +23,12 @@ impl BlockProductionService {
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
+        if config.parallel_merkle_enabled {
+            backend
+                .db
+                .ensure_parallel_merkle_recovery_config()
+                .context("Validating parallel Merkle recovery configuration")?;
+        }
         let metrics = Arc::new(BlockProductionMetrics::register());
         let mempool_paused = config.mempool_paused;
         let close_queue_capacity = usize::try_from(config.parallel_merkle_max_inflight)
@@ -46,13 +52,7 @@ impl BlockProductionService {
                 .with_parallel_merkle_enabled(config.parallel_merkle_enabled)
                 .with_parallel_merkle_compare_sequential(config.parallel_merkle_compare_sequential)
                 .with_parallel_merkle_root_workers(config.parallel_merkle_root_workers)
-                .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval)
-                .with_parallel_merkle_trie_log_mode(match config.parallel_merkle_trie_log_mode {
-                    ParallelMerkleTrieLogMode::Off => mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Off,
-                    ParallelMerkleTrieLogMode::Checkpoint => {
-                        mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint
-                    }
-                }),
+                .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval),
             ),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,

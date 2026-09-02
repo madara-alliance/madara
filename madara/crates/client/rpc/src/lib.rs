@@ -1257,6 +1257,7 @@ pub(crate) async fn close_ws_subscription(
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum LiveConfirmedHeadResolution {
     Block(Box<mp_block::MadaraBlockInfo>),
     Reorg(mc_db::ReorgNotification),

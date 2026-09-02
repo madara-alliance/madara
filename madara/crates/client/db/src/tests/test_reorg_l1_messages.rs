@@ -80,4 +80,8 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
         .expect("DB read should succeed")
         .is_none());
     assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(pending_only_l1_block - 1));
+
+    let repeated = backend.revert_to(&block_0_hash).expect("Repeating a completed revert should be a no-op");
+    assert_eq!(repeated, (new_tip_n, new_tip_hash));
+    assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(pending_only_l1_block - 1));
 }

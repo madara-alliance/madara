@@ -60,6 +60,18 @@ fn count_column_entries(backend: &RocksDBStorage, column: Column) -> usize {
     backend.inner.db.iterator_cf(&handle, IteratorMode::Start).map_while(|item| item.ok()).count()
 }
 
+fn count_revision_entries(backend: &RocksDBStorage, column: Column, revision: u64) -> usize {
+    let handle = backend.inner.get_column(column);
+    let prefix = revision.to_be_bytes();
+    backend
+        .inner
+        .db
+        .iterator_cf(&handle, IteratorMode::Start)
+        .map(|item| item.expect("read trie-log entry"))
+        .filter(|(key, _)| key.starts_with(&prefix))
+        .count()
+}
+
 fn synthetic_state_diff(index: u64) -> StateDiff {
     let contract_address = Felt::from(10_000 + index);
     let class_hash = Felt::from(20_000 + index);
@@ -176,17 +188,8 @@ fn in_memory_single_block_root_matches_sequential_apply() {
 
     let expected_root = sequential_roots(&backend_seq, std::slice::from_ref(&diff))[0];
     let snapshot = fresh_snapshot(&backend_mem.db);
-    let computed = compute_root_from_snapshot(
-        &backend_mem.db,
-        None,
-        snapshot,
-        0,
-        &diff,
-        protocol_version(),
-        false,
-        TrieLogMode::Off,
-    )
-    .expect("compute");
+    let computed = compute_root_from_snapshot(&backend_mem.db, None, snapshot, 0, &diff, protocol_version(), false)
+        .expect("compute");
 
     assert_eq!(computed.state_root, expected_root);
     assert!(computed.overlay.is_none(), "overlay should be absent when include_overlay=false");
@@ -245,7 +248,6 @@ fn in_memory_single_block_root_preserves_existing_contract_storage() {
         &current_diff,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("actual compute");
 
@@ -346,7 +348,6 @@ fn in_memory_single_block_root_preserves_existing_storage_across_multiple_contra
         &current_diff,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("actual compute");
 
@@ -539,7 +540,6 @@ fn replay_regression_contract_2860_storage_root_matches_sequential_apply() {
         &current_diff,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("actual compute");
 
@@ -737,7 +737,6 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
         &current_diff,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("actual compute from persisted base");
 
@@ -748,6 +747,7 @@ fn replay_regression_contract_2860_persisted_base_snapshot_matches_sequential_ap
 }
 
 #[test]
+#[ignore = "requires captured /tmp state-update fixtures for blocks 669158 through 669160"]
 fn debug_replay_regression_669160_full_window_matches_sequential_apply() {
     let base_diff = load_state_diff_fixture("/tmp/state_update_669158.json");
     let diff_159 = load_state_diff_fixture("/tmp/state_update_669159.json");
@@ -787,7 +787,6 @@ fn debug_replay_regression_669160_full_window_matches_sequential_apply() {
         cumulative,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("actual compute from cumulative diff");
 
@@ -861,7 +860,6 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
         &diffs,
         protocol_version(),
         Some(2),
-        TrieLogMode::Checkpoint,
     )
     .expect("parallel roots");
 
@@ -911,7 +909,6 @@ fn contract_leaf_fallback_reads_nonce_and_class_from_snapshot_state() {
         &current_diff,
         protocol_version(),
         false,
-        TrieLogMode::Checkpoint,
     )
     .expect("expected compute");
 
@@ -942,17 +939,9 @@ fn contract_leaf_fallback_reads_nonce_and_class_from_snapshot_state() {
         )
         .expect("mutate live class history");
 
-    let actual = compute_root_from_snapshot(
-        &backend_actual.db,
-        Some(0),
-        snapshot,
-        1,
-        &current_diff,
-        protocol_version(),
-        false,
-        TrieLogMode::Checkpoint,
-    )
-    .expect("actual compute");
+    let actual =
+        compute_root_from_snapshot(&backend_actual.db, Some(0), snapshot, 1, &current_diff, protocol_version(), false)
+            .expect("actual compute");
 
     assert_eq!(actual.state_root, expected.state_root, "snapshot-scoped fallback should ignore live DB mutation");
 }
@@ -963,22 +952,13 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
     let snapshot = fresh_snapshot(&backend.db);
 
-    let results = compute_roots_in_parallel_from_snapshot(
-        &backend.db,
-        None,
-        snapshot,
-        0,
-        &diffs,
-        protocol_version(),
-        Some(2),
-        TrieLogMode::Checkpoint,
-    )
-    .expect("parallel roots");
+    let results =
+        compute_roots_in_parallel_from_snapshot(&backend.db, None, snapshot, 0, &diffs, protocol_version(), Some(2))
+            .expect("parallel roots");
     let boundary = results.last().expect("boundary result");
     let overlay = boundary.overlay.as_ref().expect("boundary overlay");
 
-    flush_overlay_and_checkpoint(&backend.db, boundary.block_n, overlay, TrieLogMode::Checkpoint)
-        .expect("flush and checkpoint");
+    flush_overlay_and_checkpoint(&backend.db, boundary.block_n, 3, overlay).expect("flush and checkpoint");
 
     let persisted_root =
         crate::rocksdb::global_trie::get_state_root(&backend.db, protocol_version()).expect("read persisted root");
@@ -988,60 +968,77 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
 }
 
 #[test]
-fn trie_log_mode_controls_log_column_flush_behavior() {
-    let backend_off = setup_backend();
-    let backend_checkpoint = setup_backend();
+fn boundary_flush_always_persists_trie_logs() {
+    let backend = setup_backend();
     let diff = synthetic_state_diff(0);
 
-    let off_snapshot = fresh_snapshot(&backend_off.db);
-    let off_result = compute_root_from_snapshot(
-        &backend_off.db,
-        None,
-        off_snapshot,
-        0,
-        &diff,
-        protocol_version(),
-        true,
-        TrieLogMode::Off,
-    )
-    .expect("off mode compute");
-    flush_overlay_and_checkpoint(
-        &backend_off.db,
-        0,
-        off_result.overlay.as_ref().expect("off overlay"),
-        TrieLogMode::Off,
-    )
-    .expect("off mode flush");
+    let snapshot = fresh_snapshot(&backend.db);
+    let result = compute_root_from_snapshot(&backend.db, None, snapshot, 0, &diff, protocol_version(), true)
+        .expect("root compute");
+    flush_overlay_and_checkpoint(&backend.db, 0, 1, result.overlay.as_ref().expect("boundary overlay"))
+        .expect("boundary flush");
 
-    let checkpoint_snapshot = fresh_snapshot(&backend_checkpoint.db);
-    let checkpoint_result = compute_root_from_snapshot(
-        &backend_checkpoint.db,
-        None,
-        checkpoint_snapshot,
-        0,
-        &diff,
-        protocol_version(),
-        true,
-        TrieLogMode::Checkpoint,
-    )
-    .expect("checkpoint mode compute");
-    flush_overlay_and_checkpoint(
-        &backend_checkpoint.db,
-        0,
-        checkpoint_result.overlay.as_ref().expect("checkpoint overlay"),
-        TrieLogMode::Checkpoint,
-    )
-    .expect("checkpoint mode flush");
+    let log_entries = count_column_entries(&backend.db, BONSAI_CONTRACT_LOG_COLUMN)
+        + count_column_entries(&backend.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
+        + count_column_entries(&backend.db, BONSAI_CLASS_LOG_COLUMN);
 
-    let off_log_entries = count_column_entries(&backend_off.db, BONSAI_CONTRACT_LOG_COLUMN)
-        + count_column_entries(&backend_off.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
-        + count_column_entries(&backend_off.db, BONSAI_CLASS_LOG_COLUMN);
-    let checkpoint_log_entries = count_column_entries(&backend_checkpoint.db, BONSAI_CONTRACT_LOG_COLUMN)
-        + count_column_entries(&backend_checkpoint.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
-        + count_column_entries(&backend_checkpoint.db, BONSAI_CLASS_LOG_COLUMN);
+    assert!(log_entries > 0, "boundary recovery requires persisted trie logs");
+}
 
-    assert_eq!(off_log_entries, 0, "off mode should not persist trie logs");
-    assert!(checkpoint_log_entries > 0, "checkpoint mode should persist trie logs");
+#[test]
+fn parallel_merkle_warns_but_allows_disabled_trie_log_retention() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let storage = RocksDBStorage::open(
+        temp_dir.path(),
+        crate::rocksdb::RocksDBConfig { max_saved_trie_logs: Some(0), ..Default::default() },
+    )
+    .expect("open storage");
+    let diff = synthetic_state_diff(0);
+
+    compute_root_from_snapshot(&storage, None, fresh_snapshot(&storage), 0, &diff, protocol_version(), true)
+        .expect("parallel Merkle should remain available when trie logs are explicitly disabled");
+}
+
+#[test]
+fn boundary_log_retention_counts_boundaries_not_block_numbers() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let storage = RocksDBStorage::open(
+        temp_dir.path(),
+        crate::rocksdb::RocksDBConfig { max_saved_trie_logs: Some(2), ..Default::default() },
+    )
+    .expect("open storage");
+    let boundary_interval = 3;
+    let mut base_block_n = None;
+
+    for boundary_block_n in [2_u64, 5, 8] {
+        let start_block_n = boundary_block_n + 1 - boundary_interval;
+        let diffs: Vec<_> = (start_block_n..=boundary_block_n).map(synthetic_state_diff).collect();
+        let results = compute_roots_in_parallel_from_snapshot(
+            &storage,
+            base_block_n,
+            fresh_snapshot(&storage),
+            start_block_n,
+            &diffs,
+            protocol_version(),
+            Some(boundary_block_n),
+        )
+        .expect("compute boundary roots");
+        let overlay = results.last().and_then(|result| result.overlay.as_ref()).expect("boundary overlay");
+        flush_overlay_and_checkpoint(&storage, boundary_block_n, boundary_interval, overlay)
+            .expect("flush boundary overlay");
+        base_block_n = Some(boundary_block_n);
+    }
+
+    let revision_entry_count = |revision| {
+        [BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN, BONSAI_CLASS_LOG_COLUMN]
+            .into_iter()
+            .map(|column| count_revision_entries(&storage, column, revision))
+            .sum::<usize>()
+    };
+
+    assert_eq!(revision_entry_count(2), 0, "third boundary should prune the oldest retained boundary");
+    assert!(revision_entry_count(5) > 0, "second boundary logs should remain");
+    assert!(revision_entry_count(8) > 0, "latest boundary logs should remain");
 }
 
 #[test]
@@ -1172,7 +1169,6 @@ fn search_in_memory_mismatch_against_sequential_for_complex_storage_shapes() {
             &current_diff,
             protocol_version(),
             false,
-            TrieLogMode::Checkpoint,
         )
         .expect("actual compute");
 

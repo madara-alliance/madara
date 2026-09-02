@@ -1,11 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum, Deserialize, Serialize, PartialEq, Eq)]
-pub enum ParallelMerkleTrieLogMode {
-    Off,
-    Checkpoint,
-}
-
 /// Parameters used to config block production.
 #[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
 pub struct BlockProductionParams {
@@ -78,15 +72,6 @@ pub struct BlockProductionParams {
         value_parser = clap::value_parser!(u64).range(1..)
     )]
     pub parallel_merkle_flush_interval: u64,
-
-    /// Parallel merkle trie-log persistence mode.
-    #[arg(
-        env = "MADARA_PARALLEL_MERKLE_TRIE_LOG_MODE",
-        long,
-        default_value_t = ParallelMerkleTrieLogMode::Checkpoint,
-        value_enum
-    )]
-    pub parallel_merkle_trie_log_mode: ParallelMerkleTrieLogMode,
 }
 
 #[cfg(test)]
@@ -123,17 +108,6 @@ mod tests {
         let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-flush-interval", invalid_value])
             .expect_err("flush interval <1 must be rejected");
         assert!(err.to_string().contains("parallel-merkle-flush-interval"));
-    }
-
-    #[rstest]
-    #[case::default_mode(vec!["madara"], ParallelMerkleTrieLogMode::Checkpoint)]
-    #[case::off_mode(vec!["madara", "--parallel-merkle-trie-log-mode", "off"], ParallelMerkleTrieLogMode::Off)]
-    fn block_production_params_parse_parallel_merkle_trie_log_mode(
-        #[case] args: Vec<&str>,
-        #[case] expected: ParallelMerkleTrieLogMode,
-    ) {
-        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
-        assert_eq!(params.parallel_merkle_trie_log_mode, expected);
     }
 
     #[rstest]

@@ -188,6 +188,12 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
+    /// Mark L1 handler transactions in a fully confirmed block as consumed.
+    ///
+    /// This is intentionally separate from [`Self::write_transactions`]: block parts may be
+    /// persisted before the canonical head advances, while pending L1 messages must remain
+    /// available until that head transition is durable.
+    fn confirm_l1_messages_in_block(&self, block_n: u64) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;
     fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
@@ -272,13 +278,14 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     ///
     /// This is used during startup and graceful shutdown in parallel-merkle mode to rebuild or
     /// checkpoint trie state for a confirmed non-boundary head.
-    fn reconcile_confirmed_parallel_merkle_state(&self, block_n: u64, context: &str) -> Result<()>;
+    fn reconcile_confirmed_parallel_merkle_state(&self, block_n: Option<u64>, context: &str) -> Result<()>;
 
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
 
     /// Fetches the latest global state root.
     fn get_state_root_hash(&self) -> Result<Felt>;
+    fn get_state_root_hash_at_version(&self, protocol_version: StarknetVersion) -> Result<Felt>;
 
     /// Revert the blockchain state to a specific block hash.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)>;

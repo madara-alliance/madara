@@ -225,12 +225,15 @@ async fn get_start_block(
     backend: &MadaraBackend,
     replay_max_duration: Duration,
 ) -> Result<u64, SettlementClientError> {
-    // Check if we have a saved sync tip
+    // The saved value is the L1 block containing the last processed event, not a fully
+    // processed block-range watermark. Resume one block earlier so a crash between two events
+    // in the same block cannot skip the later event. This also normalizes provider behavior:
+    // Ethereum filters are inclusive, while the Starknet watcher starts after its cursor.
     if let Some(block_n) = backend
         .get_l1_messaging_sync_tip()
         .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e)))?
     {
-        return Ok(block_n);
+        return Ok(block_n.saturating_sub(1));
     }
 
     // No saved tip - determine start block based on replay config
@@ -524,6 +527,18 @@ mod messaging_module_tests {
     /// `l1_block_hash = [0u8; 32]`, so we return that for every block number.
     fn mock_canonical_block_hash(mock: &mut MockSettlementLayerProvider) {
         mock.expect_get_block_n_hash().returning(|_| Ok(Some([0u8; 32])));
+    }
+
+    #[tokio::test]
+    async fn saved_event_cursor_replays_its_boundary_block() -> anyhow::Result<()> {
+        let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        db.write_l1_messaging_sync_tip(Some(100))?;
+        let client = Arc::new(MockSettlementLayerProvider::new()) as Arc<dyn SettlementLayerProvider>;
+
+        let start = get_start_block(&client, &db, Duration::ZERO).await?;
+
+        assert_eq!(start, 99);
+        Ok(())
     }
 
     #[rstest]

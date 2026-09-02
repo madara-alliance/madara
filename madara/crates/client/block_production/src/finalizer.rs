@@ -572,7 +572,7 @@ mod tests {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         QueuedClosePayload {
             close_job_payload: CloseJobPayload { block_n },
-            state: CurrentBlockState::new(backend.into(), block_n),
+            state: CurrentBlockState::new(backend, block_n),
             block_exec_summary: Box::new(empty_block_exec_summary()),
             state_diff: StateDiff {
                 storage_diffs: vec![],
@@ -584,7 +584,7 @@ mod tests {
                 migrated_compiled_classes: vec![],
             },
             is_boundary,
-            trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
+            parallel_merkle_flush_interval: 3,
             compare_parallel_with_sequential: false,
             root_base_block_n: None,
             root_snapshot: None,

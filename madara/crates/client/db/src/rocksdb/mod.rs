@@ -9,7 +9,6 @@ use crate::{
             in_memory::{
                 compute_root_from_snapshot, compute_root_from_snapshot_sequential,
                 compute_roots_in_parallel_from_snapshot, squash_state_diffs, BonsaiOverlay, InMemoryRootComputation,
-                TrieLogMode,
             },
             MerklizationTimings,
         },
@@ -155,6 +154,8 @@ impl RocksDBStorageInner {
 
         tracing::debug!("Removing blocks range {starting_from_block_n}..{last_block_n_exclusive} in reverse order");
 
+        let mut earliest_reverted_l1_source_block = None;
+
         // Reverse order
         for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
             let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
@@ -177,7 +178,15 @@ impl RocksDBStorageInner {
                 self.events_remove_block(block_n, &mut batch)?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
+                for nonce in l1_handler_nonces.iter().copied() {
+                    if let Some(source_block) = self.get_l1_handler_l1_block_by_nonce(nonce)? {
+                        earliest_reverted_l1_source_block = Some(
+                            earliest_reverted_l1_source_block
+                                .map_or(source_block, |current: u64| current.min(source_block)),
+                        );
+                    }
+                }
+                self.message_to_l2_revert_unconfirmed_consumption(&l1_handler_nonces, &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -185,6 +194,22 @@ impl RocksDBStorageInner {
             self.db
                 .write(batch)
                 .with_context(|| format!("Committing changes removing block_n={block_n} from database"))?;
+        }
+
+        // Older versions marked an L1 message consumed as soon as transaction rows were written.
+        // If startup removes one of those partial blocks, rewind far enough to reconstruct a
+        // pending payload that may already have been deleted. New writes retain the pending row,
+        // so this is primarily a backward-compatible recovery path.
+        if let (Some(source_block), Some(current_sync_tip)) =
+            (earliest_reverted_l1_source_block, self.get_l1_messaging_sync_tip()?)
+        {
+            let replay_tip = source_block.saturating_sub(1).min(current_sync_tip);
+            if replay_tip < current_sync_tip {
+                self.write_l1_messaging_sync_tip(Some(replay_tip))?;
+                tracing::info!(
+                    "Rewound L1 messaging sync tip from {current_sync_tip} to {replay_tip} after removing partial blocks"
+                );
+            }
         }
 
         Ok(())
@@ -383,6 +408,10 @@ impl RocksDBStorage {
         self.inner.remove_parallel_merkle_checkpoints_above(target_block_n)
     }
 
+    fn rewind_parallel_merkle_checkpoints(&self, target_block_n: Option<u64>) -> Result<()> {
+        self.inner.rewind_parallel_merkle_checkpoints(target_block_n)
+    }
+
     pub fn get_latest_snapshot_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
         self.snapshots.get_floor(max_block_n)
     }
@@ -391,7 +420,101 @@ impl RocksDBStorage {
         self.snapshots.get_durable_floor(max_block_n)
     }
 
-    pub fn reconcile_confirmed_parallel_merkle_state(&self, confirmed_tip: u64, context: &str) -> Result<()> {
+    pub fn ensure_parallel_merkle_recovery_config(&self) -> Result<()> {
+        if self.inner.config.max_saved_trie_logs == Some(0) {
+            tracing::warn!(
+                "Parallel Merkle is running with trie-log persistence disabled; roots can still be computed, but trie-log-based reorg recovery is unavailable"
+            );
+        }
+        Ok(())
+    }
+
+    fn clear_global_trie_columns(&self) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        for column in [
+            trie::BONSAI_CONTRACT_FLAT_COLUMN,
+            trie::BONSAI_CONTRACT_TRIE_COLUMN,
+            trie::BONSAI_CONTRACT_LOG_COLUMN,
+            trie::BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
+            trie::BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
+            trie::BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+            trie::BONSAI_CLASS_FLAT_COLUMN,
+            trie::BONSAI_CLASS_TRIE_COLUMN,
+            trie::BONSAI_CLASS_LOG_COLUMN,
+        ] {
+            let handle = self.inner.get_column(column);
+            for item in self.inner.db.iterator_cf(&handle, IteratorMode::Start) {
+                let (key, _value) = item?;
+                batch.delete_cf(&handle, key);
+            }
+        }
+        self.inner.db.write_opt(batch, &self.inner.writeopts)?;
+        Ok(())
+    }
+
+    fn rollback_tries_to_checkpoint_floor(&self, checkpoint_floor: Option<u64>, context: &str) -> Result<bool> {
+        let trie_log_heads = self.trie_log_heads().context("Reading trie log heads before recovery rollback")?;
+
+        let Some(checkpoint_floor) = checkpoint_floor else {
+            let had_durable_trie_state =
+                trie_log_heads.highest().is_some() || self.get_state_root_hash()? != Felt::ZERO;
+            if had_durable_trie_state {
+                tracing::warn!(
+                    "parallel_merkle_recovery_rollback_to_empty context={} trie_log_heads={:?}",
+                    context,
+                    trie_log_heads
+                );
+                self.clear_global_trie_columns().context("Clearing global tries back to the empty durable base")?;
+            }
+            return Ok(had_durable_trie_state);
+        };
+
+        let floor_id = BasicId::new(checkpoint_floor);
+        let mut contract_trie = self.contract_trie();
+        let contract_needs_commit =
+            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, checkpoint_floor)?;
+        let mut contract_storage_trie = self.contract_storage_trie();
+        let contract_storage_needs_commit = revert_single_trie(
+            "contract storage",
+            &mut contract_storage_trie,
+            trie_log_heads.contract_storage,
+            checkpoint_floor,
+        )?;
+        let mut class_trie = self.class_trie();
+        let class_needs_commit = revert_single_trie("class", &mut class_trie, trie_log_heads.class, checkpoint_floor)?;
+
+        if contract_needs_commit {
+            contract_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
+        }
+        if contract_storage_needs_commit {
+            contract_storage_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
+        }
+        if class_needs_commit {
+            class_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
+        }
+
+        Ok(contract_needs_commit || contract_storage_needs_commit || class_needs_commit)
+    }
+
+    pub fn reconcile_confirmed_parallel_merkle_state(&self, confirmed_tip: Option<u64>, context: &str) -> Result<()> {
+        let Some(confirmed_tip) = confirmed_tip else {
+            let latest_checkpoint = self.get_parallel_merkle_latest_checkpoint()?;
+            let trie_log_heads = self.trie_log_heads()?;
+            let actual_root = self.get_state_root_hash()?;
+            if latest_checkpoint.is_some() || trie_log_heads.highest().is_some() || actual_root != Felt::ZERO {
+                self.rollback_tries_to_checkpoint_floor(None, context)?;
+                self.rewind_parallel_merkle_checkpoints(None)?;
+            }
+            let reconciled_root = self.get_state_root_hash()?;
+            ensure!(
+                reconciled_root == Felt::ZERO,
+                "Empty confirmed head must have an empty trie after {context}, got {reconciled_root:#x}"
+            );
+            self.write_latest_applied_trie_update(&None)?;
+            self.snapshots.rewind_to_empty();
+            return Ok(());
+        };
+
         let confirmed_block_info = self
             .inner
             .get_block_info(confirmed_tip)
@@ -404,7 +527,7 @@ impl RocksDBStorage {
                 )
             })?;
         let expected_root = confirmed_block_info.header.global_state_root;
-        let actual_root = self.get_state_root_hash().with_context(|| {
+        let actual_root = get_state_root(self, confirmed_block_info.header.protocol_version).with_context(|| {
             format!(
                 "Reading global state root for confirmed block #{confirmed_tip} during parallel merkle reconciliation"
             )
@@ -418,49 +541,64 @@ impl RocksDBStorage {
             actual_root
         );
 
+        let latest_checkpoint = self.get_parallel_merkle_latest_checkpoint()?;
+        let trie_log_heads = self.trie_log_heads()?;
+        let durable_state_is_ahead = latest_checkpoint.is_some_and(|checkpoint| checkpoint > confirmed_tip)
+            || trie_log_heads.highest().is_some_and(|trie_head| trie_head > confirmed_tip);
+        let mut rolled_back_to_floor = false;
         let mut replayed_from_floor = false;
-        if actual_root != expected_root {
-            let checkpoint_floor = self
-                .get_parallel_merkle_checkpoint_floor(confirmed_tip)
-                .with_context(|| {
-                    format!(
-                        "Reading parallel merkle checkpoint floor for confirmed block #{confirmed_tip} during reconciliation"
-                    )
-                })?
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Missing durable checkpoint floor for confirmed block #{confirmed_tip} during {context}"
-                    )
-                })?;
+        if actual_root != expected_root || durable_state_is_ahead {
+            let checkpoint_floor = self.get_parallel_merkle_checkpoint_floor(confirmed_tip).with_context(|| {
+                format!(
+                    "Reading parallel merkle checkpoint floor for confirmed block #{confirmed_tip} during reconciliation"
+                )
+            })?;
+            let floor_root = match checkpoint_floor {
+                Some(checkpoint_floor) => self
+                    .inner
+                    .get_block_info(checkpoint_floor)
+                    .with_context(|| {
+                        format!(
+                            "Reading block info for durable checkpoint floor #{checkpoint_floor} during parallel merkle reconciliation"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Missing block info for durable checkpoint floor #{checkpoint_floor} during parallel merkle reconciliation"
+                        )
+                    })?
+                    .header
+                    .global_state_root,
+                None => Felt::ZERO,
+            };
 
-            let floor_block_info = self
-                .inner
-                .get_block_info(checkpoint_floor)
-                .with_context(|| {
-                    format!(
-                        "Reading block info for durable checkpoint floor #{checkpoint_floor} during parallel merkle reconciliation"
-                    )
-                })?
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Missing block info for durable checkpoint floor #{checkpoint_floor} during parallel merkle reconciliation"
-                    )
-                })?;
-            let floor_root = floor_block_info.header.global_state_root;
+            rolled_back_to_floor = self.rollback_tries_to_checkpoint_floor(checkpoint_floor, context)?;
+            self.rewind_parallel_merkle_checkpoints(Some(confirmed_tip))?;
 
+            let root_at_floor = match checkpoint_floor {
+                Some(checkpoint_floor) => {
+                    let floor_protocol_version = self
+                        .inner
+                        .get_block_info(checkpoint_floor)?
+                        .context("Missing checkpoint floor block info after recovery rollback")?
+                        .header
+                        .protocol_version;
+                    get_state_root(self, floor_protocol_version)?
+                }
+                None => self.get_state_root_hash()?,
+            };
             ensure!(
-                actual_root == floor_root,
-                "Current trie root {actual_root:#x} does not match durable checkpoint floor #{checkpoint_floor} root {floor_root:#x} while reconciling confirmed block #{confirmed_tip} during {context}"
+                root_at_floor == floor_root,
+                "Trie root {root_at_floor:#x} does not match durable checkpoint floor {checkpoint_floor:?} root {floor_root:#x} while reconciling confirmed block #{confirmed_tip} during {context}"
             );
 
-            if checkpoint_floor < confirmed_tip {
+            let replay_start = checkpoint_floor.map_or(0, |checkpoint_floor| checkpoint_floor + 1);
+            if replay_start <= confirmed_tip {
                 let replay_diffs =
-                    self.collect_state_diffs_inclusive(checkpoint_floor + 1, confirmed_tip).with_context(|| {
+                    self.collect_state_diffs_inclusive(replay_start, confirmed_tip).with_context(|| {
                         format!(
-                            "Collecting state diffs {}..={} for parallel merkle reconciliation",
-                            checkpoint_floor + 1,
-                            confirmed_tip
-                        )
+                        "Collecting state diffs {replay_start}..={confirmed_tip} for parallel merkle reconciliation"
+                    )
                     })?;
                 let cumulative_state_diff = squash_state_diffs(replay_diffs.iter().map(|(_, diff)| diff));
                 self.apply_to_global_trie(
@@ -477,11 +615,12 @@ impl RocksDBStorage {
             }
         }
 
-        let reconciled_root = self.get_state_root_hash().with_context(|| {
-            format!(
+        let reconciled_root =
+            get_state_root(self, confirmed_block_info.header.protocol_version).with_context(|| {
+                format!(
                 "Reading global state root after reconciliation for confirmed block #{confirmed_tip} during {context}"
             )
-        })?;
+            })?;
         ensure!(
             reconciled_root == expected_root,
             "Confirmed block #{confirmed_tip} root mismatch after {context}: expected {expected_root:#x}, got {reconciled_root:#x}"
@@ -505,21 +644,23 @@ impl RocksDBStorage {
             format!("Refreshing snapshot inventory for confirmed block #{confirmed_tip} during parallel merkle reconciliation")
         })?;
 
-        if replayed_from_floor || wrote_checkpoint {
+        if rolled_back_to_floor || replayed_from_floor || wrote_checkpoint {
             tracing::info!(
-                "parallel_merkle_confirmed_reconcile_complete context={} confirmed_tip={} state_root={:#x} replayed_from_floor={} wrote_checkpoint={}",
+                "parallel_merkle_confirmed_reconcile_complete context={} confirmed_tip={} state_root={:#x} rolled_back_to_floor={} replayed_from_floor={} wrote_checkpoint={}",
                 context,
                 confirmed_tip,
                 reconciled_root,
+                rolled_back_to_floor,
                 replayed_from_floor,
                 wrote_checkpoint
             );
         } else {
             tracing::debug!(
-                "parallel_merkle_confirmed_reconcile_complete context={} confirmed_tip={} state_root={:#x} replayed_from_floor={} wrote_checkpoint={}",
+                "parallel_merkle_confirmed_reconcile_complete context={} confirmed_tip={} state_root={:#x} rolled_back_to_floor={} replayed_from_floor={} wrote_checkpoint={}",
                 context,
                 confirmed_tip,
                 reconciled_root,
+                rolled_back_to_floor,
                 replayed_from_floor,
                 wrote_checkpoint
             );
@@ -528,6 +669,7 @@ impl RocksDBStorage {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compute_root_from_selected_snapshot(
         &self,
         snapshot_block: Option<u64>,
@@ -536,14 +678,12 @@ impl RocksDBStorage {
         state_diff: &StateDiff,
         protocol_version: mp_chain_config::StarknetVersion,
         include_overlay: bool,
-        trie_log_mode: TrieLogMode,
         compare_with_sequential: bool,
     ) -> Result<InMemoryRootComputation> {
         tracing::debug!(
-            "parallel_root_selected_snapshot_compute block_number={} base_block={snapshot_block:?} include_overlay={} trie_log_mode={:?}",
+            "parallel_root_selected_snapshot_compute block_number={} base_block={snapshot_block:?} include_overlay={}",
             block_n,
-            include_overlay,
-            trie_log_mode
+            include_overlay
         );
         let compare_snapshot = compare_with_sequential.then(|| Arc::clone(&snapshot));
         let parallel = compute_root_from_snapshot(
@@ -554,7 +694,6 @@ impl RocksDBStorage {
             state_diff,
             protocol_version,
             include_overlay,
-            trie_log_mode,
         )?;
 
         if let Some(compare_snapshot) = compare_snapshot {
@@ -565,10 +704,9 @@ impl RocksDBStorage {
                 block_n,
                 state_diff,
                 protocol_version,
-                trie_log_mode,
             )?;
             tracing::debug!(
-                "parallel_vs_sequential_root_compare block_number={} base_block={snapshot_block:?} contract_root_parallel={:#x} contract_root_sequential={:#x} contract_root_match={} class_root_parallel={:#x} class_root_sequential={:#x} class_root_match={} state_root_parallel={:#x} state_root_sequential={:#x} state_root_match={} include_overlay={} trie_log_mode={:?}",
+                "parallel_vs_sequential_root_compare block_number={} base_block={snapshot_block:?} contract_root_parallel={:#x} contract_root_sequential={:#x} contract_root_match={} class_root_parallel={:#x} class_root_sequential={:#x} class_root_match={} state_root_parallel={:#x} state_root_sequential={:#x} state_root_match={} include_overlay={}",
                 block_n,
                 parallel.contract_root,
                 sequential.contract_root,
@@ -579,8 +717,7 @@ impl RocksDBStorage {
                 parallel.state_root,
                 sequential.state_root,
                 parallel.state_root == sequential.state_root,
-                include_overlay,
-                trie_log_mode
+                include_overlay
             );
         }
 
@@ -593,13 +730,12 @@ impl RocksDBStorage {
         state_diff: &StateDiff,
         protocol_version: mp_chain_config::StarknetVersion,
         include_overlay: bool,
-        trie_log_mode: TrieLogMode,
     ) -> Result<InMemoryRootComputation> {
         let base_block_n = block_n.checked_sub(1);
         let inventory = self.snapshots.inventory();
         let snapshot = self.snapshots.get_exact(base_block_n).ok_or_else(|| {
             tracing::error!(
-                "parallel_root_base_snapshot_missing block_number={} base_block={base_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
+                "parallel_root_base_snapshot_missing block_number={} base_block={base_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={}",
                 block_n,
                 inventory.head_block_n,
                 inventory.exact_count,
@@ -611,29 +747,18 @@ impl RocksDBStorage {
                 inventory.has_empty_base,
                 self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
                 self.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten(),
-                include_overlay,
-                trie_log_mode
+                include_overlay
             );
             anyhow::anyhow!("Missing exact base snapshot for block #{block_n} (base {base_block_n:?})")
         })?;
         tracing::debug!(
-            "parallel_root_base_snapshot_selected block_number={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
+            "parallel_root_base_snapshot_selected block_number={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={}",
             block_n,
             self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
             self.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten(),
-            include_overlay,
-            trie_log_mode
+            include_overlay
         );
-        compute_root_from_snapshot(
-            self,
-            base_block_n,
-            snapshot,
-            block_n,
-            state_diff,
-            protocol_version,
-            include_overlay,
-            trie_log_mode,
-        )
+        compute_root_from_snapshot(self, base_block_n, snapshot, block_n, state_diff, protocol_version, include_overlay)
     }
 
     pub fn compute_roots_in_parallel_from_latest_snapshot(
@@ -642,7 +767,6 @@ impl RocksDBStorage {
         state_diffs: &[StateDiff],
         protocol_version: mp_chain_config::StarknetVersion,
         boundary_block_n: Option<u64>,
-        trie_log_mode: TrieLogMode,
     ) -> Result<Vec<InMemoryRootComputation>> {
         let base_block_n = start_block_n.checked_sub(1);
         let end_block_n = start_block_n
@@ -650,7 +774,7 @@ impl RocksDBStorage {
         let inventory = self.snapshots.inventory();
         let snapshot = self.snapshots.get_exact(base_block_n).ok_or_else(|| {
             tracing::error!(
-                "parallel_root_base_snapshot_missing start_block={} end_block={} batch_size={} base_block={base_block_n:?} boundary_block={boundary_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor_for_start={:?} trie_log_mode={:?}",
+                "parallel_root_base_snapshot_missing start_block={} end_block={} batch_size={} base_block={base_block_n:?} boundary_block={boundary_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor_for_start={:?}",
                 start_block_n,
                 end_block_n,
                 state_diffs.len(),
@@ -663,8 +787,7 @@ impl RocksDBStorage {
                 inventory.newest_historical,
                 inventory.has_empty_base,
                 self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
-                self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten(),
-                trie_log_mode
+                self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten()
             );
             anyhow::anyhow!(
                 "Missing exact base snapshot for root batch {}..={} (base {base_block_n:?})",
@@ -673,13 +796,12 @@ impl RocksDBStorage {
             )
         })?;
         tracing::debug!(
-            "parallel_root_base_snapshot_selected start_block={} end_block={} batch_size={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor_for_start={:?} boundary_block={boundary_block_n:?} trie_log_mode={:?}",
+            "parallel_root_base_snapshot_selected start_block={} end_block={} batch_size={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor_for_start={:?} boundary_block={boundary_block_n:?}",
             start_block_n,
             end_block_n,
             state_diffs.len(),
             self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
-            self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten(),
-            trie_log_mode
+            self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten()
         );
         compute_roots_in_parallel_from_snapshot(
             self,
@@ -689,17 +811,16 @@ impl RocksDBStorage {
             state_diffs,
             protocol_version,
             boundary_block_n,
-            trie_log_mode,
         )
     }
 
     pub fn flush_overlay_and_checkpoint(
         &self,
         block_n: u64,
+        boundary_interval: u64,
         overlay: &BonsaiOverlay,
-        trie_log_mode: TrieLogMode,
     ) -> Result<()> {
-        crate::rocksdb::global_trie::in_memory::flush_overlay_and_checkpoint(self, block_n, overlay, trie_log_mode)
+        crate::rocksdb::global_trie::in_memory::flush_overlay_and_checkpoint(self, block_n, boundary_interval, overlay)
     }
 
     fn collect_state_diffs_inclusive(&self, from_block_n: u64, to_block_n: u64) -> Result<Vec<(u64, StateDiff)>> {
@@ -923,16 +1044,39 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
         tracing::debug!("Writing transactions {block_n}");
-        // Save l1 core contract nonce to tx mapping.
-        self.inner
-            .messages_to_l2_write_transactions(
-                txs.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
-            )
-            .with_context(|| format!("Updating L1 state when storing transactions for block_n={block_n}"))?;
-
         self.inner
             .blocks_store_transactions(block_n, txs)
             .with_context(|| format!("Storing transactions for block_n={block_n}"))
+    }
+
+    fn confirm_l1_messages_in_block(&self, block_n: u64) -> Result<()> {
+        let Some(block_info) = self
+            .inner
+            .get_block_info(block_n)
+            .with_context(|| format!("Reading block info before confirming L1 messages for block_n={block_n}"))?
+        else {
+            // Head-projection unit tests and unsafe starting-block configurations can advance a
+            // logical head without locally materialized block rows. There are no transaction
+            // side effects to finalize in that case.
+            tracing::debug!("Skipping L1 message confirmation for block_n={block_n}: block info is not stored");
+            return Ok(());
+        };
+        let transactions: Vec<_> =
+            self.inner.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
+        ensure!(
+            transactions.len() == block_info.tx_hashes.len(),
+            "Expected {} transactions while confirming L1 messages for block_n={block_n}, found {}",
+            block_info.tx_hashes.len(),
+            transactions.len()
+        );
+
+        self.inner
+            .messages_to_l2_write_transactions(
+                transactions
+                    .iter()
+                    .filter_map(|value| value.transaction.as_l1_handler().zip(value.receipt.as_l1_handler())),
+            )
+            .with_context(|| format!("Confirming L1 messages consumed in block_n={block_n}"))
     }
 
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
@@ -1194,7 +1338,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         Ok(())
     }
 
-    fn reconcile_confirmed_parallel_merkle_state(&self, block_n: u64, context: &str) -> Result<()> {
+    fn reconcile_confirmed_parallel_merkle_state(&self, block_n: Option<u64>, context: &str) -> Result<()> {
         RocksDBStorage::reconcile_confirmed_parallel_merkle_state(self, block_n, context)
     }
 
@@ -1206,9 +1350,11 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn get_state_root_hash(&self) -> Result<Felt> {
-        // This method has no callers outside the trait definition. Use LATEST as default.
-        // If pre-0.14.0 chains need this, thread the version through the trait method.
         get_state_root(self, StarknetVersion::LATEST)
+    }
+
+    fn get_state_root_hash_at_version(&self, protocol_version: StarknetVersion) -> Result<Felt> {
+        get_state_root(self, protocol_version)
     }
 
     /// Reverts the blockchain state to a specific block hash during a chain reorganization.
@@ -1551,7 +1697,9 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::info!("✅ REORG: Class database reverted successfully");
 
         let expected_target_root = target_block_info.header.global_state_root;
-        let actual_target_root = self.get_state_root_hash().context("Reading global state root after trie revert")?;
+        let actual_target_root = self
+            .get_state_root_hash_at_version(target_block_info.header.protocol_version)
+            .context("Reading global state root after trie revert")?;
         let target_root_matches = actual_target_root == expected_target_root;
         tracing::info!(
             "reorg_target_state_root_verification target_block_n={} expected_root={:#x} actual_root={:#x} match={}",
@@ -1741,13 +1889,7 @@ mod tests {
         storage.on_new_confirmed_head(0).expect("confirm block 0");
 
         let results = storage
-            .compute_roots_in_parallel_from_latest_snapshot(
-                1,
-                &[diff1],
-                StarknetVersion::LATEST,
-                None,
-                TrieLogMode::Checkpoint,
-            )
+            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], StarknetVersion::LATEST, None)
             .expect("parallel roots");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].state_root, expected_root);
@@ -1765,13 +1907,7 @@ mod tests {
         storage.on_new_confirmed_head(1).expect("confirm block 1");
 
         let err = storage
-            .compute_roots_in_parallel_from_latest_snapshot(
-                1,
-                &[diff1],
-                StarknetVersion::LATEST,
-                None,
-                TrieLogMode::Checkpoint,
-            )
+            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], StarknetVersion::LATEST, None)
             .expect_err("missing exact base snapshot should fail");
         let message = format!("{err:#}");
         assert!(message.contains("Missing exact base snapshot"), "unexpected error: {message}");
@@ -1798,13 +1934,7 @@ mod tests {
         storage.on_new_confirmed_head(1).expect("confirm block 1");
 
         let results = storage
-            .compute_roots_in_parallel_from_latest_snapshot(
-                0,
-                &diffs,
-                StarknetVersion::LATEST,
-                None,
-                TrieLogMode::Checkpoint,
-            )
+            .compute_roots_in_parallel_from_latest_snapshot(0, &diffs, StarknetVersion::LATEST, None)
             .expect("parallel roots from empty base");
         let got_roots: Vec<_> = results.into_iter().map(|result| result.state_root).collect();
         assert_eq!(got_roots, expected_roots);

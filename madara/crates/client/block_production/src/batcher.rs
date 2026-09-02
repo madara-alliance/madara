@@ -33,6 +33,7 @@ pub struct Batcher {
 }
 
 impl Batcher {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,

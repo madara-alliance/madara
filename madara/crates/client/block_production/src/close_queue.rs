@@ -18,7 +18,7 @@ pub(crate) struct QueuedClosePayload {
     pub block_exec_summary: Box<BlockExecutionSummary>,
     pub state_diff: StateDiff,
     pub is_boundary: bool,
-    pub trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
+    pub parallel_merkle_flush_interval: u64,
     pub compare_parallel_with_sequential: bool,
     pub root_base_block_n: Option<u64>,
     pub root_snapshot: Option<SnapshotRef>,
