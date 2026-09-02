@@ -89,6 +89,7 @@ impl BlockProductionTask {
                 root_total: compute.total,
                 boundary_flush: None,
                 has_boundary_overlay,
+                boundary_checkpoint_persisted: false,
             },
         })
     }

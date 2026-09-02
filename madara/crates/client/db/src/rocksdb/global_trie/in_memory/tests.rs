@@ -91,6 +91,19 @@ fn synthetic_state_diff(index: u64) -> StateDiff {
     }
 }
 
+/// Computes one boundary overlay from a chosen durable snapshot and diff span.
+fn compute_boundary(
+    backend: &RocksDBStorage,
+    base_block_n: Option<u64>,
+    snapshot: SnapshotRef,
+    block_n: u64,
+    state_diffs: &[StateDiff],
+) -> InMemoryRootComputation {
+    let cumulative_diff = squash_state_diffs(state_diffs.iter());
+    compute_root_from_snapshot(backend, base_block_n, snapshot, block_n, &cumulative_diff, protocol_version(), true)
+        .expect("compute boundary root")
+}
+
 fn make_contract_history_key(contract_address: &Felt, block_n: u32) -> [u8; 32 + size_of::<u32>()] {
     let mut key = [0u8; 32 + size_of::<u32>()];
     key[..32].copy_from_slice(&contract_address.to_bytes_be());
@@ -958,13 +971,61 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let boundary = results.last().expect("boundary result");
     let overlay = boundary.overlay.as_ref().expect("boundary overlay");
 
-    flush_overlay_and_checkpoint(&backend.db, boundary.block_n, 3, overlay).expect("flush and checkpoint");
+    flush_overlay_and_checkpoint(&backend.db, boundary.block_n, 3, None, overlay).expect("flush and checkpoint");
 
     let persisted_root =
         crate::rocksdb::global_trie::get_state_root(&backend.db, protocol_version()).expect("read persisted root");
     assert_eq!(persisted_root, boundary.state_root);
     assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(2));
     assert!(backend.has_parallel_merkle_checkpoint(2).expect("checkpoint marker"));
+}
+
+#[test]
+fn stale_boundary_overlay_is_skipped_and_later_boundary_catches_up() {
+    let backend = setup_backend();
+    let all_diffs: Vec<_> = (0_u64..9).map(synthetic_state_diff).collect();
+
+    let first_boundary = compute_boundary(&backend.db, None, fresh_snapshot(&backend.db), 2, &all_diffs[..3]);
+    flush_overlay_and_checkpoint(
+        &backend.db,
+        2,
+        3,
+        None,
+        first_boundary.overlay.as_ref().expect("first boundary overlay"),
+    )
+    .expect("flush first boundary");
+
+    let shared_base = fresh_snapshot(&backend.db);
+    let block5 = compute_boundary(&backend.db, Some(2), Arc::clone(&shared_base), 5, &all_diffs[3..6]);
+    let block8_from_2 = compute_boundary(&backend.db, Some(2), shared_base, 8, &all_diffs[3..9]);
+
+    let block5_outcome =
+        flush_overlay_and_checkpoint(&backend.db, 5, 3, Some(2), block5.overlay.as_ref().expect("block 5 overlay"))
+            .expect("flush block 5 boundary");
+    assert_eq!(block5_outcome, BoundaryFlushOutcome::Persisted);
+
+    let stale_outcome = flush_overlay_and_checkpoint(
+        &backend.db,
+        8,
+        3,
+        Some(2),
+        block8_from_2.overlay.as_ref().expect("stale block 8 overlay"),
+    )
+    .expect("skip stale block 8 boundary");
+    assert_eq!(stale_outcome, BoundaryFlushOutcome::StaleBaseSkipped { latest_checkpoint: 5 });
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("checkpoint after skip"), Some(5));
+
+    let block8_from_5 = compute_boundary(&backend.db, Some(5), fresh_snapshot(&backend.db), 8, &all_diffs[6..9]);
+    assert_eq!(block8_from_5.state_root, block8_from_2.state_root);
+    flush_overlay_and_checkpoint(
+        &backend.db,
+        8,
+        3,
+        Some(5),
+        block8_from_5.overlay.as_ref().expect("fresh block 8 overlay"),
+    )
+    .expect("flush block 8 boundary from current checkpoint");
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("checkpoint after catch-up"), Some(8));
 }
 
 #[test]
@@ -975,7 +1036,7 @@ fn boundary_flush_always_persists_trie_logs() {
     let snapshot = fresh_snapshot(&backend.db);
     let result = compute_root_from_snapshot(&backend.db, None, snapshot, 0, &diff, protocol_version(), true)
         .expect("root compute");
-    flush_overlay_and_checkpoint(&backend.db, 0, 1, result.overlay.as_ref().expect("boundary overlay"))
+    flush_overlay_and_checkpoint(&backend.db, 0, 1, None, result.overlay.as_ref().expect("boundary overlay"))
         .expect("boundary flush");
 
     let log_entries = count_column_entries(&backend.db, BONSAI_CONTRACT_LOG_COLUMN)
@@ -1024,7 +1085,7 @@ fn boundary_log_retention_counts_block_revisions() {
         )
         .expect("compute boundary roots");
         let overlay = results.last().and_then(|result| result.overlay.as_ref()).expect("boundary overlay");
-        flush_overlay_and_checkpoint(&storage, boundary_block_n, boundary_interval, overlay)
+        flush_overlay_and_checkpoint(&storage, boundary_block_n, boundary_interval, base_block_n, overlay)
             .expect("flush boundary overlay");
         base_block_n = Some(boundary_block_n);
     }

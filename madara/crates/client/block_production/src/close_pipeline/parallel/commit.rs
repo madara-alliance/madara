@@ -45,6 +45,7 @@ impl BlockProductionTask {
         let close_started_at = Instant::now();
         let backend = Arc::clone(&state.backend);
         let block_n = state.block_number;
+        let root_base_block_n = parallel_summary.base_snapshot_block;
         let bouncer_weights = block_exec_summary.bouncer_weights;
         let db_commit = global_spawn_rayon_task(move || {
             commit_parallel_db(
@@ -54,6 +55,7 @@ impl BlockProductionTask {
                 state_diff,
                 root_response,
                 parallel_merkle_flush_interval,
+                root_base_block_n,
             )
         })
         .await?;
@@ -69,9 +71,10 @@ impl BlockProductionTask {
         durations.record_close_preconfirmed(&metrics);
         parallel_summary.boundary_flush = db_commit.boundary_flush;
         parallel_summary.has_boundary_overlay = has_boundary_overlay;
+        parallel_summary.boundary_checkpoint_persisted = db_commit.durable_checkpoint_committed;
         log_parallel_close_complete(&state, &facts, &durations, &db_commit.block_result, &parallel_summary);
         record_closed_block_summary_metrics(&metrics, &state, &facts, &durations);
-        Ok(CloseJobCompletion { block_n })
+        Ok(CloseJobCompletion { block_n, durable_checkpoint_committed: db_commit.durable_checkpoint_committed })
     }
 }
 
@@ -83,6 +86,7 @@ fn commit_parallel_db(
     state_diff: StateDiff,
     root_response: InMemoryRootComputation,
     flush_interval: u64,
+    root_base_block_n: Option<u64>,
 ) -> anyhow::Result<ParallelDbCommitResult> {
     let pipeline_started_at = Instant::now();
     let touched_storage =
@@ -97,14 +101,25 @@ fn commit_parallel_db(
     write_bouncer_weights(&backend, block_n, &bouncer_weights)?;
     let InMemoryRootComputation { state_root, timings, overlay, .. } = root_response;
     let block_result = write_block_parts(&backend, block_n, state_diff, state_root, timings)?;
-    let boundary_flush = flush_boundary(&backend, block_n, flush_interval, overlay.as_ref(), &touched_storage)?;
+    let boundary_flush =
+        flush_boundary(&backend, block_n, flush_interval, root_base_block_n, overlay.as_ref(), &touched_storage)?;
     confirm_block(&backend, block_n)?;
     tracing::debug!(
         "parallel_close_db_pipeline_finished block_number={} total_duration_ms={}",
         block_n,
         pipeline_started_at.elapsed().as_secs_f64() * 1000.0
     );
-    Ok(ParallelDbCommitResult { block_result, boundary_flush })
+    Ok(ParallelDbCommitResult {
+        block_result,
+        boundary_flush: boundary_flush.duration,
+        durable_checkpoint_committed: boundary_flush.checkpoint_persisted,
+    })
+}
+
+/// Describes whether an optional boundary overlay advanced durable trie state.
+struct BoundaryFlushResult {
+    duration: Option<Duration>,
+    checkpoint_persisted: bool,
 }
 
 /// Persists bouncer weights required by SNOS before block parts are written.
@@ -156,17 +171,30 @@ fn flush_boundary(
     backend: &Arc<MadaraBackend>,
     block_n: u64,
     flush_interval: u64,
+    overlay_base_block_n: Option<u64>,
     overlay: Option<&BonsaiOverlay>,
     touched_storage: &[(Felt, usize)],
-) -> anyhow::Result<Option<Duration>> {
+) -> anyhow::Result<BoundaryFlushResult> {
     let Some(overlay) = overlay else {
-        return Ok(None);
+        return Ok(BoundaryFlushResult { duration: None, checkpoint_persisted: false });
     };
     let started_at = Instant::now();
-    backend
+    let outcome = backend
         .db
-        .flush_overlay_and_checkpoint(block_n, flush_interval, overlay)
+        .flush_overlay_and_checkpoint(block_n, flush_interval, overlay_base_block_n, overlay)
         .context("Flushing boundary overlay and writing parallel-merkle checkpoint")?;
+    if let mc_db::rocksdb::global_trie::in_memory::BoundaryFlushOutcome::StaleBaseSkipped { latest_checkpoint } =
+        outcome
+    {
+        tracing::debug!(
+            block_number = block_n,
+            ?overlay_base_block_n,
+            latest_checkpoint,
+            "parallel_merkle_stale_boundary_overlay_skipped"
+        );
+        return Ok(BoundaryFlushResult { duration: None, checkpoint_persisted: false });
+    }
+
     let duration = started_at.elapsed();
     tracing::debug!(
         "parallel_close_phase_boundary_flush_done block_number={} duration_ms={} contract_changes={} contract_storage_changes={} class_changes={} latest_checkpoint={:?} checkpoint_floor_for_block={:?}",
@@ -179,7 +207,7 @@ fn flush_boundary(
         backend.db.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten()
     );
     log_persisted_storage_roots(backend, block_n, touched_storage)?;
-    Ok(Some(duration))
+    Ok(BoundaryFlushResult { duration: Some(duration), checkpoint_persisted: true })
 }
 
 /// Reads persisted roots after a boundary flush for temporary replay diagnostics.
@@ -300,6 +328,7 @@ fn log_parallel_close_complete(
         root_total_ms = parallel.root_total.as_secs_f64() * 1000.0,
         boundary_flush_ms = ?parallel.boundary_flush.map(|value| value.as_secs_f64() * 1000.0),
         has_boundary_overlay = parallel.has_boundary_overlay,
+        boundary_checkpoint_persisted = parallel.boundary_checkpoint_persisted,
         parallel_merkle = true,
         "close_block_complete"
     );

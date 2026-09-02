@@ -213,7 +213,7 @@ impl BlockProductionTask {
             self.parallel_merkle_enabled
         );
 
-        self.prune_completed_boundary(completion.block_n);
+        self.prune_completed_boundary(completion);
         self.mark_replay_boundary_closed(completion.block_n);
         self.send_state_notification(BlockProductionStateNotification::ClosedBlock { block_n: completion.block_n });
         self.record_block_stage_metrics();
@@ -221,9 +221,9 @@ impl BlockProductionTask {
     }
 
     /// Drops tracked state diffs once their durable boundary has committed.
-    fn prune_completed_boundary(&mut self, block_n: u64) {
-        if self.parallel_merkle_enabled && self.is_boundary_block(block_n) {
-            prune_diffs_since_snapshot(&mut self.diffs_since_snapshot, block_n);
+    fn prune_completed_boundary(&mut self, completion: CloseJobCompletion) {
+        if self.parallel_merkle_enabled && completion.durable_checkpoint_committed {
+            prune_diffs_since_snapshot(&mut self.diffs_since_snapshot, completion.block_n);
         }
     }
 
@@ -250,7 +250,7 @@ impl BlockProductionTask {
         while let Some((expected_block_n, receiver)) = self.pending_completions.pop_front() {
             match receiver.await {
                 Ok(Ok(completion)) if completion.block_n == expected_block_n => {
-                    self.prune_completed_boundary(completion.block_n);
+                    self.prune_completed_boundary(completion);
                     self.mark_replay_boundary_closed(completion.block_n);
                 }
                 Ok(Ok(completion)) => tracing::warn!(

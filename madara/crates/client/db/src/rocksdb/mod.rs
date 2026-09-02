@@ -844,13 +844,21 @@ impl RocksDBStorage {
         )
     }
 
+    /// Publishes a boundary overlay only when its selected base is still durable.
     pub fn flush_overlay_and_checkpoint(
         &self,
         block_n: u64,
         boundary_interval: u64,
+        overlay_base_block_n: Option<u64>,
         overlay: &BonsaiOverlay,
-    ) -> Result<()> {
-        crate::rocksdb::global_trie::in_memory::flush_overlay_and_checkpoint(self, block_n, boundary_interval, overlay)
+    ) -> Result<crate::rocksdb::global_trie::in_memory::BoundaryFlushOutcome> {
+        crate::rocksdb::global_trie::in_memory::flush_overlay_and_checkpoint(
+            self,
+            block_n,
+            boundary_interval,
+            overlay_base_block_n,
+            overlay,
+        )
     }
 
     fn collect_state_diffs_inclusive(&self, from_block_n: u64, to_block_n: u64) -> Result<Vec<(u64, StateDiff)>> {

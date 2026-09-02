@@ -10,5 +10,5 @@ pub use compute::{
     InMemoryRootComputation,
 };
 pub use db::{InMemoryBonsaiDb, InMemoryColumnMapping, OverlayKey, OverlayMap};
-pub use overlay::{flush_overlay_and_checkpoint, BonsaiOverlay};
+pub use overlay::{flush_overlay_and_checkpoint, BonsaiOverlay, BoundaryFlushOutcome};
 pub use state_diff::{cumulative_squashed_state_diffs, squash_state_diffs};

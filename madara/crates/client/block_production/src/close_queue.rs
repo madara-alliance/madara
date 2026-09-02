@@ -39,4 +39,5 @@ pub(crate) struct QueuedCloseJob {
 /// Ordered acknowledgement emitted only after the block reaches its commit point.
 pub(crate) struct CloseJobCompletion {
     pub block_n: u64,
+    pub durable_checkpoint_committed: bool,
 }

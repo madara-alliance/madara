@@ -237,7 +237,7 @@ fn startup_rolls_boundary_trie_back_to_confirmed_head_and_preserves_preconfirmed
         let block2 = write_parallel_block_parts(&backend, 2, &[diff1, diff2], true);
         backend
             .db
-            .flush_overlay_and_checkpoint(2, 3, block2.overlay.as_ref().expect("boundary overlay"))
+            .flush_overlay_and_checkpoint(2, 3, Some(0), block2.overlay.as_ref().expect("boundary overlay"))
             .expect("persisting the block 2 boundary should succeed");
 
         assert_eq!(backend.chain_head_state().confirmed_tip, Some(1));
@@ -282,7 +282,7 @@ fn startup_rolls_first_boundary_back_to_empty_base_before_replaying_confirmed_bl
         let block2 = write_parallel_block_parts(&backend, 2, &[diff0, diff1, diff2], true);
         backend
             .db
-            .flush_overlay_and_checkpoint(2, 3, block2.overlay.as_ref().expect("first boundary overlay"))
+            .flush_overlay_and_checkpoint(2, 3, None, block2.overlay.as_ref().expect("first boundary overlay"))
             .expect("persisting the first boundary should succeed");
 
         assert_eq!(backend.chain_head_state().confirmed_tip, Some(1));

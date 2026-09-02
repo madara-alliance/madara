@@ -79,7 +79,12 @@ fn test_execute(
     Box::pin(async move {
         payloads
             .into_iter()
-            .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
+            .map(|payload| {
+                Ok(CloseJobCompletion {
+                    block_n: payload.close_job_payload.block_n,
+                    durable_checkpoint_committed: false,
+                })
+            })
             .collect()
     })
 }
@@ -148,7 +153,12 @@ async fn batches_stop_at_boundary() {
                 seen_batches.lock().expect("batch log mutex").push(blocks);
                 payloads
                     .into_iter()
-                    .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
+                    .map(|payload| {
+                        Ok(CloseJobCompletion {
+                            block_n: payload.close_job_payload.block_n,
+                            durable_checkpoint_committed: false,
+                        })
+                    })
                     .collect()
             })
         })
@@ -179,7 +189,12 @@ async fn drain_shutdown_completes_in_flight_job() {
                 gate.notified().await;
                 payloads
                     .into_iter()
-                    .map(|payload| Ok(CloseJobCompletion { block_n: payload.close_job_payload.block_n }))
+                    .map(|payload| {
+                        Ok(CloseJobCompletion {
+                            block_n: payload.close_job_payload.block_n,
+                            durable_checkpoint_committed: false,
+                        })
+                    })
                     .collect()
             })
         })
@@ -224,7 +239,7 @@ async fn parallel_roots_can_finish_out_of_order_but_commit_in_order() {
             Box::pin(async move {
                 let block_n = computed.block_n();
                 commit_order.lock().unwrap().push(block_n);
-                Ok(CloseJobCompletion { block_n })
+                Ok(CloseJobCompletion { block_n, durable_checkpoint_committed: false })
             })
         })
     };

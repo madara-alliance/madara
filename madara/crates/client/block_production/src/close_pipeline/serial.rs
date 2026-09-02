@@ -43,7 +43,7 @@ impl BlockProductionTask {
         durations.record_close_preconfirmed(&metrics);
         log_serial_close_complete(&state, &facts, &durations, &db_result);
         record_closed_block_summary_metrics(&metrics, &state, &facts, &durations);
-        Ok(CloseJobCompletion { block_n: state.block_number })
+        Ok(CloseJobCompletion { block_n: state.block_number, durable_checkpoint_committed: false })
     }
 
     /// Processes a boundary-limited serial batch and preserves input result order.

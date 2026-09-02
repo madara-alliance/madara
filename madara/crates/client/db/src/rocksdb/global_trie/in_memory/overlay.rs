@@ -13,6 +13,15 @@ pub struct BonsaiOverlay {
     pub class_changed: OverlayMap,
 }
 
+/// Result of attempting to publish a computed boundary overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundaryFlushOutcome {
+    /// The overlay base matched durable state, so the checkpoint was published.
+    Persisted,
+    /// A newer checkpoint already exists, so applying this older-base delta was unsafe.
+    StaleBaseSkipped { latest_checkpoint: u64 },
+}
+
 impl BonsaiOverlay {
     pub(super) fn apply_changed_map_to_batch(
         backend: &RocksDBStorage,
@@ -90,13 +99,46 @@ fn prune_expired_boundary_logs_in_batch(
     Ok(Some(first_retained_revision))
 }
 
-/// Atomically persists a boundary overlay, its checkpoint, and bounded trie-log retention metadata.
+/// Rejects a future base and identifies an older base that must be skipped.
+fn stale_boundary_outcome(
+    block_n: u64,
+    latest_checkpoint: Option<u64>,
+    overlay_base_block_n: Option<u64>,
+) -> Result<Option<BoundaryFlushOutcome>> {
+    if latest_checkpoint == overlay_base_block_n {
+        return Ok(None);
+    }
+
+    match (latest_checkpoint, overlay_base_block_n) {
+        (Some(latest_checkpoint), None) => {
+            Ok(Some(BoundaryFlushOutcome::StaleBaseSkipped { latest_checkpoint }))
+        }
+        (Some(latest_checkpoint), Some(overlay_base_block_n)) if latest_checkpoint > overlay_base_block_n => {
+            Ok(Some(BoundaryFlushOutcome::StaleBaseSkipped { latest_checkpoint }))
+        }
+        _ => anyhow::bail!(
+            "parallel merkle overlay base is newer than durable state: block={block_n}, overlay_base={overlay_base_block_n:?}, latest_checkpoint={latest_checkpoint:?}"
+        ),
+    }
+}
+
+/// Publishes an overlay only when it was computed from the current durable checkpoint.
+///
+/// Workers may compute cumulative roots from an older durable floor while a previous
+/// boundary is committing. Such roots remain valid, but their overlays are deltas
+/// relative to that older floor and must not be applied on top of a newer checkpoint.
 pub fn flush_overlay_and_checkpoint(
     backend: &RocksDBStorage,
     block_n: u64,
     boundary_interval: u64,
+    overlay_base_block_n: Option<u64>,
     overlay: &BonsaiOverlay,
-) -> Result<()> {
+) -> Result<BoundaryFlushOutcome> {
+    let latest_checkpoint = backend.inner.get_parallel_merkle_latest_checkpoint()?;
+    if let Some(outcome) = stale_boundary_outcome(block_n, latest_checkpoint, overlay_base_block_n)? {
+        return Ok(outcome);
+    }
+
     let mut batch = WriteBatchWithTransaction::default();
     BonsaiOverlay::apply_changed_map_to_batch(
         backend,
@@ -137,5 +179,5 @@ pub fn flush_overlay_and_checkpoint(
             backend.inner.config.max_saved_trie_logs
         );
     }
-    Ok(())
+    Ok(BoundaryFlushOutcome::Persisted)
 }

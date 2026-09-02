@@ -50,6 +50,7 @@ struct ParallelMerkleSummary {
     root_total: Duration,
     boundary_flush: Option<Duration>,
     has_boundary_overlay: bool,
+    boundary_checkpoint_persisted: bool,
 }
 
 /// Keeps a computed root attached to the close payload that produced it.
@@ -83,6 +84,7 @@ struct RootComputationOutput {
 struct ParallelDbCommitResult {
     block_result: mc_db::AddFullBlockResult,
     boundary_flush: Option<Duration>,
+    durable_checkpoint_committed: bool,
 }
 
 /// Creates a root result without DB work for finalizer scheduler tests.
