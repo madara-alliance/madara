@@ -97,10 +97,11 @@ impl CurrentBlockState {
         }
 
         let backend = self.backend.clone();
+        let block_number = self.block_number;
         global_spawn_rayon_task(move || {
             backend
                 .write_access()
-                .append_to_preconfirmed(&executed, /* candidates */ [])
+                .append_to_preconfirmed(block_number, &executed, /* candidates */ [])
                 .context("Appending to preconfirmed block")
         })
         .await?;

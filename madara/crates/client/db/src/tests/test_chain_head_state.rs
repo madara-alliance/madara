@@ -201,6 +201,55 @@ fn runahead_keeps_multiple_runtime_preconfirmed_blocks_when_persistence_is_disab
 }
 
 #[test]
+fn concurrent_confirmation_and_runahead_creation_preserve_the_newer_head() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: false, ..Default::default() },
+    );
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
+        .expect("creating initial preconfirmed block should succeed");
+
+    for confirmed_block_n in 0..32 {
+        let next_block_n = confirmed_block_n + 1;
+        let start = Arc::new(std::sync::Barrier::new(3));
+        std::thread::scope(|scope| {
+            let confirming_backend = Arc::clone(&backend);
+            let confirming_start = Arc::clone(&start);
+            scope.spawn(move || {
+                confirming_start.wait();
+                confirming_backend
+                    .write_access()
+                    .new_confirmed_block(confirmed_block_n)
+                    .expect("concurrent confirmation should succeed");
+            });
+
+            let producing_backend = Arc::clone(&backend);
+            let producing_start = Arc::clone(&start);
+            scope.spawn(move || {
+                producing_start.wait();
+                producing_backend
+                    .write_access()
+                    .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                        block_number: next_block_n,
+                        ..Default::default()
+                    }))
+                    .expect("concurrent runahead creation should succeed");
+            });
+
+            start.wait();
+        });
+
+        let head = backend.chain_head_state();
+        assert_eq!(head.confirmed_tip, Some(confirmed_block_n));
+        assert_eq!(head.external_preconfirmed_tip, Some(next_block_n));
+        assert_eq!(head.internal_preconfirmed_tip, Some(next_block_n));
+        assert!(backend.block_view_on_preconfirmed(next_block_n).is_some());
+    }
+}
+
+#[test]
 fn refresh_reconstructs_internal_tip_from_persisted_preconfirmed_headers() {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_test()),

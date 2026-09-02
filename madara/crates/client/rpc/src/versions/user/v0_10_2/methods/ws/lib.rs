@@ -1043,7 +1043,7 @@ mod test {
         }];
         backend
             .write_access()
-            .append_to_preconfirmed(&executed, std::iter::empty())
+            .append_to_preconfirmed(0, &executed, std::iter::empty())
             .expect("Failed to append preconfirmed transaction");
 
         let item = tokio::time::timeout(Duration::from_secs(5), sub.next())
@@ -1095,7 +1095,7 @@ mod test {
         }];
         backend
             .write_access()
-            .append_to_preconfirmed(&executed, std::iter::empty())
+            .append_to_preconfirmed(0, &executed, std::iter::empty())
             .expect("Failed to append preconfirmed transaction");
 
         let item = tokio::time::timeout(Duration::from_secs(5), sub.next())

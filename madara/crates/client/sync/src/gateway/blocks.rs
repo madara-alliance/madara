@@ -609,9 +609,11 @@ pub fn gateway_preconfirmed_block_sync(
                         .new_preconfirmed(PreconfirmedBlock::new_with_content(header, executed, candidates))?;
                 } else {
                     // Append to current pre-confirmed block.
-                    backend
-                        .write_access()
-                        .append_to_preconfirmed(&executed, /* replace_candidates */ candidates)?;
+                    backend.write_access().append_to_preconfirmed(
+                        header.block_number,
+                        &executed,
+                        /* replace_candidates */ candidates,
+                    )?;
                 }
 
                 Ok(Some(()))

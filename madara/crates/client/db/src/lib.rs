@@ -398,6 +398,13 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub chain_head_state: tokio::sync::watch::Sender<ChainHeadState>,
     pub preconfirmed_block_runtime: RwLock<RuntimePreconfirmedBlocks>,
 
+    /// Serializes read-modify-write transitions of the canonical head and runtime preconfirmed map.
+    ///
+    /// Merkle computation and block-part writes deliberately remain outside this lock. Only the
+    /// short projection transition is serialized so a confirmation cannot publish a stale copy
+    /// over a concurrently-created preconfirmed block.
+    head_projection_write_lock: Mutex<()>,
+
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
@@ -529,6 +536,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
             preconfirmed_block_runtime: RwLock::new(BTreeMap::new()),
+            head_projection_write_lock: Mutex::new(()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             reorg_notifications,
             custom_headers: Mutex::new(Default::default()),
@@ -599,18 +607,15 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,
     /// and do any other such thing. The canonical chain head projection can only be modified through this.
     ///
-    /// As a caller, you are responsible for ensuring the backend is not being concurrently
-    /// modified in an unexpected way. In practice, this means:
-    /// - You are allowed to use the `write_*` low-level functions to write block parts concurrently.
-    /// - You are not allowed to use the other functions to advance the head projection
+    /// Canonical head-projection transitions are serialized internally. Callers must still submit
+    /// those transitions in canonical block order. Low-level `write_*` block-part functions may be
+    /// used concurrently.
     ///
     /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
     /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
     ///
     /// In addition, all the associated functions need to be called in a rayon thread pool context. **Do not call
     /// them from the tokio pool!**
-    // TODO: ensure exclusive access? all of these requirements could be checked relatively cheaply. There are also
-    // ways to make the aforementioned logic errors unrepresentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
     }
@@ -1207,12 +1212,19 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         Ok(())
     }
 
-    /// Refresh in-memory head projection from persisted DB head projection.
-    ///
-    /// This is the canonical refresh path used by rpc/sync compatibility callsites after destructive DB operations.
-    pub fn refresh_head_projection_from_db(&self) -> Result<()> {
+    /// Rebuilds the runtime head while the caller holds `head_projection_write_lock`.
+    fn refresh_head_projection_from_db_locked(&self) -> Result<()> {
         let (chain_head_state, preconfirmed) = self.build_runtime_head_projection(self.db.get_head_projection()?)?;
         self.publish_head_projection(chain_head_state, preconfirmed)
+    }
+
+    /// Refreshes the in-memory head projection from its persisted representation.
+    ///
+    /// This is the canonical refresh path used by RPC and sync compatibility callsites after
+    /// destructive DB operations. Refresh is serialized with live head transitions.
+    pub fn refresh_head_projection_from_db(&self) -> Result<()> {
+        let _projection_guard = self.head_projection_write_lock.lock().expect("Poisoned head projection lock");
+        self.refresh_head_projection_from_db_locked()
     }
 
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
@@ -1298,16 +1310,18 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 }
 
-/// Structure holding exclusive access to write the blocks and the tip of the chain.
+/// Handle for writing blocks and advancing the canonical chain head.
 ///
-/// Note: All of the associated functions need to be called in a rayon thread pool context.
+/// Head-projection operations are serialized by `MadaraBackend`; callers remain responsible for
+/// submitting them in canonical order. All methods must run in a Rayon thread-pool context.
 pub struct MadaraBackendWriter<D: MadaraStorage> {
     inner: Arc<MadaraBackend<D>>,
 }
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
+    /// Advances the canonical confirmed tip without losing newer runtime preconfirmed blocks.
     fn transition_to_confirmed_or_empty(&self, new_confirmed_tip: Option<u64>) -> Result<()> {
-        // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
+        let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let current_head_state = *self.inner.chain_head_state.borrow();
 
         let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
@@ -1346,8 +1360,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.publish_head_projection(next_chain_head_state, None)
     }
 
+    /// Adds a preconfirmed block using one atomic read-modify-publish projection transition.
     fn transition_to_preconfirmed(&self, preconfirmed: Arc<PreconfirmedBlock>) -> Result<()> {
-        // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
+        let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let current_head_state = *self.inner.chain_head_state.borrow();
 
         let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
@@ -1384,14 +1399,21 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.publish_head_projection(next_chain_head_state, Some(preconfirmed))
     }
 
-    /// Append transactions to the current preconfirmed block. Returns an error if there is no preconfirmed block.
-    /// Replaces all candidate transactions with the content of `replace_candidates`.
+    /// Appends transactions to the specified runtime preconfirmed block.
+    ///
+    /// Addressing the block explicitly prevents a delayed executor batch from being appended to a
+    /// different tip. Returns an error when `block_n` is no longer present, including after it has
+    /// already been confirmed. Candidate transactions are replaced with `replace_candidates`.
     pub fn append_to_preconfirmed(
         &self,
+        block_n: u64,
         executed: &[PreconfirmedExecutedTransaction],
         replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
     ) -> Result<()> {
-        let block = self.inner.internal_preconfirmed_block().context("There is no current preconfirmed block")?;
+        let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
+        let block =
+            runtime_preconfirmed_block(&self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock"), block_n)
+                .with_context(|| format!("There is no preconfirmed block #{block_n}"))?;
 
         if self.inner.config.save_preconfirmed {
             let start_tx_index = block.content.borrow().n_executed();
@@ -1440,6 +1462,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
     pub fn clear_preconfirmed(&self) -> Result<()> {
+        let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let current_head_state = *self.inner.chain_head_state.borrow();
         let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
         MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
@@ -2113,6 +2136,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 
     /// Revert the blockchain to a specific block hash.
     pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+        let _projection_guard = self.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let previous_tip = self.chain_head_state();
         let previous_latest_confirmed_block_n = previous_tip.confirmed_tip.ok_or_else(|| {
             anyhow::anyhow!("Cannot revert backend cache state without a confirmed block in the current chain head")
@@ -2146,7 +2170,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             return Ok((new_tip_block_n, new_tip_block_hash));
         }
 
-        self.refresh_head_projection_from_db().context("Refreshing head projection after revert")?;
+        self.refresh_head_projection_from_db_locked().context("Refreshing head projection after revert")?;
         let refreshed_chain_tip = self.chain_head_state();
         ensure!(
             refreshed_chain_tip.confirmed_tip == Some(new_tip_block_n),
