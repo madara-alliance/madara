@@ -1000,11 +1000,11 @@ fn parallel_merkle_warns_but_allows_disabled_trie_log_retention() {
 }
 
 #[test]
-fn boundary_log_retention_counts_boundaries_not_block_numbers() {
+fn boundary_log_retention_counts_block_revisions() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let storage = RocksDBStorage::open(
         temp_dir.path(),
-        crate::rocksdb::RocksDBConfig { max_saved_trie_logs: Some(2), ..Default::default() },
+        crate::rocksdb::RocksDBConfig { max_saved_trie_logs: Some(4), ..Default::default() },
     )
     .expect("open storage");
     let boundary_interval = 3;
@@ -1036,8 +1036,8 @@ fn boundary_log_retention_counts_boundaries_not_block_numbers() {
             .sum::<usize>()
     };
 
-    assert_eq!(revision_entry_count(2), 0, "third boundary should prune the oldest retained boundary");
-    assert!(revision_entry_count(5) > 0, "second boundary logs should remain");
+    assert_eq!(revision_entry_count(2), 0, "revision outside the four-block window should be pruned");
+    assert!(revision_entry_count(5) > 0, "revision inside the four-block window should remain");
     assert!(revision_entry_count(8) > 0, "latest boundary logs should remain");
 }
 

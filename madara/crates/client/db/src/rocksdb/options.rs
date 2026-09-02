@@ -200,7 +200,8 @@ pub struct RocksDBConfig {
     /// Ratio of the buffer size dedicated to bloom filters for a column
     pub memtable_prefix_bloom_filter_ratio: f64,
 
-    /// Maximum number of trie logs
+    /// Number of block revisions for which global trie logs are retained.
+    /// Parallel Merkle writes sparse boundary logs but uses the same block-based retention window.
     pub max_saved_trie_logs: Option<usize>,
     /// Maximum number of kept snapshots
     pub max_kept_snapshots: Option<usize>,

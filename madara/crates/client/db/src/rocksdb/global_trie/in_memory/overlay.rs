@@ -2,7 +2,9 @@ use super::db::{InMemoryColumnMapping, OverlayMap};
 use crate::prelude::*;
 use crate::rocksdb::trie::{BONSAI_CLASS_LOG_COLUMN, BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN};
 use crate::rocksdb::{RocksDBStorage, WriteBatchWithTransaction};
-use rocksdb::{Direction, IteratorMode};
+use std::time::{Duration, Instant};
+
+const SLOW_BOUNDARY_FLUSH_WARNING: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct BonsaiOverlay {
@@ -53,41 +55,42 @@ impl BonsaiOverlay {
     }
 }
 
+/// Adds one range tombstone per trie-log column for revisions outside the configured block window.
+///
+/// `max_saved_trie_logs` is a number of block revisions, even though parallel Merkle only writes
+/// logs at boundary revisions. Range deletion keeps pruning work bounded regardless of how many
+/// keys exist in an expired revision and leaves physical space reclamation to RocksDB compaction.
 fn prune_expired_boundary_logs_in_batch(
     backend: &RocksDBStorage,
     block_n: u64,
-    boundary_interval: u64,
     batch: &mut WriteBatchWithTransaction,
-) -> Result<Option<(u64, usize)>> {
-    ensure!(boundary_interval > 0, "Parallel Merkle boundary interval must be greater than zero");
+) -> Result<Option<u64>> {
     let Some(max_saved_trie_logs) = backend.inner.config.max_saved_trie_logs else {
         return Ok(None);
     };
-    let retention_distance = boundary_interval
-        .checked_mul(u64::try_from(max_saved_trie_logs).context("Converting trie-log retention to u64")?)
-        .context("Parallel Merkle trie-log retention distance overflow")?;
-    let Some(expired_revision) = block_n.checked_sub(retention_distance) else {
-        return Ok(None);
+    let retained_block_revisions =
+        u64::try_from(max_saved_trie_logs).context("Converting trie-log retention to u64")?;
+    let first_retained_revision = if retained_block_revisions == 0 {
+        block_n.checked_add(1).context("Computing trie-log range end after the maximum block number")?
+    } else {
+        block_n.saturating_sub(retained_block_revisions - 1)
     };
-    let prefix = expired_revision.to_be_bytes();
-    let mut deleted_entries = 0;
+    if first_retained_revision == 0 {
+        return Ok(None);
+    }
+
+    let first_revision = 0_u64.to_be_bytes();
+    let first_retained_revision_key = first_retained_revision.to_be_bytes();
 
     for column in [BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN, BONSAI_CLASS_LOG_COLUMN] {
         let handle = backend.inner.get_column(column);
-        let iter = backend.inner.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
-        for item in iter {
-            let (key, _) = item.context("Scanning expired boundary trie-log revision")?;
-            if !key.starts_with(&prefix) {
-                break;
-            }
-            batch.delete_cf(&handle, key);
-            deleted_entries += 1;
-        }
+        batch.delete_range_cf(&handle, first_revision, first_retained_revision_key);
     }
 
-    Ok(Some((expired_revision, deleted_entries)))
+    Ok(Some(first_retained_revision))
 }
 
+/// Atomically persists a boundary overlay, its checkpoint, and bounded trie-log retention metadata.
 pub fn flush_overlay_and_checkpoint(
     backend: &RocksDBStorage,
     block_n: u64,
@@ -113,12 +116,24 @@ pub fn flush_overlay_and_checkpoint(
         &overlay.class_changed,
         &mut batch,
     )?;
-    let pruned = prune_expired_boundary_logs_in_batch(backend, block_n, boundary_interval, &mut batch)?;
+    let pruned_before_revision = prune_expired_boundary_logs_in_batch(backend, block_n, &mut batch)?;
     backend.inner.parallel_merkle_mark_checkpoint_in_batch(block_n, &mut batch)?;
+    let write_started = Instant::now();
     backend.inner.db.write_opt(batch, &backend.inner.writeopts)?;
-    if let Some((expired_revision, deleted_entries)) = pruned {
+    let write_duration = write_started.elapsed();
+
+    if write_duration >= SLOW_BOUNDARY_FLUSH_WARNING {
+        tracing::warn!(
+            block_number = block_n,
+            boundary_interval,
+            write_duration_ms = write_duration.as_secs_f64() * 1000.0,
+            ?pruned_before_revision,
+            "parallel_merkle_boundary_flush_slow"
+        );
+    }
+    if let Some(first_retained_revision) = pruned_before_revision {
         tracing::debug!(
-            "parallel_merkle_boundary_logs_pruned block_number={block_n} boundary_interval={boundary_interval} expired_revision={expired_revision} deleted_entries={deleted_entries} max_saved_trie_logs={:?}",
+            "parallel_merkle_boundary_logs_pruned block_number={block_n} boundary_interval={boundary_interval} first_retained_revision={first_retained_revision} range_tombstones=3 max_saved_trie_logs={:?}",
             backend.inner.config.max_saved_trie_logs
         );
     }
