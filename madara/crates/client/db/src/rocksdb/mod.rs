@@ -320,14 +320,44 @@ fn revert_single_trie<H: StarkHash + Send + Sync>(
 }
 
 impl RocksDBStorage {
+    /// Builds descriptors for every column family already present on disk.
+    ///
+    /// Known Madara columns keep their tuned options. Unknown columns are opened
+    /// with RocksDB defaults and left untouched so a newer binary can still open
+    /// databases written by older or experimental builds.
+    fn column_family_descriptors(
+        path: &Path,
+        global_opts: &RocksDBOptions,
+        config: &RocksDBConfig,
+    ) -> Result<Vec<ColumnFamilyDescriptor>> {
+        let mut descriptors: Vec<_> = ALL_COLUMNS
+            .iter()
+            .map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(config)))
+            .collect();
+
+        if path.join("CURRENT").exists() {
+            for name in DB::list_cf(global_opts, path).context("Listing existing RocksDB column families")? {
+                if name == "default" || ALL_COLUMNS.iter().any(|column| column.rocksdb_name == name) {
+                    continue;
+                }
+
+                tracing::warn!(
+                    column_family = name,
+                    "Opening unknown RocksDB column family with default options to preserve compatibility"
+                );
+                descriptors.push(ColumnFamilyDescriptor::new(name, RocksDBOptions::default()));
+            }
+        }
+
+        Ok(descriptors)
+    }
+
+    /// Opens Madara's RocksDB while preserving unknown legacy column families.
     pub fn open(path: &Path, config: RocksDBConfig) -> Result<Self> {
         let opts = rocksdb_global_options(&config)?;
         tracing::debug!("Opening db at {:?}", path.display());
-        let db = DB::open_cf_descriptors(
-            &opts,
-            path,
-            ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
-        )?;
+        let descriptors = Self::column_family_descriptors(path, &opts, &config)?;
+        let db = DB::open_cf_descriptors(&opts, path, descriptors)?;
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
@@ -1770,6 +1800,27 @@ mod tests {
     fn contract_trie_key(key: Felt) -> BitVec<u8, Msb0> {
         let bytes = key.to_bytes_be();
         bytes.as_bits()[5..].to_owned()
+    }
+
+    #[test]
+    fn open_preserves_unknown_legacy_column_families() {
+        const LEGACY_COLUMN: &str = "tainted_rebuild_carry";
+        const LEGACY_KEY: &[u8] = b"legacy-key";
+        const LEGACY_VALUE: &[u8] = b"legacy-value";
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut options = RocksDBOptions::default();
+        options.create_if_missing(true);
+        options.create_missing_column_families(true);
+        {
+            let db = DB::open_cf(&options, temp_dir.path(), [LEGACY_COLUMN]).unwrap();
+            let legacy = db.cf_handle(LEGACY_COLUMN).unwrap();
+            db.put_cf(&legacy, LEGACY_KEY, LEGACY_VALUE).unwrap();
+        }
+
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+        let legacy = storage.inner.db.cf_handle(LEGACY_COLUMN).expect("legacy column should remain open");
+        assert_eq!(storage.inner.db.get_cf(&legacy, LEGACY_KEY).unwrap().as_deref(), Some(LEGACY_VALUE));
     }
 
     #[test]
