@@ -230,6 +230,12 @@ async fn test_pending_block_reorg_disabled(mut ctx: TestContext) {
     assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
 
     grown_block_mock.delete();
+    let mut candidate_replaced_block_mock =
+        ctx.gateway_mock.mock_block_pending_with_hash_offsets(2, 1000000000000, 2, vec![0, 0, 100]);
+    assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
+    assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));
+
+    candidate_replaced_block_mock.delete();
     let mut shrunk_block_mock = ctx.gateway_mock.mock_block_pending_with_ts_and_count(2, 1000000000000, 2);
     assert!(!poll_preconfirmed(&ctx.gateway_mock, &ctx.importer, &ctx.backend, true).await);
     assert_eq!(preconfirmed_state(&ctx.backend), (1000000000000, 2, 1));

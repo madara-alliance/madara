@@ -228,8 +228,26 @@ impl GatewayMock {
         executed_count: usize,
         hash_offset: usize,
     ) -> Mock<'_> {
-        let transaction_hashes = (0..transaction_count)
-            .map(|index| {
+        self.mock_block_pending_with_hash_offsets(
+            block_number,
+            timestamp,
+            executed_count,
+            vec![hash_offset; transaction_count],
+        )
+    }
+
+    pub fn mock_block_pending_with_hash_offsets(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        executed_count: usize,
+        hash_offsets: Vec<usize>,
+    ) -> Mock<'_> {
+        let transaction_count = hash_offsets.len();
+        let transaction_hashes = hash_offsets
+            .into_iter()
+            .enumerate()
+            .map(|(index, hash_offset)| {
                 if hash_offset == 0 && index == 0 {
                     "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1".to_owned()
                 } else {
