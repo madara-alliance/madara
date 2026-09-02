@@ -60,6 +60,7 @@ enum ExecutorThreadState {
 }
 
 impl ExecutorThreadState {
+    /// Returns the L1 nonce set owned by the current executor phase.
     fn consumed_l1_to_l2_nonces(&mut self) -> &mut HashSet<u64> {
         match self {
             ExecutorThreadState::Executing(s) => &mut s.consumed_l1_to_l2_nonces,
@@ -97,10 +98,34 @@ pub struct ExecutorThread {
 enum WaitTxBatchOutcome {
     /// Batch channel closed.
     Exit,
+    /// The block deadline elapsed without new work.
+    Deadline,
     /// Got a command to execute.
     Command(super::ExecutorCommand),
     /// Batch
     Batch(BatchToExecute),
+}
+
+impl WaitTxBatchOutcome {
+    /// Returns the stable metric label for the event that ended the wait.
+    fn metric_label(&self) -> &'static str {
+        match self {
+            Self::Exit => "closed",
+            Self::Deadline => "timeout",
+            Self::Command(_) => "command",
+            Self::Batch(_) => "batch",
+        }
+    }
+
+    /// Emits the detailed debug event that explains why the executor resumed.
+    fn log_debug(&self) {
+        match self {
+            Self::Exit => tracing::debug!("Batch channel closed."),
+            Self::Deadline => tracing::debug!("Executor wait deadline reached."),
+            Self::Command(cmd) => tracing::debug!("Got cmd {cmd:?}."),
+            Self::Batch(batch) => tracing::debug!("Got new batch with {} transactions.", batch.len()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,6 +137,7 @@ pub(super) enum CloseReason {
 }
 
 impl CloseReason {
+    /// Returns the low-cardinality metric label for one close trigger.
     fn as_label(self) -> &'static str {
         match self {
             CloseReason::ForceClose => "force_close",
@@ -131,6 +157,7 @@ pub(super) struct CloseDecision {
 }
 
 impl ExecutorThread {
+    /// Creates the executor state machine and its dedicated wait runtime.
     pub fn new(
         backend: Arc<MadaraBackend>,
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
@@ -152,12 +179,14 @@ impl ExecutorThread {
                 .context("Building tokio runtime")?,
         })
     }
+    /// Records how long the executor waited and what resumed it.
     fn record_wait_for_work(&self, waited_secs: f64, outcome: &'static str, mode: &'static str) {
         self.metrics
             .executor_wait_for_work_duration
             .record(waited_secs, &[KeyValue::new("outcome", outcome), KeyValue::new("mode", mode)]);
     }
 
+    /// Increments the counter for the selected block-close reason.
     fn record_close_reason(&self, reason: CloseReason) {
         self.metrics.executor_close_reason_total.add(1, &[KeyValue::new("reason", reason.as_label())]);
     }
@@ -167,12 +196,16 @@ impl ExecutorThread {
     fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
             self.record_wait_for_work(0.0, "batch", "try_recv");
-            return WaitTxBatchOutcome::Batch(batch);
+            let outcome = WaitTxBatchOutcome::Batch(batch);
+            outcome.log_debug();
+            return outcome;
         }
 
         if let Ok(cmd) = self.commands.try_recv() {
             self.record_wait_for_work(0.0, "command", "try_recv");
-            return WaitTxBatchOutcome::Command(cmd);
+            let outcome = WaitTxBatchOutcome::Command(cmd);
+            outcome.log_debug();
+            return outcome;
         }
 
         if !should_wait {
@@ -183,44 +216,37 @@ impl ExecutorThread {
 
         // tokio exposes blocking_recv but not a blocking recv-with-deadline helper, so this runtime-backed
         // select keeps the executor on a blocking thread while still honoring the block deadline when present.
-        let (outcome, mode, result) = self.wait_rt.block_on(async {
+        let result = self.wait_rt.block_on(async {
             match deadline {
                 Some(deadline) => {
                     tokio::select! {
                         Some(cmd) = self.commands.recv() => {
-                            ("command", "recv", WaitTxBatchOutcome::Command(cmd))
+                            WaitTxBatchOutcome::Command(cmd)
                         }
                         _ = tokio::time::sleep_until(deadline) => {
-                            ("timeout", "recv", WaitTxBatchOutcome::Batch(Default::default()))
+                            WaitTxBatchOutcome::Deadline
                         }
                         el = self.incoming_batches.recv() => match el {
-                            Some(el) => {
-                                ("batch", "recv", WaitTxBatchOutcome::Batch(el))
-                            }
-                            None => {
-                                ("closed", "recv", WaitTxBatchOutcome::Exit)
-                            }
+                            Some(el) => WaitTxBatchOutcome::Batch(el),
+                            None => WaitTxBatchOutcome::Exit,
                         }
                     }
                 }
                 None => {
                     tokio::select! {
                         Some(cmd) = self.commands.recv() => {
-                            ("command", "recv", WaitTxBatchOutcome::Command(cmd))
+                            WaitTxBatchOutcome::Command(cmd)
                         }
                         el = self.incoming_batches.recv() => match el {
-                            Some(el) => {
-                                ("batch", "recv", WaitTxBatchOutcome::Batch(el))
-                            }
-                            None => {
-                                ("closed", "recv", WaitTxBatchOutcome::Exit)
-                            }
+                            Some(el) => WaitTxBatchOutcome::Batch(el),
+                            None => WaitTxBatchOutcome::Exit,
                         }
                     }
                 }
             }
         });
-        self.record_wait_for_work(wait_started.elapsed().as_secs_f64(), outcome, mode);
+        self.record_wait_for_work(wait_started.elapsed().as_secs_f64(), result.metric_label(), "recv");
+        result.log_debug();
         result
     }
 
@@ -332,6 +358,7 @@ impl ExecutorThread {
         })
     }
 
+    /// Reconstructs the first executor phase from the backend's confirmed head.
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
@@ -340,6 +367,7 @@ impl ExecutorThread {
         }))
     }
 
+    /// Drives block execution until the batch channel closes or a command fails.
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
@@ -373,6 +401,8 @@ impl ExecutorThread {
                 let taken = match self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) {
                     // Got a batch
                     WaitTxBatchOutcome::Batch(batch_to_execute) => batch_to_execute,
+                    // The deadline is represented as an empty batch so the normal close decision runs.
+                    WaitTxBatchOutcome::Deadline => BatchToExecute::default(),
                     // Got a command
                     WaitTxBatchOutcome::Command(executor_command) => match executor_command {
                         super::ExecutorCommand::CloseBlock(callback) => {

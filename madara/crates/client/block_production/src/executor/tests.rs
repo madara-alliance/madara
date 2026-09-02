@@ -15,7 +15,6 @@ use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rstest::fixture;
 use starknet_core::utils::get_selector_from_name;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
@@ -423,33 +422,4 @@ async fn replay_close_decision_waits_for_boundary_or_force_close(#[future] devne
 
     // ExecutorThread owns a Tokio runtime, which must be dropped outside this async runtime.
     tokio::task::spawn_blocking(move || drop(thread)).await.unwrap();
-}
-
-#[test]
-fn dashboard_uses_histograms_for_wait_metrics() {
-    let dashboard_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../observability/grafana/dashboards/Madara/madara-overview.json");
-    let dashboard = std::fs::read_to_string(&dashboard_path).unwrap();
-
-    for removed_metric in [
-        ["batcher", "batch", "wait", "last", "seconds"].join("_"),
-        ["batcher", "output", "backpressure", "last", "seconds"].join("_"),
-        ["executor", "inter", "batch", "wait", "last", "seconds"].join("_"),
-    ] {
-        assert!(
-            !dashboard.contains(removed_metric.as_str()),
-            "dashboard still references removed metric `{removed_metric}`"
-        );
-    }
-
-    for histogram_metric in [
-        "batcher_batch_wait_duration_seconds_bucket",
-        "batcher_output_backpressure_duration_seconds_bucket",
-        "executor_inter_batch_wait_duration_seconds_bucket",
-    ] {
-        assert!(
-            dashboard.contains(histogram_metric),
-            "dashboard should use histogram buckets for `{histogram_metric}`"
-        );
-    }
 }

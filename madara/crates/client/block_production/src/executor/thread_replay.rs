@@ -1,19 +1,28 @@
+//! Replay-only executor policy.
+//!
+//! This module is compiled into the production binary because replay is a
+//! runtime mode. Its helpers affect execution only when replay mode is enabled
+//! and a replay boundary has been registered for the current block.
+
 use super::{CloseDecision, CloseReason, ExecutorThread, ExecutorThreadState};
 use crate::util::BatchToExecute;
 use mp_convert::Felt;
 use tokio::time::Instant;
 
 impl ExecutorThread {
+    /// Returns whether replay metadata exists for the requested block.
     pub(super) fn replay_boundary_exists(&self, block_n: u64) -> bool {
         self.backend.replay_boundary_exists(block_n)
     }
 
+    /// Returns how many more transactions may execute before the replay boundary.
     fn replay_boundary_remaining_capacity(&self, block_n: u64) -> Option<usize> {
         self.backend
             .replay_boundary_remaining_execution_capacity(block_n)
             .map(|remaining| usize::try_from(remaining).unwrap_or(usize::MAX))
     }
 
+    /// Returns true after the recorded count and last hash match the boundary.
     fn replay_boundary_is_met(&self, block_n: u64) -> bool {
         self.backend.replay_boundary_is_met(block_n).unwrap_or(false)
     }
@@ -69,6 +78,7 @@ impl ExecutorThread {
         self.metrics.replay_boundary_spillover_transactions_total.add(overflow_count as u64, &[]);
     }
 
+    /// Adds newly executed hashes to replay boundary progress and reports mismatch.
     pub(super) fn record_replay_executed_hashes(&self, block_n: u64, replay_executed_hashes: &[Felt]) {
         if !self.replay_mode_enabled || replay_executed_hashes.is_empty() {
             return;

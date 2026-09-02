@@ -13,44 +13,27 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
-
-const BYPASS_ENQUEUE_WARN_MS: f64 = 25.0;
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
+    /// Sends a validated transaction directly to the batcher's bypass stream.
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
-        let tx_hash = tx.hash;
-        let available_capacity_before_send = self.0.capacity();
-        let send_started = Instant::now();
-        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))?;
-        let send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0;
-        if send_wait_ms >= BYPASS_ENQUEUE_WARN_MS {
-            tracing::warn!(
-                "bypass_input_tx_slow_enqueue tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
-                available_capacity_before_send,
-                self.0.capacity()
-            );
-        } else {
-            tracing::debug!(
-                "bypass_input_tx_enqueued tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
-                available_capacity_before_send,
-                self.0.capacity()
-            );
-        }
-        Ok(())
+        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
 }
 
 #[async_trait]
 impl TransactionLookup for BypassInput {
+    /// Bypass submission does not maintain a separate transaction lookup index.
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
     }
+    /// Bypass submission does not expose a transaction subscription stream.
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
@@ -71,6 +54,7 @@ pub struct BlockProductionHandle {
 }
 
 impl BlockProductionHandle {
+    /// Creates the shared transaction converter and runtime control channels.
     pub(crate) fn new(
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
@@ -101,6 +85,7 @@ impl BlockProductionHandle {
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }
 
+    /// Pauses or resumes mempool intake without affecting bypass or L1 traffic.
     pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {
         let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
         let previous_mode = *self.mempool_intake_tx.borrow();
@@ -113,10 +98,12 @@ impl BlockProductionHandle {
         Ok(())
     }
 
+    /// Updates the local replay-mode guard used by replay-only handle methods.
     pub(crate) fn set_replay_mode_enabled(&mut self, enabled: bool) {
         self.replay_mode_enabled = enabled;
     }
 
+    /// Returns whether replay-only control methods are enabled.
     pub fn replay_mode_enabled(&self) -> bool {
         self.replay_mode_enabled
     }

@@ -29,12 +29,14 @@ pub(crate) struct QueuedClosePayload {
     pub enqueued_at: Instant,
 }
 
+/// Queue envelope that pairs a close payload with its one-shot acknowledgement.
 pub(crate) struct QueuedCloseJob {
     pub payload: QueuedClosePayload,
     pub completion: oneshot::Sender<Result<CloseJobCompletion>>,
 }
 
 #[derive(Debug, Clone, Copy)]
+/// Ordered acknowledgement emitted only after the block reaches its commit point.
 pub(crate) struct CloseJobCompletion {
     pub block_n: u64,
 }

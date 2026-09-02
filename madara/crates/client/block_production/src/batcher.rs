@@ -33,6 +33,7 @@ pub struct Batcher {
 }
 
 impl Batcher {
+    /// Wires the three transaction sources into the executor batch output.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: Arc<MadaraBackend>,
@@ -57,6 +58,7 @@ impl Batcher {
         }
     }
 
+    /// Reserves one executor slot, builds the next prioritized batch, and sends it.
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
