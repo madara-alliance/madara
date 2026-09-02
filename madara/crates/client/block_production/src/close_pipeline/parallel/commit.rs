@@ -89,8 +89,6 @@ fn commit_parallel_db(
     root_base_block_n: Option<u64>,
 ) -> anyhow::Result<ParallelDbCommitResult> {
     let pipeline_started_at = Instant::now();
-    let touched_storage =
-        state_diff.storage_diffs.iter().map(|item| (item.address, item.storage_entries.len())).collect::<Vec<_>>();
     tracing::debug!(
         "parallel_close_db_pipeline_started block_number={} state_diff_len={} has_boundary_overlay={}",
         block_n,
@@ -101,8 +99,7 @@ fn commit_parallel_db(
     write_bouncer_weights(&backend, block_n, &bouncer_weights)?;
     let InMemoryRootComputation { state_root, timings, overlay, .. } = root_response;
     let block_result = write_block_parts(&backend, block_n, state_diff, state_root, timings)?;
-    let boundary_flush =
-        flush_boundary(&backend, block_n, flush_interval, root_base_block_n, overlay.as_ref(), &touched_storage)?;
+    let boundary_flush = flush_boundary(&backend, block_n, flush_interval, root_base_block_n, overlay.as_ref())?;
     confirm_block(&backend, block_n)?;
     tracing::debug!(
         "parallel_close_db_pipeline_finished block_number={} total_duration_ms={}",
@@ -173,7 +170,6 @@ fn flush_boundary(
     flush_interval: u64,
     overlay_base_block_n: Option<u64>,
     overlay: Option<&BonsaiOverlay>,
-    touched_storage: &[(Felt, usize)],
 ) -> anyhow::Result<BoundaryFlushResult> {
     let Some(overlay) = overlay else {
         return Ok(BoundaryFlushResult { duration: None, checkpoint_persisted: false });
@@ -206,38 +202,7 @@ fn flush_boundary(
         backend.db.get_parallel_merkle_latest_checkpoint().ok().flatten(),
         backend.db.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten()
     );
-    log_persisted_storage_roots(backend, block_n, touched_storage)?;
     Ok(BoundaryFlushResult { duration: Some(duration), checkpoint_persisted: true })
-}
-
-/// Reads persisted roots after a boundary flush for temporary replay diagnostics.
-fn log_persisted_storage_roots(
-    backend: &Arc<MadaraBackend>,
-    block_n: u64,
-    touched_storage: &[(Felt, usize)],
-) -> anyhow::Result<()> {
-    let started_at = Instant::now();
-    let trie = backend.db.contract_storage_trie();
-    for (contract_address, storage_entries) in touched_storage {
-        let root = trie
-            .root_hash(&contract_address.to_bytes_be())
-            .map_err(mc_db::rocksdb::trie::WrappedBonsaiError)
-            .context("Reading persisted contract storage root after boundary flush")?;
-        tracing::debug!(
-            "parallel_boundary_persisted_storage_root block_number={} contract_address={:#x} storage_entries={} persisted_storage_root={:#x}",
-            block_n,
-            contract_address,
-            storage_entries,
-            root
-        );
-    }
-    tracing::debug!(
-        "parallel_boundary_persisted_storage_roots_done block_number={} touched_contracts={} duration_ms={}",
-        block_n,
-        touched_storage.len(),
-        started_at.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(())
 }
 
 /// Advances the authoritative confirmed head only after parts and durability succeed.

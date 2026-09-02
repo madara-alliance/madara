@@ -56,7 +56,6 @@ fn contract_state_leaf_hash(
     contract_address: &Felt,
     contract_leaf: &ContractLeaf,
     block_number: u64,
-    snapshot_block: Option<u64>,
 ) -> Result<Felt> {
     let nonce = if let Some(nonce) = contract_leaf.nonce {
         nonce
@@ -77,84 +76,7 @@ fn contract_state_leaf_hash(
     let storage_root =
         contract_leaf.storage_root.context("Storage root needs to be set before contract leaf hashing")?;
 
-    if contract_leaf.nonce.is_none() || contract_leaf.class_hash.is_none() {
-        tracing::debug!(
-            "parallel_contract_leaf_fallback block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_address={:#x} nonce_source={} class_hash_source={} nonce={:#x} class_hash={:#x} storage_root={:#x}",
-            block_number,
-            snapshot_block.is_some_and(|selected| selected > block_number),
-            contract_address,
-            if contract_leaf.nonce.is_some() { "state_diff" } else { "snapshot_history" },
-            if contract_leaf.class_hash.is_some() { "state_diff" } else { "snapshot_history" },
-            nonce,
-            class_hash,
-            storage_root
-        );
-    }
-    let leaf_hash = Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO);
-    tracing::debug!(
-        "parallel_contract_leaf_hash block_number={} source_snapshot_block={snapshot_block:?} contract_address={:#x} nonce={:#x} class_hash={:#x} storage_root={:#x} leaf_hash={:#x}",
-        block_number,
-        contract_address,
-        nonce,
-        class_hash,
-        storage_root,
-        leaf_hash
-    );
-    Ok(leaf_hash)
-}
-
-fn sequential_contract_state_leaf_hash(
-    backend: &RocksDBStorage,
-    snapshot: &SnapshotRef,
-    contract_address: &Felt,
-    contract_leaf: &ContractLeaf,
-    block_number: u64,
-    snapshot_block: Option<u64>,
-) -> Result<Felt> {
-    let nonce = if let Some(nonce) = contract_leaf.nonce {
-        nonce
-    } else {
-        backend
-            .inner
-            .get_contract_nonce_at_from_snapshot(snapshot, block_number, contract_address)?
-            .unwrap_or(Felt::ZERO)
-    };
-    let class_hash = if let Some(class_hash) = contract_leaf.class_hash {
-        class_hash
-    } else {
-        backend
-            .inner
-            .get_contract_class_hash_at_from_snapshot(snapshot, block_number, contract_address)?
-            .unwrap_or(Felt::ZERO)
-    };
-    let storage_root =
-        contract_leaf.storage_root.context("Storage root needs to be set before contract leaf hashing")?;
-
-    if contract_leaf.nonce.is_none() || contract_leaf.class_hash.is_none() {
-        tracing::debug!(
-            "sequential_contract_leaf_fallback block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_address={:#x} nonce_source={} class_hash_source={} nonce={:#x} class_hash={:#x} storage_root={:#x}",
-            block_number,
-            snapshot_block.is_some_and(|selected| selected > block_number),
-            contract_address,
-            if contract_leaf.nonce.is_some() { "state_diff" } else { "snapshot_history" },
-            if contract_leaf.class_hash.is_some() { "state_diff" } else { "snapshot_history" },
-            nonce,
-            class_hash,
-            storage_root
-        );
-    }
-
-    let leaf_hash = Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO);
-    tracing::debug!(
-        "sequential_contract_leaf_hash block_number={} source_snapshot_block={snapshot_block:?} contract_address={:#x} nonce={:#x} class_hash={:#x} storage_root={:#x} leaf_hash={:#x}",
-        block_number,
-        contract_address,
-        nonce,
-        class_hash,
-        storage_root,
-        leaf_hash
-    );
-    Ok(leaf_hash)
+    Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
 
 fn in_memory_contract_trie_root(
@@ -170,19 +92,8 @@ fn in_memory_contract_trie_root(
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
-        let actual_order: Vec<String> =
-            storage_entries.iter().map(|StorageEntry { key, .. }| format!("{:#x}", key)).collect();
         let mut sorted_entries: Vec<_> = storage_entries.iter().collect();
         sorted_entries.sort_by_key(|StorageEntry { key, .. }| key.to_bytes_be());
-        let sorted_order: Vec<String> =
-            sorted_entries.iter().map(|StorageEntry { key, .. }| format!("{:#x}", key)).collect();
-        tracing::debug!(
-            "parallel_contract_storage_insert_order block_number={} source_snapshot_block={snapshot_block:?} contract_address={:#x} actual_order={:?} sorted_order={:?}",
-            block_n,
-            address,
-            actual_order,
-            sorted_order
-        );
         for StorageEntry { key, value } in sorted_entries {
             let bytes = key.to_bytes_be();
             let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
@@ -216,15 +127,6 @@ fn in_memory_contract_trie_root(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
-    let mut touched_contracts_sorted: Vec<_> = contract_leafs.keys().copied().collect();
-    touched_contracts_sorted.sort();
-    tracing::debug!(
-        "parallel_contract_trie_contracts block_number={} source_snapshot_block={snapshot_block:?} actual_contracts={:?} sorted_contracts={:?}",
-        block_n,
-        contract_leafs.keys().map(|address| format!("{:#x}", address)).collect::<Vec<_>>(),
-        touched_contracts_sorted.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>()
-    );
-
     let mut leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
@@ -232,17 +134,9 @@ fn in_memory_contract_trie_root(
                 .root_hash(&contract_address.to_bytes_be())
                 .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
-            let leaf_hash =
-                contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n, snapshot_block)?;
+            let leaf_hash = contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n)?;
             let bytes = contract_address.to_bytes_be();
             let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            tracing::debug!(
-                "parallel_contract_trie_leaf_ready block_number={} contract_address={:#x} key_bits_len={} leaf_hash={:#x}",
-                block_n,
-                contract_address,
-                bitvec.len(),
-                leaf_hash
-            );
             anyhow::Ok((contract_address, bitvec, leaf_hash))
         })
         .collect::<Result<_>>()?;
@@ -251,25 +145,7 @@ fn in_memory_contract_trie_root(
         left_key.as_raw_slice().cmp(right_key.as_raw_slice()).then_with(|| left_address.cmp(right_address))
     });
 
-    tracing::debug!(
-        "parallel_contract_trie_insert_order block_number={} actual_order={:?} sorted_order={:?}",
-        block_n,
-        leaf_hashes.iter().map(|(address, _, _)| format!("{:#x}", address)).collect::<Vec<_>>(),
-        {
-            let mut sorted = leaf_hashes.iter().map(|(address, _, _)| *address).collect::<Vec<_>>();
-            sorted.sort();
-            sorted.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>()
-        }
-    );
-
-    for (contract_address, key, value) in leaf_hashes {
-        tracing::debug!(
-            "parallel_contract_trie_insert block_number={} contract_address={:#x} key_bits_len={} leaf_hash={:#x}",
-            block_n,
-            contract_address,
-            key.len(),
-            value
-        );
+    for (_contract_address, key, value) in leaf_hashes {
         contract_trie
             .insert(super::super::bonsai_identifier::CONTRACT, &key, &value)
             .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
@@ -292,7 +168,6 @@ fn in_memory_contract_trie_root_sequential(
     contract_trie: &mut InMemoryTrie<Pedersen>,
     state_diff: &StateDiff,
     block_n: u64,
-    snapshot_block: Option<u64>,
 ) -> Result<(Felt, ContractTrieTimings)> {
     let mut timings = ContractTrieTimings::default();
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
@@ -330,8 +205,7 @@ fn in_memory_contract_trie_root_sequential(
             .root_hash(&contract_address.to_bytes_be())
             .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
         leaf.storage_root = Some(storage_root);
-        let leaf_hash =
-            sequential_contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n, snapshot_block)?;
+        let leaf_hash = contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n)?;
         let bytes = contract_address.to_bytes_be();
         let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
         leaf_hashes.push((contract_address, bitvec, leaf_hash));
@@ -341,20 +215,7 @@ fn in_memory_contract_trie_root_sequential(
         left_key.as_raw_slice().cmp(right_key.as_raw_slice()).then_with(|| left_address.cmp(right_address))
     });
 
-    tracing::debug!(
-        "sequential_contract_trie_insert_order block_number={} order={:?}",
-        block_n,
-        leaf_hashes.iter().map(|(address, _, _)| format!("{:#x}", address)).collect::<Vec<_>>()
-    );
-
-    for (contract_address, key, value) in leaf_hashes {
-        tracing::debug!(
-            "sequential_contract_trie_insert block_number={} contract_address={:#x} key_bits_len={} leaf_hash={:#x}",
-            block_n,
-            contract_address,
-            key.len(),
-            value
-        );
+    for (_contract_address, key, value) in leaf_hashes {
         contract_trie
             .insert(super::super::bonsai_identifier::CONTRACT, &key, &value)
             .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
@@ -552,7 +413,6 @@ pub fn compute_root_from_snapshot_sequential(
         &mut contract_trie,
         state_diff,
         block_n,
-        snapshot_block,
     )?;
     let contract_duration = contract_started_at.elapsed();
 

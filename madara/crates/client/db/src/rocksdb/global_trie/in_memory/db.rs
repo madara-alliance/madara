@@ -12,33 +12,6 @@ use rocksdb::{Direction, IteratorMode};
 use std::fmt;
 use std::sync::Arc;
 
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn is_lex_sorted(bytes: &[ByteVec]) -> bool {
-    bytes.windows(2).all(|pair| pair[0].as_slice() <= pair[1].as_slice())
-}
-
-fn split_identifier_and_suffix(bytes: &[u8]) -> Option<(String, String)> {
-    (bytes.len() >= 32).then(|| {
-        let (identifier, suffix) = bytes.split_at(32);
-        (bytes_to_hex(identifier), bytes_to_hex(suffix))
-    })
-}
-
-fn describe_database_key(key: &DatabaseKey) -> (&'static str, String, String, usize) {
-    let key_kind = match key {
-        DatabaseKey::Trie(_) => "trie",
-        DatabaseKey::Flat(_) => "flat",
-        DatabaseKey::TrieLog(_) => "trie_log",
-    };
-    let (identifier, suffix) =
-        split_identifier_and_suffix(key.as_slice()).unwrap_or_else(|| ("".into(), bytes_to_hex(key.as_slice())));
-    let suffix_len = suffix.len() / 2;
-    (key_kind, identifier, suffix, suffix_len)
-}
-
 const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
@@ -139,37 +112,11 @@ impl InMemoryBonsaiDb {
 
     fn get_from_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        let value = self.snapshot.get_cf(&handle, key.as_slice())?.map(ByteVec::from);
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
-            tracing::debug!(
-                "parallel_contract_storage_snapshot_get key_kind={} identifier=0x{} suffix=0x{} suffix_len={} hit={}",
-                key_kind,
-                identifier,
-                suffix,
-                suffix_len,
-                value.is_some()
-            );
-        }
-        Ok(value)
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(ByteVec::from))
     }
 
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
-        let value = self.changed.get(&to_changed_key(key)).map(|v| v.value().clone());
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
-            tracing::debug!(
-                "parallel_contract_storage_overlay_lookup key_kind={} identifier=0x{} suffix=0x{} suffix_len={} present={} tombstone={} overlay_entries={}",
-                key_kind,
-                identifier,
-                suffix,
-                suffix_len,
-                value.is_some(),
-                value.as_ref().is_some_and(|inner| inner.is_none()),
-                self.changed.len()
-            );
-        }
-        value
+        self.changed.get(&to_changed_key(key)).map(|v| v.value().clone())
     }
 }
 
@@ -211,15 +158,6 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             }
             out.push((key.to_vec().into(), value.to_vec().into()));
         }
-        tracing::debug!(
-            "parallel_bonsai_get_by_prefix_snapshot column_id={} prefix={} snapshot_matches={} snapshot_keys={:?} snapshot_keys_sorted={}",
-            prefix_col,
-            bytes_to_hex(prefix_bytes.as_slice()),
-            out.len(),
-            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>(),
-            is_lex_sorted(&out.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>())
-        );
-
         for entry in self.changed.iter() {
             let ((column_id, key), value) = entry.pair();
             if *column_id != prefix_col || !key.starts_with(prefix_bytes.as_slice()) {
@@ -228,12 +166,6 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
 
             match value {
                 Some(v) => {
-                    tracing::debug!(
-                        "parallel_bonsai_get_by_prefix_overlay_upsert column_id={} key={} value_len={}",
-                        column_id,
-                        bytes_to_hex(key.as_slice()),
-                        v.len()
-                    );
                     if let Some((_, existing)) =
                         out.iter_mut().find(|(existing_key, _)| existing_key.as_slice() == key.as_slice())
                     {
@@ -242,28 +174,11 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
                         out.push((key.clone(), v.clone()));
                     }
                 }
-                None => {
-                    tracing::debug!(
-                        "parallel_bonsai_get_by_prefix_overlay_delete column_id={} key={}",
-                        column_id,
-                        bytes_to_hex(key.as_slice())
-                    );
-                    out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice())
-                }
+                None => out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice()),
             }
         }
 
         out.sort_by(|(left_key, _), (right_key, _)| left_key.as_slice().cmp(right_key.as_slice()));
-
-        tracing::debug!(
-            "parallel_bonsai_get_by_prefix_result column_id={} prefix={} merged_matches={} keys={:?} keys_sorted={} values_lens={:?}",
-            prefix_col,
-            bytes_to_hex(prefix_bytes.as_slice()),
-            out.len(),
-            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>(),
-            is_lex_sorted(&out.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>()),
-            out.iter().map(|(_, value)| value.len()).collect::<Vec<_>>()
-        );
 
         Ok(out)
     }
@@ -283,19 +198,6 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         let previous = self.get(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
-            tracing::debug!(
-                "parallel_contract_storage_overlay_insert key_kind={} identifier=0x{} suffix=0x{} suffix_len={} value_len={} previous_present={} overlay_entries={}",
-                key_kind,
-                identifier,
-                suffix,
-                suffix_len,
-                value.len(),
-                previous.is_some(),
-                self.changed.len()
-            );
-        }
         Ok(previous)
     }
 
@@ -306,25 +208,12 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         let previous = self.get(key)?;
         self.changed.insert(to_changed_key(key), None);
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
-            tracing::debug!(
-                "parallel_contract_storage_overlay_remove key_kind={} identifier=0x{} suffix=0x{} suffix_len={} previous_present={} overlay_entries={}",
-                key_kind,
-                identifier,
-                suffix,
-                suffix_len,
-                previous.is_some(),
-                self.changed.len()
-            );
-        }
         Ok(previous)
     }
 
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         let prefix_key = to_changed_key(prefix);
         let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);
-        let before = self.changed.len();
 
         let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
             return Ok(());
@@ -355,37 +244,11 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             self.changed.insert(key, None);
         }
 
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(prefix);
-            tracing::debug!(
-                "parallel_contract_storage_overlay_remove_by_prefix key_kind={} identifier=0x{} suffix=0x{} suffix_len={} overlay_entries_before={} overlay_entries_after={}",
-                key_kind,
-                identifier,
-                suffix,
-                suffix_len,
-                before,
-                self.changed.len()
-            );
-        }
-
         Ok(())
     }
 
     fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         // Intentionally a no-op: all writes stay in overlay until explicit flush.
-        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let trie_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_COLUMN_ID).count();
-            let flat_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_FLAT_COLUMN_ID).count();
-            let trie_log_entries =
-                self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_LOG_COLUMN_ID).count();
-            tracing::debug!(
-                "parallel_contract_storage_overlay_write_batch noop=true overlay_entries={} trie_entries={} flat_entries={} trie_log_entries={}",
-                self.changed.len(),
-                trie_entries,
-                flat_entries,
-                trie_log_entries
-            );
-        }
         Ok(())
     }
 }
