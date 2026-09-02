@@ -89,6 +89,12 @@ pub struct L2SyncParams {
     /// operators who want to manually handle chain divergences.
     #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = false)]
     pub disable_reorg: bool,
+
+    /// Disable replacement of an already-synced preconfirmed block when the upstream block shrinks,
+    /// changes header, or changes its existing transaction prefix. Forward-only updates remain enabled.
+    #[serde(default)]
+    #[clap(env = "MADARA_DISABLE_REORG_PRECONFIRMED", long, default_value_t = false)]
+    pub disable_reorg_preconfirmed: bool,
 }
 
 impl L2SyncParams {
