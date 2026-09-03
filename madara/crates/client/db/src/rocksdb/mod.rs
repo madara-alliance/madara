@@ -544,17 +544,17 @@ impl RocksDBStorage {
         };
 
         let floor_id = BasicId::new(checkpoint_floor);
-        let mut contract_trie = self.contract_trie();
+        let mut contract_trie = self.contract_trie_for_revert();
         let contract_needs_commit =
             revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, checkpoint_floor)?;
-        let mut contract_storage_trie = self.contract_storage_trie();
+        let mut contract_storage_trie = self.contract_storage_trie_for_revert();
         let contract_storage_needs_commit = revert_single_trie(
             "contract storage",
             &mut contract_storage_trie,
             trie_log_heads.contract_storage,
             checkpoint_floor,
         )?;
-        let mut class_trie = self.class_trie();
+        let mut class_trie = self.class_trie_for_revert();
         let class_needs_commit = revert_single_trie("class", &mut class_trie, trie_log_heads.class, checkpoint_floor)?;
 
         if contract_needs_commit {
@@ -1655,12 +1655,12 @@ impl MadaraStorageWrite for RocksDBStorage {
             );
 
             tracing::debug!("🌳 REORG: Reverting contract trie to checkpoint floor...");
-            let mut contract_trie = self.contract_trie();
+            let mut contract_trie = self.contract_trie_for_revert();
             let contract_trie_needs_commit =
                 revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, bonsai_floor)?;
 
             tracing::debug!("🌳 REORG: Reverting contract storage trie to checkpoint floor...");
-            let mut contract_storage_trie = self.contract_storage_trie();
+            let mut contract_storage_trie = self.contract_storage_trie_for_revert();
             let contract_storage_trie_needs_commit = revert_single_trie(
                 "contract storage",
                 &mut contract_storage_trie,
@@ -1669,7 +1669,7 @@ impl MadaraStorageWrite for RocksDBStorage {
             )?;
 
             tracing::debug!("🌳 REORG: Reverting class trie to checkpoint floor...");
-            let mut class_trie = self.class_trie();
+            let mut class_trie = self.class_trie_for_revert();
             let class_trie_needs_commit =
                 revert_single_trie("class", &mut class_trie, trie_log_heads.class, bonsai_floor)?;
 
@@ -1714,12 +1714,12 @@ impl MadaraStorageWrite for RocksDBStorage {
             }
         } else {
             tracing::debug!("🌳 REORG: Reverting contract trie...");
-            let mut contract_trie = self.contract_trie();
+            let mut contract_trie = self.contract_trie_for_revert();
             let contract_trie_needs_commit =
                 revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
 
             tracing::debug!("🌳 REORG: Reverting contract storage trie...");
-            let mut contract_storage_trie = self.contract_storage_trie();
+            let mut contract_storage_trie = self.contract_storage_trie_for_revert();
             let contract_storage_trie_needs_commit = revert_single_trie(
                 "contract storage",
                 &mut contract_storage_trie,
@@ -1728,7 +1728,7 @@ impl MadaraStorageWrite for RocksDBStorage {
             )?;
 
             tracing::debug!("🌳 REORG: Reverting class trie...");
-            let mut class_trie = self.class_trie();
+            let mut class_trie = self.class_trie_for_revert();
             let class_trie_needs_commit =
                 revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
 
