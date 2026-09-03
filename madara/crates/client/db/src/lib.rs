@@ -168,6 +168,20 @@ pub use storage::{
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
+const SLOW_CONFIRMED_HEAD_PHASE: Duration = Duration::from_secs(5);
+
+/// Warns when one synchronous confirmed-head phase can visibly stall block production.
+pub(crate) fn warn_if_confirmed_head_phase_slow(block_n: u64, phase: &'static str, elapsed: Duration) {
+    if elapsed >= SLOW_CONFIRMED_HEAD_PHASE {
+        tracing::warn!(
+            block_number = block_n,
+            phase,
+            duration_ms = elapsed.as_secs_f64() * 1000.0,
+            "confirmed_head_phase_slow"
+        );
+    }
+}
+
 /// Timing information collected during the close_block DB operations.
 /// All durations are captured for structured logging.
 #[derive(Debug, Clone, Default)]
@@ -1977,20 +1991,30 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
             tracing::debug!("Flushing.");
+            let started_at = Instant::now();
             self.inner.db.flush().context("Periodic database flush")?;
+            warn_if_confirmed_head_phase_slow(block_number, "periodic_flush", started_at.elapsed());
         }
 
         // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
+        let started_at = Instant::now();
         self.inner.db.on_new_confirmed_head(block_number)?;
+        warn_if_confirmed_head_phase_slow(block_number, "storage_head_update", started_at.elapsed());
 
         // Persist and publish the canonical head transition.
+        let started_at = Instant::now();
         self.transition_to_confirmed_or_empty(Some(block_number))?;
+        warn_if_confirmed_head_phase_slow(block_number, "head_transition", started_at.elapsed());
         // L1 pending/consumed state is a derived projection. Update it only after the durable
         // canonical head says this block is confirmed; startup re-applies this idempotently if
         // the process stops between these two operations.
+        let started_at = Instant::now();
         self.inner.db.confirm_l1_messages_in_block(block_number)?;
+        warn_if_confirmed_head_phase_slow(block_number, "l1_message_projection", started_at.elapsed());
         // Confirmed-path immediate GC for block-keyed preconfirmed persistence.
+        let started_at = Instant::now();
         self.inner.db.delete_preconfirmed_rows_up_to(block_number)?;
+        warn_if_confirmed_head_phase_slow(block_number, "preconfirmed_gc", started_at.elapsed());
 
         Ok(())
     }

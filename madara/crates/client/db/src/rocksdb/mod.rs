@@ -39,7 +39,7 @@ use rocksdb::{
     WriteOptions,
 };
 use starknet_types_core::hash::StarkHash;
-use std::{fmt, path::Path, sync::Arc};
+use std::{fmt, path::Path, sync::Arc, time::Instant};
 
 mod backup;
 mod blocks;
@@ -1412,11 +1412,19 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
         tracing::debug!("on_new_confirmed_head block_n={block_n}");
+        let started_at = Instant::now();
         self.snapshots.set_new_head(block_n);
+        crate::warn_if_confirmed_head_phase_slow(block_n, "snapshot_head_rotation", started_at.elapsed());
+
+        let started_at = Instant::now();
         if self.has_parallel_merkle_checkpoint(block_n)? {
             self.snapshots.pin_head(block_n);
         }
+        crate::warn_if_confirmed_head_phase_slow(block_n, "checkpoint_snapshot_pin", started_at.elapsed());
+
+        let started_at = Instant::now();
         self.metrics.update(self);
+        crate::warn_if_confirmed_head_phase_slow(block_n, "db_metrics_update", started_at.elapsed());
         Ok(())
     }
 
