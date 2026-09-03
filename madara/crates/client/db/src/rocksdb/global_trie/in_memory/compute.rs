@@ -41,10 +41,11 @@ struct ContractLeaf {
     nonce: Option<Felt>,
 }
 
-fn bonsai_storage_config(backend: &RocksDBStorage) -> Result<BonsaiStorageConfig> {
+/// Builds a Bonsai config that retains rollback logs only for durable boundary overlays.
+fn bonsai_storage_config(backend: &RocksDBStorage, retain_trie_logs: bool) -> Result<BonsaiStorageConfig> {
     backend.ensure_parallel_merkle_recovery_config()?;
     Ok(BonsaiStorageConfig {
-        max_saved_trie_logs: backend.inner.config.max_saved_trie_logs,
+        max_saved_trie_logs: if retain_trie_logs { backend.inner.config.max_saved_trie_logs } else { Some(0) },
         max_saved_snapshots: Some(0),
         snapshot_interval: backend.inner.config.snapshot_interval,
     })
@@ -320,11 +321,12 @@ pub fn compute_root_from_snapshot(
     protocol_version: StarknetVersion,
     include_overlay: bool,
 ) -> Result<InMemoryRootComputation> {
-    let config = bonsai_storage_config(backend)?;
+    let config = bonsai_storage_config(backend, include_overlay)?;
     let contract_snapshot = Arc::clone(&snapshot);
-    let (contract_db, contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot));
-    let (contract_storage_db, contract_storage_changed) = InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot));
-    let (class_db, class_changed) = InMemoryBonsaiDb::class(snapshot);
+    let (contract_db, contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot), include_overlay);
+    let (contract_storage_db, contract_storage_changed) =
+        InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot), include_overlay);
+    let (class_db, class_changed) = InMemoryBonsaiDb::class(snapshot, include_overlay);
 
     let mut contract_trie: InMemoryTrie<Pedersen> = bonsai_trie::BonsaiStorage::new(contract_db, config.clone(), 251);
     let mut contract_storage_trie: InMemoryTrie<Pedersen> =
@@ -393,11 +395,12 @@ pub fn compute_root_from_snapshot_sequential(
     state_diff: &StateDiff,
     protocol_version: StarknetVersion,
 ) -> Result<InMemoryRootComputation> {
-    let config = bonsai_storage_config(backend)?;
+    let config = bonsai_storage_config(backend, false)?;
     let contract_snapshot = Arc::clone(&snapshot);
-    let (contract_db, _contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot));
-    let (contract_storage_db, _contract_storage_changed) = InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot));
-    let (class_db, _class_changed) = InMemoryBonsaiDb::class(snapshot);
+    let (contract_db, _contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot), false);
+    let (contract_storage_db, _contract_storage_changed) =
+        InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot), false);
+    let (class_db, _class_changed) = InMemoryBonsaiDb::class(snapshot, false);
 
     let mut contract_trie: InMemoryTrie<Pedersen> = bonsai_trie::BonsaiStorage::new(contract_db, config.clone(), 251);
     let mut contract_storage_trie: InMemoryTrie<Pedersen> =

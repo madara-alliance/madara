@@ -77,6 +77,7 @@ pub struct InMemoryBonsaiDb {
     snapshot: SnapshotRef,
     pub(super) changed: OverlayMap,
     pub(super) column_mapping: InMemoryColumnMapping,
+    track_old_values: bool,
 }
 
 impl fmt::Debug for InMemoryBonsaiDb {
@@ -86,28 +87,48 @@ impl fmt::Debug for InMemoryBonsaiDb {
 }
 
 impl InMemoryBonsaiDb {
-    pub fn with_mapping(snapshot: SnapshotRef, column_mapping: InMemoryColumnMapping, changed: OverlayMap) -> Self {
-        Self { snapshot, changed, column_mapping }
+    /// Creates an overlay DB and controls whether writes retain values needed by trie logs.
+    pub fn with_mapping(
+        snapshot: SnapshotRef,
+        column_mapping: InMemoryColumnMapping,
+        changed: OverlayMap,
+        track_old_values: bool,
+    ) -> Self {
+        Self { snapshot, changed, column_mapping, track_old_values }
     }
 
-    pub fn contract(snapshot: SnapshotRef) -> (Self, OverlayMap) {
+    /// Creates the contract-trie overlay used by one root computation.
+    pub fn contract(snapshot: SnapshotRef, track_old_values: bool) -> (Self, OverlayMap) {
         let changed = Arc::new(DashMap::new());
-        (Self::with_mapping(snapshot, InMemoryColumnMapping::contract(), Arc::clone(&changed)), changed)
+        (
+            Self::with_mapping(snapshot, InMemoryColumnMapping::contract(), Arc::clone(&changed), track_old_values),
+            changed,
+        )
     }
 
-    pub fn contract_storage(snapshot: SnapshotRef) -> (Self, OverlayMap) {
+    /// Creates the contract-storage-trie overlay used by one root computation.
+    pub fn contract_storage(snapshot: SnapshotRef, track_old_values: bool) -> (Self, OverlayMap) {
         let changed = Arc::new(DashMap::new());
-        (Self::with_mapping(snapshot, InMemoryColumnMapping::contract_storage(), Arc::clone(&changed)), changed)
+        (
+            Self::with_mapping(
+                snapshot,
+                InMemoryColumnMapping::contract_storage(),
+                Arc::clone(&changed),
+                track_old_values,
+            ),
+            changed,
+        )
     }
 
-    pub fn class(snapshot: SnapshotRef) -> (Self, OverlayMap) {
+    /// Creates the class-trie overlay used by one root computation.
+    pub fn class(snapshot: SnapshotRef, track_old_values: bool) -> (Self, OverlayMap) {
         let changed = Arc::new(DashMap::new());
-        (Self::with_mapping(snapshot, InMemoryColumnMapping::class(), Arc::clone(&changed)), changed)
+        (Self::with_mapping(snapshot, InMemoryColumnMapping::class(), Arc::clone(&changed), track_old_values), changed)
     }
 
     #[cfg(test)]
     pub(super) fn test_with_mapping(snapshot: SnapshotRef, column_mapping: InMemoryColumnMapping) -> Self {
-        Self::with_mapping(snapshot, column_mapping, Arc::new(DashMap::new()))
+        Self::with_mapping(snapshot, column_mapping, Arc::new(DashMap::new()), true)
     }
 
     fn get_from_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
@@ -117,6 +138,15 @@ impl InMemoryBonsaiDb {
 
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
         self.changed.get(&to_changed_key(key)).map(|v| v.value().clone())
+    }
+
+    /// Reads a previous value only when the caller will retain a rollback log.
+    fn previous_value_for_write(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
+        if self.track_old_values {
+            self.get(key)
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -196,7 +226,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let previous = self.get(key)?;
+        let previous = self.previous_value_for_write(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
         Ok(previous)
     }
@@ -206,7 +236,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let previous = self.get(key)?;
+        let previous = self.previous_value_for_write(key)?;
         self.changed.insert(to_changed_key(key), None);
         Ok(previous)
     }

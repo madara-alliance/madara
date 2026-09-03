@@ -9,6 +9,7 @@ use crate::rocksdb::trie::{
 use crate::rocksdb::RocksDBStorage;
 use crate::MadaraBackend;
 use bonsai_trie::{BonsaiDatabase, ByteVec, DatabaseKey};
+use dashmap::DashMap;
 use mp_chain_config::{ChainConfig, StarknetVersion};
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
@@ -138,6 +139,24 @@ fn in_memory_bonsai_overlay_hit_beats_snapshot() {
     db.insert(&DatabaseKey::Flat(key), b"overlay-value", None).expect("insert overlay");
     let got = db.get(&DatabaseKey::Flat(key)).expect("read overlay");
     assert_eq!(got, Some(ByteVec::from(&b"overlay-value"[..])));
+}
+
+#[test]
+fn historyless_in_memory_writes_skip_previous_values() {
+    let backend = setup_snapshot_db();
+    let key = b"historyless-key";
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, key, b"snapshot-value");
+    let snapshot = fresh_snapshot(&backend.db);
+    let mut db =
+        InMemoryBonsaiDb::with_mapping(snapshot, InMemoryColumnMapping::contract(), Arc::new(DashMap::new()), false);
+
+    let previous = db.insert(&DatabaseKey::Flat(key), b"overlay-value", None).expect("insert overlay");
+    assert_eq!(previous, None, "historyless writes should not fetch the snapshot value");
+    assert_eq!(db.get(&DatabaseKey::Flat(key)).expect("read overlay"), Some(ByteVec::from(&b"overlay-value"[..])));
+
+    let previous = db.remove(&DatabaseKey::Flat(key), None).expect("remove overlay");
+    assert_eq!(previous, None, "historyless removals should not fetch the overlay value");
+    assert_eq!(db.get(&DatabaseKey::Flat(key)).expect("read tombstone"), None);
 }
 
 #[test]
