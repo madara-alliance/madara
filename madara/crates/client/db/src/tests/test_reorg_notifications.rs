@@ -1,10 +1,17 @@
 #![cfg(test)]
 
 use crate::preconfirmed::PreconfirmedBlock;
-use crate::{test_utils::add_test_block, ChainTip, MadaraBackend, MadaraStorageRead, ReorgHead, ReorgNotification};
+use crate::{
+    chain_head::ChainHeadState, test_utils::add_test_block, MadaraBackend, MadaraStorageRead, ReorgHead,
+    ReorgNotification,
+};
 use mp_block::header::PreconfirmedHeader;
 use mp_chain_config::ChainConfig;
 use std::{sync::Arc, time::Duration};
+
+fn confirmed_head(block_n: u64) -> ChainHeadState {
+    ChainHeadState { confirmed_tip: Some(block_n), external_preconfirmed_tip: None, internal_preconfirmed_tip: None }
+}
 
 #[tokio::test]
 async fn revert_refreshes_chain_tip_cache_and_emits_reorg_notification() {
@@ -14,10 +21,10 @@ async fn revert_refreshes_chain_tip_cache_and_emits_reorg_notification() {
     let block_1_hash = add_test_block(&backend, 1, vec![]);
     let block_2_hash = add_test_block(&backend, 2, vec![]);
 
-    let mut chain_tip_watch = backend.watch_chain_tip();
+    let mut chain_head_watch = backend.watch_chain_head_state();
     let mut reorgs = backend.subscribe_reorgs();
 
-    assert_eq!(chain_tip_watch.current(), &ChainTip::Confirmed(2));
+    assert_eq!(chain_head_watch.current(), &confirmed_head(2));
     assert_eq!(backend.latest_confirmed_block_n(), Some(2));
 
     let (new_tip_n, new_tip_hash) = backend.revert_to(&block_0_hash).expect("Revert should succeed");
@@ -25,12 +32,12 @@ async fn revert_refreshes_chain_tip_cache_and_emits_reorg_notification() {
     assert_eq!(new_tip_n, 0);
     assert_eq!(new_tip_hash, block_0_hash);
     assert_eq!(backend.latest_confirmed_block_n(), Some(0));
-    assert_eq!(&*backend.chain_tip.borrow(), &ChainTip::Confirmed(0));
+    assert_eq!(backend.chain_head_state(), confirmed_head(0));
 
-    let updated_tip = tokio::time::timeout(Duration::from_secs(1), chain_tip_watch.recv())
+    let updated_tip = tokio::time::timeout(Duration::from_secs(1), chain_head_watch.recv())
         .await
-        .expect("Chain tip watcher should observe the revert");
-    assert!(matches!(updated_tip, ChainTip::Confirmed(0)));
+        .expect("Chain head watcher should observe the revert");
+    assert_eq!(updated_tip, &confirmed_head(0));
 
     let notification = tokio::time::timeout(Duration::from_secs(1), reorgs.recv())
         .await
@@ -41,12 +48,12 @@ async fn revert_refreshes_chain_tip_cache_and_emits_reorg_notification() {
         notification,
         ReorgNotification {
             previous_head: ReorgHead {
-                tip: ChainTip::Confirmed(2),
+                tip: confirmed_head(2),
                 latest_confirmed_block_n: 2,
                 latest_confirmed_block_hash: block_2_hash,
             },
             new_head: ReorgHead {
-                tip: ChainTip::Confirmed(0),
+                tip: confirmed_head(0),
                 latest_confirmed_block_n: 0,
                 latest_confirmed_block_hash: block_0_hash,
             },
@@ -105,7 +112,7 @@ async fn revert_clears_preconfirmed_tip_when_confirmed_height_is_unchanged() {
         .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
         .expect("Preconfirmed block should be stored");
 
-    let mut chain_tip_watch = backend.watch_chain_tip();
+    let mut chain_head_watch = backend.watch_chain_head_state();
     assert!(backend.has_preconfirmed_block(), "Expected a preconfirmed tip before revert");
 
     let (new_tip_n, new_tip_hash) = backend.revert_to(&block_0_hash).expect("Revert should clear the preconfirmed tip");
@@ -114,10 +121,10 @@ async fn revert_clears_preconfirmed_tip_when_confirmed_height_is_unchanged() {
     assert_eq!(new_tip_hash, block_0_hash);
     assert!(!backend.has_preconfirmed_block(), "Expected the preconfirmed tip to be cleared");
     assert_eq!(backend.latest_confirmed_block_n(), Some(0));
-    assert_eq!(&*backend.chain_tip.borrow(), &ChainTip::Confirmed(0));
+    assert_eq!(backend.chain_head_state(), confirmed_head(0));
 
-    let updated_tip = tokio::time::timeout(Duration::from_secs(1), chain_tip_watch.recv())
+    let updated_tip = tokio::time::timeout(Duration::from_secs(1), chain_head_watch.recv())
         .await
-        .expect("Chain tip watcher should observe the preconfirmed-tip removal");
-    assert!(matches!(updated_tip, ChainTip::Confirmed(0)));
+        .expect("Chain head watcher should observe the preconfirmed-tip removal");
+    assert_eq!(updated_tip, &confirmed_head(0));
 }

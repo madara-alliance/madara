@@ -23,18 +23,37 @@ impl BlockProductionService {
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
+        if config.parallel_merkle_enabled {
+            backend
+                .db
+                .ensure_parallel_merkle_recovery_config()
+                .context("Validating parallel Merkle recovery configuration")?;
+        }
         let metrics = Arc::new(BlockProductionMetrics::register());
+        let mempool_paused = config.mempool_paused;
+        let close_queue_capacity = usize::try_from(config.parallel_merkle_max_inflight)
+            .context("parallel_merkle_max_inflight does not fit into usize")?
+            .max(1);
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(
-                backend.clone(),
-                mempool,
-                metrics,
-                l1_client,
-                no_charge_fee,
-                config.discard_preconfirmed_on_startup,
-            )),
+            task: Some(
+                BlockProductionTask::new(
+                    backend.clone(),
+                    mempool,
+                    metrics,
+                    l1_client,
+                    mempool_paused,
+                    no_charge_fee,
+                    config.discard_preconfirmed_on_startup,
+                )
+                .with_close_queue_capacity(close_queue_capacity)
+                .with_replay_mode_enabled(config.replay_mode)
+                .with_parallel_merkle_enabled(config.parallel_merkle_enabled)
+                .with_parallel_merkle_compare_sequential(config.parallel_merkle_compare_sequential)
+                .with_parallel_merkle_root_workers(config.parallel_merkle_root_workers)
+                .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval),
+            ),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })

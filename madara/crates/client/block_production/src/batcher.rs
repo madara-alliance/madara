@@ -1,4 +1,6 @@
+use crate::metrics::BlockProductionMetrics;
 use crate::util::{AdditionalTxInfo, BatchToExecute};
+use crate::MempoolIntakeMode;
 use anyhow::Context;
 use futures::{
     stream::{self, BoxStream, PollNext},
@@ -15,46 +17,60 @@ use mp_transactions::{
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::sync::watch;
+use tokio::time::Instant;
 
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
+    metrics: Arc<BlockProductionMetrics>,
     l1_message_stream: BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>,
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
+    mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
 }
 
 impl Batcher {
+    /// Wires the three transaction sources into the executor batch output.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
+        metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
+        mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     ) -> Self {
         Self {
             mempool,
+            metrics,
             l1_message_stream: l1_client.create_message_to_l2_consumer(),
             ctx,
             out,
             bypass_in,
+            mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
         }
     }
 
+    /// Reserves one executor slot, builds the next prioritized batch, and sends it.
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
             // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
             // the worker has finished executing its current one.
+            let permit_wait_started = Instant::now();
             let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
                 // Stop condition: service stopped (ctx), or batch sender closed.
                 return anyhow::Ok(());
             };
+            let permit_wait_secs = permit_wait_started.elapsed().as_secs_f64();
+            self.metrics.batcher_output_backpressure_duration.record(permit_wait_secs, &[]);
 
             // We have 3 transactions streams:
             // * bypass inclusion (for admin rpc/chain bootstrapping purposes)
@@ -83,18 +99,26 @@ impl Batcher {
             });
 
             // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
-            let mempool_txs_stream = stream::unfold(self.mempool.clone(), |mempool| async move {
-                let consumer = mempool.get_consumer().await;
-                Some((consumer, mempool))
-            })
-            .map(|c| {
-                stream::iter(c.map(|tx| {
-                    tx.into_blockifier_for_sequencing()
-                        .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
-                        .map_err(anyhow::Error::from)
-                }))
-            })
-            .flatten();
+            let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = {
+                match *self.mempool_intake_rx.borrow() {
+                    MempoolIntakeMode::Paused => stream::pending().boxed(),
+                    MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
+                        let consumer = mempool.get_consumer().await;
+                        Some((consumer, mempool))
+                    })
+                    .map(|c| {
+                        stream::iter(c.map(|tx| {
+                            tx.into_blockifier_for_sequencing()
+                                .map(|(btx, ts, declared_class)| {
+                                    (btx, AdditionalTxInfo { declared_class, arrived_at: ts })
+                                })
+                                .map_err(anyhow::Error::from)
+                        }))
+                    })
+                    .flatten()
+                    .boxed(),
+                }
+            };
 
             // merge all three streams :)
             // * all three streams are merged into one stream, allowing us to poll them all at once.
@@ -114,14 +138,23 @@ impl Batcher {
                 stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
                 |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
             )
-            .try_ready_chunks(self.batch_size);
+            // futures::TryStreamExt::try_ready_chunks panics when capacity is zero, so clamp defensively.
+            .try_ready_chunks(self.batch_size.max(1));
 
             tokio::pin!(tx_stream);
 
+            let batch_wait_started = Instant::now();
             let batch = tokio::select! {
                 _ = self.ctx.cancelled() => {
                     // Stop condition: cancelled.
                     return anyhow::Ok(());
+                }
+                res = self.mempool_intake_rx.changed() => {
+                    // Intake mode changes require rebuilding the mempool stream with the new paused/running state.
+                    if res.is_err() {
+                        return anyhow::Ok(());
+                    }
+                    continue;
                 }
                 Some(got) = tx_stream.next() => {
                     // got a batch :)
@@ -134,8 +167,9 @@ impl Batcher {
             };
 
             if !batch.is_empty() {
+                let batch_wait_secs = batch_wait_started.elapsed().as_secs_f64();
+                self.metrics.batcher_batch_wait_duration.record(batch_wait_secs, &[]);
                 tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
-
                 permit.send(batch);
             }
         }

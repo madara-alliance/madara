@@ -27,16 +27,20 @@ pub struct RpcMetrics {
 }
 
 impl RpcMetrics {
-    // `calls_started` and `calls_time` only carry the `method` label because
+    // `calls_started` and `calls_time` carry method and transport labels because
     // they track invocation and latency independent of outcome.
     // `calls_finished` additionally carries `success` so failed calls can be
     // distinguished from successful ones in dashboards.
-    fn call_started_labels(method: &str) -> [KeyValue; 1] {
-        [KeyValue::new("method", method.to_string())]
+    fn call_started_labels(method: &str, transport_label: &'static str) -> [KeyValue; 2] {
+        [KeyValue::new("method", method.to_string()), KeyValue::new("transport", transport_label)]
     }
 
-    fn call_completed_labels(method: &str, success: bool) -> [KeyValue; 2] {
-        [KeyValue::new("method", method.to_string()), KeyValue::new("success", success.to_string())]
+    fn call_completed_labels(method: &str, success: bool, transport_label: &'static str) -> [KeyValue; 3] {
+        [
+            KeyValue::new("method", method.to_string()),
+            KeyValue::new("success", success.to_string()),
+            KeyValue::new("transport", transport_label),
+        ]
     }
 
     /// Create an instance of metrics
@@ -94,7 +98,7 @@ impl RpcMetrics {
 
     pub(crate) fn ws_connect(&self) {
         if let Some(counter) = self.ws_sessions_opened.as_ref() {
-            counter.add(1, &[]);
+            counter.add(1, &[KeyValue::new("transport", "ws")]);
         }
     }
 
@@ -102,9 +106,9 @@ impl RpcMetrics {
         let millis = now.elapsed().as_millis();
 
         if let Some(counter) = self.ws_sessions_closed.as_ref() {
-            counter.add(1, &[]);
+            counter.add(1, &[KeyValue::new("transport", "ws")]);
         }
-        self.ws_sessions_time.record(millis as f64, &[]);
+        self.ws_sessions_time.record(millis as f64, &[KeyValue::new("transport", "ws")]);
     }
 
     pub(crate) fn on_call(&self, req: &Request, transport_label: &'static str) {
@@ -114,7 +118,7 @@ impl RpcMetrics {
             req.method_name(),
             req.params(),
         );
-        self.calls_started.add(1, &Self::call_started_labels(req.method_name()));
+        self.calls_started.add(1, &Self::call_started_labels(req.method_name(), transport_label));
     }
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
@@ -129,10 +133,11 @@ impl RpcMetrics {
             millis,
         );
 
-        let labels = Self::call_completed_labels(req.method_name(), rp.is_success());
+        let started_labels = Self::call_started_labels(req.method_name(), transport_label);
+        let completed_labels = Self::call_completed_labels(req.method_name(), rp.is_success(), transport_label);
 
-        self.calls_time.record(millis as f64, &Self::call_started_labels(req.method_name()));
-        self.calls_finished.add(1, &labels);
+        self.calls_time.record(millis as f64, &started_labels);
+        self.calls_finished.add(1, &completed_labels);
     }
 }
 

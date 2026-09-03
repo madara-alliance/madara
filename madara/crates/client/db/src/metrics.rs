@@ -3,6 +3,8 @@ use mc_telemetry::{
 };
 use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
+#[cfg(test)]
+use std::sync::atomic::AtomicU64;
 use std::sync::LazyLock;
 
 const BONSAI_DURATION_BUCKETS: &[f64] =
@@ -49,6 +51,12 @@ const BONSAI_BATCH_BYTES_BUCKETS: &[f64] = &[
 
 /// Database metrics for close_block operations
 pub struct DbMetrics {
+    // Invariant/error counters
+    pub head_projection_violation_count: Counter<u64>,
+    /// Test-visible atomic mirror of `head_projection_violation_count` for delta assertions.
+    #[cfg(test)]
+    pub head_projection_violation_count_test: AtomicU64,
+
     // Histograms for percentile analysis
     pub apply_to_global_trie_duration: Histogram<f64>,
     pub contract_trie_root_duration: Histogram<f64>,
@@ -92,6 +100,13 @@ impl DbMetrics {
             InstrumentationScope::builder("crates.db.opentelemetry")
                 .with_attributes([KeyValue::new("crate", "db")])
                 .build(),
+        );
+
+        let head_projection_violation_count = register_counter_metric_instrument(
+            &meter,
+            "head_projection_violation_total".to_string(),
+            "Number of head projection invariant violations".to_string(),
+            "violation".to_string(),
         );
 
         // Merklization timing (Priority 1)
@@ -259,6 +274,9 @@ impl DbMetrics {
         );
 
         Self {
+            head_projection_violation_count,
+            #[cfg(test)]
+            head_projection_violation_count_test: AtomicU64::new(0),
             apply_to_global_trie_duration,
             contract_trie_root_duration,
             class_trie_root_duration,

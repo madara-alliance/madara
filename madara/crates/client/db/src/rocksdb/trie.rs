@@ -32,8 +32,12 @@ pub use bonsai_trie::ProofNode;
 /// Wrapper because bonsai requires a special DBError trait implementation.
 /// TODO: Remove that upstream in bonsai-trie, this is dumb.
 #[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct TrieError(#[from] rocksdb::Error);
+pub enum TrieError {
+    #[error(transparent)]
+    RocksDb(#[from] rocksdb::Error),
+    #[error("Cannot delete an unbounded trie-log prefix")]
+    UnboundedPrefix,
+}
 impl DBError for TrieError {}
 
 /// Wrapper because bonsai's error type does not implement [std::error::Error].
@@ -47,8 +51,30 @@ impl RocksDBStorage {
         &self,
         column_mapping: DatabaseKeyMapping,
     ) -> BonsaiStorage<BasicId, BonsaiDB, H> {
+        self.get_bonsai_with_revert_mode(column_mapping, false)
+    }
+
+    /// Creates a Bonsai handle whose prefix removals and inverse writes are committed together.
+    fn get_bonsai_for_revert<H: StarkHash + Send + Sync>(
+        &self,
+        column_mapping: DatabaseKeyMapping,
+    ) -> BonsaiStorage<BasicId, BonsaiDB, H> {
+        self.get_bonsai_with_revert_mode(column_mapping, true)
+    }
+
+    /// Creates a Bonsai handle with the requested database behavior.
+    fn get_bonsai_with_revert_mode<H: StarkHash + Send + Sync>(
+        &self,
+        column_mapping: DatabaseKeyMapping,
+        revert_mode: bool,
+    ) -> BonsaiStorage<BasicId, BonsaiDB, H> {
         BonsaiStorage::new(
-            BonsaiDB { backend: self.inner.clone(), column_mapping, snapshots: self.snapshots.clone() },
+            BonsaiDB {
+                backend: self.inner.clone(),
+                column_mapping,
+                snapshots: self.snapshots.clone(),
+                deferred_prefix_deletes: revert_mode.then(Vec::new),
+            },
             BonsaiStorageConfig {
                 max_saved_trie_logs: self.inner.config.max_saved_trie_logs,
                 max_saved_snapshots: self.inner.config.max_kept_snapshots,
@@ -79,6 +105,33 @@ impl RocksDBStorage {
             log: BONSAI_CLASS_LOG_COLUMN,
         })
     }
+
+    /// Opens the contract trie with atomic, history-free inverse writes for rollback.
+    pub(crate) fn contract_trie_for_revert(&self) -> GlobalTrie<Pedersen> {
+        self.get_bonsai_for_revert(DatabaseKeyMapping {
+            flat: BONSAI_CONTRACT_FLAT_COLUMN,
+            trie: BONSAI_CONTRACT_TRIE_COLUMN,
+            log: BONSAI_CONTRACT_LOG_COLUMN,
+        })
+    }
+
+    /// Opens the contract-storage trie with atomic, history-free inverse writes for rollback.
+    pub(crate) fn contract_storage_trie_for_revert(&self) -> GlobalTrie<Pedersen> {
+        self.get_bonsai_for_revert(DatabaseKeyMapping {
+            flat: BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
+            trie: BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
+            log: BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+        })
+    }
+
+    /// Opens the class trie with atomic, history-free inverse writes for rollback.
+    pub(crate) fn class_trie_for_revert(&self) -> GlobalTrie<Poseidon> {
+        self.get_bonsai_for_revert(DatabaseKeyMapping {
+            flat: BONSAI_CLASS_FLAT_COLUMN,
+            trie: BONSAI_CLASS_TRIE_COLUMN,
+            log: BONSAI_CLASS_LOG_COLUMN,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -98,21 +151,23 @@ impl DatabaseKeyMapping {
     }
 }
 
+/// Decodes the block revision carried by a trie-log prefix for observability.
 fn trie_log_revision(prefix: &DatabaseKey) -> Option<u64> {
     let DatabaseKey::TrieLog(prefix) = prefix else { return None };
     let revision: [u8; 8] = prefix.get(..8)?.try_into().ok()?;
     Some(u64::from_be_bytes(revision))
 }
 
-fn prefix_prune_outcome(scan_error: bool, write_succeeded: bool) -> &'static str {
-    match (scan_error, write_succeeded) {
-        (false, true) => "success",
-        (true, true) => "scan_error",
-        (false, false) => "write_error",
-        (true, false) => "scan_and_write_error",
+/// Maps a range-delete write result to its stable metrics label.
+fn prefix_prune_outcome(write_succeeded: bool) -> &'static str {
+    if write_succeeded {
+        "success"
+    } else {
+        "write_error"
     }
 }
 
+/// Records one logical revision-prefix deletion after its RocksDB write resolves.
 struct PrefixPruneObservation {
     column: &'static str,
     revision: Option<u64>,
@@ -120,15 +175,24 @@ struct PrefixPruneObservation {
     entries_scanned: u64,
     batch_operations: u64,
     batch_bytes: u64,
-    scan_error: bool,
+    strategy: &'static str,
+}
+
+/// Holds a rollback log-range deletion until the inverse state batch is ready.
+struct DeferredPrefixDelete {
+    column: Column,
+    start: ByteVec,
+    end: ByteVec,
+    observation: PrefixPruneObservation,
 }
 
 impl PrefixPruneObservation {
+    /// Emits range-deletion cost and the latest successfully deleted revision.
     fn record(self, write_succeeded: bool) {
-        let outcome = prefix_prune_outcome(self.scan_error, write_succeeded);
+        let outcome = prefix_prune_outcome(write_succeeded);
         let attributes = [
             KeyValue::new("column", self.column),
-            KeyValue::new("strategy", "point_delete"),
+            KeyValue::new("strategy", self.strategy),
             KeyValue::new("outcome", outcome),
         ];
 
@@ -151,6 +215,8 @@ pub struct BonsaiDB {
     snapshots: Arc<Snapshots>,
     /// Mapping from `DatabaseKey` => rocksdb column name
     column_mapping: DatabaseKeyMapping,
+    /// Rollback-only range deletions applied with the inverse-write batch.
+    deferred_prefix_deletes: Option<Vec<DeferredPrefixDelete>>,
 }
 
 impl fmt::Debug for BonsaiDB {
@@ -178,7 +244,13 @@ impl BonsaiDatabase for BonsaiDB {
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         tracing::trace!("Getting by prefix from RocksDB: {:?}", prefix);
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
-        let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
+        let mut readopts = rocksdb::ReadOptions::default();
+        readopts.set_prefix_same_as_start(true);
+        let iter = self.backend.db.iterator_cf_opt(
+            &handle,
+            readopts,
+            IteratorMode::From(prefix.as_slice(), Direction::Forward),
+        );
         Ok(iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
@@ -212,13 +284,17 @@ impl BonsaiDatabase for BonsaiDB {
         tracing::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
 
-        let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        let old_value = if self.deferred_prefix_deletes.is_some() {
+            None
+        } else {
+            self.backend.db.get_cf(&handle, key.as_slice())?.map(Into::into)
+        };
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
         } else {
             self.backend.db.put_cf_opt(&handle, key.as_slice(), value, &self.backend.writeopts)?;
         }
-        Ok(old_value.map(Into::into))
+        Ok(old_value)
     }
 
     #[tracing::instrument(skip(self, key, batch))]
@@ -229,46 +305,60 @@ impl BonsaiDatabase for BonsaiDB {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Removing from RocksDB: {:?}", key);
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
-        let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        let old_value = if self.deferred_prefix_deletes.is_some() {
+            None
+        } else {
+            self.backend.db.get_cf(&handle, key.as_slice())?.map(Into::into)
+        };
         if let Some(batch) = batch {
             batch.delete_cf(&handle, key.as_slice());
         } else {
             self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
         }
-        Ok(old_value.map(Into::into))
+        Ok(old_value)
     }
 
     #[tracing::instrument(skip(self, prefix))]
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
-        tracing::trace!("Getting from RocksDB: {:?}", prefix);
         let started_at = Instant::now();
-        let column = self.column_mapping.map(prefix);
-        let handle = self.backend.get_column(column.clone());
-        let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
-        let mut batch = self.create_batch();
-        let mut entries_scanned = 0u64;
-        let mut scan_error = false;
-        for kv in iter {
-            if let Ok((key, _)) = kv {
-                entries_scanned = entries_scanned.saturating_add(1);
-                if key.starts_with(prefix.as_slice()) {
-                    batch.delete_cf(&handle, &key);
-                } else {
-                    break;
-                }
-            } else {
-                scan_error = true;
-                break;
-            }
+        let column = self.column_mapping.map(prefix).clone();
+        if let Some(deferred_prefix_deletes) = self.deferred_prefix_deletes.as_mut() {
+            let Some(end) = prefix_upper_bound(prefix.as_slice()) else {
+                return Err(TrieError::UnboundedPrefix);
+            };
+            let batch_bytes = u64::try_from(prefix.as_slice().len() + end.len()).unwrap_or(u64::MAX);
+            deferred_prefix_deletes.push(DeferredPrefixDelete {
+                column: column.clone(),
+                start: prefix.as_slice().into(),
+                end: end.into(),
+                observation: PrefixPruneObservation {
+                    column: column.rocksdb_name,
+                    revision: trie_log_revision(prefix),
+                    started_at,
+                    entries_scanned: 0,
+                    batch_operations: 1,
+                    batch_bytes,
+                    strategy: "range_delete_deferred",
+                },
+            });
+            return Ok(());
         }
+
+        tracing::trace!("Deleting RocksDB prefix range: {:?}", prefix);
+        let Some(end) = prefix_upper_bound(prefix.as_slice()) else {
+            return Err(TrieError::UnboundedPrefix);
+        };
+        let handle = self.backend.get_column(column.clone());
+        let mut batch = self.create_batch();
+        batch.delete_range_cf(&handle, prefix.as_slice(), &end);
         let observation = PrefixPruneObservation {
             column: column.rocksdb_name,
             revision: trie_log_revision(prefix),
             started_at,
-            entries_scanned,
-            batch_operations: u64::try_from(batch.len()).unwrap_or(u64::MAX),
+            entries_scanned: 0,
+            batch_operations: 1,
             batch_bytes: u64::try_from(batch.size_in_bytes()).unwrap_or(u64::MAX),
-            scan_error,
+            strategy: "range_delete",
         };
         drop(handle);
         let result = self.write_batch(batch);
@@ -277,9 +367,31 @@ impl BonsaiDatabase for BonsaiDB {
     }
 
     #[tracing::instrument(skip(self, batch))]
-    fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        Ok(self.backend.db.write_opt(batch, &self.backend.writeopts)?)
+    fn write_batch(&mut self, mut batch: Self::Batch) -> Result<(), Self::DatabaseError> {
+        let deferred_prefix_deletes = self.deferred_prefix_deletes.as_mut().map(std::mem::take).unwrap_or_default();
+        for deletion in &deferred_prefix_deletes {
+            let handle = self.backend.get_column(deletion.column.clone());
+            batch.delete_range_cf(&handle, &deletion.start, &deletion.end);
+        }
+        let result = self.backend.db.write_opt(batch, &self.backend.writeopts);
+        for deletion in deferred_prefix_deletes {
+            deletion.observation.record(result.is_ok());
+        }
+        Ok(result?)
     }
+}
+
+/// Returns the smallest lexicographic key strictly above every key with `prefix`.
+fn prefix_upper_bound(prefix: &[u8]) -> Option<Vec<u8>> {
+    let mut end = prefix.to_vec();
+    for index in (0..end.len()).rev() {
+        if end[index] != u8::MAX {
+            end[index] += 1;
+            end.truncate(index + 1);
+            return Some(end);
+        }
+    }
+    None
 }
 
 fn to_changed_key(k: &DatabaseKey) -> (u8, ByteVec) {
@@ -334,7 +446,7 @@ impl BonsaiDatabase for BonsaiTransaction {
             return Ok(val.clone());
         }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -344,8 +456,11 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
+        if let Some(val) = self.changed.get(&to_changed_key(key)) {
+            return Ok(val.is_some());
+        }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
+        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.is_some())
     }
 
     fn insert(
@@ -429,15 +544,20 @@ mod tests {
     }
 
     #[test]
-    fn prefix_prune_outcome_preserves_scan_and_write_failures() {
-        assert_eq!(prefix_prune_outcome(false, true), "success");
-        assert_eq!(prefix_prune_outcome(true, true), "scan_error");
-        assert_eq!(prefix_prune_outcome(false, false), "write_error");
-        assert_eq!(prefix_prune_outcome(true, false), "scan_and_write_error");
+    fn prefix_prune_outcome_reports_write_result() {
+        assert_eq!(prefix_prune_outcome(true), "success");
+        assert_eq!(prefix_prune_outcome(false), "write_error");
     }
 
     #[test]
-    fn remove_by_prefix_point_delete_removes_only_matching_revision() {
+    fn prefix_upper_bound_covers_exact_prefix_only() {
+        assert_eq!(prefix_upper_bound(&[0x00, 0x12, 0x34]), Some(vec![0x00, 0x12, 0x35]));
+        assert_eq!(prefix_upper_bound(&[0x00, 0x12, 0xff]), Some(vec![0x00, 0x13]));
+        assert_eq!(prefix_upper_bound(&[0xff, 0xff]), None);
+    }
+
+    #[test]
+    fn remove_by_prefix_range_delete_removes_only_matching_revision() {
         let directory = tempfile::tempdir().unwrap();
         let storage = RocksDBStorage::open(directory.path(), RocksDBConfig::default()).unwrap();
         let mapping = DatabaseKeyMapping {
@@ -449,6 +569,7 @@ mod tests {
             backend: Arc::clone(&storage.inner),
             snapshots: Arc::clone(&storage.snapshots),
             column_mapping: mapping,
+            deferred_prefix_deletes: None,
         };
         let handle = storage.inner.get_column(BONSAI_CONTRACT_LOG_COLUMN);
 
@@ -466,5 +587,45 @@ mod tests {
         assert!(storage.inner.db.get_cf(&handle, first_key).unwrap().is_none());
         assert!(storage.inner.db.get_cf(&handle, second_key).unwrap().is_none());
         assert_eq!(storage.inner.db.get_cf(&handle, next_key).unwrap().as_deref(), Some(b"value".as_slice()));
+    }
+
+    #[test]
+    fn deferred_range_delete_commits_with_inverse_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(directory.path(), RocksDBConfig::default()).unwrap();
+        let mapping = DatabaseKeyMapping {
+            flat: BONSAI_CONTRACT_FLAT_COLUMN,
+            trie: BONSAI_CONTRACT_TRIE_COLUMN,
+            log: BONSAI_CONTRACT_LOG_COLUMN,
+        };
+        let mut bonsai_db = BonsaiDB {
+            backend: Arc::clone(&storage.inner),
+            snapshots: Arc::clone(&storage.snapshots),
+            column_mapping: mapping,
+            deferred_prefix_deletes: Some(Vec::new()),
+        };
+        let log_handle = storage.inner.get_column(BONSAI_CONTRACT_LOG_COLUMN);
+        let flat_handle = storage.inner.get_column(BONSAI_CONTRACT_FLAT_COLUMN);
+        let revision = 7u64.to_be_bytes();
+        let next_revision = 8u64.to_be_bytes();
+        let reverted_log_key = [revision.as_slice(), b"entry"].concat();
+        let retained_log_key = [next_revision.as_slice(), b"entry"].concat();
+        storage.inner.db.put_cf(&log_handle, &reverted_log_key, b"change").unwrap();
+        storage.inner.db.put_cf(&log_handle, &retained_log_key, b"change").unwrap();
+
+        bonsai_db.remove_by_prefix(&DatabaseKey::TrieLog(&revision)).unwrap();
+        assert!(
+            storage.inner.db.get_cf(&log_handle, &reverted_log_key).unwrap().is_some(),
+            "rollback log deletion must wait for the inverse-write batch"
+        );
+
+        let state_key = DatabaseKey::Flat(b"state-key");
+        let mut batch = bonsai_db.create_batch();
+        bonsai_db.insert(&state_key, b"old-state", Some(&mut batch)).unwrap();
+        bonsai_db.write_batch(batch).unwrap();
+
+        assert!(storage.inner.db.get_cf(&log_handle, reverted_log_key).unwrap().is_none());
+        assert_eq!(storage.inner.db.get_cf(&log_handle, retained_log_key).unwrap().as_deref(), Some(&b"change"[..]));
+        assert_eq!(storage.inner.db.get_cf(&flat_handle, b"state-key").unwrap().as_deref(), Some(&b"old-state"[..]));
     }
 }

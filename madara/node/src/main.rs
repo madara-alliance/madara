@@ -98,7 +98,6 @@
 //! [m-proc-macros]: m_proc_macros
 #![warn(missing_docs)]
 
-use mc_db::MadaraStorageRead;
 mod cli;
 mod service;
 mod submit_tx;
@@ -171,6 +170,11 @@ async fn main() -> anyhow::Result<()> {
     // Extracts the arguments into the struct
     let mut run_cmd: RunCmd = config.extract()?;
     run_cmd.check_mode()?;
+    if run_cmd.block_production_params.mempool_paused
+        && !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe)
+    {
+        bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
+    }
 
     // Setting up telemetry
     let mut service_telemetry = TelemetryService::new(run_cmd.telemetry_params.as_telemetry_config())
@@ -281,8 +285,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("🧹 Ensured full-node startup is not carrying saved sequencer runtime execution config");
     }
 
-    let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
-    tracing::info!("💼 Starting chain with block: {}", chain_tip);
+    let chain_head_state = backend.chain_head_state();
+    tracing::info!("💼 Starting chain with head state: {:?}", chain_head_state);
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
@@ -517,7 +521,7 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = backend.flush() {
         tracing::error!("Failed to flush database during shutdown: {}", e);
     } else {
-        tracing::debug!("🔍 DEBUG: Database flush completed successfully");
+        tracing::debug!("🔍 Database flush completed successfully");
     }
 
     result

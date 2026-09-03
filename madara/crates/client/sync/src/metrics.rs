@@ -10,6 +10,7 @@ use opentelemetry::{
 };
 use std::{
     sync::Arc,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -34,6 +35,18 @@ pub struct SyncMetrics {
     // gas price is also define in eth/client.rs but this would be the gas used in the block and it's price
     pub l1_gas_price_wei: Histogram<f64>,
     pub l1_gas_price_strk: Histogram<f64>,
+}
+
+pub struct SyncControlMetrics {
+    pub reorg_detected_total: Counter<u64>,
+    pub reorg_processed_total: Counter<u64>,
+    pub reorg_required_but_disabled_total: Counter<u64>,
+    pub genesis_mismatch_total: Counter<u64>,
+    pub genesis_recovery_total: Counter<u64>,
+    pub pipeline_reinitialized_total: Counter<u64>,
+    pub common_ancestor_search_duration: Histogram<f64>,
+    pub common_ancestor_distance_blocks: Histogram<f64>,
+    pub genesis_recovery_duration: Histogram<f64>,
 }
 
 impl SyncMetrics {
@@ -152,4 +165,77 @@ impl SyncMetrics {
 
         Ok(())
     }
+}
+
+impl SyncControlMetrics {
+    fn register() -> Self {
+        let meter = global::meter_with_scope(
+            InstrumentationScope::builder("crates.sync.control.opentelemetry")
+                .with_attributes([KeyValue::new("crate", "sync")])
+                .build(),
+        );
+
+        Self {
+            reorg_detected_total: register_counter_metric_instrument(
+                &meter,
+                "sync_reorg_detected_total".to_string(),
+                "Number of upstream reorgs detected during sync".to_string(),
+                "reorg".to_string(),
+            ),
+            reorg_processed_total: register_counter_metric_instrument(
+                &meter,
+                "sync_reorg_processed_total".to_string(),
+                "Number of reorgs successfully processed during sync".to_string(),
+                "reorg".to_string(),
+            ),
+            reorg_required_but_disabled_total: register_counter_metric_instrument(
+                &meter,
+                "sync_reorg_required_but_disabled_total".to_string(),
+                "Number of reorgs detected while auto-reorg handling was disabled".to_string(),
+                "reorg".to_string(),
+            ),
+            genesis_mismatch_total: register_counter_metric_instrument(
+                &meter,
+                "sync_genesis_mismatch_total".to_string(),
+                "Number of genesis mismatches detected during sync".to_string(),
+                "mismatch".to_string(),
+            ),
+            genesis_recovery_total: register_counter_metric_instrument(
+                &meter,
+                "sync_genesis_recovery_total".to_string(),
+                "Number of destructive genesis recovery runs triggered during sync".to_string(),
+                "recovery".to_string(),
+            ),
+            pipeline_reinitialized_total: register_counter_metric_instrument(
+                &meter,
+                "sync_pipeline_reinitialized_total".to_string(),
+                "Number of sync pipeline reinitializations after recovery events".to_string(),
+                "reinit".to_string(),
+            ),
+            common_ancestor_search_duration: register_histogram_metric_instrument(
+                &meter,
+                "sync_common_ancestor_search_duration_seconds".to_string(),
+                "Time spent searching for the common ancestor during reorg handling".to_string(),
+                "s".to_string(),
+            ),
+            common_ancestor_distance_blocks: register_histogram_metric_instrument(
+                &meter,
+                "sync_common_ancestor_distance_blocks".to_string(),
+                "Number of blocks walked backwards while searching for the common ancestor".to_string(),
+                "block".to_string(),
+            ),
+            genesis_recovery_duration: register_histogram_metric_instrument(
+                &meter,
+                "sync_genesis_recovery_duration_seconds".to_string(),
+                "Time spent wiping and refreshing local state after a genesis mismatch".to_string(),
+                "s".to_string(),
+            ),
+        }
+    }
+}
+
+static CONTROL_METRICS: LazyLock<SyncControlMetrics> = LazyLock::new(SyncControlMetrics::register);
+
+pub fn control_metrics() -> &'static SyncControlMetrics {
+    &CONTROL_METRICS
 }

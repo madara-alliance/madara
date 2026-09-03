@@ -80,6 +80,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v13→v14: seed external DB retention cursor from L1 tip",
             migrate: super::revisions::revision_0014::migrate,
         },
+        Migration {
+            from_version: 14,
+            to_version: 15,
+            name: "v14→v15: block-keyed preconfirmed persistence migration",
+            migrate: super::revisions::revision_0015::migrate,
+        },
     ]
 }
 
