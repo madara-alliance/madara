@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Parameters used to config block production.
 #[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
+#[serde(default)]
 pub struct BlockProductionParams {
     /// Disable the block production service.
     /// The block production service is only enabled with the authority (sequencer) mode.
@@ -72,6 +73,24 @@ pub struct BlockProductionParams {
         value_parser = clap::value_parser!(u64).range(1..)
     )]
     pub parallel_merkle_flush_interval: u64,
+}
+
+/// Supplies backward-compatible values when older config files omit newer block-production fields.
+impl Default for BlockProductionParams {
+    fn default() -> Self {
+        Self {
+            block_production_disabled: false,
+            discard_preconfirmed_on_startup: false,
+            mempool_paused: false,
+            replay_mode: false,
+            devnet_contracts: 10,
+            parallel_merkle_max_inflight: 10,
+            parallel_merkle_enabled: false,
+            parallel_merkle_compare_sequential: false,
+            parallel_merkle_root_workers: 1,
+            parallel_merkle_flush_interval: 3,
+        }
+    }
 }
 
 #[cfg(test)]
