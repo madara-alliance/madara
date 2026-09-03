@@ -8,7 +8,7 @@ use crate::{
             apply_to_global_trie, compute_global_trie_staged, get_state_root,
             in_memory::{
                 compute_root_from_snapshot, compute_root_from_snapshot_sequential,
-                compute_roots_in_parallel_from_snapshot, squash_state_diffs, BonsaiOverlay, InMemoryRootComputation,
+                compute_roots_in_parallel_from_snapshot, BonsaiOverlay, InMemoryRootComputation,
             },
             MerklizationTimings,
         },
@@ -690,23 +690,13 @@ impl RocksDBStorage {
 
             let replay_start = checkpoint_floor.map_or(0, |checkpoint_floor| checkpoint_floor + 1);
             if replay_start <= confirmed_tip {
-                let replay_diffs =
-                    self.collect_state_diffs_inclusive(replay_start, confirmed_tip).with_context(|| {
-                        format!(
-                        "Collecting state diffs {replay_start}..={confirmed_tip} for parallel merkle reconciliation"
-                    )
-                    })?;
-                let cumulative_state_diff = squash_state_diffs(replay_diffs.iter().map(|(_, diff)| diff));
-                self.apply_to_global_trie(
+                self.replay_state_diffs_inclusive(
+                    replay_start,
                     confirmed_tip,
-                    [&cumulative_state_diff],
                     confirmed_block_info.header.protocol_version,
+                    "parallel merkle reconciliation",
                 )
-                .with_context(|| {
-                    format!(
-                        "Applying cumulative state diff for confirmed block #{confirmed_tip} during parallel merkle reconciliation"
-                    )
-                })?;
+                .with_context(|| format!("Rebuilding confirmed block #{confirmed_tip} during {context}"))?;
                 replayed_from_floor = true;
             }
         }
@@ -943,6 +933,29 @@ impl RocksDBStorage {
         }
 
         Ok(diffs)
+    }
+
+    /// Reapplies stored state diffs in block order and materializes the target trie revision.
+    ///
+    /// State diffs must remain ordered because collapsing a long range can lose transitions
+    /// whose meaning depends on state established by an earlier block in that range.
+    fn replay_state_diffs_inclusive(
+        &self,
+        from_block_n: u64,
+        to_block_n: u64,
+        protocol_version: StarknetVersion,
+        operation: &str,
+    ) -> Result<()> {
+        let replay_diffs = self
+            .collect_state_diffs_inclusive(from_block_n, to_block_n)
+            .with_context(|| format!("Collecting state diffs {from_block_n}..={to_block_n} for {operation}"))?;
+        self.apply_to_global_trie(
+            from_block_n,
+            replay_diffs.iter().map(|(_, state_diff)| state_diff),
+            protocol_version,
+        )
+        .with_context(|| format!("Applying state diffs {from_block_n}..={to_block_n} for {operation}"))?;
+        Ok(())
     }
 }
 
@@ -1725,17 +1738,16 @@ impl MadaraStorageWrite for RocksDBStorage {
                 .remove_parallel_merkle_checkpoints_above(target_block_n)
                 .context("Rewinding parallel merkle checkpoint metadata after floor revert")?;
 
-            // Replay cumulative diffs from floor+1..=target to rebuild target trie state even when
+            // Replay diffs from floor+1..=target to rebuild target trie state even when
             // trie logs are sparse (non-boundary blocks). If target==floor, no replay is needed.
             if target_block_n > bonsai_floor {
-                let replay_diffs = self.collect_state_diffs_inclusive(bonsai_floor + 1, target_block_n)?;
-                let cumulative_state_diff = squash_state_diffs(replay_diffs.iter().map(|(_, diff)| diff));
-                self.apply_to_global_trie(
+                self.replay_state_diffs_inclusive(
+                    bonsai_floor + 1,
                     target_block_n,
-                    [&cumulative_state_diff],
                     target_block_info.header.protocol_version,
+                    "checkpoint-floor reorg",
                 )
-                .context("Replaying cumulative state diff after floor revert")?;
+                .context("Replaying ordered state diffs after floor revert")?;
                 self.inner
                     .write_parallel_merkle_checkpoint(target_block_n)
                     .context("Marking replay target as checkpoint after floor revert")?;
