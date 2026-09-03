@@ -263,6 +263,11 @@ impl TrieLogHeads {
     fn highest(self) -> Option<u64> {
         [self.contract, self.contract_storage, self.class].into_iter().flatten().max()
     }
+
+    /// Returns the oldest materialized trie revision available as a common recovery ceiling.
+    fn lowest(self) -> Option<u64> {
+        [self.contract, self.contract_storage, self.class].into_iter().flatten().min()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -570,6 +575,22 @@ impl RocksDBStorage {
         Ok(contract_needs_commit || contract_storage_needs_commit || class_needs_commit)
     }
 
+    /// Selects a checkpoint that every materialized trie can reach by rolling backward.
+    ///
+    /// During an interrupted reorg, one trie may already be older than the confirmed tip.
+    /// Starting from the oldest live revision lets recovery align all tries at one durable
+    /// checkpoint before replaying confirmed state diffs forward.
+    fn confirmed_recovery_checkpoint_floor(
+        &self,
+        confirmed_tip: u64,
+        trie_log_heads: TrieLogHeads,
+    ) -> Result<Option<u64>> {
+        let Some(oldest_trie_head) = trie_log_heads.lowest() else {
+            return Ok(None);
+        };
+        self.get_parallel_merkle_checkpoint_floor(oldest_trie_head.min(confirmed_tip))
+    }
+
     pub fn reconcile_confirmed_parallel_merkle_state(&self, confirmed_tip: Option<u64>, context: &str) -> Result<()> {
         let Some(confirmed_tip) = confirmed_tip else {
             let latest_checkpoint = self.get_parallel_merkle_latest_checkpoint()?;
@@ -622,11 +643,10 @@ impl RocksDBStorage {
         let mut rolled_back_to_floor = false;
         let mut replayed_from_floor = false;
         if actual_root != expected_root || durable_state_is_ahead {
-            let checkpoint_floor = self.get_parallel_merkle_checkpoint_floor(confirmed_tip).with_context(|| {
-                format!(
-                    "Reading parallel merkle checkpoint floor for confirmed block #{confirmed_tip} during reconciliation"
-                )
-            })?;
+            let checkpoint_floor =
+                self.confirmed_recovery_checkpoint_floor(confirmed_tip, trie_log_heads).with_context(|| {
+                    format!("Reading common parallel merkle recovery checkpoint for confirmed block #{confirmed_tip}")
+                })?;
             let floor_root = match checkpoint_floor {
                 Some(checkpoint_floor) => self
                     .inner
@@ -647,7 +667,9 @@ impl RocksDBStorage {
             };
 
             rolled_back_to_floor = self.rollback_tries_to_checkpoint_floor(checkpoint_floor, context)?;
-            self.rewind_parallel_merkle_checkpoints(Some(confirmed_tip))?;
+            // History-free trie rollback removes future trie-log revisions. Their checkpoint
+            // markers must be removed before rebuilding the authoritative confirmed tip.
+            self.rewind_parallel_merkle_checkpoints(checkpoint_floor)?;
 
             let root_at_floor = match checkpoint_floor {
                 Some(checkpoint_floor) => {

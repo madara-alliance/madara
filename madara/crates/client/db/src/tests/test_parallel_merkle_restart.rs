@@ -4,6 +4,7 @@ use crate::{
     preconfirmed::PreconfirmedBlock,
     rocksdb::{
         global_trie::in_memory::{BoundaryFlushOutcome, InMemoryRootComputation},
+        trie::BasicId,
         RocksDBConfig,
     },
     storage::{MadaraStorageRead, MadaraStorageWrite},
@@ -227,6 +228,23 @@ fn assert_revert_survives_reopen(path: &Path, target_hash: Felt, target_root: Fe
     assert!(reopened.db.get_block_info(9).expect("reading reverted block 9").is_none());
 }
 
+/// Simulates a crash after different tries reached different reorg revisions.
+fn leave_interrupted_revert_state(backend: &Arc<MadaraBackend>) {
+    let mut contract_trie = backend.db.contract_trie_for_revert();
+    contract_trie
+        .revert_to(BasicId::new(2), BasicId::new(11))
+        .expect("partially reverting contract trie should succeed");
+    contract_trie.commit(BasicId::new(2)).expect("committing partially reverted contract trie should succeed");
+
+    let mut contract_storage_trie = backend.db.contract_storage_trie_for_revert();
+    contract_storage_trie
+        .revert_to(BasicId::new(5), BasicId::new(11))
+        .expect("partially reverting contract-storage trie should succeed");
+    contract_storage_trie
+        .commit(BasicId::new(5))
+        .expect("committing partially reverted contract-storage trie should succeed");
+}
+
 fn assert_boundary_crash_recovered(backend: &Arc<MadaraBackend>, expected_confirmed_root: Felt) {
     let head = backend.chain_head_state();
     assert_eq!(head.confirmed_tip, Some(1));
@@ -406,6 +424,50 @@ fn stale_boundary_skip_then_cumulative_commit_reverts_idempotently_after_reopen(
     };
 
     assert_revert_survives_reopen(temp_dir.path(), target_hash, target_root);
+}
+
+#[test]
+fn startup_recovers_confirmed_tip_after_interrupted_revert() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let (confirmed_hash, confirmed_root, revert_hash, revert_root) = {
+        let backend = open_backend(temp_dir.path());
+        let diffs: Vec<_> = (0_u64..=11).map(synthetic_state_diff).collect();
+
+        confirm_initial_boundary(&backend, &diffs);
+        let stale_block_8 = compute_stale_block_8_before_checkpoint_5(&backend, &diffs);
+        confirm_stale_skip_and_catch_up(&backend, &diffs, &stale_block_8);
+
+        let confirmed = backend.db.get_block_info(11).expect("reading confirmed tip").expect("confirmed tip exists");
+        let revert_target = backend.db.get_block_info(2).expect("reading revert target").expect("revert target exists");
+        leave_interrupted_revert_state(&backend);
+        backend.flush().expect("flushing interrupted revert fixture should succeed");
+
+        (
+            confirmed.block_hash,
+            confirmed.header.global_state_root,
+            revert_target.block_hash,
+            revert_target.header.global_state_root,
+        )
+    };
+
+    let recovered = open_backend(temp_dir.path());
+    assert_eq!(recovered.chain_head_state().confirmed_tip, Some(11));
+    assert_eq!(recovered.db.get_state_root_hash().expect("reading recovered root"), confirmed_root);
+    assert_eq!(
+        recovered.db.get_block_info(11).expect("reading recovered tip").expect("recovered tip exists").block_hash,
+        confirmed_hash
+    );
+    assert_eq!(recovered.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(11));
+    assert!(!recovered.has_parallel_merkle_checkpoint(5).expect("stale checkpoint 5"));
+    assert!(!recovered.has_parallel_merkle_checkpoint(8).expect("stale checkpoint 8"));
+
+    let first_revert = recovered.revert_to(&revert_hash).expect("retrying interrupted revert should succeed");
+    assert_eq!(first_revert, (2, revert_hash));
+    assert_eq!(recovered.db.get_state_root_hash().expect("reading reverted root"), revert_root);
+
+    let repeated_revert = recovered.revert_to(&revert_hash).expect("repeating completed revert should succeed");
+    assert_eq!(repeated_revert, (2, revert_hash));
+    assert_eq!(recovered.db.get_state_root_hash().expect("reading repeated revert root"), revert_root);
 }
 
 #[test]
