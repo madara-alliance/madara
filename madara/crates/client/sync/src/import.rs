@@ -19,6 +19,22 @@ use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 
+const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
+const MAINNET_FIRST_V0_13_2: u64 = 671813;
+const INTEGRATION_SEPOLIA_FIRST_V0_13_2: u64 = 35748;
+const PARADEX_MAINNET_FIRST_V0_13_2: u64 = 95271;
+const PARADEX_MAINNET_CHAIN_ID: &str = "PRIVATE_SN_PARACLEAR_MAINNET";
+
+fn should_trust_pre_v0_13_2_gateway_header(chain_id: &ChainId, block_n: u64) -> bool {
+    match chain_id {
+        ChainId::Sepolia => block_n < SEPOLIA_FIRST_V0_13_2,
+        ChainId::Mainnet => block_n < MAINNET_FIRST_V0_13_2,
+        ChainId::IntegrationSepolia => block_n < INTEGRATION_SEPOLIA_FIRST_V0_13_2,
+        ChainId::Other(id) if id == PARADEX_MAINNET_CHAIN_ID => block_n < PARADEX_MAINNET_FIRST_V0_13_2,
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
     /// Trust class hashes.
@@ -200,21 +216,11 @@ impl BlockImporterCtx {
         // because they don't guarantee the integrity of all of the block and in particular, because state diffs and receipts can't be checked,
         // (they arguably contain the most important data of a block), we skip integrity checking all-together.
         //
-        // This does not affect app-chains, as we require the chain_id to be either Sepolia and Mainnet to import pre-v0.13.2 blocks. We further
-        // restrict the heights of pre-v0.13.2 blocks to be less than the known first v0.13.2 blocks on those chains just in case.
-
-        // First v0.13.2 sepolia block: https://sepolia.voyager.online/block/86311.
-        const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
-        // First v0.13.2 mainnet block: https://voyager.online/block/671813.
-        const MAINNET_FIRST_V0_13_2: u64 = 671813;
-        // First v0.13.2 integration-sepolia block.
-        const INTEGRATION_SEPOLIA_FIRST_V0_13_2: u64 = 35748;
+        // Do not grant a generic app-chain bypass. Paradex Mainnet is an explicit exception because its gateway has the same legacy header
+        // limitation. Each network is bounded by its known first v0.13.2 block so normal verification resumes at the protocol transition.
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
-            && ((self.backend.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2)
-                || (self.backend.chain_config().chain_id == ChainId::IntegrationSepolia
-                    && block_n < INTEGRATION_SEPOLIA_FIRST_V0_13_2))
+            && should_trust_pre_v0_13_2_gateway_header(&self.backend.chain_config().chain_id, block_n)
         {
             // Skip integrity check.
             return Ok(());
@@ -648,7 +654,10 @@ impl BlockImporterCtx {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig};
+    use super::{
+        should_trust_pre_v0_13_2_gateway_header, BlockImportError, BlockImporter, BlockImporterCtx,
+        BlockValidationConfig, ChainId, PARADEX_MAINNET_CHAIN_ID, PARADEX_MAINNET_FIRST_V0_13_2,
+    };
     use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
     use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
@@ -931,6 +940,15 @@ mod tests {
             ),
             Err(BlockImportError::ReceiptCommitment { .. })
         );
+    }
+
+    #[test]
+    fn paradex_legacy_gateway_header_trust_stops_at_v0_13_2() {
+        let chain_id = ChainId::Other(PARADEX_MAINNET_CHAIN_ID.to_owned());
+
+        assert!(should_trust_pre_v0_13_2_gateway_header(&chain_id, PARADEX_MAINNET_FIRST_V0_13_2 - 1));
+        assert!(!should_trust_pre_v0_13_2_gateway_header(&chain_id, PARADEX_MAINNET_FIRST_V0_13_2));
+        assert!(!should_trust_pre_v0_13_2_gateway_header(&ChainId::Other("OTHER_APPCHAIN".to_owned()), 0));
     }
 
     // TODO: do those checks for classes and block hashes too.
