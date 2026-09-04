@@ -51,6 +51,9 @@ impl Default for ForwardSyncConfig {
 }
 
 impl ForwardSyncConfig {
+    pub fn block_parallelization(self, val: usize) -> Self {
+        Self { block_parallelization: val, ..self }
+    }
     pub fn disable_tries(self, val: bool) -> Self {
         Self { disable_tries: val, ..self }
     }

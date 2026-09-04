@@ -121,6 +121,7 @@ impl Service for SyncService {
                     gateway,
                     SyncControllerConfig::default().stop_on_sync(true).no_pending_block(true),
                     mc_sync::gateway::ForwardSyncConfig::default()
+                        .block_parallelization(this.params.block_parallelization)
                         .disable_tries(this.params.disable_tries)
                         .snap_sync(this.params.snap_sync)
                         .snap_sync_batch_size(this.params.snap_sync_batch_size)
@@ -159,6 +160,7 @@ impl Service for SyncService {
                 gateway,
                 config,
                 mc_sync::gateway::ForwardSyncConfig::default()
+                    .block_parallelization(this.params.block_parallelization)
                     .disable_tries(this.params.disable_tries)
                     .snap_sync(this.params.snap_sync)
                     .snap_sync_batch_size(this.params.snap_sync_batch_size)
