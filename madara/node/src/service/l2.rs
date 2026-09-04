@@ -123,6 +123,7 @@ impl Service for SyncService {
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .snap_sync(this.params.snap_sync)
+                        .snap_sync_batch_size(this.params.snap_sync_batch_size)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                         .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
                         .disable_reorg(this.params.disable_reorg),
@@ -160,6 +161,7 @@ impl Service for SyncService {
                 mc_sync::gateway::ForwardSyncConfig::default()
                     .disable_tries(this.params.disable_tries)
                     .snap_sync(this.params.snap_sync)
+                    .snap_sync_batch_size(this.params.snap_sync_batch_size)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                     .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
                     .disable_reorg(this.params.disable_reorg),

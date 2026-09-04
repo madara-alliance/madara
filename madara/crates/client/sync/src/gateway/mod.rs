@@ -25,6 +25,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
     pub snap_sync: bool,
+    pub snap_sync_batch_size: u64,
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
     pub disable_reorg: bool,
@@ -41,6 +42,7 @@ impl Default for ForwardSyncConfig {
             apply_state_batch_size: 4,
             disable_tries: false,
             snap_sync: false,
+            snap_sync_batch_size: 1000,
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
             disable_reorg: false,
@@ -57,6 +59,9 @@ impl ForwardSyncConfig {
     }
     pub fn snap_sync(self, val: bool) -> Self {
         Self { snap_sync: val, ..self }
+    }
+    pub fn snap_sync_batch_size(self, val: u64) -> Self {
+        Self { snap_sync_batch_size: val, ..self }
     }
 
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
@@ -133,6 +138,7 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
             config.snap_sync,
+            config.snap_sync_batch_size,
         );
         (blocks_pipeline, classes_pipeline, apply_state_pipeline)
     }

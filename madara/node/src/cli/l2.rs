@@ -32,6 +32,11 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_SNAP_SYNC", long)]
     pub snap_sync: bool,
 
+    /// Number of blocks accumulated before a snap-sync trie flush.
+    /// Larger batches trade memory for fewer trie computations.
+    #[clap(env = "MADARA_SNAP_SYNC_BATCH_SIZE", long, default_value_t = 1000)]
+    pub snap_sync_batch_size: u64,
+
     /// Gateway API key used as an x-throttling-bypass header when the selected
     /// gateway has issued one.
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]

@@ -10,7 +10,9 @@ use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 use tokio::sync::Mutex;
 
-// TODO(heemankv, 2025-10-26): Should be driven from env for hardware-based customisations
+/// Keep the final range block-by-block so the target block has its own trie root.
+const SNAP_SYNC_FINAL_BLOCK_BY_BLOCK_RANGE: u64 = 1000;
+
 /// Batch size for snap sync state accumulation before flushing to the global trie.
 ///
 /// During snap sync, state diffs are accumulated in memory rather than computing
@@ -26,10 +28,6 @@ use tokio::sync::Mutex;
 /// on modern hardware without excessive memory consumption. It typically results in
 /// trie updates every few minutes during active syncing.
 ///
-/// Not exposed as a CLI option to maintain simplicity (KISS principle). If adjustment
-/// is needed for specific hardware constraints, modify this constant directly.
-const APPLY_STATE_SNAP_BATCH_SIZE: u64 = 1000;
-
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
     backend: Arc<MadaraBackend>,
@@ -39,9 +37,17 @@ pub fn apply_state_pipeline(
     batch_size: usize,
     disable_tries: bool,
     snap_sync: bool,
+    snap_sync_batch_size: u64,
 ) -> ApplyStateSync {
     PipelineController::new(
-        ApplyStateSteps { importer, backend, disable_tries, snap_sync, state_diff_map: Mutex::new(Default::default()) },
+        ApplyStateSteps {
+            importer,
+            backend,
+            disable_tries,
+            snap_sync,
+            snap_sync_batch_size,
+            state_diff_map: Mutex::new(Default::default()),
+        },
         parallelization,
         batch_size,
         starting_block_n,
@@ -53,6 +59,7 @@ pub struct ApplyStateSteps {
     pub(crate) backend: Arc<MadaraBackend>,
     disable_tries: bool,
     snap_sync: bool,
+    snap_sync_batch_size: u64,
     state_diff_map: Mutex<crate::sync_utils::StateDiffMap>,
 }
 
@@ -102,9 +109,9 @@ impl ApplyStateSteps {
 
         // Apply accumulated diffs if either condition is met:
         // 1. We've reached the sync target (ensures we flush before transitioning modes)
-        // 2. We've accumulated APPLY_STATE_SNAP_BATCH_SIZE blocks (periodic flush for memory)
+        // 2. We've accumulated the configured number of blocks (periodic flush for memory)
         let should_apply = target_block.map(|t| latest_block >= t).unwrap_or(false)
-            || latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE);
+            || latest_block >= current_first_block.saturating_add(self.snap_sync_batch_size);
 
         if should_apply {
             self.clone()
@@ -134,9 +141,9 @@ impl ApplyStateSteps {
         let distance_to_target = target_block.map(|t| t.saturating_sub(block_range.start));
         // Use snap sync if:
         // 1. Snap sync is enabled, AND
-        // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
+        // 2. We're outside the final block-by-block verification range.
         let should_use_snap_sync =
-            self.snap_sync && distance_to_target.map(|d| d >= APPLY_STATE_SNAP_BATCH_SIZE).unwrap_or(false);
+            self.snap_sync && distance_to_target.map(|d| d >= SNAP_SYNC_FINAL_BLOCK_BY_BLOCK_RANGE).unwrap_or(false);
         if should_use_snap_sync {
             self.sync_snap(block_range, input, target_block).await
         } else {
