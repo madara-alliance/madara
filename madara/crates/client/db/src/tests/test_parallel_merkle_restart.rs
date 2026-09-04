@@ -7,7 +7,7 @@ use crate::{
         trie::BasicId,
         RocksDBConfig,
     },
-    storage::{MadaraStorageRead, MadaraStorageWrite},
+    storage::{MadaraStorageRead, MadaraStorageWrite, StorageHeadProjection},
     MadaraBackend, MadaraBackendConfig,
 };
 use mc_class_exec::config::NativeConfig;
@@ -468,6 +468,57 @@ fn startup_recovers_confirmed_tip_after_interrupted_revert() {
     let repeated_revert = recovered.revert_to(&revert_hash).expect("repeating completed revert should succeed");
     assert_eq!(repeated_revert, (2, revert_hash));
     assert_eq!(recovered.db.get_state_root_hash().expect("reading repeated revert root"), revert_root);
+}
+
+#[test]
+fn startup_finishes_reverse_suffix_cleanup_after_reorg_head_commit() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let (target_hash, target_root) = {
+        let backend = open_backend(temp_dir.path());
+        let diffs: Vec<_> = (0_u64..=11).map(synthetic_state_diff).collect();
+
+        confirm_initial_boundary(&backend, &diffs);
+        let stale_block_8 = compute_stale_block_8_before_checkpoint_5(&backend, &diffs);
+        confirm_stale_skip_and_catch_up(&backend, &diffs, &stale_block_8);
+
+        let target = backend.db.get_block_info(2).expect("reading target block").expect("target block exists");
+        let mut contract_trie = backend.db.contract_trie_for_revert();
+        contract_trie
+            .revert_to(BasicId::new(2), BasicId::new(11))
+            .expect("reverting contract trie to committed target");
+        contract_trie.commit(BasicId::new(2)).expect("committing reverted contract trie");
+        let mut contract_storage_trie = backend.db.contract_storage_trie_for_revert();
+        contract_storage_trie
+            .revert_to(BasicId::new(2), BasicId::new(11))
+            .expect("reverting storage trie to committed target");
+        contract_storage_trie.commit(BasicId::new(2)).expect("committing reverted storage trie");
+
+        // Simulate a crash after the target-head commit and after only the newest
+        // part of the reverse-order suffix cleanup completed. Blocks 3..=8 remain.
+        backend.db.replace_head_projection(&StorageHeadProjection::Confirmed(2)).expect("publishing target head");
+        backend.db.write_latest_applied_trie_update(&Some(2)).expect("publishing trie cursor");
+        backend.db.remove_all_blocks_starting_from(9).expect("removing newest suffix before simulated crash");
+        assert!(backend.db.get_block_info(8).expect("reading remaining suffix").is_some());
+        assert!(backend.db.get_block_info(9).expect("reading removed suffix").is_none());
+        backend.flush().expect("flushing simulated post-commit crash state");
+
+        (target.block_hash, target.header.global_state_root)
+    };
+
+    let reopened = open_backend(temp_dir.path());
+    assert_eq!(reopened.chain_head_state().confirmed_tip, Some(2));
+    assert_eq!(reopened.db.get_state_root_hash().expect("reading recovered root"), target_root);
+    assert_eq!(reopened.db.get_block_info(2).expect("reading target").expect("target exists").block_hash, target_hash);
+    for block_n in 3_u64..=11 {
+        assert!(
+            reopened.db.get_block_info(block_n).expect("reading cleaned suffix").is_none(),
+            "startup must finish cleanup for block #{block_n}"
+        );
+    }
+
+    let repeated = reopened.revert_to(&target_hash).expect("repeating completed revert");
+    assert_eq!(repeated, (2, target_hash));
+    assert_eq!(reopened.db.get_state_root_hash().expect("reading repeated root"), target_root);
 }
 
 #[test]

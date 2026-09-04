@@ -165,7 +165,7 @@ impl RocksDBStorageInner {
             {
                 if let Some(state_diff) = self.get_block_state_diff(block_n)? {
                     // State diff is in db.
-                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)?;
+                    self.classes_revert_state_diff(&state_diff, &mut batch)?;
                     self.state_remove(block_n, &state_diff, &mut batch)?;
                 }
 
@@ -957,6 +957,29 @@ impl RocksDBStorage {
         .with_context(|| format!("Applying state diffs {from_block_n}..={to_block_n} for {operation}"))?;
         Ok(())
     }
+
+    /// Atomically publishes the canonical reorg target and its coupled recovery metadata.
+    ///
+    /// Before this batch commits, the old confirmed head remains authoritative and every
+    /// future block/state-diff row is still available for startup trie reconstruction. After
+    /// it commits, startup can treat `target_block_n` as authoritative and resume deletion of
+    /// the now-noncanonical suffix without exposing an intermediate head.
+    fn commit_reorg_head(
+        &self,
+        target_block_n: u64,
+        l1_message_nonces_to_cleanup: &[u64],
+        l1_messaging_sync_tip_after_revert: Option<u64>,
+    ) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        self.inner.replace_head_projection_in_batch(&StorageHeadProjection::Confirmed(target_block_n), &mut batch)?;
+        self.inner.delete_all_preconfirmed_rows_in_batch(&mut batch)?;
+        self.inner.message_to_l2_remove_for_nonces(l1_message_nonces_to_cleanup, &mut batch)?;
+        self.inner.write_latest_applied_trie_update_in_batch(&Some(target_block_n), &mut batch)?;
+        if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
+            self.inner.write_l1_messaging_sync_tip_in_batch(Some(l1_sync_tip), &mut batch);
+        }
+        self.inner.db.write_opt(batch, &self.inner.writeopts).context("Committing canonical reorg head")
+    }
 }
 
 impl MadaraStorageRead for RocksDBStorage {
@@ -1509,12 +1532,11 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// 2. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
     /// 3. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
     /// 4. **Trie Commit**: Commits the reverted tries to ensure consistency
-    /// 5. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
-    /// 6. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
-    /// 7. **Head Projection Update**: Updates the head projection to the target block
-    /// 8. **Snapshot Update**: Updates the head snapshot to the target block
-    /// 9. **Applied Update Reset**: Resets the latest_applied_trie_update marker
-    /// 10. **Database Flush**: Ensures all changes are persisted to disk
+    /// 5. **Root Verification**: Refuses to publish a target whose materialized root does not match
+    /// 6. **Atomic Head Commit**: Publishes the target with preconfirmed/L1/trie recovery metadata
+    /// 7. **Suffix Cleanup**: Removes future blocks and their versioned state in reverse order
+    /// 8. **Snapshot Update**: Updates the in-memory snapshot inventory to the target block
+    /// 9. **Database Flush**: Ensures all changes are persisted to disk
     ///
     /// # Notes
     ///
@@ -1525,8 +1547,8 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * This function does not stop services or shutdown the process. Lifecycle side-effects
     ///   are managed by upper layers (for example admin RPC orchestration).
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
-    /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
-    /// ```
+    /// * The head commit is the reorg's linearization point. A crash before it recovers the old
+    ///   confirmed head; a crash after it resumes reverse-order suffix cleanup from the new head.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
@@ -1793,39 +1815,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             tracing::info!("✅ REORG: All tries committed successfully");
         }
 
-        // Revert database state using the three revert functions
-        // First, revert blocks and collect state diffs
-        tracing::info!("📦 REORG: Starting block database revert...");
-        let state_diffs =
-            self.inner.block_db_revert(target_block_n, current_tip).context("Reverting blocks database")?;
-        tracing::info!("✅ REORG: Block database reverted, collected {} state diffs", state_diffs.len());
-
-        // Pending messages are synced by L1 block and may have never been consumed on L2 yet.
-        // On revert, we intentionally drop all currently pending L1 messages and related L1 indices so
-        // the next L1 sync replays them from `l1_messaging_sync_tip_after_revert`.
-        tracing::info!(
-            "📦 REORG: Cleaning {} L1 message nonce entries (reverted + pending)",
-            l1_message_nonces_to_cleanup.len()
-        );
-        let mut l1_message_cleanup_batch = WriteBatchWithTransaction::default();
-        self.inner
-            .message_to_l2_remove_for_nonces(&l1_message_nonces_to_cleanup, &mut l1_message_cleanup_batch)
-            .context("Removing L1 message data for reverted/pending nonces")?;
-        self.inner
-            .db
-            .write_opt(l1_message_cleanup_batch, &self.inner.writeopts)
-            .context("Committing L1 message cleanup batch after reorg")?;
-        tracing::info!("✅ REORG: L1 message cleanup completed");
-
-        // Then use those state diffs to revert contract and class state
-        tracing::info!("📝 REORG: Starting contract database revert...");
-        self.inner.contract_db_revert(&state_diffs).context("Reverting contract database")?;
-        tracing::info!("✅ REORG: Contract database reverted successfully");
-
-        tracing::info!("🎓 REORG: Starting class database revert...");
-        self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
-        tracing::info!("✅ REORG: Class database reverted successfully");
-
         let expected_target_root = target_block_info.header.global_state_root;
         let actual_target_root = self
             .get_state_root_hash_at_version(target_block_info.header.protocol_version)
@@ -1848,10 +1837,20 @@ impl MadaraStorageWrite for RocksDBStorage {
         }
         ensure_reorg_target_root_matches(target_block_n, expected_target_root, actual_target_root)?;
 
-        tracing::info!("🔗 REORG: Updating head projection to block_n={}", target_block_n);
-        let new_tip = StorageHeadProjection::Confirmed(target_block_n);
-        self.replace_head_projection(&new_tip).context("Updating head projection after reorg")?;
-        tracing::info!("✅ REORG: Head projection updated successfully");
+        tracing::info!(
+            "🔗 REORG: Atomically publishing head block_n={} with {} L1 cleanup entries",
+            target_block_n,
+            l1_message_nonces_to_cleanup.len()
+        );
+        self.commit_reorg_head(target_block_n, &l1_message_nonces_to_cleanup, l1_messaging_sync_tip_after_revert)?;
+        tracing::info!("✅ REORG: Canonical head and recovery metadata committed successfully");
+
+        let suffix_start = target_block_n.checked_add(1).context("Computing reorg suffix start")?;
+        tracing::info!("📦 REORG: Removing noncanonical block suffix starting at block_n={suffix_start}");
+        self.inner
+            .remove_all_blocks_starting_from(suffix_start)
+            .context("Removing noncanonical block suffix after reorg head commit")?;
+        tracing::info!("✅ REORG: Noncanonical block suffix removed successfully");
 
         tracing::info!("📸 REORG: Updating snapshots to new head block_n={}", target_block_n);
         self.snapshots.rewind_to(target_block_n);
@@ -1860,19 +1859,11 @@ impl MadaraStorageWrite for RocksDBStorage {
         }
         tracing::info!("✅ REORG: Snapshots updated successfully");
 
-        tracing::info!("🔄 REORG: Resetting latest_applied_trie_update to block_n={}", target_block_n);
-        self.write_latest_applied_trie_update(&Some(target_block_n))
-            .context("Resetting latest_applied_trie_update after reorg")?;
-        tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
-
         if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
             tracing::info!(
-                "🔁 REORG: Rewinding L1 messaging sync tip to block_n={l1_sync_tip} (from source block {:?})",
+                "🔁 REORG: L1 messaging sync tip committed at block_n={l1_sync_tip} (from source block {:?})",
                 rewind_from_l1_block
             );
-            self.write_l1_messaging_sync_tip(Some(l1_sync_tip))
-                .context("Rewinding l1 messaging sync tip after reorg")?;
-            tracing::info!("✅ REORG: L1 messaging sync tip rewound successfully");
         } else {
             tracing::info!("🔁 REORG: No L1 messaging rewind needed");
         }

@@ -72,23 +72,26 @@ pub enum StoredHeadProjectionWithoutContent {
 }
 
 impl RocksDBStorageInner {
+    /// Appends an L1 messaging cursor update to an existing atomic database batch.
+    pub(super) fn write_l1_messaging_sync_tip_in_batch(
+        &self,
+        block_n: Option<u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) {
+        let meta_col = self.get_column(META_COLUMN);
+        if let Some(block_n) = block_n {
+            batch.put_cf(&meta_col, META_LAST_SYNCED_L1_EVENT_BLOCK_KEY, block_n.to_be_bytes());
+        } else {
+            batch.delete_cf(&meta_col, META_LAST_SYNCED_L1_EVENT_BLOCK_KEY);
+        }
+    }
+
     /// Set the latest l1_block synced for the messaging worker.
     #[tracing::instrument(skip(self))]
     pub(super) fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
-        if let Some(block_n) = block_n {
-            self.db.put_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
-                block_n.to_be_bytes(),
-                &self.writeopts,
-            )?;
-        } else {
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
-                &self.writeopts,
-            )?;
-        }
+        let mut batch = WriteBatchWithTransaction::default();
+        self.write_l1_messaging_sync_tip_in_batch(block_n, &mut batch);
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -166,12 +169,13 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
-    pub(super) fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()> {
-        // We need to do all of this in a single write. (atomic)
-
+    /// Appends a complete head projection replacement to an existing atomic database batch.
+    pub(super) fn replace_head_projection_in_batch(
+        &self,
+        head_projection: &StorageHeadProjection,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
         let meta_col = self.get_column(META_COLUMN);
-        let mut batch = WriteBatchWithTransaction::default();
         // Keep metadata on the new key only.
         batch.delete_cf(&meta_col, META_HEAD_PROJECTION_LEGACY_KEY);
 
@@ -214,6 +218,15 @@ impl RocksDBStorageInner {
                 }
             }
         };
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()> {
+        // We need to do all of this in a single write. (atomic)
+        let mut batch = WriteBatchWithTransaction::default();
+        self.replace_head_projection_in_batch(head_projection, &mut batch)?;
 
         // Write head projection atomically
         // Note: Using regular write opts (no fsync) for performance
@@ -349,6 +362,30 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Appends removal of every persisted preconfirmed header and transaction row.
+    ///
+    /// A canonical reorg invalidates every preconfirmed block above its new target.
+    /// Keeping this deletion in the head-publication batch prevents startup from
+    /// observing a confirmed projection alongside an orphaned preconfirmed tip.
+    pub(super) fn delete_all_preconfirmed_rows_in_batch(&self, batch: &mut WriteBatchWithTransaction) -> Result<()> {
+        let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
+        let meta_col = self.get_column(META_COLUMN);
+        let start = preconfirmed_block_range_start(0);
+        let end_exclusive = [u8::MAX; 11];
+        batch.delete_range_cf(&preconfirmed_col, start.as_slice(), end_exclusive.as_slice());
+
+        let header_start = meta_key_with_block_n(META_PRECONFIRMED_HEADER_PREFIX, 0);
+        for entry in self.db.iterator_cf(&meta_col, IteratorMode::From(&header_start, rocksdb::Direction::Forward)) {
+            let (key, _value) = entry?;
+            if !key.starts_with(META_PRECONFIRMED_HEADER_PREFIX) {
+                break;
+            }
+            batch.delete_cf(&meta_col, key);
+        }
+
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn get_head_projection(&self) -> Result<StorageHeadProjection> {
         match self.get_head_projection_without_content()? {
@@ -397,15 +434,27 @@ impl RocksDBStorageInner {
 
     #[tracing::instrument(skip(self))]
     pub(super) fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        self.write_latest_applied_trie_update_in_batch(block_n, &mut batch)?;
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    /// Appends the durable-trie cursor update to an existing atomic database batch.
+    pub(super) fn write_latest_applied_trie_update_in_batch(
+        &self,
+        block_n: &Option<u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let meta_col = self.get_column(META_COLUMN);
         if let Some(block_n) = block_n {
-            self.db.put_cf_opt(
-                &self.get_column(META_COLUMN),
+            batch.put_cf(
+                &meta_col,
                 META_LATEST_APPLIED_TRIE_UPDATE,
                 super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
-                &self.writeopts,
-            )?;
+            );
         } else {
-            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE, &self.writeopts)?;
+            batch.delete_cf(&meta_col, META_LATEST_APPLIED_TRIE_UPDATE);
         }
         Ok(())
     }
