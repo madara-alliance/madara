@@ -21,10 +21,14 @@ enum StoredHeadProjectionWithoutContent {
     Preconfirmed(PreconfirmedHeader),
 }
 
+/// Returns the legacy-compatible bincode options used by v14 metadata.
+/// Migration reads and writes must use the same encoding as the original rows.
 fn bincode_opts() -> impl bincode::Options {
     bincode::DefaultOptions::new()
 }
 
+/// Encodes a block number and transaction index into the v15 content key layout.
+/// Big-endian fields preserve block and transaction ordering during RocksDB scans.
 fn preconfirmed_content_key(block_n: u64, tx_index: u16) -> [u8; 10] {
     let mut key = [0u8; 10];
     key[..8].copy_from_slice(&block_n.to_be_bytes());
@@ -32,6 +36,8 @@ fn preconfirmed_content_key(block_n: u64, tx_index: u16) -> [u8; 10] {
     key
 }
 
+/// Builds the metadata key for one block-keyed preconfirmed header.
+/// The fixed prefix separates header records from other metadata rows.
 fn preconfirmed_header_key(block_n: u64) -> Vec<u8> {
     let mut key = Vec::with_capacity(META_PRECONFIRMED_HEADER_PREFIX.len() + 8);
     key.extend_from_slice(META_PRECONFIRMED_HEADER_PREFIX);
@@ -39,6 +45,8 @@ fn preconfirmed_header_key(block_n: u64) -> Vec<u8> {
     key
 }
 
+/// Appends a big-endian block number to a metadata namespace prefix.
+/// Checkpoint markers and other ordered metadata use this shared layout.
 fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
     let mut key = Vec::with_capacity(prefix.len() + 8);
     key.extend_from_slice(prefix);
@@ -46,6 +54,8 @@ fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
     key
 }
 
+/// Derives the last confirmed block represented by the legacy head projection.
+/// A preconfirmed head points one block beyond its confirmed parent.
 fn latest_confirmed_from_projection(projection: &StoredHeadProjectionWithoutContent) -> Option<u64> {
     match projection {
         StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(*block_n),
@@ -53,86 +63,125 @@ fn latest_confirmed_from_projection(projection: &StoredHeadProjectionWithoutCont
     }
 }
 
-pub fn migrate(ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
-    tracing::info!("Starting v14→v15 migration: block-keyed preconfirmed persistence");
-
+/// Loads the current head projection, accepting both the canonical and legacy metadata keys.
+/// A missing projection means the database has no preconfirmed state for this migration to move.
+fn load_head_projection(
+    ctx: &MigrationContext<'_>,
+) -> Result<Option<StoredHeadProjectionWithoutContent>, MigrationError> {
     let db = ctx.db();
     let meta_cf = db.cf_handle(META_COLUMN).ok_or_else(|| MigrationError::RocksDb("meta CF missing".to_string()))?;
-    let preconfirmed_cf = db
-        .cf_handle(PRECONFIRMED_COLUMN)
-        .ok_or_else(|| MigrationError::RocksDb("preconfirmed CF missing".to_string()))?;
-
     let projection_raw = if let Some(raw) = db.get_pinned_cf(&meta_cf, META_HEAD_PROJECTION_KEY)? {
         Some(raw)
     } else {
         db.get_pinned_cf(&meta_cf, META_HEAD_PROJECTION_LEGACY_KEY)?
     };
 
-    let Some(projection_raw) = projection_raw else {
-        tracing::info!("v14→v15 migration: no head projection found, nothing to migrate");
-        return Ok(());
-    };
+    projection_raw
+        .map(|raw| {
+            bincode_opts()
+                .deserialize(&raw)
+                .map_err(|e| MigrationError::Serialization(format!("deserialize head projection: {e}")))
+        })
+        .transpose()
+}
 
-    let projection: StoredHeadProjectionWithoutContent = bincode_opts()
-        .deserialize(&projection_raw)
-        .map_err(|e| MigrationError::Serialization(format!("deserialize head projection: {e}")))?;
-    let mut batch = WriteBatch::default();
-    let mut moved = 0usize;
-
-    let latest_applied_trie_update = db
-        .get_pinned_cf(&meta_cf, META_LATEST_APPLIED_TRIE_UPDATE)?
+/// Reads the durable trie progress marker used to seed a parallel-Merkle checkpoint.
+/// Missing metadata is valid and falls back to the confirmed portion of the head projection.
+fn load_latest_applied_trie_update(ctx: &MigrationContext<'_>) -> Result<Option<u64>, MigrationError> {
+    let db = ctx.db();
+    let meta_cf = db.cf_handle(META_COLUMN).ok_or_else(|| MigrationError::RocksDb("meta CF missing".to_string()))?;
+    db.get_pinned_cf(&meta_cf, META_LATEST_APPLIED_TRIE_UPDATE)?
         .map(|raw| {
             bincode_opts()
                 .deserialize::<u64>(&raw)
                 .map_err(|e| MigrationError::Serialization(format!("deserialize latest applied trie update: {e}")))
         })
-        .transpose()?;
+        .transpose()
+}
+
+/// Adds the checkpoint marker and latest-checkpoint pointer to the migration write batch.
+/// Both records are staged together so an interrupted migration cannot expose only one of them.
+fn stage_checkpoint(
+    ctx: &MigrationContext<'_>,
+    batch: &mut WriteBatch,
+    checkpoint_block_n: u64,
+) -> Result<(), MigrationError> {
+    let db = ctx.db();
+    let meta_cf = db.cf_handle(META_COLUMN).ok_or_else(|| MigrationError::RocksDb("meta CF missing".to_string()))?;
+    batch.put_cf(&meta_cf, meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, checkpoint_block_n), [1u8]);
+    batch.put_cf(
+        &meta_cf,
+        META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
+        bincode_opts()
+            .serialize(&checkpoint_block_n)
+            .map_err(|e| MigrationError::Serialization(format!("serialize latest checkpoint: {e}")))?,
+    );
+    Ok(())
+}
+
+/// Moves legacy two-byte transaction keys under the projected preconfirmed block number.
+/// The corresponding block-keyed header is staged in the same batch and the moved-row count is returned.
+fn stage_preconfirmed_rows(
+    ctx: &MigrationContext<'_>,
+    batch: &mut WriteBatch,
+    projection: StoredHeadProjectionWithoutContent,
+) -> Result<usize, MigrationError> {
+    let StoredHeadProjectionWithoutContent::Preconfirmed(header) = projection else {
+        tracing::info!("v14→v15 migration: head is not preconfirmed, skipping legacy preconfirmed row migration");
+        return Ok(0);
+    };
+
+    let db = ctx.db();
+    let meta_cf = db.cf_handle(META_COLUMN).ok_or_else(|| MigrationError::RocksDb("meta CF missing".to_string()))?;
+    let preconfirmed_cf = db
+        .cf_handle(PRECONFIRMED_COLUMN)
+        .ok_or_else(|| MigrationError::RocksDb("preconfirmed CF missing".to_string()))?;
+    let block_n = header.block_number;
+    let mut moved = 0;
+
+    for item in db.iterator_cf(&preconfirmed_cf, rocksdb::IteratorMode::Start) {
+        let (key, value) = item?;
+        if key.len() != 2 {
+            continue;
+        }
+        let tx_index = u16::from_be_bytes(
+            key.as_ref()
+                .try_into()
+                .map_err(|_| MigrationError::Serialization("malformed legacy preconfirmed key".to_string()))?,
+        );
+        batch.put_cf(&preconfirmed_cf, preconfirmed_content_key(block_n, tx_index), value);
+        batch.delete_cf(&preconfirmed_cf, key);
+        moved += 1;
+    }
+
+    batch.put_cf(
+        &meta_cf,
+        preconfirmed_header_key(block_n),
+        bincode_opts()
+            .serialize(&header)
+            .map_err(|e| MigrationError::Serialization(format!("serialize preconfirmed header: {e}")))?,
+    );
+    Ok(moved)
+}
+
+/// Migrates v14 head metadata and singleton preconfirmed rows into the v15 keyed layout.
+/// All mutations share one write batch, so rerunning an interrupted migration is idempotent.
+pub fn migrate(ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
+    tracing::info!("Starting v14→v15 migration: block-keyed preconfirmed persistence");
+
+    let Some(projection) = load_head_projection(ctx)? else {
+        tracing::info!("v14→v15 migration: no head projection found, nothing to migrate");
+        return Ok(());
+    };
+    let latest_applied_trie_update = load_latest_applied_trie_update(ctx)?;
     let checkpoint_seed = latest_applied_trie_update.or_else(|| latest_confirmed_from_projection(&projection));
 
+    let mut batch = WriteBatch::default();
     if let Some(checkpoint_block_n) = checkpoint_seed {
-        batch.put_cf(
-            &meta_cf,
-            meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, checkpoint_block_n),
-            [1u8],
-        );
-        batch.put_cf(
-            &meta_cf,
-            META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
-            bincode_opts()
-                .serialize(&checkpoint_block_n)
-                .map_err(|e| MigrationError::Serialization(format!("serialize latest checkpoint: {e}")))?,
-        );
+        stage_checkpoint(ctx, &mut batch, checkpoint_block_n)?;
     }
-
-    if let StoredHeadProjectionWithoutContent::Preconfirmed(header) = projection {
-        let block_n = header.block_number;
-
-        for item in db.iterator_cf(&preconfirmed_cf, rocksdb::IteratorMode::Start) {
-            let (key, value) = item?;
-            if key.len() != 2 {
-                continue;
-            }
-            let tx_index = u16::from_be_bytes(
-                key.as_ref()
-                    .try_into()
-                    .map_err(|_| MigrationError::Serialization("malformed legacy preconfirmed key".to_string()))?,
-            );
-            batch.put_cf(&preconfirmed_cf, preconfirmed_content_key(block_n, tx_index), value);
-            batch.delete_cf(&preconfirmed_cf, key);
-            moved += 1;
-        }
-
-        batch.put_cf(
-            &meta_cf,
-            preconfirmed_header_key(block_n),
-            bincode_opts()
-                .serialize(&header)
-                .map_err(|e| MigrationError::Serialization(format!("serialize preconfirmed header: {e}")))?,
-        );
-    } else {
-        tracing::info!("v14→v15 migration: head is not preconfirmed, skipping legacy preconfirmed row migration");
-    }
-    db.write(batch)?;
+    let moved = stage_preconfirmed_rows(ctx, &mut batch, projection)?;
+    ctx.db().write(batch)?;
 
     tracing::info!(
         "v14→v15 migration completed: moved {moved} legacy preconfirmed rows, checkpoint_seed={checkpoint_seed:?}, latest_applied_trie_update={latest_applied_trie_update:?}"

@@ -49,6 +49,8 @@ impl fmt::Debug for Snapshots {
 }
 
 impl Snapshots {
+    /// Creates the snapshot inventory around the database's current durable head.
+    /// An empty database retains a dedicated empty-base snapshot for genesis root work.
     pub fn new(
         db: Arc<RocksDBStorageInner>,
         head_block_n: Option<u64>,
@@ -74,6 +76,8 @@ impl Snapshots {
         }
     }
 
+    /// Stores one historical interval snapshot and enforces the configured retention bound.
+    /// The caller holds the inventory write lock for the complete update.
     fn save_interval_snapshot_locked(&self, inner: &mut SnapshotsInner, block_n: u64, snapshot: SnapshotRef) {
         tracing::debug!("Saving interval snapshot at {block_n:?}");
         inner.historical.insert(block_n, snapshot);
@@ -116,6 +120,8 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Pins the current head as the sole durable exact snapshot for parallel-Merkle roots.
+    /// Requests for a non-head block are logged and leave the inventory unchanged.
     pub fn pin_head(&self, block_n: u64) {
         let mut inner = self.inner.write().expect("Poisoned lock");
         if inner.head_block_n != Some(block_n) {
@@ -151,6 +157,8 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Rebuilds the head snapshot after a reorg and drops all snapshots above its target.
+    /// Lower historical and exact entries remain available as root floors.
     pub fn rewind_to(&self, block_n: u64) {
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
         let mut inner = self.inner.write().expect("Poisoned lock");
@@ -171,6 +179,8 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Resets all retained snapshots and installs a fresh empty-base snapshot.
+    /// This is used only when the canonical chain itself becomes empty.
     pub fn rewind_to_empty(&self) {
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
         let mut inner = self.inner.write().expect("Poisoned lock");
@@ -183,6 +193,8 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Returns the exact snapshot for a block, including the live head and historical matches.
+    /// A `None` block selects the explicitly retained empty base.
     pub fn get_exact(&self, block_n: Option<u64>) -> Option<SnapshotRef> {
         let inner = self.inner.read().expect("Poisoned lock");
         match block_n {
@@ -193,6 +205,8 @@ impl Snapshots {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Returns the newest runtime snapshot no later than the requested block.
+    /// Exact and historical candidates are compared by block number before cloning.
     pub fn get_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
         let inner = self.inner.read().expect("Poisoned lock");
         match max_block_n {
@@ -243,6 +257,8 @@ impl Snapshots {
         }
     }
 
+    /// Returns a count-and-range summary of snapshots currently retained by the manager.
+    /// The result contains metadata only and does not clone or expose RocksDB snapshot handles.
     pub fn inventory(&self) -> SnapshotInventory {
         let inner = self.inner.read().expect("Poisoned lock");
         SnapshotInventory {

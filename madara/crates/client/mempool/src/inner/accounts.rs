@@ -173,6 +173,8 @@ pub struct Accounts {
 }
 
 impl Accounts {
+    /// Iterates over accounts which currently own queued mempool transactions.
+    /// The iterator borrows the account map and does not impose an ordering.
     pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {
         self.accounts.keys()
     }

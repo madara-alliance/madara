@@ -50,6 +50,8 @@ pub struct SyncControlMetrics {
 }
 
 impl SyncMetrics {
+    /// Registers sync throughput and per-block timing instruments for a new session.
+    /// The supplied starting block anchors subsequent average-duration calculations.
     pub fn register(starting_block: u64) -> Self {
         let meter = global::meter_with_scope(
             InstrumentationScope::builder("crates.sync.opentelemetry")
@@ -134,6 +136,8 @@ impl SyncMetrics {
         }
     }
 
+    /// Records timing, transaction, event, and gas-price values for one imported block.
+    /// The update also advances the in-process throughput counter and timing cursor.
     pub fn update(&mut self, block_n: u64, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
         let now = Instant::now();
 
@@ -168,6 +172,8 @@ impl SyncMetrics {
 }
 
 impl SyncControlMetrics {
+    /// Registers reorg, recovery, and common-ancestor control-plane instruments.
+    /// These metrics are process-global and intentionally independent of one sync session.
     fn register() -> Self {
         let meter = global::meter_with_scope(
             InstrumentationScope::builder("crates.sync.control.opentelemetry")
@@ -236,6 +242,8 @@ impl SyncControlMetrics {
 
 static CONTROL_METRICS: LazyLock<SyncControlMetrics> = LazyLock::new(SyncControlMetrics::register);
 
+/// Returns the process-wide synchronization control metrics registry.
+/// The registry is initialized lazily on first use and shared thereafter.
 pub fn control_metrics() -> &'static SyncControlMetrics {
     &CONTROL_METRICS
 }

@@ -10,6 +10,8 @@ use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
 use std::{collections::HashMap, sync::Arc};
 
+/// Returns true only for an adjacent preconfirmed frontier advance.
+/// Non-adjacent changes are treated as replacement or rollback paths by the watcher.
 fn is_preconfirmed_forward_advance(current_preconfirmed_n: Option<u64>, next_preconfirmed_n: Option<u64>) -> bool {
     matches!(
         (current_preconfirmed_n, next_preconfirmed_n),
@@ -25,6 +27,8 @@ struct ChainWatcherBranchEffects {
 }
 
 impl ChainWatcherBranchEffects {
+    /// Creates an empty per-event effect accumulator with reinsertion enabled.
+    /// Individual watcher branches may disable reinsertion before effects are applied.
     fn new() -> Self {
         Self {
             potentially_removed: HashMap::new(),
@@ -104,6 +108,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
+    /// Updates executed and candidate statuses for one preconfirmed block view.
+    /// Newly observed nonce writes and confirmed hashes are accumulated for deferred application.
     fn update_preconfirmed_block_transaction_statuses(
         &self,
         preconfirmed: &MadaraPreconfirmedBlockView<D>,
@@ -141,6 +147,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
+    /// Adds every candidate from the previous frontier to the pending-removal set.
+    /// A later view update removes candidates that remain present before effects are applied.
     fn mark_candidate_transactions_as_potentially_removed(
         &self,
         preconfirmed: &MadaraPreconfirmedBlockView<D>,
@@ -151,6 +159,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
     }
 
+    /// Collects transactions and nonce rollbacks implied by leaving the previous preconfirmed frontier.
+    /// Adjacent forward progress keeps executed transactions and only reconsiders unexecuted candidates.
     fn collect_previous_preconfirmed_potentially_removed_transactions(
         &self,
         current_internal_frontier: Option<&MadaraBlockView<D>>,
@@ -285,10 +295,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
+    /// Applies nonce changes accumulated while processing one watcher event.
+    /// Keeping this step separate ensures the event branch finishes inspecting storage first.
     async fn apply_nonce_updates(&self, nonce_updates: HashMap<Felt, Felt>) -> anyhow::Result<()> {
         self.update_account_nonces(nonce_updates).await
     }
 
+    /// Requeues or drops transactions absent from the newly observed frontier.
+    /// The selected branch controls reinsertion so rejected candidates cannot cycle indefinitely.
     async fn apply_potentially_removed_transactions(
         &self,
         potentially_removed: HashMap<Felt, Arc<ValidatedTransaction>>,

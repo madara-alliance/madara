@@ -367,6 +367,8 @@ impl BonsaiDatabase for BonsaiDB {
     }
 
     #[tracing::instrument(skip(self, batch))]
+    /// Applies deferred prefix tombstones and the caller's trie mutations in one RocksDB batch.
+    /// Pruning observations are completed with the same success result as the underlying write.
     fn write_batch(&mut self, mut batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         let deferred_prefix_deletes = self.deferred_prefix_deletes.as_mut().map(std::mem::take).unwrap_or_default();
         for deletion in &deferred_prefix_deletes {

@@ -21,6 +21,7 @@ pub(super) struct CloseBlockFacts {
 
 impl CloseBlockFacts {
     /// Reads transaction/event counts and copies resource totals before DB commit.
+    /// The snapshot is immutable input for both close implementations and their logs.
     pub fn collect(
         state: &CurrentBlockState,
         state_diff: &StateDiff,
@@ -51,6 +52,7 @@ impl CloseBlockFacts {
     }
 
     /// Records shape and bouncer gauges that do not depend on close duration.
+    /// Values describe the just-closed block rather than cumulative process totals.
     pub fn record_gauges(&self, metrics: &BlockProductionMetrics) {
         metrics.block_declared_classes_count.record(self.declared_classes as u64, &[]);
         metrics.block_deployed_contracts_count.record(self.deployed_contracts as u64, &[]);
@@ -80,6 +82,7 @@ pub(super) struct CloseDurations {
 
 impl CloseDurations {
     /// Derives every close duration from the timestamps carried by the queue payload.
+    /// Missing optional timestamps leave their corresponding duration absent.
     pub fn capture(
         state: &CurrentBlockState,
         last_execution_finished_at: Option<Instant>,
@@ -103,6 +106,7 @@ impl CloseDurations {
     }
 
     /// Records the DB-close duration shared by both implementations.
+    /// The histogram and latest-value gauge receive the same observation.
     pub fn record_close_preconfirmed(&self, metrics: &BlockProductionMetrics) {
         metrics.close_preconfirmed_duration.record(self.close_preconfirmed.as_secs_f64(), &[]);
         metrics.close_preconfirmed_last.record(self.close_preconfirmed.as_secs_f64(), &[]);
@@ -110,6 +114,7 @@ impl CloseDurations {
 }
 
 /// Records the canonical completion counters and latency histograms for one block.
+/// Serial and parallel close paths call this after the authoritative head advances.
 pub(super) fn record_closed_block_summary_metrics(
     metrics: &BlockProductionMetrics,
     state: &CurrentBlockState,
@@ -151,6 +156,7 @@ pub(super) fn record_closed_block_summary_metrics(
 }
 
 /// Saturates a gas total that cannot be represented by the metrics backend.
+/// A warning identifies the affected metric whenever truncation would otherwise occur.
 fn saturating_u128_to_u64(metric_name: &str, value: u128) -> u64 {
     value.try_into().unwrap_or_else(|_| {
         tracing::warn!("{metric_name} ({value}) exceeds u64::MAX ({}), saturating to u64::MAX for metrics", u64::MAX);

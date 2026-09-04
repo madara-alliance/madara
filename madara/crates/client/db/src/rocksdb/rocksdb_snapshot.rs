@@ -19,6 +19,8 @@ pub struct SnapshotWithDBArc {
 
 #[allow(dead_code)]
 impl SnapshotWithDBArc {
+    /// Builds RocksDB read options bound to this snapshot's raw handle.
+    /// The returned options remain valid because this value owns the backing database reference.
     pub(crate) fn read_options_with_snapshot(&self) -> ReadOptions {
         let mut readopts = ReadOptions::default();
         // Safety: the snapshot originates from the same DB and is alive for the lifetime of this value.

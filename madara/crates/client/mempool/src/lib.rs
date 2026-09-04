@@ -278,6 +278,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
+    /// Reconciles persisted mempool accounts with the latest confirmed and internal preconfirmed nonces.
+    /// Transactions made stale by durable chain progress are removed before normal intake resumes.
     async fn reconcile_loaded_txs_with_chain_head(&self) -> Result<(), anyhow::Error> {
         let contract_addresses = {
             let guard = self.inner.read().await;
@@ -318,6 +320,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.update_account_nonces(nonce_updates).await
     }
 
+    /// Applies canonical account nonces to the inner mempool and collects transactions made stale.
+    /// Metrics, persistence, and status notifications are updated after releasing the write lock.
     async fn update_account_nonces(&self, nonce_updates: HashMap<Felt, Felt>) -> Result<(), anyhow::Error> {
         if nonce_updates.is_empty() {
             return Ok(());
@@ -705,15 +709,6 @@ pub(crate) mod tests {
             None,
             true,
         )
-    }
-
-    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
-        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
-    }
-
-    fn write_invalid_saved_mempool_tx(backend: &mc_db::MadaraBackend) {
-        let cf = backend.db.inner_db().cf_handle("mempool_transactions").expect("mempool column should exist");
-        backend.db.inner_db().put_cf(&cf, b"invalid-key", b"invalid-value").expect("writing invalid row should work");
     }
 
     fn tx_account_with_nonce_and_hash(

@@ -40,6 +40,7 @@ struct ClosePayloadData {
 
 impl BlockProductionTask {
     /// Applies one executor message to the block-production state machine.
+    /// Invalid message/state combinations fail before mutating the tracked block.
     pub(crate) async fn process_reply(
         &mut self,
         reply: ExecutorMessage,
@@ -64,6 +65,7 @@ impl BlockProductionTask {
     }
 
     /// Creates the block-keyed preconfirmed row after validating the executor cursor.
+    /// The new state becomes the only target for subsequent batch appends.
     async fn start_preconfirmed_block(&mut self, exec_ctx: BlockExecutionContext) -> anyhow::Result<()> {
         tracing::debug!("received_executor_start_new_block block_n={}", exec_ctx.block_number);
         let current_state = self.current_state.take().context("No current state")?;
@@ -91,6 +93,7 @@ impl BlockProductionTask {
     }
 
     /// Persists one executor batch and folds its statistics into the open block.
+    /// Transaction results and timing data remain aligned by batch order.
     async fn append_executed_batch(
         &mut self,
         batch: BatchExecutionResult,
@@ -129,6 +132,7 @@ impl BlockProductionTask {
     }
 
     /// Converts a finalized executor block into one bounded close-queue job.
+    /// Parallel preparation inputs are captured before execution advances to later blocks.
     async fn close_block(
         &mut self,
         block_exec_summary: Box<BlockExecutionSummary>,
@@ -198,6 +202,7 @@ impl BlockProductionTask {
     }
 
     /// Captures queue-entry latency after state diff and root inputs are ready.
+    /// The resulting timestamps travel with the close payload for end-to-end metrics.
     fn capture_close_enqueue_timing(
         &self,
         block_n: u64,
@@ -226,6 +231,7 @@ impl BlockProductionTask {
     }
 
     /// Selects a durable snapshot floor and contiguous diff span for root preparation.
+    /// A missing block in the span is rejected instead of silently choosing a stale root input.
     fn prepare_parallel_root_inputs(
         &mut self,
         block_n: u64,
@@ -265,6 +271,7 @@ impl BlockProductionTask {
     }
 
     /// Couples execution output, root inputs, and timings into the queue data contract.
+    /// This is the sole construction point for finalizer-owned close payloads.
     fn build_close_payload(
         &self,
         data: ClosePayloadData,
@@ -291,6 +298,7 @@ impl BlockProductionTask {
     }
 
     /// Records the queue state immediately after a successful enqueue.
+    /// Depth and enqueue counters describe accepted work only.
     fn record_close_enqueued(
         &self,
         close_queue: &FinalizerHandle,
@@ -314,6 +322,7 @@ impl BlockProductionTask {
     }
 
     /// Keeps a parallel completion in block order while execution advances.
+    /// The receiver is appended to the same FIFO frontier as its block payload.
     fn defer_parallel_completion(
         &mut self,
         block_n: u64,
@@ -334,6 +343,7 @@ impl BlockProductionTask {
     }
 
     /// Waits for the sequential DB close before permitting the next block.
+    /// Completion-channel closure is surfaced as an explicit pipeline error.
     async fn await_serial_completion(
         &mut self,
         completion: oneshot::Receiver<anyhow::Result<CloseJobCompletion>>,

@@ -13,22 +13,32 @@ const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 
+/// Returns the Starknet Keccak cache capacity used when no CLI override is supplied.
+/// The default stays aligned with the execution library's own tuning.
 fn default_exec_hash_cache_starknet_keccak_capacity() -> usize {
     starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
 }
 
+/// Returns the two-input Pedersen cache capacity used by default.
+/// The value is sourced from Starknet API to avoid duplicating its tuning.
 fn default_exec_hash_cache_pedersen_pair_capacity() -> usize {
     starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
 }
 
+/// Returns the Pedersen-array cache capacity used by default.
+/// The value is sourced from Starknet API to keep CLI defaults consistent.
 fn default_exec_hash_cache_pedersen_array_capacity() -> usize {
     starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
 }
 
+/// Returns the Poseidon-array cache capacity used by default.
+/// The value is sourced from Starknet API to keep CLI defaults consistent.
 fn default_exec_hash_cache_poseidon_array_capacity() -> usize {
     starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
 }
 
+/// Returns the Cairo-native Pedersen cache capacity used by default.
+/// The value follows the native executor's configured default.
 fn default_exec_hash_cache_cairo_native_pedersen_capacity() -> usize {
     mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
 }
@@ -320,6 +330,8 @@ impl BackendParams {
         Ok(())
     }
 
+    /// Validates nonzero hash-cache capacities whenever memoization is enabled.
+    /// Disabled caches may retain custom capacities, which are accepted with an operator warning.
     fn validate_exec_hash_cache(&self) -> anyhow::Result<()> {
         let capacities = [
             ("starknet_keccak", self.exec_hash_cache_starknet_keccak_capacity),

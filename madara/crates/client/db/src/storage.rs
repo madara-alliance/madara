@@ -139,11 +139,17 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Meta
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
+    /// Returns the durable externally visible head and any projected preconfirmed content.
+    /// Internal runahead is intentionally exposed through backend runtime APIs instead.
     fn get_head_projection(&self) -> Result<StorageHeadProjection>;
+    /// Loads a block-keyed preconfirmed header and its ordered executed transaction content.
+    /// Missing block data returns `None`; incomplete persisted content is reported as an error.
     fn get_preconfirmed_block_data(
         &self,
         block_n: u64,
     ) -> Result<Option<(PreconfirmedHeader, Vec<PreconfirmedExecutedTransaction>)>>;
+    /// Returns the greatest block number with a persisted preconfirmed header.
+    /// This inventory lookup may include internal runahead above the externally projected head.
     fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
@@ -201,14 +207,22 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
+    /// Atomically replaces the durable externally visible chain-head projection.
+    /// Preconfirmed projections include their block-scoped header and executed content.
     fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()>;
+    /// Appends executed content to an explicit preconfirmed block at the supplied transaction index.
+    /// Callers must preserve contiguous indices for deterministic recovery.
     fn append_preconfirmed_content(
         &self,
         block_n: u64,
         start_tx_index: u64,
         txs: &[PreconfirmedExecutedTransaction],
     ) -> Result<()>;
+    /// Writes the header for one block-keyed preconfirmed recovery record.
+    /// Executed transaction content is persisted independently as batches complete.
     fn write_preconfirmed_header(&self, header: &PreconfirmedHeader) -> Result<()>;
+    /// Deletes preconfirmed headers and content at or below a newly durable confirmed tip.
+    /// Rows above the tip are retained so internal runahead remains recoverable.
     fn delete_preconfirmed_rows_up_to(&self, confirmed_tip: u64) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
@@ -262,6 +276,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         protocol_version: StarknetVersion,
     ) -> Result<(Felt, MerklizationTimings)>;
 
+    /// Computes a state root and returns the uncommitted trie overlay for later ordered publication.
+    /// The calculation reads a stable storage base without mutating durable trie state.
     fn compute_global_trie_staged(
         &self,
         state_diff: &StateDiff,
@@ -285,6 +301,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Fetches the latest global state root.
     fn get_state_root_hash(&self) -> Result<Felt>;
+    /// Fetches the latest global state root using the requested protocol-version root rules.
+    /// This preserves historical class-trie behavior across Starknet version transitions.
     fn get_state_root_hash_at_version(&self, protocol_version: StarknetVersion) -> Result<Felt>;
 
     /// Revert the blockchain state to a specific block hash.

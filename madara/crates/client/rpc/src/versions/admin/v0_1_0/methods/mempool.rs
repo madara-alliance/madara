@@ -67,6 +67,8 @@ mod tests {
 
 #[async_trait]
 impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
+    /// Pauses or resumes sequencer mempool intake after enforcing unsafe-RPC access control.
+    /// Bypass and L1-handler sources remain available because the handle changes only mempool mode.
     async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {

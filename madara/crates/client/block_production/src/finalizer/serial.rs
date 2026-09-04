@@ -33,6 +33,7 @@ struct SerialBatchParts {
 
 impl SerialBatch {
     /// Drains immediately available jobs, stopping after the first boundary block.
+    /// The boundary remains the final element so durable flush grouping is preserved.
     fn drain(receiver: &mut mpsc::Receiver<QueuedCloseJob>, first_job: QueuedCloseJob) -> Self {
         let mut jobs = vec![first_job];
         while !jobs.last().is_some_and(|job| job.payload.is_boundary) {
@@ -54,6 +55,7 @@ impl SerialBatch {
     }
 
     /// Separates worker payloads from completion channels without changing order.
+    /// Both vectors retain the exact FIFO order of the drained jobs.
     fn into_parts(self) -> SerialBatchParts {
         let mut payloads = Vec::with_capacity(self.jobs.len());
         let mut completions = Vec::with_capacity(self.jobs.len());
@@ -66,6 +68,7 @@ impl SerialBatch {
 }
 
 /// Runs boundary-limited serial close batches until the sender side is dropped.
+/// Accepted jobs are drained and completed before shutdown returns.
 pub(super) async fn run(
     mut receiver: mpsc::Receiver<QueuedCloseJob>,
     metrics: Arc<BlockProductionMetrics>,
@@ -160,6 +163,7 @@ fn deliver_results(
 }
 
 /// Emits one compact start event for a serial close batch.
+/// Queue-delay aggregates are computed before ownership moves into the executor.
 fn log_batch_started(
     first_block_n: u64,
     last_block_n: u64,
@@ -182,6 +186,7 @@ fn log_batch_started(
 }
 
 /// Emits one compact completion event for a serial close batch.
+/// Success count and execution duration cover the same drained batch.
 fn log_batch_finished(
     first_block_n: u64,
     last_block_n: u64,

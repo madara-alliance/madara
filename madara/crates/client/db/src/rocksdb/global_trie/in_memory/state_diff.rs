@@ -15,7 +15,9 @@ struct StateDiffAccumulator {
 }
 
 impl StateDiffAccumulator {
-    fn apply_state_diff(&mut self, state_diff: &StateDiff) {
+    /// Emits the detailed input trace used to diagnose cumulative-root mismatches.
+    /// Logging is intentionally separate from mutation so the merge rules stay reviewable.
+    fn log_input(state_diff: &StateDiff) {
         tracing::debug!(
             "parallel_state_diff_apply input storage_diff_contracts={} storage_entries={} deployed_contracts={} replaced_classes={} declared_classes={} migrated_compiled_classes={} nonces={} old_declared_contracts={}",
             state_diff.storage_diffs.len(),
@@ -71,7 +73,12 @@ impl StateDiffAccumulator {
                 nonce
             );
         }
+    }
 
+    /// Applies one block's state changes with last-write-wins semantics per state key.
+    /// Deployment provenance and class migration provenance are retained for serialization.
+    fn apply_state_diff(&mut self, state_diff: &StateDiff) {
+        Self::log_input(state_diff);
         for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
             let storage = self.storage_diffs.entry(*address).or_default();
             for StorageEntry { key, value } in storage_entries {
@@ -99,6 +106,8 @@ impl StateDiffAccumulator {
         }
     }
 
+    /// Serializes the accumulated maps into deterministic, address-sorted state-diff vectors.
+    /// Sorting keeps root inputs stable regardless of hash-map iteration order.
     fn to_state_diff(&self) -> StateDiff {
         let mut storage_diffs: Vec<_> = self
             .storage_diffs
@@ -158,6 +167,13 @@ impl StateDiffAccumulator {
             migrated_compiled_classes,
         };
 
+        Self::log_output(&squashed);
+        squashed
+    }
+
+    /// Emits the detailed output trace used to diagnose a squashed-diff mismatch.
+    /// The trace mirrors `log_input` so each state category can be compared directly.
+    fn log_output(squashed: &StateDiff) {
         tracing::debug!(
             "parallel_state_diff_squashed output storage_diff_contracts={} storage_entries={} deployed_contracts={} replaced_classes={} declared_classes={} migrated_compiled_classes={} nonces={} old_declared_contracts={}",
             squashed.storage_diffs.len(),
@@ -215,11 +231,11 @@ impl StateDiffAccumulator {
                 nonce
             );
         }
-
-        squashed
     }
 }
 
+/// Squashes an ordered diff sequence into one deterministic last-write-wins diff.
+/// Earlier values are retained only when no later block updates the same state key.
 pub fn squash_state_diffs<'a>(state_diffs: impl IntoIterator<Item = &'a StateDiff>) -> StateDiff {
     let mut accumulator = StateDiffAccumulator::default();
     for state_diff in state_diffs {
@@ -228,6 +244,8 @@ pub fn squash_state_diffs<'a>(state_diffs: impl IntoIterator<Item = &'a StateDif
     accumulator.to_state_diff()
 }
 
+/// Returns the cumulative squashed diff after every input block in sequence.
+/// Entry `i` therefore represents applying all diffs from the start through `i`.
 pub fn cumulative_squashed_state_diffs<'a>(state_diffs: impl IntoIterator<Item = &'a StateDiff>) -> Vec<StateDiff> {
     let mut accumulator = StateDiffAccumulator::default();
     let mut out = Vec::new();

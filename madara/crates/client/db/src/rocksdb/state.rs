@@ -104,6 +104,8 @@ impl RocksDBStorageInner {
         Ok(n.transpose()?.transpose()?)
     }
 
+    /// Resolves the newest historical value matching a reversed block-key prefix from a fixed snapshot.
+    /// Deserialization and iterator failures are surfaced rather than falling back to live storage.
     fn db_history_kv_resolve_from_snapshot<V: serde::de::DeserializeOwned + 'static>(
         &self,
         snapshot: &SnapshotRef,
@@ -144,6 +146,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, snapshot))]
+    /// Reads a contract nonce at a block from an immutable RocksDB snapshot.
+    /// Snapshot reads provide the stable base required by concurrent root computation.
     pub(super) fn get_contract_nonce_at_from_snapshot(
         &self,
         snapshot: &SnapshotRef,
@@ -163,6 +167,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, snapshot))]
+    /// Reads a contract class hash at a block from an immutable RocksDB snapshot.
+    /// The lookup shares historical-key semantics with the live backend read path.
     pub(super) fn get_contract_class_hash_at_from_snapshot(
         &self,
         snapshot: &SnapshotRef,

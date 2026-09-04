@@ -1,6 +1,7 @@
 //! Mutable state accumulated while the executor is building one block.
 
 use super::*;
+use crate::util::ExecutionStats;
 
 impl CurrentBlockState {
     /// Starts empty aggregation state for one executor block.
@@ -15,7 +16,48 @@ impl CurrentBlockState {
             last_execution_finished_at: None,
         }
     }
-    /// Process the execution result, merging it with the current pending state
+    /// Persists successful execution records into this block's durable preconfirmed entry.
+    ///
+    /// Persistence runs on Rayon because the backend write path is synchronous.
+    async fn persist_executed_transactions(
+        &self,
+        executed: Vec<PreconfirmedExecutedTransaction>,
+    ) -> anyhow::Result<()> {
+        let backend = Arc::clone(&self.backend);
+        let block_number = self.block_number;
+        global_spawn_rayon_task(move || {
+            backend
+                .write_access()
+                .append_to_preconfirmed(block_number, &executed, /* candidates */ [])
+                .context("Appending to preconfirmed block")
+        })
+        .await
+    }
+
+    /// Records the aggregate execution result for one batch.
+    ///
+    /// Empty batches stay silent because they carry no useful production timing.
+    fn log_batch_stats(&self, stats: &ExecutionStats) {
+        if stats.n_executed == 0 {
+            return;
+        }
+        tracing::debug!(
+            txs_executed_in_batch = stats.n_executed,
+            txs_added_to_block = stats.n_added_to_block,
+            txs_reverted = stats.n_reverted,
+            txs_rejected = stats.n_rejected,
+            batch_exec_duration_ms = stats.exec_duration.as_secs_f64() * 1000.0,
+            "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
+            stats.n_added_to_block,
+            self.block_number,
+            stats.exec_duration,
+        );
+        tracing::debug!("Tick stats {:?}", stats);
+    }
+
+    /// Converts one executor batch into durable preconfirmed transactions and appends them.
+    ///
+    /// Rejected executions are omitted, while consumed L1 nonces remain recorded even on revert.
     pub async fn append_batch(&mut self, mut batch: BatchExecutionResult) -> anyhow::Result<()> {
         let mut executed = vec![];
 
@@ -96,31 +138,9 @@ impl CurrentBlockState {
             }
         }
 
-        let backend = self.backend.clone();
-        let block_number = self.block_number;
-        global_spawn_rayon_task(move || {
-            backend
-                .write_access()
-                .append_to_preconfirmed(block_number, &executed, /* candidates */ [])
-                .context("Appending to preconfirmed block")
-        })
-        .await?;
-
+        self.persist_executed_transactions(executed).await?;
         let stats = mem::take(&mut batch.stats);
-        if stats.n_executed > 0 {
-            tracing::debug!(
-                txs_executed_in_batch = stats.n_executed,
-                txs_added_to_block = stats.n_added_to_block,
-                txs_reverted = stats.n_reverted,
-                txs_rejected = stats.n_rejected,
-                batch_exec_duration_ms = stats.exec_duration.as_secs_f64() * 1000.0,
-                "🧮 Executed and added {} transaction(s) to the preconfirmed block at height {} - {:.3?}",
-                stats.n_added_to_block,
-                self.block_number,
-                stats.exec_duration,
-            );
-            tracing::debug!("Tick stats {:?}", stats);
-        }
+        self.log_batch_stats(&stats);
         Ok(())
     }
 }

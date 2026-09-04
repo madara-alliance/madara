@@ -23,6 +23,8 @@ pub enum BoundaryFlushOutcome {
 }
 
 impl BonsaiOverlay {
+    /// Appends one overlay column's puts and deletes to an existing RocksDB transaction batch.
+    /// Column identifiers are resolved through the supplied mapping and rejected when unknown.
     pub(super) fn apply_changed_map_to_batch(
         backend: &RocksDBStorage,
         mapping: &InMemoryColumnMapping,
@@ -43,6 +45,8 @@ impl BonsaiOverlay {
         Ok(())
     }
 
+    /// Persists all contract, storage, and class overlay changes in one RocksDB write batch.
+    /// The overlay remains unchanged so callers can retain it for comparison or retry bookkeeping.
     pub fn flush_to_db(&self, backend: &RocksDBStorage) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         Self::apply_changed_map_to_batch(

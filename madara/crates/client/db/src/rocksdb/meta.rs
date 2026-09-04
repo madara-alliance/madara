@@ -29,6 +29,8 @@ const META_PRECONFIRMED_HEADER_PREFIX: &[u8] = b"PRECONFIRMED_HEADER/";
 const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
 const META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_LATEST_CHECKPOINT";
 
+/// Appends a big-endian block number to a metadata namespace prefix.
+/// Ordered checkpoint scans rely on this stable key representation.
 fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
     let mut key = Vec::with_capacity(prefix.len() + size_of::<u64>());
     key.extend_from_slice(prefix);
@@ -36,6 +38,8 @@ fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
     key
 }
 
+/// Encodes one preconfirmed transaction position into its ordered content key.
+/// Big-endian block and transaction fields preserve iteration order.
 fn preconfirmed_content_key(block_n: u64, tx_index: u16) -> [u8; 10] {
     let mut key = [0u8; 10];
     key[..8].copy_from_slice(&block_n.to_be_bytes());
@@ -43,14 +47,20 @@ fn preconfirmed_content_key(block_n: u64, tx_index: u16) -> [u8; 10] {
     key
 }
 
+/// Returns the inclusive first content key for a preconfirmed block.
+/// Range scans begin at transaction index zero.
 fn preconfirmed_block_range_start(block_n: u64) -> [u8; 10] {
     preconfirmed_content_key(block_n, 0)
 }
 
+/// Returns the exclusive end key for a preconfirmed block's content range.
+/// Saturating arithmetic keeps cleanup safe at the maximum block number.
 fn preconfirmed_block_range_end_exclusive(block_n: u64) -> [u8; 10] {
     preconfirmed_content_key(block_n.saturating_add(1), 0)
 }
 
+/// Decodes a block number and transaction index from a content key.
+/// Malformed key lengths or byte slices are rejected as storage errors.
 fn preconfirmed_content_key_decode(key: &[u8]) -> Result<(u64, u16)> {
     anyhow::ensure!(key.len() == 10, "Malformed preconfirmed content key length: {}", key.len());
     let block_n = u64::from_be_bytes(key[0..8].try_into().context("Malformed preconfirmed block_n bytes")?);
@@ -58,6 +68,8 @@ fn preconfirmed_content_key_decode(key: &[u8]) -> Result<(u64, u16)> {
     Ok((block_n, tx_index))
 }
 
+/// Extracts the block number from a block-keyed preconfirmed header key.
+/// The prefix and encoded number are validated before decoding.
 fn preconfirmed_header_block_n_from_key(key: &[u8]) -> Result<u64> {
     anyhow::ensure!(key.starts_with(META_PRECONFIRMED_HEADER_PREFIX), "Malformed preconfirmed header key prefix");
     Ok(u64::from_be_bytes(
@@ -170,6 +182,7 @@ impl RocksDBStorageInner {
     }
 
     /// Appends a complete head projection replacement to an existing atomic database batch.
+    /// Preconfirmed headers and content use block-keyed rows within the same batch.
     pub(super) fn replace_head_projection_in_batch(
         &self,
         head_projection: &StorageHeadProjection,
@@ -223,6 +236,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Atomically replaces the durable head projection and its block-scoped preconfirmed data.
+    /// The write uses the backend's regular durability options and is flushed by normal lifecycle policy.
     pub(super) fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()> {
         // We need to do all of this in a single write. (atomic)
         let mut batch = WriteBatchWithTransaction::default();
@@ -235,7 +250,8 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    // internal utility method
+    /// Loads head metadata without materializing preconfirmed transaction content.
+    /// The legacy key is migrated lazily into the canonical key in one atomic write.
     #[tracing::instrument(skip(self))]
     pub(super) fn get_head_projection_without_content(&self) -> Result<Option<StoredHeadProjectionWithoutContent>> {
         let meta_col = self.get_column(META_COLUMN);
@@ -257,6 +273,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, txs))]
+    /// Appends executed preconfirmed transactions under an explicit block and starting index.
+    /// Every row is staged in one batch so callers never observe a partial suffix.
     pub(super) fn append_preconfirmed_content(
         &self,
         block_n: u64,
@@ -275,6 +293,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, header))]
+    /// Stores one block-keyed preconfirmed header using the backend's configured write options.
+    /// Transaction content is intentionally persisted through the separate append path.
     pub(super) fn write_preconfirmed_header(&self, header: &PreconfirmedHeader) -> Result<()> {
         self.db.put_cf_opt(
             &self.get_column(META_COLUMN),
@@ -285,6 +305,8 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Loads one block-keyed preconfirmed header and its ordered transaction content.
+    /// A missing header returns `None`; malformed or missing content rows surface as errors.
     pub(super) fn get_preconfirmed_block_data(
         &self,
         block_n: u64,
@@ -321,6 +343,8 @@ impl RocksDBStorageInner {
         Ok(Some((header, content)))
     }
 
+    /// Seeks backward to the newest block-keyed preconfirmed header row.
+    /// Databases without such rows return `None`.
     pub(super) fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let seek_key = meta_key_with_block_n(META_PRECONFIRMED_HEADER_PREFIX, u64::MAX);
@@ -334,6 +358,8 @@ impl RocksDBStorageInner {
         Ok(None)
     }
 
+    /// Deletes preconfirmed transaction and header rows at or below the confirmed tip.
+    /// Range deletion handles content while ordered header iteration removes metadata.
     pub(super) fn delete_preconfirmed_rows_up_to(&self, confirmed_tip: u64) -> Result<()> {
         let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
         let meta_col = self.get_column(META_COLUMN);
@@ -387,6 +413,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Reconstructs the externally visible durable head projection including preconfirmed content.
+    /// Missing metadata maps to an empty chain while malformed persisted rows remain hard errors.
     pub(super) fn get_head_projection(&self) -> Result<StorageHeadProjection> {
         match self.get_head_projection_without_content()? {
             None => Ok(StorageHeadProjection::Empty),
@@ -425,6 +453,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Reads the latest durable trie revision applied to RocksDB.
+    /// Missing metadata is represented as `None`, including an empty database.
     pub(super) fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE)? else {
             return Ok(None);
@@ -433,6 +463,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
+    /// Replaces or clears the latest durable trie revision in one write batch.
+    /// This standalone wrapper delegates batch construction to the shared atomic helper.
     pub(super) fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         self.write_latest_applied_trie_update_in_batch(block_n, &mut batch)?;
@@ -493,6 +525,8 @@ impl RocksDBStorageInner {
         Ok(Some(RuntimeExecutionConfig::from_saved_config(serializable, backend_chain_config)?))
     }
 
+    /// Publishes a monotonic parallel-Merkle checkpoint as one standalone database write.
+    /// Both the per-block marker and latest pointer are staged by the shared batch helper.
     pub(super) fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         self.parallel_merkle_mark_checkpoint_in_batch(block_n, &mut batch)?;
@@ -500,6 +534,8 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Adds a monotonic checkpoint marker and latest-checkpoint pointer to an existing batch.
+    /// Attempts to move the checkpoint backward are rejected before writes are appended.
     pub(super) fn parallel_merkle_mark_checkpoint_in_batch(
         &self,
         block_n: u64,
@@ -523,6 +559,8 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Tests whether the durable metadata contains a checkpoint marker for one block.
+    /// This does not imply that the block is the newest published checkpoint.
     pub(super) fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
         Ok(self
             .db
@@ -533,6 +571,8 @@ impl RocksDBStorageInner {
             .is_some())
     }
 
+    /// Reads the newest checkpoint pointer published by the parallel-Merkle pipeline.
+    /// An empty database or a pipeline that has not reached a boundary returns `None`.
     pub(super) fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>> {
         let Some(res) =
             self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY)?
@@ -542,7 +582,8 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
-    /// Find the latest checkpoint <= target_block_n.
+    /// Finds the newest checkpoint at or below the requested block number.
+    /// Reverse iteration returns `None` when no durable base can cover the target.
     pub(super) fn get_parallel_merkle_checkpoint_floor(&self, target_block_n: u64) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let seek_key = meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n);

@@ -32,6 +32,7 @@ struct RootFinishedLog {
 
 impl BlockProductionTask {
     /// Precomputes one block's Merkle root without mutating confirmed DB state.
+    /// Snapshot selection and diff continuity are captured before entering the blocking pool.
     pub(crate) async fn compute_close_payload_parallel_root(
         metrics: Arc<BlockProductionMetrics>,
         mut payload: QueuedClosePayload,
@@ -96,6 +97,7 @@ impl BlockProductionTask {
 }
 
 /// Executes the blocking root job and maps panics/failures into one metric.
+/// The active-job guard is released regardless of task success.
 async fn spawn_root_computation(request: RootComputationRequest) -> anyhow::Result<RootComputationOutput> {
     let block_n = request.block_n;
     let metrics = Arc::clone(&request.metrics);
@@ -109,6 +111,7 @@ async fn spawn_root_computation(request: RootComputationRequest) -> anyhow::Resu
 }
 
 /// Squashes cumulative diffs and computes a root against the selected snapshot.
+/// The returned overlay is retained only for durable boundary blocks.
 fn compute_root_blocking(request: RootComputationRequest) -> anyhow::Result<RootComputationOutput> {
     let RootComputationRequest {
         backend,
@@ -183,6 +186,7 @@ fn compute_root_blocking(request: RootComputationRequest) -> anyhow::Result<Root
 }
 
 /// Logs dispatch metadata before the root job leaves the async scheduler.
+/// Fields identify the chosen snapshot and cumulative diff window.
 fn log_root_dispatched(
     payload: &QueuedClosePayload,
     squashed_block_count: usize,
@@ -202,6 +206,7 @@ fn log_root_dispatched(
 }
 
 /// Logs timing and concurrency after one blocking root computation finishes.
+/// Durations distinguish queue delay, trie work, and total preparation latency.
 fn log_root_finished(details: RootFinishedLog) {
     let RootFinishedLog {
         block_n,

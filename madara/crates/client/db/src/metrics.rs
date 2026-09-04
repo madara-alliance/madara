@@ -94,223 +94,249 @@ pub struct DbMetrics {
     pub bonsai_prefix_prune_last_revision: Gauge<u64>,
 }
 
+/// Registers a counter from borrowed descriptor strings.
+/// This keeps the metric table compact without changing its exported identity.
+fn register_counter(meter: &opentelemetry::metrics::Meter, name: &str, description: &str, unit: &str) -> Counter<u64> {
+    register_counter_metric_instrument(meter, name.to_owned(), description.to_owned(), unit.to_owned())
+}
+
+/// Registers an integer gauge from borrowed descriptor strings.
+/// This keeps the metric table compact without changing its exported identity.
+fn register_u64_gauge(meter: &opentelemetry::metrics::Meter, name: &str, description: &str, unit: &str) -> Gauge<u64> {
+    register_gauge_metric_instrument(meter, name.to_owned(), description.to_owned(), unit.to_owned())
+}
+
+/// Registers a floating-point gauge from borrowed descriptor strings.
+/// Timing gauges use this variant so sub-second values retain their precision.
+fn register_f64_gauge(meter: &opentelemetry::metrics::Meter, name: &str, description: &str, unit: &str) -> Gauge<f64> {
+    register_gauge_metric_instrument(meter, name.to_owned(), description.to_owned(), unit.to_owned())
+}
+
+/// Registers a floating-point histogram from borrowed descriptor strings.
+/// Default bucket behavior remains owned by the telemetry helper.
+fn register_histogram(
+    meter: &opentelemetry::metrics::Meter,
+    name: &str,
+    description: &str,
+    unit: &str,
+) -> Histogram<f64> {
+    register_histogram_metric_instrument(meter, name.to_owned(), description.to_owned(), unit.to_owned())
+}
+
+/// Registers a u64 histogram with explicit pruning-count or batch-size boundaries.
+/// The supplied static boundary table is copied into the OpenTelemetry builder.
+fn register_u64_histogram(
+    meter: &opentelemetry::metrics::Meter,
+    name: &'static str,
+    description: &'static str,
+    boundaries: &[f64],
+) -> Histogram<u64> {
+    meter.u64_histogram(name).with_description(description).with_boundaries(boundaries.to_vec()).build()
+}
+
+/// Registers an f64 histogram with explicit duration boundaries and a unit.
+/// The supplied static boundary table is copied into the OpenTelemetry builder.
+fn register_f64_histogram(
+    meter: &opentelemetry::metrics::Meter,
+    name: &'static str,
+    description: &'static str,
+    unit: &'static str,
+    boundaries: &[f64],
+) -> Histogram<f64> {
+    meter.f64_histogram(name).with_description(description).with_unit(unit).with_boundaries(boundaries.to_vec()).build()
+}
+
+/// Expands the declarative database metric table without hiding runtime control flow.
+/// Keeping descriptors together makes name, unit, and bucket changes easy to review.
+macro_rules! register_db_metrics {
+    ($meter:expr) => {
+        Self {
+            head_projection_violation_count: register_counter(
+                $meter,
+                "head_projection_violation_total",
+                "Number of head projection invariant violations",
+                "violation",
+            ),
+            #[cfg(test)]
+            head_projection_violation_count_test: AtomicU64::new(0),
+            apply_to_global_trie_duration: register_histogram(
+                $meter,
+                "apply_to_global_trie_duration_seconds",
+                "Total time for global trie merklization",
+                "s",
+            ),
+            contract_trie_root_duration: register_histogram(
+                $meter,
+                "contract_trie_root_duration_seconds",
+                "Time to compute contract trie root",
+                "s",
+            ),
+            class_trie_root_duration: register_histogram(
+                $meter,
+                "class_trie_root_duration_seconds",
+                "Time to compute class trie root",
+                "s",
+            ),
+            contract_storage_trie_commit_duration: register_histogram(
+                $meter,
+                "contract_storage_trie_commit_duration_seconds",
+                "Time to commit contract storage trie",
+                "s",
+            ),
+            contract_trie_commit_duration: register_histogram(
+                $meter,
+                "contract_trie_commit_duration_seconds",
+                "Time to commit contract trie",
+                "s",
+            ),
+            class_trie_commit_duration: register_histogram(
+                $meter,
+                "class_trie_commit_duration_seconds",
+                "Time to commit class trie",
+                "s",
+            ),
+            block_commitments_compute_duration: register_histogram(
+                $meter,
+                "block_commitments_compute_duration_seconds",
+                "Total time to compute block commitments",
+                "s",
+            ),
+            block_hash_compute_duration: register_histogram(
+                $meter,
+                "block_hash_compute_duration_seconds",
+                "Time to compute block hash",
+                "s",
+            ),
+            get_full_block_without_state_diff_duration: register_histogram(
+                $meter,
+                "get_full_block_without_state_diff_duration_seconds",
+                "Time to fetch full block without state diff",
+                "s",
+            ),
+            db_write_block_parts_duration: register_histogram(
+                $meter,
+                "db_write_block_parts_duration_seconds",
+                "Time to write block parts to database",
+                "s",
+            ),
+            get_full_block_without_state_diff_last: register_f64_gauge(
+                $meter,
+                "get_full_block_without_state_diff_last_seconds",
+                "Last block: time to fetch full block without state diff",
+                "s",
+            ),
+            block_commitments_compute_last: register_f64_gauge(
+                $meter,
+                "block_commitments_compute_last_seconds",
+                "Last block: time to compute block commitments",
+                "s",
+            ),
+            apply_to_global_trie_last: register_f64_gauge(
+                $meter,
+                "apply_to_global_trie_last_seconds",
+                "Last block: total time for global trie merklization",
+                "s",
+            ),
+            block_hash_compute_last: register_f64_gauge(
+                $meter,
+                "block_hash_compute_last_seconds",
+                "Last block: time to compute block hash",
+                "s",
+            ),
+            db_write_block_parts_last: register_f64_gauge(
+                $meter,
+                "db_write_block_parts_last_seconds",
+                "Last block: time to write block parts to database",
+                "s",
+            ),
+            contract_trie_root_last: register_f64_gauge(
+                $meter,
+                "contract_trie_root_last_seconds",
+                "Last block: time to compute contract trie root",
+                "s",
+            ),
+            class_trie_root_last: register_f64_gauge(
+                $meter,
+                "class_trie_root_last_seconds",
+                "Last block: time to compute class trie root",
+                "s",
+            ),
+            contract_storage_trie_commit_last: register_f64_gauge(
+                $meter,
+                "contract_storage_trie_commit_last_seconds",
+                "Last block: time to commit contract storage trie",
+                "s",
+            ),
+            contract_trie_commit_last: register_f64_gauge(
+                $meter,
+                "contract_trie_commit_last_seconds",
+                "Last block: time to commit contract trie",
+                "s",
+            ),
+            class_trie_commit_last: register_f64_gauge(
+                $meter,
+                "class_trie_commit_last_seconds",
+                "Last block: time to commit class trie",
+                "s",
+            ),
+            bonsai_prefix_prune_operations: register_counter(
+                $meter,
+                "bonsai_prefix_prune_operations",
+                "Number of Bonsai trie-log prefix removals",
+                "",
+            ),
+            bonsai_prefix_prune_last_revision: register_u64_gauge(
+                $meter,
+                "bonsai_prefix_prune_last_revision",
+                "Latest Bonsai trie-log revision fully removed by prefix",
+                "",
+            ),
+            bonsai_prefix_prune_entries_scanned: register_u64_histogram(
+                $meter,
+                "bonsai_prefix_prune_entries_scanned",
+                "RocksDB iterator entries examined by each Bonsai trie-log prefix removal",
+                BONSAI_COUNT_BUCKETS,
+            ),
+            bonsai_prefix_prune_batch_operations: register_u64_histogram(
+                $meter,
+                "bonsai_prefix_prune_batch_operations",
+                "RocksDB write-batch operations generated by each Bonsai trie-log prefix removal",
+                BONSAI_COUNT_BUCKETS,
+            ),
+            bonsai_prefix_prune_batch_bytes: register_u64_histogram(
+                $meter,
+                "bonsai_prefix_prune_batch_bytes",
+                "Serialized RocksDB write-batch size generated by each Bonsai trie-log prefix removal",
+                BONSAI_BATCH_BYTES_BUCKETS,
+            ),
+            bonsai_prefix_prune_duration: register_f64_histogram(
+                $meter,
+                "bonsai_prefix_prune_duration_seconds",
+                "Time spent scanning and deleting one Bonsai trie-log prefix",
+                "s",
+                BONSAI_DURATION_BUCKETS,
+            ),
+        }
+    };
+}
+
 impl DbMetrics {
+    /// Registers database timing, invariant, and trie-log pruning metrics.
+    /// Names and histogram boundaries remain stable for existing dashboards.
     pub fn register() -> Self {
         let meter = global::meter_with_scope(
             InstrumentationScope::builder("crates.db.opentelemetry")
                 .with_attributes([KeyValue::new("crate", "db")])
                 .build(),
         );
-
-        let head_projection_violation_count = register_counter_metric_instrument(
-            &meter,
-            "head_projection_violation_total".to_string(),
-            "Number of head projection invariant violations".to_string(),
-            "violation".to_string(),
-        );
-
-        // Merklization timing (Priority 1)
-        let apply_to_global_trie_duration = register_histogram_metric_instrument(
-            &meter,
-            "apply_to_global_trie_duration_seconds".to_string(),
-            "Total time for global trie merklization".to_string(),
-            "s".to_string(),
-        );
-        let contract_trie_root_duration = register_histogram_metric_instrument(
-            &meter,
-            "contract_trie_root_duration_seconds".to_string(),
-            "Time to compute contract trie root".to_string(),
-            "s".to_string(),
-        );
-        let class_trie_root_duration = register_histogram_metric_instrument(
-            &meter,
-            "class_trie_root_duration_seconds".to_string(),
-            "Time to compute class trie root".to_string(),
-            "s".to_string(),
-        );
-        let contract_storage_trie_commit_duration = register_histogram_metric_instrument(
-            &meter,
-            "contract_storage_trie_commit_duration_seconds".to_string(),
-            "Time to commit contract storage trie".to_string(),
-            "s".to_string(),
-        );
-        let contract_trie_commit_duration = register_histogram_metric_instrument(
-            &meter,
-            "contract_trie_commit_duration_seconds".to_string(),
-            "Time to commit contract trie".to_string(),
-            "s".to_string(),
-        );
-        let class_trie_commit_duration = register_histogram_metric_instrument(
-            &meter,
-            "class_trie_commit_duration_seconds".to_string(),
-            "Time to commit class trie".to_string(),
-            "s".to_string(),
-        );
-
-        // Block hash calculation (Priority 2)
-        let block_commitments_compute_duration = register_histogram_metric_instrument(
-            &meter,
-            "block_commitments_compute_duration_seconds".to_string(),
-            "Total time to compute block commitments".to_string(),
-            "s".to_string(),
-        );
-        let block_hash_compute_duration = register_histogram_metric_instrument(
-            &meter,
-            "block_hash_compute_duration_seconds".to_string(),
-            "Time to compute block hash".to_string(),
-            "s".to_string(),
-        );
-
-        // Data fetching (Priority 3)
-        let get_full_block_without_state_diff_duration = register_histogram_metric_instrument(
-            &meter,
-            "get_full_block_without_state_diff_duration_seconds".to_string(),
-            "Time to fetch full block without state diff".to_string(),
-            "s".to_string(),
-        );
-        let db_write_block_parts_duration = register_histogram_metric_instrument(
-            &meter,
-            "db_write_block_parts_duration_seconds".to_string(),
-            "Time to write block parts to database".to_string(),
-            "s".to_string(),
-        );
-
-        // Gauges for exact per-block values - Main 5 sequential operations
-        let get_full_block_without_state_diff_last = register_gauge_metric_instrument(
-            &meter,
-            "get_full_block_without_state_diff_last_seconds".to_string(),
-            "Last block: time to fetch full block without state diff".to_string(),
-            "s".to_string(),
-        );
-        let block_commitments_compute_last = register_gauge_metric_instrument(
-            &meter,
-            "block_commitments_compute_last_seconds".to_string(),
-            "Last block: time to compute block commitments".to_string(),
-            "s".to_string(),
-        );
-        let apply_to_global_trie_last = register_gauge_metric_instrument(
-            &meter,
-            "apply_to_global_trie_last_seconds".to_string(),
-            "Last block: total time for global trie merklization".to_string(),
-            "s".to_string(),
-        );
-        let block_hash_compute_last = register_gauge_metric_instrument(
-            &meter,
-            "block_hash_compute_last_seconds".to_string(),
-            "Last block: time to compute block hash".to_string(),
-            "s".to_string(),
-        );
-        let db_write_block_parts_last = register_gauge_metric_instrument(
-            &meter,
-            "db_write_block_parts_last_seconds".to_string(),
-            "Last block: time to write block parts to database".to_string(),
-            "s".to_string(),
-        );
-
-        // Gauges for Merklization Deep Dive
-        let contract_trie_root_last = register_gauge_metric_instrument(
-            &meter,
-            "contract_trie_root_last_seconds".to_string(),
-            "Last block: time to compute contract trie root".to_string(),
-            "s".to_string(),
-        );
-        let class_trie_root_last = register_gauge_metric_instrument(
-            &meter,
-            "class_trie_root_last_seconds".to_string(),
-            "Last block: time to compute class trie root".to_string(),
-            "s".to_string(),
-        );
-        let contract_storage_trie_commit_last = register_gauge_metric_instrument(
-            &meter,
-            "contract_storage_trie_commit_last_seconds".to_string(),
-            "Last block: time to commit contract storage trie".to_string(),
-            "s".to_string(),
-        );
-        let contract_trie_commit_last = register_gauge_metric_instrument(
-            &meter,
-            "contract_trie_commit_last_seconds".to_string(),
-            "Last block: time to commit contract trie".to_string(),
-            "s".to_string(),
-        );
-        let class_trie_commit_last = register_gauge_metric_instrument(
-            &meter,
-            "class_trie_commit_last_seconds".to_string(),
-            "Last block: time to commit class trie".to_string(),
-            "s".to_string(),
-        );
-
-        let bonsai_prefix_prune_operations = register_counter_metric_instrument(
-            &meter,
-            "bonsai_prefix_prune_operations".to_string(),
-            "Number of Bonsai trie-log prefix removals".to_string(),
-            "".to_string(),
-        );
-        let bonsai_prefix_prune_entries_scanned = meter
-            .u64_histogram("bonsai_prefix_prune_entries_scanned")
-            .with_description("RocksDB iterator entries examined by each Bonsai trie-log prefix removal")
-            .with_boundaries(BONSAI_COUNT_BUCKETS.to_vec())
-            .build();
-        let bonsai_prefix_prune_batch_operations = meter
-            .u64_histogram("bonsai_prefix_prune_batch_operations")
-            .with_description("RocksDB write-batch operations generated by each Bonsai trie-log prefix removal")
-            .with_boundaries(BONSAI_COUNT_BUCKETS.to_vec())
-            .build();
-        let bonsai_prefix_prune_batch_bytes = meter
-            .u64_histogram("bonsai_prefix_prune_batch_bytes")
-            .with_description("Serialized RocksDB write-batch size generated by each Bonsai trie-log prefix removal")
-            .with_boundaries(BONSAI_BATCH_BYTES_BUCKETS.to_vec())
-            .build();
-        let bonsai_prefix_prune_duration = meter
-            .f64_histogram("bonsai_prefix_prune_duration_seconds")
-            .with_description("Time spent scanning and deleting one Bonsai trie-log prefix")
-            .with_unit("s")
-            .with_boundaries(BONSAI_DURATION_BUCKETS.to_vec())
-            .build();
-        let bonsai_prefix_prune_last_revision = register_gauge_metric_instrument(
-            &meter,
-            "bonsai_prefix_prune_last_revision".to_string(),
-            "Latest Bonsai trie-log revision fully removed by prefix".to_string(),
-            "".to_string(),
-        );
-
-        Self {
-            head_projection_violation_count,
-            #[cfg(test)]
-            head_projection_violation_count_test: AtomicU64::new(0),
-            apply_to_global_trie_duration,
-            contract_trie_root_duration,
-            class_trie_root_duration,
-            contract_storage_trie_commit_duration,
-            contract_trie_commit_duration,
-            class_trie_commit_duration,
-            block_commitments_compute_duration,
-            block_hash_compute_duration,
-            get_full_block_without_state_diff_duration,
-            db_write_block_parts_duration,
-            // Gauges
-            get_full_block_without_state_diff_last,
-            block_commitments_compute_last,
-            apply_to_global_trie_last,
-            block_hash_compute_last,
-            db_write_block_parts_last,
-            contract_trie_root_last,
-            class_trie_root_last,
-            contract_storage_trie_commit_last,
-            contract_trie_commit_last,
-            class_trie_commit_last,
-            bonsai_prefix_prune_operations,
-            bonsai_prefix_prune_entries_scanned,
-            bonsai_prefix_prune_batch_operations,
-            bonsai_prefix_prune_batch_bytes,
-            bonsai_prefix_prune_duration,
-            bonsai_prefix_prune_last_revision,
-        }
+        register_db_metrics!(&meter)
     }
 }
 
 static METRICS: LazyLock<DbMetrics> = LazyLock::new(DbMetrics::register);
 
-/// Get the global database metrics instance
+/// Returns the lazily initialized global database metric set.
+/// Initialization occurs on first access and is shared process-wide.
 pub fn metrics() -> &'static DbMetrics {
     &METRICS
 }

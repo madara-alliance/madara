@@ -27,10 +27,14 @@ pub struct InMemoryColumnMapping {
 }
 
 impl InMemoryColumnMapping {
+    /// Returns the Bonsai column mapping for the global contract trie.
+    /// Trie, flat, and log identifiers retain the durable RocksDB layout.
     pub fn contract() -> Self {
         Self { flat: BONSAI_CONTRACT_FLAT_COLUMN, trie: BONSAI_CONTRACT_TRIE_COLUMN, log: BONSAI_CONTRACT_LOG_COLUMN }
     }
 
+    /// Returns the Bonsai column mapping for per-contract storage tries.
+    /// Each in-memory overlay key can therefore be resolved back to its durable column.
     pub fn contract_storage() -> Self {
         Self {
             flat: BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
@@ -39,10 +43,14 @@ impl InMemoryColumnMapping {
         }
     }
 
+    /// Returns the Bonsai column mapping for the global class trie.
+    /// Trie, flat, and log identifiers retain the durable RocksDB layout.
     pub fn class() -> Self {
         Self { flat: BONSAI_CLASS_FLAT_COLUMN, trie: BONSAI_CLASS_TRIE_COLUMN, log: BONSAI_CLASS_LOG_COLUMN }
     }
 
+    /// Maps a logical Bonsai key variant to its durable RocksDB column.
+    /// All overlay reads use this mapping before consulting the pinned snapshot.
     pub(super) fn map(&self, key: &DatabaseKey) -> &Column {
         match key {
             DatabaseKey::Trie(_) => &self.trie,
@@ -51,6 +59,8 @@ impl InMemoryColumnMapping {
         }
     }
 
+    /// Resolves the compact overlay column identifier into its durable RocksDB column.
+    /// Unknown identifiers return `None` so corrupted overlay data cannot be misrouted.
     pub(super) fn map_from_column_id(&self, column_id: u8) -> Option<&Column> {
         match column_id {
             OVERLAY_TRIE_COLUMN_ID => Some(&self.trie),
@@ -61,6 +71,8 @@ impl InMemoryColumnMapping {
     }
 }
 
+/// Converts a Bonsai database key into the overlay's compact column-and-bytes representation.
+/// The encoded column identifier is later resolved through [`InMemoryColumnMapping`].
 pub(super) fn to_changed_key(key: &DatabaseKey) -> OverlayKey {
     (
         match key {
@@ -131,11 +143,15 @@ impl InMemoryBonsaiDb {
         Self::with_mapping(snapshot, column_mapping, Arc::new(DashMap::new()), true)
     }
 
+    /// Reads a key from the immutable snapshot backing this overlay.
+    /// Overlay changes are intentionally ignored by this lower-level lookup.
     fn get_from_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
         Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(ByteVec::from))
     }
 
+    /// Returns the overlay's tri-state value for a key: absent, deleted, or replaced.
+    /// Callers use the outer option to distinguish an untouched key from a deletion.
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
         self.changed.get(&to_changed_key(key)).map(|v| v.value().clone())
     }
@@ -165,6 +181,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         self.get_from_snapshot(key)
     }
 
+    /// Merges snapshot rows and in-memory overlay changes for one logical Bonsai prefix.
+    /// Overlay deletions remove snapshot rows, and the returned key order is deterministic.
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         let prefix_key = to_changed_key(prefix);
         let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);
@@ -241,6 +259,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         Ok(previous)
     }
 
+    /// Marks every snapshot and overlay key under a logical prefix as deleted in memory.
+    /// No RocksDB mutation occurs until the completed overlay is explicitly flushed.
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         let prefix_key = to_changed_key(prefix);
         let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);

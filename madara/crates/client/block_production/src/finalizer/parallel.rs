@@ -56,6 +56,7 @@ struct ParallelFinalizer {
 
 impl ParallelFinalizer {
     /// Creates an empty scheduler over the supplied bounded receiver.
+    /// No work is active until the first job is accepted from the channel.
     fn new(
         receiver: mpsc::Receiver<QueuedCloseJob>,
         metrics: Arc<BlockProductionMetrics>,
@@ -80,6 +81,7 @@ impl ParallelFinalizer {
     }
 
     /// Runs until the input is closed and every accepted block is committed.
+    /// Root preparation may finish out of order, while commit delivery remains strictly ordered.
     async fn run(mut self) -> Result<()> {
         loop {
             self.dispatch_waiting_roots();
@@ -105,6 +107,7 @@ impl ParallelFinalizer {
     }
 
     /// Starts queued root jobs until the configured worker limit is reached.
+    /// Jobs stay FIFO at dispatch even though their computations may finish in any order.
     fn dispatch_waiting_roots(&mut self) {
         while self.active_roots.len() < self.root_workers {
             let Some(job) = self.waiting_jobs.pop_front() else {
@@ -115,6 +118,7 @@ impl ParallelFinalizer {
     }
 
     /// Moves one waiting job into the active root-future set.
+    /// Queue wait and in-flight gauges are recorded at the ownership transition.
     fn dispatch_root(&mut self, job: QueuedCloseJob) {
         let queue_wait = job.payload.enqueued_at.elapsed().as_secs_f64();
         self.metrics.close_queue_wait_duration.record(queue_wait, &[]);
@@ -145,6 +149,7 @@ impl ParallelFinalizer {
     }
 
     /// Commits consecutive ready blocks, stopping at the first ordering gap.
+    /// Later ready results remain buffered until the expected block is available.
     async fn commit_ready_in_order(&mut self) -> Result<()> {
         while let Some(block_n) = self.next_commit_block_n {
             let Some(entry) = self.ready_to_commit.remove(&block_n) else {
@@ -157,6 +162,7 @@ impl ParallelFinalizer {
     }
 
     /// Delivers one prepared root through the commit function or fails the worker.
+    /// Either outcome completes the caller's receiver exactly once.
     async fn commit_one(&mut self, block_n: u64, entry: ReadyCommitEntry) -> Result<()> {
         match entry {
             ReadyCommitEntry::Success { output, completion, in_flight_guard, ready_at } => {
@@ -182,6 +188,7 @@ impl ParallelFinalizer {
     }
 
     /// Sends a commit result to its caller and converts commit failure into worker failure.
+    /// The in-flight guard is dropped only after delivery has been attempted.
     fn deliver_commit_result(
         &self,
         block_n: u64,
@@ -214,6 +221,7 @@ impl ParallelFinalizer {
     }
 
     /// Accepts a newly received job or marks the input as closed.
+    /// The first accepted block establishes the ordered commit frontier.
     fn accept_received_job(&mut self, maybe_job: Option<QueuedCloseJob>) {
         let Some(job) = maybe_job else {
             self.receiver_closed = true;
@@ -234,6 +242,7 @@ impl ParallelFinalizer {
     }
 
     /// Stores one completed root result until its block reaches the commit frontier.
+    /// Duplicate block results are rejected because they would make ordering ambiguous.
     fn record_root_result(&mut self, result: RootTaskResult) -> Result<()> {
         let RootTaskResult { block_n, completion, in_flight_guard, result } = result;
         if self.ready_to_commit.contains_key(&block_n) {
@@ -306,6 +315,7 @@ impl ParallelFinalizer {
 }
 
 /// Runs the parallel scheduler until all accepted close jobs commit or one fails.
+/// Shutdown drains queued and active root work before returning.
 pub(super) async fn run(
     receiver: mpsc::Receiver<QueuedCloseJob>,
     metrics: Arc<BlockProductionMetrics>,
@@ -318,6 +328,7 @@ pub(super) async fn run(
 }
 
 /// Records the number of blocks in each parallel scheduler stage.
+/// All stage gauges are emitted together to provide a coherent scheduler snapshot.
 pub(super) fn record_pipeline_gauges(
     metrics: &BlockProductionMetrics,
     active_root_jobs: usize,

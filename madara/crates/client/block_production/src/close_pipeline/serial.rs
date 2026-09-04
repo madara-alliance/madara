@@ -5,6 +5,7 @@ use super::metrics::{record_closed_block_summary_metrics, CloseBlockFacts, Close
 
 impl BlockProductionTask {
     /// Closes one queued block through the existing sequential Merkle/DB path.
+    /// The function returns a completion only after the backend confirms the block.
     async fn execute_close_payload(
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
@@ -47,6 +48,7 @@ impl BlockProductionTask {
     }
 
     /// Processes a boundary-limited serial batch and preserves input result order.
+    /// Each payload still closes independently through the sequential DB contract.
     pub(crate) async fn execute_close_payload_batch(
         metrics: Arc<BlockProductionMetrics>,
         payloads: Vec<QueuedClosePayload>,
@@ -60,6 +62,7 @@ impl BlockProductionTask {
 }
 
 /// Emits the detailed sequential close event from already-collected facts.
+/// Keeping formatting separate leaves the close path focused on persistence.
 fn log_serial_close_complete(
     state: &CurrentBlockState,
     facts: &CloseBlockFacts,

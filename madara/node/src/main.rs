@@ -130,6 +130,47 @@ use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitc
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
+/// Validates startup controls that require privileged administrative RPC access.
+/// This prevents a node from starting paused without an enabled path to resume intake.
+fn validate_runtime_controls(run_cmd: &RunCmd) -> anyhow::Result<()> {
+    if run_cmd.block_production_params.mempool_paused
+        && !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe)
+    {
+        bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
+    }
+    Ok(())
+}
+
+/// Validates backend settings and installs the process-wide execution hash-cache configuration.
+/// Metric callbacks are initialized only after both Starknet and Cairo Native caches are configured.
+fn configure_execution_hash_cache(run_cmd: &RunCmd) -> anyhow::Result<()> {
+    run_cmd.backend_params.validate().context("Validating backend configuration")?;
+
+    starknet_api::configure_hash_cache(starknet_api::HashCacheConfig {
+        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
+        sn_keccak_capacity: run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+        pedersen_pair_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+        pedersen_array_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+        poseidon_array_capacity: run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+    });
+    mc_class_exec::configure_pedersen_cache(mc_class_exec::PedersenCacheConfig {
+        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
+        capacity: run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+    });
+    mc_exec::metrics::metrics();
+    tracing::info!(
+        enabled = run_cmd.backend_params.exec_hash_cache_enabled,
+        starknet_keccak_capacity = run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+        pedersen_pair_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+        pedersen_array_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+        poseidon_array_capacity = run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+        cairo_native_pedersen_capacity_per_thread =
+            run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+        "Execution hash memoization configured"
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
@@ -170,11 +211,7 @@ async fn main() -> anyhow::Result<()> {
     // Extracts the arguments into the struct
     let mut run_cmd: RunCmd = config.extract()?;
     run_cmd.check_mode()?;
-    if run_cmd.block_production_params.mempool_paused
-        && !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe)
-    {
-        bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
-    }
+    validate_runtime_controls(&run_cmd)?;
 
     // Setting up telemetry
     let mut service_telemetry = TelemetryService::new(run_cmd.telemetry_params.as_telemetry_config())
@@ -235,30 +272,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Config-based warnings shall be added here
 
-    run_cmd.backend_params.validate().context("Validating backend configuration")?;
-
-    starknet_api::configure_hash_cache(starknet_api::HashCacheConfig {
-        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
-        sn_keccak_capacity: run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
-        pedersen_pair_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
-        pedersen_array_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
-        poseidon_array_capacity: run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
-    });
-    mc_class_exec::configure_pedersen_cache(mc_class_exec::PedersenCacheConfig {
-        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
-        capacity: run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
-    });
-    mc_exec::metrics::metrics();
-    tracing::info!(
-        enabled = run_cmd.backend_params.exec_hash_cache_enabled,
-        starknet_keccak_capacity = run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
-        pedersen_pair_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
-        pedersen_array_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
-        poseidon_array_capacity = run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
-        cairo_native_pedersen_capacity_per_thread =
-            run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
-        "Execution hash memoization configured"
-    );
+    configure_execution_hash_cache(&run_cmd)?;
 
     if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {
         tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");

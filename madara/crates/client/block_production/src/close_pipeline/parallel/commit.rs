@@ -6,6 +6,7 @@ use mc_db::rocksdb::global_trie::in_memory::BonsaiOverlay;
 
 impl BlockProductionTask {
     /// Commits one prepared root through the strictly ordered DB stage.
+    /// Completion is returned only after block parts and the confirmed projection are durable.
     pub(crate) async fn execute_close_payload_parallel_precomputed_job(
         metrics: Arc<BlockProductionMetrics>,
         computed: ParallelComputedClosePayload,
@@ -20,6 +21,7 @@ impl BlockProductionTask {
     }
 
     /// Writes block parts, optional boundary durability, then the confirmed head.
+    /// This ordering keeps crash recovery anchored to the last published confirmation.
     async fn execute_close_payload_parallel_precomputed(
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
@@ -79,6 +81,7 @@ impl BlockProductionTask {
 }
 
 /// Executes the three crash-sensitive DB phases in their required order.
+/// A failure stops before any later phase can publish a partially prepared block.
 fn commit_parallel_db(
     backend: Arc<MadaraBackend>,
     block_n: u64,
@@ -120,6 +123,7 @@ struct BoundaryFlushResult {
 }
 
 /// Persists bouncer weights required by SNOS before block parts are written.
+/// The write is timed separately so close latency remains attributable.
 fn write_bouncer_weights(
     backend: &Arc<MadaraBackend>,
     block_n: u64,
@@ -139,6 +143,7 @@ fn write_bouncer_weights(
 }
 
 /// Writes immutable block parts with the precomputed root without advancing head.
+/// The resulting staged block remains externally invisible until confirmation.
 fn write_block_parts(
     backend: &Arc<MadaraBackend>,
     block_n: u64,
@@ -164,6 +169,7 @@ fn write_block_parts(
 }
 
 /// Flushes a boundary overlay and checkpoint before the confirmed head moves.
+/// Non-boundary blocks intentionally skip this durability phase.
 fn flush_boundary(
     backend: &Arc<MadaraBackend>,
     block_n: u64,
@@ -206,6 +212,7 @@ fn flush_boundary(
 }
 
 /// Advances the authoritative confirmed head only after parts and durability succeed.
+/// It also emits the block-production notification owned by the backend.
 fn confirm_block(backend: &Arc<MadaraBackend>, block_n: u64) -> anyhow::Result<()> {
     let started_at = Instant::now();
     backend
@@ -225,6 +232,7 @@ fn confirm_block(backend: &Arc<MadaraBackend>, block_n: u64) -> anyhow::Result<(
 }
 
 /// Emits the detailed parallel close event from already-collected facts.
+/// Keeping formatting separate leaves the commit path focused on state transitions.
 fn log_parallel_close_complete(
     state: &CurrentBlockState,
     facts: &CloseBlockFacts,

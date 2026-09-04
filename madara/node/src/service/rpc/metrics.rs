@@ -27,14 +27,14 @@ pub struct RpcMetrics {
 }
 
 impl RpcMetrics {
-    // `calls_started` and `calls_time` carry method and transport labels because
-    // they track invocation and latency independent of outcome.
-    // `calls_finished` additionally carries `success` so failed calls can be
-    // distinguished from successful ones in dashboards.
+    /// Builds labels shared by call-start counters and latency histograms.
+    /// Invocation metrics intentionally omit outcome because it is not known yet.
     fn call_started_labels(method: &str, transport_label: &'static str) -> [KeyValue; 2] {
         [KeyValue::new("method", method.to_string()), KeyValue::new("transport", transport_label)]
     }
 
+    /// Builds completion labels including method, transport, and success outcome.
+    /// The outcome label lets dashboards separate failed and successful calls.
     fn call_completed_labels(method: &str, success: bool, transport_label: &'static str) -> [KeyValue; 3] {
         [
             KeyValue::new("method", method.to_string()),

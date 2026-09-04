@@ -105,17 +105,25 @@ pub struct WatchChainHeadState<D: MadaraStorageRead> {
     subscription: tokio::sync::watch::Receiver<ChainHeadState>,
 }
 impl<D: MadaraStorageRead> WatchChainHeadState<D> {
+    /// Creates a watch cursor initialized from the backend's latest published head state.
+    /// The backend reference keeps the source alive for the lifetime of the subscription.
     fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
         let subscription = backend.chain_head_state.subscribe();
         let current_value = *subscription.borrow();
         Self { _backend: backend.clone(), current_value, subscription }
     }
+    /// Returns the latest head value observed by this watcher without advancing it.
+    /// Call [`Self::refresh`] or [`Self::recv`] to consume a newer published value.
     pub fn current(&self) -> &ChainHeadState {
         &self.current_value
     }
+    /// Advances the watcher immediately to the channel's latest published head.
+    /// Intermediate head updates are intentionally coalesced by the watch channel.
     pub fn refresh(&mut self) {
         self.current_value = *self.subscription.borrow_and_update();
     }
+    /// Waits for a head update and returns the newest coalesced value.
+    /// If the channel closes, the last observed value is retained and returned.
     pub async fn recv(&mut self) -> &ChainHeadState {
         if self.subscription.changed().await.is_err() {
             tracing::warn!("Chain head watch channel closed; returning last observed value");
@@ -148,6 +156,8 @@ pub struct SubscribeInternalHeads<D: MadaraStorageRead> {
     current_preconfirmed: Option<Arc<PreconfirmedBlock>>,
 }
 impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
+    /// Creates an internal-head cursor anchored to the backend's current confirmed projection.
+    /// Preconfirmed subscribers also capture the latest in-memory internal preconfirmed block.
     fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag) -> Self {
         let subscription = WatchChainHeadState::new(backend);
         let current_confirmed_tip = subscription.current().confirmed_tip;
@@ -156,15 +166,21 @@ impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
         Self { backend: backend.clone(), subscription, tag, current_confirmed_tip, current_preconfirmed }
     }
 
+    /// Repositions the subscription so its next confirmed result begins at `block_n`.
+    /// Any cached preconfirmed view is cleared because it may precede the new cursor.
     pub fn set_start_from(&mut self, block_n: u64) {
         self.current_confirmed_tip = block_n.checked_sub(1);
         self.current_preconfirmed = None;
     }
 
+    /// Returns the confirmed block currently represented by the local cursor.
+    /// This value may lag the backend until the subscriber advances.
     pub fn current_confirmed_block_n(&self) -> Option<u64> {
         self.current_confirmed_tip
     }
 
+    /// Returns the block view represented by the subscriber's current local cursor.
+    /// A preconfirmed view takes precedence over the confirmed fallback when available.
     pub fn current_block_view(&self) -> Option<MadaraBlockView<D>> {
         self.current_preconfirmed
             .as_ref()
@@ -174,6 +190,8 @@ impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
             })
     }
 
+    /// Advances the cursor to the next confirmed block or changed internal preconfirmed frontier.
+    /// The method waits for head notifications when no immediately observable progress exists.
     async fn advance_if_needed(&mut self) {
         loop {
             // Inclusive bound.

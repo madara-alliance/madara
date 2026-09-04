@@ -51,6 +51,8 @@ fn bonsai_storage_config(backend: &RocksDBStorage, retain_trie_logs: bool) -> Re
     })
 }
 
+/// Resolves missing nonce/class values from the snapshot and hashes one contract-state leaf.
+/// Storage root must already reflect the current diff before this helper is called.
 fn contract_state_leaf_hash(
     backend: &RocksDBStorage,
     snapshot: &SnapshotRef,
@@ -80,6 +82,8 @@ fn contract_state_leaf_hash(
     Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
 
+/// Applies contract storage and leaf updates using parallel leaf hashing.
+/// Historical nonce/class values come from the selected immutable snapshot when absent from the diff.
 fn in_memory_contract_trie_root(
     backend: &RocksDBStorage,
     snapshot: &SnapshotRef,
@@ -162,6 +166,8 @@ fn in_memory_contract_trie_root(
     Ok((root, timings))
 }
 
+/// Applies the same contract updates with sequential leaf hashing as a correctness reference.
+/// Tests compare this result with the parallel path to prove scheduling does not affect roots.
 fn in_memory_contract_trie_root_sequential(
     backend: &RocksDBStorage,
     snapshot: &SnapshotRef,
@@ -234,10 +240,14 @@ fn in_memory_contract_trie_root_sequential(
 
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
 
+/// Hashes a compiled class hash into the Starknet class-trie leaf domain.
+/// The fixed version prefix is part of the protocol commitment and must remain stable.
 fn compute_class_leaf_hash(compiled_class_hash: &Felt) -> Felt {
     Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, compiled_class_hash)
 }
 
+/// Applies declared and migrated classes using parallel leaf hashing.
+/// Trie inserts remain ordered after the parallel hash-computation stage.
 fn in_memory_class_trie_root(
     class_trie: &mut InMemoryTrie<Poseidon>,
     state_diff: &StateDiff,
@@ -278,6 +288,8 @@ fn in_memory_class_trie_root(
     Ok((root, timings))
 }
 
+/// Applies declared and migrated classes sequentially as a correctness reference.
+/// It uses the same leaf hash and trie commit revision as the optimized path.
 fn in_memory_class_trie_root_sequential(
     class_trie: &mut InMemoryTrie<Poseidon>,
     state_diff: &StateDiff,
@@ -312,6 +324,8 @@ fn in_memory_class_trie_root_sequential(
     Ok((root, timings))
 }
 
+/// Computes one state root from an immutable snapshot and a cumulative state diff.
+/// An overlay is retained only when the caller needs to flush this result as a durable boundary.
 pub fn compute_root_from_snapshot(
     backend: &RocksDBStorage,
     snapshot_block: Option<u64>,
@@ -387,6 +401,8 @@ pub fn compute_root_from_snapshot(
     Ok(InMemoryRootComputation { block_n, contract_root, class_root, state_root, timings, overlay })
 }
 
+/// Computes the snapshot-based state root without parallel leaf hashing.
+/// This comparison path detects correctness regressions in the optimized implementation.
 pub fn compute_root_from_snapshot_sequential(
     backend: &RocksDBStorage,
     snapshot_block: Option<u64>,
@@ -450,6 +466,8 @@ pub fn compute_root_from_snapshot_sequential(
     Ok(InMemoryRootComputation { block_n, contract_root, class_root, state_root, timings, overlay: None })
 }
 
+/// Computes several cumulative state roots concurrently from one shared snapshot.
+/// Returned results preserve block order even though individual root jobs execute in Rayon.
 pub fn compute_roots_in_parallel_from_snapshot(
     backend: &RocksDBStorage,
     snapshot_block: Option<u64>,

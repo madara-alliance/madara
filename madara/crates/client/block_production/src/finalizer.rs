@@ -86,6 +86,7 @@ pub(super) enum FinalizerWorkers {
 
 impl FinalizerWorkers {
     /// Binds a validated mode to the production close-pipeline functions.
+    /// Callback type erasure keeps scheduler code independent of generic function types.
     fn production(mode: FinalizerMode) -> Self {
         match mode {
             FinalizerMode::Serial => Self::Serial {
@@ -146,12 +147,14 @@ pub(crate) struct FinalizerTaskHandle {
 
 impl FinalizerHandle {
     /// Spawns the configured production worker and returns its queue and join handles.
+    /// Queue and worker limits have already been normalized by `FinalizerConfig`.
     pub fn spawn(config: FinalizerConfig, metrics: Arc<BlockProductionMetrics>) -> (Self, FinalizerTaskHandle) {
         let workers = FinalizerWorkers::production(config.mode());
         Self::spawn_with_workers(config.capacity(), metrics, workers)
     }
 
     /// Creates the bounded channel and starts the selected worker implementation.
+    /// The returned handle owns enqueue access while the task handle owns graceful joining.
     fn spawn_with_workers(
         capacity: usize,
         metrics: Arc<BlockProductionMetrics>,
@@ -192,6 +195,7 @@ impl FinalizerHandle {
     }
 
     /// Enqueues one close payload or returns a backpressure/closed-channel error.
+    /// Successful calls return both queue metadata and the block-specific completion receiver.
     pub fn try_enqueue(
         &self,
         payload: QueuedClosePayload,

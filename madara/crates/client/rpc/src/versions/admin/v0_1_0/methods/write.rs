@@ -414,6 +414,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         })
     }
 
+    /// Stores a replay boundary after enforcing unsafe-RPC access control.
+    /// The returned status exposes the backend's initialized dispatch and execution counters.
     async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
@@ -456,6 +458,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(status)
     }
 
+    /// Reads the current status for one replay boundary after enforcing unsafe-RPC access control.
+    /// A missing boundary is returned as `None` rather than an RPC failure.
     async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {

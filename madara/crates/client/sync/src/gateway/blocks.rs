@@ -5,14 +5,18 @@ use crate::{
     probe::ThrottledRepeatedFuture,
 };
 use anyhow::Context;
+use blockifier::bouncer::BouncerWeights;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend, MadaraStorageWrite,
 };
 use mc_gateway_client::{BlockId, GatewayProvider};
-use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+use mp_block::{header::PreconfirmedHeader, BlockHeaderWithSignatures, FullBlock, Header};
 use mp_convert::Felt;
-use mp_gateway::error::{SequencerError, StarknetErrorCode};
+use mp_gateway::{
+    block::ProviderBlockPreConfirmed,
+    error::{SequencerError, StarknetErrorCode},
+};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use mp_utils::AbortOnDrop;
@@ -52,6 +56,152 @@ pub fn block_with_state_update_pipeline(
     )
 }
 
+#[derive(Clone, Copy)]
+enum PreconfirmedUpdateMode {
+    Ignore,
+    Replace,
+    Append { common_prefix: usize },
+}
+
+/// Repeats the gateway request whenever the confirmed head advances underneath it.
+/// The returned block number therefore corresponds to the head observed by the completed request.
+async fn fetch_current_preconfirmed(
+    client: &GatewayProvider,
+    backend: &Arc<MadaraBackend>,
+) -> (Result<ProviderBlockPreConfirmed, SequencerError>, u64) {
+    let mut subscription = backend.watch_chain_head_state();
+    loop {
+        let block_number = subscription.current().confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        tracing::debug!("Sync Get Preconfirmed block #{block_number}.");
+        tokio::select! {
+            biased;
+            _ = subscription.recv() => continue,
+            preconfirmed = client.get_preconfirmed_block(block_number) => return (preconfirmed, block_number),
+        }
+    }
+}
+
+/// Compares an incoming gateway preconfirmed block with the current durable projection.
+/// The result distinguishes a no-op, full replacement, and suffix-only append.
+fn preconfirmed_update_mode(
+    backend: &Arc<MadaraBackend>,
+    block: &ProviderBlockPreConfirmed,
+    block_number: u64,
+    header: &PreconfirmedHeader,
+    n_executed: usize,
+) -> PreconfirmedUpdateMode {
+    let Some(mut in_backend) = backend.block_view_on_current_preconfirmed() else {
+        return PreconfirmedUpdateMode::Replace;
+    };
+    in_backend.refresh_with_candidates();
+    if in_backend.block_number() != block_number {
+        return PreconfirmedUpdateMode::Ignore;
+    }
+
+    let is_replacement = in_backend.header() != header
+        || in_backend.num_executed_transactions() > n_executed
+        || Iterator::ne(
+            in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
+            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
+        );
+    if is_replacement {
+        return PreconfirmedUpdateMode::Replace;
+    }
+
+    let common_prefix = in_backend.num_executed_transactions();
+    let candidates_match = Iterator::eq(
+        in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
+        block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
+    );
+    if common_prefix == n_executed && candidates_match {
+        PreconfirmedUpdateMode::Ignore
+    } else {
+        PreconfirmedUpdateMode::Append { common_prefix }
+    }
+}
+
+/// Converts and persists the changed portion of one gateway preconfirmed block.
+/// Replacement writes start at transaction zero; append writes preserve the common executed prefix.
+fn persist_preconfirmed_update(
+    backend: &Arc<MadaraBackend>,
+    block: ProviderBlockPreConfirmed,
+    header: PreconfirmedHeader,
+    mode: PreconfirmedUpdateMode,
+) -> anyhow::Result<Option<()>> {
+    let skip_first_n = match mode {
+        PreconfirmedUpdateMode::Ignore => return Ok(None),
+        PreconfirmedUpdateMode::Replace => 0,
+        PreconfirmedUpdateMode::Append { common_prefix } => common_prefix,
+    };
+    let arrived_at = TxTimestamp::now();
+    let (executed, candidates) = block.into_transactions(skip_first_n);
+    let executed: Vec<_> = executed
+        .into_iter()
+        .map(|(transaction, state_diff)| PreconfirmedExecutedTransaction {
+            transaction,
+            state_diff,
+            declared_class: None,
+            arrived_at,
+            paid_fee_on_l1: None,
+        })
+        .collect();
+    let candidates: Vec<_> = candidates
+        .into_iter()
+        .map(|transaction| {
+            ValidatedTransaction {
+                transaction: transaction.transaction.transaction,
+                paid_fee_on_l1: None,
+                contract_address: transaction.contract_address,
+                arrived_at,
+                declared_class: None,
+                hash: transaction.transaction.hash,
+                charge_fee: true,
+            }
+            .into()
+        })
+        .collect();
+
+    tracing::debug!(
+        "Gateway preconfirmed block sync: skip_first_n={skip_first_n} {header:?} {executed:?}, {candidates:?}"
+    );
+    match mode {
+        PreconfirmedUpdateMode::Replace => backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(header, executed, candidates))?,
+        PreconfirmedUpdateMode::Append { .. } => {
+            backend.write_access().append_to_preconfirmed(header.block_number, &executed, candidates)?
+        }
+        PreconfirmedUpdateMode::Ignore => unreachable!("ignore mode returns before conversion"),
+    }
+    Ok(Some(()))
+}
+
+/// Performs one observable gateway-preconfirmed synchronization attempt.
+/// Missing or incompatible upstream data is treated as a throttled no-op, matching the polling contract.
+async fn sync_gateway_preconfirmed_once(
+    client: &GatewayProvider,
+    backend: &Arc<MadaraBackend>,
+) -> anyhow::Result<Option<()>> {
+    let (block, block_number) = fetch_current_preconfirmed(client, backend).await;
+    let block = match block {
+        Ok(block) => block,
+        Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
+            tracing::debug!("Preconfirmed block #{block_number} not found.");
+            return Ok(None);
+        }
+        Err(other) => {
+            tracing::warn!("Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}");
+            return Ok(None);
+        }
+    };
+    tracing::debug!("Got Preconfirmed block #{block_number}.");
+
+    let n_executed = block.num_executed_transactions();
+    let header = block.header(block_number)?;
+    let mode = preconfirmed_update_mode(backend, &block, block_number, &header, n_executed);
+    persist_preconfirmed_update(backend, block, header, mode)
+}
+
 // TODO: check that the headers follow each other
 pub struct GatewaySyncSteps {
     _backend: Arc<MadaraBackend>,
@@ -64,6 +214,208 @@ pub struct GatewaySyncSteps {
 }
 
 impl GatewaySyncSteps {
+    /// Fetches one complete gateway block and its optional Madara bouncer weights.
+    /// Both requests are contextualized with the block number for actionable failures.
+    async fn fetch_block(&self, block_n: u64) -> anyhow::Result<(FullBlock, Option<BouncerWeights>)> {
+        tracing::debug!("📥 Fetching block #{} from gateway", block_n);
+        let block = self
+            .client
+            .get_state_update_with_block(BlockId::Number(block_n))
+            .await
+            .with_context(|| format!("Getting state update with block_n={block_n}"))?;
+        let bouncer_weights = if self.sync_bouncer_config {
+            Some(
+                self.client
+                    .get_block_bouncer_weights(block_n)
+                    .await
+                    .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?,
+            )
+        } else {
+            None
+        };
+
+        Ok((block.into_full_block().context("Parsing gateway block")?, bouncer_weights))
+    }
+
+    /// Verifies an existing local genesis against the fetched upstream genesis.
+    /// Returns true when the matching local block means importing block zero can be skipped.
+    async fn verify_existing_genesis(&self, gateway_block: &FullBlock) -> anyhow::Result<bool> {
+        let Some(local_genesis_view) = self._backend.block_view_on_confirmed(0) else {
+            return Ok(false);
+        };
+        let local_genesis_hash = local_genesis_view.get_block_info()?.block_hash;
+        let upstream_genesis_hash = gateway_block.block_hash;
+
+        if local_genesis_hash != upstream_genesis_hash {
+            control_metrics().genesis_mismatch_total.add(1, &[]);
+            tracing::warn!(
+                local_genesis_hash = format!("{local_genesis_hash:#x}"),
+                upstream_genesis_hash = format!("{upstream_genesis_hash:#x}"),
+                "sync_genesis_mismatch_detected"
+            );
+            self.handle_genesis_mismatch().await?;
+            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
+        }
+
+        tracing::debug!("✅ Genesis block already exists and matches upstream, skipping block 0");
+        Ok(true)
+    }
+
+    /// Processes a detected parent mismatch under the shared reorg guard.
+    /// Every successful recovery aborts this pipeline so it restarts from the repaired head.
+    async fn process_parent_mismatch(
+        &self,
+        block_n: u64,
+        incoming_parent_hash: Felt,
+        local_parent_hash: Felt,
+    ) -> anyhow::Result<()> {
+        control_metrics().reorg_detected_total.add(1, &[]);
+        tracing::warn!(
+            "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
+            block_n,
+            incoming_parent_hash,
+            local_parent_hash
+        );
+
+        if self.disable_reorg {
+            control_metrics().reorg_required_but_disabled_total.add(1, &[]);
+            tracing::error!(
+                block_number = block_n,
+                expected_parent_hash = format!("{local_parent_hash:#x}"),
+                incoming_parent_hash = format!("{incoming_parent_hash:#x}"),
+                "sync_reorg_required_but_disabled"
+            );
+            anyhow::bail!(
+                "Reorg required but disabled by config. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
+                block_n,
+                local_parent_hash,
+                incoming_parent_hash
+            );
+        }
+
+        let _reorg_guard = self.reorg_guard.lock().await;
+        let common_ancestor_hash = match self.find_common_ancestor(block_n - 1).await {
+            Ok(hash) => hash,
+            Err(error) => {
+                tracing::error!("Failed to find common ancestor: {}", error);
+                return Err(error);
+            }
+        };
+        if common_ancestor_hash == Felt::ZERO {
+            tracing::warn!("sync_genesis_mismatch_recovery_required");
+            self.handle_genesis_mismatch().await?;
+            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
+        }
+
+        tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
+        self._backend.revert_to(&common_ancestor_hash)?;
+        self._backend.db.flush()?;
+        control_metrics().reorg_processed_total.add(1, &[]);
+        tracing::info!(
+            "✅ Reorg completed successfully, head projection cache refreshed, aborting pipeline to restart from new head projection"
+        );
+        anyhow::bail!("Reorg detected and processed, restarting sync from new head projection");
+    }
+
+    /// Validates that a fetched block extends the locally confirmed parent when available.
+    /// Missing parents are tolerated only for normal parallel-fetch gaps, never at the resume boundary.
+    async fn verify_parent(
+        &self,
+        block_n: u64,
+        gateway_block: &FullBlock,
+        confirmed_tip_at_start: Option<u64>,
+    ) -> anyhow::Result<()> {
+        if block_n == 0 {
+            return Ok(());
+        }
+
+        match self._backend.block_view_on_confirmed(block_n - 1) {
+            Some(parent_view) => {
+                let local_parent_hash = parent_view.get_block_info()?.block_hash;
+                let incoming_parent_hash = gateway_block.header.parent_block_hash;
+                if incoming_parent_hash != local_parent_hash {
+                    self.process_parent_mismatch(block_n, incoming_parent_hash, local_parent_hash).await?;
+                }
+            }
+            None => {
+                let is_first_block_after_confirmed =
+                    confirmed_tip_at_start.map(|tip| block_n - 1 == tip).unwrap_or(false);
+                if is_first_block_after_confirmed {
+                    tracing::error!(
+                        "❌ SYNC RESUME VALIDATION FAILED: Parent block #{} should be confirmed (head projection) but not found by block_view() when fetching block #{}",
+                        block_n - 1,
+                        block_n
+                    );
+                    anyhow::bail!(
+                        "Database inconsistency: Head projection indicates block {} is confirmed, but block_view() cannot find it",
+                        block_n - 1
+                    );
+                }
+                tracing::debug!(
+                    "Parent block {} not yet confirmed when fetching block {} (parallel fetch gap, expected)",
+                    block_n - 1,
+                    block_n
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Verifies and persists every component of one fetched gateway block on the importer pool.
+    /// The returned state diff is forwarded unchanged to the pipeline's ordered stage.
+    async fn import_block(
+        &self,
+        block_n: u64,
+        gateway_block: FullBlock,
+        bouncer_weights: Option<BouncerWeights>,
+    ) -> anyhow::Result<StateDiff> {
+        let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
+        self.importer
+            .run_in_rayon_pool(move |importer| {
+                let mut signed_header = BlockHeaderWithSignatures {
+                    header: gateway_block.header,
+                    block_hash: gateway_block.block_hash,
+                    consensus_signatures: vec![],
+                };
+                let allow_pre_v0_13_2 = true;
+                let state_diff_commitment = importer.verify_state_diff(
+                    block_n,
+                    &gateway_block.state_diff,
+                    &signed_header.header,
+                    allow_pre_v0_13_2,
+                )?;
+                let (transaction_commitment, receipt_commitment) = importer.verify_transactions(
+                    block_n,
+                    &gateway_block.transactions,
+                    &signed_header.header,
+                    allow_pre_v0_13_2,
+                )?;
+                let event_commitment =
+                    importer.verify_events(block_n, &gateway_block.events, &signed_header.header, allow_pre_v0_13_2)?;
+                if !keep_pre_v0_13_2_hashes {
+                    signed_header.header = Header {
+                        state_diff_commitment: Some(state_diff_commitment),
+                        transaction_commitment,
+                        event_commitment,
+                        receipt_commitment: Some(receipt_commitment),
+                        ..signed_header.header
+                    };
+                }
+                importer.verify_header(block_n, &signed_header)?;
+                importer.save_header(block_n, signed_header)?;
+                if let Some(bouncer_weights) = bouncer_weights {
+                    importer.save_bouncer_weights(block_n, bouncer_weights)?;
+                }
+                importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
+                importer.save_transactions(block_n, gateway_block.transactions)?;
+                importer.save_events(block_n, gateway_block.events)?;
+                tracing::debug!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
+                anyhow::Ok(gateway_block.state_diff)
+            })
+            .await
+            .with_context(|| format!("Verifying block for block_n={block_n:?}"))
+    }
+
     /// Finds the common ancestor block hash between the local chain and gateway during a reorg.
     ///
     /// This function walks backwards from a given block number, comparing local block hashes
@@ -260,211 +612,15 @@ impl PipelineSteps for GatewaySyncSteps {
         AbortOnDrop::spawn(async move {
             let mut out = vec![];
             tracing::debug!("Gateway sync parallel step {:?}", block_range);
-
-            // Get the confirmed tip from canonical head-state to detect sync resume scenarios.
             let confirmed_tip_at_start = self._backend.chain_head_state().confirmed_tip;
 
             for block_n in block_range {
-                tracing::debug!("📥 Fetching block #{} from gateway", block_n);
-                let block = self
-                    .client
-                    .get_state_update_with_block(BlockId::Number(block_n))
-                    .await
-                    .with_context(|| format!("Getting state update with block_n={block_n}"))?;
-
-                let bouncer_weights = if self.sync_bouncer_config {
-                    Some(
-                        self.client
-                            .get_block_bouncer_weights(block_n)
-                            .await
-                            .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?,
-                    )
-                } else {
-                    None
-                };
-
-                let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
-
-                if block_n == 0 {
-                    // Check if we already have a genesis block
-                    if let Some(local_genesis_view) = self._backend.block_view_on_confirmed(0) {
-                        let local_genesis_info = local_genesis_view.get_block_info()?;
-                        let local_genesis_hash = local_genesis_info.block_hash;
-                        let upstream_genesis_hash = gateway_block.block_hash;
-
-                        if local_genesis_hash != upstream_genesis_hash {
-                            control_metrics().genesis_mismatch_total.add(1, &[]);
-                            tracing::warn!(
-                                local_genesis_hash = format!("{local_genesis_hash:#x}"),
-                                upstream_genesis_hash = format!("{upstream_genesis_hash:#x}"),
-                                "sync_genesis_mismatch_detected"
-                            );
-
-                            self.handle_genesis_mismatch().await?;
-                            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
-                        }
-
-                        tracing::debug!("✅ Genesis block already exists and matches upstream, skipping block 0");
-                        continue;
-                    }
+                let (gateway_block, bouncer_weights) = self.fetch_block(block_n).await?;
+                if block_n == 0 && self.verify_existing_genesis(&gateway_block).await? {
+                    continue;
                 }
-
-                // Check for parent hash mismatch (reorg detection) BEFORE processing the block
-                if block_n > 0 {
-                    // Try to get the parent block's info (only confirmed blocks during gateway sync)
-                    match self._backend.block_view_on_confirmed(block_n - 1) {
-                        Some(parent_view) => {
-                            let parent_info = parent_view.get_block_info()?;
-                            let incoming_parent_hash = gateway_block.header.parent_block_hash;
-                            let local_parent_hash = parent_info.block_hash;
-
-                            if incoming_parent_hash != local_parent_hash {
-                                control_metrics().reorg_detected_total.add(1, &[]);
-                                tracing::warn!(
-                                    "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
-                                    block_n, incoming_parent_hash, local_parent_hash
-                                );
-
-                                // Check if reorg is disabled
-                                if self.disable_reorg {
-                                    control_metrics().reorg_required_but_disabled_total.add(1, &[]);
-                                    tracing::error!(
-                                        block_number = block_n,
-                                        expected_parent_hash = format!("{local_parent_hash:#x}"),
-                                        incoming_parent_hash = format!("{incoming_parent_hash:#x}"),
-                                        "sync_reorg_required_but_disabled"
-                                    );
-                                    anyhow::bail!(
-                                        "Reorg required but disabled by config. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
-                                        block_n, local_parent_hash, incoming_parent_hash
-                                    );
-                                }
-
-                                // Try to find common ancestor
-                                // Serialize reorg handling to avoid concurrent detect+revert races.
-                                let _reorg_guard = self.reorg_guard.lock().await;
-                                match self.find_common_ancestor(block_n - 1).await {
-                                    Ok(common_ancestor_hash) => {
-                                        if common_ancestor_hash == Felt::ZERO {
-                                            tracing::warn!("sync_genesis_mismatch_recovery_required");
-                                            self.handle_genesis_mismatch().await?;
-
-                                            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
-                                        } else {
-                                            // Normal reorg - found common ancestor
-                                            tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
-                                            self._backend.revert_to(&common_ancestor_hash)?;
-
-                                            self._backend.db.flush()?;
-                                            control_metrics().reorg_processed_total.add(1, &[]);
-                                            tracing::info!("✅ Reorg completed successfully, head projection cache refreshed, aborting pipeline to restart from new head projection");
-
-                                            anyhow::bail!("Reorg detected and processed, restarting sync from new head projection");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Failed to find common ancestor: {}", e);
-                                        return Err(e);
-                                    }
-                                }
-                            }
-                        }
-                        None => {
-                            // Parent block not found via block_view() - could be written but not confirmed yet
-                            // This is normal during parallel fetching, but we need to be careful on sync resume
-
-                            // Check if this is the critical first block after sync resume
-                            let is_first_block_after_confirmed = confirmed_tip_at_start
-                                .map(|tip| block_n - 1 == tip)
-                                .unwrap_or(false);
-
-                            if is_first_block_after_confirmed {
-                                // CRITICAL: This is the first block after the confirmed head projection
-                                // We MUST validate its parent_hash against our confirmed parent
-                                // But block_view() failed, which means parent is not confirmed yet (shouldn't happen)
-                                //
-                                // This indicates the parent block exists but wasn't confirmed,
-                                // which is a database inconsistency issue - the head projection says block N-1 is confirmed
-                                // but block_view() can't find it
-                                tracing::error!(
-                                    "❌ SYNC RESUME VALIDATION FAILED: Parent block #{} should be confirmed (head projection) but not found by block_view() when fetching block #{}",
-                                    block_n - 1, block_n
-                                );
-                                anyhow::bail!(
-                                    "Database inconsistency: Head projection indicates block {} is confirmed, but block_view() cannot find it",
-                                    block_n - 1
-                                );
-                            }
-
-                            // Normal parallel fetch gap - parent was written but not confirmed yet
-                            // This is expected and safe during parallel fetching
-                            tracing::debug!(
-                                "Parent block {} not yet confirmed when fetching block {} (parallel fetch gap, expected)",
-                                block_n - 1, block_n
-                            );
-                        }
-                    }
-                }
-
-                let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
-
-                let state_diff = self
-                    .importer
-                    .run_in_rayon_pool(move |importer| {
-                        let mut signed_header = BlockHeaderWithSignatures {
-                            header: gateway_block.header,
-                            block_hash: gateway_block.block_hash,
-                            consensus_signatures: vec![],
-                        };
-
-                        // Allow the gateway format, which has legacy commitments.
-                        let allow_pre_v0_13_2 = true;
-
-                        let state_diff_commitment = importer.verify_state_diff(
-                            block_n,
-                            &gateway_block.state_diff,
-                            &signed_header.header,
-                            allow_pre_v0_13_2,
-                        )?;
-                        let (transaction_commitment, receipt_commitment) = importer.verify_transactions(
-                            block_n,
-                            &gateway_block.transactions,
-                            &signed_header.header,
-                            allow_pre_v0_13_2,
-                        )?;
-                        let event_commitment = importer.verify_events(
-                            block_n,
-                            &gateway_block.events,
-                            &signed_header.header,
-                            allow_pre_v0_13_2,
-                        )?;
-                        if !keep_pre_v0_13_2_hashes {
-                            // Fill in the header with the commitments missing in pre-v0.13.2 headers from the gateway.
-                            signed_header.header = Header {
-                                state_diff_commitment: Some(state_diff_commitment),
-                                transaction_commitment,
-                                event_commitment,
-                                receipt_commitment: Some(receipt_commitment),
-                                ..signed_header.header
-                            };
-                        }
-                        importer.verify_header(block_n, &signed_header)?;
-
-                        importer.save_header(block_n, signed_header)?;
-                        if let Some(bouncer_weights) = bouncer_weights {
-                            importer.save_bouncer_weights(block_n, bouncer_weights)?;
-                        }
-                        importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
-                        importer.save_transactions(block_n, gateway_block.transactions)?;
-                        importer.save_events(block_n, gateway_block.events)?;
-
-                        tracing::debug!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
-
-                        anyhow::Ok(gateway_block.state_diff)
-                    })
-                    .await
-                    .with_context(|| format!("Verifying block for block_n={block_n:?}"))?;
-                out.push(state_diff);
+                self.verify_parent(block_n, &gateway_block, confirmed_tip_at_start).await?;
+                out.push(self.import_block(block_n, gateway_block, bouncer_weights).await?);
             }
             Ok(out)
         })
@@ -490,134 +646,7 @@ pub fn gateway_preconfirmed_block_sync(
         move |_| {
             let client = client.clone();
             let backend = backend.clone();
-            async move {
-                // Abort/restart the request if canonical head-state advances.
-                let mut subscription = backend.watch_chain_head_state();
-                let (block, block_number) = loop {
-                    let block_number =
-                        subscription.current().confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0);
-                    tracing::debug!("Sync Get Preconfirmed block #{block_number}.");
-                    tokio::select! {
-                        biased;
-                        _ = subscription.recv() => continue, // Abort request and restart
-                        preconfirmed = client.get_preconfirmed_block(block_number) => {
-                            break (preconfirmed, block_number)
-                        }
-                    }
-                };
-                let block = match block {
-                    Ok(block) => block,
-                    Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
-                        tracing::debug!("Preconfirmed block #{block_number} not found.");
-                        return Ok(None);
-                    }
-                    Err(other) => {
-                        // non-compliant gateway?
-                        tracing::warn!(
-                            "Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}"
-                        );
-                        return Ok(None);
-                    }
-                };
-
-                tracing::debug!("Got Preconfirmed block #{block_number}.");
-
-                let n_executed = block.num_executed_transactions();
-                let header = block.header(block_number)?;
-
-                // How many of these transactions do we already have? When None, we need to make a new pre-confirmed block.
-                let mut common_prefix = None;
-
-                if let Some(mut in_backend) = backend.block_view_on_current_preconfirmed() {
-                    in_backend.refresh_with_candidates(); // we want to compare candidates too.
-
-                    if in_backend.block_number() != block_number {
-                        return Ok(None);
-                    }
-
-                    // True if this gateway block should be considered as a new pre-confirmed block entirely.
-                    let new_preconfirmed = in_backend.header() != &header
-                        || in_backend.num_executed_transactions() > n_executed
-                        ||
-                        // Compare hashes
-                        // TODO: should we compute these hashes? probably not?
-                        Iterator::ne(
-                            in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
-                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
-                        );
-
-                    if !new_preconfirmed {
-                        common_prefix = Some(in_backend.num_executed_transactions());
-                    }
-
-                    // Whether there was no change at all (no need to update the backend)
-                    let has_not_changed = !new_preconfirmed
-                        && in_backend.num_executed_transactions() == n_executed
-                        // Compare candidate hashes.
-                        && Iterator::eq(
-                        in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
-                        block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
-                    );
-                    if has_not_changed {
-                        return Ok(None);
-                    }
-                }
-
-                let arrived_at = TxTimestamp::now();
-
-                let (executed, candidates) =
-                    block.into_transactions(/* skip_first_n */ common_prefix.unwrap_or(0));
-
-                let executed: Vec<_> = executed
-                    .into_iter()
-                    .map(|(transaction, state_diff)| PreconfirmedExecutedTransaction {
-                        transaction,
-                        state_diff,
-                        declared_class: None, // It seems we can't get the declared classes from the preconfirmed block :/
-                        arrived_at,
-                        paid_fee_on_l1: None, // Gateway blocks don't contain paid_fee_on_l1 because:
-                                              // 1. Gateway API responses don't include fee payment metadata
-                                              // 2. paid_fee_on_l1 is only relevant for L1 handler transactions paid on L1
-                                              // 3. Gateway blocks contain execution results but not fee payment details
-                                              // 4. This information would need to be fetched from L1 if required, but
-                                              //    for gateway sync purposes it's not available and not critical
-                    })
-                    .collect();
-
-                let candidates: Vec<_> = candidates
-                    .into_iter()
-                    .map(|transaction| {
-                        ValidatedTransaction {
-                            transaction: transaction.transaction.transaction,
-                            paid_fee_on_l1: None,
-                            contract_address: transaction.contract_address,
-                            arrived_at,
-                            declared_class: None, // Ditto.
-                            hash: transaction.transaction.hash,
-                            charge_fee: true, // keeping the default value as true for now
-                        }
-                        .into()
-                    })
-                    .collect();
-
-                tracing::debug!("Gateay preconfirmed block sync: common_prefix={common_prefix:?} {header:?} {executed:?}, {candidates:?}");
-
-                if common_prefix.is_none() {
-                    // New preconfirmed block (replaces the current one if there is one)
-                    backend
-                        .write_access()
-                        .new_preconfirmed(PreconfirmedBlock::new_with_content(header, executed, candidates))?;
-                } else {
-                    // Append to current pre-confirmed block.
-                    backend.write_access().append_to_preconfirmed(
-                        header.block_number,
-                        &executed,
-                        /* replace_candidates */ candidates,
-                    )?;
-                }
-
-                Ok(Some(()))
-            }
+            async move { sync_gateway_preconfirmed_once(&client, &backend).await }
         },
         Duration::from_millis(500),
     )

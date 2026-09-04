@@ -32,8 +32,15 @@ pub struct Batcher {
     batch_size: usize,
 }
 
+enum BatcherStep {
+    Batch(BatchToExecute),
+    RebuildStreams,
+    Stop,
+}
+
 impl Batcher {
     /// Wires the three transaction sources into the executor batch output.
+    /// The resulting task owns source prioritization and applies channel backpressure.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         backend: Arc<MadaraBackend>,
@@ -58,119 +65,89 @@ impl Batcher {
         }
     }
 
-    /// Reserves one executor slot, builds the next prioritized batch, and sends it.
+    /// Reserves owned output capacity without consuming transactions from any source.
+    /// Waiting time is recorded as executor-channel backpressure for the batcher.
+    async fn reserve_output(&mut self) -> Option<mpsc::OwnedPermit<BatchToExecute>> {
+        let permit_wait_started = Instant::now();
+        let permit = self.ctx.run_until_cancelled(self.out.clone().reserve_owned()).await?.ok()?;
+        self.metrics.batcher_output_backpressure_duration.record(permit_wait_started.elapsed().as_secs_f64(), &[]);
+        Some(permit)
+    }
+
+    /// Builds one prioritized ready batch from bypass, L1-message, and mempool streams.
+    /// Intake-mode changes request a stream rebuild without sending an empty batch.
+    async fn next_batch(&mut self) -> anyhow::Result<BatcherStep> {
+        let (chain_id, sn_version) =
+            (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
+        let bypass_txs_stream =
+            stream::unfold(&mut self.bypass_in, |chan| async move { chan.recv().await.map(|tx| (tx, chan)) }).map(
+                |tx| {
+                    tx.into_blockifier_for_sequencing()
+                        .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
+                        .map_err(anyhow::Error::from)
+                },
+            );
+        let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
+            Ok(res?.into_blockifier(chain_id, sn_version).map(|(btx, declared_class)| {
+                (btx, AdditionalTxInfo { declared_class, arrived_at: TxTimestamp::now() })
+            })?)
+        });
+        let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = match *self.mempool_intake_rx.borrow() {
+            MempoolIntakeMode::Paused => stream::pending().boxed(),
+            MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
+                let consumer = mempool.get_consumer().await;
+                Some((consumer, mempool))
+            })
+            .map(|consumer| {
+                stream::iter(consumer.map(|tx| {
+                    tx.into_blockifier_for_sequencing()
+                        .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
+                        .map_err(anyhow::Error::from)
+                }))
+            })
+            .flatten()
+            .boxed(),
+        };
+        let tx_stream =
+            stream::select_with_strategy(bypass_txs_stream, stream::select(l1_txs_stream, mempool_txs_stream), |()| {
+                PollNext::Left
+            })
+            .try_ready_chunks(self.batch_size.max(1));
+        tokio::pin!(tx_stream);
+
+        let batch_wait_started = Instant::now();
+        let step = tokio::select! {
+            _ = self.ctx.cancelled() => BatcherStep::Stop,
+            result = self.mempool_intake_rx.changed() => {
+                if result.is_err() { BatcherStep::Stop } else { BatcherStep::RebuildStreams }
+            }
+            Some(batch) = tx_stream.next() => {
+                let batch = batch.context("Creating batch for block building")?;
+                tracing::debug!("Batcher got a batch of {}.", batch.len());
+                BatcherStep::Batch(batch.into_iter().collect())
+            }
+            else => BatcherStep::Stop,
+        };
+        if matches!(&step, BatcherStep::Batch(batch) if !batch.is_empty()) {
+            self.metrics.batcher_batch_wait_duration.record(batch_wait_started.elapsed().as_secs_f64(), &[]);
+        }
+        Ok(step)
+    }
+
+    /// Repeatedly reserves executor capacity, builds the next prioritized batch, and sends it.
+    /// Cancellation, source closure, or intake-control closure ends the task cleanly.
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
-            // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
-            // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
-            // the worker has finished executing its current one.
-            let permit_wait_started = Instant::now();
-            let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
-                // Stop condition: service stopped (ctx), or batch sender closed.
-                return anyhow::Ok(());
+            let Some(permit) = self.reserve_output().await else {
+                return Ok(());
             };
-            let permit_wait_secs = permit_wait_started.elapsed().as_secs_f64();
-            self.metrics.batcher_output_backpressure_duration.record(permit_wait_secs, &[]);
-
-            // We have 3 transactions streams:
-            // * bypass inclusion (for admin rpc/chain bootstrapping purposes)
-            // * l1 to l2 message transactions
-            // * mempool transactions
-            // and we want to fill in a batch with them, with some priority
-            // this is a perfect candidate for the futures-rs stream select api :)
-
-            let (chain_id, sn_version) =
-                (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
-
-            let bypass_txs_stream =
-                stream::unfold(&mut self.bypass_in, |chan| async move { chan.recv().await.map(|tx| (tx, chan)) }).map(
-                    |tx| {
-                        tx.into_blockifier_for_sequencing()
-                            .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
-                            .map_err(anyhow::Error::from)
-                    },
-                );
-
-            let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
-                Ok(res?.into_blockifier(chain_id, sn_version).map(|(btx, declared_class)| {
-                    // L1HandlerTx timestamp is irrelevant
-                    (btx, AdditionalTxInfo { declared_class, arrived_at: TxTimestamp::now() })
-                })?)
-            });
-
-            // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
-            let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = {
-                match *self.mempool_intake_rx.borrow() {
-                    MempoolIntakeMode::Paused => stream::pending().boxed(),
-                    MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
-                        let consumer = mempool.get_consumer().await;
-                        Some((consumer, mempool))
-                    })
-                    .map(|c| {
-                        stream::iter(c.map(|tx| {
-                            tx.into_blockifier_for_sequencing()
-                                .map(|(btx, ts, declared_class)| {
-                                    (btx, AdditionalTxInfo { declared_class, arrived_at: ts })
-                                })
-                                .map_err(anyhow::Error::from)
-                        }))
-                    })
-                    .flatten()
-                    .boxed(),
+            match self.next_batch().await? {
+                BatcherStep::Batch(batch) if !batch.is_empty() => {
+                    tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                    permit.send(batch);
                 }
-            };
-
-            // merge all three streams :)
-            // * all three streams are merged into one stream, allowing us to poll them all at once.
-            // * this will always prioritise bypass_txs, then try and keep the balance betweeen l1_txs and mempool txs.
-
-            // We then consume the merged stream using `try_ready_chunks`.
-            // * `try_ready_chunks` is perfect here since:
-            //   * if there is at least one ready item in the stream, it will return with a batch of all of these ready items, up
-            //     to `batch_size`. This returns immediately and never waits.
-            //   * if there are no ready items in the stream, it will wait until there is at least one.
-            // This allows us to batch when possible, but never wait when we don't have to.
-            // This means that when the congestion is very low (mempool empty & no pending l1 msg), when a
-            // transaction arrives we can instantly pick it up and send it for execution, ensuring the lowest latency possible.
-
-            let tx_stream = stream::select_with_strategy(
-                bypass_txs_stream,
-                stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
-                |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
-            )
-            // futures::TryStreamExt::try_ready_chunks panics when capacity is zero, so clamp defensively.
-            .try_ready_chunks(self.batch_size.max(1));
-
-            tokio::pin!(tx_stream);
-
-            let batch_wait_started = Instant::now();
-            let batch = tokio::select! {
-                _ = self.ctx.cancelled() => {
-                    // Stop condition: cancelled.
-                    return anyhow::Ok(());
-                }
-                res = self.mempool_intake_rx.changed() => {
-                    // Intake mode changes require rebuilding the mempool stream with the new paused/running state.
-                    if res.is_err() {
-                        return anyhow::Ok(());
-                    }
-                    continue;
-                }
-                Some(got) = tx_stream.next() => {
-                    // got a batch :)
-                    let got = got.context("Creating batch for block building")?;
-                    tracing::debug!("Batcher got a batch of {}.", got.len());
-                    got.into_iter().collect::<BatchToExecute>()
-                }
-                // Stop condition: tx_stream is empty.
-                else => return anyhow::Ok(())
-            };
-
-            if !batch.is_empty() {
-                let batch_wait_secs = batch_wait_started.elapsed().as_secs_f64();
-                self.metrics.batcher_batch_wait_duration.record(batch_wait_secs, &[]);
-                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
-                permit.send(batch);
+                BatcherStep::Batch(_) | BatcherStep::RebuildStreams => continue,
+                BatcherStep::Stop => return Ok(()),
             }
         }
     }

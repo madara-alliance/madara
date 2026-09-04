@@ -132,6 +132,8 @@ impl InnerMempool {
 }
 
 impl InnerMempool {
+    /// Iterates over contract addresses currently represented in the mempool.
+    /// Addresses are copied from the account index without exposing its storage.
     pub fn contract_addresses(&self) -> impl Iterator<Item = ContractAddress> + '_ {
         self.accounts.contract_addresses().copied()
     }

@@ -43,6 +43,7 @@ impl ShutdownProgress {
 
 impl BlockProductionTask {
     /// Validates recovery settings, repairs persisted preconfirmed work, and sets the confirmed cursor.
+    /// Parallel-Merkle production begins only after the recovered confirmed head is a durable root base.
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
         if self.parallel_merkle_enabled {
@@ -92,6 +93,7 @@ impl BlockProductionTask {
     }
 
     /// Starts the dedicated executor thread with the task's one-shot command receiver.
+    /// Ownership of the receiver guarantees that only one executor can consume commands.
     fn start_executor(&mut self) -> anyhow::Result<executor::ExecutorThreadHandle> {
         executor::start_executor_thread(
             Arc::clone(&self.backend),
@@ -103,6 +105,7 @@ impl BlockProductionTask {
     }
 
     /// Builds and starts the selected close worker after validating queue limits.
+    /// Serial and parallel modes share the same bounded completion contract.
     fn start_finalizer(&self) -> anyhow::Result<(FinalizerHandle, FinalizerTaskHandle)> {
         let capacity = self.close_queue_capacity();
         validate_parallel_queue_invariant(self.parallel_merkle_enabled, capacity)?;
@@ -117,6 +120,7 @@ impl BlockProductionTask {
     }
 
     /// Logs the effective queue and root-worker settings used by the finalizer.
+    /// Values are emitted once at startup so benchmark configuration is reproducible.
     fn log_finalizer_configuration(&self, handle: &FinalizerHandle) {
         if self.parallel_merkle_enabled {
             tracing::info!(
@@ -139,6 +143,7 @@ impl BlockProductionTask {
     }
 
     /// Starts the batcher with ownership of the executor's single-slot batch sender.
+    /// The task receives transactions from bypass, L1, and mempool sources.
     fn start_batcher(
         &mut self,
         ctx: ServiceContext,
@@ -162,6 +167,7 @@ impl BlockProductionTask {
     }
 
     /// Waits for executor replies, ordered close completions, and shutdown signals.
+    /// The loop exits only after producers stop and the final executor block is accounted for.
     async fn run_event_loop(
         &mut self,
         executor: &mut executor::ExecutorThreadHandle,
@@ -215,6 +221,7 @@ impl BlockProductionTask {
     }
 
     /// Validates and publishes one ordered finalizer completion.
+    /// Any block-number mismatch fails before tracked diff state is pruned.
     fn accept_ordered_completion(
         &mut self,
         expected_block_n: u64,
@@ -272,6 +279,7 @@ impl BlockProductionTask {
     }
 
     /// Drains completion receivers left behind by an error-path loop exit.
+    /// The first completion error is retained while later receivers are still awaited.
     async fn drain_pending_completions(&mut self) {
         while let Some((expected_block_n, receiver)) = self.pending_completions.pop_front() {
             match receiver.await {
@@ -303,6 +311,7 @@ impl BlockProductionTask {
     }
 
     /// Preserves both the event-loop and finalizer error when shutdown reports both.
+    /// A clean result is returned only when both components completed successfully.
     fn combine_runtime_results(
         loop_result: anyhow::Result<()>,
         finalizer_result: anyhow::Result<()>,

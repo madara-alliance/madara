@@ -5,6 +5,7 @@
 //! when persistence is disabled, startup resumes from the confirmed head.
 
 use super::*;
+use anyhow::ensure;
 
 impl BlockProductionTask {
     /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
@@ -127,6 +128,42 @@ impl BlockProductionTask {
         }
     }
 
+    /// Compares every replayed receipt with the durable preconfirmed receipt.
+    ///
+    /// Any execution failure or receipt mismatch aborts recovery before the block is confirmed.
+    fn verify_reexecuted_receipts(
+        blockifier_txs: &[blockifier::transaction::transaction_execution::Transaction],
+        execution_results: &[blockifier::blockifier::transaction_executor::TransactionExecutorResult<
+            blockifier::blockifier::transaction_executor::TransactionExecutionOutput,
+        >],
+        executed_txs: &[PreconfirmedExecutedTransaction],
+    ) -> anyhow::Result<()> {
+        for (index, (result, preconfirmed_tx)) in execution_results.iter().zip(executed_txs).enumerate() {
+            let (execution_info, _) = result.as_ref().map_err(|error| {
+                tracing::warn!("Transaction execution error during re-execution: {error:?}");
+                anyhow::anyhow!(
+                    "Transaction {} (hash: {:#x}) failed during re-execution: {error:?}",
+                    index,
+                    preconfirmed_tx.transaction.receipt.transaction_hash()
+                )
+            })?;
+            let replayed_receipt = from_blockifier_execution_info(execution_info, &blockifier_txs[index]);
+            ensure!(
+                replayed_receipt.transaction_hash() == preconfirmed_tx.transaction.receipt.transaction_hash(),
+                "Re-execution produced different receipt hash for transaction {} (hash: {:#x})",
+                index,
+                preconfirmed_tx.transaction.receipt.transaction_hash()
+            );
+            ensure!(
+                replayed_receipt == preconfirmed_tx.transaction.receipt,
+                "Re-execution produced different receipt content for transaction {} (hash: {:#x})",
+                index,
+                preconfirmed_tx.transaction.receipt.transaction_hash()
+            );
+        }
+        Ok(())
+    }
+
     /// Re-executes all transactions in a PreconfirmedBlock to obtain BlockExecutionSummary.
     ///
     /// This function is called when Madara restarts with a preconfirmed block in the database.
@@ -201,39 +238,7 @@ impl BlockProductionTask {
         // Execute all transactions
         let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
 
-        // Verify that re-execution produces matching receipts
-        for (i, (result, preconfirmed_tx)) in execution_results.iter().zip(executed_txs.iter()).enumerate() {
-            match result {
-                Ok((exec_info, _state_maps)) => {
-                    // Convert execution info to receipt
-                    let reexecuted_receipt = from_blockifier_execution_info(exec_info, &blockifier_txs[i]);
-
-                    // Compare receipts - they should match exactly
-                    anyhow::ensure!(
-                        reexecuted_receipt.transaction_hash() == preconfirmed_tx.transaction.receipt.transaction_hash(),
-                        "Re-execution produced different receipt hash for transaction {} (hash: {:#x})",
-                        i,
-                        preconfirmed_tx.transaction.receipt.transaction_hash()
-                    );
-
-                    anyhow::ensure!(
-                        reexecuted_receipt == preconfirmed_tx.transaction.receipt,
-                        "Re-execution produced different receipt content for transaction {} (hash: {:#x})",
-                        i,
-                        preconfirmed_tx.transaction.receipt.transaction_hash()
-                    );
-                }
-                Err(err) => {
-                    tracing::warn!("Transaction execution error during re-execution: {err:?}");
-                    // If execution failed, we can't compare receipts, but this is unexpected
-                    anyhow::bail!(
-                        "Transaction {} (hash: {:#x}) failed during re-execution: {err:?}",
-                        i,
-                        preconfirmed_tx.transaction.receipt.transaction_hash()
-                    );
-                }
-            }
-        }
+        Self::verify_reexecuted_receipts(&blockifier_txs, &execution_results, &executed_txs)?;
 
         // Call finalize() to get BlockExecutionSummary
         let block_exec_summary = executor.finalize().context("Finalizing executor to get BlockExecutionSummary")?;
@@ -263,132 +268,126 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    /// Closes the last preconfirmed block stored in the database (if any).
+    /// Discards the recovered internal tip when startup policy explicitly requests data loss.
     ///
-    /// This function is called when Madara restarts and finds a preconfirmed block in the database.
-    /// It handles closing the block properly by re-executing transactions to regenerate execution context.
+    /// Transaction hashes are logged before clearing so operators can account for discarded work.
+    async fn discard_recovered_preconfirmed(&self, block_n: u64) -> anyhow::Result<()> {
+        let preconfirmed_view = self
+            .backend
+            .block_view_on_preconfirmed(block_n)
+            .with_context(|| format!("Getting preconfirmed block view for block #{block_n}"))?;
+        let n_txs = preconfirmed_view.num_executed_transactions();
+        let tx_hashes: Vec<_> =
+            preconfirmed_view.get_block_info().tx_hashes.into_iter().map(|hash| format!("{hash:#x}")).collect();
+
+        tracing::warn!(
+            discarded_transaction_hashes = ?tx_hashes,
+            "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled; these transactions are permanently lost and will not be re-queued",
+            block_n,
+            n_txs
+        );
+        let backend = Arc::clone(&self.backend);
+        global_spawn_rayon_task(move || {
+            backend.write_access().clear_preconfirmed().context("Discarding preconfirmed block on startup")
+        })
+        .await?;
+        self.save_current_runtime_exec_config()
+            .context("Saving runtime execution config after discarding preconfirmed block")?;
+        tracing::info!("🧹 Discarded preconfirmed block #{} on startup", block_n);
+        Ok(())
+    }
+
+    /// Resolves the execution configuration that originally produced persisted preconfirmed blocks.
     ///
-    /// # Process
+    /// Older databases without a saved config deliberately fall back to current node settings.
+    fn preconfirmed_recovery_config(&self) -> anyhow::Result<(Option<Arc<mp_chain_config::ChainConfig>>, bool)> {
+        match self.backend.get_runtime_exec_config().context("Getting runtime execution config")? {
+            Some(config) => Ok((Some(Arc::new(config.chain_config)), config.no_charge_fee)),
+            None => {
+                tracing::warn!(
+                    "No saved runtime execution config found, using current configs (backward compatibility)"
+                );
+                Ok((None, self.no_charge_fee))
+            }
+        }
+    }
+
+    /// Re-executes and closes one persisted preconfirmed block during startup recovery.
     ///
-    /// 1. Checks if a preconfirmed block exists.
-    /// 2. Re-executes transactions to obtain `bouncer_weights` and `state_diff`.
-    /// 3. Extracts L1 handler nonces and cleans up L1-L2 message nonces.
-    /// 4. Saves bouncer weights and closes the block.
-    /// 5. Updates runtime config for future blocks.
+    /// The block is confirmed only after its reconstructed state diff and bouncer weights are available.
+    async fn recover_preconfirmed_block(
+        &self,
+        block_number: u64,
+        saved_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
+        saved_no_charge_fee: bool,
+    ) -> anyhow::Result<()> {
+        let preconfirmed_view = self
+            .backend
+            .block_view_on_preconfirmed(block_number)
+            .with_context(|| format!("Getting preconfirmed block view for block #{block_number}"))?;
+        let n_txs = preconfirmed_view.num_executed_transactions();
+        tracing::debug!(
+            "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
+            n_txs,
+            block_number
+        );
+
+        let block_exec_summary = self
+            .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config, saved_no_charge_fee)
+            .await
+            .with_context(|| format!("Re-executing preconfirmed block #{block_number} to get execution summary"))?;
+        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
+        let deployed_contracts_set = preconfirmed_view.get_deployed_contracts_set();
+        let migration_v2_hashes: std::collections::HashSet<Felt> =
+            block_exec_summary.compiled_class_hashes_for_migration.iter().map(|(v2_hash, _)| v2_hash.0).collect();
+        let state_diff = mp_state_update::StateDiff::from_blockifier(
+            block_exec_summary.state_diff,
+            &migration_v2_hashes,
+            &deployed_contracts_set,
+            old_declared_contracts,
+        );
+
+        Self::close_preconfirmed_block_with_state_diff(
+            Arc::clone(&self.backend),
+            block_number,
+            &block_exec_summary.bouncer_weights,
+            state_diff,
+        )
+        .await
+        .with_context(|| format!("Closing preconfirmed block #{block_number} on startup"))?;
+        tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+        Ok(())
+    }
+
+    /// Closes every persisted preconfirmed block above the authoritative confirmed head.
     ///
-    /// Note: Re-execution uses saved config values (e.g. `no_charge_fee`) to ensure consistency with original execution.
-    /// Runtime config is always saved for persistence.
+    /// Recovery scans in ascending order and refreshes the saved runtime configuration afterward.
     pub(super) async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
         let head = self.backend.chain_head_state();
-        let confirmed_tip = head.confirmed_tip;
-        let Some(internal_preconfirmed_tip) = head.internal_preconfirmed_tip else {
+        let Some(internal_tip) = head.internal_preconfirmed_tip else {
             self.save_current_runtime_exec_config()?;
             return Ok(());
         };
-
-        // Startup recovery scans block-keyed preconfirmed entries in ascending order:
-        // [confirmed + 1, internal_preconfirmed_tip].
-        let start_block_n = confirmed_tip.map(|n| n.saturating_add(1)).unwrap_or(0);
-        if start_block_n > internal_preconfirmed_tip {
+        let start_block_n = head.confirmed_tip.map(|block_n| block_n.saturating_add(1)).unwrap_or(0);
+        if start_block_n > internal_tip {
             self.save_current_runtime_exec_config()?;
             return Ok(());
         }
-
         if self.discard_preconfirmed_on_startup {
-            let preconfirmed_view = self
-                .backend
-                .block_view_on_preconfirmed(internal_preconfirmed_tip)
-                .with_context(|| format!("Getting preconfirmed block view for block #{internal_preconfirmed_tip}"))?;
-            let block_number = preconfirmed_view.block_number();
-            let n_txs = preconfirmed_view.num_executed_transactions();
-            let tx_hashes: Vec<_> = preconfirmed_view
-                .get_block_info()
-                .tx_hashes
-                .into_iter()
-                .map(|tx_hash| format!("{tx_hash:#x}"))
-                .collect();
-
-            tracing::warn!(
-                discarded_transaction_hashes = ?tx_hashes,
-                "Discarding preconfirmed block #{} with {} transactions on startup because discard_preconfirmed_on_startup is enabled; these transactions are permanently lost and will not be re-queued",
-                block_number,
-                n_txs
-            );
-
-            let backend = self.backend.clone();
-            global_spawn_rayon_task(move || {
-                backend.write_access().clear_preconfirmed().context("Discarding preconfirmed block on startup")
-            })
-            .await?;
-
-            self.save_current_runtime_exec_config()
-                .context("Saving runtime execution config after discarding preconfirmed block")?;
-
-            tracing::info!("🧹 Discarded preconfirmed block #{} on startup", block_number);
-            return Ok(());
+            return self.discard_recovered_preconfirmed(internal_tip).await;
         }
+
         tracing::debug!(
             "Close preconfirmed blocks on startup from block_n={} to block_n={}",
             start_block_n,
-            internal_preconfirmed_tip
+            internal_tip
         );
-
-        let saved_config = self.backend.get_runtime_exec_config().context("Getting runtime execution config")?;
-        let (saved_chain_config, saved_no_charge_fee) = if let Some(config) = saved_config {
-            (Some(Arc::new(config.chain_config)), config.no_charge_fee)
-        } else {
-            tracing::warn!("No saved runtime execution config found, using current configs (backward compatibility)");
-            (None, self.no_charge_fee)
-        };
-
-        for block_number in start_block_n..=internal_preconfirmed_tip {
-            let preconfirmed_view = self
-                .backend
-                .block_view_on_preconfirmed(block_number)
-                .with_context(|| format!("Getting preconfirmed block view for block #{block_number}"))?;
-
-            let n_txs = preconfirmed_view.num_executed_transactions();
-            tracing::debug!(
-                "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
-                n_txs,
-                block_number
-            );
-
-            let block_exec_summary = self
-                .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config.as_ref(), saved_no_charge_fee)
-                .await
-                .with_context(|| format!("Re-executing preconfirmed block #{block_number} to get execution summary"))?;
-
-            let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
-            let deployed_contracts_set = preconfirmed_view.get_deployed_contracts_set();
-            let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
-                .compiled_class_hashes_for_migration
-                .iter()
-                .map(|(v2_hash, _v1_hash)| v2_hash.0)
-                .collect();
-
-            let state_diff = mp_state_update::StateDiff::from_blockifier(
-                block_exec_summary.state_diff,
-                &migration_v2_hashes,
-                &deployed_contracts_set,
-                old_declared_contracts,
-            );
-
-            let _db_result = Self::close_preconfirmed_block_with_state_diff(
-                self.backend.clone(),
-                block_number,
-                &block_exec_summary.bouncer_weights,
-                state_diff,
-            )
-            .await
-            .with_context(|| format!("Closing preconfirmed block #{block_number} on startup"))?;
-
-            tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+        let (saved_chain_config, saved_no_charge_fee) = self.preconfirmed_recovery_config()?;
+        for block_number in start_block_n..=internal_tip {
+            self.recover_preconfirmed_block(block_number, saved_chain_config.as_ref(), saved_no_charge_fee).await?;
         }
-
         self.save_current_runtime_exec_config()
             .context("Updating runtime execution config after startup preconfirmed recovery")?;
-
         Ok(())
     }
 }
