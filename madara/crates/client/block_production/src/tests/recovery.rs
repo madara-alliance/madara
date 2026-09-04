@@ -200,13 +200,28 @@ async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
     // adding some delay to see if block_timestamp would differ in the reexecution or not
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Step 5: Now call close_preconfirmed_block_if_exists to re-execute and close the preconfirmed block
-    let mut reexec_block_production_task = restart_devnet_setup.block_prod_task();
-    reexec_block_production_task.close_preconfirmed_block_if_exists().await.unwrap();
+    // Step 5: Run parallel-Merkle startup recovery. Besides re-executing and closing the
+    // preconfirmed block, setup must publish the recovered head as the next durable root base.
+    let mut reexec_block_production_task = restart_devnet_setup.block_prod_task().with_parallel_merkle_enabled(true);
+    reexec_block_production_task.setup_initial_state().await.unwrap();
 
     // Step 6: Verify results match
     assert!(!restart_devnet_setup.backend.has_preconfirmed_block());
     assert_eq!(restart_devnet_setup.backend.latest_confirmed_block_n(), Some(block_number));
+    assert_eq!(
+        restart_devnet_setup.backend.db.get_parallel_merkle_latest_checkpoint().unwrap(),
+        Some(block_number),
+        "recovered head must be the durable base for the first new parallel root"
+    );
+    assert_eq!(
+        restart_devnet_setup
+            .backend
+            .db
+            .get_latest_durable_snapshot_floor(Some(block_number))
+            .map(|(snapshot_block, _)| snapshot_block),
+        Some(Some(block_number)),
+        "recovered head snapshot must be available before normal production starts"
+    );
 
     let reexecuted_block_info =
         restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap().get_block_info().unwrap();

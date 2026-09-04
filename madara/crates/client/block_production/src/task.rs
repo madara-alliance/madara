@@ -59,10 +59,36 @@ impl BlockProductionTask {
                 .context("Validating parallel Merkle recovery configuration")?;
         }
 
+        let confirmed_tip_before_recovery = self.backend.latest_confirmed_block_n();
         self.close_preconfirmed_block_if_exists().await.context("Cannot close preconfirmed block on startup")?;
+        self.checkpoint_recovered_parallel_merkle_head(confirmed_tip_before_recovery)?;
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: self.backend.latest_confirmed_block_n() });
         self.record_block_stage_metrics();
         Ok(())
+    }
+
+    /// Makes a recovered confirmed tip the durable base for the first new parallel root.
+    ///
+    /// Preconfirmed recovery closes blocks before the finalizer exists, so its state diffs
+    /// cannot survive in the task-local diff window. Publishing the recovered trie state as
+    /// a durable checkpoint prevents the first normal close from selecting the older startup
+    /// snapshot and requesting those unavailable in-memory diffs.
+    fn checkpoint_recovered_parallel_merkle_head(
+        &self,
+        confirmed_tip_before_recovery: Option<u64>,
+    ) -> anyhow::Result<()> {
+        if !self.parallel_merkle_enabled {
+            return Ok(());
+        }
+
+        let recovered_tip = self.backend.latest_confirmed_block_n();
+        if recovered_tip == confirmed_tip_before_recovery {
+            return Ok(());
+        }
+
+        self.backend
+            .reconcile_confirmed_parallel_merkle_state("post_preconfirmed_recovery")
+            .with_context(|| format!("Checkpointing recovered parallel Merkle head {recovered_tip:?}"))
     }
 
     /// Starts the dedicated executor thread with the task's one-shot command receiver.
