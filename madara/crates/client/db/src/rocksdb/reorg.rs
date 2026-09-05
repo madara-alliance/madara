@@ -84,7 +84,8 @@ impl RocksDBStorage {
 
     /// Preflights all L1-message cleanup and derives the replay cursor for the reverted range.
     ///
-    /// Missing source-block metadata is rejected before trie or block data is mutated.
+    /// Nonces without source-block metadata are still cleaned up, but cannot contribute to the
+    /// L1 sync cursor rewind.
     fn prepare_l1_rewind(&self, target_block_n: u64, current_tip: u64) -> Result<L1RewindPlan> {
         let reverted_nonces = self
             .inner
@@ -117,8 +118,8 @@ impl RocksDBStorage {
         missing_source_block_nonces.sort_unstable();
         if !missing_source_block_nonces.is_empty() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
-            bail!(
-                "Cannot revert: missing L1 handler L1 block mapping for {} L1 message nonce(s) scheduled for cleanup (sample={sample:?}).",
+            tracing::warn!(
+                "Revert: {} L1 message nonce(s) have no L1 block mapping (sample={sample:?}). These nonces will still be cleaned up but won't affect L1 sync rewind.",
                 missing_source_block_nonces.len()
             );
         }
