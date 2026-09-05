@@ -127,6 +127,9 @@ use std::sync::Arc;
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch, MakeTransactionLookupSwitch};
 
+#[global_allocator]
+static GLOBAL_ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
