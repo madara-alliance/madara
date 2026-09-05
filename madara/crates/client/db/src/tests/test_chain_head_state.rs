@@ -9,6 +9,7 @@ use mp_chain_config::ChainConfig;
 use mp_state_update::StateDiff;
 use rstest::rstest;
 use std::sync::Arc;
+use tokio::time::{timeout, Duration};
 
 #[tokio::test]
 async fn internal_heads_subscription_tracks_preconfirmed_then_confirmed_close() {
@@ -91,6 +92,42 @@ async fn internal_heads_subscription_emits_internal_runahead_while_external_tip_
     match second {
         MadaraBlockView::Preconfirmed(block) => assert_eq!(block.block_number(), 1),
         _ => panic!("expected preconfirmed head"),
+    }
+}
+
+#[tokio::test]
+async fn internal_heads_subscription_does_not_skip_confirmation_behind_runahead() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+    let mut sub = backend.subscribe_internal_heads(crate::subscription::SubscribeNewBlocksTag::Preconfirmed);
+    sub.set_start_from(0);
+
+    for block_n in 0..=1 {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: block_n,
+                ..Default::default()
+            }))
+            .expect("creating runahead preconfirmed block should succeed");
+
+        let observed = sub.next_block_view().await;
+        match observed {
+            MadaraBlockView::Preconfirmed(block) => assert_eq!(block.block_number(), block_n),
+            _ => panic!("expected preconfirmed head"),
+        }
+    }
+
+    backend.write_access().new_confirmed_block(0).expect("confirming block 0 should succeed");
+
+    let observed = timeout(Duration::from_secs(1), sub.next_block_view())
+        .await
+        .expect("confirmation behind runahead must not be skipped");
+    match observed {
+        MadaraBlockView::Confirmed(block) => assert_eq!(block.block_number(), 0),
+        _ => panic!("expected confirmed block 0"),
     }
 }
 

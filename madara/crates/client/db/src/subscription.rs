@@ -215,7 +215,8 @@ impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
                     });
 
                     if expected_preconfirmed_tip == next_preconfirmed_tip && changed {
-                        self.current_confirmed_tip = next_preconfirmed.header.block_number.checked_sub(1);
+                        // Preconfirmed runahead may be several blocks ahead of confirmation. Keep the
+                        // confirmed cursor unchanged so every later confirmed block is still emitted.
                         self.current_preconfirmed = Some(next_preconfirmed);
                         return;
                     }

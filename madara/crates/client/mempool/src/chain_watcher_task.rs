@@ -408,6 +408,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             self.apply_nonce_updates(effects.nonce_updates).await?;
             self.apply_potentially_removed_transactions(effects.potentially_removed, effects.put_back_into_mempool)
                 .await;
+            self.metrics.record_preconfirmed_transaction_statuses(self.preconfirmed_transactions_statuses.len());
         }
     }
 }
