@@ -143,7 +143,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     /// Internal runahead is intentionally exposed through backend runtime APIs instead.
     fn get_head_projection(&self) -> Result<StorageHeadProjection>;
     /// Loads a block-keyed preconfirmed header and its ordered executed transaction content.
-    /// Missing block data returns `None`; incomplete persisted content is reported as an error.
+    /// A missing header returns `None`; malformed stored values return an error.
     fn get_preconfirmed_block_data(
         &self,
         block_n: u64,

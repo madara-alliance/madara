@@ -8,30 +8,8 @@ use super::*;
 use anyhow::ensure;
 
 impl BlockProductionTask {
-    /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
-    ///
-    /// This function converts a `PreconfirmedExecutedTransaction` (stored in the database) back into a
-    /// blockifier transaction format that can be re-executed. It handles all the necessary conversions
-    /// and ensures execution flags are properly set.
-    ///
-    /// # Process
-    ///
-    /// 1. Converts `PreconfirmedExecutedTransaction` to `ValidatedTransaction` using `to_validated()`
-    /// 2. Sets `charge_fee` based on the `no_charge_fee` configuration (`charge_fee = !no_charge_fee`)
-    /// 3. Fetches `declared_class` from state if missing (for Declare transactions)
-    /// 4. Converts to blockifier format using `into_blockifier_for_sequencing()` which properly applies execution flags
-    ///
-    /// # Important Notes
-    ///
-    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration. Note that `new()` is
-    ///   called every time Madara starts, so there is no guarantee that the `no_charge_fee` value matches
-    ///   the value used during original execution. This is a limitation that should be addressed by storing
-    ///   execution configuration in the database (see TODO in `new()`).
-    /// - For L1 handler transactions, `paid_fee_on_l1` is preserved from `PreconfirmedExecutedTransaction`
-    ///   (stored during `append_batch`) and used during conversion via `to_validated()`
-    /// - Declare transactions may need their `declared_class` fetched from state if not already stored
-    /// - The conversion uses `into_blockifier_for_sequencing()` which properly sets all execution flags
-    ///   including `charge_fee`, `validate`, and `only_query`
+    /// Rebuilds a Blockifier transaction using the saved fee policy and persisted L1 fee.
+    /// Missing declared classes are loaded from the recovery parent state.
     fn prepare_preconfirmed_tx_for_reexecution(
         &self,
         preconfirmed_tx: &PreconfirmedExecutedTransaction,

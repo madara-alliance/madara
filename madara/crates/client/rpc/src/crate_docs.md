@@ -334,7 +334,9 @@ Estimates the fee for a given transaction.
   "jsonrpc": "2.0",
   "method": "starknet_estimateFee",
   "params": {
-    "request": [/* transaction objects */],
+    "request": [
+      /* transaction objects */
+    ],
     "simulation_flags": [],
     "block_id": "latest"
   },
@@ -353,7 +355,9 @@ Estimates the fee for an L1 to L2 message.
   "jsonrpc": "2.0",
   "method": "starknet_estimateMessageFee",
   "params": {
-    "message": {/* L1 message object */},
+    "message": {
+      /* L1 message object */
+    },
     "block_id": "latest"
   },
   "id": 1
@@ -500,7 +504,9 @@ Simulates transactions without executing them on-chain.
   "method": "starknet_simulateTransactions",
   "params": {
     "block_id": "latest",
-    "transactions": [/* transaction objects */],
+    "transactions": [
+      /* transaction objects */
+    ],
     "simulation_flags": []
   },
   "id": 1
@@ -541,7 +547,9 @@ Submits an invoke transaction.
   "jsonrpc": "2.0",
   "method": "starknet_addInvokeTransaction",
   "params": {
-    "invoke_transaction": {/* transaction object */}
+    "invoke_transaction": {
+      /* transaction object */
+    }
   },
   "id": 1
 }
@@ -558,7 +566,9 @@ Submits a declare transaction to register a new contract class.
   "jsonrpc": "2.0",
   "method": "starknet_addDeclareTransaction",
   "params": {
-    "declare_transaction": {/* transaction object */}
+    "declare_transaction": {
+      /* transaction object */
+    }
   },
   "id": 1
 }
@@ -575,7 +585,9 @@ Submits a deploy account transaction.
   "jsonrpc": "2.0",
   "method": "starknet_addDeployAccountTransaction",
   "params": {
-    "deploy_account_transaction": {/* transaction object */}
+    "deploy_account_transaction": {
+      /* transaction object */
+    }
   },
   "id": 1
 }
@@ -691,7 +703,9 @@ allows submission of older transaction formats.
   "jsonrpc": "2.0",
   "method": "madara_addDeclareV0Transaction",
   "params": {
-    "declare_transaction": {/* legacy transaction object */}
+    "declare_transaction": {
+      /* legacy transaction object */
+    }
   },
   "id": 1
 }
@@ -747,6 +761,23 @@ components.
   "id": 1
 }
 ```
+
+### Replay and Mempool Intake Controls
+
+These methods require `--rpc-unsafe` on the administrative endpoint.
+
+- `madara_setReplayBoundary` accepts a `replay_boundary` object containing `block_n`,
+  `expected_tx_count`, and `last_tx_hash`. With `--replay-mode`, the batcher limits
+  dispatch and the executor checks the transaction count and terminal hash before closing
+  the source block. A boundary stored without replay mode is ignored by batching and execution.
+- `madara_getReplayBoundaryStatus` accepts `block_n` and returns the configured boundary's
+  progress, or `null` when none is configured. Dispatch, execution, and closure are separate
+  stages; `boundary_met` does not mean the block has been durably confirmed.
+- `madara_setMempoolIntake` accepts `enabled`: `false` pauses further mempool intake and
+  `true` resumes it. Transactions already dispatched may still execute. This requires block
+  production and leaves L1 messages and administrative bypass submissions active.
+
+Replay boundaries and intake controls live in memory and must be configured again after restart.
 
 ### WebSocket Methods
 

@@ -104,6 +104,7 @@ mod tests {
     }
 }
 
+/// Runtime replay limit for one source block, checked by transaction count and terminal hash.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReplayBlockBoundary {
     pub block_n: u64,
@@ -111,6 +112,8 @@ pub struct ReplayBlockBoundary {
     pub last_tx_hash: Felt,
 }
 
+/// Runtime progress toward a replay boundary. Dispatch, execution, and closure are separate stages;
+/// meeting the boundary does not by itself establish durable block confirmation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReplayBlockBoundaryStatus {
     pub block_n: u64,

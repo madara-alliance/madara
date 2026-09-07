@@ -24,6 +24,8 @@ use std::time::Instant;
 
 type InMemoryTrie<H> = bonsai_trie::BonsaiStorage<BasicId, InMemoryBonsaiDb, H>;
 
+/// A computed block root that has not yet been committed or published as confirmed.
+/// The optional overlay is retained only when requested for a checkpoint flush or comparison.
 #[derive(Debug, Clone)]
 pub struct InMemoryRootComputation {
     pub block_n: u64,

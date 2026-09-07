@@ -44,8 +44,8 @@ pub struct BlockProductionParams {
     pub parallel_merkle_max_inflight: u64,
 
     /// Enable parallel merkle root computation.
-    /// When enabled, trie root computation runs in a dedicated worker thread
-    /// while commitments, header, hash, and DB writes remain inline.
+    /// Root jobs run on a blocking pool while the finalizer commits block parts and
+    /// checkpoint boundaries in canonical order. Execution can run ahead.
     #[arg(env = "MADARA_PARALLEL_MERKLE_ENABLED", long, default_value_t = false)]
     pub parallel_merkle_enabled: bool,
 

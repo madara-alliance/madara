@@ -1,3 +1,13 @@
+//! Root computation over a pinned checkpoint plus a private mutable Bonsai overlay.
+//!
+//! A root job applies the cumulative state diff since its selected checkpoint. It never changes
+//! the live database. The resulting overlay is a delta against that checkpoint, not a complete
+//! database snapshot and not a delta against the immediately preceding root job.
+//!
+//! Database clones within one job share overlay ownership; independent jobs require separate
+//! overlays. Only the ordered finalizer may flush a completed overlay. Boundary flushes include
+//! all three tries and durable checkpoint bookkeeping before confirmation becomes visible.
+
 mod compute;
 mod db;
 mod overlay;

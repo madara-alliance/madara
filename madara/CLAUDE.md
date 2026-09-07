@@ -130,7 +130,8 @@ Key services run concurrently:
 
 **Chain Head Projection Management:**
 
-- Canonical state is tracked via `ChainHeadState` + optional in-memory `PreconfirmedBlock`
+- `ChainHeadState` separates confirmed, external preconfirmed, and internal execution tips
+- Runtime preconfirmed blocks form a block-keyed suffix; confirmation removes only its confirmed prefix
 - Persisted head projection supports Empty | Confirmed(block_n) | Preconfirmed(header + content)
 - Atomic transitions are validated by `MadaraBackendWriter`
 

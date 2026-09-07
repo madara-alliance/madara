@@ -35,8 +35,7 @@ impl SnapshotWithDBArc {
         DBIterator::new_cf(&self.db.db, &self.db.get_column(column), readopts, mode)
     }
 
-    // This function allows us to not repeat the unsafe block a bunch of times. It takes ownership of the
-    // readoptions to ensure its lifetime is stictly smaller than self.
+    // Keep raw options inside this private callback while self keeps the snapshot alive.
     fn readopts_with_raw_snapshot<R>(&self, mut readopts: ReadOptions, f: impl FnOnce(&ReadOptions) -> R) -> R {
         // Safety: the snapshot originates from the `db`, and it is not dropped during the lifetime of the `readopts` variable.
         unsafe {
@@ -48,6 +47,7 @@ impl SnapshotWithDBArc {
 
     /// Creates a new `SnapshotWithDBArc` of the database `db`.
     pub(crate) fn new(db: Arc<RocksDBStorageInner>) -> Self {
+        // SAFETY: db is live and its Arc is retained until after the snapshot is released.
         let snapshot = unsafe { db.db.create_snapshot() };
         Self { db, inner: snapshot }
     }
@@ -168,13 +168,14 @@ impl SnapshotWithDBArc {
 
 impl Drop for SnapshotWithDBArc {
     fn drop(&mut self) {
+        // SAFETY: this handle came from this DB and is released exactly once, before its Arc drops.
         unsafe {
             self.db.db.release_snapshot(self.inner);
         }
     }
 }
 
-/// `Send` and `Sync` implementations for `SnapshotWithThreadMode` are safe, because `SnapshotWithThreadMode` is
-/// immutable and can be safely shared between threads.
+// SAFETY: RocksDB snapshots can be used across threads; the Arc keeps the owning DB alive.
 unsafe impl Send for SnapshotWithDBArc {}
+// SAFETY: shared access only reads the immutable snapshot; releasing it requires exclusive Drop.
 unsafe impl Sync for SnapshotWithDBArc {}

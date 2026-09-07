@@ -500,7 +500,8 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
         Self: 'a;
     type DatabaseError = TrieError;
 
-    /// this is called upstream, but we ignore it for now because we create the snapshot in [`crate::MadaraBackend::store_block`]
+    /// Snapshot lifecycle is managed by the backend when the confirmed head or checkpoint advances,
+    /// so Bonsai's per-trie snapshot callback does not create a separate snapshot.
     #[tracing::instrument(skip(self))]
     fn snapshot(&mut self, id: BasicId) {}
 

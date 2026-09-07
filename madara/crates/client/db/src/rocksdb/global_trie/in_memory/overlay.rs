@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 const SLOW_BOUNDARY_FLUSH_WARNING: Duration = Duration::from_secs(5);
 
+/// Cumulative trie changes relative to one pinned checkpoint, including deletions.
+/// Cloning shares the mutable maps; finish root computation before flushing or inspecting them.
 #[derive(Debug, Clone)]
 pub struct BonsaiOverlay {
     pub contract_changed: OverlayMap,
