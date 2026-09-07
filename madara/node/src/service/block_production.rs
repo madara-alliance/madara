@@ -66,7 +66,7 @@ impl Service for BlockProductionService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let block_production_task = self.task.take().context("Service already started")?;
         if !self.disabled {
-            runner.service_loop(move |ctx| block_production_task.run(ctx));
+            runner.service_loop_with_graceful_shutdown(move |ctx| block_production_task.run(ctx));
         }
 
         Ok(())

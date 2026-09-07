@@ -251,6 +251,13 @@ impl<D: MadaraStorageRead> Mempool<D> {
     }
 }
 
+/// Only startup reconciliation or an actual chain replacement may lower an account nonce.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NonceUpdateMode {
+    Advance,
+    Replace,
+}
+
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
         if !self.config.save_to_db {
@@ -317,12 +324,16 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             nonce_updates.insert(contract_address, account_nonce);
         }
 
-        self.update_account_nonces(nonce_updates).await
+        self.update_account_nonces(nonce_updates, NonceUpdateMode::Replace).await
     }
 
     /// Applies canonical account nonces to the inner mempool and collects transactions made stale.
     /// Metrics, persistence, and status notifications are updated after releasing the write lock.
-    async fn update_account_nonces(&self, nonce_updates: HashMap<Felt, Felt>) -> Result<(), anyhow::Error> {
+    async fn update_account_nonces(
+        &self,
+        nonce_updates: HashMap<Felt, Felt>,
+        mode: NonceUpdateMode,
+    ) -> Result<(), anyhow::Error> {
         if nonce_updates.is_empty() {
             return Ok(());
         }
@@ -331,11 +342,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let summary = {
             let mut guard = self.inner.write().await;
             for (contract_address, account_nonce) in nonce_updates {
-                guard.update_account_nonce(
-                    &contract_address.try_into().context("Invalid contract address")?,
-                    &Nonce(account_nonce),
-                    &mut removed_txs,
-                );
+                let address = contract_address.try_into().context("Invalid contract address")?;
+                let mut nonce = Nonce(account_nonce);
+                if mode == NonceUpdateMode::Advance {
+                    // Admission can observe a newer chain state before this watcher acquires the lock.
+                    nonce = nonce.max(guard.get_account_nonce(&address).copied().unwrap_or_default());
+                }
+                guard.update_account_nonce(&address, &nonce, &mut removed_txs);
             }
             guard.summary()
         };
@@ -872,7 +885,10 @@ pub(crate) mod tests {
             vec![queued_tx.clone()]
         );
 
-        mempool.update_account_nonces([(queued_tx.contract_address, Felt::ONE)].into()).await.unwrap();
+        mempool
+            .update_account_nonces([(queued_tx.contract_address, Felt::ONE)].into(), NonceUpdateMode::Advance)
+            .await
+            .unwrap();
 
         assert!(mempool.is_empty().await, "nonce advancement should evict stale txs from the in-memory mempool");
         assert!(

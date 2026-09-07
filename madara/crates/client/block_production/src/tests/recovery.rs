@@ -272,7 +272,7 @@ async fn test_reexecution_uses_saved_no_charge_fee_value(
     // Phase 2: Restart with different no_charge_fee value
     // This simulates a configuration change between shutdown and restart.
     let restart_no_charge_fee = false;
-    let restart_block_production_task = BlockProductionTask::new(
+    let mut restart_block_production_task = BlockProductionTask::new(
         original_devnet_setup.backend.clone(), // Same backend = same database
         original_devnet_setup.mempool.clone(),
         original_devnet_setup.metrics.clone(),
@@ -282,16 +282,8 @@ async fn test_reexecution_uses_saved_no_charge_fee_value(
         false,
     );
 
-    // Start the block production task.
-    // This will call setup_initial_state() which calls close_preconfirmed_block_if_exists().
-    // During re-execution, it will use saved_no_charge_fee = true (from saved config),
-    // NOT restart_no_charge_fee = false (from current config).
-    let _restart_task = AbortOnDrop::spawn(async move {
-        restart_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
-    });
-
-    // Give time for setup_initial_state to complete and close the pre-confirmed block
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // Await recovery itself rather than racing its completion against a fixed sleep.
+    restart_block_production_task.setup_initial_state().await.unwrap();
 
     // Phase 3: Verify block was closed successfully
     assert!(!original_devnet_setup.backend.has_preconfirmed_block());

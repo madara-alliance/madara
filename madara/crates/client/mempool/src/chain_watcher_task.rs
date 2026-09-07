@@ -1,6 +1,6 @@
 use crate::{
     transaction_status::{PreConfirmationStatus, TransactionStatus},
-    Mempool,
+    Mempool, NonceUpdateMode,
 };
 use anyhow::Context;
 use futures::future::OptionFuture;
@@ -8,21 +8,53 @@ use mc_db::{MadaraBlockView, MadaraPreconfirmedBlockView, MadaraStorageRead, Mad
 use mp_convert::Felt;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
-/// Returns true only for an adjacent preconfirmed frontier advance.
-/// Non-adjacent changes are treated as replacement or rollback paths by the watcher.
-fn is_preconfirmed_forward_advance(current_preconfirmed_n: Option<u64>, next_preconfirmed_n: Option<u64>) -> bool {
-    matches!(
-        (current_preconfirmed_n, next_preconfirmed_n),
-        (Some(current), Some(next)) if current.checked_add(1) == Some(next)
-    )
+/// Confirmation advances independently of the executed blocks still awaiting finalization.
+struct ChainWatcherState<D: MadaraStorageRead> {
+    confirmed_tip: Option<u64>,
+    preconfirmed: BTreeMap<u64, TrackedPreconfirmed<D>>,
+}
+
+/// Keeps each block's latest nonce per account without rescanning its transactions on confirmation.
+struct TrackedPreconfirmed<D: MadaraStorageRead> {
+    view: MadaraPreconfirmedBlockView<D>,
+    nonces: HashMap<Felt, Felt>,
+}
+
+impl<D: MadaraStorageRead> TrackedPreconfirmed<D> {
+    /// Persisted blocks can be reconstructed into new Arcs while recovery is in progress.
+    /// Their executed prefix identifies continuity independently of allocation identity.
+    fn continues_in(&self, current: &MadaraPreconfirmedBlockView<D>) -> bool {
+        Arc::ptr_eq(self.view.block(), current.block())
+            || (self.view.block().header == current.block().header
+                && current.get_block_info().tx_hashes.starts_with(&self.view.get_block_info().tx_hashes))
+    }
+
+    fn new(view: MadaraPreconfirmedBlockView<D>) -> Self {
+        let nonces = view
+            .borrow_content()
+            .executed_transactions()
+            .flat_map(|tx| tx.state_diff.nonces.iter().map(|(address, nonce)| (*address, *nonce)))
+            .collect();
+        Self { view, nonces }
+    }
+}
+
+impl<D: MadaraStorageRead> ChainWatcherState<D> {
+    fn new(confirmed_tip: Option<u64>) -> Self {
+        Self { confirmed_tip, preconfirmed: BTreeMap::new() }
+    }
 }
 
 struct ChainWatcherBranchEffects {
     potentially_removed: HashMap<Felt, Arc<ValidatedTransaction>>,
     put_back_into_mempool: bool,
     nonce_updates: HashMap<Felt, Felt>,
+    nonce_update_mode: NonceUpdateMode,
     confirmed_tx_hashes: Vec<Felt>,
 }
 
@@ -34,6 +66,7 @@ impl ChainWatcherBranchEffects {
             potentially_removed: HashMap::new(),
             put_back_into_mempool: true,
             nonce_updates: HashMap::new(),
+            nonce_update_mode: NonceUpdateMode::Advance,
             confirmed_tx_hashes: Vec::new(),
         }
     }
@@ -159,41 +192,67 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         }
     }
 
-    /// Collects transactions and nonce rollbacks implied by leaving the previous preconfirmed frontier.
-    /// Adjacent forward progress keeps executed transactions and only reconsiders unexecuted candidates.
-    fn collect_previous_preconfirmed_potentially_removed_transactions(
+    /// Only blocks actually replaced or confirmed can lose executed transactions.
+    fn collect_removed_preconfirmed(
         &self,
-        current_internal_frontier: Option<&MadaraBlockView<D>>,
-        preconfirmed_forward_advance: bool,
-        potentially_removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
+        preconfirmed: &MadaraPreconfirmedBlockView<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) {
+        for tx in preconfirmed.borrow_content().executed_transactions() {
+            effects.potentially_removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
+            // Values are resolved against the remaining chain after the transition.
+            effects.nonce_updates.extend(tx.state_diff.nonces.keys().map(|key| (*key, Felt::ZERO)));
+        }
+        self.mark_candidate_transactions_as_potentially_removed(preconfirmed, &mut effects.potentially_removed);
+    }
+
+    /// Resolves affected account nonces from confirmed state plus every retained execution layer.
+    /// A confirmation behind runahead must not overwrite a nonce written by a later block.
+    fn resolve_nonce_updates(
+        &self,
+        state: &ChainWatcherState<D>,
         nonce_updates: &mut HashMap<Felt, Felt>,
     ) -> anyhow::Result<()> {
-        let Some(preconfirmed) = current_internal_frontier.and_then(|v| v.as_preconfirmed()) else {
-            return Ok(());
-        };
-
-        if preconfirmed_forward_advance {
-            // On normal forward progress to the next preconfirmed block, previous executed transactions
-            // must stay out of the mempool and keep their preconfirmed status.
-            self.mark_candidate_transactions_as_potentially_removed(preconfirmed, potentially_removed);
-            return Ok(());
+        let confirmed_tip = self.backend.latest_confirmed_block_n();
+        for (address, nonce) in nonce_updates.iter_mut() {
+            *nonce = match confirmed_tip {
+                Some(block_n) => self.backend.db.get_contract_nonce_at(block_n, address)?.unwrap_or(Felt::ZERO),
+                None => Felt::ZERO,
+            };
         }
-
-        let view_on_parent = preconfirmed.state_view_on_parent();
-        for tx in preconfirmed.borrow_content().executed_transactions() {
-            // Re-convert PreconfirmedExecutedTransaction to ValidatedTransaction.
-            potentially_removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
-            // Rollback the contract nonce to what it was before the transaction.
-            for key in tx.state_diff.nonces.keys() {
-                nonce_updates.insert(
-                    *key,
-                    // Get from db.
-                    view_on_parent.get_contract_nonce(key)?.unwrap_or(Felt::ZERO),
-                );
+        for pending in state
+            .preconfirmed
+            .values()
+            .filter(|pending| confirmed_tip.is_none_or(|tip| pending.view.block_number() > tip))
+        {
+            for (address, update) in nonce_updates.iter_mut() {
+                if let Some(nonce) = pending.nonces.get(address) {
+                    *update = *nonce;
+                }
             }
         }
-        self.mark_candidate_transactions_as_potentially_removed(preconfirmed, potentially_removed);
+        Ok(())
+    }
 
+    /// Retained execution layers protect transactions even when their earlier candidate is retired.
+    fn resolve_branch_effects(
+        &self,
+        state: &ChainWatcherState<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        self.resolve_nonce_updates(state, &mut effects.nonce_updates)?;
+        if effects.potentially_removed.is_empty() {
+            return Ok(());
+        }
+        for pending in state.preconfirmed.values() {
+            let view = &pending.view;
+            for hash in &view.get_block_info().tx_hashes {
+                effects.potentially_removed.remove(hash);
+            }
+            for tx in view.candidate_transactions() {
+                effects.potentially_removed.remove(&tx.hash);
+            }
+        }
         Ok(())
     }
 
@@ -224,58 +283,86 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
-    /// Branch #2:
-    /// Process a new internal L2 frontier item (`Confirmed` or internal `Preconfirmed`).
+    /// Processes confirmations without replacing the independent execution frontier.
     fn handle_new_internal_frontier(
         &self,
-        current_internal_frontier: &mut Option<MadaraBlockView<D>>,
-        mut new_head: MadaraBlockView<D>,
+        state: &mut ChainWatcherState<D>,
+        new_head: MadaraBlockView<D>,
         effects: &mut ChainWatcherBranchEffects,
     ) -> anyhow::Result<()> {
-        let current_preconfirmed_n =
-            current_internal_frontier.as_ref().and_then(|v| v.as_preconfirmed()).map(|v| v.block_number());
-        let next_preconfirmed_n = new_head.as_preconfirmed().map(|v| v.block_number());
-        let preconfirmed_forward_advance = is_preconfirmed_forward_advance(current_preconfirmed_n, next_preconfirmed_n);
-
-        // If the previous frontier was preconfirmed, mark potentially removed transactions and nonce rollback.
-        self.collect_previous_preconfirmed_potentially_removed_transactions(
-            current_internal_frontier.as_ref(),
-            preconfirmed_forward_advance,
-            &mut effects.potentially_removed,
-            &mut effects.nonce_updates,
-        )?;
-
-        if let MadaraBlockView::Preconfirmed(preconfirmed) = &mut new_head {
-            preconfirmed.refresh_with_candidates();
-        }
-
-        // Update statuses/nonces for transactions in the new frontier.
-        match &new_head {
+        match new_head {
             MadaraBlockView::Confirmed(confirmed) => {
-                self.update_block_transaction_statuses(
-                    &new_head,
-                    confirmed.get_block_info()?.tx_hashes.iter().cloned().enumerate(),
-                    &mut effects.potentially_removed,
-                    &mut effects.confirmed_tx_hashes,
-                )?;
-
+                let block_n = confirmed.block_number();
+                if let Some(previous) = state.preconfirmed.remove(&block_n) {
+                    self.collect_removed_preconfirmed(&previous.view, effects);
+                }
+                let tx_hashes = confirmed.get_block_info()?.tx_hashes;
                 effects
                     .nonce_updates
-                    .extend(confirmed.get_state_diff()?.nonces.iter().map(|n| (n.contract_address, n.nonce)));
-            }
-            MadaraBlockView::Preconfirmed(preconfirmed) => {
-                self.update_preconfirmed_block_transaction_statuses(
-                    preconfirmed,
-                    preconfirmed.get_block_info().tx_hashes.iter().cloned().enumerate(),
-                    0,
+                    .extend(confirmed.get_state_diff()?.nonces.into_iter().map(|n| (n.contract_address, n.nonce)));
+                self.update_block_transaction_statuses(
+                    &confirmed.into(),
+                    tx_hashes.into_iter().enumerate(),
                     &mut effects.potentially_removed,
-                    &mut effects.nonce_updates,
                     &mut effects.confirmed_tx_hashes,
                 )?;
+                state.confirmed_tip = Some(block_n);
+            }
+            MadaraBlockView::Preconfirmed(_) => self.update_execution_frontier(state, effects)?,
+        }
+        Ok(())
+    }
+
+    /// Refreshes the entire unconfirmed suffix so coalesced notifications cannot skip executions.
+    fn update_execution_frontier(
+        &self,
+        state: &mut ChainWatcherState<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        let (head, views) = self.backend.internal_preconfirmed_views()?;
+        let canonical: BTreeMap<_, _> = views.into_iter().map(|view| (view.block_number(), view)).collect();
+        let first_replaced = state.preconfirmed.iter().find_map(|(&n, previous)| {
+            if head.confirmed_tip.is_some_and(|confirmed| n <= confirmed) {
+                // Its confirmation is still queued in the ordered subscription.
+                return None;
+            }
+            canonical.get(&n).is_none_or(|current| !previous.continues_in(current)).then_some(n)
+        });
+        if let Some(first_replaced) = first_replaced {
+            effects.nonce_update_mode = NonceUpdateMode::Replace;
+            for previous in state.preconfirmed.split_off(&first_replaced).into_values() {
+                self.collect_removed_preconfirmed(&previous.view, effects);
             }
         }
 
-        *current_internal_frontier = Some(new_head);
+        for (n, mut current) in canonical {
+            current.refresh_with_candidates();
+            if let Some(previous) = state.preconfirmed.get(&n) {
+                if previous.view == current
+                    && previous
+                        .view
+                        .candidate_transactions()
+                        .iter()
+                        .map(|tx| tx.hash)
+                        .eq(current.candidate_transactions().iter().map(|tx| tx.hash))
+                {
+                    continue;
+                }
+                self.mark_candidate_transactions_as_potentially_removed(
+                    &previous.view,
+                    &mut effects.potentially_removed,
+                );
+            }
+            self.update_preconfirmed_block_transaction_statuses(
+                &current,
+                current.get_block_info().tx_hashes.iter().copied().enumerate(),
+                0,
+                &mut effects.potentially_removed,
+                &mut effects.nonce_updates,
+                &mut effects.confirmed_tx_hashes,
+            )?;
+            state.preconfirmed.insert(n, TrackedPreconfirmed::new(current));
+        }
         Ok(())
     }
 
@@ -297,8 +384,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Applies nonce changes accumulated while processing one watcher event.
     /// Keeping this step separate ensures the event branch finishes inspecting storage first.
-    async fn apply_nonce_updates(&self, nonce_updates: HashMap<Felt, Felt>) -> anyhow::Result<()> {
-        self.update_account_nonces(nonce_updates).await
+    async fn apply_nonce_updates(
+        &self,
+        nonce_updates: HashMap<Felt, Felt>,
+        mode: NonceUpdateMode,
+    ) -> anyhow::Result<()> {
+        self.update_account_nonces(nonce_updates, mode).await
     }
 
     /// Requeues or drops transactions absent from the newly observed frontier.
@@ -326,37 +417,16 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Watches chain head/runtime updates and keeps mempool-facing transaction state in sync.
     ///
-    /// ## Why this task keeps a single frontier cursor
-    /// The backend has multiple canonical head fields (confirmed tip, external preconfirmed tip,
-    /// internal preconfirmed tip). This task intentionally keeps one local cursor,
-    /// `current_internal_frontier`, which means "last L2 frontier item already processed by mempool".
-    /// It is not the canonical chain head; it is a processing cursor used to compute old->new deltas.
-    ///
-    /// ## Flow
-    /// 1. Subscribe to internal L2 frontier updates (`Confirmed` + internal `Preconfirmed`) and L1 confirmations.
-    /// 2. Initialize `current_internal_frontier` from the internal-head subscription.
-    /// 3. In each loop iteration, process exactly one event branch:
-    ///    - preconfirmed content update on the current preconfirmed frontier (new executed txs/candidates),
-    ///    - new internal frontier item (`Confirmed` or `Preconfirmed`),
-    ///    - new L1 confirmation for an already-known L2 confirmed block.
-    /// 4. Accumulate nonce updates and potentially removed transactions for that event, then apply:
-    ///    - nonce updates to inner mempool account state,
-    ///    - tx reinsertion or drop decisions,
-    ///    - status publication updates.
-    ///
-    /// This task updates preconfirmed/confirmed/L1 transaction statuses and is also responsible
-    /// for putting reverted preconfirmed transactions back into the mempool when appropriate.
+    /// Confirmed progress and the unconfirmed execution suffix have separate lifetimes.
+    /// Confirmations retire one layer; only actual replacements requeue its executed transactions.
     pub(super) async fn run_chain_watcher_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         let mut l1_new_heads_subscription = self.backend.subscribe_new_l1_confirmed_heads();
 
         let mut new_heads_subscription =
             self.backend.subscribe_internal_heads(mc_db::subscription::SubscribeNewBlocksTag::Preconfirmed);
-        // Start returning heads from the next block after the latest confirmed block (inclusive).
-        new_heads_subscription
-            .set_start_from(self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0));
-
-        // Last internal L2 frontier item already processed by this task.
-        let mut current_internal_frontier = new_heads_subscription.current_block_view();
+        let confirmed_tip = self.backend.latest_confirmed_block_n();
+        new_heads_subscription.set_start_from(confirmed_tip.map_or(0, |n| n + 1));
+        let mut state = ChainWatcherState::new(confirmed_tip);
 
         loop {
             // When the pre-confirmed block changes, we need to put all potentially removed transactions back into the mempool.
@@ -368,18 +438,19 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 biased;
 
                 // Preconfirmed block new tx. We process this first to make sure we don't miss transactions.
-                Some(preconfirmed) = OptionFuture::from(current_internal_frontier.as_mut().and_then(|v| v.as_preconfirmed_mut()).map(|v| async {
-                    v.wait_until_outdated().await;
+                Some(preconfirmed) = OptionFuture::from(state.preconfirmed.last_entry().map(|entry| entry.into_mut()).map(|v| async {
+                    v.view.wait_until_outdated().await;
                     v
                 })) => {
                     tracing::debug!("Mempool task: preconfirmed update.");
-                    self.handle_preconfirmed_content_update(preconfirmed, &mut effects)?;
+                    self.handle_preconfirmed_content_update(&mut preconfirmed.view, &mut effects)?;
+                    preconfirmed.nonces.extend(effects.nonce_updates.iter().map(|(address, nonce)| (*address, *nonce)));
                 }
 
                 // New block on l2: either confirmed or pre-confirmed.
                 new_head = new_heads_subscription.next_block_view() => {
                     tracing::debug!("Mempool task: new head.");
-                    self.handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)?;
+                    self.handle_new_internal_frontier(&mut state, new_head, &mut effects)?;
                 }
 
                 // Process blocks confirmed on l1. Avoid updates that are past the l2 tip though.
@@ -404,8 +475,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 effects.put_back_into_mempool
             );
 
+            self.resolve_branch_effects(&state, &mut effects)?;
             self.remove_saved_txs_by_hashes(effects.confirmed_tx_hashes);
-            self.apply_nonce_updates(effects.nonce_updates).await?;
+            self.apply_nonce_updates(effects.nonce_updates, effects.nonce_update_mode).await?;
             self.apply_potentially_removed_transactions(effects.potentially_removed, effects.put_back_into_mempool)
                 .await;
             self.metrics.record_preconfirmed_transaction_statuses(self.preconfirmed_transactions_statuses.len());
@@ -414,124 +486,4 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{is_preconfirmed_forward_advance, ChainWatcherBranchEffects, Mempool, PreConfirmationStatus};
-    use crate::MempoolConfig;
-    use mc_db::{preconfirmed::PreconfirmedBlock, MadaraBlockView};
-    use mp_block::header::PreconfirmedHeader;
-    use mp_convert::Felt;
-    use std::sync::Arc;
-
-    async fn backend_with_genesis() -> Arc<mc_db::MadaraBackend> {
-        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
-        let mut genesis = mc_devnet::ChainGenesisDescription::base_config().expect("base config");
-        genesis.add_devnet_contracts(10).expect("devnet contracts");
-        genesis.build_and_store(&backend).await.expect("genesis build");
-        backend
-    }
-
-    #[rstest::rstest]
-    #[case(Some(42), Some(43), true)]
-    #[case(Some(42), Some(42), false)]
-    #[case(Some(42), Some(44), false)]
-    #[case(Some(42), None, false)]
-    #[case(None, Some(0), false)]
-    #[case(None, None, false)]
-    fn detect_forward_preconfirmed_advance(
-        #[case] current_preconfirmed_n: Option<u64>,
-        #[case] next_preconfirmed_n: Option<u64>,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(is_preconfirmed_forward_advance(current_preconfirmed_n, next_preconfirmed_n), expected);
-    }
-
-    #[tokio::test]
-    async fn handle_preconfirmed_content_update_disables_reinsertion_and_sets_candidate_status() {
-        let backend = backend_with_genesis().await;
-        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
-
-        let candidate = Arc::new(crate::tests::tx_account(Felt::from(0x1234u64)));
-        let block = Arc::new(PreconfirmedBlock::new_with_content(
-            PreconfirmedHeader { block_number: 0, ..Default::default() },
-            vec![],
-            vec![candidate.clone()],
-        ));
-        let mut preconfirmed_view = mc_db::MadaraPreconfirmedBlockView::new(backend, block);
-        let mut effects = ChainWatcherBranchEffects::new();
-
-        mempool
-            .handle_preconfirmed_content_update(&mut preconfirmed_view, &mut effects)
-            .expect("preconfirmed content update");
-
-        assert!(!effects.put_back_into_mempool, "candidates branch should drop potentially removed txs");
-        assert!(effects.potentially_removed.is_empty(), "candidate is still present in refreshed view");
-
-        let status = mempool
-            .preconfirmed_transactions_statuses
-            .get(&candidate.hash)
-            .map(|status| status.clone())
-            .expect("candidate status must be tracked");
-        assert!(matches!(status, PreConfirmationStatus::Candidate { transaction_index: 0, .. }));
-    }
-
-    #[tokio::test]
-    async fn handle_new_internal_frontier_non_forward_marks_old_candidates_potentially_removed() {
-        let backend = backend_with_genesis().await;
-        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
-
-        let old_candidate = Arc::new(crate::tests::tx_account(Felt::from(0x5678u64)));
-        let old_block = Arc::new(PreconfirmedBlock::new_with_content(
-            PreconfirmedHeader { block_number: 0, ..Default::default() },
-            vec![],
-            vec![old_candidate.clone()],
-        ));
-        let mut old_view = mc_db::MadaraPreconfirmedBlockView::new(backend.clone(), old_block);
-        old_view.refresh_with_candidates();
-
-        let mut current_internal_frontier = Some(MadaraBlockView::Preconfirmed(old_view));
-        // Same block number => non-forward preconfirmed transition.
-        let new_head: MadaraBlockView<_> = mc_db::MadaraPreconfirmedBlockView::new(
-            backend.clone(),
-            Arc::new(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() })),
-        )
-        .into();
-
-        let mut effects = ChainWatcherBranchEffects::new();
-        mempool
-            .handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)
-            .expect("new internal frontier handling");
-
-        assert!(effects.potentially_removed.contains_key(&old_candidate.hash));
-        assert!(effects.nonce_updates.is_empty());
-    }
-
-    #[tokio::test]
-    async fn handle_new_internal_frontier_forward_only_marks_old_candidates_potentially_removed() {
-        let backend = backend_with_genesis().await;
-        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
-
-        let old_candidate = Arc::new(crate::tests::tx_account(Felt::from(0x9abcu64)));
-        let old_block = Arc::new(PreconfirmedBlock::new_with_content(
-            PreconfirmedHeader { block_number: 0, ..Default::default() },
-            vec![],
-            vec![old_candidate.clone()],
-        ));
-        let mut old_view = mc_db::MadaraPreconfirmedBlockView::new(backend.clone(), old_block);
-        old_view.refresh_with_candidates();
-
-        let mut current_internal_frontier = Some(MadaraBlockView::Preconfirmed(old_view));
-        let new_head: MadaraBlockView<_> = mc_db::MadaraPreconfirmedBlockView::new(
-            backend,
-            Arc::new(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() })),
-        )
-        .into();
-
-        let mut effects = ChainWatcherBranchEffects::new();
-        mempool
-            .handle_new_internal_frontier(&mut current_internal_frontier, new_head, &mut effects)
-            .expect("forward internal frontier handling");
-
-        assert!(effects.potentially_removed.contains_key(&old_candidate.hash));
-        assert!(effects.nonce_updates.is_empty(), "forward advance should not rollback old executed nonces");
-    }
-}
+mod tests;

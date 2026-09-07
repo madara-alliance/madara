@@ -251,3 +251,43 @@ async fn test_no_empty_blocks_timestamp_uses_wall_clock(
              This likely means a stale captured block_start_time was used."
     );
 }
+
+#[rstest::rstest]
+#[timeout(Duration::from_secs(30))]
+#[tokio::test]
+async fn fresh_genesis_supports_first_parallel_close(
+    #[future]
+    #[with(Duration::from_secs(100), false, true)]
+    devnet_setup: DevnetSetup,
+) {
+    let mut setup = devnet_setup.await;
+    assert!(!setup.backend.db.has_parallel_merkle_checkpoint(0).unwrap());
+    let mut producer = setup.block_prod_task().with_parallel_merkle_enabled(true).with_close_queue_capacity(10);
+    let mut notifications = producer.subscribe_state_notifications();
+    let control = producer.handle();
+    let ctx = ServiceContext::new_for_testing();
+    let cancel = ctx.clone();
+    let task = AbortOnDrop::spawn(producer.run(ctx));
+
+    sign_and_add_invoke_tx(
+        &setup.contracts.0[0],
+        &setup.contracts.0[1],
+        &setup.backend,
+        &setup.tx_validator,
+        Felt::ZERO,
+    )
+    .await;
+    assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+    control.close_block().await.unwrap();
+    let Some(closed) = notifications.recv().await else {
+        panic!("producer exited before closing the first block: {:?}", task.await);
+    };
+    assert_eq!(closed, BlockProductionStateNotification::ClosedBlock { block_n: 1 });
+    cancel.cancel_global();
+    task.await.unwrap();
+
+    assert_eq!(setup.backend.latest_confirmed_block_n(), Some(1));
+    assert!(setup.backend.db.has_parallel_merkle_checkpoint(0).unwrap());
+    let diff = setup.backend.block_view_on_confirmed(1).unwrap().get_state_diff().unwrap();
+    assert!(!diff.nonces.is_empty(), "the first parallel root must include the executed transaction");
+}

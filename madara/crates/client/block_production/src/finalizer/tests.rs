@@ -259,3 +259,27 @@ async fn parallel_roots_can_finish_out_of_order_but_commit_in_order() {
     assert_eq!(*commit_order.lock().unwrap(), vec![0, 1, 2, 3]);
     assert!(max_active_roots.load(Ordering::Relaxed) >= 2);
 }
+
+#[tokio::test]
+async fn dropping_finalizer_owner_cancels_queued_work() {
+    let started = Arc::new(tokio::sync::Notify::new());
+    let execute: SerialExecute = {
+        let started = started.clone();
+        Arc::new(move |_, _| {
+            let started = started.clone();
+            Box::pin(async move {
+                started.notify_one();
+                std::future::pending().await
+            })
+        })
+    };
+    let (queue, owner) = FinalizerHandle::spawn_with_workers(
+        1,
+        Arc::new(BlockProductionMetrics::register()),
+        FinalizerWorkers::Serial { execute },
+    );
+    let (_, completion) = queue.try_enqueue(test_payload(0)).unwrap();
+    started.notified().await;
+    drop(owner);
+    assert!(tokio::time::timeout(Duration::from_secs(1), completion).await.unwrap().is_err());
+}

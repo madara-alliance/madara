@@ -173,6 +173,10 @@ pub struct Accounts {
 }
 
 impl Accounts {
+    pub fn get_account_nonce(&self, address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.get(address).map(|account| &account.current_nonce)
+    }
+
     /// Iterates over accounts which currently own queued mempool transactions.
     /// The iterator borrows the account map and does not impose an ordering.
     pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {

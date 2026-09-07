@@ -163,7 +163,7 @@ pub(super) struct CloseDecision {
 /// Keeping channel shutdown explicit prevents it from being confused with a successful block transition.
 enum CloseBlockOutcome {
     Open,
-    Closed(ExecutorThreadState),
+    Closed(Box<ExecutorStateNewBlock>),
     Exit,
 }
 
@@ -311,7 +311,7 @@ impl ExecutorThread {
     }
 
     /// End the current block.
-    fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorThreadState> {
+    fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorStateNewBlock> {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
         let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
@@ -322,11 +322,11 @@ impl ExecutorThread {
             mem::take(&mut state.consumed_l1_to_l2_nonces),
         )?;
 
-        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
+        Ok(ExecutorStateNewBlock {
             state_adaptor: cached_adapter,
             consumed_l1_to_l2_nonces: HashSet::new(),
             block_start_time: SystemTime::now(),
-        }))
+        })
     }
 
     /// Returns the initial state diff storage too. It is used to create the StartNewBlock message and transition to ExecutorState::Executing.
@@ -600,7 +600,7 @@ impl ExecutorThread {
         if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(Box::new(summary))).is_err() {
             return Ok(CloseBlockOutcome::Exit);
         }
-        Ok(CloseBlockOutcome::Closed(self.end_block(execution_state).context("Ending block")?))
+        Ok(CloseBlockOutcome::Closed(Box::new(self.end_block(execution_state).context("Ending block")?)))
     }
 
     /// Drives the executor state machine until its batch or reply channel closes.
@@ -660,7 +660,7 @@ impl ExecutorThread {
                 CloseBlockOutcome::Open => {}
                 CloseBlockOutcome::Exit => return Ok(()),
                 CloseBlockOutcome::Closed(next_state) => {
-                    state = next_state;
+                    state = ExecutorThreadState::NewBlock(*next_state);
                     next_block_deadline = Instant::now() + block_time;
                     block_empty = true;
                     force_close = false;

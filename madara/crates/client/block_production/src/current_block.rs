@@ -2,8 +2,39 @@
 
 use super::*;
 use crate::util::ExecutionStats;
+use mc_db::MadaraStorageRead;
 
 impl CurrentBlockState {
+    /// Classifies against the whole parent chain, including blocks awaiting finalization.
+    fn classify_class_update(&mut self, address: Felt, class_hash: Felt) -> anyhow::Result<ClassUpdateItem> {
+        if self.deployed_contracts.contains(&address) {
+            return Ok(ClassUpdateItem::ReplacedClass(class_hash));
+        }
+
+        let first_unconfirmed = self.backend.latest_confirmed_block_n().map_or(0, |n| n + 1);
+        for block_n in (first_unconfirmed..self.block_number).rev() {
+            if let Some(parent) = self.backend.block_view_on_preconfirmed(block_n) {
+                if parent
+                    .borrow_content()
+                    .executed_transactions()
+                    .any(|tx| tx.state_diff.contract_class_hashes.contains_key(&address))
+                {
+                    return Ok(ClassUpdateItem::ReplacedClass(class_hash));
+                }
+            }
+        }
+
+        // Read persisted state last: finalization may have removed a parent from the runtime
+        // map while we inspected it. Its state is persisted before that removal.
+        if let Some(parent_n) = self.block_number.checked_sub(1) {
+            if self.backend.db.is_contract_deployed_at(parent_n, &address)? {
+                return Ok(ClassUpdateItem::ReplacedClass(class_hash));
+            }
+        }
+        self.deployed_contracts.insert(address);
+        Ok(ClassUpdateItem::DeployedContract(class_hash))
+    }
+
     /// Starts empty aggregation state for one executor block.
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64) -> Self {
         Self {
@@ -96,14 +127,8 @@ impl CurrentBlockState {
                             .class_hashes
                             .into_iter()
                             .map(|(contract_addr, class_hash)| {
-                                let entry = if !self.deployed_contracts.contains(&contract_addr)
-                                    && !self.backend.view_on_latest_confirmed().is_contract_deployed(&contract_addr)?
-                                {
-                                    self.deployed_contracts.insert(contract_addr.to_felt());
-                                    ClassUpdateItem::DeployedContract(class_hash.to_felt())
-                                } else {
-                                    ClassUpdateItem::ReplacedClass(class_hash.to_felt())
-                                };
+                                let entry =
+                                    self.classify_class_update(contract_addr.to_felt(), class_hash.to_felt())?;
 
                                 Ok((contract_addr.to_felt(), entry))
                             })
@@ -142,5 +167,65 @@ impl CurrentBlockState {
         let stats = mem::take(&mut batch.stats);
         self.log_batch_stats(&stats);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
+    use mp_block::{header::PreconfirmedHeader, TransactionWithReceipt};
+    use mp_chain_config::ChainConfig;
+    use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
+    use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+
+    #[test]
+    fn replacement_sees_deployment_in_an_earlier_unconfirmed_block() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let address = Felt::from(123u64);
+        let first_class = Felt::from(456u64);
+        let replacement = Felt::from(789u64);
+        for n in 0..=2 {
+            backend
+                .write_access()
+                .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: n, ..Default::default() }))
+                .unwrap();
+        }
+        let transaction = PreconfirmedExecutedTransaction {
+            transaction: TransactionWithReceipt {
+                transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0::default())),
+                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt::default()),
+            },
+            state_diff: TransactionStateUpdate {
+                contract_class_hashes: [(address, ClassUpdateItem::DeployedContract(first_class))].into(),
+                ..Default::default()
+            },
+            declared_class: None,
+            arrived_at: Default::default(),
+            paid_fee_on_l1: None,
+        };
+        backend.write_access().append_to_preconfirmed(0, &[transaction], []).unwrap();
+        let mut current = CurrentBlockState::new(backend, 2);
+        assert_eq!(
+            current.classify_class_update(address, replacement).unwrap(),
+            ClassUpdateItem::ReplacedClass(replacement)
+        );
+        assert!(current.deployed_contracts.is_empty(), "close normalization must preserve replacement classification");
+    }
+
+    #[test]
+    fn deployment_followed_by_same_block_replacement_stays_a_block_deployment() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mut current = CurrentBlockState::new(backend, 0);
+        let address = Felt::from(123u64);
+        assert_eq!(
+            current.classify_class_update(address, Felt::ONE).unwrap(),
+            ClassUpdateItem::DeployedContract(Felt::ONE)
+        );
+        assert_eq!(
+            current.classify_class_update(address, Felt::TWO).unwrap(),
+            ClassUpdateItem::ReplacedClass(Felt::TWO)
+        );
+        assert!(current.deployed_contracts.contains(&address));
     }
 }

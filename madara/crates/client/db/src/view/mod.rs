@@ -28,6 +28,27 @@ impl<D: MadaraStorageRead> ExecutedTransactionWithBlockView<D> {
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
+    /// Captures the confirmed floor and internal execution suffix under the head-transition lock.
+    /// Consumers can distinguish finalization from replacement without racing runtime pruning.
+    /// Transaction content can continue growing after these views are captured.
+    pub fn internal_preconfirmed_views(
+        self: &Arc<Self>,
+    ) -> Result<(crate::ChainHeadState, Vec<MadaraPreconfirmedBlockView<D>>)> {
+        let _projection_guard = self.head_projection_write_lock.lock().expect("Poisoned head projection lock");
+        let head = self.chain_head_state();
+        let mut views = Vec::new();
+        if let Some(tip) = head.internal_preconfirmed_tip {
+            for block_n in head.confirmed_tip.map_or(0, |n| n + 1)..=tip {
+                views.push(
+                    self.block_view_on_preconfirmed(block_n).with_context(|| {
+                        format!("Missing preconfirmed block #{block_n} in internal execution suffix")
+                    })?,
+                );
+            }
+        }
+        Ok((head, views))
+    }
+
     /// Returns a view on the last confirmed block. This view is used to query content from that block.
     /// Returns [`None`] if the database has no blocks.
     pub fn block_view_on_last_confirmed(self: &Arc<Self>) -> Option<MadaraConfirmedBlockView<D>> {

@@ -145,6 +145,14 @@ pub(crate) struct FinalizerTaskHandle {
     join_handle: tokio::task::JoinHandle<Result<()>>,
 }
 
+impl Drop for FinalizerTaskHandle {
+    fn drop(&mut self) {
+        // Stop queued async work if its owner fails. This cannot cancel a blocking write;
+        // the service must still join normally before administrative DB operations.
+        self.join_handle.abort();
+    }
+}
+
 impl FinalizerHandle {
     /// Spawns the configured production worker and returns its queue and join handles.
     /// Queue and worker limits have already been normalized by `FinalizerConfig`.
@@ -230,7 +238,7 @@ impl FinalizerHandle {
 
 impl FinalizerTaskHandle {
     /// Waits for a drained worker to exit and preserves a panic as an error.
-    pub async fn join(self) -> Result<()> {
-        self.join_handle.await.context("Finalizer worker task panicked")?
+    pub async fn join(mut self) -> Result<()> {
+        (&mut self.join_handle).await.context("Finalizer worker task panicked")?
     }
 }

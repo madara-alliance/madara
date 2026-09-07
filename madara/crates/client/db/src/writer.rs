@@ -337,14 +337,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         global_state_root: Felt,
         pre_v0_13_2_hash_override: bool,
         replay_path: &'static str,
-        timings: &mut CloseBlockTimings,
-    ) -> Result<(mp_block::header::Header, Felt)> {
+    ) -> Result<(mp_block::header::Header, Felt, Duration)> {
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let started_at = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
-        timings.block_hash_compute = started_at.elapsed();
-        let elapsed = timings.block_hash_compute.as_secs_f64();
+        let block_hash_compute = started_at.elapsed();
+        let elapsed = block_hash_compute.as_secs_f64();
         metrics().block_hash_compute_duration.record(elapsed, &[]);
         metrics().block_hash_compute_last.record(elapsed, &[]);
 
@@ -356,7 +355,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         );
         self.verify_custom_header(block, commitments, parent_block_hash, global_state_root, block_hash, replay_path)?;
         self.clear_consumed_custom_headers(block.header.block_number, replay_path);
-        Ok((header, block_hash))
+        Ok((header, block_hash, block_hash_compute))
     }
 
     /// Copies worker-produced Merkle timings into the close result.
@@ -452,15 +451,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.protocol_version,
             block.header.block_number,
         )?;
-        let (header, block_hash) = self.prepare_confirmed_header(
+        let (header, block_hash, block_hash_compute) = self.prepare_confirmed_header(
             block,
             &commitments,
             parent_block_hash,
             global_state_root,
             pre_v0_13_2_hash_override,
             "inline_trie",
-            &mut timings,
         )?;
+        timings.block_hash_compute = block_hash_compute;
         self.commit_staged_tries(block.header.block_number, staged_tries, merklization_started_at, &mut timings)?;
         self.write_confirmed_block_parts(block, classes, header, block_hash, &mut timings)?;
 
@@ -492,15 +491,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let parent_block_hash = self.parent_block_hash()?;
         let commitments = self.compute_block_commitments(block, &mut timings);
         Self::apply_precomputed_merklization_timings(&mut timings, merklization_timings);
-        let (header, block_hash) = self.prepare_confirmed_header(
+        let (header, block_hash, block_hash_compute) = self.prepare_confirmed_header(
             block,
             &commitments,
             parent_block_hash,
             precomputed_root,
             pre_v0_13_2_hash_override,
             "parallel_precomputed",
-            &mut timings,
         )?;
+        timings.block_hash_compute = block_hash_compute;
         self.write_confirmed_block_parts(block, classes, header, block_hash, &mut timings)?;
 
         Ok(AddFullBlockResult { new_state_root: precomputed_root, commitments, block_hash, parent_block_hash, timings })

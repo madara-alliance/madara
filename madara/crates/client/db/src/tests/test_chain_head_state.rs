@@ -531,3 +531,24 @@ fn metric_violation_counter_increments() {
         "violation counter must increment by 1 after cross-field invariant violation"
     );
 }
+
+#[test]
+fn internal_execution_views_keep_their_blocks_after_confirmation_prunes_runtime() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
+    for block_number in 0..=1 {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number, ..Default::default() }))
+            .unwrap();
+    }
+    let (before, captured) = backend.internal_preconfirmed_views().unwrap();
+    assert_eq!(before.confirmed_tip, None);
+    assert_eq!(captured.iter().map(|view| view.block_number()).collect::<Vec<_>>(), vec![0, 1]);
+
+    backend.write_access().new_confirmed_block(0).unwrap();
+    let (after, current) = backend.internal_preconfirmed_views().unwrap();
+    assert_eq!(after.confirmed_tip, Some(0));
+    assert_eq!(current.iter().map(|view| view.block_number()).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(captured[0].block_number(), 0);
+    assert!(Arc::ptr_eq(captured[1].block(), current[0].block()));
+}
