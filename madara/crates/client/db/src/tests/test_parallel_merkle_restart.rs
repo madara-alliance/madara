@@ -573,7 +573,7 @@ fn startup_rolls_first_boundary_back_to_empty_base_before_replaying_confirmed_bl
 }
 
 #[test]
-fn full_node_startup_reverts_sparse_trie_runahead_to_confirmed_head() {
+fn full_node_startup_preserves_independent_sync_pipeline_progress() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
     let (confirmed_root, runahead_root) = {
         let backend = open_backend_without_trie_reconciliation(temp_dir.path());
@@ -605,11 +605,9 @@ fn full_node_startup_reverts_sparse_trie_runahead_to_confirmed_head() {
     assert_eq!(reopened.chain_head_state().confirmed_tip, Some(0));
     assert_eq!(reopened.db.get_state_root_hash().expect("reading runahead root should succeed"), runahead_root);
 
-    reopened.reconcile_confirmed_sync_state("test_l2_sync_startup").expect("sync recovery should succeed");
-
-    assert_eq!(reopened.db.get_state_root_hash().expect("reading recovered root should succeed"), confirmed_root);
-    assert_eq!(reopened.get_latest_applied_trie_update().expect("reading recovered trie cursor"), Some(0));
-    assert_eq!(reopened.get_snap_sync_latest_block().expect("reading recovered SnapSync cursor"), Some(0));
+    assert_ne!(runahead_root, confirmed_root);
+    assert_eq!(reopened.get_latest_applied_trie_update().expect("reading trie cursor"), Some(1));
+    assert_eq!(reopened.get_snap_sync_latest_block().expect("reading SnapSync cursor"), Some(1));
 }
 
 #[test]

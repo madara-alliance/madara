@@ -311,12 +311,12 @@ impl RocksDBStorage {
         Ok(())
     }
 
-    /// Rolls all three tries back to a common revision or the empty base.
+    /// Rolls all three tries back to a common checkpoint floor or the empty base.
     /// The result reports whether any durable trie state changed.
-    fn rollback_tries_to_revision(&self, target_revision: Option<u64>, context: &str) -> Result<bool> {
+    fn rollback_tries_to_checkpoint_floor(&self, checkpoint_floor: Option<u64>, context: &str) -> Result<bool> {
         let trie_log_heads = self.trie_log_heads().context("Reading trie log heads before recovery rollback")?;
 
-        let Some(target_revision) = target_revision else {
+        let Some(checkpoint_floor) = checkpoint_floor else {
             let had_durable_trie_state =
                 trie_log_heads.highest().is_some() || self.get_state_root_hash()? != Felt::ZERO;
             if had_durable_trie_state {
@@ -330,28 +330,28 @@ impl RocksDBStorage {
             return Ok(had_durable_trie_state);
         };
 
-        let target_id = BasicId::new(target_revision);
+        let floor_id = BasicId::new(checkpoint_floor);
         let mut contract_trie = self.contract_trie_for_revert();
         let contract_needs_commit =
-            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_revision)?;
+            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, checkpoint_floor)?;
         let mut contract_storage_trie = self.contract_storage_trie_for_revert();
         let contract_storage_needs_commit = revert_single_trie(
             "contract storage",
             &mut contract_storage_trie,
             trie_log_heads.contract_storage,
-            target_revision,
+            checkpoint_floor,
         )?;
         let mut class_trie = self.class_trie_for_revert();
-        let class_needs_commit = revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_revision)?;
+        let class_needs_commit = revert_single_trie("class", &mut class_trie, trie_log_heads.class, checkpoint_floor)?;
 
         if contract_needs_commit {
-            contract_trie.commit(target_id).map_err(trie::WrappedBonsaiError)?;
+            contract_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
         }
         if contract_storage_needs_commit {
-            contract_storage_trie.commit(target_id).map_err(trie::WrappedBonsaiError)?;
+            contract_storage_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
         }
         if class_needs_commit {
-            class_trie.commit(target_id).map_err(trie::WrappedBonsaiError)?;
+            class_trie.commit(floor_id).map_err(trie::WrappedBonsaiError)?;
         }
 
         Ok(contract_needs_commit || contract_storage_needs_commit || class_needs_commit)
@@ -381,7 +381,7 @@ impl RocksDBStorage {
         let trie_log_heads = self.trie_log_heads()?;
         let actual_root = self.get_state_root_hash()?;
         if latest_checkpoint.is_some() || trie_log_heads.highest().is_some() || actual_root != Felt::ZERO {
-            self.rollback_tries_to_revision(None, context)?;
+            self.rollback_tries_to_checkpoint_floor(None, context)?;
             self.rewind_parallel_merkle_checkpoints(None)?;
         }
 
@@ -477,7 +477,7 @@ impl RocksDBStorage {
                 format!("Reading common parallel merkle recovery checkpoint for confirmed block #{confirmed_tip}")
             })?;
         let expected_floor_root = self.checkpoint_floor_root(checkpoint_floor)?;
-        let rolled_back = self.rollback_tries_to_revision(checkpoint_floor, context)?;
+        let rolled_back = self.rollback_tries_to_checkpoint_floor(checkpoint_floor, context)?;
         self.rewind_parallel_merkle_checkpoints(checkpoint_floor)?;
         self.verify_checkpoint_floor_root(checkpoint_floor, expected_floor_root, confirmed_tip, context)?;
 
@@ -582,55 +582,6 @@ impl RocksDBStorage {
                 "{log_message}"
             );
         }
-        Ok(())
-    }
-
-    /// Restores ordinary sync state when trie application completed ahead of head publication.
-    /// Sync commits exact batch revisions, so each trie can roll directly to the confirmed tip.
-    pub fn reconcile_confirmed_sync_state(&self, confirmed_tip: Option<u64>, context: &str) -> Result<()> {
-        let Some(confirmed_tip) = confirmed_tip else {
-            return self.reconcile_empty_confirmed_head(context);
-        };
-
-        let confirmed_block_info = self.confirmed_block_for_reconcile(confirmed_tip)?;
-        let expected_root = confirmed_block_info.header.global_state_root;
-        let trie_log_heads = self.trie_log_heads()?;
-        let actual_root = get_state_root(self, confirmed_block_info.header.protocol_version)?;
-        let durable_state_is_ahead = trie_log_heads.highest().is_some_and(|trie_head| trie_head > confirmed_tip);
-
-        if actual_root != expected_root || durable_state_is_ahead {
-            tracing::warn!(
-                context,
-                confirmed_tip,
-                expected_root = format_args!("{expected_root:#x}"),
-                actual_root = format_args!("{actual_root:#x}"),
-                ?trie_log_heads,
-                "sync_recovery_rolling_trie_to_confirmed_head"
-            );
-            self.rollback_tries_to_revision(Some(confirmed_tip), context)?;
-        }
-
-        let reconciled_root = get_state_root(self, confirmed_block_info.header.protocol_version)?;
-        ensure!(
-            reconciled_root == expected_root,
-            "Synced trie root mismatch after {context} at confirmed block #{confirmed_tip}: expected {expected_root:#x}, got {reconciled_root:#x}"
-        );
-        self.write_latest_applied_trie_update(&Some(confirmed_tip))?;
-
-        if self.get_parallel_merkle_latest_checkpoint()?.is_some_and(|block_n| block_n > confirmed_tip) {
-            self.rewind_parallel_merkle_checkpoints(Some(confirmed_tip))?;
-        }
-
-        if self.get_snap_sync_latest_block()?.is_some_and(|block_n| block_n > confirmed_tip) {
-            self.write_snap_sync_latest_block(&Some(confirmed_tip))?;
-        }
-
-        tracing::info!(
-            context,
-            confirmed_tip,
-            state_root = format_args!("{reconciled_root:#x}"),
-            "sync_recovery_confirmed_head_ready"
-        );
         Ok(())
     }
 

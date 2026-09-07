@@ -50,10 +50,6 @@ impl SyncService {
         warp_update: Option<WarpUpdateConfig>,
         unsafe_starting_block_enabled: bool,
     ) -> anyhow::Result<Self> {
-        if !config.l2_sync_disabled && !config.disable_tries {
-            db.reconcile_confirmed_sync_state("l2_sync_startup")?;
-        }
-
         Ok(Self {
             start_args: (!config.l2_sync_disabled).then_some(StartArgs {
                 l1_head_recv,

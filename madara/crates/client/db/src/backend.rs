@@ -373,14 +373,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn reconcile_confirmed_parallel_merkle_state(&self, context: &str) -> Result<()> {
         self.reconcile_confirmed_parallel_merkle_state_for_tip(self.chain_head_state().confirmed_tip, context)
     }
-
-    /// Repairs ordinary full-node or serial-sync trie state after an interrupted import.
-    /// Unlike parallel-Merkle recovery, this rolls directly to the confirmed sync revision.
-    pub fn reconcile_confirmed_sync_state(&self, context: &str) -> Result<()> {
-        self.db
-            .reconcile_confirmed_sync_state(self.chain_head_state().confirmed_tip, context)
-            .with_context(|| format!("Reconciling synced trie state during {context}"))
-    }
 }
 
 impl<D> MadaraBackend<D> {
