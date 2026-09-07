@@ -203,7 +203,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         let mut out = BTreeMap::<ByteVec, ByteVec>::new();
         for item in self
             .snapshot
-            .iterator_cf(column, readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
+            .iterator_cf(column.clone(), readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
             .into_iter_items(|(key, value)| (ByteVec::from(key), ByteVec::from(value)))
         {
             let (key, value) = item?;
@@ -273,7 +273,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
 
         for item in self
             .snapshot
-            .iterator_cf(column, readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
+            .iterator_cf(column.clone(), readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
             .into_iter_keys(|key| ByteVec::from(key))
         {
             let key = item?;
