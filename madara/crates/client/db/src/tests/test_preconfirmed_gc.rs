@@ -87,3 +87,56 @@ fn appends_are_routed_by_explicit_preconfirmed_block_number() {
         .expect_err("a delayed batch must not fall through to block 1");
     assert!(error.to_string().contains("There is no preconfirmed block #0"));
 }
+
+#[test]
+fn replacement_discards_old_content_and_rejects_internal_runahead() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+    let header = PreconfirmedHeader { block_number: 0, ..Default::default() };
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new_with_content(
+            header.clone(),
+            [dummy_executed_tx(), dummy_executed_tx()],
+            [],
+        ))
+        .unwrap();
+    let old = backend.block_view_on_current_preconfirmed().unwrap();
+    backend
+        .write_access()
+        .replace_preconfirmed(PreconfirmedBlock::new_with_content(header.clone(), [dummy_executed_tx()], []))
+        .unwrap();
+    assert_eq!(backend.db.get_preconfirmed_block_data(0).unwrap().unwrap().1.len(), 1);
+    assert_eq!(backend.block_view_on_current_preconfirmed().unwrap().num_executed_transactions(), 1);
+    assert_eq!(old.num_executed_transactions(), 2, "existing readers retain their original block");
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+        .unwrap();
+    assert!(backend.write_access().replace_preconfirmed(PreconfirmedBlock::new(header)).is_err());
+    assert_eq!(backend.db.get_preconfirmed_block_data(0).unwrap().unwrap().1.len(), 1);
+    assert_eq!(backend.chain_head_state().internal_preconfirmed_tip, Some(1));
+}
+
+#[tokio::test]
+async fn internal_subscription_reports_same_length_replacement() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    let header = PreconfirmedHeader { block_number: 0, ..Default::default() };
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new_with_content(header.clone(), [dummy_executed_tx()], []))
+        .unwrap();
+    let mut subscription = backend.subscribe_internal_heads(crate::subscription::SubscribeNewBlocksTag::Preconfirmed);
+    let replacement_header = PreconfirmedHeader { block_timestamp: mp_block::header::BlockTimestamp(42), ..header };
+    backend
+        .write_access()
+        .replace_preconfirmed(PreconfirmedBlock::new_with_content(replacement_header, [dummy_executed_tx()], []))
+        .unwrap();
+
+    let replacement = tokio::time::timeout(std::time::Duration::from_secs(1), subscription.next_block_view())
+        .await
+        .expect("same-height, same-length replacement must wake subscribers");
+    assert_eq!(replacement.as_preconfirmed().unwrap().block().header.block_timestamp.0, 42);
+}

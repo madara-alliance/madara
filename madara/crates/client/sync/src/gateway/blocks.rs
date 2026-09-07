@@ -102,7 +102,7 @@ fn preconfirmed_update_mode(
         || in_backend.num_executed_transactions() > n_executed
         || Iterator::ne(
             in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
-            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
+            block.transactions[..in_backend.num_executed_transactions()].iter().map(|tx| tx.transaction_hash()),
         );
     if is_replacement {
         return PreconfirmedUpdateMode::Replace;
@@ -165,9 +165,14 @@ fn persist_preconfirmed_update(
         "Gateway preconfirmed block sync: skip_first_n={skip_first_n} {header:?} {executed:?}, {candidates:?}"
     );
     match mode {
-        PreconfirmedUpdateMode::Replace => backend
-            .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new_with_content(header, executed, candidates))?,
+        PreconfirmedUpdateMode::Replace => {
+            let block = PreconfirmedBlock::new_with_content(header, executed, candidates);
+            if backend.has_preconfirmed_block() {
+                backend.write_access().replace_preconfirmed(block)?;
+            } else {
+                backend.write_access().new_preconfirmed(block)?;
+            }
+        }
         PreconfirmedUpdateMode::Append { .. } => {
             backend.write_access().append_to_preconfirmed(header.block_number, &executed, candidates)?
         }

@@ -205,6 +205,12 @@ impl RocksDBStorageInner {
                 );
             }
             StorageHeadProjection::Preconfirmed { header, content } => {
+                // Replacing a shorter block must not leave the old transaction suffix behind.
+                batch.delete_range_cf(
+                    &self.get_column(PRECONFIRMED_COLUMN),
+                    preconfirmed_block_range_start(header.block_number),
+                    preconfirmed_block_range_end_exclusive(header.block_number),
+                );
                 batch.put_cf(
                     &meta_col,
                     META_HEAD_PROJECTION_KEY,
@@ -306,7 +312,7 @@ impl RocksDBStorageInner {
     }
 
     /// Loads one block-keyed preconfirmed header and its ordered transaction content.
-    /// A missing header returns `None`; malformed or missing content rows surface as errors.
+    /// A missing header returns `None`; malformed stored values surface as errors.
     pub(super) fn get_preconfirmed_block_data(
         &self,
         block_n: u64,

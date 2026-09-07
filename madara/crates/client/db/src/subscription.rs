@@ -209,10 +209,11 @@ impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
                 let expected_preconfirmed_tip = self.subscription.current().internal_preconfirmed_tip;
                 if let Some(next_preconfirmed) = self.backend.internal_preconfirmed_block() {
                     let next_preconfirmed_tip = Some(next_preconfirmed.header.block_number);
-                    let changed = self.current_preconfirmed.as_ref().is_none_or(|current| {
-                        current.header.block_number != next_preconfirmed.header.block_number
-                            || current.content.borrow().n_executed() != next_preconfirmed.content.borrow().n_executed()
-                    });
+                    // A replacement can keep both height and transaction count unchanged.
+                    let changed = self
+                        .current_preconfirmed
+                        .as_ref()
+                        .is_none_or(|current| !Arc::ptr_eq(current, &next_preconfirmed));
 
                     if expected_preconfirmed_tip == next_preconfirmed_tip && changed {
                         // Preconfirmed runahead may be several blocks ahead of confirmation. Keep the

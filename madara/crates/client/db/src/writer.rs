@@ -10,17 +10,14 @@ pub struct MadaraBackendWriter<D: MadaraStorage> {
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Advances the canonical confirmed tip without losing newer runtime preconfirmed blocks.
-    fn transition_to_confirmed_or_empty(&self, new_confirmed_tip: Option<u64>) -> Result<()> {
+    fn transition_to_confirmed(&self, block_n: u64) -> Result<()> {
         let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let current_head_state = *self.inner.chain_head_state.borrow();
 
         let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
         MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
 
-        let next_chain_head_state = match new_confirmed_tip {
-            Some(block_n) => current_head_state.next_for_confirmed(block_n)?,
-            None => bail!("Cannot replace chain head to empty"),
-        };
+        let next_chain_head_state = current_head_state.next_for_confirmed(block_n)?;
 
         if self.inner.config.save_preconfirmed {
             let new_tip_in_db = if let Some(external_tip) = next_chain_head_state.external_preconfirmed_tip {
@@ -118,7 +115,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
     ///
-    /// When `state_diff` is provided, this function uses an optimized path that skips the expensive
+    /// The supplied `state_diff` skips the expensive
     /// `get_normalized_state_diff()` computation (which queries the DB for every storage entry).
     /// The provided `state_diff` should already contain all necessary fields including
     /// `old_declared_contracts`, `deployed_contracts`, and `replaced_classes`.
@@ -150,7 +147,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
-    /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
+    /// Discards the entire preconfirmed suffix, including persisted rows when enabled.
+    /// Does nothing when the backend has no preconfirmed blocks.
     pub fn clear_preconfirmed(&self) -> Result<()> {
         let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
         let current_head_state = *self.inner.chain_head_state.borrow();
@@ -185,10 +183,26 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.db.write_runtime_exec_config(config)
     }
 
-    /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
-    /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
+    /// Starts the next preconfirmed block, retaining earlier blocks awaiting confirmation.
+    /// The header must follow the internal execution tip (or the confirmed tip when no suffix exists).
     pub fn new_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {
         self.transition_to_preconfirmed(Arc::new(block))
+    }
+
+    /// Replaces the sole preconfirmed block, as required when gateway data changes at the same height.
+    /// Rejects replacement below an internal execution suffix; its later blocks would depend on old state.
+    pub fn replace_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {
+        let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
+        let head = self.inner.chain_head_state();
+        ensure!(
+            head.external_preconfirmed_tip == Some(block.header.block_number)
+                && head.internal_preconfirmed_tip == Some(block.header.block_number),
+            "Preconfirmed replacement requires a single block at the external head"
+        );
+        if self.inner.config.save_preconfirmed {
+            self.inner.db.replace_head_projection(&storage_tip_from_preconfirmed_block(&block))?;
+        }
+        self.inner.publish_head_projection(head, Some(Arc::new(block)))
     }
 
     /// Add a block. Returns the block hash.
@@ -541,30 +555,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         )
     }
 
-    /// Close a preconfirmed block with a precomputed state root from a parallel worker.
-    /// This is the parallel merkle counterpart of `close_preconfirmed`.
-    #[deprecated(
-        note = "Use write_preconfirmed_with_precomputed_root + new_confirmed_block in phased order to preserve boundary durability semantics."
-    )]
-    pub fn close_preconfirmed_with_precomputed_root(
-        &self,
-        pre_v0_13_2_hash_override: bool,
-        block_n: u64,
-        state_diff: StateDiff,
-        precomputed_root: Felt,
-        merklization_timings: rocksdb::global_trie::MerklizationTimings,
-    ) -> Result<AddFullBlockResult> {
-        let result = self.write_preconfirmed_with_precomputed_root(
-            pre_v0_13_2_hash_override,
-            block_n,
-            state_diff,
-            precomputed_root,
-            merklization_timings,
-        )?;
-        self.new_confirmed_block(block_n)?;
-        Ok(result)
-    }
-
     /// Lower level access to writing primitives. This is only used by the sync process, which
     /// saves block parts separately for performance reasons.
     ///
@@ -642,16 +632,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.db.apply_to_global_trie(start_block_n, state_diffs, protocol_version)
     }
 
-    /// Lower level access to writing primitives. This is only used by the sync process, which
-    /// saves block parts separately for performance reasons.
-    /// This function in particular marks a fully imported block as confirmed. It also clears the current preconfirmed block, if any.
+    /// Publishes the next fully imported block as confirmed and removes its preconfirmed prefix.
+    /// Newer preconfirmed blocks remain available for execution runahead and public projection.
     ///
-    /// **Warning**: The caller must ensure this new imported block is the one following the current confirmed block.
-    /// You are not allowed to call this function with earlier or later blocks.
-    /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
-    /// parts.
+    /// The caller must have written every block part and completed any required trie/checkpoint
+    /// durability steps. `block_number` must immediately follow the current confirmed tip.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        // Flush the most latest state to db to reduce data loss
+        // Periodically flush to reduce data loss.
         if self
             .inner
             .config
@@ -671,7 +658,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Persist and publish the canonical head transition.
         let started_at = Instant::now();
-        self.transition_to_confirmed_or_empty(Some(block_number))?;
+        self.transition_to_confirmed(block_number)?;
         warn_if_confirmed_head_phase_slow(block_number, "head_transition", started_at.elapsed());
         // L1 pending/consumed state is a derived projection. Update it only after the durable
         // canonical head says this block is confirmed; startup re-applies this idempotently if
