@@ -395,9 +395,8 @@ impl MadaraCmd {
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
                 println!("{stdout_prefix} {line}");
-                if stdout_tx.send(line).is_err() {
-                    break;
-                }
+                // Keep draining the child's pipe after startup drops the port-discovery receiver.
+                let _ = stdout_tx.send(line);
             }
         });
 
@@ -405,9 +404,8 @@ impl MadaraCmd {
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 println!("{stderr_prefix} {line}");
-                if line_tx.send(line).is_err() {
-                    break;
-                }
+                // Keep draining stderr for the child's full lifetime as well.
+                let _ = line_tx.send(line);
             }
         });
 

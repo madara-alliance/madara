@@ -105,7 +105,6 @@ impl CurrentBlockState {
                 let declared_class = additional_info.declared_class.take().filter(|_| !execution_info.is_reverted());
 
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
                 // Extract paid_fee_on_l1 from L1 handler transactions
                 let paid_fee_on_l1 = match &blockifier_tx {
@@ -115,6 +114,8 @@ impl CurrentBlockState {
                     _ => None,
                 };
 
+                // ponytail: finish borrowing the transaction before consuming it; no deep clone is needed.
+                let converted_tx = TransactionWithHash::from(blockifier_tx);
                 executed.push(PreconfirmedExecutedTransaction {
                     transaction: TransactionWithReceipt { transaction: converted_tx.transaction, receipt },
                     state_diff: TransactionStateUpdate {

@@ -410,7 +410,7 @@ fn revert_refresh_reconstruction() {
     assert_eq!(new_tip_n, 0);
     assert_eq!(new_tip_hash, block_0_hash);
 
-    // DB projection should be updated but in-memory head is stale.
+    // Revert updates the durable and runtime projections; refreshing again is idempotent.
     assert!(matches!(backend.db.get_head_projection().expect("db read"), StorageHeadProjection::Confirmed(0)));
 
     // Refresh in-memory head from DB.
@@ -480,13 +480,11 @@ fn revert_errors_when_latest_checkpoint_exists_but_no_floor_covers_target() {
 /// Metric violation counter increments on induced projection mismatch.
 #[test]
 fn metric_violation_counter_increments() {
-    use std::sync::atomic::Ordering;
-
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-    let test_counter = &metrics::metrics().head_projection_violation_count_test;
+    let test_counter = &metrics::HEAD_PROJECTION_VIOLATIONS;
 
     // Record baseline counter value.
-    let baseline = test_counter.load(Ordering::Relaxed);
+    let baseline = test_counter.get();
 
     // 1. Induce a projection violation: projected confirmed tip ahead of head.
     let head =
@@ -496,7 +494,7 @@ fn metric_violation_counter_increments() {
         MadaraBackend::<crate::rocksdb::RocksDBStorage>::ensure_tip_not_ahead_of_head_state(head, &ahead_projection);
     assert!(result.is_err(), "ahead projection must be rejected");
     assert_eq!(
-        test_counter.load(Ordering::Relaxed),
+        test_counter.get(),
         baseline + 1,
         "violation counter must increment by 1 after ahead-projection rejection"
     );
@@ -512,7 +510,7 @@ fn metric_violation_counter_increments() {
     let result = backend.publish_head_projection(head_with_preconfirmed, Some(mismatched_preconfirmed));
     assert!(result.is_err(), "runtime preconfirmed mismatch must be rejected");
     assert_eq!(
-        test_counter.load(Ordering::Relaxed),
+        test_counter.get(),
         baseline + 2,
         "violation counter must increment by 1 after runtime-preconfirmed mismatch"
     );
@@ -526,7 +524,7 @@ fn metric_violation_counter_increments() {
     let result = backend.publish_head_projection(bad_cross_field, None);
     assert!(result.is_err(), "cross-field invariant violation must be rejected");
     assert_eq!(
-        test_counter.load(Ordering::Relaxed),
+        test_counter.get(),
         baseline + 3,
         "violation counter must increment by 1 after cross-field invariant violation"
     );

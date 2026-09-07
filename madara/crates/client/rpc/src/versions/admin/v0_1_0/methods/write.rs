@@ -593,23 +593,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revert_fails_when_source_mapping_missing() {
+    async fn revert_cleans_legacy_l1_messages_without_source_mapping() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
         let block_0_hash = add_test_block(&backend, 0, vec![]);
         let reverted_nonce = 7u64;
         add_test_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, Felt::from(700u64))]);
+        backend.write_l1_messaging_sync_tip(Some(10_000)).unwrap();
 
         let rpc = make_starknet(backend.clone(), ServiceContext::default());
 
-        // Missing nonce->l1_block metadata should fail fast without mutating the chain.
-        let err = rpc
-            .revert_to_and_shutdown(block_0_hash)
-            .await
-            .expect_err("revert should fail when source metadata is missing");
-        assert_ne!(err.code(), 0);
-        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
-        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
+        // Legacy or replay-injected messages can lack source metadata. Revert still cleans them
+        // without inventing a source block to rewind the L1 cursor to.
+        rpc.revert_to_and_shutdown(block_0_hash).await.expect("revert should tolerate missing legacy source metadata");
+        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
+        assert_eq!(backend.get_l1_messaging_sync_tip().unwrap(), Some(10_000));
     }
 
     #[tokio::test]

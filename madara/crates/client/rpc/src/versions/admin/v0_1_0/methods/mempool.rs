@@ -14,6 +14,28 @@ pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_fil
         && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
 }
 
+#[async_trait]
+impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
+    /// Pauses or resumes sequencer mempool intake after enforcing unsafe-RPC access control.
+    /// Bypass and L1-handler sources remain available because the handle changes only mempool mode.
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .set_mempool_intake(enabled)
+            .map_err(StarknetRpcApiError::from)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,27 +84,5 @@ mod tests {
         assert!(matches_nonce_filter(&account_tx, nonce_filter));
         assert!(!matches_nonce_filter(&l1_handler_tx, nonce_filter));
         assert!(matches_nonce_filter(&l1_handler_tx, MempoolNonceFilter::default()));
-    }
-}
-
-#[async_trait]
-impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
-    /// Pauses or resumes sequencer mempool intake after enforcing unsafe-RPC access control.
-    /// Bypass and L1-handler sources remain available because the handle changes only mempool mode.
-    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
-        if !self.rpc_unsafe_enabled {
-            return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
-            }
-            .into());
-        }
-
-        tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .set_mempool_intake(enabled)
-            .map_err(StarknetRpcApiError::from)?)
     }
 }

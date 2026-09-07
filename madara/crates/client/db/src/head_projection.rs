@@ -3,10 +3,10 @@ use super::*;
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Increments the invariant metric and logs one rejected head-projection state.
     /// Callers still return their original error so diagnostics do not alter control flow.
-    fn register_projection_violation(message: String) {
+    fn register_projection_violation(message: &str) {
         metrics().head_projection_violation_count.add(1, &[]);
         #[cfg(test)]
-        metrics().head_projection_violation_count_test.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        crate::metrics::HEAD_PROJECTION_VIOLATIONS.with(|count| count.set(count.get() + 1));
         tracing::error!(target: "db::chain_head_projection", "{message}");
     }
 
@@ -103,7 +103,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     expected,
                     preconfirmed.keys().copied().collect::<Vec<_>>()
                 );
-                Self::register_projection_violation(message.clone());
+                Self::register_projection_violation(&message);
                 bail!("{message}");
             }
             None => {
@@ -111,7 +111,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     "Runtime preconfirmed blocks {:?} exist while head has no internal preconfirmed tip. [head={chain_head_state:?}]",
                     preconfirmed.keys().copied().collect::<Vec<_>>()
                 );
-                Self::register_projection_violation(message.clone());
+                Self::register_projection_violation(&message);
                 bail!("{message}");
             }
         }
@@ -134,7 +134,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                         block_n,
                         chain_head_state.confirmed_tip
                     );
-                    Self::register_projection_violation(message.clone());
+                    Self::register_projection_violation(&message);
                     bail!("{message}");
                 }
                 Ok(())
@@ -147,7 +147,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                         header.block_number,
                         expected
                     );
-                    Self::register_projection_violation(message.clone());
+                    Self::register_projection_violation(&message);
                     bail!("{message}");
                 }
                 Ok(())
@@ -162,10 +162,8 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         chain_head_state: ChainHeadState,
         preconfirmed: Option<Arc<PreconfirmedBlock>>,
     ) -> Result<()> {
-        chain_head_state.validate_cross_field_invariants().map_err(|err| {
-            let message = err.to_string();
-            Self::register_projection_violation(message.clone());
-            anyhow::anyhow!(message)
+        chain_head_state.validate_cross_field_invariants().inspect_err(|err| {
+            Self::register_projection_violation(&err.to_string());
         })?;
 
         let previous_head_state = *self.chain_head_state.borrow();
