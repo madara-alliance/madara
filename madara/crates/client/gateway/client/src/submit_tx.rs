@@ -73,6 +73,7 @@ fn map_gateway_error(err: SequencerError) -> SubmitTransactionError {
         | Error::InvalidUrl(_)
         | Error::HttpError(_)
         | Error::HttpCallError(_)
+        | Error::DecompressResponse { .. }
         | Error::DeserializeBody { .. }
         | Error::SerializeRequest(_)
         | Error::CompressError(_)

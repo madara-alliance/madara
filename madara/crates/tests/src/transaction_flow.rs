@@ -55,11 +55,18 @@ struct SetupBuilder {
     block_time: String,
     block_production_disabled: bool,
     enable_native_execution: bool,
+    feeder_gateway_gzip_responses: bool,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        Self { setup, block_time: "2s".into(), block_production_disabled: false, enable_native_execution: false }
+        Self {
+            setup,
+            block_time: "2s".into(),
+            block_production_disabled: false,
+            enable_native_execution: false,
+            feeder_gateway_gzip_responses: false,
+        }
     }
     pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
         self.block_production_disabled = disabled;
@@ -71,6 +78,11 @@ impl SetupBuilder {
     }
     pub fn with_native_execution(mut self, enabled: bool) -> Self {
         self.enable_native_execution = enabled;
+        self
+    }
+
+    pub fn with_feeder_gateway_gzip_responses(mut self, enabled: bool) -> Self {
+        self.feeder_gateway_gzip_responses = enabled;
         self
     }
 
@@ -94,6 +106,9 @@ impl SetupBuilder {
         if self.enable_native_execution {
             args.push("--native-compilation-mode".into());
             args.push("blocking".into());
+        }
+        if self.feeder_gateway_gzip_responses {
+            args.push("--feeder-gateway-gzip-responses".into());
         }
 
         args.into_iter().chain(self.block_production_disabled.then_some("--no-block-production".into()))
@@ -302,6 +317,25 @@ fn make_transfer_call(recipient: Felt, amount: u128) -> Vec<Call> {
         selector: starknet_keccak(b"transfer"),
         calldata: vec![recipient, amount.into(), Felt::ZERO],
     }]
+}
+
+#[rstest]
+#[case::identity(false)]
+#[case::gzip(true)]
+#[tokio::test]
+async fn full_node_syncs_from_negotiated_feeder(#[case] gzip_enabled: bool) {
+    let setup = SetupBuilder::new(FullNodeAndSequencer)
+        .with_block_time("500ms")
+        .with_feeder_gateway_gzip_responses(gzip_enabled)
+        .run()
+        .await;
+    let RunningTestSetup::TwoNodes { _sequencer: sequencer, mut user_facing } = setup else {
+        unreachable!("full-node setup always starts two nodes")
+    };
+
+    wait_for_next_block(&sequencer.json_rpc()).await;
+    let target = get_latest_block_n(&sequencer.json_rpc()).await;
+    user_facing.wait_for_sync_to(target).await;
 }
 
 async fn get_latest_block_n(provider: &(impl Provider + Send + Sync)) -> u64 {

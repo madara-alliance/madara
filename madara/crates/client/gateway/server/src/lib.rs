@@ -332,6 +332,17 @@
 //! madara --feeder-gateway-enable
 //! ```
 //!
+//! Feeder responses can also use negotiated gzip compression. Madara full nodes advertise gzip support automatically,
+//! while the server keeps compression disabled by default for compatibility with older clients. After gzip-capable
+//! clients have been deployed, enable it with either `--feeder-gateway-gzip-responses` or
+//! `MADARA_FEEDER_GATEWAY_GZIP_RESPONSES=true`. Disable the same setting for immediate rollback; no client rollback is
+//! required. Only successful, non-empty `feeder_gateway/*` responses are compressed, and only when the request includes
+//! an acceptable `Accept-Encoding: gzip` value.
+//!
+//! The `gateway_calls` telemetry records the selected `encoding`, `uncompressed_bytes`, `transmitted_bytes`, and
+//! `compression_duration` alongside the route, status, and total response time. Compression uses a bounded blocking
+//! worker path; requests fall back to identity encoding when all compression slots are busy.
+//!
 //! ## Enabling the Gateway
 //!
 //! The gateway server is disabled by default. Enable it with:

@@ -21,6 +21,8 @@ pub enum SequencerError {
     HttpCallError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error },
+    #[error("Failed to decompress gzip response: {source:#}")]
+    DecompressResponse { source: std::io::Error },
     #[error("Serialization or deserialization error: {0:#}")]
     SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]
