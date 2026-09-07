@@ -274,8 +274,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             };
             let is_new_tx = false; // do not trigger metrics update and db update.
+            let tx_hash = tx.hash;
             if let Err(err) = self.add_tx(tx, is_new_tx).await {
                 match err {
+                    MempoolInsertionError::InnerMempool(TxInsertionError::NonceTooLow { .. }) => {
+                        // Admission now rejects transactions already covered by internal execution.
+                        // They never enter the pool for the later reconciliation pass to remove.
+                        self.remove_saved_txs_by_hashes([tx_hash]);
+                    }
                     MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
                 }
@@ -363,6 +369,36 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.add_tx(tx, /* is_new_tx */ true).await
     }
 
+    /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
+    /// The caller holds the mempool write lock so an account cannot drain between lookup and insertion.
+    fn account_nonce_for_insertion(
+        &self,
+        inner: &InnerMempool,
+        address: &Felt,
+    ) -> Result<Nonce, MempoolInsertionError> {
+        let contract_address = (*address).try_into().map_err(|_| TxInsertionError::InvalidContractAddress)?;
+        if let Some(nonce) = inner.get_account_nonce(&contract_address) {
+            return Ok(*nonce);
+        }
+
+        let (head, views) = self.backend.internal_preconfirmed_views()?;
+        for view in views.iter().rev() {
+            if let Some(nonce) = view
+                .borrow_content()
+                .executed_transactions()
+                .rev()
+                .find_map(|tx| tx.state_diff.nonces.get(address).copied())
+            {
+                return Ok(Nonce(nonce));
+            }
+        }
+        let nonce = match head.confirmed_tip {
+            Some(block_n) => self.backend.db.get_contract_nonce_at(block_n, address)?.unwrap_or(Felt::ZERO),
+            None => Felt::ZERO,
+        };
+        Ok(Nonce(nonce))
+    }
+
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
     async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
@@ -385,14 +421,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             }
         }
 
-        let now = TxTimestamp::now();
-        let account_nonce =
-            self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
 
         let (ret, summary) = {
             let mut lock = self.inner.write().await;
-            let ret = lock.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
+            let ret = self.account_nonce_for_insertion(&lock, &tx.contract_address).and_then(|nonce| {
+                lock.insert_tx(TxTimestamp::now(), tx.clone(), nonce, &mut removed_txs).map_err(Into::into)
+            });
             (ret, lock.summary())
         };
 
@@ -421,7 +456,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             }
             self.on_tx_added(&tx, is_new_tx);
         }
-        ret.map_err(Into::into)
+        ret
     }
 
     /// Update secondary state when a new transaction has been successfully added to the mempool.

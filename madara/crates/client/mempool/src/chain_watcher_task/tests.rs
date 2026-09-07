@@ -58,6 +58,89 @@ fn observe(
 }
 
 #[tokio::test]
+async fn emptied_account_admission_uses_internal_execution_nonce() {
+    let backend = backend_with_genesis().await;
+    let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+    let address = Felt::from(123u64);
+    let contract_address = address.try_into().unwrap();
+    let mut state = ChainWatcherState::new(Some(0));
+
+    for nonce in 0..3 {
+        let tx = executed(address, nonce, 100 + nonce);
+        mempool.accept_tx(tx.to_validated()).await.unwrap();
+        {
+            let mut guard = mempool.inner.write().await;
+            assert_eq!(guard.pop_next_ready().unwrap().hash, Felt::from(100 + nonce));
+            assert!(guard.get_account_nonce(&contract_address).is_none());
+        }
+        append_block(&backend, nonce + 1, vec![tx]);
+        let effects = observe(&mempool, &mut state, backend.block_view_on_preconfirmed(nonce + 1).unwrap().into());
+        mempool.apply_nonce_updates(effects.nonce_updates, effects.nonce_update_mode).await.unwrap();
+    }
+    // The latest block need not touch this account; admission must inspect the earlier suffix too.
+    append_block(&backend, 4, vec![]);
+    assert_eq!(backend.view_on_latest().get_contract_nonce(&address).unwrap(), Some(Felt::ONE));
+    assert!(matches!(
+        mempool.accept_tx(executed(address, 1, 998).to_validated()).await,
+        Err(crate::MempoolInsertionError::InnerMempool(crate::inner::TxInsertionError::NonceTooLow { .. }))
+    ));
+    mempool.accept_tx(executed(address, 3, 999).to_validated()).await.unwrap();
+    let mut guard = mempool.inner.write().await;
+    assert_eq!(guard.get_account_nonce(&contract_address).unwrap().0, Felt::THREE);
+    assert_eq!(guard.pop_next_ready().unwrap().hash, Felt::from(999u64));
+    guard.check_invariants();
+}
+
+#[tokio::test]
+async fn admission_resolves_nonce_after_waiting_for_mempool_lock() {
+    use futures::FutureExt;
+
+    let backend = backend_with_genesis().await;
+    let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+    let address = Felt::from(123u64);
+    mempool.accept_tx(executed(address, 0, 100).to_validated()).await.unwrap();
+    let mut guard = mempool.inner.write().await;
+    let admission = mempool.accept_tx(executed(address, 3, 999).to_validated());
+    tokio::pin!(admission);
+    assert!(admission.as_mut().now_or_never().is_none());
+
+    assert_eq!(guard.pop_next_ready().unwrap().hash, Felt::from(100u64));
+    for n in 1..=3 {
+        append_block(&backend, n, vec![executed(address, n - 1, n)]);
+    }
+    drop(guard);
+    admission.await.unwrap();
+    let mut guard = mempool.inner.write().await;
+    assert_eq!(guard.pop_next_ready().unwrap().hash, Felt::from(999u64));
+    guard.check_invariants();
+}
+
+#[tokio::test]
+async fn admission_falls_back_to_confirmed_nonce_below_empty_suffix() {
+    let backend = backend_with_genesis().await;
+    let address = Felt::from(123u64);
+    append_block(&backend, 1, vec![executed(address, 0, 101)]);
+    backend
+        .write_access()
+        .close_preconfirmed(
+            true,
+            1,
+            StateDiff {
+                nonces: vec![NonceUpdate { contract_address: address, nonce: Felt::ONE }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    append_block(&backend, 2, vec![]);
+    append_block(&backend, 3, vec![]);
+    let mempool = Mempool::new(backend, MempoolConfig::default());
+    mempool.accept_tx(executed(address, 1, 999).to_validated()).await.unwrap();
+    let mut guard = mempool.inner.write().await;
+    assert_eq!(guard.pop_next_ready().unwrap().hash, Felt::from(999u64));
+    guard.check_invariants();
+}
+
+#[tokio::test]
 async fn older_confirmations_preserve_runahead_nonces_and_executed_statuses() {
     let backend = backend_with_genesis().await;
     let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
