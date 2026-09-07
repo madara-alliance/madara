@@ -73,8 +73,16 @@ impl RocksDBStorage {
                 "🔄 REORG: Clearing preconfirmed tip while keeping confirmed head at block_n={}",
                 context.target_block_n
             );
-            self.replace_head_projection(&StorageHeadProjection::Confirmed(context.target_block_n))
-                .context("Clearing preconfirmed head projection during revert")?;
+            let mut batch = WriteBatchWithTransaction::default();
+            self.inner.delete_all_preconfirmed_rows_in_batch(&mut batch)?;
+            self.inner.replace_head_projection_in_batch(
+                &StorageHeadProjection::Confirmed(context.target_block_n),
+                &mut batch,
+            )?;
+            self.inner
+                .db
+                .write_opt(batch, &self.inner.writeopts)
+                .context("Clearing preconfirmed data and head projection during revert")?;
             self.flush().context("Flushing database after clearing preconfirmed tip")?;
         } else {
             tracing::info!("🔄 REORG: Already at common ancestor block_n={}, no revert needed", context.target_block_n);

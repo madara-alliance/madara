@@ -559,3 +559,28 @@ fn startup_rolls_first_boundary_back_to_empty_base_before_replaying_confirmed_bl
     let reopened = open_backend(temp_dir.path());
     assert_boundary_crash_recovered(&reopened, expected_confirmed_root);
 }
+
+#[test]
+fn same_tip_revert_discards_persisted_runahead_across_restart() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let backend = open_backend(temp_dir.path());
+    let block_hash = crate::test_utils::add_test_block(&backend, 0, vec![]);
+    for block_number in 1..=3 {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number, ..Default::default() }))
+            .expect("persist preconfirmed suffix");
+    }
+
+    backend.revert_to(&block_hash).expect("discard suffix at current confirmed tip");
+    assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+    assert!(!backend.has_preconfirmed_block());
+    for block_number in 1..=3 {
+        assert!(backend.db.get_preconfirmed_block_data(block_number).unwrap().is_none());
+    }
+    drop(backend);
+
+    let reopened = open_backend(temp_dir.path());
+    assert_eq!(reopened.latest_confirmed_block_n(), Some(0));
+    assert!(!reopened.has_preconfirmed_block());
+}
