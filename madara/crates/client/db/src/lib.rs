@@ -29,9 +29,16 @@
 //!
 //! A boundary is published only after block parts, trie changes, and checkpoint metadata have
 //! passed the required durability steps. A completed root or written header alone is insufficient.
-//! Startup reconciles trie state to the persisted confirmed head and verifies its root; graceful
-//! shutdown reconciles the last confirmed block as well. Retained checkpoints and trie logs
-//! bound available rollback history. Callers must stop canonical writers before a reorg.
+//! Producer startup reconciles trie state to the confirmed head before recovering preconfirmed
+//! blocks; parallel shutdown reconciles the last confirmed block as well. Ordinary full-node
+//! startup preserves independent sync cursors, which can legitimately run ahead of that head.
+//!
+//! Reorg persists a recovery floor before changing tries and clears it only after flushing the
+//! completed transition. If that marker survives a crash, storage startup aligns the tries at
+//! the saved floor, verifies its root, and rebuilds the authoritative confirmed head. Before the
+//! atomic head commit this is the old head; afterward it is the reorg target. Recovery itself is
+//! retryable, and startup removes any remaining noncanonical suffix. Retained checkpoints and
+//! trie logs bound available rollback history. Callers must stop canonical writers before a reorg.
 //!
 //! # Persisted preconfirmed suffix
 //!

@@ -84,7 +84,7 @@ pub(super) fn revert_single_trie<H: StarkHash + Send + Sync>(
 /// more blocks than the retained window could make Bonsai treat pruned revisions as empty
 /// change sets and silently reconstruct the wrong trie state.
 pub(super) fn ensure_parallel_merkle_revert_is_retained(
-    latest_checkpoint: u64,
+    latest_trie_revision: u64,
     target_block_n: u64,
     checkpoint_floor: u64,
     max_saved_trie_logs: Option<usize>,
@@ -95,14 +95,14 @@ pub(super) fn ensure_parallel_merkle_revert_is_retained(
     let retained_block_revisions =
         u64::try_from(max_saved_trie_logs).context("Converting trie-log retention to u64")?;
     let first_retained_revision = if retained_block_revisions == 0 {
-        latest_checkpoint.checked_add(1).context("Computing empty trie-log retention floor")?
+        latest_trie_revision.checked_add(1).context("Computing empty trie-log retention floor")?
     } else {
-        latest_checkpoint.saturating_sub(retained_block_revisions - 1)
+        latest_trie_revision.saturating_sub(retained_block_revisions - 1)
     };
 
     if checkpoint_floor < first_retained_revision {
         anyhow::bail!(
-            "Cannot revert parallel Merkle checkpoint from block {latest_checkpoint} to {target_block_n}: checkpoint floor {checkpoint_floor} predates first retained trie-log revision {first_retained_revision} (window={retained_block_revisions})"
+            "Cannot revert trie state from block {latest_trie_revision} to {target_block_n}: checkpoint floor {checkpoint_floor} predates first retained trie-log revision {first_retained_revision} (window={retained_block_revisions})"
         );
     }
 
@@ -188,6 +188,8 @@ impl RocksDBStorage {
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         };
+
+        storage.recover_interrupted_reorg(head_block_n).context("Recovering interrupted reorg")?;
 
         if let Some(head_block_n) = head_block_n {
             if storage.has_parallel_merkle_checkpoint(head_block_n)? {

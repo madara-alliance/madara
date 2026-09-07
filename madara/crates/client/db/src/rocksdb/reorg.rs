@@ -24,6 +24,46 @@ struct L1RewindPlan {
 }
 
 impl RocksDBStorage {
+    /// Persists the common rollback floor before the first trie can change, including without WAL.
+    fn begin_reorg_recovery(&self, floor: u64) -> Result<()> {
+        ensure!(
+            self.inner.get_reorg_recovery_floor()?.is_none_or(|pending_floor| pending_floor == floor),
+            "Recover the unfinished reorg before changing its rollback floor"
+        );
+        self.inner.write_reorg_recovery_floor(Some(floor))?;
+        self.flush().context("Persisting reorg recovery floor before trie rollback")
+    }
+
+    /// Makes the repaired state durable before clearing its recovery marker.
+    fn finish_reorg_recovery(&self) -> Result<()> {
+        self.flush().context("Persisting completed reorg state")?;
+        self.inner.write_reorg_recovery_floor(None)?;
+        self.flush().context("Persisting reorg recovery completion")
+    }
+
+    /// Repairs only interrupted reorgs; ordinary full-node cursor progress remains independent.
+    /// Before the atomic head commit we rebuild the old head; afterward we rebuild the new one.
+    pub(super) fn recover_interrupted_reorg(&self, confirmed_tip: Option<u64>) -> Result<()> {
+        let Some(floor) = self.inner.get_reorg_recovery_floor()? else { return Ok(()) };
+        let confirmed_tip = confirmed_tip.context("Interrupted reorg has no confirmed head")?;
+        ensure!(floor <= confirmed_tip, "Reorg recovery floor {floor} exceeds confirmed head {confirmed_tip}");
+        let floor_info = self.inner.get_block_info(floor)?.context("Missing reorg recovery floor block")?;
+        tracing::warn!(floor, confirmed_tip, "Recovering interrupted reorg before opening the database");
+
+        // The saved floor also covers serial full nodes that have no parallel checkpoints.
+        // Align partially reverted tries there before replaying to the authoritative head.
+        self.revert_and_commit_tries(self.trie_log_heads()?, floor, true)?;
+        ensure_reorg_target_root_matches(
+            floor,
+            floor_info.header.global_state_root,
+            self.get_state_root_hash_at_version(floor_info.header.protocol_version)?,
+        )?;
+        self.inner.remove_parallel_merkle_checkpoints_above(floor)?;
+        self.inner.write_parallel_merkle_checkpoint(floor)?;
+        self.reconcile_confirmed_parallel_merkle_state(Some(confirmed_tip), "interrupted_reorg")?;
+        self.finish_reorg_recovery()
+    }
+
     /// Resolves and validates the source and target heads for a reorg request.
     ///
     /// No writes occur here, so every later failure still leaves the old confirmed head authoritative.
@@ -201,8 +241,11 @@ impl RocksDBStorage {
                     context.target_block_n
                 )
             })?;
+        // Serial sync can advance trie logs long after migration wrote the last checkpoint.
+        // Retention follows the actual revisions, not the age of the checkpoint metadata.
+        let latest_trie_revision = heads.highest().unwrap_or(checkpoint_ceiling).max(checkpoint_ceiling);
         ensure_parallel_merkle_revert_is_retained(
-            checkpoint_ceiling,
+            latest_trie_revision,
             context.target_block_n,
             checkpoint_floor,
             self.inner.config.max_saved_trie_logs,
@@ -214,6 +257,7 @@ impl RocksDBStorage {
             context.target_block_n
         );
 
+        self.begin_reorg_recovery(checkpoint_floor)?;
         self.revert_and_commit_tries(heads, checkpoint_floor, true)?;
         self.inner
             .remove_parallel_merkle_checkpoints_above(context.target_block_n)
@@ -269,6 +313,7 @@ impl RocksDBStorage {
         {
             Some(checkpoint_ceiling) => self.revert_from_checkpoint_floor(context, heads, checkpoint_ceiling),
             None => {
+                self.begin_reorg_recovery(context.target_block_n)?;
                 self.revert_and_commit_tries(heads, context.target_block_n, false)?;
                 tracing::info!("✅ REORG: All tries committed successfully");
                 Ok(())
@@ -339,11 +384,14 @@ impl RocksDBStorage {
         }
 
         tracing::info!("💾 REORG: Flushing database to persist changes...");
-        self.flush().context("Flushing database after reorg")?;
+        self.finish_reorg_recovery()?;
         tracing::info!("✅ REORG: Database flushed successfully");
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 /// Executes the complete crash-consistent reorg around a single atomic head commit.
 ///

@@ -24,6 +24,7 @@ const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
 const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 const META_PRECONFIRMED_HEADER_PREFIX: &[u8] = b"PRECONFIRMED_HEADER/";
+const META_REORG_RECOVERY_FLOOR: &[u8] = b"REORG_RECOVERY_FLOOR";
 
 // Parallel-merkle checkpoint metadata (kept in META_COLUMN).
 const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
@@ -84,6 +85,26 @@ pub enum StoredHeadProjectionWithoutContent {
 }
 
 impl RocksDBStorageInner {
+    /// Reads the rollback floor of a reorg whose durable completion has not been recorded.
+    pub(super) fn get_reorg_recovery_floor(&self) -> Result<Option<u64>> {
+        self.db
+            .get_pinned_cf(&self.get_column(META_COLUMN), META_REORG_RECOVERY_FLOOR)?
+            .map(|bytes| Ok(u64::from_be_bytes(bytes.as_ref().try_into().context("Malformed reorg recovery floor")?)))
+            .transpose()
+    }
+
+    /// Writes or clears the reorg marker. Callers must flush at the transition's durability boundaries.
+    pub(super) fn write_reorg_recovery_floor(&self, floor: Option<u64>) -> Result<()> {
+        let column = self.get_column(META_COLUMN);
+        match floor {
+            Some(floor) => {
+                self.db.put_cf_opt(&column, META_REORG_RECOVERY_FLOOR, floor.to_be_bytes(), &self.writeopts)?;
+            }
+            None => self.db.delete_cf_opt(&column, META_REORG_RECOVERY_FLOOR, &self.writeopts)?,
+        }
+        Ok(())
+    }
+
     /// Appends an L1 messaging cursor update to an existing atomic database batch.
     pub(super) fn write_l1_messaging_sync_tip_in_batch(
         &self,

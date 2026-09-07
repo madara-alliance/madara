@@ -83,8 +83,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(backend)
     }
 
-    /// Validates chain identity, cleans crash leftovers, reconciles tries, and publishes runtime heads.
-    /// The confirmed projection remains authoritative throughout startup recovery.
+    /// Validates chain identity, cleans partial blocks, and publishes runtime heads.
+    /// Trie reconciliation belongs to producer startup or storage's interrupted-reorg recovery.
     fn init(&mut self) -> Result<()> {
         // Check chain configuration
         if let Some(res) = self.db.get_stored_chain_info()? {

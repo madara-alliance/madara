@@ -379,6 +379,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
     /// * The head commit is the reorg's linearization point. A crash before it recovers the old
     ///   confirmed head; a crash after it resumes reverse-order suffix cleanup from the new head.
+    ///   A flushed recovery-floor marker makes this repair explicit for both producers and full nodes.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         super::reorg::execute_reorg(self, new_tip_block_hash)
     }
