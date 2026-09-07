@@ -62,12 +62,18 @@ enum CrashPhase {
 #[case::before_head_commit(CrashPhase::AllTries)]
 #[case::after_head_commit(CrashPhase::HeadCommitted)]
 #[case::during_recovery(CrashPhase::RecoveryReplayed)]
-fn full_node_restart_repairs_interrupted_reorg(#[case] phase: CrashPhase, #[values(true, false)] wal: bool) {
+fn full_node_restart_repairs_interrupted_reorg(
+    #[case] phase: CrashPhase,
+    #[values(true, false)] wal: bool,
+    #[values(false, true)] migrated: bool,
+) {
     let dir = tempfile::TempDir::new().unwrap();
     let (expected_tip, expected_root) = {
         let backend = open_backend(dir.path(), wal);
         fill_chain(&backend);
-        assert_eq!(backend.get_parallel_merkle_latest_checkpoint().unwrap(), None);
+        if migrated {
+            backend.write_parallel_merkle_checkpoint(0).unwrap();
+        }
         let target = backend.db.get_block_info(2).unwrap().unwrap();
         let context = backend.db.prepare_reorg(&target.block_hash).unwrap();
         let expected_tip = if matches!(phase, CrashPhase::HeadCommitted) { 2 } else { 3 };
@@ -162,7 +168,7 @@ fn reorg_rejects_pruned_migration_floor_before_mutating_tries() {
         // Migration's checkpoint survives while serial sync advances and prunes old logs.
         backend.write_parallel_merkle_checkpoint(0).unwrap();
         let expected_root = backend.db.get_state_root_hash().unwrap();
-        let target = backend.db.get_block_info(2).unwrap().unwrap();
+        let target = backend.db.get_block_info(0).unwrap().unwrap();
 
         let error = backend.revert_to(&target.block_hash).unwrap_err();
         assert!(format!("{error:#}").contains("checkpoint floor 0 predates first retained trie-log revision 2"));
@@ -174,5 +180,76 @@ fn reorg_rejects_pruned_migration_floor_before_mutating_tries() {
     };
     let backend = open_backend(dir.path(), true);
     assert_eq!(backend.latest_confirmed_block_n(), Some(3));
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), expected_root);
+}
+
+#[rstest::rstest]
+fn recent_reorg_uses_retained_serial_revision_after_migration(#[values(true, false)] wal: bool) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let expected_root = {
+        let backend = open_backend(dir.path(), wal);
+        fill_chain(&backend);
+        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        let target = backend.db.get_block_info(2).unwrap().unwrap();
+        backend.revert_to(&target.block_hash).unwrap();
+        assert_eq!(backend.get_parallel_merkle_latest_checkpoint().unwrap(), Some(2));
+        assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(2));
+        assert_eq!(backend.db.inner.get_reorg_recovery_floor().unwrap(), None);
+        target.header.global_state_root
+    };
+    for _ in 0..2 {
+        let backend = open_backend(dir.path(), wal);
+        assert_eq!(backend.latest_confirmed_block_n(), Some(2));
+        assert_eq!(backend.db.get_state_root_hash().unwrap(), expected_root);
+        assert!(backend.db.get_block_info(3).unwrap().is_none());
+    }
+}
+
+#[test]
+fn recent_reorg_uses_class_revision_when_other_tries_did_not_change() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let expected_root = {
+        let backend = open_backend(dir.path(), true);
+        for block_number in 0..4 {
+            let state_diff = if block_number == 2 {
+                StateDiff {
+                    declared_classes: vec![mp_state_update::DeclaredClassItem {
+                        class_hash: Felt::from(200_u64),
+                        compiled_class_hash: Felt::from(300_u64),
+                    }],
+                    ..Default::default()
+                }
+            } else {
+                StateDiff {
+                    deployed_contracts: vec![DeployedContractItem {
+                        address: Felt::from(100 + block_number),
+                        class_hash: Felt::ONE,
+                    }],
+                    ..Default::default()
+                }
+            };
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader { block_number, ..Default::default() },
+                        state_diff,
+                        transactions: vec![],
+                        events: vec![],
+                    },
+                    &[],
+                    false,
+                )
+                .unwrap();
+        }
+        backend.write_parallel_merkle_checkpoint(0).unwrap();
+        assert_eq!(backend.db.inner.bonsai_log_floor(trie::BONSAI_CLASS_LOG_COLUMN, 2).unwrap(), Some(2));
+        assert_eq!(backend.db.inner.bonsai_log_floor(trie::BONSAI_CONTRACT_LOG_COLUMN, 2).unwrap(), None);
+        let target = backend.db.get_block_info(2).unwrap().unwrap();
+        backend.revert_to(&target.block_hash).unwrap();
+        target.header.global_state_root
+    };
+    let backend = open_backend(dir.path(), true);
+    assert_eq!(backend.latest_confirmed_block_n(), Some(2));
     assert_eq!(backend.db.get_state_root_hash().unwrap(), expected_root);
 }

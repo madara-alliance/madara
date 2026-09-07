@@ -76,6 +76,10 @@ fn latest_bonsai_log_id_reads_latest_committed_revision() {
     trie.commit(BasicId::new(5)).unwrap();
 
     assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
+    for (ceiling, expected) in [(0, None), (1, None), (2, Some(2)), (4, Some(2)), (5, Some(5)), (u64::MAX, Some(5))] {
+        assert_eq!(storage.inner.bonsai_log_floor(trie::BONSAI_CONTRACT_LOG_COLUMN, ceiling).unwrap(), expected);
+    }
+    assert_eq!(storage.inner.bonsai_log_floor(trie::BONSAI_CLASS_LOG_COLUMN, 5).unwrap(), None);
 }
 
 #[test]

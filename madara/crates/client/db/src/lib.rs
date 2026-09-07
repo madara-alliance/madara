@@ -33,7 +33,10 @@
 //! blocks; parallel shutdown reconciles the last confirmed block as well. Ordinary full-node
 //! startup preserves independent sync cursors, which can legitimately run ahead of that head.
 //!
-//! Reorg persists a recovery floor before changing tries and clears it only after flushing the
+//! Reorg selects a recovery floor from checkpoint metadata and retained trie revisions. This lets
+//! serial sync use a recent materialized state even after an older migration checkpoint's logs
+//! have expired. The floor's root is verified against its block header before replaying later diffs.
+//! Reorg persists that recovery floor before changing tries and clears it only after flushing the
 //! completed transition. If that marker survives a crash, storage startup aligns the tries at
 //! the saved floor, verifies its root, and rebuilds the authoritative confirmed head. Before the
 //! atomic head commit this is the old head; afterward it is the reorg target. Recovery itself is

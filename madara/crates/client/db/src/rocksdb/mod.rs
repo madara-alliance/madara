@@ -222,8 +222,17 @@ impl RocksDBStorageInner {
     /// `u64` (`BasicId::to_bytes`). That means the lexicographically-last key in a trie-log
     /// column belongs to the latest committed revision for that trie.
     fn latest_bonsai_log_id(&self, column: Column) -> anyhow::Result<Option<u64>> {
+        self.bonsai_log_floor(column, u64::MAX)
+    }
+
+    /// Finds the latest retained trie revision at or below a block, including serial commits.
+    fn bonsai_log_floor(&self, column: Column, block_n: u64) -> anyhow::Result<Option<u64>> {
         let handle = self.get_column(column);
-        let mut iter = self.db.iterator_cf(&handle, IteratorMode::End);
+        let mut options = rocksdb::ReadOptions::default();
+        if let Some(exclusive_end) = block_n.checked_add(1) {
+            options.set_iterate_upper_bound(exclusive_end.to_be_bytes());
+        }
+        let mut iter = self.db.iterator_cf_opt(&handle, options, IteratorMode::End);
 
         match iter.next() {
             None => Ok(None),

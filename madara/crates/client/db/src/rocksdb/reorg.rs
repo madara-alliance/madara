@@ -222,7 +222,7 @@ impl RocksDBStorage {
         Ok(())
     }
 
-    /// Rebuilds the target root from the retained checkpoint floor and ordered state diffs.
+    /// Rebuilds the target root from a retained materialized revision and ordered state diffs.
     ///
     /// Checkpoint metadata is rewound before replay so it never points at a pruned future revision.
     fn revert_from_checkpoint_floor(
@@ -241,42 +241,58 @@ impl RocksDBStorage {
                     context.target_block_n
                 )
             })?;
+        // All three tries describe one state. The last change in any trie identifies its
+        // latest materialized revision; unchanged tries can have older or absent log heads.
+        let mut recovery_floor = checkpoint_floor;
+        for column in
+            [trie::BONSAI_CONTRACT_LOG_COLUMN, trie::BONSAI_CONTRACT_STORAGE_LOG_COLUMN, trie::BONSAI_CLASS_LOG_COLUMN]
+        {
+            if let Some(revision) = self.inner.bonsai_log_floor(column, context.target_block_n)? {
+                recovery_floor = recovery_floor.max(revision);
+            }
+        }
         // Serial sync can advance trie logs long after migration wrote the last checkpoint.
         // Retention follows the actual revisions, not the age of the checkpoint metadata.
         let latest_trie_revision = heads.highest().unwrap_or(checkpoint_ceiling).max(checkpoint_ceiling);
         ensure_parallel_merkle_revert_is_retained(
             latest_trie_revision,
             context.target_block_n,
-            checkpoint_floor,
+            recovery_floor,
             self.inner.config.max_saved_trie_logs,
         )?;
         tracing::info!(
             "🌳 REORG: Floor-revert mode with checkpoints (floor={}, ceiling={}, target={})",
-            checkpoint_floor,
+            recovery_floor,
             checkpoint_ceiling,
             context.target_block_n
         );
 
-        self.begin_reorg_recovery(checkpoint_floor)?;
-        self.revert_and_commit_tries(heads, checkpoint_floor, true)?;
+        let floor_info = self.inner.get_block_info(recovery_floor)?.context("Missing reorg recovery floor block")?;
+        self.begin_reorg_recovery(recovery_floor)?;
+        self.revert_and_commit_tries(heads, recovery_floor, true)?;
+        ensure_reorg_target_root_matches(
+            recovery_floor,
+            floor_info.header.global_state_root,
+            self.get_state_root_hash_at_version(floor_info.header.protocol_version)?,
+        )?;
         self.inner
             .remove_parallel_merkle_checkpoints_above(context.target_block_n)
             .context("Rewinding parallel merkle checkpoint metadata after floor revert")?;
 
-        if context.target_block_n > checkpoint_floor {
+        if context.target_block_n > recovery_floor {
             self.replay_state_diffs_inclusive(
-                checkpoint_floor + 1,
+                recovery_floor + 1,
                 context.target_block_n,
                 context.target_block_info.header.protocol_version,
                 "checkpoint-floor reorg",
             )
             .context("Replaying ordered state diffs after floor revert")?;
-            self.inner
-                .write_parallel_merkle_checkpoint(context.target_block_n)
-                .context("Marking replay target as checkpoint after floor revert")?;
         } else {
             tracing::info!("🌳 REORG: Target block is checkpoint floor; no cumulative replay needed");
         }
+        self.inner
+            .write_parallel_merkle_checkpoint(context.target_block_n)
+            .context("Marking verified reorg target as checkpoint after floor revert")?;
         Ok(())
     }
 
