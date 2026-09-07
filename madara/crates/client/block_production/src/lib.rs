@@ -50,12 +50,14 @@
 //!
 //! # Recovery and shutdown
 //!
-//! Startup reconciles materialized tries with the confirmed head, including serial devnet
-//! genesis, before scheduling parallel roots. The persisted confirmed head remains authoritative:
+//! Producer startup reconciles materialized tries with the confirmed head before any preconfirmed
+//! recovery, even when restarting in serial mode after parallel production. This includes serial
+//! devnet genesis. The persisted confirmed head remains authoritative:
 //! any trie state ahead of it is rolled back, and missing trie updates are rebuilt and verified
 //! against its root. Persisted preconfirmed blocks are then re-executed in order using the saved
 //! execution configuration. Explicit discard removes the suffix instead. Candidates are not
-//! persisted and cannot be recovered from these records.
+//! persisted and cannot be recovered from these records. Parallel startup checkpoints the recovered
+//! head again before scheduling new roots.
 //!
 //! On normal shutdown the batcher closes the input channel, the executor sends `EndFinalBlock`,
 //! and the main task drains and joins the finalizer. Parallel mode then reconciles the final

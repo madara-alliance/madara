@@ -42,8 +42,8 @@ impl ShutdownProgress {
 }
 
 impl BlockProductionTask {
-    /// Validates recovery settings, repairs persisted preconfirmed work, and sets the confirmed cursor.
-    /// Parallel-Merkle production begins only after the recovered confirmed head is a durable root base.
+    /// Repairs the confirmed trie before recovering preconfirmed work and setting the producer cursor.
+    /// The existing database may have been produced in parallel mode even when this process uses serial mode.
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
         if self.parallel_merkle_enabled {
@@ -60,6 +60,10 @@ impl BlockProductionTask {
                 .context("Validating parallel Merkle recovery configuration")?;
         }
 
+        // Recovery closes blocks through the serial trie path, so its parent must already be materialized.
+        self.backend
+            .reconcile_confirmed_parallel_merkle_state("block_production_before_recovery")
+            .context("Establishing the confirmed trie base before startup recovery")?;
         self.close_preconfirmed_block_if_exists().await.context("Cannot close preconfirmed block on startup")?;
         self.ensure_parallel_merkle_startup_base()?;
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: self.backend.latest_confirmed_block_n() });

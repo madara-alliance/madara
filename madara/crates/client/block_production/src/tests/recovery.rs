@@ -1,4 +1,105 @@
 use super::*;
+use mc_db::MadaraStorageWrite;
+
+/// Leaves the confirmed head ahead of its durable trie, as after a non-boundary parallel close.
+fn confirm_non_boundary_block(setup: &DevnetSetup) -> Felt {
+    let backend = &setup.backend;
+    backend.reconcile_confirmed_parallel_merkle_state("test_genesis_checkpoint").unwrap();
+    let state_diff = StateDiff {
+        nonces: vec![mp_state_update::NonceUpdate { contract_address: setup.contracts.0[0].address, nonce: Felt::ONE }],
+        ..Default::default()
+    };
+    let header = PreconfirmedHeader {
+        block_number: 1,
+        protocol_version: backend.chain_config().latest_protocol_version,
+        ..Default::default()
+    };
+    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(header.clone())).unwrap();
+    let (floor, snapshot) = backend.db.get_latest_durable_snapshot_floor(Some(0)).unwrap();
+    let computed = backend
+        .db
+        .compute_root_from_selected_snapshot(floor, snapshot, 1, &state_diff, header.protocol_version, false, false)
+        .unwrap();
+    backend
+        .write_access()
+        .write_preconfirmed_with_precomputed_root(false, 1, state_diff, computed.state_root, computed.timings)
+        .unwrap();
+    backend.write_access().new_confirmed_block(1).unwrap();
+    assert_ne!(backend.db.get_state_root_hash().unwrap(), computed.state_root);
+    computed.state_root
+}
+
+#[rstest::rstest]
+#[case::parallel_recovery(true, true)]
+#[case::serial_recovery(false, true)]
+#[case::parallel_without_preconfirmed(true, false)]
+#[case::switch_to_serial_without_preconfirmed(false, false)]
+#[timeout(Duration::from_secs(30))]
+#[tokio::test]
+async fn startup_reconciles_non_boundary_parent_before_recovery(
+    #[future] devnet_setup: DevnetSetup,
+    #[future]
+    #[from(devnet_setup)]
+    reference_setup: DevnetSetup,
+    #[case] parallel: bool,
+    #[case] recover_preconfirmed: bool,
+) {
+    let mut setup = devnet_setup.await;
+    let parent_root = confirm_non_boundary_block(&setup);
+    let mut reference = reference_setup.await;
+    reference
+        .backend
+        .write_access()
+        .add_full_block_with_classes(
+            &mp_block::FullBlockWithoutCommitments {
+                header: PreconfirmedHeader {
+                    block_number: 1,
+                    protocol_version: setup.backend.chain_config().latest_protocol_version,
+                    ..Default::default()
+                },
+                state_diff: setup.backend.block_view_on_confirmed(1).unwrap().get_state_diff().unwrap(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .unwrap();
+    assert_eq!(reference.backend.db.get_state_root_hash().unwrap(), parent_root);
+    if recover_preconfirmed {
+        for backend in [&setup.backend, &reference.backend] {
+            backend
+                .write_access()
+                .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                    block_number: 2,
+                    protocol_version: backend.chain_config().latest_protocol_version,
+                    ..Default::default()
+                }))
+                .unwrap();
+        }
+    }
+
+    // Exercise the actual service startup order, without the DB fixture's eager reconciliation.
+    let mut task = setup.block_prod_task().with_parallel_merkle_enabled(parallel);
+    task.setup_initial_state().await.unwrap();
+    reference.block_prod_task().setup_initial_state().await.unwrap();
+
+    let expected_tip = if recover_preconfirmed { 2 } else { 1 };
+    assert_eq!(setup.backend.latest_confirmed_block_n(), Some(expected_tip));
+    let tip = setup.backend.block_view_on_confirmed(expected_tip).unwrap().get_block_info().unwrap();
+    // Even an empty block may write system-contract state; use the serial path as the root oracle.
+    let expected_root = reference
+        .backend
+        .block_view_on_confirmed(expected_tip)
+        .unwrap()
+        .get_block_info()
+        .unwrap()
+        .header
+        .global_state_root;
+    assert_eq!(tip.header.global_state_root, expected_root, "recovery must match the materialized serial parent");
+    assert_eq!(setup.backend.db.get_state_root_hash().unwrap(), expected_root);
+    assert!(!setup.backend.has_preconfirmed_block());
+}
 
 //
 // This test verifies that when Madara restarts with a preconfirmed block, `close_preconfirmed_block_if_exists`
