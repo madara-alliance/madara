@@ -3,8 +3,8 @@ use bincode::Options;
 use bytes::{Buf, Bytes};
 use flate2::read::GzDecoder;
 use http::Method;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming;
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
+use hyper::body::{Body, Incoming};
 use hyper::header::{HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
 use mp_gateway::error::{SequencerError, StarknetError};
@@ -15,6 +15,8 @@ use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, collections::HashMap, io::Read};
 use tower::Service;
 use url::Url;
+
+const MAX_FEEDER_RESPONSE_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) fn url_join_segment(url: &mut Url, segment: &str) {
     if url.path_segments().expect("Invalid base URL").next_back().is_some_and(|e| e.is_empty()) {
@@ -183,8 +185,22 @@ where
 {
     let http_status = response.status();
     let headers = response.headers().clone();
-    let whole_body = response.collect().await?.to_bytes();
+    let whole_body = collect_response_body(response.into_body(), MAX_FEEDER_RESPONSE_BODY_BYTES).await?;
     unpack_bytes(http_status, &headers, whole_body)
+}
+
+async fn collect_response_body<B>(body: B, max_bytes: usize) -> Result<Bytes, SequencerError>
+where
+    B: Body<Data = Bytes>,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    Limited::new(body, max_bytes).collect().await.map(|body| body.to_bytes()).map_err(|source| {
+        if source.downcast_ref::<LengthLimitError>().is_some() {
+            SequencerError::ResponseBodyTooLarge { max_bytes }
+        } else {
+            SequencerError::HttpCallError(source)
+        }
+    })
 }
 
 fn unpack_bytes<T>(http_status: StatusCode, headers: &HeaderMap, body: Bytes) -> Result<T, SequencerError>
@@ -206,6 +222,14 @@ where
 }
 
 fn decode_response_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, SequencerError> {
+    decode_response_body_with_limit(headers, body, MAX_FEEDER_RESPONSE_BODY_BYTES)
+}
+
+fn decode_response_body_with_limit(
+    headers: &HeaderMap,
+    body: Bytes,
+    max_bytes: usize,
+) -> Result<Bytes, SequencerError> {
     let gzip_encoded = headers
         .get_all(CONTENT_ENCODING)
         .iter()
@@ -217,9 +241,12 @@ fn decode_response_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, Seque
         return Ok(body);
     }
 
-    let mut decoder = GzDecoder::new(body.as_ref());
+    let mut decoder = GzDecoder::new(body.as_ref()).take(max_bytes.saturating_add(1) as u64);
     let mut decoded = Vec::new();
     decoder.read_to_end(&mut decoded).map_err(|source| SequencerError::DecompressResponse { source })?;
+    if decoded.len() > max_bytes {
+        return Err(SequencerError::ResponseBodyTooLarge { max_bytes });
+    }
     Ok(decoded.into())
 }
 
@@ -344,5 +371,20 @@ mod tests {
             let result = unpack_bytes::<serde_json::Value>(StatusCode::OK, &headers, body);
             assert!(matches!(result, Err(SequencerError::DecompressResponse { .. })));
         }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn compressed_and_decompressed_response_sizes_are_bounded() {
+        let compressed = gzip(&[b'a'; 64]);
+        let raw_result = collect_response_body(Full::new(compressed.clone()), compressed.len() - 1).await;
+        assert!(matches!(
+            raw_result,
+            Err(SequencerError::ResponseBodyTooLarge { max_bytes }) if max_bytes == compressed.len() - 1
+        ));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        let decoded_result = decode_response_body_with_limit(&headers, compressed, 32);
+        assert!(matches!(decoded_result, Err(SequencerError::ResponseBodyTooLarge { max_bytes: 32 })));
     }
 }

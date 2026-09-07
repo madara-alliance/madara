@@ -43,7 +43,6 @@ impl GatewayProvider {
         for attempt in 0..MAX_RETRIES {
             match request_fn().await {
                 Ok(result) => return Ok(result),
-                Err(error @ SequencerError::DecompressResponse { .. }) => return Err(error),
                 Err(e) => {
                     if attempt < MAX_RETRIES - 1 {
                         tracing::warn!("Failed to get with {:?}, retrying", e);
@@ -322,21 +321,24 @@ mod tests {
     const CLASS_ERC1155_BLOCK: u64 = 18507;
 
     #[tokio::test]
-    async fn decompression_errors_are_not_retried() {
+    async fn transient_decompression_errors_are_retried() {
         let provider = GatewayProvider::new_from_base_path(Url::parse("http://127.0.0.1:1/").unwrap());
         let attempts = AtomicUsize::new(0);
 
-        let result: Result<serde_json::Value, _> = provider
+        let result: serde_json::Value = provider
             .retry_get(|| {
-                attempts.fetch_add(1, Ordering::Relaxed);
-                std::future::ready(Err(SequencerError::DecompressResponse {
-                    source: std::io::Error::other("deterministic test failure"),
-                }))
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                std::future::ready(if attempt == 0 {
+                    Err(SequencerError::DecompressResponse { source: std::io::Error::other("transient test failure") })
+                } else {
+                    Ok(serde_json::json!({ "ok": true }))
+                })
             })
-            .await;
+            .await
+            .unwrap();
 
-        assert!(matches!(result, Err(SequencerError::DecompressResponse { .. })));
-        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        assert_eq!(result, serde_json::json!({ "ok": true }));
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
     }
 
     struct JsonGatewayProvider {

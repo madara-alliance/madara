@@ -13,6 +13,8 @@ Set `MADARA_FEEDER_GATEWAY_GZIP_RESPONSES=false`, or remove the CLI flag, to rol
 
 Compression uses the fast gzip level on blocking workers. A process-wide semaphore permits at most four simultaneous compression jobs. Saturated requests and internal compression failures fail open to the original identity response.
 
+The fullnode client caps both the received HTTP body and its decompressed representation at 64 MiB. Invalid, truncated, or oversized responses use the existing bounded five-attempt retry policy, so transient feeder failures can recover without allowing unbounded memory growth.
+
 The `gateway_calls` event keeps the existing route, status, response size, and total duration fields and adds `encoding`, `uncompressed_bytes`, `transmitted_bytes`, and `compression_duration`. Route values are normalized to a fixed set. Operators can calculate the wire-byte saving over a period as:
 
 ```text
