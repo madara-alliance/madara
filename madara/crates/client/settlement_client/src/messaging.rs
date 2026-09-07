@@ -247,47 +247,22 @@ async fn get_start_block(
     }
 }
 
-/// Processes events from the queue that have reached the required confirmation depth.
-///
-/// For each event at the front of the queue, in order:
-///
-///   1. **Confirmation check**: requires `latest - event_block >= finality_blocks`. If not yet
-///      satisfied, leave the event in the queue and stop (events are ordered, so later events
-///      are also not yet confirmed).
-///
-///   2. **Canonical block check** (RPC call — done BEFORE popping the event): query the current
-///      canonical block hash at `event.l1_block_number` and compare against `event.l1_block_hash`
-///      (captured at observation time). If the RPC call fails transiently, the event stays in the
-///      queue and is retried on the next poll. If the hashes differ, the block was reorged out —
-///      pop and drop the event WITHOUT writing any nonce metadata and WITHOUT advancing the sync
-///      tip (so reconnection can re-scan the reorged region for new canonical events).
-///
-///   3. **Validity check**: only after the canonical check passes, pop the event, write nonce
-///      metadata, and run `check_message_to_l2_validity` (existence check on the L1 contract +
-///      cancellation check). If valid, queue for L2 inclusion via `write_pending_message_to_l2`.
-///
-/// Note: there is still a small unprotected window between queue-write and L2 block production
-/// inclusion. Within this window, a deeper-than-`finality_blocks` reorg could invalidate a message
-/// that has already been queued. This is accepted as part of the probabilistic safety envelope
-/// implied by `finality_blocks` — chosen specifically to make such reorgs negligibly unlikely.
+/// Decision for the borrowed front event; queue ownership stays with the caller.
 enum FinalizedEventPoll {
-    Ready { event: MessageToL2WithMetadata, confirmations: u64 },
+    Ready { confirmations: u64 },
     Dropped,
     Waiting,
     RetryCanonicalCheck,
 }
 
-/// Inspects the front event without removing it until finality and canonicality are known.
-/// Reorged events are discarded, while transient RPC failures leave the event queued for retry.
+/// Checks finality and canonicality without taking ownership of the event.
+/// The caller discards reorged events and retains transient failures for retry.
 async fn poll_finalized_event(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
-    pending_events: &mut VecDeque<MessageToL2WithMetadata>,
+    event: &MessageToL2WithMetadata,
     latest_l1_block: u64,
     finality_blocks: u64,
 ) -> FinalizedEventPoll {
-    let Some(event) = pending_events.front() else {
-        return FinalizedEventPoll::Waiting;
-    };
     let confirmations = latest_l1_block.saturating_sub(event.l1_block_number);
     if confirmations < finality_blocks {
         tracing::debug!(
@@ -313,11 +288,8 @@ async fn poll_finalized_event(
     };
 
     match canonical_hash {
-        Some(hash) if hash == block_hash => {
-            FinalizedEventPoll::Ready { event: pending_events.pop_front().expect("front() was Some"), confirmations }
-        }
+        Some(hash) if hash == block_hash => FinalizedEventPoll::Ready { confirmations },
         Some(hash) => {
-            let event = pending_events.pop_front().expect("front() was Some");
             tracing::warn!(
                 "Dropping reorged L1→L2 message: block={}, nonce={}, observed_hash={:#x}, canonical_hash={:#x}",
                 block_number,
@@ -328,7 +300,6 @@ async fn poll_finalized_event(
             FinalizedEventPoll::Dropped
         }
         None => {
-            let event = pending_events.pop_front().expect("front() was Some");
             tracing::warn!(
                 "Dropping L1→L2 message: block #{} no longer exists on L1 (deep reorg or pruning), nonce={}",
                 block_number,
@@ -344,7 +315,7 @@ async fn poll_finalized_event(
 fn persist_message_origin(
     backend: &MadaraBackend,
     event: &MessageToL2WithMetadata,
-) -> Result<L1TransactionHash, SettlementClientError> {
+) -> Result<(), SettlementClientError> {
     let nonce = event.message.tx.nonce;
     let l1_tx_hash = L1TransactionHash(event.l1_transaction_hash.to_be_bytes::<32>());
     backend.write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash).map_err(|error| {
@@ -366,7 +337,7 @@ fn persist_message_origin(
             SettlementClientError::DatabaseError(format!("Failed to store message source block: {error}"))
         })?;
     }
-    Ok(l1_tx_hash)
+    Ok(())
 }
 
 /// Validates one canonical event and optionally queues it for block production.
@@ -378,7 +349,7 @@ async fn process_canonical_event(
     unsafe_skip_l1_message_consumed_check: bool,
     metadata_only: bool,
 ) -> Result<(), SettlementClientError> {
-    let _l1_tx_hash = persist_message_origin(backend, event)?;
+    persist_message_origin(backend, event)?;
     let is_valid =
         check_message_to_l2_validity(settlement_client, backend, &event.message, unsafe_skip_l1_message_consumed_check)
             .await
@@ -412,6 +383,10 @@ async fn process_canonical_event(
 
 /// Drains every queued event that has reached finality and passed the canonical-chain check.
 /// Processing stops when the front event is still pending or requires a transient retry.
+/// Canonical events remain queued until validity checks, metadata writes, and cursor persistence
+/// succeed, so a failed event cannot be skipped by a later event advancing the cursor.
+/// Reorged events are discarded without advancing the cursor or writing nonce metadata.
+/// Reorgs deeper than `finality_blocks` after L2 inclusion remain outside this finality guarantee.
 async fn process_finalized_events(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
@@ -427,13 +402,16 @@ async fn process_finalized_events(
 
     let latest_l1_block = settlement_client.get_latest_block_number().await?;
 
-    loop {
-        let (event, confirmations) =
-            match poll_finalized_event(settlement_client, pending_events, latest_l1_block, finality_blocks).await {
-                FinalizedEventPoll::Ready { event, confirmations } => (event, confirmations),
-                FinalizedEventPoll::Dropped => continue,
-                FinalizedEventPoll::Waiting | FinalizedEventPoll::RetryCanonicalCheck => break,
-            };
+    while let Some(event) = pending_events.front() {
+        let confirmations = match poll_finalized_event(settlement_client, event, latest_l1_block, finality_blocks).await
+        {
+            FinalizedEventPoll::Ready { confirmations } => confirmations,
+            FinalizedEventPoll::Dropped => {
+                pending_events.pop_front();
+                continue;
+            }
+            FinalizedEventPoll::Waiting | FinalizedEventPoll::RetryCanonicalCheck => break,
+        };
 
         tracing::info!(
             "Processing L1→L2 message: block={}, nonce={}, confirmations={}",
@@ -445,7 +423,7 @@ async fn process_finalized_events(
         process_canonical_event(
             settlement_client,
             backend,
-            &event,
+            event,
             unsafe_skip_l1_message_consumed_check,
             metadata_only,
         )
@@ -457,6 +435,7 @@ async fn process_finalized_events(
             .write_l1_messaging_sync_tip(Some(event.l1_block_number))
             .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to update sync tip: {}", e)))?;
 
+        pending_events.pop_front();
         notify_consumer.notify_waiters();
     }
 

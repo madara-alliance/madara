@@ -651,3 +651,42 @@ async fn test_metadata_only_flag_stores_metadata_but_not_pending(
     sync_handle.abort();
     Ok(())
 }
+
+#[tokio::test]
+async fn validity_failure_keeps_event_ahead_of_later_messages() -> anyhow::Result<()> {
+    let db = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+    db.write_l1_messaging_sync_tip(Some(99))?;
+    let first = create_mock_event(100, 1);
+    let second = create_mock_event(101, 2);
+    let mut pending = VecDeque::from([first.clone(), second.clone()]);
+    let notify = Notify::new();
+    let mut client = MockSettlementLayerProvider::new();
+    client.expect_get_latest_block_number().returning(|| Ok(200));
+    mock_canonical_block_hash(&mut client);
+    client.expect_get_client_type().returning(|| ClientType::Eth);
+    client.expect_calculate_message_hash().returning(|tx| Ok(vec![tx.tx.nonce as u8; 32]));
+    let mut attempts = 0;
+    client.expect_message_to_l2_is_pending().returning(move |_| {
+        attempts += 1;
+        if attempts == 1 {
+            Err(SettlementClientError::InvalidResponse("temporary RPC failure".into()))
+        } else {
+            Ok(true)
+        }
+    });
+    client.expect_message_to_l2_has_cancel_request().returning(|_| Ok(false));
+    let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
+
+    assert!(process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await.is_err());
+    assert_eq!(pending.len(), 2, "failed event must remain ahead of later events");
+    assert_eq!(pending.front().unwrap().message.tx.nonce, 1);
+    assert_eq!(db.get_l1_messaging_sync_tip()?, Some(99));
+    assert!(db.get_pending_message_to_l2(2)?.is_none());
+
+    process_finalized_events(&client, &db, &notify, &mut pending, 10, false, false).await?;
+    assert!(pending.is_empty());
+    assert_eq!(db.get_pending_message_to_l2(1)?, Some(first.message));
+    assert_eq!(db.get_pending_message_to_l2(2)?, Some(second.message));
+    assert_eq!(db.get_l1_messaging_sync_tip()?, Some(101));
+    Ok(())
+}
