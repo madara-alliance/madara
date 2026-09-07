@@ -58,6 +58,27 @@ fn observe(
 }
 
 #[tokio::test]
+async fn incremental_status_updates_preserve_absolute_transaction_indices() {
+    let backend = backend_with_genesis().await;
+    let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
+    let address = Felt::from(123u64);
+    append_block(&backend, 1, vec![executed(address, 0, 101)]);
+    let mut view = backend.block_view_on_preconfirmed(1).unwrap();
+    for nonce in 1..=2 {
+        let hash = 101 + nonce;
+        backend.write_access().append_to_preconfirmed(1, &[executed(address, nonce, hash)], []).unwrap();
+        let mut effects = ChainWatcherBranchEffects::new();
+        mempool.handle_preconfirmed_content_update(&mut view, &mut effects).unwrap();
+        let Some(TransactionStatus::Preconfirmed(PreConfirmationStatus::Executed { transaction_index, .. })) =
+            mempool.get_transaction_status(&Felt::from(hash)).unwrap()
+        else {
+            panic!("Missing executed status");
+        };
+        assert_eq!(transaction_index, nonce);
+    }
+}
+
+#[tokio::test]
 async fn emptied_account_admission_uses_internal_execution_nonce() {
     let backend = backend_with_genesis().await;
     let mempool = Mempool::new(backend.clone(), MempoolConfig::default());

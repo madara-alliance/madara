@@ -273,7 +273,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         self.update_preconfirmed_block_transaction_statuses(
             preconfirmed,
-            preconfirmed.get_block_info().tx_hashes[previous_num_txs..].iter().cloned().enumerate(),
+            preconfirmed.get_block_info().tx_hashes.iter().copied().enumerate().skip(previous_num_txs),
             previous_num_txs,
             &mut effects.potentially_removed,
             &mut effects.nonce_updates,
