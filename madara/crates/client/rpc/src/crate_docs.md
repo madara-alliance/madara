@@ -689,7 +689,7 @@ Be weary when using admin methods as they provide privileged access to node oper
 expose these endpoints publicly without proper authentication and authorization mechanisms.
 Madara does not perform authorization checks on these methods.
 
-### Write Methods
+### Admin Write Methods
 
 #### `madara_addDeclareV0Transaction`
 
@@ -799,7 +799,7 @@ the node is alive. Useful for monitoring and health checks.
 
 ## Special Methods
 
-#### `rpc_methods`
+### `rpc_methods`
 
 Returns a list of all available RPC methods on the current endpoint. This is useful for
 discovering which methods are supported by a particular node configuration.
