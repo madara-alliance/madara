@@ -17,7 +17,9 @@ use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate
 use starknet_types_core::felt::Felt;
 use std::{path::Path, sync::Arc};
 
-fn open_backend(path: &Path) -> Arc<MadaraBackend> {
+/// Opens the shared RocksDB fixture without selecting a service-specific recovery policy.
+/// Tests use this to model the interval between database open and service startup.
+fn open_backend_without_trie_reconciliation(path: &Path) -> Arc<MadaraBackend> {
     MadaraBackend::open_rocksdb(
         path,
         Arc::new(ChainConfig::madara_test()),
@@ -26,6 +28,16 @@ fn open_backend(path: &Path) -> Arc<MadaraBackend> {
         Arc::new(NativeConfig::default()),
     )
     .expect("opening RocksDB backend should succeed")
+}
+
+/// Opens a block-production fixture and applies the parallel-Merkle startup policy.
+/// This mirrors the recovery performed by `BlockProductionTask` when that mode is enabled.
+fn open_backend(path: &Path) -> Arc<MadaraBackend> {
+    let backend = open_backend_without_trie_reconciliation(path);
+    backend
+        .reconcile_confirmed_parallel_merkle_state("test_block_production_startup")
+        .expect("parallel-Merkle startup reconciliation should succeed");
+    backend
 }
 
 fn synthetic_state_diff(index: u64) -> StateDiff {
@@ -558,6 +570,46 @@ fn startup_rolls_first_boundary_back_to_empty_base_before_replaying_confirmed_bl
 
     let reopened = open_backend(temp_dir.path());
     assert_boundary_crash_recovered(&reopened, expected_confirmed_root);
+}
+
+#[test]
+fn full_node_startup_reverts_sparse_trie_runahead_to_confirmed_head() {
+    let temp_dir = tempfile::TempDir::new().expect("tempdir");
+    let (confirmed_root, runahead_root) = {
+        let backend = open_backend_without_trie_reconciliation(temp_dir.path());
+        backend
+            .write_access()
+            .add_full_block_with_classes(&block_with_state_diff(0, synthetic_state_diff(0)), &[], false)
+            .expect("importing confirmed block 0 should succeed");
+        let confirmed_root = backend
+            .db
+            .get_block_info(0)
+            .expect("reading confirmed block info should succeed")
+            .expect("confirmed block 0 should exist")
+            .header
+            .global_state_root;
+
+        let (runahead_root, _) = backend
+            .write_access()
+            .apply_to_global_trie(1, [&synthetic_state_diff(1)], backend.chain_config().latest_protocol_version)
+            .expect("applying an unsealed sync batch should succeed");
+        backend.write_latest_applied_trie_update(&Some(1)).expect("writing trie runahead cursor should succeed");
+        backend.write_snap_sync_latest_block(&Some(1)).expect("writing SnapSync runahead cursor should succeed");
+        backend.flush().expect("flushing full-node runahead fixture should succeed");
+
+        assert_ne!(runahead_root, confirmed_root, "fixture must leave trie state ahead of the confirmed head");
+        (confirmed_root, runahead_root)
+    };
+
+    let reopened = open_backend_without_trie_reconciliation(temp_dir.path());
+    assert_eq!(reopened.chain_head_state().confirmed_tip, Some(0));
+    assert_eq!(reopened.db.get_state_root_hash().expect("reading runahead root should succeed"), runahead_root);
+
+    reopened.reconcile_confirmed_sync_state("test_l2_sync_startup").expect("sync recovery should succeed");
+
+    assert_eq!(reopened.db.get_state_root_hash().expect("reading recovered root should succeed"), confirmed_root);
+    assert_eq!(reopened.get_latest_applied_trie_update().expect("reading recovered trie cursor"), Some(0));
+    assert_eq!(reopened.get_snap_sync_latest_block().expect("reading recovered SnapSync cursor"), Some(0));
 }
 
 #[test]

@@ -320,6 +320,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         RocksDBStorage::reconcile_confirmed_parallel_merkle_state(self, block_n, context)
     }
 
+    fn reconcile_confirmed_sync_state(&self, block_n: Option<u64>, context: &str) -> Result<()> {
+        RocksDBStorage::reconcile_confirmed_sync_state(self, block_n, context)
+    }
+
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()> {
         tracing::debug!("remove_all_blocks_starting_from starting_from_block_n={starting_from_block_n}");
         self.inner

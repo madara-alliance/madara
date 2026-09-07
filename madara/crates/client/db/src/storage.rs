@@ -296,6 +296,10 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// checkpoint trie state for a confirmed non-boundary head.
     fn reconcile_confirmed_parallel_merkle_state(&self, block_n: Option<u64>, context: &str) -> Result<()>;
 
+    /// Align the ordinary sync trie's durable revision with the confirmed head.
+    /// Full nodes use this after a restart instead of parallel-Merkle checkpoint recovery.
+    fn reconcile_confirmed_sync_state(&self, block_n: Option<u64>, context: &str) -> Result<()>;
+
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
 

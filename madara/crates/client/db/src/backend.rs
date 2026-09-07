@@ -126,7 +126,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.db.remove_all_blocks_starting_from(
             chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
-        self.reconcile_confirmed_parallel_merkle_state_for_tip(chain_head_state.confirmed_tip, "startup_init")?;
         if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
             // A crash can happen after the durable head transition but before the derived L1
             // consumed/pending projection is updated. Re-applying the confirmed tip is safe and
@@ -373,6 +372,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// The context string is carried into diagnostics for startup or shutdown attribution.
     pub fn reconcile_confirmed_parallel_merkle_state(&self, context: &str) -> Result<()> {
         self.reconcile_confirmed_parallel_merkle_state_for_tip(self.chain_head_state().confirmed_tip, context)
+    }
+
+    /// Repairs ordinary full-node or serial-sync trie state after an interrupted import.
+    /// Unlike parallel-Merkle recovery, this rolls directly to the confirmed sync revision.
+    pub fn reconcile_confirmed_sync_state(&self, context: &str) -> Result<()> {
+        self.db
+            .reconcile_confirmed_sync_state(self.chain_head_state().confirmed_tip, context)
+            .with_context(|| format!("Reconciling synced trie state during {context}"))
     }
 }
 
