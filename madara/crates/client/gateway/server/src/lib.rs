@@ -340,8 +340,9 @@
 //! an acceptable `Accept-Encoding: gzip` value.
 //!
 //! The `gateway_calls` telemetry records the selected `encoding`, `uncompressed_bytes`, `transmitted_bytes`, and
-//! `compression_duration` alongside the route, status, and total response time. Compression uses a bounded blocking
-//! worker path; requests fall back to identity encoding when all compression slots are busy.
+//! `compression_duration` alongside the route, status, and total response time. OpenTelemetry counters expose the
+//! cumulative uncompressed and transmitted feeder response-body bytes for dashboards. Compression uses a bounded
+//! blocking worker path; requests fall back to identity encoding when all compression slots are busy.
 //!
 //! ## Enabling the Gateway
 //!
@@ -376,5 +377,6 @@
 mod error;
 mod handler;
 mod helpers;
+mod metrics;
 mod router;
 pub mod service;

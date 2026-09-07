@@ -15,10 +15,29 @@ Compression uses the fast gzip level on blocking workers. A process-wide semapho
 
 The fullnode client caps both the received HTTP body and its decompressed representation at 64 MiB. Invalid, truncated, or oversized responses use the existing bounded five-attempt retry policy, so transient feeder failures can recover without allowing unbounded memory growth.
 
-The `gateway_calls` event keeps the existing route, status, response size, and total duration fields and adds `encoding`, `uncompressed_bytes`, `transmitted_bytes`, and `compression_duration`. Route values are normalized to a fixed set. Operators can calculate the wire-byte saving over a period as:
+The `gateway_calls` event keeps the existing route, status, response size, and total duration fields and adds `encoding`, `uncompressed_bytes`, `transmitted_bytes`, and `compression_duration`. Route values are normalized to a fixed set.
 
-```text
-1 - sum(transmitted_bytes) / sum(uncompressed_bytes)
+Every feeder response also increments two OpenTelemetry counters. Both use bounded `route` and `encoding` (`gzip` or `identity`) labels:
+
+- `feeder_gateway_response_body_uncompressed_bytes`: response-body bytes that would have been sent without gzip.
+- `feeder_gateway_response_body_transmitted_bytes`: response-body bytes actually sent after optional gzip compression.
+
+The counters measure HTTP response bodies, excluding HTTP headers and lower-level transport overhead. The Prometheus exporter adds the `_total` suffix. Grafana can compare the hypothetical and actual byte rates with:
+
+```promql
+sum(rate(feeder_gateway_response_body_uncompressed_bytes_total{namespace=~"$namespace", pod=~"$pod"}[$__rate_interval]))
+sum(rate(feeder_gateway_response_body_transmitted_bytes_total{namespace=~"$namespace", pod=~"$pod"}[$__rate_interval]))
+```
+
+The percentage saved over the selected interval is:
+
+```promql
+100 * (
+  1 -
+  sum(increase(feeder_gateway_response_body_transmitted_bytes_total{namespace=~"$namespace", pod=~"$pod"}[$__range]))
+  /
+  sum(increase(feeder_gateway_response_body_uncompressed_bytes_total{namespace=~"$namespace", pod=~"$pod"}[$__range]))
+)
 ```
 
 ## Rollout

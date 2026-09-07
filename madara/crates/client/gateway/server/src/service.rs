@@ -1,4 +1,4 @@
-use super::router::main_router;
+use super::{metrics::GatewayMetrics, router::main_router};
 use anyhow::Context;
 use bytes::Bytes;
 use flate2::{write::GzEncoder, Compression};
@@ -69,6 +69,7 @@ pub async fn start_server(
     let addr = listener.local_addr().context("Getting the bound-to address.")?;
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
+    let gateway_metrics = GatewayMetrics::register();
 
     while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
         // Handle new incoming connections
@@ -81,6 +82,7 @@ pub async fn start_server(
             let submit_validated = submit_validated.clone();
             let config = config.clone();
             let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+            let gateway_metrics = gateway_metrics.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
@@ -90,6 +92,7 @@ pub async fn start_server(
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
+                    let gateway_metrics = gateway_metrics.clone();
                     async move {
                         let path = req
                             .uri()
@@ -118,6 +121,15 @@ pub async fn start_server(
                                 .await;
                         let status = res.status().as_u16() as i64;
                         let response_time = start.elapsed().as_micros();
+
+                        if path.starts_with("feeder_gateway/") {
+                            gateway_metrics.record_response(
+                                telemetry_route,
+                                response_stats.encoding,
+                                response_stats.uncompressed_bytes,
+                                response_stats.transmitted_bytes,
+                            );
+                        }
 
                         tracing::info!(
                             target: "gateway_calls",
