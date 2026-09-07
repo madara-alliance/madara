@@ -112,12 +112,10 @@ impl RocksDBStorageInner {
         bin_prefix: &[u8],
         col: Column,
     ) -> Result<Option<V>> {
-        let mut options = snapshot.read_options_with_snapshot();
+        let mut options = ReadOptions::default();
         options.set_prefix_same_as_start(true);
         let mode = IteratorMode::From(bin_prefix, rocksdb::Direction::Forward);
-        let handle = snapshot.db.get_column(col);
-        let mut iter = DBIterator::new_cf(&snapshot.db.db, &handle, options, mode)
-            .into_iter_values(|bytes| super::deserialize(bytes));
+        let mut iter = snapshot.iterator_cf(col, options, mode).into_iter_values(|bytes| super::deserialize(bytes));
         let n = iter.next();
 
         Ok(n.transpose()?.transpose()?)

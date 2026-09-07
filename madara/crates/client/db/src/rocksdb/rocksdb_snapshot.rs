@@ -1,8 +1,8 @@
 use librocksdb_sys as ffi;
-use rocksdb::{AsColumnFamilyRef, DBAccess, DBPinnableSlice, Error, ReadOptions};
+use rocksdb::{AsColumnFamilyRef, DBAccess, DBPinnableSlice, Error, IteratorMode, ReadOptions};
 use std::sync::Arc;
 
-use crate::rocksdb::RocksDBStorageInner;
+use crate::rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner};
 
 /// A copy of [`rocksdb::SnapshotWithThreadMode`] with an Arc<DB> instead of an &'_ DB reference
 /// The reason this has to exist is because we want to store Snapshots inside the MadaraBackend. For that to work, we need
@@ -19,15 +19,20 @@ pub struct SnapshotWithDBArc {
 
 #[allow(dead_code)]
 impl SnapshotWithDBArc {
-    /// Builds RocksDB read options bound to this snapshot's raw handle.
-    /// The returned options remain valid because this value owns the backing database reference.
-    pub(crate) fn read_options_with_snapshot(&self) -> ReadOptions {
-        let mut readopts = ReadOptions::default();
-        // Safety: the snapshot originates from the same DB and is alive for the lifetime of this value.
+    /// Iterates a column using this snapshot, retaining its borrow until the iterator is dropped.
+    /// Raw snapshot read options never escape independently of the snapshot's lifetime.
+    pub(crate) fn iterator_cf(
+        &self,
+        column: Column,
+        mut readopts: ReadOptions,
+        mode: IteratorMode<'_>,
+    ) -> DBIterator<'_> {
+        // SAFETY: the column and snapshot belong to this DB. The returned iterator borrows
+        // self, keeping both the snapshot and its backing DB alive while RocksDB uses them.
         unsafe {
             readopts.set_raw_snapshot(self.inner);
         }
-        readopts
+        DBIterator::new_cf(&self.db.db, &self.db.get_column(column), readopts, mode)
     }
 
     // This function allows us to not repeat the unsafe block a bunch of times. It takes ownership of the

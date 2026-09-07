@@ -8,7 +8,8 @@ use crate::rocksdb::trie::{
 use crate::rocksdb::WriteBatchWithTransaction;
 use bonsai_trie::{BonsaiDatabase, BonsaiPersistentDatabase, ByteVec, DatabaseKey};
 use dashmap::DashMap;
-use rocksdb::{Direction, IteratorMode};
+use rocksdb::{Direction, IteratorMode, ReadOptions};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -16,9 +17,12 @@ const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
 
+/// Logical Bonsai column identifier and raw key bytes.
 pub type OverlayKey = (u8, ByteVec);
+/// Shared per-job changes: absent keys fall back to the snapshot, `None` values are tombstones.
 pub type OverlayMap = Arc<DashMap<OverlayKey, Option<ByteVec>>>;
 
+/// Maps one logical Bonsai trie to its durable flat, trie, and log columns.
 #[derive(Clone, Debug)]
 pub struct InMemoryColumnMapping {
     pub(super) flat: Column,
@@ -84,6 +88,8 @@ pub(super) fn to_changed_key(key: &DatabaseKey) -> OverlayKey {
     )
 }
 
+/// Snapshot-backed Bonsai database whose clones share one root job's mutable overlay.
+/// Separate root jobs must construct separate overlays.
 #[derive(Clone)]
 pub struct InMemoryBonsaiDb {
     snapshot: SnapshotRef,
@@ -190,21 +196,21 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
             return Ok(Vec::new());
         };
-        let handle = self.snapshot.db.get_column(column.clone());
-        let mut readopts = self.snapshot.read_options_with_snapshot();
+        let mut readopts = ReadOptions::default();
         readopts.set_prefix_same_as_start(true);
 
-        let mut out: Vec<(ByteVec, ByteVec)> = Vec::new();
-        for item in self.snapshot.db.db.iterator_cf_opt(
-            &handle,
-            readopts,
-            IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward),
-        ) {
+        // ponytail: BTreeMap handles replacement, deletion, and sorted output without repeated scans.
+        let mut out = BTreeMap::<ByteVec, ByteVec>::new();
+        for item in self
+            .snapshot
+            .iterator_cf(column, readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
+            .into_iter_items(|(key, value)| (ByteVec::from(key), ByteVec::from(value)))
+        {
             let (key, value) = item?;
             if !key.starts_with(prefix_bytes.as_slice()) {
                 break;
             }
-            out.push((key.to_vec().into(), value.to_vec().into()));
+            out.insert(key, value);
         }
         for entry in self.changed.iter() {
             let ((column_id, key), value) = entry.pair();
@@ -213,22 +219,16 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             }
 
             match value {
-                Some(v) => {
-                    if let Some((_, existing)) =
-                        out.iter_mut().find(|(existing_key, _)| existing_key.as_slice() == key.as_slice())
-                    {
-                        *existing = v.clone();
-                    } else {
-                        out.push((key.clone(), v.clone()));
-                    }
+                Some(value) => {
+                    out.insert(key.clone(), value.clone());
                 }
-                None => out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice()),
+                None => {
+                    out.remove(key);
+                }
             }
         }
 
-        out.sort_by(|(left_key, _), (right_key, _)| left_key.as_slice().cmp(right_key.as_slice()));
-
-        Ok(out)
+        Ok(out.into_iter().collect())
     }
 
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
@@ -268,30 +268,26 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
             return Ok(());
         };
-        let handle = self.snapshot.db.get_column(column.clone());
-        let mut readopts = self.snapshot.read_options_with_snapshot();
+        let mut readopts = ReadOptions::default();
         readopts.set_prefix_same_as_start(true);
 
-        for item in self.snapshot.db.db.iterator_cf_opt(
-            &handle,
-            readopts,
-            IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward),
-        ) {
-            let (key, _value) = item?;
+        for item in self
+            .snapshot
+            .iterator_cf(column, readopts, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
+            .into_iter_keys(|key| ByteVec::from(key))
+        {
+            let key = item?;
             if !key.starts_with(prefix_bytes.as_slice()) {
                 break;
             }
-            self.changed.insert((prefix_col, key.to_vec().into()), None);
+            self.changed.insert((prefix_col, key), None);
         }
 
-        for key in self
-            .changed
-            .iter()
-            .map(|entry| entry.key().clone())
-            .filter(|(column_id, key)| *column_id == prefix_col && key.starts_with(prefix_bytes.as_slice()))
-            .collect::<Vec<_>>()
-        {
-            self.changed.insert(key, None);
+        for mut entry in self.changed.iter_mut() {
+            let (column_id, key) = entry.key();
+            if *column_id == prefix_col && key.starts_with(prefix_bytes.as_slice()) {
+                *entry.value_mut() = None;
+            }
         }
 
         Ok(())

@@ -86,3 +86,34 @@ fn in_memory_bonsai_write_batch_does_not_persist_to_rocksdb() {
     let persisted = backend.db.inner.db.get_cf(&handle, key).expect("read rocksdb");
     assert_eq!(persisted, None, "overlay writes must not persist before explicit flush");
 }
+
+#[test]
+fn prefix_operations_merge_overlay_with_pinned_snapshot() {
+    let backend = setup_snapshot_db();
+    for key in [b"p/a", b"p/b", b"p/c", b"q/a"] {
+        write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, key, b"original");
+    }
+    let snapshot = fresh_snapshot(&backend.db);
+    // Live writes after capture must not leak into iteration over this snapshot.
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"p/a", b"new-live-value");
+    let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
+    db.insert(&DatabaseKey::Flat(b"p/b"), b"replacement", None).unwrap();
+    db.remove(&DatabaseKey::Flat(b"p/c"), None).unwrap();
+    db.insert(&DatabaseKey::Flat(b"p/d"), b"overlay-only", None).unwrap();
+    db.insert(&DatabaseKey::Trie(b"p/a"), b"other-column", None).unwrap();
+
+    assert_eq!(
+        db.get_by_prefix(&DatabaseKey::Flat(b"p/")).unwrap(),
+        vec![
+            (ByteVec::from(&b"p/a"[..]), ByteVec::from(&b"original"[..])),
+            (ByteVec::from(&b"p/b"[..]), ByteVec::from(&b"replacement"[..])),
+            (ByteVec::from(&b"p/d"[..]), ByteVec::from(&b"overlay-only"[..])),
+        ]
+    );
+    db.remove_by_prefix(&DatabaseKey::Flat(b"p/")).unwrap();
+    assert!(db.get_by_prefix(&DatabaseKey::Flat(b"p/")).unwrap().is_empty());
+    assert_eq!(db.get(&DatabaseKey::Flat(b"q/a")).unwrap(), Some(ByteVec::from(&b"original"[..])));
+    assert_eq!(db.get(&DatabaseKey::Trie(b"p/a")).unwrap(), Some(ByteVec::from(&b"other-column"[..])));
+    let handle = backend.db.inner.get_column(BONSAI_CONTRACT_FLAT_COLUMN);
+    assert_eq!(backend.db.inner.db.get_cf(&handle, b"p/a").unwrap().as_deref(), Some(&b"new-live-value"[..]));
+}
