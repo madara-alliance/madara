@@ -24,6 +24,7 @@ const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
 const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 const META_PRECONFIRMED_HEADER_PREFIX: &[u8] = b"PRECONFIRMED_HEADER/";
+const META_CONFIRMED_TRIE_RECOVERY: &[u8] = b"CONFIRMED_TRIE_RECOVERY";
 const META_REORG_RECOVERY_FLOOR: &[u8] = b"REORG_RECOVERY_FLOOR";
 
 // Parallel-merkle checkpoint metadata (kept in META_COLUMN).
@@ -84,7 +85,48 @@ pub enum StoredHeadProjectionWithoutContent {
     Preconfirmed(PreconfirmedHeader),
 }
 
+/// Durable intent for confirmed-trie repair, not a claim that a particular floor is valid.
+/// The original revision ceiling preserves the retention bound across partial rollbacks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct ConfirmedTrieRecovery {
+    pub confirmed_tip: Option<u64>,
+    pub latest_trie_revision: Option<u64>,
+}
+
 impl RocksDBStorageInner {
+    /// Reads unfinished confirmed-trie repair independently of normal full-node cursors.
+    pub(super) fn get_confirmed_trie_recovery(&self) -> Result<Option<ConfirmedTrieRecovery>> {
+        self.db
+            .get_pinned_cf(&self.get_column(META_COLUMN), META_CONFIRMED_TRIE_RECOVERY)?
+            .map(|bytes| super::deserialize(bytes).context("Decoding confirmed trie recovery marker"))
+            .transpose()
+    }
+
+    /// Writes recovery intent; callers flush before mutation and before clearing completion.
+    pub(super) fn write_confirmed_trie_recovery(&self, recovery: Option<ConfirmedTrieRecovery>) -> Result<()> {
+        let column = self.get_column(META_COLUMN);
+        match recovery {
+            Some(recovery) => self.db.put_cf_opt(
+                &column,
+                META_CONFIRMED_TRIE_RECOVERY,
+                super::serialize(&recovery)?,
+                &self.writeopts,
+            )?,
+            None => self.db.delete_cf_opt(&column, META_CONFIRMED_TRIE_RECOVERY, &self.writeopts)?,
+        }
+        Ok(())
+    }
+
+    /// Completes a reorg and any nested trie repair in one atomic metadata batch.
+    pub(super) fn clear_trie_recovery_markers(&self) -> Result<()> {
+        let column = self.get_column(META_COLUMN);
+        let mut batch = WriteBatchWithTransaction::default();
+        batch.delete_cf(&column, META_REORG_RECOVERY_FLOOR);
+        batch.delete_cf(&column, META_CONFIRMED_TRIE_RECOVERY);
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
     /// Reads the rollback floor of a reorg whose durable completion has not been recorded.
     pub(super) fn get_reorg_recovery_floor(&self) -> Result<Option<u64>> {
         self.db

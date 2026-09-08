@@ -33,6 +33,15 @@
 //! blocks; parallel shutdown reconciles the last confirmed block as well. Ordinary full-node
 //! startup preserves independent sync cursors, which can legitimately run ahead of that head.
 //!
+//! Confirmed-trie repair tries the newest checkpoint at or below the confirmed head. A trie's
+//! last mutation may be much older without making its state stale. After rollback, the combined
+//! root must match the checkpoint header; only a mismatch permits trying an older retained
+//! checkpoint. Recovery intent is flushed before mutation, and failed candidates preserve
+//! checkpoint metadata. Each replayed block uses a private overlay, verifies its root, and
+//! atomically publishes all three tries with a checkpoint. This bounds restart work even when
+//! replay prunes its original floor's logs. The intent marker is cleared only after flushing
+//! repaired state and cursors; its presence opts DB open into completing an interrupted repair.
+//!
 //! Reorg selects a recovery floor from checkpoint metadata and retained trie revisions. This lets
 //! serial sync use a recent materialized state even after an older migration checkpoint's logs
 //! have expired. The floor's root is verified against its block header before replaying later diffs.

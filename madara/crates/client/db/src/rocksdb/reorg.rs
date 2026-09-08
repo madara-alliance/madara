@@ -37,7 +37,7 @@ impl RocksDBStorage {
     /// Makes the repaired state durable before clearing its recovery marker.
     fn finish_reorg_recovery(&self) -> Result<()> {
         self.flush().context("Persisting completed reorg state")?;
-        self.inner.write_reorg_recovery_floor(None)?;
+        self.inner.clear_trie_recovery_markers()?;
         self.flush().context("Persisting reorg recovery completion")
     }
 
@@ -47,6 +47,12 @@ impl RocksDBStorage {
         let Some(floor) = self.inner.get_reorg_recovery_floor()? else { return Ok(()) };
         let confirmed_tip = confirmed_tip.context("Interrupted reorg has no confirmed head")?;
         ensure!(floor <= confirmed_tip, "Reorg recovery floor {floor} exceeds confirmed head {confirmed_tip}");
+        // Reconciliation starts only after the reorg floor has verified. Its atomic replay
+        // checkpoints may already have pruned that floor, so resume them before clearing the reorg.
+        if self.inner.get_confirmed_trie_recovery()?.is_some() {
+            self.reconcile_confirmed_parallel_merkle_state(Some(confirmed_tip), "interrupted_reorg_replay")?;
+            return self.finish_reorg_recovery();
+        }
         let floor_info = self.inner.get_block_info(floor)?.context("Missing reorg recovery floor block")?;
         tracing::warn!(floor, confirmed_tip, "Recovering interrupted reorg before opening the database");
 

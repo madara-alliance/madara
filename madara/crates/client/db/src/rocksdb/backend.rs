@@ -13,11 +13,6 @@ impl TrieLogHeads {
     pub(super) fn highest(self) -> Option<u64> {
         [self.contract, self.contract_storage, self.class].into_iter().flatten().max()
     }
-
-    /// Returns the oldest materialized trie revision available as a common recovery ceiling.
-    fn lowest(self) -> Option<u64> {
-        [self.contract, self.contract_storage, self.class].into_iter().flatten().min()
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,6 +185,9 @@ impl RocksDBStorage {
         };
 
         storage.recover_interrupted_reorg(head_block_n).context("Recovering interrupted reorg")?;
+        if storage.inner.get_confirmed_trie_recovery()?.is_some() {
+            storage.reconcile_confirmed_parallel_merkle_state(head_block_n, "interrupted_confirmed_recovery")?;
+        }
 
         if let Some(head_block_n) = head_block_n {
             if storage.has_parallel_merkle_checkpoint(head_block_n)? {
@@ -359,22 +357,6 @@ impl RocksDBStorage {
         Ok(contract_needs_commit || contract_storage_needs_commit || class_needs_commit)
     }
 
-    /// Selects a checkpoint that every materialized trie can reach by rolling backward.
-    ///
-    /// During an interrupted reorg, one trie may already be older than the confirmed tip.
-    /// Starting from the oldest live revision lets recovery align all tries at one durable
-    /// checkpoint before replaying confirmed state diffs forward.
-    fn confirmed_recovery_checkpoint_floor(
-        &self,
-        confirmed_tip: u64,
-        trie_log_heads: TrieLogHeads,
-    ) -> Result<Option<u64>> {
-        let Some(oldest_trie_head) = trie_log_heads.lowest() else {
-            return Ok(None);
-        };
-        self.get_parallel_merkle_checkpoint_floor(oldest_trie_head.min(confirmed_tip))
-    }
-
     /// Reconciles an empty canonical head with empty trie, checkpoint, and snapshot state.
     ///
     /// Any materialized future state is removed before the empty root invariant is checked.
@@ -383,6 +365,7 @@ impl RocksDBStorage {
         let trie_log_heads = self.trie_log_heads()?;
         let actual_root = self.get_state_root_hash()?;
         if latest_checkpoint.is_some() || trie_log_heads.highest().is_some() || actual_root != Felt::ZERO {
+            self.begin_confirmed_trie_recovery(None)?;
             self.rollback_tries_to_checkpoint_floor(None, context)?;
             self.rewind_parallel_merkle_checkpoints(None)?;
         }
@@ -394,7 +377,7 @@ impl RocksDBStorage {
         );
         self.write_latest_applied_trie_update(&None)?;
         self.snapshots.rewind_to_empty();
-        Ok(())
+        self.finish_confirmed_trie_recovery()
     }
 
     /// Loads the confirmed block metadata required to verify and rebuild its state root.
@@ -435,64 +418,16 @@ impl RocksDBStorage {
             })
     }
 
-    /// Verifies the live trie root immediately after rolling back to a durable floor.
-    ///
-    /// This check prevents replaying confirmed diffs on top of an already-corrupt base.
-    fn verify_checkpoint_floor_root(
-        &self,
-        checkpoint_floor: Option<u64>,
-        expected_floor_root: Felt,
-        confirmed_tip: u64,
-        context: &str,
-    ) -> Result<()> {
-        let actual_floor_root = match checkpoint_floor {
-            Some(block_n) => {
-                let protocol_version = self
-                    .inner
-                    .get_block_info(block_n)?
-                    .context("Missing checkpoint floor block info after recovery rollback")?
-                    .header
-                    .protocol_version;
-                get_state_root(self, protocol_version)?
-            }
-            None => self.get_state_root_hash()?,
-        };
-        ensure!(
-            actual_floor_root == expected_floor_root,
-            "Trie root {actual_floor_root:#x} does not match durable checkpoint floor {checkpoint_floor:?} root {expected_floor_root:#x} while reconciling confirmed block #{confirmed_tip} during {context}"
-        );
-        Ok(())
-    }
-
     /// Rolls back to a common checkpoint and replays ordered diffs through the confirmed tip.
     ///
     /// Returns whether rollback and replay performed work for reconciliation telemetry.
-    fn rebuild_confirmed_trie(
-        &self,
-        confirmed_tip: u64,
-        confirmed_block_info: &MadaraBlockInfo,
-        trie_log_heads: TrieLogHeads,
-        context: &str,
-    ) -> Result<(bool, bool)> {
-        let checkpoint_floor =
-            self.confirmed_recovery_checkpoint_floor(confirmed_tip, trie_log_heads).with_context(|| {
-                format!("Reading common parallel merkle recovery checkpoint for confirmed block #{confirmed_tip}")
-            })?;
-        let expected_floor_root = self.checkpoint_floor_root(checkpoint_floor)?;
-        let rolled_back = self.rollback_tries_to_checkpoint_floor(checkpoint_floor, context)?;
-        self.rewind_parallel_merkle_checkpoints(checkpoint_floor)?;
-        self.verify_checkpoint_floor_root(checkpoint_floor, expected_floor_root, confirmed_tip, context)?;
-
-        let replay_start = checkpoint_floor.map_or(0, |block_n| block_n + 1);
-        let replayed = replay_start <= confirmed_tip;
+    fn rebuild_confirmed_trie(&self, confirmed_tip: u64, context: &str) -> Result<(bool, bool)> {
+        let recovery = self.begin_confirmed_trie_recovery(Some(confirmed_tip))?;
+        let (checkpoint_floor, rolled_back) = self.select_verified_recovery_floor(confirmed_tip, recovery, context)?;
+        let replay_start = checkpoint_floor.map_or(0, |block_n| block_n.saturating_add(1));
+        let replayed = checkpoint_floor != Some(confirmed_tip);
         if replayed {
-            self.replay_state_diffs_inclusive(
-                replay_start,
-                confirmed_tip,
-                confirmed_block_info.header.protocol_version,
-                "parallel merkle reconciliation",
-            )
-            .with_context(|| format!("Rebuilding confirmed block #{confirmed_tip} during {context}"))?;
+            self.replay_confirmed_trie(replay_start, confirmed_tip)?;
         }
         Ok((rolled_back, replayed))
     }
@@ -523,6 +458,9 @@ impl RocksDBStorage {
     ///
     /// Recovery rolls back to a common durable floor, replays ordered diffs, and republishes metadata.
     pub fn reconcile_confirmed_parallel_merkle_state(&self, confirmed_tip: Option<u64>, context: &str) -> Result<()> {
+        if let Some(recovery) = self.inner.get_confirmed_trie_recovery()? {
+            ensure!(recovery.confirmed_tip == confirmed_tip, "Confirmed head changed during unfinished trie recovery");
+        }
         let Some(confirmed_tip) = confirmed_tip else {
             return self.reconcile_empty_confirmed_head(context);
         };
@@ -547,7 +485,7 @@ impl RocksDBStorage {
         let durable_state_is_ahead = latest_checkpoint.is_some_and(|checkpoint| checkpoint > confirmed_tip)
             || trie_log_heads.highest().is_some_and(|trie_head| trie_head > confirmed_tip);
         let (rolled_back_to_floor, replayed_from_floor) = if actual_root != expected_root || durable_state_is_ahead {
-            self.rebuild_confirmed_trie(confirmed_tip, &confirmed_block_info, trie_log_heads, context)?
+            self.rebuild_confirmed_trie(confirmed_tip, context)?
         } else {
             (false, false)
         };
@@ -561,6 +499,7 @@ impl RocksDBStorage {
             "Confirmed block #{confirmed_tip} root mismatch after {context}: expected {expected_root:#x}, got {reconciled_root:#x}"
         );
         let wrote_checkpoint = self.finalize_confirmed_reconcile(confirmed_tip)?;
+        self.finish_confirmed_trie_recovery()?;
 
         let log_message = "parallel_merkle_confirmed_reconcile_complete";
         if rolled_back_to_floor || replayed_from_floor || wrote_checkpoint {
@@ -825,3 +764,5 @@ impl RocksDBStorage {
 
 #[cfg(test)]
 mod tests;
+
+mod recovery;

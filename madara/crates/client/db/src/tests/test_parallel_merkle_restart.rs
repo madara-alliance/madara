@@ -470,8 +470,9 @@ fn startup_recovers_confirmed_tip_after_interrupted_revert() {
         confirmed_hash
     );
     assert_eq!(recovered.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(11));
-    assert!(!recovered.has_parallel_merkle_checkpoint(5).expect("stale checkpoint 5"));
-    assert!(!recovered.has_parallel_merkle_checkpoint(8).expect("stale checkpoint 8"));
+    // Ordered recovery now recreates verified checkpoints as it replays each block.
+    assert!(recovered.has_parallel_merkle_checkpoint(5).expect("replayed checkpoint 5"));
+    assert!(recovered.has_parallel_merkle_checkpoint(8).expect("replayed checkpoint 8"));
 
     let first_revert = recovered.revert_to(&revert_hash).expect("retrying interrupted revert should succeed");
     assert_eq!(first_revert, (2, revert_hash));
