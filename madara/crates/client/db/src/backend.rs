@@ -1,5 +1,9 @@
 use super::*;
 
+// Includes active boundaries and recent closed statuses retained for operator polling.
+// Reject excess active work instead of evicting state still needed by the executor.
+const MAX_REPLAY_BOUNDARIES: usize = 1024;
+
 impl<D: MadaraStorage> MadaraBackend<D> {
     /// Compares the live trie root with the root stored in one confirmed header.
     /// A mismatch is logged and returned as false so reconciliation can fail with context.
@@ -200,7 +204,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 
     /// Creates or replaces one replay boundary and seeds it from already executed transactions.
     /// Reapplying an identical boundary preserves monotonic progress while reopening close state.
-    pub fn set_replay_boundary(&self, boundary: ReplayBlockBoundary) -> ReplayBlockBoundaryStatus {
+    /// At capacity, evicts the oldest closed boundary or rejects a new active entry.
+    pub fn set_replay_boundary(&self, boundary: ReplayBlockBoundary) -> Result<ReplayBlockBoundaryStatus> {
         let (seed_executed, seed_last_hash) = self.replay_boundary_seed_from_preconfirmed(boundary.block_n);
         let mut guard = self.replay_boundaries.lock().expect("Poisoned lock");
 
@@ -228,7 +233,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                     status.closed,
                     status.mismatch
                 );
-                return status;
+                return Ok(status);
             }
 
             tracing::warn!(
@@ -239,6 +244,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                 boundary.expected_tx_count,
                 boundary.last_tx_hash
             );
+        }
+
+        if !guard.contains_key(&boundary.block_n) && guard.len() >= MAX_REPLAY_BOUNDARIES {
+            let oldest_closed = guard.iter().find_map(|(&block_n, entry)| entry.closed.then_some(block_n));
+            let oldest_closed = oldest_closed.ok_or_else(|| {
+                anyhow::anyhow!("Replay boundary capacity reached ({MAX_REPLAY_BOUNDARIES} active entries)")
+            })?;
+            guard.remove(&oldest_closed);
         }
 
         let runtime = ReplayBoundaryRuntime::from_boundary(boundary.clone(), seed_executed, seed_last_hash);
@@ -253,11 +266,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             status.closed,
             status.mismatch
         );
-        status
+        Ok(status)
     }
 
     /// Returns a snapshot of the requested replay boundary's current counters and flags.
-    /// Missing block entries remain distinguishable as `None`.
+    /// Missing or evicted closed entries return `None`; active entries are never evicted.
     pub fn get_replay_boundary_status(&self, block_n: u64) -> Option<ReplayBlockBoundaryStatus> {
         self.replay_boundaries.lock().expect("Poisoned lock").get(&block_n).map(ReplayBoundaryRuntime::to_status)
     }
@@ -575,3 +588,6 @@ impl MadaraBackend<RocksDBStorage> {
         self.db.get_parallel_merkle_latest_checkpoint()
     }
 }
+
+#[cfg(test)]
+mod replay_boundary_tests;

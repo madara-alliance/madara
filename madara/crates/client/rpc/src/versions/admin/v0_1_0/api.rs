@@ -104,11 +104,12 @@ pub trait MadaraWriteRpcApi {
     /// Sets replay block boundary metadata for a specific block.
     ///
     /// This metadata is consumed by replay-aware batching/execution to avoid crossing block
-    /// boundaries while transactions are sent asynchronously.
+    /// boundaries while transactions are sent asynchronously. At capacity, the oldest closed
+    /// status is evicted; a map full of active boundaries rejects new entries.
     #[method(name = "setReplayBoundary")]
     async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus>;
 
-    /// Returns replay boundary status for a given block, if a boundary is configured.
+    /// Returns replay boundary status for a given block, if configured and still retained.
     #[method(name = "getReplayBoundaryStatus")]
     async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>>;
 }

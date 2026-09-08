@@ -435,7 +435,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         let started = Instant::now();
-        let status = self.backend.set_replay_boundary(replay_boundary.clone());
+        let status = self.backend.set_replay_boundary(replay_boundary.clone()).map_err(StarknetRpcApiError::from)?;
         let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         let head = self.backend.chain_head_state();
         tracing::debug!(
