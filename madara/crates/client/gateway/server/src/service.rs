@@ -196,16 +196,19 @@ fn telemetry_route(path: &str) -> &'static str {
 async fn prepare_response(
     request_headers: &HeaderMap,
     path: &str,
-    response: Response<String>,
+    mut response: Response<String>,
     gzip_enabled: bool,
     gzip_compression_semaphore: Arc<Semaphore>,
 ) -> (Response<Full<Bytes>>, ResponseStats) {
     let uncompressed_bytes = response.body().len() as u64;
-    let should_compress = gzip_enabled
-        && path.starts_with("feeder_gateway/")
-        && response.status().is_success()
-        && uncompressed_bytes > 0
-        && accepts_gzip(request_headers);
+    let eligible_for_compression =
+        gzip_enabled && path.starts_with("feeder_gateway/") && response.status().is_success() && uncompressed_bytes > 0;
+
+    if eligible_for_compression {
+        append_vary_accept_encoding(response.headers_mut());
+    }
+
+    let should_compress = eligible_for_compression && accepts_gzip(request_headers);
 
     if !should_compress {
         return identity_response(response, 0);
@@ -217,12 +220,12 @@ async fn prepare_response(
     };
 
     let (parts, body) = response.into_parts();
-    let body = Arc::new(body);
-    let body_to_compress = Arc::clone(&body);
+    let body = Bytes::from(body);
+    let body_to_compress = body.clone();
     let compression_start = Instant::now();
     let compressed = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        gzip(body_to_compress.as_bytes())
+        gzip(body_to_compress.as_ref())
     })
     .await
     .map_err(io::Error::other)
@@ -300,39 +303,29 @@ fn identity_response(response: Response<String>, compression_duration: u128) -> 
 
 fn finish_compression(
     mut parts: hyper::http::response::Parts,
-    body: Arc<String>,
+    body: Bytes,
     compressed: io::Result<Vec<u8>>,
     compression_duration: u128,
 ) -> (Response<Full<Bytes>>, ResponseStats) {
     let uncompressed_bytes = body.len() as u64;
-    match compressed {
+    let (body, encoding) = match compressed {
         Ok(compressed) => {
-            let transmitted_bytes = compressed.len() as u64;
             parts.headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
-            append_vary_accept_encoding(&mut parts.headers);
-            parts.headers.insert(CONTENT_LENGTH, HeaderValue::from(transmitted_bytes));
-            (
-                Response::from_parts(parts, Full::new(compressed.into())),
-                ResponseStats { encoding: "gzip", uncompressed_bytes, transmitted_bytes, compression_duration },
-            )
+            let body = Bytes::from(compressed);
+            parts.headers.insert(CONTENT_LENGTH, HeaderValue::from(body.len() as u64));
+            (body, "gzip")
         }
         Err(error) => {
             tracing::error!(target: "gateway_errors", %error, "Failed to compress feeder response; returning identity");
-            let body = match Arc::try_unwrap(body) {
-                Ok(body) => Bytes::from(body),
-                Err(body) => Bytes::copy_from_slice(body.as_bytes()),
-            };
-            (
-                Response::from_parts(parts, Full::new(body)),
-                ResponseStats {
-                    encoding: "identity",
-                    uncompressed_bytes,
-                    transmitted_bytes: uncompressed_bytes,
-                    compression_duration,
-                },
-            )
+            (body, "identity")
         }
-    }
+    };
+    let transmitted_bytes = body.len() as u64;
+
+    (
+        Response::from_parts(parts, Full::new(body)),
+        ResponseStats { encoding, uncompressed_bytes, transmitted_bytes, compression_duration },
+    )
 }
 
 fn append_vary_accept_encoding(headers: &mut HeaderMap) {
@@ -420,19 +413,20 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn leaves_ineligible_responses_uncompressed() {
         let cases = [
-            (HeaderMap::new(), "feeder_gateway/get_block", StatusCode::OK, true, "original"),
-            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::OK, false, "original"),
-            (headers(&["gzip"]), "health", StatusCode::OK, true, "original"),
-            (headers(&["gzip"]), "gateway/add_transaction", StatusCode::OK, true, "original"),
-            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::BAD_REQUEST, true, "original"),
-            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::OK, true, ""),
+            (HeaderMap::new(), "feeder_gateway/get_block", StatusCode::OK, true, "original", true),
+            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::OK, false, "original", false),
+            (headers(&["gzip"]), "health", StatusCode::OK, true, "original", false),
+            (headers(&["gzip"]), "gateway/add_transaction", StatusCode::OK, true, "original", false),
+            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::BAD_REQUEST, true, "original", false),
+            (headers(&["gzip"]), "feeder_gateway/get_block", StatusCode::OK, true, "", false),
         ];
 
-        for (headers, path, status, enabled, body) in cases {
+        for (headers, path, status, enabled, body, varies_by_encoding) in cases {
             let response = Response::builder().status(status).body(body.to_string()).unwrap();
             let (response, stats) =
                 prepare_response(&headers, path, response, enabled, Arc::new(Semaphore::new(1))).await;
             assert_eq!(response.headers().get(CONTENT_ENCODING), None);
+            assert_eq!(response.headers().get(VARY).is_some(), varies_by_encoding);
             assert_eq!(stats.encoding, "identity");
             assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), body);
         }
@@ -451,6 +445,7 @@ mod tests {
         .await;
 
         assert_eq!(stats.encoding, "identity");
+        assert_eq!(response.headers().get(VARY).unwrap(), "Accept-Encoding");
         assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "original");
     }
 
@@ -461,12 +456,14 @@ mod tests {
             .header(CONTENT_TYPE, "application/json")
             .body("original".to_string())
             .unwrap();
-        let (parts, body) = response.into_parts();
-        let (response, stats) = finish_compression(parts, Arc::new(body), Err(io::Error::other("test failure")), 7);
+        let (mut parts, body) = response.into_parts();
+        append_vary_accept_encoding(&mut parts.headers);
+        let (response, stats) = finish_compression(parts, Bytes::from(body), Err(io::Error::other("test failure")), 7);
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers().get(CONTENT_TYPE).unwrap(), "application/json");
         assert_eq!(response.headers().get(CONTENT_ENCODING), None);
+        assert_eq!(response.headers().get(VARY).unwrap(), "Accept-Encoding");
         assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "original");
         assert_eq!(
             stats,

@@ -1,7 +1,7 @@
 use super::builder::PausedClient;
 use bincode::Options;
 use bytes::{Buf, Bytes};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use http::Method;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::{Body, Incoming};
@@ -241,7 +241,7 @@ fn decode_response_body_with_limit(
         return Ok(body);
     }
 
-    let mut decoder = GzDecoder::new(body.as_ref()).take(max_bytes.saturating_add(1) as u64);
+    let mut decoder = MultiGzDecoder::new(body.as_ref()).take(max_bytes.saturating_add(1) as u64);
     let mut decoded = Vec::new();
     decoder.read_to_end(&mut decoded).map_err(|source| SequencerError::DecompressResponse { source })?;
     if decoded.len() > max_bytes {
@@ -340,6 +340,20 @@ mod tests {
         assert_eq!(plain_result, expected);
         assert_eq!(identity_result, expected);
         assert_eq!(gzip_result, expected);
+    }
+
+    #[test]
+    fn response_decoding_supports_concatenated_gzip_members() {
+        let expected = json!({"block_number": 42});
+        let mut body = Vec::new();
+        body.extend_from_slice(&gzip(br#"{"block_number":"#));
+        body.extend_from_slice(&gzip(b"42}"));
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+
+        let result: serde_json::Value = unpack_bytes(StatusCode::OK, &headers, body.into()).unwrap();
+
+        assert_eq!(result, expected);
     }
 
     #[test]

@@ -24,7 +24,7 @@ use starknet_core::{
     utils::starknet_keccak,
 };
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
-use std::time::Duration;
+use std::{io::Read, time::Duration};
 
 const GAS_PRICE: u128 = 100000;
 
@@ -336,6 +336,29 @@ async fn full_node_syncs_from_negotiated_feeder(#[case] gzip_enabled: bool) {
     wait_for_next_block(&sequencer.json_rpc()).await;
     let target = get_latest_block_n(&sequencer.json_rpc()).await;
     user_facing.wait_for_sync_to(target).await;
+
+    let response = sequencer
+        .gateway_root_get(&format!("feeder_gateway/get_block?blockNumber={target}"))
+        .await
+        .header(reqwest::header::ACCEPT_ENCODING, "gzip")
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    let content_encoding =
+        response.headers().get(reqwest::header::CONTENT_ENCODING).map(|value| value.to_str().unwrap().to_owned());
+    assert_eq!(content_encoding.as_deref(), gzip_enabled.then_some("gzip"));
+
+    let transmitted_body = response.bytes().await.unwrap();
+    let response_body = if gzip_enabled {
+        let mut decoded = Vec::new();
+        flate2::read::MultiGzDecoder::new(transmitted_body.as_ref()).read_to_end(&mut decoded).unwrap();
+        decoded
+    } else {
+        transmitted_body.to_vec()
+    };
+    let block: serde_json::Value = serde_json::from_slice(&response_body).unwrap();
+    assert_eq!(block["block_number"], target);
 }
 
 async fn get_latest_block_n(provider: &(impl Provider + Send + Sync)) -> u64 {
