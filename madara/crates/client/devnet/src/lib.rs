@@ -465,8 +465,9 @@ mod tests {
 
         let mut block_production = chain.block_production.take().unwrap();
         let mut notifications = block_production.subscribe_state_notifications();
-        let _task =
-            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        let ctx = ServiceContext::new_for_testing();
+        let task_ctx = ctx.clone();
+        let task = AbortOnDrop::spawn(async move { block_production.run(task_ctx).await.unwrap() });
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if !chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_block_info().tx_hashes.is_empty() {
@@ -490,6 +491,9 @@ mod tests {
         };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
+
+        ctx.cancel_global();
+        tokio::time::timeout(Duration::from_secs(30), task).await.expect("block production should drain");
     }
 
     #[test]
@@ -535,8 +539,9 @@ mod tests {
 
         let mut block_production = chain.block_production.take().unwrap();
         let mut notifications = block_production.subscribe_state_notifications();
-        let mut _task =
-            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        let ctx = ServiceContext::new_for_testing();
+        let task_ctx = ctx.clone();
+        let task = AbortOnDrop::spawn(async move { block_production.run(task_ctx).await.unwrap() });
 
         let key = SigningKey::from_random();
         tracing::debug!("Secret Key : {:?}", key.secret_scalar());
@@ -642,6 +647,8 @@ mod tests {
             );
             let error = res.unwrap_err();
             assert!(format!("{error:#}").contains("exceed balance"), "{error:#}");
+            ctx.cancel_global();
+            tokio::time::timeout(Duration::from_secs(30), task).await.expect("block production should drain");
             return;
         }
 
@@ -675,6 +682,9 @@ mod tests {
         let TransactionReceipt::DeployAccount(receipt) = res.receipt else { unreachable!() };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
+
+        ctx.cancel_global();
+        tokio::time::timeout(Duration::from_secs(30), task).await.expect("block production should drain");
     }
 
     // TODO: add eth transfer
@@ -730,8 +740,9 @@ mod tests {
 
         let mut block_production = chain.block_production.take().unwrap();
         let mut notifications = block_production.subscribe_state_notifications();
-        let _task =
-            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+        let ctx = ServiceContext::new_for_testing();
+        let task_ctx = ctx.clone();
+        let task = AbortOnDrop::spawn(async move { block_production.run(task_ctx).await.unwrap() });
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
@@ -822,5 +833,8 @@ mod tests {
                 );
             }
         }
+
+        ctx.cancel_global();
+        tokio::time::timeout(Duration::from_secs(30), task).await.expect("block production should drain");
     }
 }
