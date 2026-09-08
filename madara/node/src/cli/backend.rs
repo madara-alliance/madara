@@ -13,6 +13,26 @@ const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 
+fn default_exec_hash_cache_starknet_keccak_capacity() -> usize {
+    starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_pedersen_pair_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_pedersen_array_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_poseidon_array_capacity() -> usize {
+    starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
+}
+
+fn default_exec_hash_cache_cairo_native_pedersen_capacity() -> usize {
+    mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
     /// Disable all metrics
@@ -209,11 +229,62 @@ pub struct BackendParams {
     /// Maximum size of the execution read cache (MiB).
     #[clap(env = "MADARA_EXEC_READ_CACHE_MAX_MEMORY_MIB", long, default_value_t = DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB)]
     pub exec_read_cache_max_memory_mib: usize,
+
+    /// Enable execution hash memoization in Starknet API and Cairo Native. Default: false.
+    #[clap(env = "MADARA_EXEC_HASH_CACHE_ENABLED", long)]
+    #[serde(default)]
+    pub exec_hash_cache_enabled: bool,
+
+    /// Maximum Starknet Keccak memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_STARKNET_KECCAK_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_starknet_keccak_capacity")]
+    pub exec_hash_cache_starknet_keccak_capacity: usize,
+
+    /// Maximum two-input Pedersen memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_PEDERSEN_PAIR_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_pedersen_pair_capacity")]
+    pub exec_hash_cache_pedersen_pair_capacity: usize,
+
+    /// Maximum Pedersen-array memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_PEDERSEN_ARRAY_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_pedersen_array_capacity")]
+    pub exec_hash_cache_pedersen_array_capacity: usize,
+
+    /// Maximum Poseidon-array memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_POSEIDON_ARRAY_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_poseidon_array_capacity")]
+    pub exec_hash_cache_poseidon_array_capacity: usize,
+
+    /// Maximum Cairo Native Pedersen memoized values retained per execution thread.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_CAIRO_NATIVE_PEDERSEN_CAPACITY",
+        long,
+        default_value_t = mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_cairo_native_pedersen_capacity")]
+    pub exec_hash_cache_cairo_native_pedersen_capacity: usize,
 }
 
 impl BackendParams {
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.validate_exec_read_cache()
+        self.validate_exec_read_cache()?;
+        self.validate_exec_hash_cache()
     }
 
     fn validate_exec_read_cache(&self) -> anyhow::Result<()> {
@@ -244,6 +315,34 @@ impl BackendParams {
             tracing::warn!(
                 "Execution read cache enabled with an empty allowlist; caching will be effectively disabled."
             );
+        }
+
+        Ok(())
+    }
+
+    fn validate_exec_hash_cache(&self) -> anyhow::Result<()> {
+        let capacities = [
+            ("starknet_keccak", self.exec_hash_cache_starknet_keccak_capacity),
+            ("pedersen_pair", self.exec_hash_cache_pedersen_pair_capacity),
+            ("pedersen_array", self.exec_hash_cache_pedersen_array_capacity),
+            ("poseidon_array", self.exec_hash_cache_poseidon_array_capacity),
+            ("cairo_native_pedersen", self.exec_hash_cache_cairo_native_pedersen_capacity),
+        ];
+
+        if self.exec_hash_cache_enabled {
+            for (name, capacity) in capacities {
+                anyhow::ensure!(capacity > 0, "Execution hash cache is enabled but `{name}` capacity is 0.");
+            }
+        } else if capacities
+            != [
+                ("starknet_keccak", starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY),
+                ("pedersen_pair", starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY),
+                ("pedersen_array", starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY),
+                ("poseidon_array", starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY),
+                ("cairo_native_pedersen", mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY),
+            ]
+        {
+            tracing::warn!(?capacities, "Execution hash cache capacities are configured but the cache is disabled.");
         }
 
         Ok(())

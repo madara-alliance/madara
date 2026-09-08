@@ -231,6 +231,31 @@ async fn main() -> anyhow::Result<()> {
 
     // Config-based warnings shall be added here
 
+    run_cmd.backend_params.validate().context("Validating backend configuration")?;
+
+    starknet_api::configure_hash_cache(starknet_api::HashCacheConfig {
+        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
+        sn_keccak_capacity: run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+        pedersen_pair_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+        pedersen_array_capacity: run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+        poseidon_array_capacity: run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+    });
+    mc_class_exec::configure_pedersen_cache(mc_class_exec::PedersenCacheConfig {
+        enabled: run_cmd.backend_params.exec_hash_cache_enabled,
+        capacity: run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+    });
+    mc_exec::metrics::metrics();
+    tracing::info!(
+        enabled = run_cmd.backend_params.exec_hash_cache_enabled,
+        starknet_keccak_capacity = run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+        pedersen_pair_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+        pedersen_array_capacity = run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+        poseidon_array_capacity = run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+        cairo_native_pedersen_capacity_per_thread =
+            run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+        "Execution hash memoization configured"
+    );
+
     if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {
         tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");
     }
@@ -264,8 +289,6 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
-
-    run_cmd.backend_params.validate().context("Validating backend configuration")?;
 
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
