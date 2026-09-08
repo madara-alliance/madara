@@ -8,6 +8,7 @@ use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_state_update::StateDiff;
 use rstest::rstest;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -282,4 +283,85 @@ async fn dropping_finalizer_owner_cancels_queued_work() {
     started.notified().await;
     drop(owner);
     assert!(tokio::time::timeout(Duration::from_secs(1), completion).await.unwrap().is_err());
+}
+
+#[rstest]
+#[case::root_failure(false)]
+#[case::commit_failure(true)]
+#[tokio::test]
+async fn parallel_failure_joins_blocking_roots_and_rejects_uncommitted_jobs(#[case] fail_commit: bool) {
+    let blocking_started = Arc::new(tokio::sync::Notify::new());
+    let release_first = Arc::new(tokio::sync::Notify::new());
+    let (release_blocking, blocking_gate) = std::sync::mpsc::channel();
+    let blocking_gate = Arc::new(Mutex::new(Some(blocking_gate)));
+    let blocking_finished = Arc::new(AtomicUsize::new(0));
+    let commits = Arc::new(AtomicUsize::new(0));
+    let prepare: ParallelPrepare = {
+        let blocking_started = Arc::clone(&blocking_started);
+        let release_first = Arc::clone(&release_first);
+        let blocking_gate = Arc::clone(&blocking_gate);
+        let blocking_finished = Arc::clone(&blocking_finished);
+        Arc::new(move |_, payload| {
+            let blocking_started = Arc::clone(&blocking_started);
+            let release_first = Arc::clone(&release_first);
+            let blocking_gate = Arc::clone(&blocking_gate);
+            let blocking_finished = Arc::clone(&blocking_finished);
+            Box::pin(async move {
+                match payload.close_job_payload.block_n {
+                    0 => {
+                        release_first.notified().await;
+                        if !fail_commit {
+                            bail!("injected root failure");
+                        }
+                    }
+                    1 => {
+                        let gate = blocking_gate.lock().unwrap().take().unwrap();
+                        tokio::task::spawn_blocking(move || {
+                            blocking_started.notify_one();
+                            gate.recv_timeout(Duration::from_secs(5)).unwrap();
+                            blocking_finished.store(1, Ordering::SeqCst);
+                        })
+                        .await
+                        .unwrap();
+                    }
+                    _ => panic!("queued preparation must not start after failure"),
+                }
+                Ok(crate::close_pipeline::parallel_computed_payload_for_test(payload))
+            })
+        })
+    };
+    let commit: ParallelCommit = {
+        let commits = Arc::clone(&commits);
+        Arc::new(move |_, _| {
+            commits.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { bail!("injected commit failure") })
+        })
+    };
+    let (handle, task) = FinalizerHandle::spawn_with_workers(
+        4,
+        Arc::new(BlockProductionMetrics::register()),
+        FinalizerWorkers::Parallel { root_workers: 2, prepare, commit },
+    );
+    let mut completions = VecDeque::new();
+    for block_n in 0..4 {
+        completions.push_back(handle.try_enqueue(test_payload(block_n)).unwrap().1);
+    }
+    tokio::time::timeout(Duration::from_secs(2), blocking_started.notified()).await.unwrap();
+    release_first.notify_one();
+    assert!(completions.pop_front().unwrap().await.unwrap().is_err());
+    let in_flight = Arc::clone(&handle.in_flight);
+    drop(handle);
+    let mut join = Box::pin(task.join());
+    let early_join = tokio::time::timeout(Duration::from_millis(50), &mut join).await;
+    let count_while_blocked = in_flight.load(Ordering::Relaxed);
+    release_blocking.send(()).unwrap();
+    assert!(early_join.is_err(), "joining the finalizer must wait for its blocking work");
+    assert_eq!(count_while_blocked, 1, "blocking preparation must retain its ownership guard");
+    assert!(join.await.is_err());
+    assert_eq!(blocking_finished.load(Ordering::SeqCst), 1);
+    assert_eq!(in_flight.load(Ordering::Relaxed), 0);
+    assert_eq!(commits.load(Ordering::SeqCst), usize::from(fail_commit));
+    for completion in completions {
+        assert!(completion.await.expect("all accepted jobs receive explicit completion").is_err());
+    }
 }

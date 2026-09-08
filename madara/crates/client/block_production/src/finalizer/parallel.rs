@@ -80,12 +80,22 @@ impl ParallelFinalizer {
         }
     }
 
-    /// Runs until the input is closed and every accepted block is committed.
+    /// Runs until accepted blocks commit or a failure has drained all dispatched work.
     /// Root preparation may finish out of order, while commit delivery remains strictly ordered.
     async fn run(mut self) -> Result<()> {
+        let result = self.run_until_drained().await;
+        if let Err(error) = &result {
+            self.drain_after_failure(error).await;
+        }
+        record_pipeline_gauges(&self.metrics, 0, 0, 0);
+        result
+    }
+
+    /// Stops scheduling at the first ordered failure; the owner still drains dispatched work.
+    async fn run_until_drained(&mut self) -> Result<()> {
         loop {
-            self.dispatch_waiting_roots();
             self.commit_ready_in_order().await?;
+            self.dispatch_waiting_roots();
 
             if self.input_and_work_drained() {
                 self.ensure_no_ordering_gap()?;
@@ -102,8 +112,35 @@ impl ParallelFinalizer {
             }
         }
 
-        record_pipeline_gauges(&self.metrics, 0, 0, 0);
         Ok(())
+    }
+
+    /// Blocking root tasks cannot be cancelled by dropping their futures. Join every
+    /// dispatched task before returning an error so finalizer completion remains a DB barrier.
+    async fn drain_after_failure(&mut self, error: &anyhow::Error) {
+        self.receiver.close();
+        while let Some(result) = self.active_roots.next().await {
+            Self::reject_completion(result.completion, error);
+            // Dropping the completed result now releases its payload and in-flight guard.
+        }
+        for (_, entry) in std::mem::take(&mut self.ready_to_commit) {
+            let completion = match entry {
+                ReadyCommitEntry::Success { completion, .. } | ReadyCommitEntry::Failed { completion, .. } => {
+                    completion
+                }
+            };
+            Self::reject_completion(completion, error);
+        }
+        for job in self.waiting_jobs.drain(..) {
+            Self::reject_completion(job.completion, error);
+        }
+        while let Some(job) = self.receiver.recv().await {
+            Self::reject_completion(job.completion, error);
+        }
+    }
+
+    fn reject_completion(completion: oneshot::Sender<Result<CloseJobCompletion>>, error: &anyhow::Error) {
+        let _ = completion.send(Err(anyhow!("Close job cancelled after finalizer failure: {error:#}")));
     }
 
     /// Starts queued root jobs until the configured worker limit is reached.
@@ -246,7 +283,9 @@ impl ParallelFinalizer {
     fn record_root_result(&mut self, result: RootTaskResult) -> Result<()> {
         let RootTaskResult { block_n, completion, in_flight_guard, result } = result;
         if self.ready_to_commit.contains_key(&block_n) {
-            return Err(anyhow!("Parallel finalizer produced duplicate ready result for block #{block_n}"));
+            let error = anyhow!("Parallel finalizer produced duplicate ready result for block #{block_n}");
+            Self::reject_completion(completion, &error);
+            return Err(error);
         }
 
         let event = match result {
