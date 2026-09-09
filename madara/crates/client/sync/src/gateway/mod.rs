@@ -28,7 +28,6 @@ pub struct ForwardSyncConfig {
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
     pub disable_reorg: bool,
-    pub disable_reorg_preconfirmed: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -45,7 +44,6 @@ impl Default for ForwardSyncConfig {
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
             disable_reorg: false,
-            disable_reorg_preconfirmed: false,
         }
     }
 }
@@ -67,9 +65,6 @@ impl ForwardSyncConfig {
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
     }
-    pub fn disable_reorg_preconfirmed(self, val: bool) -> Self {
-        Self { disable_reorg_preconfirmed: val, ..self }
-    }
 }
 
 pub type GatewaySync = SyncController<GatewayForwardSync>;
@@ -82,12 +77,7 @@ pub fn forward_sync(
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
-    let get_pending_block = gateway_preconfirmed_block_sync(
-        client.clone(),
-        importer.clone(),
-        backend.clone(),
-        config.disable_reorg_preconfirmed,
-    );
+    let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
     SyncController::new(
         backend.clone(),
         GatewayForwardSync::new(backend, importer, client, config),
