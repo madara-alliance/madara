@@ -198,6 +198,64 @@ impl GatewayMock {
 
     /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
     pub fn mock_block_pending_with_ts(&self, block_number: u64, timestamp: usize) -> Mock<'_> {
+        self.mock_block_pending_with_ts_and_count(block_number, timestamp, 1)
+    }
+
+    pub fn mock_block_pending_with_ts_and_count(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+    ) -> Mock<'_> {
+        self.mock_block_pending_with_ts_and_counts(block_number, timestamp, transaction_count, transaction_count)
+    }
+
+    pub fn mock_block_pending_with_ts_and_counts(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+        executed_count: usize,
+    ) -> Mock<'_> {
+        self.mock_block_pending_custom(block_number, timestamp, transaction_count, executed_count, 0)
+    }
+
+    pub fn mock_block_pending_custom(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+        executed_count: usize,
+        hash_offset: usize,
+    ) -> Mock<'_> {
+        self.mock_block_pending_with_hash_offsets(
+            block_number,
+            timestamp,
+            executed_count,
+            vec![hash_offset; transaction_count],
+        )
+    }
+
+    pub fn mock_block_pending_with_hash_offsets(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        executed_count: usize,
+        hash_offsets: Vec<usize>,
+    ) -> Mock<'_> {
+        let transaction_count = hash_offsets.len();
+        let transaction_hashes = hash_offsets
+            .into_iter()
+            .enumerate()
+            .map(|(index, hash_offset)| {
+                if hash_offset == 0 && index == 0 {
+                    "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1".to_owned()
+                } else {
+                    format!("0x{:x}", hash_offset + index + 1)
+                }
+            })
+            .collect::<Vec<_>>();
+
         // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
             when.method("GET")
@@ -225,9 +283,8 @@ impl GatewayMock {
                 },
                 "timestamp": timestamp,
                 "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                "transactions": [
-                    {
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                "transactions": transaction_hashes.iter().map(|transaction_hash| json!({
+                        "transaction_hash": transaction_hash,
                         "version": "0x1",
                         "max_fee": "0x0",
                         "signature": [
@@ -250,13 +307,11 @@ impl GatewayMock {
                             "0x1"
                         ],
                         "type": "INVOKE_FUNCTION"
-                    },
-                ],
-                "transaction_receipts": [
-                    {
+                    })).collect::<Vec<_>>(),
+                "transaction_receipts": (0..transaction_count).map(|index| if index < executed_count { json!({
                         "execution_status": "SUCCEEDED",
-                        "transaction_index": 3,
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                        "transaction_index": index,
+                        "transaction_hash": transaction_hashes[index],
                         "l2_to_l1_messages": [],
                         "events": [],
                         "execution_resources": {
@@ -269,10 +324,8 @@ impl GatewayMock {
                             "n_memory_holes": 0
                         },
                         "actual_fee": "0x0"
-                    },
-                ],
-                "transaction_state_diffs": [
-                    {
+                    }) } else { Value::Null }).collect::<Vec<_>>(),
+                "transaction_state_diffs": (0..transaction_count).map(|index| if index < executed_count { json!({
                         "storage_diffs": {
                             "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d": [
                                 {
@@ -302,8 +355,7 @@ impl GatewayMock {
                         "old_declared_contracts": [],
                         "declared_classes": [],
                         "replaced_classes": []
-                    }
-                ],
+                    }) } else { Value::Null }).collect::<Vec<_>>(),
             }));
         })
     }
