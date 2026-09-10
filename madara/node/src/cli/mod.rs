@@ -461,6 +461,17 @@ mod tests {
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
+        assert!(!run_cmd.gateway_params.feeder_gateway_gzip_responses);
+    }
+
+    #[test]
+    fn feeder_gateway_gzip_responses_is_opt_in() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        let enabled =
+            RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet", "--feeder-gateway-gzip-responses"]);
+
+        assert!(!disabled.gateway_params.feeder_gateway_gzip_responses);
+        assert!(enabled.gateway_params.feeder_gateway_gzip_responses);
     }
 
     #[test]
