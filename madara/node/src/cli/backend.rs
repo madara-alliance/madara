@@ -1,4 +1,4 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::rocksdb::{DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ContractAddress;
@@ -12,6 +12,12 @@ const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
+
+/// Returns the default RocksDB obsolete-file scan interval for config deserialization.
+/// Keeping it aligned with `RocksDBConfig` preserves compatibility with existing configs.
+fn default_delete_obsolete_files_period_micros() -> u64 {
+    DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS
+}
 
 /// Returns the Starknet Keccak cache capacity used when no CLI override is supplied.
 /// The default stays aligned with the execution library's own tuning.
@@ -152,6 +158,16 @@ pub struct BackendParams {
     /// The argument `--db-enable-statistics` is needed for this argument to have an effect.
     #[clap(env = "MADARA_DB_STATISTICS_LEVEL", long)]
     pub db_statistics_level: Option<StatsLevel>,
+
+    /// Interval in microseconds between full RocksDB obsolete-file discovery scans.
+    /// Files obsoleted by normal flush and compaction are cleaned independently.
+    #[clap(
+        env = "MADARA_DB_DELETE_OBSOLETE_FILES_PERIOD_MICROS",
+        long,
+        default_value_t = DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS
+    )]
+    #[serde(default = "default_delete_obsolete_files_period_micros")]
+    pub db_delete_obsolete_files_period_micros: u64,
 
     /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
@@ -393,6 +409,7 @@ impl BackendParams {
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
+            delete_obsolete_files_period_micros: self.db_delete_obsolete_files_period_micros,
             // Write stall prevention settings
             max_write_buffer_number: self.db_max_write_buffer_number,
             level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,
