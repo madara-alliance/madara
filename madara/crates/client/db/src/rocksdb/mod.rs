@@ -69,7 +69,9 @@ pub mod global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
-pub use options::{DbWriteMode, RocksDBConfig, StatsLevel, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS};
+pub use options::{
+    DbWriteMode, RocksDBConfig, StatsLevel, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES,
+};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 

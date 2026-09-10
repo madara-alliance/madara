@@ -1,4 +1,4 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS};
+use mc_db::rocksdb::{DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ContractAddress;
@@ -17,6 +17,12 @@ const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 /// Keeping it aligned with `RocksDBConfig` preserves compatibility with existing configs.
 fn default_delete_obsolete_files_period_micros() -> u64 {
     DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS
+}
+
+/// Returns the default RocksDB table-cache file limit for config deserialization.
+/// Keeping this aligned with `RocksDBConfig` preserves existing configuration behavior.
+fn default_max_open_files() -> i32 {
+    DEFAULT_MAX_OPEN_FILES
 }
 
 /// Returns the Starknet Keccak cache capacity used when no CLI override is supplied.
@@ -168,6 +174,12 @@ pub struct BackendParams {
     )]
     #[serde(default = "default_delete_obsolete_files_period_micros")]
     pub db_delete_obsolete_files_period_micros: u64,
+
+    /// Maximum number of SST files RocksDB keeps open in its table cache.
+    /// Lower this for large full-node databases when index and filter memory is constrained.
+    #[clap(env = "MADARA_DB_MAX_OPEN_FILES", long, default_value_t = DEFAULT_MAX_OPEN_FILES)]
+    #[serde(default = "default_max_open_files")]
+    pub db_max_open_files: i32,
 
     /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
@@ -410,6 +422,7 @@ impl BackendParams {
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
             delete_obsolete_files_period_micros: self.db_delete_obsolete_files_period_micros,
+            max_open_files: self.db_max_open_files,
             // Write stall prevention settings
             max_write_buffer_number: self.db_max_write_buffer_number,
             level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,
