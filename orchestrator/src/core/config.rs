@@ -290,6 +290,11 @@ impl Config {
         let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
 
         let layer = run_cmd.layer.clone();
+        info!(
+            upstream_read_max_attempts = run_cmd.upstream_read_retry_args.upstream_read_max_attempts.get(),
+            upstream_read_timeout_secs = run_cmd.upstream_read_retry_args.upstream_read_timeout_secs.get(),
+            "Configured upstream read resilience"
+        );
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
@@ -310,13 +315,24 @@ impl Config {
             bouncer_weights_limit,
             da_public_keys: run_cmd.da_public_keys.clone(),
         };
-        let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
-        let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
+        let rpc_http_client = run_cmd.upstream_read_retry_args.build_http_client(&params.madara_rpc_url)?;
+        let rpc_client =
+            JsonRpcClient::new(HttpTransport::new_with_client(params.madara_rpc_url.clone(), rpc_http_client));
+        let feeder_gateway_client = RestClient::with_client(
+            params.madara_feeder_gateway_url.clone(),
+            run_cmd.upstream_read_retry_args.build_http_client(&params.madara_feeder_gateway_url)?,
+        );
         let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
         let replay_bounds_client = run_cmd
             .replay_bounds_rpc_url
             .as_ref()
-            .map(|url| Arc::new(JsonRpcClient::new(HttpTransport::new(url.clone()))));
+            .map(|url| {
+                run_cmd
+                    .upstream_read_retry_args
+                    .build_http_client(url)
+                    .map(|client| Arc::new(JsonRpcClient::new(HttpTransport::new_with_client(url.clone(), client))))
+            })
+            .transpose()?;
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;

@@ -711,7 +711,10 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
 
     let queue_params = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_identifier) };
 
-    let aws_params = AWSCredentials { prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX") };
+    let aws_params = AWSCredentials {
+        prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
+        ..Default::default()
+    };
 
     let da_params = DAConfig::Ethereum(EthereumDaValidatedArgs {
         ethereum_da_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL"))

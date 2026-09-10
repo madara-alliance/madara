@@ -1,4 +1,4 @@
-use reqwest::{Client, Response, Result};
+use reqwest_13::{Client, Response, Result};
 use serde::Serialize;
 use url::Url;
 
@@ -45,7 +45,7 @@ impl RestClient {
     }
 
     // For more control, expose the request builder
-    pub fn request(&self, method: reqwest::Method, path: &str) -> Result<reqwest::RequestBuilder> {
+    pub fn request(&self, method: reqwest_13::Method, path: &str) -> Result<reqwest_13::RequestBuilder> {
         Ok(self.client.request(method, self.url(path)))
     }
 }
