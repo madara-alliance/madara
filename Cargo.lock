@@ -9943,6 +9943,7 @@ dependencies = [
  "m-cairo-test-contracts",
  "m-proc-macros",
  "mc-block-production",
+ "mc-class-exec",
  "mc-db",
  "mc-devnet",
  "mc-exec",

@@ -32,6 +32,12 @@ use mp_class::SierraConvertedClass;
 #[cfg(test)]
 static TEST_MEMORY_CACHE_SEND_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug, thiserror::Error)]
+pub enum NativeCacheDeletionError {
+    #[error("failed to delete Cairo Native cache artifact at {path}: {source}")]
+    DeleteArtifact { path: PathBuf, source: std::io::Error },
+}
+
 #[cfg(test)]
 pub fn set_test_memory_cache_send_delay(delay: Duration) {
     TEST_MEMORY_CACHE_SEND_DELAY_MS.store(delay.as_millis() as u64, Ordering::Relaxed);
@@ -112,22 +118,58 @@ pub(crate) fn cache_len() -> usize {
     NATIVE_CACHE.len()
 }
 
+/// Delete every in-memory and on-disk Cairo Native compiled class.
+pub fn delete_all_native_cache_classes(cache_dir: &Path) -> Result<(), NativeCacheDeletionError> {
+    NATIVE_CACHE.clear();
+    match std::fs::remove_dir_all(cache_dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(NativeCacheDeletionError::DeleteArtifact { path: cache_dir.to_path_buf(), source: e }),
+    }
+    Ok(())
+}
+
+/// Delete selected in-memory and on-disk Cairo Native compiled classes.
+pub fn delete_native_cache_classes(
+    class_hashes: &[ClassHash],
+    cache_dir: &Path,
+) -> Result<(), NativeCacheDeletionError> {
+    let mut first_error = None;
+
+    for class_hash in class_hashes {
+        NATIVE_CACHE.remove(class_hash);
+        let path = native_cache_path(class_hash, cache_dir);
+        match remove_disk_cache_entry(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => remove_native_cache_artifacts(&path),
+            Err(e) if first_error.is_none() => {
+                first_error = Some(NativeCacheDeletionError::DeleteArtifact { path, source: e });
+            }
+            Err(_) => {}
+        }
+    }
+
+    first_error.map_or(Ok(()), Err)
+}
+
 /// Get the cache file path for a class hash.
 ///
 /// Constructs a path like `{cache_dir}/{class_hash:#x}.so`.
 /// The filename is validated to prevent path traversal attacks.
 pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::NativeConfig) -> PathBuf {
-    // Convert ClassHash to Felt for formatting (ClassHash implements ToFelt)
-    let felt = class_hash.to_felt();
-    // Ensure filename is safe (no path traversal)
-    let filename = format!("{:#x}.so", felt);
-    debug_assert!(!filename.contains("..") && !filename.contains("/"));
+    native_cache_path(
+        class_hash,
+        &config
+            .execution_config()
+            .expect("get_disk_cache_path should only be called when native execution is enabled")
+            .cache_dir,
+    )
+}
 
-    config
-        .execution_config()
-        .expect("get_disk_cache_path should only be called when native execution is enabled")
-        .cache_dir
-        .join(filename)
+fn native_cache_path(class_hash: &ClassHash, cache_dir: &Path) -> PathBuf {
+    let filename = format!("{:#x}.so", class_hash.to_felt());
+    debug_assert!(!filename.contains("..") && !filename.contains("/"));
+    cache_dir.join(filename)
 }
 
 /// Best-effort cleanup for one native cache entry: the `.so` and its metadata sidecar.
@@ -791,7 +833,7 @@ mod tests {
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
-    use mp_convert::ToFelt;
+    use mp_convert::{Felt, ToFelt};
     // Import fixtures from test_utils
     use crate::test_utils::{sierra_class, temp_dir, test_config};
 
@@ -801,6 +843,66 @@ mod tests {
     /// Helper function to create a unique test class hash (module_id=1 for cache.rs)
     fn create_unique_test_class_hash() -> ClassHash {
         crate::test_utils::create_unique_test_class_hash(1)
+    }
+
+    #[test]
+    fn delete_native_cache_classes_removes_selected_disk_artifacts() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let config = config::NativeConfig::builder().with_cache_dir(temp_dir.path().to_path_buf()).build();
+        let class_hash = ClassHash(Felt::from(42u64));
+        let other_class_hash = ClassHash(Felt::from(43u64));
+        let path = get_native_cache_path(&class_hash, &config);
+        let other_path = get_native_cache_path(&other_class_hash, &config);
+        let metadata_path = crate::host_fingerprint::metadata_path_for_so(&path);
+        let other_metadata_path = crate::host_fingerprint::metadata_path_for_so(&other_path);
+
+        std::fs::write(&path, b"native").expect("native artifact should be written");
+        std::fs::write(&metadata_path, b"metadata").expect("metadata artifact should be written");
+        std::fs::write(&other_path, b"other native").expect("other native artifact should be written");
+        std::fs::write(&other_metadata_path, b"other metadata").expect("other metadata artifact should be written");
+
+        delete_native_cache_classes(&[class_hash], temp_dir.path()).expect("selected cache deletion should succeed");
+
+        assert!(!path.exists());
+        assert!(!metadata_path.exists());
+        assert!(other_path.exists());
+        assert!(other_metadata_path.exists());
+    }
+
+    #[test]
+    fn delete_native_cache_classes_continues_after_disk_error() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let config = config::NativeConfig::builder().with_cache_dir(temp_dir.path().to_path_buf()).build();
+        let failing_class_hash = ClassHash(Felt::from(42u64));
+        let later_class_hash = ClassHash(Felt::from(43u64));
+        let failing_path = get_native_cache_path(&failing_class_hash, &config);
+        let later_path = get_native_cache_path(&later_class_hash, &config);
+
+        std::fs::create_dir(&failing_path).expect("directory at native artifact path should be created");
+        std::fs::write(&later_path, b"native").expect("later native artifact should be written");
+
+        let err = delete_native_cache_classes(&[failing_class_hash, later_class_hash], temp_dir.path())
+            .expect_err("selected deletion should report the disk error");
+
+        assert!(matches!(err, NativeCacheDeletionError::DeleteArtifact { path, .. } if path == failing_path));
+        assert!(failing_path.exists());
+        assert!(!later_path.exists());
+    }
+
+    #[test]
+    fn delete_all_native_cache_classes_removes_all_disk_artifacts() {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let cache_dir = temp_dir.path().join("native_classes");
+        std::fs::create_dir_all(&cache_dir).expect("cache dir should be created");
+
+        std::fs::write(cache_dir.join("0x1.so"), b"native").expect("native artifact should be written");
+        std::fs::write(cache_dir.join("0x1.so.meta.json"), b"metadata")
+            .expect("metadata artifact should be written");
+        std::fs::write(cache_dir.join("orphan.lock"), b"lock").expect("lock artifact should be written");
+
+        delete_all_native_cache_classes(&cache_dir).expect("full cache deletion should succeed");
+
+        assert!(!cache_dir.exists());
     }
 
     // Helper function to create a test NativeCompiledClass from a Sierra class

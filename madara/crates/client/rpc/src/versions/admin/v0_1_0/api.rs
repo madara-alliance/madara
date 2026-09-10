@@ -30,6 +30,14 @@ pub enum ServiceRequest {
     Restart,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct DeleteCairoNativeCompiledClassesRequest {
+    #[serde(default)]
+    pub all: bool,
+    #[serde(default)]
+    pub class_hashes: Option<Vec<Felt>>,
+}
+
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
@@ -92,6 +100,10 @@ pub trait MadaraWriteRpcApi {
     /// Only available when unsafe RPC methods are enabled.
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
+
+    /// Deletes Cairo Native compiled classes from memory and disk cache.
+    #[method(name = "deleteCairoNativeCompiledClasses")]
+    async fn delete_cairo_native_compiled_classes(&self, request: DeleteCairoNativeCompiledClassesRequest) -> RpcResult<()>;
 
     /// Flush transactions from the mempool using an admin-only filter.
     /// Only available when unsafe RPC methods are enabled.
