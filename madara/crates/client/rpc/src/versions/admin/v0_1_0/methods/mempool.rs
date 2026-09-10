@@ -16,6 +16,7 @@ impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
             .as_ref()
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .set_mempool_intake(enabled)
+            .map_err(anyhow::Error::from)
             .map_err(StarknetRpcApiError::from)?;
         tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
         Ok(())
