@@ -125,6 +125,14 @@ pub trait MadaraReadRpcApi {
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraMempoolRpcApi {
+    /// Controls mempool consumption, retaining submission and bypass/L1 paths.
+    /// Available only with unsafe admin RPC enabled.
+    #[method(name = "setMempoolIntake")]
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()>;
+}
+
+#[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraStatusRpcApi {
     /// Can be used to check node availability and network latency
     ///

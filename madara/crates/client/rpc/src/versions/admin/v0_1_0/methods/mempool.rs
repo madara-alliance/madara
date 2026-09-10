@@ -1,5 +1,26 @@
+use crate::{versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::admin::MempoolNonceFilter;
 use mp_transactions::validated::ValidatedTransaction;
+
+#[async_trait]
+impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+        self.block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .set_mempool_intake(enabled)
+            .map_err(StarknetRpcApiError::from)?;
+        tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
+        Ok(())
+    }
+}
 
 pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
     if nonce_filter != MempoolNonceFilter::default() && transaction.sender_contract_address().is_none() {
@@ -14,10 +35,48 @@ pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_fil
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::TestTransactionProvider;
+    use mc_db::MadaraBackend;
+    use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
     use mp_transactions::{
         validated::TxTimestamp, InvokeTransaction, InvokeTransactionV1, L1HandlerTransaction, Transaction,
     };
+    use mp_utils::service::ServiceContext;
+    use std::sync::Arc;
+
+    fn rpc_with_unsafe(enabled: bool) -> Starknet {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let provider = Arc::new(TestTransactionProvider);
+        let mut rpc = Starknet::new(
+            backend,
+            provider.clone(),
+            provider,
+            Default::default(),
+            None,
+            ServiceContext::new_for_testing(),
+        );
+        rpc.rpc_unsafe_enabled = enabled;
+        rpc
+    }
+
+    #[test]
+    fn mempool_intake_is_hidden_without_unsafe_admin() {
+        let api = crate::rpc_api_admin(&rpc_with_unsafe(false)).unwrap();
+        assert!(!api.method_names().any(|name| name.ends_with("setMempoolIntake")));
+    }
+
+    #[test]
+    fn mempool_intake_is_registered_with_unsafe_admin() {
+        let api = crate::rpc_api_admin(&rpc_with_unsafe(true)).unwrap();
+        assert!(api.method_names().any(|name| name.ends_with("setMempoolIntake")));
+    }
+
+    #[tokio::test]
+    async fn mempool_intake_rejects_direct_calls_without_unsafe_admin() {
+        let error = rpc_with_unsafe(false).set_mempool_intake(false).await.unwrap_err();
+        assert!(error.to_string().contains("--rpc-unsafe"));
+    }
 
     fn validated(transaction: Transaction, contract_address: Felt) -> ValidatedTransaction {
         ValidatedTransaction {

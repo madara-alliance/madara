@@ -150,7 +150,7 @@ use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 mod batcher;
 mod executor;
@@ -321,6 +321,7 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    mempool_intake: watch::Receiver<bool>,
     no_charge_fee: bool,
     discard_preconfirmed_on_startup: bool,
 }
@@ -345,12 +346,20 @@ impl BlockProductionTask {
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
+        let (mempool_intake_sender, mempool_intake) = watch::channel(true);
         Self {
             backend: backend.clone(),
             mempool,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
+            handle: BlockProductionHandle::new(
+                backend,
+                sender,
+                bypass_input_sender,
+                no_charge_fee,
+                mempool_intake_sender,
+            ),
+            mempool_intake,
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
@@ -1044,6 +1053,7 @@ impl BlockProductionTask {
                 ctx,
                 batch_sender,
                 bypass_tx_input,
+                self.mempool_intake.clone(),
             )
             .run(),
         );

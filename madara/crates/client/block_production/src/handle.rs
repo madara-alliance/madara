@@ -13,7 +13,7 @@ use mp_rpc::v0_9_0::{
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
@@ -42,6 +42,7 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    mempool_intake: watch::Sender<bool>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -52,10 +53,12 @@ impl BlockProductionHandle {
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
         no_charge_fee: bool,
+        mempool_intake: watch::Sender<bool>,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            mempool_intake,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
@@ -63,6 +66,12 @@ impl BlockProductionHandle {
             )
             .into(),
         }
+    }
+
+    /// Pause or resume mempool consumption without disabling normal submission.
+    /// Already dispatched batches may finish; bypass and L1 paths remain active.
+    pub fn set_mempool_intake(&self, enabled: bool) -> Result<(), ExecutorCommandError> {
+        self.mempool_intake.send(enabled).map_err(|_| ExecutorCommandError::ChannelClosed)
     }
 
     /// Force the current block to close without waiting for block time.

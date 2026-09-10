@@ -14,7 +14,7 @@ use mp_transactions::{
 };
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
@@ -23,6 +23,7 @@ pub struct Batcher {
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
+    mempool_intake: watch::Receiver<bool>,
     batch_size: usize,
 }
 
@@ -34,6 +35,7 @@ impl Batcher {
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
+        mempool_intake: watch::Receiver<bool>,
     ) -> Self {
         Self {
             mempool,
@@ -41,6 +43,7 @@ impl Batcher {
             ctx,
             out,
             bypass_in,
+            mempool_intake,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
         }
@@ -96,6 +99,12 @@ impl Batcher {
             })
             .flatten();
 
+            let mempool_txs_stream: BoxStream<'_, _> = if *self.mempool_intake.borrow_and_update() {
+                mempool_txs_stream.boxed()
+            } else {
+                stream::pending().boxed()
+            };
+
             // merge all three streams :)
             // * all three streams are merged into one stream, allowing us to poll them all at once.
             // * this will always prioritise bypass_txs, then try and keep the balance betweeen l1_txs and mempool txs.
@@ -119,6 +128,11 @@ impl Batcher {
             tokio::pin!(tx_stream);
 
             let batch = tokio::select! {
+                // Rebuild the sources when the control changes, including while the queue is empty.
+                changed = self.mempool_intake.changed() => {
+                    if changed.is_err() { return Ok(()); }
+                    continue;
+                }
                 _ = self.ctx.cancelled() => {
                     // Stop condition: cancelled.
                     return anyhow::Ok(());
