@@ -51,8 +51,9 @@ pub struct BlockProductionParams {
 
     /// Compare the parallel root against the sequential root implementation.
     ///
-    /// This is intended for correctness validation and debugging only, as it
-    /// adds a full sequential root computation to the close path.
+    /// Testing and diagnostics only; this adds a full sequential computation to each close.
+    /// Root equality is logged at debug level. A mismatch does not reject the parallel root
+    /// or prevent block confirmation, so this is not a production validation gate.
     #[arg(env = "MADARA_PARALLEL_MERKLE_COMPARE_SEQUENTIAL", long, default_value_t = false)]
     pub parallel_merkle_compare_sequential: bool,
 

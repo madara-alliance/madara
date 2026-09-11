@@ -252,7 +252,8 @@ impl BlockProductionTask {
         self
     }
 
-    /// Enables root comparison against the sequential implementation for validation.
+    /// Enables diagnostic root comparison against the sequential implementation.
+    /// Equality is logged at debug level; mismatches do not prevent block confirmation.
     pub fn with_parallel_merkle_compare_sequential(mut self, enabled: bool) -> Self {
         self.parallel_merkle_compare_sequential = enabled;
         self
