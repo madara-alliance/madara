@@ -1,4 +1,5 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
+use anyhow::Context;
 use futures::{future::OptionFuture, Future};
 use mc_db::sync_status::SyncStatus;
 use mc_db::MadaraBackend;
@@ -125,6 +126,7 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
+        self.discard_inherited_execution_suffix().await?;
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -145,6 +147,33 @@ impl<P: ForwardPipeline> SyncController<P> {
             tracing::info!("🌐 Sync process ended");
         }
         Ok(())
+    }
+
+    /// Full-node sync imports upstream state and cannot resume a sequencer's dependent execution suffix.
+    /// Normalize it before polling or importing; retain ordinary single-block preconfirmed recovery.
+    async fn discard_inherited_execution_suffix(&mut self) -> anyhow::Result<()> {
+        let head = self.backend.chain_head_state();
+        let (Some(external_tip), Some(internal_tip)) = (head.external_preconfirmed_tip, head.internal_preconfirmed_tip)
+        else {
+            return Ok(());
+        };
+        if internal_tip <= external_tip {
+            return Ok(());
+        }
+
+        tracing::info!(external_tip, internal_tip, "Discarding inherited sequencer execution before full-node sync");
+        let backend = self.backend.clone();
+        mp_utils::rayon::global_spawn_rayon_task(move || {
+            // Backend initialization already removed partial block parts. Reconcile the trie
+            // before clearing the projection, so interrupted recovery can still find the suffix.
+            backend
+                .db
+                .reconcile_confirmed_parallel_merkle_state(head.confirmed_tip, "full_node_inherited_execution")
+                .context("Reconciling inherited sequencer trie state before full-node sync")?;
+            backend.write_access().clear_preconfirmed().context("Discarding inherited sequencer execution")?;
+            backend.db.flush().context("Flushing inherited execution cleanup before full-node sync")
+        })
+        .await
     }
 
     fn target_height(&self) -> Option<u64> {

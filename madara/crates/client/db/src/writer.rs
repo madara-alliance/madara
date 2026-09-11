@@ -147,7 +147,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
-    /// Discards the entire preconfirmed suffix, including persisted rows when enabled.
+    /// Discards the entire preconfirmed suffix, including rows persisted by an earlier process.
     /// Does nothing when the backend has no preconfirmed blocks.
     pub fn clear_preconfirmed(&self) -> Result<()> {
         let _projection_guard = self.inner.head_projection_write_lock.lock().expect("Poisoned head projection lock");
@@ -163,13 +163,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             ChainHeadState { confirmed_tip, external_preconfirmed_tip: None, internal_preconfirmed_tip: None };
         next_chain_head_state.validate_cross_field_invariants()?;
 
-        if self.inner.config.save_preconfirmed {
-            // Explicit discard removes every persisted runahead row before dropping the external
-            // projection. If the process stops between these writes, restart can still rebuild
-            // the projected header as an empty preconfirmed block, which is consistent with the
-            // caller's request to discard its transactions.
-            self.inner.db.delete_preconfirmed_rows_up_to(internal_preconfirmed_tip)?;
-        }
+        // Clear persisted rows even when this process disabled saving: an earlier process may
+        // have written them. If interrupted before the projection update, restart can rebuild
+        // the projected header as an empty block, consistent with the requested discard.
+        self.inner.db.delete_preconfirmed_rows_up_to(internal_preconfirmed_tip)?;
         let new_tip_in_db = storage_tip_from_confirmed_or_empty(confirmed_tip);
         if self.inner.db.get_head_projection()? != new_tip_in_db {
             self.inner.db.replace_head_projection(&new_tip_in_db)?;

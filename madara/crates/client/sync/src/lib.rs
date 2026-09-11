@@ -2,6 +2,10 @@
 //! blocks, transactions, and state updates from external sources and applying them to the local
 //! database.
 //!
+//! Before importing, full-node startup reconciles inherited multi-block sequencer execution to
+//! the confirmed trie and discards its unfinished suffix. Upstream blocks then supply that state
+//! again. A single preconfirmed block is retained and follows the configured replacement policy.
+//!
 //! # Overview
 //!
 //! The Sync module is responsible for downloading, verifying, and applying blocks
