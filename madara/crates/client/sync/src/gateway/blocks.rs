@@ -89,6 +89,7 @@ fn preconfirmed_update_mode(
     block_number: u64,
     header: &PreconfirmedHeader,
     n_executed: usize,
+    disable_reorg_preconfirmed: bool,
 ) -> PreconfirmedUpdateMode {
     let Some(mut in_backend) = backend.block_view_on_current_preconfirmed() else {
         return PreconfirmedUpdateMode::Replace;
@@ -104,6 +105,25 @@ fn preconfirmed_update_mode(
             in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
             block.transactions[..in_backend.num_executed_transactions()].iter().map(|tx| tx.transaction_hash()),
         );
+    let local_executed = in_backend.num_executed_transactions();
+    let local_candidates = in_backend.candidate_transactions();
+    let local_transaction_count = local_executed + local_candidates.len();
+    let candidate_prefix_changed = local_transaction_count > block.transactions.len()
+        || Iterator::ne(
+            local_candidates.iter().map(|tx| &tx.hash),
+            block.transactions[local_executed..local_transaction_count].iter().map(|tx| tx.transaction_hash()),
+        );
+    if disable_reorg_preconfirmed && (is_replacement || candidate_prefix_changed) {
+        tracing::debug!(
+            block_number,
+            local_executed,
+            local_candidates = local_candidates.len(),
+            upstream_executed = n_executed,
+            upstream_candidates = block.transactions.len().saturating_sub(n_executed),
+            "Ignoring upstream preconfirmed block replacement because preconfirmed reorgs are disabled"
+        );
+        return PreconfirmedUpdateMode::Ignore;
+    }
     if is_replacement {
         return PreconfirmedUpdateMode::Replace;
     }
@@ -186,6 +206,7 @@ fn persist_preconfirmed_update(
 async fn sync_gateway_preconfirmed_once(
     client: &GatewayProvider,
     backend: &Arc<MadaraBackend>,
+    disable_reorg_preconfirmed: bool,
 ) -> anyhow::Result<Option<()>> {
     let (block, block_number) = fetch_current_preconfirmed(client, backend).await;
     let block = match block {
@@ -203,7 +224,7 @@ async fn sync_gateway_preconfirmed_once(
 
     let n_executed = block.num_executed_transactions();
     let header = block.header(block_number)?;
-    let mode = preconfirmed_update_mode(backend, &block, block_number, &header, n_executed);
+    let mode = preconfirmed_update_mode(backend, &block, block_number, &header, n_executed, disable_reorg_preconfirmed);
     persist_preconfirmed_update(backend, block, header, mode)
 }
 
@@ -646,12 +667,13 @@ pub fn gateway_preconfirmed_block_sync(
     client: Arc<GatewayProvider>,
     _importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
+    disable_reorg_preconfirmed: bool,
 ) -> ThrottledRepeatedFuture<()> {
     ThrottledRepeatedFuture::new(
         move |_| {
             let client = client.clone();
             let backend = backend.clone();
-            async move { sync_gateway_preconfirmed_once(&client, &backend).await }
+            async move { sync_gateway_preconfirmed_once(&client, &backend, disable_reorg_preconfirmed).await }
         },
         Duration::from_millis(500),
     )

@@ -371,6 +371,14 @@ mod tests {
     }
 
     #[test]
+    fn full_node_can_disable_preconfirmed_reorgs_independently() {
+        let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia", "--disable-reorg-preconfirmed"]);
+
+        assert!(run_cmd.l2_sync_params.disable_reorg_preconfirmed);
+        assert!(!run_cmd.l2_sync_params.disable_reorg);
+    }
+
+    #[test]
     fn sequencer_runs_and_saves_mempool_by_default() {
         let run_cmd = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
 
@@ -453,6 +461,56 @@ mod tests {
             Figment::new().merge(Json::file(config_path)).extract().expect("config fixture should deserialize");
 
         assert!(!run_cmd.block_production_params.discard_preconfirmed_on_startup);
+        assert!(!run_cmd.gateway_params.feeder_gateway_gzip_responses);
+    }
+
+    #[test]
+    fn feeder_gateway_gzip_responses_is_opt_in() {
+        let disabled = RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet"]);
+        let enabled =
+            RunCmd::parse_from(["madara", "--sequencer", "--preset", "devnet", "--feeder-gateway-gzip-responses"]);
+
+        assert!(!disabled.gateway_params.feeder_gateway_gzip_responses);
+        assert!(enabled.gateway_params.feeder_gateway_gzip_responses);
+    }
+
+    #[test]
+    fn config_file_without_hash_cache_capacities_uses_defaults() {
+        let config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../configs/args/config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).expect("config fixture should be readable"))
+                .expect("config fixture should be valid JSON");
+        let backend = config["backend_params"].as_object_mut().expect("backend params should be an object");
+        for key in [
+            "exec_hash_cache_starknet_keccak_capacity",
+            "exec_hash_cache_pedersen_pair_capacity",
+            "exec_hash_cache_pedersen_array_capacity",
+            "exec_hash_cache_poseidon_array_capacity",
+            "exec_hash_cache_cairo_native_pedersen_capacity",
+        ] {
+            backend.remove(key);
+        }
+
+        let run_cmd: RunCmd = Figment::new()
+            .merge(Json::string(&config.to_string()))
+            .extract()
+            .expect("legacy config should deserialize");
+        assert_eq!(
+            [
+                run_cmd.backend_params.exec_hash_cache_starknet_keccak_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_pair_capacity,
+                run_cmd.backend_params.exec_hash_cache_pedersen_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_poseidon_array_capacity,
+                run_cmd.backend_params.exec_hash_cache_cairo_native_pedersen_capacity,
+            ],
+            [
+                starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY,
+                starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY,
+                starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY,
+                mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY,
+            ]
+        );
     }
 
     #[test]
