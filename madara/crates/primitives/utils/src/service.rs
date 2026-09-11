@@ -1458,6 +1458,42 @@ mod shutdown_tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn graceful_runner_waits_for_rayon_startup_after_shutdown_deadline() {
+        let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::L2Sync);
+        let mut tasks = JoinSet::new();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let (finish, recovering) = std::sync::mpsc::channel();
+        let wrote = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_wrote = wrote.clone();
+        ServiceRunner::new(ctx.clone(), &mut tasks).service_loop_with_graceful_shutdown(move |_ctx| async move {
+            crate::rayon::global_spawn_rayon_task(move || {
+                started.send(()).unwrap();
+                recovering.recv().unwrap();
+                worker_wrote.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await;
+            anyhow::Ok(())
+        });
+
+        // Recovery has already started when shutdown arrives; dropping its future cannot stop it.
+        waiting.await.unwrap();
+        ctx.cancel_global();
+        tokio::task::yield_now().await;
+        tokio::time::advance(SERVICE_GRACE_PERIOD + Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        let premature_stop = tasks.try_join_next();
+        let wrote_before_release = wrote.load(std::sync::atomic::Ordering::SeqCst);
+        // Always release the Rayon worker, including when the shutdown assertion fails.
+        finish.send(()).unwrap();
+        assert!(premature_stop.is_none(), "startup recovery must finish before sync acknowledges shutdown");
+        assert!(!wrote_before_release);
+
+        let stopped = tasks.join_next().await.unwrap().unwrap().unwrap();
+        assert_eq!(stopped, MadaraServiceId::L2Sync.svc_id());
+        assert!(wrote.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn ordinary_runner_keeps_its_force_cancel_timeout() {
         let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::Mempool);
         let mut tasks = JoinSet::new();
