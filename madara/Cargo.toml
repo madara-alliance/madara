@@ -89,6 +89,7 @@ hyper = { version = "0.14", features = ["server"] }
 hyper-tls.workspace = true
 hyper-util.workspace = true
 ip_network.workspace = true
+jemallocator = "0.5.4"
 jsonrpsee.workspace = true
 rand.workspace = true
 rayon.workspace = true

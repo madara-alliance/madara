@@ -1,12 +1,6 @@
-//! # Caution
-//!
-//! This is a temporary workaround due to limitations in the way in which [jsonrpsee] works. If
-//! possible at all, clients should prefer the generated `starknet_unsubscribe` RPC method defined
-//! in [api.rs].
-//!
-//! Use these if you encounter any strange edge cases such as 500 error codes on unsubscribe.
-//!
-//! [api.rs]: super::super::super::api
+//! Implements `starknet_unsubscribe` through the node's shared subscription registry.
+//! Numeric subscription IDs are supplied as strings. Unknown or malformed IDs return
+//! [`crate::StarknetRpcApiError::InvalidSubscriptionId`].
 
 pub async fn starknet_unsubscribe(
     starknet: &crate::Starknet,

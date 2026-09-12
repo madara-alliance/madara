@@ -4,15 +4,22 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
-        global_trie::{apply_to_global_trie, compute_global_trie_staged, get_state_root, MerklizationTimings},
-        meta::StoredChainTipWithoutContent,
+        global_trie::{
+            apply_to_global_trie, compute_global_trie_staged, get_state_root,
+            in_memory::{
+                compute_root_from_snapshot, compute_root_from_snapshot_sequential,
+                compute_roots_in_parallel_from_snapshot, BonsaiOverlay, InMemoryRootComputation,
+            },
+            MerklizationTimings,
+        },
+        meta::StoredHeadProjectionWithoutContent,
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
-        MadaraStorageWrite, StorageChainTip, StorageTxIndex, StoredChainInfo,
+        MadaraStorageWrite, StorageHeadProjection, StorageTxIndex, StoredChainInfo,
     },
 };
 
@@ -32,7 +39,7 @@ use rocksdb::{
     WriteOptions,
 };
 use starknet_types_core::hash::StarkHash;
-use std::{fmt, path::Path, sync::Arc};
+use std::{fmt, path::Path, sync::Arc, time::Instant};
 
 mod backup;
 mod blocks;
@@ -47,9 +54,12 @@ mod mempool;
 mod meta;
 mod metrics;
 mod options;
+mod reorg;
 mod rocksdb_snapshot;
 mod snapshots;
 mod state;
+
+pub use snapshots::SnapshotRef;
 
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
@@ -59,7 +69,9 @@ pub mod global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
-pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
+pub use options::{
+    DbWriteMode, RocksDBConfig, StatsLevel, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES,
+};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
@@ -85,7 +97,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
     bincode_opts().deserialize(bytes.as_ref())
 }
 
-struct RocksDBStorageInner {
+pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
     writeopts: WriteOptions,
@@ -95,7 +107,9 @@ struct RocksDBStorageInner {
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
         tracing::debug!("⏳ Gracefully closing the database...");
-        self.flush().expect("Error when flushing the database");
+        if let Err(error) = self.flush() {
+            tracing::error!("Error when flushing the database during drop: {error:#}");
+        }
         self.db.cancel_all_background_work(/* wait */ true);
     }
 }
@@ -128,7 +142,7 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    /// This method also works for partially saved blocks. (that's important for mc-sync, which may create partial blocks past the chain tip.
+    /// This method also works for partially saved blocks. (that's important for mc-sync, which may create partial blocks past the head projection.
     /// We also want to remove them!)
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()> {
         // Find the last block. We want to revert blocks in reverse order to make sure we can recover if the node
@@ -143,6 +157,8 @@ impl RocksDBStorageInner {
 
         tracing::debug!("Removing blocks range {starting_from_block_n}..{last_block_n_exclusive} in reverse order");
 
+        let mut earliest_reverted_l1_source_block = None;
+
         // Reverse order
         for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
             let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
@@ -152,7 +168,7 @@ impl RocksDBStorageInner {
             {
                 if let Some(state_diff) = self.get_block_state_diff(block_n)? {
                     // State diff is in db.
-                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)?;
+                    self.classes_revert_state_diff(&state_diff, &mut batch)?;
                     self.state_remove(block_n, &state_diff, &mut batch)?;
                 }
 
@@ -165,7 +181,15 @@ impl RocksDBStorageInner {
                 self.events_remove_block(block_n, &mut batch)?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
+                for nonce in l1_handler_nonces.iter().copied() {
+                    if let Some(source_block) = self.get_l1_handler_l1_block_by_nonce(nonce)? {
+                        earliest_reverted_l1_source_block = Some(
+                            earliest_reverted_l1_source_block
+                                .map_or(source_block, |current: u64| current.min(source_block)),
+                        );
+                    }
+                }
+                self.message_to_l2_revert_unconfirmed_consumption(&l1_handler_nonces, &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -173,6 +197,22 @@ impl RocksDBStorageInner {
             self.db
                 .write(batch)
                 .with_context(|| format!("Committing changes removing block_n={block_n} from database"))?;
+        }
+
+        // Older versions marked an L1 message consumed as soon as transaction rows were written.
+        // If startup removes one of those partial blocks, rewind far enough to reconstruct a
+        // pending payload that may already have been deleted. New writes retain the pending row,
+        // so this is primarily a backward-compatible recovery path.
+        if let (Some(source_block), Some(current_sync_tip)) =
+            (earliest_reverted_l1_source_block, self.get_l1_messaging_sync_tip()?)
+        {
+            let replay_tip = source_block.saturating_sub(1).min(current_sync_tip);
+            if replay_tip < current_sync_tip {
+                self.write_l1_messaging_sync_tip(Some(replay_tip))?;
+                tracing::info!(
+                    "Rewound L1 messaging sync tip from {current_sync_tip} to {replay_tip} after removing partial blocks"
+                );
+            }
         }
 
         Ok(())
@@ -184,8 +224,17 @@ impl RocksDBStorageInner {
     /// `u64` (`BasicId::to_bytes`). That means the lexicographically-last key in a trie-log
     /// column belongs to the latest committed revision for that trie.
     fn latest_bonsai_log_id(&self, column: Column) -> anyhow::Result<Option<u64>> {
+        self.bonsai_log_floor(column, u64::MAX)
+    }
+
+    /// Finds the latest retained trie revision at or below a block, including serial commits.
+    fn bonsai_log_floor(&self, column: Column, block_n: u64) -> anyhow::Result<Option<u64>> {
         let handle = self.get_column(column);
-        let mut iter = self.db.iterator_cf(&handle, IteratorMode::End);
+        let mut options = rocksdb::ReadOptions::default();
+        if let Some(exclusive_end) = block_n.checked_add(1) {
+            options.set_iterate_upper_bound(exclusive_end.to_be_bytes());
+        }
+        let mut iter = self.db.iterator_cf_opt(&handle, options, IteratorMode::End);
 
         match iter.next() {
             None => Ok(None),
@@ -215,960 +264,8 @@ pub struct RocksDBStorage {
     metrics: DbMetrics,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct TrieLogHeads {
-    contract: Option<u64>,
-    contract_storage: Option<u64>,
-    class: Option<u64>,
-}
+mod backend;
 
-impl TrieLogHeads {
-    fn highest(self) -> Option<u64> {
-        [self.contract, self.contract_storage, self.class].into_iter().flatten().max()
-    }
-}
+mod storage_read;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TrieRevertAction {
-    Revert { current: u64, target: u64 },
-    AlreadyAtTarget(u64),
-    OlderThanTarget { current: u64, target: u64 },
-    Missing,
-}
-
-fn trie_revert_action(latest_log_block_n: Option<u64>, target_block_n: u64) -> TrieRevertAction {
-    match latest_log_block_n {
-        Some(current) if current > target_block_n => TrieRevertAction::Revert { current, target: target_block_n },
-        Some(current) if current == target_block_n => TrieRevertAction::AlreadyAtTarget(current),
-        Some(current) => TrieRevertAction::OlderThanTarget { current, target: target_block_n },
-        None => TrieRevertAction::Missing,
-    }
-}
-
-fn revert_single_trie<H: StarkHash + Send + Sync>(
-    trie_name: &str,
-    trie: &mut trie::GlobalTrie<H>,
-    latest_log_block_n: Option<u64>,
-    target_block_n: u64,
-) -> anyhow::Result<bool> {
-    match trie_revert_action(latest_log_block_n, target_block_n) {
-        TrieRevertAction::Revert { current, target } => {
-            tracing::debug!("🌳 REORG: Reverting {trie_name} trie from trie_head={} to target={}", current, target);
-            trie.revert_to(BasicId::new(target), BasicId::new(current))
-                .map_err(|e| anyhow::anyhow!("Failed to revert {trie_name} trie: {e:?}"))?;
-            tracing::info!("✅ REORG: {trie_name} trie reverted successfully");
-            Ok(true)
-        }
-        TrieRevertAction::AlreadyAtTarget(current) => {
-            tracing::info!(
-                "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} already matches target={}",
-                current,
-                target_block_n
-            );
-            Ok(false)
-        }
-        TrieRevertAction::OlderThanTarget { current, target } => {
-            tracing::info!(
-                "🌳 REORG: Skipping {trie_name} trie revert because trie_head={} is older than target={}",
-                current,
-                target
-            );
-            Ok(false)
-        }
-        TrieRevertAction::Missing => {
-            tracing::info!("🌳 REORG: Skipping {trie_name} trie revert because it has no persisted trie logs");
-            Ok(false)
-        }
-    }
-}
-
-impl RocksDBStorage {
-    pub fn open(path: &Path, config: RocksDBConfig) -> Result<Self> {
-        let opts = rocksdb_global_options(&config)?;
-        tracing::debug!("Opening db at {:?}", path.display());
-        let db = DB::open_cf_descriptors(
-            &opts,
-            path,
-            ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
-        )?;
-
-        let writeopts = config.write_mode.to_write_options();
-        tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
-
-        let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
-            StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
-            StoredChainTipWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
-        });
-
-        let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
-
-        Ok(Self {
-            inner,
-            snapshots: snapshot.into(),
-            metrics: DbMetrics::register().context("Registering database metrics")?,
-            backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
-        })
-    }
-
-    /// Flush all pending writes to disk. This is important when WAL is disabled.
-    /// Should be called before shutdown to ensure data persistence.
-    pub fn flush(&self) -> Result<()> {
-        self.inner.flush()
-    }
-
-    /// Get a reference to the underlying RocksDB instance.
-    ///
-    /// This is primarily used for database migrations that need direct access
-    /// to the raw DB for low-level operations.
-    ///
-    /// # Warning
-    ///
-    /// Direct manipulation of the DB can lead to data corruption if not done
-    /// carefully. This should only be used by the migration system.
-    pub fn inner_db(&self) -> &DB {
-        &self.inner.db
-    }
-
-    fn trie_log_heads(&self) -> anyhow::Result<TrieLogHeads> {
-        Ok(TrieLogHeads {
-            contract: self.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN)?,
-            contract_storage: self.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_STORAGE_LOG_COLUMN)?,
-            class: self.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN)?,
-        })
-    }
-}
-
-impl MadaraStorageRead for RocksDBStorage {
-    // Blocks
-
-    fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
-        self.inner
-            .find_block_hash(block_hash)
-            .with_context(|| format!("Finding block number for block_hash={block_hash:#x}"))
-    }
-    fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>> {
-        self.inner
-            .find_transaction_hash(tx_hash)
-            .with_context(|| format!("Finding transaction index for tx_hash={tx_hash:#x}"))
-    }
-    fn get_block_info(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
-        self.inner.get_block_info(block_n).with_context(|| format!("Getting block info for block_n={block_n}"))
-    }
-    fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>> {
-        self.inner
-            .get_block_state_diff(block_n)
-            .with_context(|| format!("Getting block state diff for block_n={block_n}"))
-    }
-
-    fn get_block_bouncer_weights(&self, block_n: u64) -> Result<Option<BouncerWeights>> {
-        self.inner
-            .get_block_bouncer_weight(block_n)
-            .with_context(|| format!("Getting block bouncer weights for block_n={block_n}"))
-    }
-    fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
-        self.inner
-            .get_transaction(block_n, tx_index)
-            .with_context(|| format!("Getting block transaction for block_n={block_n} tx_index={tx_index}"))
-    }
-    fn get_block_transactions(
-        &self,
-        block_n: u64,
-        from_tx_index: u64,
-    ) -> impl Iterator<Item = Result<TransactionWithReceipt>> + '_ {
-        self.inner.get_block_transactions(block_n, from_tx_index).map(move |e| {
-            e.with_context(|| format!("Getting block transactions for block_n={block_n} from_tx_index={from_tx_index}"))
-        })
-    }
-
-    // State
-
-    fn get_storage_at(&self, block_n: u64, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
-        self.inner.get_storage_at(block_n, contract_address, key).with_context(|| {
-            format!("Getting storage value for block_n={block_n} contract_address={contract_address:#x} key={key:#x}")
-        })
-    }
-    fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        self.inner
-            .get_contract_nonce_at(block_n, contract_address)
-            .with_context(|| format!("Getting nonce for block_n={block_n} contract_address={contract_address:#x}"))
-    }
-    fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        self.inner
-            .get_contract_class_hash_at(block_n, contract_address)
-            .with_context(|| format!("Getting class_hash for block_n={block_n} contract_address={contract_address:#x}"))
-    }
-    fn is_contract_deployed_at(&self, block_n: u64, contract_address: &Felt) -> Result<bool> {
-        self.inner.is_contract_deployed_at(block_n, contract_address).with_context(|| {
-            format!("Checking if contract is deployed for block_n={block_n} contract_address={contract_address:#x}")
-        })
-    }
-
-    // Classes
-
-    fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>> {
-        self.inner.get_class(class_hash).with_context(|| format!("Getting class info for class_hash={class_hash:#x}"))
-    }
-    fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<CompiledSierraWithBlockN>> {
-        self.inner
-            .get_class_compiled(compiled_class_hash)
-            .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))
-    }
-
-    // Events
-
-    fn get_events(&self, filter: EventFilter) -> Result<Vec<EventWithInfo>> {
-        self.inner.get_filtered_events(filter.clone()).with_context(|| format!("Getting events for filter={filter:?}"))
-    }
-
-    // Meta
-
-    fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
-        self.inner.get_devnet_predeployed_keys().context("Getting devnet predeployed contracts keys")
-    }
-    fn get_chain_tip(&self) -> Result<StorageChainTip> {
-        self.inner.get_chain_tip().context("Getting chain tip from db")
-    }
-    fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>> {
-        self.inner.get_confirmed_on_l1_tip().context("Getting confirmed block on l1 tip")
-    }
-    fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
-        self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
-    }
-    fn get_external_db_retention_cursor(&self) -> Result<Option<u64>> {
-        self.inner.get_external_db_retention_cursor().context("Getting external db retention cursor")
-    }
-    fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
-        self.inner.get_stored_chain_info().context("Getting stored chain info from db")
-    }
-    fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
-        self.inner.get_latest_applied_trie_update().context("Getting latest applied trie update info from db")
-    }
-    fn get_runtime_exec_config(
-        &self,
-        backend_chain_config: &mp_chain_config::ChainConfig,
-    ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
-        self.inner.get_runtime_exec_config(backend_chain_config).context("Getting runtime execution config from db")
-    }
-    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
-        self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
-    }
-
-    // L1 to L2 messages
-
-    fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
-        self.inner
-            .get_pending_message_to_l2(core_contract_nonce)
-            .with_context(|| format!("Getting pending message to l2 with nonce={core_contract_nonce}"))
-    }
-    fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
-        self.inner
-            .get_next_pending_message_to_l2(start_nonce)
-            .with_context(|| format!("Getting next pending message to l2 with start_nonce={start_nonce}"))
-    }
-    fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
-        self.inner
-            .get_l1_txn_hash_by_nonce(core_contract_nonce)
-            .with_context(|| format!("Getting l1 txn hash by nonce={core_contract_nonce}"))
-    }
-    fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
-        self.inner
-            .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
-            .with_context(|| format!("Getting next pending message to l2 with nonce={core_contract_nonce}"))
-    }
-    fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
-        self.inner
-            .get_l1_handler_l1_block_by_nonce(core_contract_nonce)
-            .with_context(|| format!("Getting l1 handler l1 block by nonce={core_contract_nonce}"))
-    }
-    fn get_messages_to_l2_by_l1_tx_hash(
-        &self,
-        l1_tx_hash: &mp_convert::L1TransactionHash,
-    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
-        self.inner
-            .get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
-            .with_context(|| format!("Getting messages to l2 by l1_tx_hash_bytes={:?}", l1_tx_hash.0))
-    }
-    fn get_message_to_l2_index_entry(
-        &self,
-        l1_tx_hash: &mp_convert::L1TransactionHash,
-        core_contract_nonce: u64,
-    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
-        self.inner.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce).with_context(|| {
-            format!(
-                "Getting l1->l2 message index entry l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
-                l1_tx_hash.0
-            )
-        })
-    }
-
-    // Mempool
-
-    fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
-        self.inner.get_mempool_transactions().map(|res| res.context("Getting mempool transactions"))
-    }
-    fn get_external_outbox_transactions(
-        &self,
-        limit: usize,
-    ) -> impl Iterator<Item = Result<external_outbox::ExternalOutboxEntry>> + '_ {
-        self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
-    }
-
-    fn get_external_outbox_size_estimate(&self) -> Result<u64> {
-        self.inner.external_outbox_size_estimate().context("Getting external outbox size estimate")
-    }
-}
-
-impl MadaraStorageWrite for RocksDBStorage {
-    fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
-        tracing::debug!("Writing header {}", header.header.block_number);
-        let block_n = header.header.block_number;
-        self.inner
-            .blocks_store_block_header(header)
-            .with_context(|| format!("Storing block_header for block_n={block_n}"))
-    }
-
-    fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
-        tracing::debug!("Writing transactions {block_n}");
-        // Save l1 core contract nonce to tx mapping.
-        self.inner
-            .messages_to_l2_write_transactions(
-                txs.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
-            )
-            .with_context(|| format!("Updating L1 state when storing transactions for block_n={block_n}"))?;
-
-        self.inner
-            .blocks_store_transactions(block_n, txs)
-            .with_context(|| format!("Storing transactions for block_n={block_n}"))
-    }
-
-    fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
-        tracing::debug!("Writing state diff {block_n}");
-
-        // Update compiled_class_hash_v2 for SNIP-34 migrated classes
-        if !value.migrated_compiled_classes.is_empty() {
-            let migrations: Vec<(Felt, Felt)> =
-                value.migrated_compiled_classes.iter().map(|m| (m.class_hash, m.compiled_class_hash)).collect();
-            tracing::debug!("Updating {} class v2 hashes (SNIP-34 migrations) for block {}", migrations.len(), block_n);
-            self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")?;
-        }
-
-        self.inner
-            .blocks_store_state_diff(block_n, value)
-            .with_context(|| format!("Storing state diff for block_n={block_n}"))?;
-        self.inner
-            .state_apply_state_diff(block_n, value)
-            .with_context(|| format!("Applying state from state diff for block_n={block_n}"))
-    }
-
-    fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
-        tracing::debug!("Writing bouncer weights for block_n={block_n}");
-        self.inner
-            .blocks_store_bouncer_weights(block_n, value)
-            .with_context(|| format!("Storing bouncer weights for block_n={block_n}"))
-    }
-
-    fn write_events(&self, block_n: u64, events: &[mp_receipt::EventWithTransactionHash]) -> Result<()> {
-        tracing::debug!("Writing events {block_n}");
-        self.inner
-            .blocks_store_events_to_receipts(block_n, events)
-            .with_context(|| format!("Storing events to receipts for block_n={block_n}"))?;
-        self.inner
-            .store_events_bloom(block_n, events)
-            .with_context(|| format!("Storing events bloom filter for block_n={block_n}"))
-    }
-
-    fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
-        tracing::debug!("Writing classes {block_n}");
-        self.inner.store_classes(block_n, converted_classes)
-    }
-
-    fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
-        tracing::debug!("Updating {} class v2 hashes (SNIP-34 migrations)", migrations.len());
-        self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")
-    }
-
-    fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
-        tracing::debug!("Replace chain tip {chain_tip:?}");
-        self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
-    }
-
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()> {
-        tracing::debug!("Append preconfirmed content start_tx_index={start_tx_index}, new_txs={}", txs.len());
-        self.inner.append_preconfirmed_content(start_tx_index, txs).context("Appending to preconfirmed content to db")
-    }
-
-    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
-        self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
-    }
-    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
-        self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
-    }
-    fn write_external_db_retention_cursor(&self, block_n: u64) -> Result<()> {
-        tracing::debug!("Write external db retention cursor block_n={block_n:?}");
-        self.inner.write_external_db_retention_cursor(block_n).context("Writing external db retention cursor")
-    }
-    fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
-        tracing::debug!(
-            "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
-        );
-        self.inner.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash).with_context(|| {
-            format!("Writing l1 handler txn hash by nonce nonce={core_contract_nonce} txn_hash={txn_hash:#x}")
-        })
-    }
-    fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
-        tracing::debug!(
-            "Write l1 handler l1 block by nonce core_contract_nonce={core_contract_nonce}, l1_block_n={l1_block_n}"
-        );
-        self.inner.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n).with_context(|| {
-            format!("Writing l1 handler l1 block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
-        })
-    }
-    fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
-        tracing::debug!("Write pending message to l2 nonce={}", msg.tx.nonce);
-        let nonce = msg.tx.nonce;
-        self.inner
-            .write_pending_message_to_l2(msg)
-            .with_context(|| format!("Writing pending message to l2 nonce={nonce}"))
-    }
-    fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
-        tracing::debug!("Remove pending message to l2 nonce={core_contract_nonce}");
-        self.inner
-            .remove_pending_message_to_l2(core_contract_nonce)
-            .with_context(|| format!("Removing pending message to l2 nonce={core_contract_nonce}"))
-    }
-    fn write_l1_txn_hash_by_nonce(
-        &self,
-        core_contract_nonce: u64,
-        l1_tx_hash: &mp_convert::L1TransactionHash,
-    ) -> Result<()> {
-        tracing::debug!(
-            "Write l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
-            l1_tx_hash.0
-        );
-        self.inner.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash).with_context(|| {
-            format!(
-                "Writing l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
-                l1_tx_hash.0
-            )
-        })
-    }
-
-    fn insert_message_to_l2_seen_marker(
-        &self,
-        l1_tx_hash: &mp_convert::L1TransactionHash,
-        core_contract_nonce: u64,
-    ) -> Result<bool> {
-        tracing::debug!(
-            "Insert l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
-            l1_tx_hash.0
-        );
-        self.inner.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce).with_context(|| {
-            format!(
-                "Inserting l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
-                l1_tx_hash.0
-            )
-        })
-    }
-    fn write_message_to_l2_consumed_txn_hash(
-        &self,
-        l1_tx_hash: &mp_convert::L1TransactionHash,
-        core_contract_nonce: u64,
-        l2_tx_hash: &Felt,
-    ) -> Result<()> {
-        tracing::debug!(
-            "Write consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
-            l1_tx_hash.0
-        );
-        self.inner.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash).with_context(
-            || {
-                format!(
-                    "Writing consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
-                    l1_tx_hash.0
-                )
-            },
-        )
-    }
-    fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
-        tracing::debug!("Write devnet keys");
-        self.inner.write_devnet_predeployed_keys(devnet_keys).context("Writing devnet predeployed keys to db")
-    }
-    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
-        tracing::debug!("Write chain info");
-        self.inner.write_chain_info(info)
-    }
-    fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
-        tracing::debug!("Write latest applied trie update block_n={block_n:?}");
-        self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
-    }
-    fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
-        tracing::debug!("Writing runtime execution config");
-        self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
-    }
-    fn clear_runtime_exec_config(&self) -> Result<()> {
-        tracing::debug!("Clearing runtime execution config");
-        self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
-    }
-    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
-        tracing::debug!("Write snap sync latest block block_n={block_n:?}");
-        self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")
-    }
-
-    fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
-        tracing::debug!("Remove mempool transactions");
-        self.inner.remove_mempool_transactions(tx_hashes).context("Removing mempool transactions from db")
-    }
-    fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
-        let tx_hash = tx.hash;
-        tracing::debug!("Writing mempool transaction from db for tx_hash={tx_hash:#x}");
-        self.inner
-            .write_mempool_transaction(tx)
-            .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
-    }
-    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<external_outbox::ExternalOutboxId> {
-        let tx_hash = tx.hash;
-        tracing::debug!("Writing external outbox transaction for tx_hash={tx_hash:#x}");
-        self.inner
-            .write_external_outbox(tx)
-            .with_context(|| format!("Writing external outbox transaction for tx_hash={tx_hash:#x}"))
-    }
-    fn delete_external_outbox(&self, id: external_outbox::ExternalOutboxId) -> Result<()> {
-        tracing::debug!("Removing external outbox transaction arrived_at_ms={} uuid={:x?}", id.arrived_at_ms, id.uuid);
-        self.inner
-            .delete_external_outbox(id)
-            .with_context(|| format!("Deleting external outbox transaction arrived_at_ms={}", id.arrived_at_ms))
-    }
-
-    fn apply_to_global_trie<'a>(
-        &self,
-        start_block_n: u64,
-        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-        protocol_version: StarknetVersion,
-    ) -> Result<(Felt, MerklizationTimings)> {
-        tracing::debug!("Applying state diff to global trie start_block_n={start_block_n}");
-        apply_to_global_trie(self, start_block_n, state_diffs, protocol_version)
-            .context("Applying state diff to global trie")
-    }
-
-    fn compute_global_trie_staged(
-        &self,
-        state_diff: &StateDiff,
-        protocol_version: StarknetVersion,
-        block_number: u64,
-    ) -> Result<(Felt, global_trie::StagedGlobalTries)> {
-        tracing::debug!("Computing staged global trie for block_n={block_number}");
-        compute_global_trie_staged(self, state_diff, protocol_version, block_number)
-            .context("Computing staged global trie")
-    }
-
-    fn flush(&self) -> Result<()> {
-        tracing::debug!("Flushing");
-        self.inner.flush().context("Flushing RocksDB database")?;
-        self.backup.backup_if_enabled(&self.inner).context("Backing up RocksDB database")
-    }
-
-    fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
-        tracing::debug!("on_new_confirmed_head block_n={block_n}");
-        self.snapshots.set_new_head(block_n);
-        self.metrics.update(self);
-        Ok(())
-    }
-
-    fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()> {
-        tracing::debug!("remove_all_blocks_starting_from starting_from_block_n={starting_from_block_n}");
-        self.inner
-            .remove_all_blocks_starting_from(starting_from_block_n)
-            .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
-    }
-
-    fn get_state_root_hash(&self) -> Result<Felt> {
-        // This method has no callers outside the trait definition. Use LATEST as default.
-        // If pre-0.14.0 chains need this, thread the version through the trait method.
-        get_state_root(self, StarknetVersion::LATEST)
-    }
-
-    /// Reverts the blockchain state to a specific block hash during a chain reorganization.
-    ///
-    /// This function performs a complete rollback of the blockchain state to a target block,
-    /// which is typically the common ancestor between the current chain and a new canonical chain.
-    /// It ensures data consistency by reverting all state components including Bonsai tries,
-    /// block data, contract state, and class definitions.
-    ///
-    /// # Arguments
-    ///
-    /// * `new_tip_block_hash` - The block hash to revert to. This must be an existing block
-    ///   that is an ancestor of the current chain tip. The block with this hash will become
-    ///   the new chain tip after the revert completes.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok((block_number, block_hash))` where:
-    /// * `block_number` - The block number of the new chain tip
-    /// * `block_hash` - The block hash of the new chain tip (same as input `new_tip_block_hash`)
-    ///
-    /// # Implementation Details
-    ///
-    /// The revert process performs the following steps in order:
-    ///
-    /// 1. **Validation**: Finds and validates the target block exists and is finalized
-    /// 2. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
-    /// 3. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
-    /// 4. **Trie Commit**: Commits the reverted tries to ensure consistency
-    /// 5. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
-    /// 6. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
-    /// 7. **Chain Tip Update**: Updates the chain tip to the target block
-    /// 8. **Snapshot Update**: Updates the head snapshot to the target block
-    /// 9. **Applied Update Reset**: Resets the latest_applied_trie_update marker
-    /// 10. **Database Flush**: Ensures all changes are persisted to disk
-    ///
-    /// # Notes
-    ///
-    /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
-    ///   are missing source-block mappings, this function fails early without mutating chain state.
-    /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
-    ///   by reading from the database, as this function only updates the database state.
-    /// * This function does not stop services or shutdown the process. Lifecycle side-effects
-    ///   are managed by upper layers (for example admin RPC orchestration).
-    /// * This is a destructive operation - all blocks after the target block are permanently removed.
-    /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
-    /// ```
-    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
-        tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
-
-        let target_block_n = self
-            .inner
-            .find_block_hash(new_tip_block_hash)
-            .context("Finding target block for reorg")?
-            .ok_or_else(|| anyhow::anyhow!("Target block hash {new_tip_block_hash:#x} not found"))?;
-
-        let target_block_info = self
-            .inner
-            .get_block_info(target_block_n)
-            .context("Getting target block info")?
-            .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
-
-        let current_chain_tip = self.inner.get_chain_tip()?;
-        let (current_tip, had_preconfirmed_tip) = match current_chain_tip {
-            StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
-            StorageChainTip::Confirmed(block_n) => (block_n, false),
-            StorageChainTip::Preconfirmed { header, .. } => (
-                header
-                    .block_number
-                    .checked_sub(1)
-                    .ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?,
-                true,
-            ),
-        };
-
-        let current_tip_info = self
-            .inner
-            .get_block_info(current_tip)
-            .context("Getting current tip block info")?
-            .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
-
-        if target_block_n == current_tip {
-            if had_preconfirmed_tip {
-                tracing::info!(
-                    "🔄 REORG: Clearing preconfirmed tip while keeping confirmed head at block_n={target_block_n}"
-                );
-                self.replace_chain_tip(&StorageChainTip::Confirmed(target_block_n))
-                    .context("Clearing preconfirmed chain tip during revert")?;
-                self.flush().context("Flushing database after clearing preconfirmed tip")?;
-            } else {
-                tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
-            }
-            return Ok((target_block_n, *new_tip_block_hash));
-        }
-
-        if target_block_n > current_tip {
-            anyhow::bail!("Cannot revert to block_n={target_block_n} which is > current tip={current_tip}");
-        }
-
-        // Preflight L1 messaging rewind before any destructive write.
-        let reverted_l1_handler_nonces = self
-            .inner
-            .collect_reverted_l1_handler_nonces(target_block_n, current_tip)
-            .context("Collecting reverted L1 handler nonces")?;
-        let pending_l1_message_nonces =
-            self.inner.get_all_pending_message_nonces().context("Collecting pending L1 message nonces")?;
-
-        let mut l1_message_nonces_to_cleanup =
-            Vec::with_capacity(reverted_l1_handler_nonces.len() + pending_l1_message_nonces.len());
-        l1_message_nonces_to_cleanup.extend(reverted_l1_handler_nonces.iter().copied());
-        l1_message_nonces_to_cleanup.extend(pending_l1_message_nonces.iter().copied());
-        l1_message_nonces_to_cleanup.sort_unstable();
-        l1_message_nonces_to_cleanup.dedup();
-
-        let mut min_source_l1_block: Option<u64> = None;
-        let mut missing_source_block_nonces = Vec::new();
-
-        for nonce in l1_message_nonces_to_cleanup.iter().copied() {
-            match self
-                .inner
-                .get_l1_handler_l1_block_by_nonce(nonce)
-                .with_context(|| format!("Fetching L1 handler L1 block for cleanup nonce={nonce}"))?
-            {
-                Some(l1_block_n) => {
-                    min_source_l1_block = Some(match min_source_l1_block {
-                        Some(current_min) => current_min.min(l1_block_n),
-                        None => l1_block_n,
-                    });
-                }
-                None => missing_source_block_nonces.push(nonce),
-            }
-        }
-        missing_source_block_nonces.sort_unstable();
-
-        if !missing_source_block_nonces.is_empty() {
-            let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
-            bail!(
-                "Cannot revert: missing L1 handler L1 block mapping for {} L1 message nonce(s) scheduled for cleanup (sample={sample:?}).",
-                missing_source_block_nonces.len()
-            );
-        }
-
-        let rewind_from_l1_block = min_source_l1_block;
-        // Persist the tip one block before the chosen rewind point so next sync replays boundary events.
-        // This is intentional: L1 message ingestion/execution is idempotent by nonce and filters duplicates.
-        let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
-
-        tracing::info!(
-            "🔁 REORG preflight: reverted_l1_handler_nonces={}, pending_l1_message_nonces={}, l1_message_cleanup_nonces={}, min_source_l1_block={:?}, next_l1_sync_tip={:?}",
-            reverted_l1_handler_nonces.len(),
-            pending_l1_message_nonces.len(),
-            l1_message_nonces_to_cleanup.len(),
-            min_source_l1_block,
-            l1_messaging_sync_tip_after_revert
-        );
-
-        tracing::info!(
-            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n}",
-        );
-        tracing::info!(
-            "🔄 REORG: Target block hash={:#x}, current tip hash={:#x}",
-            target_block_info.block_hash,
-            current_tip_info.block_hash
-        );
-
-        let target_id = BasicId::new(target_block_n);
-        let trie_log_heads = self.trie_log_heads().context("Reading bonsai trie log heads before reorg")?;
-        let latest_applied_trie_update = self.get_latest_applied_trie_update().ok().flatten();
-
-        tracing::info!("🌳 REORG: Reverting bonsai tries from current={} to target={}", current_tip, target_block_n);
-        tracing::info!(
-            "🌳 REORG: Trie log heads before revert: contract={:?}, contract_storage={:?}, class={:?}, latest_applied_trie_update={:?}",
-            trie_log_heads.contract,
-            trie_log_heads.contract_storage,
-            trie_log_heads.class,
-            latest_applied_trie_update
-        );
-        if let Some(highest_trie_log_head) = trie_log_heads.highest() {
-            if highest_trie_log_head != current_tip {
-                tracing::warn!(
-                    "🌳 REORG: Confirmed chain tip ({}) diverges from latest persisted trie log head ({}). Reverting each trie from its actual head.",
-                    current_tip,
-                    highest_trie_log_head
-                );
-            }
-        }
-
-        tracing::debug!("🌳 REORG: Reverting contract trie...");
-        let mut contract_trie = self.contract_trie();
-        let contract_trie_needs_commit =
-            revert_single_trie("contract", &mut contract_trie, trie_log_heads.contract, target_block_n)?;
-
-        tracing::debug!("🌳 REORG: Reverting contract storage trie...");
-        let mut contract_storage_trie = self.contract_storage_trie();
-        let contract_storage_trie_needs_commit = revert_single_trie(
-            "contract storage",
-            &mut contract_storage_trie,
-            trie_log_heads.contract_storage,
-            target_block_n,
-        )?;
-
-        tracing::debug!("🌳 REORG: Reverting class trie...");
-        let mut class_trie = self.class_trie();
-        let class_trie_needs_commit =
-            revert_single_trie("class", &mut class_trie, trie_log_heads.class, target_block_n)?;
-
-        tracing::info!("💾 REORG: Committing tries after revert...");
-        if contract_trie_needs_commit {
-            contract_trie
-                .commit(target_id)
-                .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
-        }
-        if contract_storage_trie_needs_commit {
-            contract_storage_trie
-                .commit(target_id)
-                .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
-        }
-        if class_trie_needs_commit {
-            class_trie
-                .commit(target_id)
-                .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
-        }
-        tracing::info!("✅ REORG: All tries committed successfully");
-
-        // Revert database state using the three revert functions
-        // First, revert blocks and collect state diffs
-        tracing::info!("📦 REORG: Starting block database revert...");
-        let state_diffs =
-            self.inner.block_db_revert(target_block_n, current_tip).context("Reverting blocks database")?;
-        tracing::info!("✅ REORG: Block database reverted, collected {} state diffs", state_diffs.len());
-
-        // Pending messages are synced by L1 block and may have never been consumed on L2 yet.
-        // On revert, we intentionally drop all currently pending L1 messages and related L1 indices so
-        // the next L1 sync replays them from `l1_messaging_sync_tip_after_revert`.
-        tracing::info!(
-            "📦 REORG: Cleaning {} L1 message nonce entries (reverted + pending)",
-            l1_message_nonces_to_cleanup.len()
-        );
-        let mut l1_message_cleanup_batch = WriteBatchWithTransaction::default();
-        self.inner
-            .message_to_l2_remove_for_nonces(&l1_message_nonces_to_cleanup, &mut l1_message_cleanup_batch)
-            .context("Removing L1 message data for reverted/pending nonces")?;
-        self.inner
-            .db
-            .write_opt(l1_message_cleanup_batch, &self.inner.writeopts)
-            .context("Committing L1 message cleanup batch after reorg")?;
-        tracing::info!("✅ REORG: L1 message cleanup completed");
-
-        // Then use those state diffs to revert contract and class state
-        tracing::info!("📝 REORG: Starting contract database revert...");
-        self.inner.contract_db_revert(&state_diffs).context("Reverting contract database")?;
-        tracing::info!("✅ REORG: Contract database reverted successfully");
-
-        tracing::info!("🎓 REORG: Starting class database revert...");
-        self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
-        tracing::info!("✅ REORG: Class database reverted successfully");
-
-        tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
-        let new_tip = StorageChainTip::Confirmed(target_block_n);
-        self.replace_chain_tip(&new_tip).context("Updating chain tip after reorg")?;
-        tracing::info!("✅ REORG: Chain tip updated successfully");
-
-        tracing::info!("📸 REORG: Updating snapshots to new head block_n={}", target_block_n);
-        self.snapshots.set_new_head(target_block_n);
-        tracing::info!("✅ REORG: Snapshots updated successfully");
-
-        tracing::info!("🔄 REORG: Resetting latest_applied_trie_update to block_n={}", target_block_n);
-        self.write_latest_applied_trie_update(&Some(target_block_n))
-            .context("Resetting latest_applied_trie_update after reorg")?;
-        tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
-
-        if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
-            tracing::info!(
-                "🔁 REORG: Rewinding L1 messaging sync tip to block_n={l1_sync_tip} (from source block {:?})",
-                rewind_from_l1_block
-            );
-            self.write_l1_messaging_sync_tip(Some(l1_sync_tip))
-                .context("Rewinding l1 messaging sync tip after reorg")?;
-            tracing::info!("✅ REORG: L1 messaging sync tip rewound successfully");
-        } else {
-            tracing::info!("🔁 REORG: No L1 messaging rewind needed");
-        }
-
-        tracing::info!("💾 REORG: Flushing database to persist changes...");
-        self.flush().context("Flushing database after reorg")?;
-        tracing::info!("✅ REORG: Database flushed successfully");
-
-        tracing::info!(
-            "🎉 REORG: Blockchain reorganization completed successfully! Reverted to block_n={target_block_n} block_hash={:#x}",
-            target_block_info.block_hash
-        );
-
-        Ok((target_block_n, target_block_info.block_hash))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rocksdb::global_trie::bonsai_identifier;
-    use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
-    use mp_convert::Felt;
-
-    fn contract_trie_key(key: Felt) -> BitVec<u8, Msb0> {
-        let bytes = key.to_bytes_be();
-        bytes.as_bits()[5..].to_owned()
-    }
-
-    #[test]
-    fn trie_revert_action_handles_equal_older_and_missing_heads() {
-        assert_eq!(trie_revert_action(Some(12), 8), TrieRevertAction::Revert { current: 12, target: 8 });
-        assert_eq!(trie_revert_action(Some(8), 8), TrieRevertAction::AlreadyAtTarget(8));
-        assert_eq!(trie_revert_action(Some(5), 8), TrieRevertAction::OlderThanTarget { current: 5, target: 8 });
-        assert_eq!(trie_revert_action(None, 8), TrieRevertAction::Missing);
-    }
-
-    #[test]
-    fn latest_bonsai_log_id_reads_latest_committed_revision() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
-
-        let mut trie = storage.contract_trie();
-        let key_a = contract_trie_key(Felt::from(1u64));
-        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
-        trie.commit(BasicId::new(2)).unwrap();
-
-        let key_b = contract_trie_key(Felt::from(2u64));
-        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
-        trie.commit(BasicId::new(5)).unwrap();
-
-        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
-    }
-
-    #[test]
-    fn revert_single_trie_reverts_and_commits_on_the_same_handle() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
-
-        let key_a = contract_trie_key(Felt::from(1u64));
-        let key_b = contract_trie_key(Felt::from(2u64));
-
-        let mut trie = storage.contract_trie();
-        trie.insert(bonsai_identifier::CONTRACT, &key_a, &Felt::from(11u64)).unwrap();
-        let root_at_2 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
-        trie.commit(BasicId::new(2)).unwrap();
-
-        trie.insert(bonsai_identifier::CONTRACT, &key_b, &Felt::from(22u64)).unwrap();
-        let root_at_5 = trie.root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
-        trie.commit(BasicId::new(5)).unwrap();
-
-        let mut trie = storage.contract_trie();
-        assert!(revert_single_trie("contract", &mut trie, Some(5), 2).unwrap());
-        trie.commit(BasicId::new(2)).unwrap();
-
-        let latest_head = storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap();
-        assert_eq!(latest_head, Some(2));
-
-        let current_root = storage.contract_trie().root_hash_staged(bonsai_identifier::CONTRACT).unwrap();
-        assert_eq!(current_root, root_at_2);
-        assert_ne!(current_root, root_at_5);
-    }
-
-    #[test]
-    fn revert_single_trie_skipped_paths_do_not_fabricate_target_revisions() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
-
-        let key = contract_trie_key(Felt::from(1u64));
-        let mut trie = storage.contract_trie();
-        trie.insert(bonsai_identifier::CONTRACT, &key, &Felt::from(11u64)).unwrap();
-        trie.commit(BasicId::new(5)).unwrap();
-
-        let mut older_than_target = storage.contract_trie();
-        assert!(!revert_single_trie("contract", &mut older_than_target, Some(5), 8).unwrap());
-        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
-
-        let mut already_at_target = storage.contract_trie();
-        assert!(!revert_single_trie("contract", &mut already_at_target, Some(5), 5).unwrap());
-        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CONTRACT_LOG_COLUMN).unwrap(), Some(5));
-
-        let mut missing = storage.class_trie();
-        assert!(!revert_single_trie("class", &mut missing, None, 8).unwrap());
-        assert_eq!(storage.inner.latest_bonsai_log_id(trie::BONSAI_CLASS_LOG_COLUMN).unwrap(), None);
-    }
-}
+mod storage_write;

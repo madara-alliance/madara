@@ -155,15 +155,19 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     /// Returns when the block content has changed. Returns immediately if the view is
     /// already outdated. The view is not updated; you need to call [`Self::refresh`] or
     /// [`Self::refresh_with_candidates`] when this function returns.
-    pub async fn wait_until_outdated(&mut self) {
-        self.block_content.changed().await.expect("Channel unexpectedly closed");
+    pub async fn wait_until_outdated(&mut self) -> bool {
+        if self.block_content.changed().await.is_err() {
+            tracing::debug!("Preconfirmed block channel closed while waiting for updates");
+            return false;
+        }
         self.block_content.mark_changed();
+        true
     }
 
     /// Wait for the next transaction. When we're up to date with all executed transactions, this
     /// will start returning candidate transactions. When a new executed transaction appears, this
     /// will clear the visible candidate transactions.
-    pub async fn wait_next_tx(&mut self) -> PreconfirmedBlockChange {
+    pub async fn wait_next_tx(&mut self) -> Option<PreconfirmedBlockChange> {
         loop {
             {
                 let borrow = self.block_content.borrow();
@@ -171,20 +175,23 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
                 if borrow.n_executed() > self.n_txs_visible {
                     let transaction_index = self.n_txs_visible as u64;
                     self.n_txs_visible += 1;
-                    return PreconfirmedBlockChange::NewPreconfirmed {
+                    return Some(PreconfirmedBlockChange::NewPreconfirmed {
                         transaction_index,
                         // Clear all candidates.
                         removed_candidates: mem::take(&mut self.candidates),
-                    };
+                    });
                 }
                 // New candidate transaction
                 if let Some(candidate) = borrow.candidate_transactions().nth(self.candidates.len()) {
                     let transaction_index = (self.n_txs_visible + self.candidates.len()) as u64;
                     self.candidates.push(candidate.clone());
-                    return PreconfirmedBlockChange::NewCandidate { transaction_index };
+                    return Some(PreconfirmedBlockChange::NewCandidate { transaction_index });
                 };
             }
-            self.block_content.changed().await.expect("Channel unexpectedly closed");
+            if self.block_content.changed().await.is_err() {
+                tracing::debug!("Preconfirmed block channel closed while waiting for next transaction");
+                return None;
+            }
         }
     }
 
@@ -619,7 +626,7 @@ mod tests {
             ))
             .unwrap();
 
-        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+        let result = backend.block_view_on_current_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
 
         assert_eq!(
             result,
@@ -713,7 +720,7 @@ mod tests {
             .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 10, ..Default::default() }))
             .unwrap();
 
-        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+        let result = backend.block_view_on_current_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
 
         assert_eq!(
             result,

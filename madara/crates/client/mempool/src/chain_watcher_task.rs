@@ -1,15 +1,76 @@
 use crate::{
     transaction_status::{PreConfirmationStatus, TransactionStatus},
-    Mempool,
+    Mempool, NonceUpdateMode,
 };
 use anyhow::Context;
 use futures::future::OptionFuture;
-use mc_db::{MadaraBlockView, MadaraStorageRead, MadaraStorageWrite};
+use mc_db::{MadaraBlockView, MadaraPreconfirmedBlockView, MadaraStorageRead, MadaraStorageWrite};
 use mp_convert::Felt;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
-use starknet_api::core::Nonce;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
+
+/// Confirmation advances independently of the executed blocks still awaiting finalization.
+struct ChainWatcherState<D: MadaraStorageRead> {
+    confirmed_tip: Option<u64>,
+    preconfirmed: BTreeMap<u64, TrackedPreconfirmed<D>>,
+}
+
+/// Keeps each block's latest nonce per account without rescanning its transactions on confirmation.
+struct TrackedPreconfirmed<D: MadaraStorageRead> {
+    view: MadaraPreconfirmedBlockView<D>,
+    nonces: HashMap<Felt, Felt>,
+}
+
+impl<D: MadaraStorageRead> TrackedPreconfirmed<D> {
+    /// Persisted blocks can be reconstructed into new Arcs while recovery is in progress.
+    /// Their executed prefix identifies continuity independently of allocation identity.
+    fn continues_in(&self, current: &MadaraPreconfirmedBlockView<D>) -> bool {
+        Arc::ptr_eq(self.view.block(), current.block())
+            || (self.view.block().header == current.block().header
+                && current.get_block_info().tx_hashes.starts_with(&self.view.get_block_info().tx_hashes))
+    }
+
+    fn new(view: MadaraPreconfirmedBlockView<D>) -> Self {
+        let nonces = view
+            .borrow_content()
+            .executed_transactions()
+            .flat_map(|tx| tx.state_diff.nonces.iter().map(|(address, nonce)| (*address, *nonce)))
+            .collect();
+        Self { view, nonces }
+    }
+}
+
+impl<D: MadaraStorageRead> ChainWatcherState<D> {
+    fn new(confirmed_tip: Option<u64>) -> Self {
+        Self { confirmed_tip, preconfirmed: BTreeMap::new() }
+    }
+}
+
+struct ChainWatcherBranchEffects {
+    potentially_removed: HashMap<Felt, Arc<ValidatedTransaction>>,
+    put_back_into_mempool: bool,
+    nonce_updates: HashMap<Felt, Felt>,
+    nonce_update_mode: NonceUpdateMode,
+    confirmed_tx_hashes: Vec<Felt>,
+}
+
+impl ChainWatcherBranchEffects {
+    /// Creates an empty per-event effect accumulator with reinsertion enabled.
+    /// Individual watcher branches may disable reinsertion before effects are applied.
+    fn new() -> Self {
+        Self {
+            potentially_removed: HashMap::new(),
+            put_back_into_mempool: true,
+            nonce_updates: HashMap::new(),
+            nonce_update_mode: NonceUpdateMode::Advance,
+            confirmed_tx_hashes: Vec::new(),
+        }
+    }
+}
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     fn set_transaction_status(&self, tx_hash: Felt, value: Option<TransactionStatus>) {
@@ -34,12 +95,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         &self,
         view: &MadaraBlockView<D>,
         iter: impl IntoIterator<Item = (usize, Felt)>,
-        removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
+        potentially_removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
         confirmed_tx_hashes: &mut Vec<Felt>,
     ) -> anyhow::Result<()> {
         let is_on_l1 = view.is_on_l1();
         for (tx_index, tx_hash) in iter {
-            removed.remove(&tx_hash); // The transaction was not removed.
+            potentially_removed.remove(&tx_hash); // The transaction is still part of the current frontier.
 
             if let Some(preconfirmed) = view.as_preconfirmed() {
                 if let Some(candidate_index) = usize::checked_sub(tx_index, preconfirmed.num_executed_transactions()) {
@@ -80,165 +141,324 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
-    /// This task updates all the l1, confirmed, pre-confirmed, candidates statuses by watching the backend chain tip and pre-confirmed block.
-    /// It is also responsible for adding transactions back into the mempool.
+    /// Updates executed and candidate statuses for one preconfirmed block view.
+    /// Newly observed nonce writes and confirmed hashes are accumulated for deferred application.
+    fn update_preconfirmed_block_transaction_statuses(
+        &self,
+        preconfirmed: &MadaraPreconfirmedBlockView<D>,
+        executed_iter: impl IntoIterator<Item = (usize, Felt)>,
+        nonce_skip: usize,
+        potentially_removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
+        nonce_updates: &mut HashMap<Felt, Felt>,
+        confirmed_tx_hashes: &mut Vec<Felt>,
+    ) -> anyhow::Result<()> {
+        let view: MadaraBlockView<D> = preconfirmed.clone().into();
+
+        // Executed transactions.
+        self.update_block_transaction_statuses(&view, executed_iter, potentially_removed, confirmed_tx_hashes)?;
+        // Candidate transactions.
+        self.update_block_transaction_statuses(
+            &view,
+            preconfirmed
+                .candidate_transactions()
+                .iter()
+                .enumerate()
+                .map(|(candidate_index, tx)| (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)),
+            potentially_removed,
+            confirmed_tx_hashes,
+        )?;
+
+        // Mark the nonces from the state diff for update.
+        nonce_updates.extend(
+            preconfirmed
+                .borrow_content()
+                .executed_transactions()
+                .skip(nonce_skip)
+                .flat_map(|tx| tx.state_diff.nonces.iter()),
+        );
+
+        Ok(())
+    }
+
+    /// Adds every candidate from the previous frontier to the pending-removal set.
+    /// A later view update removes candidates that remain present before effects are applied.
+    fn mark_candidate_transactions_as_potentially_removed(
+        &self,
+        preconfirmed: &MadaraPreconfirmedBlockView<D>,
+        potentially_removed: &mut HashMap<Felt, Arc<ValidatedTransaction>>,
+    ) {
+        for tx in preconfirmed.candidate_transactions() {
+            potentially_removed.insert(tx.hash, tx.clone());
+        }
+    }
+
+    /// Only blocks actually replaced or confirmed can lose executed transactions.
+    fn collect_removed_preconfirmed(
+        &self,
+        preconfirmed: &MadaraPreconfirmedBlockView<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) {
+        for tx in preconfirmed.borrow_content().executed_transactions() {
+            effects.potentially_removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
+            // Values are resolved against the remaining chain after the transition.
+            effects.nonce_updates.extend(tx.state_diff.nonces.keys().map(|key| (*key, Felt::ZERO)));
+        }
+        self.mark_candidate_transactions_as_potentially_removed(preconfirmed, &mut effects.potentially_removed);
+    }
+
+    /// Resolves affected account nonces from confirmed state plus every retained execution layer.
+    /// A confirmation behind runahead must not overwrite a nonce written by a later block.
+    fn resolve_nonce_updates(
+        &self,
+        state: &ChainWatcherState<D>,
+        nonce_updates: &mut HashMap<Felt, Felt>,
+    ) -> anyhow::Result<()> {
+        let confirmed_tip = self.backend.latest_confirmed_block_n();
+        for (address, nonce) in nonce_updates.iter_mut() {
+            *nonce = match confirmed_tip {
+                Some(block_n) => self.backend.db.get_contract_nonce_at(block_n, address)?.unwrap_or(Felt::ZERO),
+                None => Felt::ZERO,
+            };
+        }
+        for pending in state
+            .preconfirmed
+            .values()
+            .filter(|pending| confirmed_tip.is_none_or(|tip| pending.view.block_number() > tip))
+        {
+            for (address, update) in nonce_updates.iter_mut() {
+                if let Some(nonce) = pending.nonces.get(address) {
+                    *update = *nonce;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Retained execution layers protect transactions even when their earlier candidate is retired.
+    fn resolve_branch_effects(
+        &self,
+        state: &ChainWatcherState<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        self.resolve_nonce_updates(state, &mut effects.nonce_updates)?;
+        if effects.potentially_removed.is_empty() {
+            return Ok(());
+        }
+        for pending in state.preconfirmed.values() {
+            let view = &pending.view;
+            for hash in &view.get_block_info().tx_hashes {
+                effects.potentially_removed.remove(hash);
+            }
+            for tx in view.candidate_transactions() {
+                effects.potentially_removed.remove(&tx.hash);
+            }
+        }
+        Ok(())
+    }
+
+    /// Branch #1:
+    /// Update statuses/nonces when the current internal preconfirmed block receives new content.
+    fn handle_preconfirmed_content_update(
+        &self,
+        preconfirmed: &mut MadaraPreconfirmedBlockView<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        // Candidates that were not executed are most likely rejected transactions.
+        // Do not reinsert them, or they can endlessly cycle mempool -> block builder -> mempool.
+        effects.put_back_into_mempool = false;
+        self.mark_candidate_transactions_as_potentially_removed(preconfirmed, &mut effects.potentially_removed);
+
+        let previous_num_txs = preconfirmed.num_executed_transactions();
+        preconfirmed.refresh_with_candidates();
+
+        self.update_preconfirmed_block_transaction_statuses(
+            preconfirmed,
+            preconfirmed.get_block_info().tx_hashes.iter().copied().enumerate().skip(previous_num_txs),
+            previous_num_txs,
+            &mut effects.potentially_removed,
+            &mut effects.nonce_updates,
+            &mut effects.confirmed_tx_hashes,
+        )?;
+
+        Ok(())
+    }
+
+    /// Processes confirmations without replacing the independent execution frontier.
+    fn handle_new_internal_frontier(
+        &self,
+        state: &mut ChainWatcherState<D>,
+        new_head: MadaraBlockView<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        match new_head {
+            MadaraBlockView::Confirmed(confirmed) => {
+                let block_n = confirmed.block_number();
+                if let Some(previous) = state.preconfirmed.remove(&block_n) {
+                    self.collect_removed_preconfirmed(&previous.view, effects);
+                }
+                let tx_hashes = confirmed.get_block_info()?.tx_hashes;
+                effects
+                    .nonce_updates
+                    .extend(confirmed.get_state_diff()?.nonces.into_iter().map(|n| (n.contract_address, n.nonce)));
+                self.update_block_transaction_statuses(
+                    &confirmed.into(),
+                    tx_hashes.into_iter().enumerate(),
+                    &mut effects.potentially_removed,
+                    &mut effects.confirmed_tx_hashes,
+                )?;
+                state.confirmed_tip = Some(block_n);
+            }
+            MadaraBlockView::Preconfirmed(_) => self.update_execution_frontier(state, effects)?,
+        }
+        Ok(())
+    }
+
+    /// Refreshes the entire unconfirmed suffix so coalesced notifications cannot skip executions.
+    fn update_execution_frontier(
+        &self,
+        state: &mut ChainWatcherState<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        let (head, views) = self.backend.internal_preconfirmed_views()?;
+        let canonical: BTreeMap<_, _> = views.into_iter().map(|view| (view.block_number(), view)).collect();
+        let first_replaced = state.preconfirmed.iter().find_map(|(&n, previous)| {
+            if head.confirmed_tip.is_some_and(|confirmed| n <= confirmed) {
+                // Its confirmation is still queued in the ordered subscription.
+                return None;
+            }
+            canonical.get(&n).is_none_or(|current| !previous.continues_in(current)).then_some(n)
+        });
+        if let Some(first_replaced) = first_replaced {
+            effects.nonce_update_mode = NonceUpdateMode::Replace;
+            for previous in state.preconfirmed.split_off(&first_replaced).into_values() {
+                self.collect_removed_preconfirmed(&previous.view, effects);
+            }
+        }
+
+        for (n, mut current) in canonical {
+            current.refresh_with_candidates();
+            if let Some(previous) = state.preconfirmed.get(&n) {
+                if previous.view == current
+                    && previous
+                        .view
+                        .candidate_transactions()
+                        .iter()
+                        .map(|tx| tx.hash)
+                        .eq(current.candidate_transactions().iter().map(|tx| tx.hash))
+                {
+                    continue;
+                }
+                self.mark_candidate_transactions_as_potentially_removed(
+                    &previous.view,
+                    &mut effects.potentially_removed,
+                );
+            }
+            self.update_preconfirmed_block_transaction_statuses(
+                &current,
+                current.get_block_info().tx_hashes.iter().copied().enumerate(),
+                0,
+                &mut effects.potentially_removed,
+                &mut effects.nonce_updates,
+                &mut effects.confirmed_tx_hashes,
+            )?;
+            state.preconfirmed.insert(n, TrackedPreconfirmed::new(current));
+        }
+        Ok(())
+    }
+
+    /// Branch #3:
+    /// Apply L1 finality updates for already-known L2 confirmed blocks.
+    fn handle_new_l1_confirmation(
+        &self,
+        new_head_on_l1: MadaraBlockView<D>,
+        effects: &mut ChainWatcherBranchEffects,
+    ) -> anyhow::Result<()> {
+        self.update_block_transaction_statuses(
+            &new_head_on_l1,
+            new_head_on_l1.get_block_info()?.tx_hashes().iter().cloned().enumerate(),
+            &mut effects.potentially_removed,
+            &mut effects.confirmed_tx_hashes,
+        )?;
+        Ok(())
+    }
+
+    /// Applies nonce changes accumulated while processing one watcher event.
+    /// Keeping this step separate ensures the event branch finishes inspecting storage first.
+    async fn apply_nonce_updates(
+        &self,
+        nonce_updates: HashMap<Felt, Felt>,
+        mode: NonceUpdateMode,
+    ) -> anyhow::Result<()> {
+        self.update_account_nonces(nonce_updates, mode).await
+    }
+
+    /// Requeues or drops transactions absent from the newly observed frontier.
+    /// The selected branch controls reinsertion so rejected candidates cannot cycle indefinitely.
+    async fn apply_potentially_removed_transactions(
+        &self,
+        potentially_removed: HashMap<Felt, Arc<ValidatedTransaction>>,
+        put_back_into_mempool: bool,
+    ) {
+        // Update the mempool with the modifications.
+        for (tx_hash, tx) in potentially_removed {
+            if put_back_into_mempool {
+                // Try to add back to mempool.
+                if let Err(err) = self.accept_tx((*tx).clone()).await {
+                    // Re-insertion may fail for various valid reasons: the tx has reached its TTL, the tx is a L1HandlerTransaction..
+                    // TODO: it may fail because of tip-bump / eviction score. Maybe we shouldn't drop the tx in these cases?
+                    tracing::debug!("Could not add transaction {:#x} back into mempool: {err:#}", tx.hash);
+                }
+            } else {
+                // Drop the transaction entirely.
+                self.set_transaction_status(tx_hash, None);
+            }
+        }
+    }
+
+    /// Watches chain head/runtime updates and keeps mempool-facing transaction state in sync.
+    ///
+    /// Confirmed progress and the unconfirmed execution suffix have separate lifetimes.
+    /// Confirmations retire one layer; only actual replacements requeue its executed transactions.
     pub(super) async fn run_chain_watcher_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         let mut l1_new_heads_subscription = self.backend.subscribe_new_l1_confirmed_heads();
 
         let mut new_heads_subscription =
-            self.backend.subscribe_new_heads(mc_db::subscription::SubscribeNewBlocksTag::Preconfirmed);
-        // Start returning heads from the next block after the latest confirmed block (inclusive).
-        new_heads_subscription
-            .set_start_from(self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0));
-
-        let mut current_head = new_heads_subscription.current_block_view();
+            self.backend.subscribe_internal_heads(mc_db::subscription::SubscribeNewBlocksTag::Preconfirmed);
+        let confirmed_tip = self.backend.latest_confirmed_block_n();
+        new_heads_subscription.set_start_from(confirmed_tip.map_or(0, |n| n + 1));
+        let mut state = ChainWatcherState::new(confirmed_tip);
 
         loop {
-            // When the pre-confirmed block changes, we need to put all of the removed transactions back into the mempool.
+            // When the pre-confirmed block changes, we need to put all potentially removed transactions back into the mempool.
             // However, we don't want to put them right away: for example, if the pre-confirmed block became confirmed, we don't want to insert
             // the transactions back into the mempool just to remove them right away to mark them confirmed. We use this map to track this.
-            let mut removed: HashMap<Felt, Arc<ValidatedTransaction>> = HashMap::new();
-            let mut put_back_into_mempool = true; // Whether to drop the txs or re-add them into mempool.
-            let mut nonce_updates: HashMap<Felt, Felt> = HashMap::new();
-            let mut confirmed_tx_hashes = Vec::new();
+            let mut effects = ChainWatcherBranchEffects::new();
 
             tokio::select! {
                 biased;
 
                 // Preconfirmed block new tx. We process this first to make sure we don't miss transactions.
-                Some(preconfirmed) = OptionFuture::from(current_head.as_mut().and_then(|v| v.as_preconfirmed_mut()).map(|v| async {
-                    v.wait_until_outdated().await;
+                Some(preconfirmed) = OptionFuture::from(state.preconfirmed.last_entry().map(|entry| entry.into_mut()).map(|v| async {
+                    v.view.wait_until_outdated().await;
                     v
                 })) => {
                     tracing::debug!("Mempool task: preconfirmed update.");
-                    // Candidates that were not executed are most likely rejected transactions. We don't want them back into the mempool.
-                    // Otherwise, we run the risk of having these transactions looping from mempool to block building to mempool repeatedly!
-                    put_back_into_mempool = false;
-
-                    // Remove all previous candidates.
-                    for tx in preconfirmed.candidate_transactions() {
-                        removed.insert(tx.hash, tx.clone());
-                    }
-
-                    let previous_num_txs = preconfirmed.num_executed_transactions();
-                    preconfirmed.refresh_with_candidates();
-
-                    // reborrow as immutable to make the compiler happy :)
-                    let current_head = current_head.as_ref().context("Current head should be present")?;
-                    let preconfirmed = current_head.as_preconfirmed().context("Current head should be preconfirmed")?;
-
-                    // Process new executed transactions.
-                    self.update_block_transaction_statuses(
-                        current_head,
-                        preconfirmed.get_block_info().tx_hashes[previous_num_txs..].iter().cloned().enumerate(),
-                        &mut removed,
-                        &mut confirmed_tx_hashes,
-                    )?;
-                    // Candidate transactions.
-                    self.update_block_transaction_statuses(
-                        current_head,
-                        preconfirmed.candidate_transactions().iter().enumerate().map(|(candidate_index, tx)| {
-                            (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)
-                        }),
-                        &mut removed,
-                        &mut confirmed_tx_hashes,
-                    )?;
-
-                    // Mark the nonces from the state diff for update.
-                    nonce_updates.extend(
-                        preconfirmed
-                            .borrow_content()
-                            .executed_transactions()
-                            .skip(previous_num_txs)
-                            .flat_map(|tx| tx.state_diff.nonces.iter()),
-                    );
+                    self.handle_preconfirmed_content_update(&mut preconfirmed.view, &mut effects)?;
+                    preconfirmed.nonces.extend(effects.nonce_updates.iter().map(|(address, nonce)| (*address, *nonce)));
                 }
 
                 // New block on l2: either confirmed or pre-confirmed.
-                mut new_head = new_heads_subscription.next_block_view() => {
+                new_head = new_heads_subscription.next_block_view() => {
                     tracing::debug!("Mempool task: new head.");
-                    // If the previous head was preconfirmed, mark all of its transactions as removed.
-                    if let Some(preconfirmed) = current_head.as_ref().and_then(|v| v.as_preconfirmed()) {
-                        let view_on_parent = preconfirmed.state_view_on_parent();
-                        for tx in preconfirmed.borrow_content().executed_transactions() {
-                            // re-convert PreconfirmedExecutedTransaction to ValidatedTransaction.
-                            removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
-                            // rollback the contract nonce to what it was before the transaction.
-                            for key in tx.state_diff.nonces.keys() {
-                                nonce_updates.insert(
-                                    *key,
-                                    // Get from db.
-                                    view_on_parent.get_contract_nonce(key)?.unwrap_or(Felt::ZERO),
-                                );
-                            }
-                        }
-                        for tx in preconfirmed.candidate_transactions() {
-                            removed.insert(tx.hash, tx.clone());
-                        }
-                    }
-
-                    if let MadaraBlockView::Preconfirmed(preconfirmed) = &mut new_head {
-                        preconfirmed.refresh_with_candidates();
-                    }
-
-                    // Update statuses for all transactions in new_head.
-                    match &new_head {
-                        MadaraBlockView::Confirmed(confirmed) => {
-                            self.update_block_transaction_statuses(
-                                &new_head,
-                                confirmed.get_block_info()?.tx_hashes.iter().cloned().enumerate(),
-                                &mut removed,
-                                &mut confirmed_tx_hashes,
-                            )?;
-
-                            // Mark the nonces from the state diff for update.
-                            nonce_updates.extend(
-                                confirmed.get_state_diff()?.nonces.iter().map(|n| (n.contract_address, n.nonce))
-                            );
-                        }
-                        MadaraBlockView::Preconfirmed(preconfirmed) => {
-                            // Executed transactions.
-                            self.update_block_transaction_statuses(
-                                &new_head,
-                                preconfirmed.get_block_info().tx_hashes.iter().cloned().enumerate(),
-                                &mut removed,
-                                &mut confirmed_tx_hashes,
-                            )?;
-                            // Candidate transactions.
-                            self.update_block_transaction_statuses(
-                                &new_head,
-                                preconfirmed.candidate_transactions().iter().enumerate().map(|(candidate_index, tx)| {
-                                    (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)
-                                }),
-                                &mut removed,
-                                &mut confirmed_tx_hashes,
-                            )?;
-
-                            // Mark the nonces from the state diff for update.
-                            nonce_updates.extend(
-                                preconfirmed
-                                    .borrow_content()
-                                    .executed_transactions()
-                                    .flat_map(|tx| tx.state_diff.nonces.iter()),
-                            );
-                        }
-                    }
-
-                    current_head = Some(new_head);
+                    self.handle_new_internal_frontier(&mut state, new_head, &mut effects)?;
                 }
 
                 // Process blocks confirmed on l1. Avoid updates that are past the l2 tip though.
                 new_head_on_l1 = l1_new_heads_subscription.next_block_view(),
-                    if *l1_new_heads_subscription.current() < new_heads_subscription.current().latest_confirmed_block_n() =>
+                    if *l1_new_heads_subscription.current() < new_heads_subscription.current_confirmed_block_n() =>
                 {
                     tracing::debug!("Mempool task: new head on l1.");
-                    let new_head_on_l1: MadaraBlockView<D> = new_head_on_l1.into();
-                    self.update_block_transaction_statuses(
-                        &new_head_on_l1,
-                        new_head_on_l1.get_block_info()?.tx_hashes().iter().cloned().enumerate(),
-                        &mut removed,
-                        &mut confirmed_tx_hashes,
-                    )?;
+                    self.handle_new_l1_confirmation(new_head_on_l1.into(), &mut effects)?;
                 }
 
                 // Cancel condition.
@@ -248,99 +468,22 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             }
 
             tracing::debug!(
-                "Mempool task: #nonce_updates={} #removed={}, put_back_into_mempool={put_back_into_mempool}.",
-                nonce_updates.len(),
-                removed.len()
+                "Mempool task: #nonce_updates={} #potentially_removed={} #confirmed_tx_hashes={}, put_back_into_mempool={}.",
+                effects.nonce_updates.len(),
+                effects.potentially_removed.len(),
+                effects.confirmed_tx_hashes.len(),
+                effects.put_back_into_mempool
             );
 
-            self.remove_saved_txs_by_hashes(confirmed_tx_hashes);
-
-            // Update nonces
-            let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-            if !nonce_updates.is_empty() {
-                let mut guard = self.inner.write().await;
-                for (contract_address, account_nonce) in nonce_updates {
-                    guard.update_account_nonce(
-                        &contract_address.try_into().context("Invalid contract address")?,
-                        &Nonce(account_nonce),
-                        &mut removed_txs,
-                    );
-                }
-                self.metrics.record_mempool_state(&guard.summary());
-            }
-            self.on_txs_removed(&removed_txs);
-
-            // Update the mempool with the modifications.
-            for (tx_hash, tx) in removed {
-                if put_back_into_mempool {
-                    // Try to add back to mempool.
-                    if let Err(err) = self.accept_tx((*tx).clone()).await {
-                        // Re-insertion may fail for various valid reasons: the tx has reached its TTL, the tx is a L1HandlerTransaction..
-                        // TODO: it may fail because of tip-bump / eviction score. Maybe we shouldn't drop the tx in these cases?
-                        tracing::debug!("Could not add transaction {:#x} back into mempool: {err:#}", tx.hash);
-                    }
-                } else {
-                    // Drop the transaction entirely.
-                    self.set_transaction_status(tx_hash, None);
-                }
-            }
+            self.resolve_branch_effects(&state, &mut effects)?;
+            self.remove_saved_txs_by_hashes(effects.confirmed_tx_hashes);
+            self.apply_nonce_updates(effects.nonce_updates, effects.nonce_update_mode).await?;
+            self.apply_potentially_removed_transactions(effects.potentially_removed, effects.put_back_into_mempool)
+                .await;
+            self.metrics.record_preconfirmed_transaction_statuses(self.preconfirmed_transactions_statuses.len());
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::MempoolConfig;
-    use mc_db::test_utils::{add_test_block, l1_handler_tx_with_receipt};
-    use mp_chain_config::ChainConfig;
-    use mp_transactions::{validated::TxTimestamp, L1HandlerTransaction, Transaction};
-    use std::sync::Arc;
-
-    fn saved_mempool_txs(backend: &mc_db::MadaraBackend) -> Vec<ValidatedTransaction> {
-        backend.get_saved_mempool_transactions().collect::<std::result::Result<Vec<_>, _>>().unwrap()
-    }
-
-    fn validated_l1_handler_tx(tx_hash: Felt) -> ValidatedTransaction {
-        ValidatedTransaction {
-            transaction: Transaction::L1Handler(L1HandlerTransaction {
-                version: Felt::ZERO,
-                nonce: 0,
-                contract_address: Felt::ONE,
-                entry_point_selector: Felt::TWO,
-                calldata: Default::default(),
-            }),
-            paid_fee_on_l1: Some(0),
-            contract_address: Felt::ONE,
-            arrived_at: TxTimestamp::now(),
-            declared_class: None,
-            hash: tx_hash,
-            charge_fee: true,
-        }
-    }
-
-    #[tokio::test]
-    async fn confirmed_block_hashes_are_collected_and_clear_saved_transactions() {
-        let backend = mc_db::MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
-        let tx_hash = Felt::from(123_u64);
-        let tx = validated_l1_handler_tx(tx_hash);
-        backend.write_saved_mempool_transaction(&tx).unwrap();
-        add_test_block(&backend, 0, vec![l1_handler_tx_with_receipt(0, tx_hash)]);
-
-        let mempool = Mempool::new(backend.clone(), MempoolConfig::default());
-        let view = backend.block_view_on_confirmed(0).unwrap().into();
-        let mut removed = HashMap::from([(tx_hash, Arc::new(tx))]);
-        let mut confirmed_tx_hashes = Vec::new();
-
-        mempool
-            .update_block_transaction_statuses(&view, [(0, tx_hash)], &mut removed, &mut confirmed_tx_hashes)
-            .unwrap();
-
-        assert!(removed.is_empty());
-        assert_eq!(confirmed_tx_hashes, [tx_hash]);
-
-        mempool.remove_saved_txs_by_hashes(confirmed_tx_hashes);
-
-        assert!(saved_mempool_txs(&backend).is_empty());
-    }
-}
+mod tests;

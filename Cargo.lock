@@ -9115,7 +9115,7 @@ dependencies = [
 [[package]]
 name = "librocksdb-sys"
 version = "0.17.0+9.0.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+source = "git+https://github.com/madara-alliance/rust-rocksdb?rev=75f13c78fdf970b0afd2f21f52caf3317341341c#75f13c78fdf970b0afd2f21f52caf3317341341c"
 dependencies = [
  "bindgen 0.69.5",
  "bzip2-sys",
@@ -9359,6 +9359,7 @@ dependencies = [
  "indoc 2.0.7",
  "ip_network",
  "itertools 0.14.0",
+ "jemallocator",
  "jsonrpsee",
  "lazy_static",
  "librocksdb-sys",
@@ -9903,6 +9904,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-receipt",
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
@@ -13086,7 +13088,7 @@ dependencies = [
 [[package]]
 name = "rocksdb"
 version = "0.22.0"
-source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+source = "git+https://github.com/madara-alliance/rust-rocksdb?rev=75f13c78fdf970b0afd2f21f52caf3317341341c#75f13c78fdf970b0afd2f21f52caf3317341341c"
 dependencies = [
  "libc",
  "librocksdb-sys",

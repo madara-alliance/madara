@@ -73,7 +73,7 @@ pub async fn subscribe_new_heads(
 
         loop {
             let next_block_n = tokio::select! {
-                head = heads.next_head() => head.latest_confirmed_block_n(),
+                head = heads.next_block_view() => Some(head.block_number()),
                 reorg = reorgs.recv() => {
                     match reorg {
                         Ok(reorg) => {

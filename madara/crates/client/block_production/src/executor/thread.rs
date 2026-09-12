@@ -1,20 +1,26 @@
 //! Executor thread internal logic.
 
+#[path = "thread_replay.rs"]
+mod thread_replay;
+
 use crate::metrics::BlockProductionMetrics;
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::blockifier::transaction_executor::TransactionExecutor;
+use blockifier::blockifier::transaction_executor::{
+    TransactionExecutionOutput, TransactionExecutor, TransactionExecutorResult,
+};
 use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
+use opentelemetry::KeyValue;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
 use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
-    time::SystemTime,
+    time::{Instant as StdInstant, SystemTime},
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -26,6 +32,7 @@ struct ExecutorStateExecuting {
     executor: TransactionExecutor<LayeredStateAdapter>,
     declared_classes: HashMap<ClassHash, ContractClass>,
     consumed_l1_to_l2_nonces: HashSet<u64>,
+    last_batch_finished_at: Option<StdInstant>,
 }
 
 struct ExecutorStateNewBlock {
@@ -55,6 +62,7 @@ enum ExecutorThreadState {
 }
 
 impl ExecutorThreadState {
+    /// Returns the L1 nonce set owned by the current executor phase.
     fn consumed_l1_to_l2_nonces(&mut self) -> &mut HashSet<u64> {
         match self {
             ExecutorThreadState::Executing(s) => &mut s.consumed_l1_to_l2_nonces,
@@ -78,6 +86,7 @@ impl ExecutorThreadState {
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
     metrics: Arc<BlockProductionMetrics>,
+    replay_mode_enabled: bool,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -91,23 +100,87 @@ pub struct ExecutorThread {
 enum WaitTxBatchOutcome {
     /// Batch channel closed.
     Exit,
+    /// The block deadline elapsed without new work.
+    Deadline,
     /// Got a command to execute.
     Command(super::ExecutorCommand),
     /// Batch
     Batch(BatchToExecute),
 }
 
+impl WaitTxBatchOutcome {
+    /// Returns the stable metric label for the event that ended the wait.
+    fn metric_label(&self) -> &'static str {
+        match self {
+            Self::Exit => "closed",
+            Self::Deadline => "timeout",
+            Self::Command(_) => "command",
+            Self::Batch(_) => "batch",
+        }
+    }
+
+    /// Emits the detailed debug event that explains why the executor resumed.
+    fn log_debug(&self) {
+        match self {
+            Self::Exit => tracing::debug!("Batch channel closed."),
+            Self::Deadline => tracing::debug!("Executor wait deadline reached."),
+            Self::Command(cmd) => tracing::debug!("Got cmd {cmd:?}."),
+            Self::Batch(batch) => tracing::debug!("Got new batch with {} transactions.", batch.len()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CloseReason {
+    ForceClose,
+    ReplayBoundaryMet,
+    BlockFull,
+    BlockTimeDeadline,
+}
+
+impl CloseReason {
+    /// Returns the low-cardinality metric label for one close trigger.
+    fn as_label(self) -> &'static str {
+        match self {
+            CloseReason::ForceClose => "force_close",
+            CloseReason::ReplayBoundaryMet => "replay_boundary_met",
+            CloseReason::BlockFull => "block_full",
+            CloseReason::BlockTimeDeadline => "block_time_deadline",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct CloseDecision {
+    pub(super) should_close: bool,
+    pub(super) replay_boundary_exists: bool,
+    pub(super) replay_boundary_met: bool,
+    pub(super) reason: Option<CloseReason>,
+}
+
+/// Describes whether a close check kept the block open, closed it, or lost the reply channel.
+///
+/// Keeping channel shutdown explicit prevents it from being confused with a successful block transition.
+enum CloseBlockOutcome {
+    Open,
+    Closed(Box<ExecutorStateNewBlock>),
+    Exit,
+}
+
 impl ExecutorThread {
+    /// Creates the executor state machine and its dedicated wait runtime.
     pub fn new(
         backend: Arc<MadaraBackend>,
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
         metrics: Arc<BlockProductionMetrics>,
+        replay_mode_enabled: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
             metrics,
+            replay_mode_enabled,
             incoming_batches,
             replies_sender,
             commands,
@@ -117,73 +190,75 @@ impl ExecutorThread {
                 .context("Building tokio runtime")?,
         })
     }
-    /// Returns None when the channel is closed.
-    /// We want to close down the thread in that case.
+    /// Records how long the executor waited and what resumed it.
+    fn record_wait_for_work(&self, waited_secs: f64, outcome: &'static str, mode: &'static str) {
+        self.metrics
+            .executor_wait_for_work_duration
+            .record(waited_secs, &[KeyValue::new("outcome", outcome), KeyValue::new("mode", mode)]);
+    }
+
+    /// Increments the counter for the selected block-close reason.
+    fn record_close_reason(&self, reason: CloseReason) {
+        self.metrics.executor_close_reason_total.add(1, &[KeyValue::new("reason", reason.as_label())]);
+    }
+
+    /// Returns [`WaitTxBatchOutcome::Exit`] when the input channel is closed.
     /// When `deadline` is `None`, this waits indefinitely for a batch or command.
     fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
-            return WaitTxBatchOutcome::Batch(batch);
+            self.record_wait_for_work(0.0, "batch", "try_recv");
+            let outcome = WaitTxBatchOutcome::Batch(batch);
+            outcome.log_debug();
+            return outcome;
         }
 
         if let Ok(cmd) = self.commands.try_recv() {
-            return WaitTxBatchOutcome::Command(cmd);
+            self.record_wait_for_work(0.0, "command", "try_recv");
+            let outcome = WaitTxBatchOutcome::Command(cmd);
+            outcome.log_debug();
+            return outcome;
         }
 
         if !should_wait {
             return WaitTxBatchOutcome::Batch(Default::default());
         }
 
-        tracing::debug!("Waiting for batch. until_block_time_deadline={}", deadline.is_some());
+        let wait_started = StdInstant::now();
 
-        // nb: tokio has blocking_recv, but no blocking_recv_timeout? this kinda sucks :(
-        // especially because they do have it implemented in send_timeout and internally, they just have not exposed the
-        // function.
-        // Should be fine, as we optimistically try_recv above and we should only hit this when we actually have to wait.
-        // nb.2: use an async block here, as timeout_at needs a runtime to be available on creation.
-        self.wait_rt.block_on(async {
+        // tokio exposes blocking_recv but not a blocking recv-with-deadline helper, so this runtime-backed
+        // select keeps the executor on a blocking thread while still honoring the block deadline when present.
+        let result = self.wait_rt.block_on(async {
             match deadline {
                 Some(deadline) => {
                     tokio::select! {
                         Some(cmd) = self.commands.recv() => {
-                            tracing::debug!("Got cmd {cmd:?}.");
                             WaitTxBatchOutcome::Command(cmd)
                         }
                         _ = tokio::time::sleep_until(deadline) => {
-                            tracing::debug!("Waiting for batch timed out.");
-                            WaitTxBatchOutcome::Batch(Default::default())
+                            WaitTxBatchOutcome::Deadline
                         }
                         el = self.incoming_batches.recv() => match el {
-                            Some(el) => {
-                                tracing::debug!("Got new batch with {} transactions.", el.len());
-                                WaitTxBatchOutcome::Batch(el)
-                            }
-                            None => {
-                                tracing::debug!("Batch channel closed.");
-                                WaitTxBatchOutcome::Exit
-                            }
+                            Some(el) => WaitTxBatchOutcome::Batch(el),
+                            None => WaitTxBatchOutcome::Exit,
                         }
                     }
                 }
                 None => {
                     tokio::select! {
                         Some(cmd) = self.commands.recv() => {
-                            tracing::debug!("Got cmd {cmd:?}.");
                             WaitTxBatchOutcome::Command(cmd)
                         }
                         el = self.incoming_batches.recv() => match el {
-                            Some(el) => {
-                                tracing::debug!("Got new batch with {} transactions.", el.len());
-                                WaitTxBatchOutcome::Batch(el)
-                            }
-                            None => {
-                                tracing::debug!("Batch channel closed.");
-                                WaitTxBatchOutcome::Exit
-                            }
+                            Some(el) => WaitTxBatchOutcome::Batch(el),
+                            None => WaitTxBatchOutcome::Exit,
                         }
                     }
                 }
             }
-        })
+        });
+        self.record_wait_for_work(wait_started.elapsed().as_secs_f64(), result.metric_label(), "recv");
+        result.log_debug();
+        result
     }
 
     /// We are making a new block - we need to put the hash of current_block_n-10 into the state diff.
@@ -207,21 +282,36 @@ impl ExecutorThread {
         if let Some(block_hash) = get_hash_from_db()? {
             Ok(Some((block_n_min_10, block_hash)))
         } else {
-            tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
+            tracing::debug!(
+                "executor_waiting_for_confirmed_hash required_block={} current_block={}",
+                block_n_min_10,
+                block_n
+            );
+            let wait_started = std::time::Instant::now();
             loop {
-                let mut receiver = self.backend.watch_chain_tip();
+                let mut receiver = self.backend.watch_chain_head_state();
                 // We need to re-query the DB here since the it is possible for the block hash to have arrived just in between.
                 if let Some(block_hash) = get_hash_from_db()? {
+                    tracing::debug!(
+                        "executor_confirmed_hash_available required_block={} current_block={} wait_ms={}",
+                        block_n_min_10,
+                        block_n,
+                        wait_started.elapsed().as_secs_f64() * 1000.0
+                    );
                     break Ok(Some((block_n_min_10, block_hash)));
                 }
-                tracing::debug!("Waiting for hash of block_n-10.");
+                tracing::debug!(
+                    "executor_confirmed_hash_still_pending required_block={} current_block={}",
+                    block_n_min_10,
+                    block_n
+                );
                 self.wait_rt.block_on(async { receiver.recv().await });
             }
         }
     }
 
     /// End the current block.
-    fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorThreadState> {
+    fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorStateNewBlock> {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
         let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
@@ -232,11 +322,11 @@ impl ExecutorThread {
             mem::take(&mut state.consumed_l1_to_l2_nonces),
         )?;
 
-        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
+        Ok(ExecutorStateNewBlock {
             state_adaptor: cached_adapter,
             consumed_l1_to_l2_nonces: HashSet::new(),
             block_start_time: SystemTime::now(),
-        }))
+        })
     }
 
     /// Returns the initial state diff storage too. It is used to create the StartNewBlock message and transition to ExecutorState::Executing.
@@ -275,9 +365,11 @@ impl ExecutorThread {
             executor,
             consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
             declared_classes: HashMap::new(),
+            last_batch_finished_at: None,
         })
     }
 
+    /// Reconstructs the first executor phase from the backend's confirmed head.
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
@@ -286,279 +378,296 @@ impl ExecutorThread {
         }))
     }
 
+    /// Finalizes any executing block when the batch channel closes.
+    ///
+    /// A failed or undeliverable finalization leaves persisted preconfirmed data for startup recovery.
+    fn finish_shutdown(&mut self, state: &mut ExecutorThreadState) {
+        let ExecutorThreadState::Executing(execution_state) = state else {
+            tracing::debug!("Shutting down executor, no block to close");
+            if self.replies_sender.blocking_send(super::ExecutorMessage::EndFinalBlock(None)).is_err() {
+                tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+            }
+            return;
+        };
+
+        tracing::debug!("Shutting down executor, closing block block_n={}", execution_state.exec_ctx.block_number);
+        let started_at = Instant::now();
+        match execution_state.executor.finalize() {
+            Ok(summary) => {
+                let elapsed = started_at.elapsed().as_secs_f64();
+                self.metrics.executor_finalize_duration.record(elapsed, &[]);
+                self.metrics.executor_finalize_last.record(elapsed, &[]);
+                if self
+                    .replies_sender
+                    .blocking_send(super::ExecutorMessage::EndFinalBlock(Some(Box::new(summary))))
+                    .is_err()
+                {
+                    tracing::warn!("Could not send EndFinalBlock during shutdown, block will remain preconfirmed");
+                }
+            }
+            Err(error) => {
+                if self.replies_sender.blocking_send(super::ExecutorMessage::EndFinalBlock(None)).is_err() {
+                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                }
+                tracing::warn!("Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed", error);
+            }
+        }
+    }
+
+    /// Converts a wait result into executable work or a graceful loop termination.
+    ///
+    /// Force-close acknowledgements are sent immediately; deadlines become empty batches.
+    fn resolve_wait_outcome(
+        &mut self,
+        outcome: WaitTxBatchOutcome,
+        state: &mut ExecutorThreadState,
+        force_close: &mut bool,
+    ) -> Option<BatchToExecute> {
+        match outcome {
+            WaitTxBatchOutcome::Batch(batch) => Some(batch),
+            WaitTxBatchOutcome::Deadline => Some(BatchToExecute::default()),
+            WaitTxBatchOutcome::Command(super::ExecutorCommand::CloseBlock(callback)) => {
+                *force_close = true;
+                let _ = callback.send(Ok(()));
+                Some(BatchToExecute::default())
+            }
+            WaitTxBatchOutcome::Exit => {
+                self.finish_shutdown(state);
+                None
+            }
+        }
+    }
+
+    /// Appends newly received work while filtering duplicate consumed L1-handler nonces.
+    ///
+    /// The nonce is reserved in the current block before the transaction enters execution.
+    fn append_received_transactions(
+        state: &mut ExecutorThreadState,
+        to_exec: &mut BatchToExecute,
+        taken: BatchToExecute,
+    ) -> anyhow::Result<()> {
+        for (tx, additional_info) in taken {
+            if let Some(nonce) = tx.l1_handler_tx_nonce() {
+                let nonce: u64 = nonce.to_felt().try_into().context("Converting nonce from felt to u64")?;
+                if state
+                    .layered_state_adapter_mut()
+                    .is_l1_to_l2_message_nonce_consumed(nonce)
+                    .context("Checking is l1 to l2 message nonce is already consumed")?
+                    || !state.consumed_l1_to_l2_nonces().insert(nonce)
+                {
+                    tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
+                    continue;
+                }
+            }
+            to_exec.push(tx, additional_info);
+        }
+        Ok(())
+    }
+
+    /// Creates an executing block state and publishes its execution context to the main task.
+    ///
+    /// A closed reply channel returns `None`, signaling the executor loop to stop.
+    fn start_executing_block(
+        &mut self,
+        state: ExecutorStateNewBlock,
+        previous_l2_gas_used: u128,
+    ) -> anyhow::Result<Option<ExecutorStateExecuting>> {
+        let execution_state =
+            self.create_execution_state(state, previous_l2_gas_used).context("Creating execution state")?;
+        tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_number);
+        let message = super::ExecutorMessage::StartNewBlock { exec_ctx: execution_state.exec_ctx.clone() };
+        Ok(self.replies_sender.blocking_send(message).is_ok().then_some(execution_state))
+    }
+
+    /// Summarizes execution results and updates per-block declared-class and gas state.
+    ///
+    /// Result conversion remains asynchronous; this pass records only scheduler statistics.
+    fn summarize_execution_results(
+        execution_state: &mut ExecutorStateExecuting,
+        executed_txs: &BatchToExecute,
+        results: &[TransactionExecutorResult<TransactionExecutionOutput>],
+        exec_duration: std::time::Duration,
+        block_empty: &mut bool,
+    ) -> (ExecutionStats, Vec<Felt>) {
+        let mut stats =
+            ExecutionStats { n_batches: 1, n_executed: executed_txs.len(), exec_duration, ..Default::default() };
+        let avg_tx_time_ms =
+            if results.is_empty() { 0.0 } else { exec_duration.as_secs_f64() * 1000.0 / results.len() as f64 };
+        let mut replay_hashes = Vec::new();
+        for (transaction, result) in executed_txs.txs.iter().zip(results) {
+            match result {
+                Ok((execution_info, _)) => {
+                    tracing::trace!("Successful execution of transaction {:#x}", transaction.tx_hash().to_felt());
+                    exec_metrics().record_tx_execution_time(
+                        avg_tx_time_ms,
+                        tx_type_to_label(transaction.tx_type()),
+                        context_label::PRODUCTION,
+                    );
+                    stats.n_added_to_block += 1;
+                    replay_hashes.push(transaction.tx_hash().to_felt());
+                    stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
+                    *block_empty = false;
+                    if execution_info.revert_error.is_some() {
+                        stats.n_reverted += 1;
+                    } else if let Some((class_hash, contract_class)) = transaction.declared_contract_class() {
+                        tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());
+                        stats.declared_classes += 1;
+                        execution_state.declared_classes.insert(class_hash, contract_class);
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(
+                        "Rejected transaction {:#x} for unexpected error: {error:#}",
+                        transaction.tx_hash().to_felt()
+                    );
+                    stats.n_rejected += 1;
+                }
+            }
+        }
+        (stats, replay_hashes)
+    }
+
+    /// Executes the buffered transactions and returns the main-task reply plus the bouncer-full flag.
+    ///
+    /// Transactions beyond the returned result count remain buffered for the next block.
+    fn execute_batch(
+        &self,
+        execution_state: &mut ExecutorStateExecuting,
+        to_exec: &mut BatchToExecute,
+        block_empty: &mut bool,
+    ) -> (super::BatchExecutionResult, bool, Vec<Felt>) {
+        let started_at = Instant::now();
+        if let Some(waited) =
+            execution_state.last_batch_finished_at.map(|last_finished_at| last_finished_at.elapsed().as_secs_f64())
+        {
+            self.metrics.executor_inter_batch_wait_duration.record(waited, &[]);
+        }
+        let results = execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
+        let exec_duration = started_at.elapsed();
+        let block_full = results.len() < to_exec.len();
+        let executed_txs = to_exec.remove_n_front(results.len());
+        let (stats, replay_hashes) =
+            Self::summarize_execution_results(execution_state, &executed_txs, &results, exec_duration, block_empty);
+        execution_state.last_batch_finished_at = Some(StdInstant::now());
+
+        tracing::debug!("Finished batch execution.");
+        tracing::debug!("Stats: {:?}", stats);
+        tracing::debug!(
+            "Weights: {:?}",
+            execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
+        );
+        tracing::debug!("Block now full: {:?}", block_full);
+        if let Some(block_state) = execution_state.executor.block_state.as_mut() {
+            block_state.state.evict_read_cache_if_needed();
+        }
+        (
+            super::BatchExecutionResult {
+                executed_txs,
+                blockifier_results: results,
+                stats,
+                emitted_at: StdInstant::now(),
+            },
+            block_full,
+            replay_hashes,
+        )
+    }
+
+    /// Applies close policy, finalizes a matching block, and sends its summary.
+    ///
+    /// The returned state transition is applied by the loop after the current mutable borrow ends.
+    fn close_block_if_ready(
+        &mut self,
+        execution_state: &mut ExecutorStateExecuting,
+        force_close: bool,
+        block_full: bool,
+        deadline: Instant,
+    ) -> anyhow::Result<CloseBlockOutcome> {
+        let block_n = execution_state.exec_ctx.block_number;
+        let decision = self.replay_close_decision(block_n, force_close, block_full, Instant::now() >= deadline);
+        if !decision.should_close {
+            return Ok(CloseBlockOutcome::Open);
+        }
+        if let Some(reason) = decision.reason {
+            self.record_close_reason(reason);
+        }
+
+        tracing::debug!("Ending block block_n={block_n}");
+        let started_at = Instant::now();
+        let summary = execution_state.executor.finalize()?;
+        let elapsed = started_at.elapsed().as_secs_f64();
+        self.metrics.executor_finalize_duration.record(elapsed, &[]);
+        self.metrics.executor_finalize_last.record(elapsed, &[]);
+        if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(Box::new(summary))).is_err() {
+            return Ok(CloseBlockOutcome::Exit);
+        }
+        Ok(CloseBlockOutcome::Closed(Box::new(self.end_block(execution_state).context("Ending block")?)))
+    }
+
+    /// Drives the executor state machine until its batch or reply channel closes.
+    ///
+    /// Each iteration receives work, executes one capped batch, and evaluates the block-close policy.
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
         let no_empty_blocks = self.backend.chain_config().no_empty_blocks;
-
-        // Initial state is ExecutorState::NewBlock, we don't yet have an execution state.
         let mut state = self.initial_state().context("Creating executor initial state")?;
-
-        // The batch of transactions to execute.
         let mut to_exec = BatchToExecute::with_capacity(batch_size);
-
+        let mut replay_next_block_buffer = BatchToExecute::with_capacity(batch_size);
         let mut next_block_deadline = Instant::now() + block_time;
         let mut force_close = false;
         let mut block_empty = true;
         let mut l2_gas_consumed_block = 0;
-
         tracing::debug!("Starting executor thread.");
 
-        // The goal here is to do the least possible between batches, as to maximize CPU usage. Any millisecond spent
-        //  outside `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU core, but are using only one.
-        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?), we're
-        //  still optimizing everything we have a hand on here in madara.
         loop {
-            // Take transactions to execute.
             if to_exec.len() < batch_size {
-                let wait_deadline = if block_empty && no_empty_blocks { None } else { Some(next_block_deadline) };
-                // should_wait: We don't want to wait if we already have transactions to process - but we would still like to fill up our batch if possible.
-
-                let taken = match self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) {
-                    // Got a batch
-                    WaitTxBatchOutcome::Batch(batch_to_execute) => batch_to_execute,
-                    // Got a command
-                    WaitTxBatchOutcome::Command(executor_command) => match executor_command {
-                        super::ExecutorCommand::CloseBlock(callback) => {
-                            force_close = true;
-                            let _ = callback.send(Ok(()));
-                            Default::default()
-                        }
-                    },
-                    // Channel closed. Exit gracefully.
-                    // Before exiting, check if we have an executing block that needs to be closed.
-                    // This ensures graceful shutdown closes the block using the executor's existing state.
-                    WaitTxBatchOutcome::Exit => {
-                        match state {
-                            ExecutorThreadState::Executing(mut execution_state) => {
-                                tracing::debug!(
-                                    "Shutting down executor, closing block block_n={}",
-                                    execution_state.exec_ctx.block_number
-                                );
-
-                                // Finalize the block to get execution summary
-                                // This uses the executor's current state - no re-execution needed
-                                let finalize_start = Instant::now();
-                                match execution_state.executor.finalize() {
-                                    Ok(block_exec_summary) => {
-                                        let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                                        self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-
-                                        // Send EndFinalBlock message so main loop can close the block during shutdown
-                                        if self
-                                            .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Some(Box::new(
-                                                block_exec_summary,
-                                            ))))
-                                            .is_err()
-                                        {
-                                            // Receiver closed - main loop already shut down
-                                            // Block will remain preconfirmed and be handled on restart
-                                            tracing::warn!(
-                                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        // Finalization failed - log error but continue shutdown
-                                        // Block will remain preconfirmed and be handled on restart
-                                        if self
-                                            .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
-                                            .is_err()
-                                        {
-                                            tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
-                                        }
-                                        tracing::warn!(
-                                            "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
-                                            e
-                                        );
-                                    }
-                                }
-                            }
-                            ExecutorThreadState::NewBlock(_) => {
-                                // No block to close, send EndFinalBlock(None) to signal completion
-                                tracing::debug!("Shutting down executor, no block to close");
-                                if self
-                                    .replies_sender
-                                    .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
-                                    .is_err()
-                                {
-                                    // Receiver closed - main loop already shut down
-                                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
-                                }
-                            }
-                        }
-
-                        return Ok(());
-                    }
+                let deadline = self.replay_wait_deadline(&state, block_empty, no_empty_blocks, next_block_deadline);
+                let outcome = self.wait_take_tx_batch(deadline, /* should_wait */ to_exec.is_empty());
+                let Some(taken) = self.resolve_wait_outcome(outcome, &mut state, &mut force_close) else {
+                    return Ok(());
                 };
-
-                for (tx, additional_info) in taken {
-                    // Remove duplicate l1handlertxs. We want to be absolutely sure we're not duplicating them.
-                    if let Some(nonce) = tx.l1_handler_tx_nonce() {
-                        let nonce: u64 = nonce.to_felt().try_into().context("Converting nonce from felt to u64")?;
-
-                        if state
-                            .layered_state_adapter_mut()
-                            .is_l1_to_l2_message_nonce_consumed(nonce)
-                            .context("Checking is l1 to l2 message nonce is already consumed")?
-                            || !state.consumed_l1_to_l2_nonces().insert(nonce)
-                        // insert: Returns true if it was already consumed in the current state.
-                        {
-                            tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
-                            continue;
-                        }
-                    }
-                    to_exec.push(tx, additional_info)
-                }
+                Self::append_received_transactions(&mut state, &mut to_exec, taken)?;
             }
 
-            // Create a new execution state (new block) if it does not already exist.
-            // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
-            // creates the blockifier TransactionExecutor.
             let execution_state = match state {
-                ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
-                ExecutorThreadState::NewBlock(state_new_block) => {
-                    // Create new execution state.
-                    let execution_state = self
-                        .create_execution_state(state_new_block, l2_gas_consumed_block)
-                        .context("Creating execution state")?;
+                ExecutorThreadState::Executing(ref mut executing) => executing,
+                ExecutorThreadState::NewBlock(new_block) => {
+                    let Some(executing) = self.start_executing_block(new_block, l2_gas_consumed_block)? else {
+                        return Ok(());
+                    };
                     l2_gas_consumed_block = 0;
-
-                    tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_number);
-                    if self
-                        .replies_sender
-                        .blocking_send(super::ExecutorMessage::StartNewBlock {
-                            exec_ctx: execution_state.exec_ctx.clone(),
-                        })
-                        .is_err()
-                    {
-                        // Receiver closed
-                        break Ok(());
-                    }
-
-                    // Replace the state with ExecutorState::Executing while returning a mutable reference to it.
-                    // I wish rust had a better way to do that :/
-                    state = ExecutorThreadState::Executing(execution_state);
-                    let ExecutorThreadState::Executing(execution_state) = &mut state else { unreachable!() };
-                    execution_state
+                    state = ExecutorThreadState::Executing(executing);
+                    let ExecutorThreadState::Executing(executing) = &mut state else { unreachable!() };
+                    executing
                 }
             };
-
-            let exec_start_time = Instant::now();
-
-            // TODO: we should use the execution deadline option
-            // Execute the transactions.
-            let blockifier_results =
-                execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
-
-            let exec_duration = exec_start_time.elapsed();
-
-            // When the bouncer cap is reached, blockifier will return fewer results than what we asked for.
-            let block_full = blockifier_results.len() < to_exec.len();
-
-            let executed_txs = to_exec.remove_n_front(blockifier_results.len()); // Remove the used txs.
-
-            let mut stats = ExecutionStats::default();
-            stats.n_batches += 1;
-            stats.n_executed += executed_txs.len();
-            stats.exec_duration += exec_duration;
-
-            // Doesn't process the results, it just inspects them for logging stats, and figures out which classes were declared.
-            // Results are processed async, outside the executor.
-            // Calculate average per-tx time for metrics (batch executes all txs together).
-            let avg_tx_time_ms = if !blockifier_results.is_empty() {
-                exec_duration.as_secs_f64() * 1000.0 / blockifier_results.len() as f64
-            } else {
-                0.0
-            };
-            for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
-                match res {
-                    Ok((execution_info, _state_diff)) => {
-                        tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
-
-                        // Record tx execution time metric with production context.
-                        exec_metrics().record_tx_execution_time(
-                            avg_tx_time_ms,
-                            tx_type_to_label(btx.tx_type()),
-                            context_label::PRODUCTION,
-                        );
-
-                        stats.n_added_to_block += 1;
-                        stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
-                        block_empty = false;
-                        if execution_info.revert_error.is_some() {
-                            stats.n_reverted += 1;
-                        } else if let Some((class_hash, contract_class)) = btx.declared_contract_class() {
-                            tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());
-                            stats.declared_classes += 1;
-                            execution_state.declared_classes.insert(class_hash, contract_class);
-                        }
-                    }
-                    Err(err) => {
-                        // These are the transactions that have errored but we can't revert them. It can be because of an internal server error, but
-                        // errors during the execution of Declare and DeployAccount also appear here as they cannot be reverted.
-                        // We reject them.
-                        // Note that this is a big DoS vector.
-                        tracing::error!(
-                            "Rejected transaction {:#x} for unexpected error: {err:#}",
-                            btx.tx_hash().to_felt()
-                        );
-                        stats.n_rejected += 1;
-                    }
-                }
-            }
-            l2_gas_consumed_block += stats.l2_gas_consumed;
-
-            tracing::debug!("Finished batch execution.");
-            tracing::debug!("Stats: {:?}", stats);
-            tracing::debug!(
-                "Weights: {:?}",
-                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
+            self.apply_replay_boundary_capacity(
+                execution_state.exec_ctx.block_number,
+                &mut to_exec,
+                &mut replay_next_block_buffer,
             );
-            tracing::debug!("Block now full: {:?}", block_full);
-            if let Some(block_state) = execution_state.executor.block_state.as_mut() {
-                block_state.state.evict_read_cache_if_needed();
-            }
-
-            let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
+            let (exec_result, block_full, replay_hashes) =
+                self.execute_batch(execution_state, &mut to_exec, &mut block_empty);
+            l2_gas_consumed_block += exec_result.stats.l2_gas_consumed;
+            self.record_replay_executed_hashes(execution_state.exec_ctx.block_number, &replay_hashes);
             if exec_result.stats.n_executed > 0
                 && self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err()
             {
-                // Receiver closed
-                break Ok(());
+                return Ok(());
             }
 
-            // End a block once we reached the block closing condition.
-            // This transitions the state machine from ExecutorState::Executing to ExecutorState::NewBlock.
-
-            let now = Instant::now();
-            let block_time_deadline_reached = now >= next_block_deadline;
-            if force_close || block_full || block_time_deadline_reached {
-                tracing::debug!(
-                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
-                    execution_state.exec_ctx.block_number,
-                );
-                let finalize_start = Instant::now();
-                let block_exec_summary = execution_state.executor.finalize()?;
-                let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-
-                if self
-                    .replies_sender
-                    .blocking_send(super::ExecutorMessage::EndBlock(Box::new(block_exec_summary)))
-                    .is_err()
-                {
-                    // Receiver closed
-                    break Ok(());
+            match self.close_block_if_ready(execution_state, force_close, block_full, next_block_deadline)? {
+                CloseBlockOutcome::Open => {}
+                CloseBlockOutcome::Exit => return Ok(()),
+                CloseBlockOutcome::Closed(next_state) => {
+                    state = ExecutorThreadState::NewBlock(*next_state);
+                    next_block_deadline = Instant::now() + block_time;
+                    block_empty = true;
+                    force_close = false;
+                    if !replay_next_block_buffer.is_empty() {
+                        to_exec.extend(mem::take(&mut replay_next_block_buffer));
+                    }
                 }
-                next_block_deadline = Instant::now() + block_time;
-                state = self.end_block(execution_state).context("Ending block")?;
-                block_empty = true;
-                force_close = false;
             }
         }
     }

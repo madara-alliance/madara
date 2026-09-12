@@ -1,6 +1,9 @@
 use mp_rpc::admin::MempoolNonceFilter;
 use mp_transactions::validated::ValidatedTransaction;
 
+use crate::{versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use jsonrpsee::core::{async_trait, RpcResult};
+
 pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
     if nonce_filter != MempoolNonceFilter::default() && transaction.sender_contract_address().is_none() {
         return false;
@@ -9,6 +12,28 @@ pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_fil
     let nonce = transaction.transaction.nonce();
     nonce_filter.nonce_after.is_none_or(|lower| nonce > lower)
         && nonce_filter.nonce_before.is_none_or(|upper| nonce < upper)
+}
+
+#[async_trait]
+impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
+    /// Pauses or resumes sequencer mempool intake after enforcing unsafe-RPC access control.
+    /// Bypass and L1-handler sources remain available because the handle changes only mempool mode.
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .set_mempool_intake(enabled)
+            .map_err(StarknetRpcApiError::from)?)
+    }
 }
 
 #[cfg(test)]

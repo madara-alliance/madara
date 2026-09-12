@@ -68,6 +68,7 @@ pub async fn subscribe_transaction_status(
 }
 
 /// Waits for the next status or reorg notification while honoring client and unsubscribe closes.
+#[allow(clippy::large_enum_variant)]
 enum SubscriptionUpdate {
     Snapshot(crate::TxStatusSnapshot),
     NoStatus,

@@ -72,7 +72,8 @@ async fn l1_handler_setup(
 
     let (commands_sender, commands) = mpsc::unbounded_channel();
     let mut handle =
-        start_executor_thread(setup.backend.clone(), commands, Arc::new(BlockProductionMetrics::register())).unwrap();
+        start_executor_thread(setup.backend.clone(), commands, Arc::new(BlockProductionMetrics::register()), false)
+            .unwrap();
 
     let (tx, additional_info) = make_tx(
         &setup.backend,
