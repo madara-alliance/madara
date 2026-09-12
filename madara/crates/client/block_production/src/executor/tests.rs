@@ -127,7 +127,7 @@ async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
     if reject {
         assert_eq!(deferred, vec![successor]);
         for tx in deferred {
-            setup.mempool.accept_tx(tx).await.unwrap();
+            setup.mempool.requeue_tx(tx).await.unwrap();
         }
         assert!(setup.mempool.get_consumer().now_or_never().is_none());
         let replacement = make_invoke_tx(sender, Multicall::default(), &setup.backend, Felt::ZERO);

@@ -371,6 +371,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         self.add_tx(tx, /* is_new_tx */ true).await
     }
 
+    /// Restore previously admitted work deferred by execution, without publishing a
+    /// second admission, rewriting its saved entry, or duplicating external delivery.
+    /// Ordinary nonce, TTL, replacement and capacity checks still apply.
+    pub async fn requeue_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
+        self.add_tx(tx, /* is_new_tx */ false).await
+    }
+
     /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
     /// The caller holds the mempool write lock so an account cannot drain between lookup and insertion.
     fn account_nonce_for_insertion(
@@ -969,6 +976,32 @@ pub(crate) mod tests {
         let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(outbox.len(), 1);
         assert_eq!(outbox[0].tx, tx);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn requeue_does_not_repeat_admission_or_external_delivery(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+        let mut notifications = mempool.subscribe_new_transactions();
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        assert_eq!(*notifications.try_recv().unwrap(), tx_account);
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<_, _>>().unwrap();
+        assert_eq!(outbox.len(), 1);
+        // Simulate successful external delivery before execution defers the tx.
+        backend.delete_external_outbox(outbox[0].id).unwrap();
+        let tx = mempool.get_consumer().await.next().unwrap();
+        mempool.requeue_tx(tx).await.unwrap();
+        assert!(backend.get_external_outbox_transactions(10).next().is_none());
+        assert_matches::assert_matches!(
+            notifications.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        );
+        assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
     }
 
     #[rstest::rstest]
