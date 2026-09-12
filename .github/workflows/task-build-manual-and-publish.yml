@@ -18,6 +18,11 @@ on:
         required: false
         default: ghcr.io
         type: string
+      test-native-worker:
+        description: Run the focused Madara Native worker regression matrix
+        required: false
+        default: false
+        type: boolean
     outputs:
       manual-sha:
         description: Manual image tag (with commit sha)
@@ -69,6 +74,10 @@ jobs:
 
       - name: Run cargo check
         run: cargo check
+
+      - name: Test Native executor lifecycle
+        if: inputs.image-name == 'madara' && inputs.test-native-worker
+        run: cargo test --locked -p mc-block-production --lib contiguous_nonce_execution_preserves_successors -- --test-threads=1
 
       - name: Tags
         id: tag

@@ -55,17 +55,27 @@ fn make_l1_handler_tx(
 }
 
 #[rstest::rstest]
-#[case::rejected_predecessor(true)]
-#[case::reverted_predecessor(false)]
+#[case::rejected_predecessor(true, false)]
+#[case::reverted_predecessor(false, false)]
+#[case::native_rejected_predecessor(true, true)]
+#[case::native_reverted_predecessor(false, true)]
 #[tokio::test]
-async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
+async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool, #[case] native: bool) {
     use crate::tests::make_invoke_tx;
     use crate::CurrentBlockState;
     use futures::FutureExt;
     use mc_db::preconfirmed::PreconfirmedBlock;
     use mc_devnet::{Call, Multicall, Selector};
 
-    let setup = devnet_setup(Duration::from_secs(30000), false, true).await;
+    let native_cache = tempfile::tempdir().unwrap();
+    let native_config = native.then(|| {
+        mc_class_exec::NativeConfig::builder()
+            .with_cache_dir(native_cache.path().to_path_buf())
+            .with_compilation_mode(mc_class_exec::NativeCompilationMode::Blocking)
+            .build()
+    });
+    let setup = crate::tests::devnet_setup_with_native(Duration::from_secs(30000), false, true, native_config).await;
+    assert_eq!(setup.backend.cairo_native_config.is_enabled(), native);
     let sender = &setup.contracts.0[0];
     let mut first = make_invoke_tx(
         sender,
