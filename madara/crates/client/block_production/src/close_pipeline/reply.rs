@@ -126,7 +126,14 @@ impl BlockProductionTask {
         self.metrics.record_execution_stats(&batch.stats);
         state.accumulated_stats = state.accumulated_stats.clone() + batch.stats.clone();
         state.last_execution_finished_at = Some(batch.emitted_at);
-        state.append_batch(batch).await?;
+        // Persist the successful prefix before resolving nonces for re-admission.
+        for tx in state.append_batch(batch).await? {
+            let hash = tx.hash;
+            if let Err(error) = self.mempool.requeue_tx(tx).await {
+                // Normal TTL, replacement and capacity policies still apply.
+                tracing::warn!("Could not requeue deferred mempool transaction {hash:#x}: {error:#}");
+            }
+        }
         self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
         Ok(())
     }

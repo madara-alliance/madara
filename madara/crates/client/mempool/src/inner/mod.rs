@@ -312,6 +312,15 @@ impl InnerMempool {
         account_update.removed_txs.pop().map(|tx| tx.into_inner())
     }
 
+    /// Pops the successor of a transaction already handed to the same locked consumer.
+    /// Only the batch-local cursor advances; the account's executed nonce is unchanged.
+    pub(crate) fn pop_contiguous(&mut self, address: ContractAddress, nonce: Nonce) -> Option<ValidatedTransaction> {
+        let update = self.accounts.remove_contiguous(address, nonce)?;
+        let mut removed = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        self.apply_update(update, &mut removed);
+        removed.pop()
+    }
+
     /// Remove all TTL-exceeded transactions. This needs to be called periodically.
     ///
     /// ## Arguments

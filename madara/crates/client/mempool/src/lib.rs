@@ -138,6 +138,8 @@ use topic_pubsub::TopicWatchPubsub;
 pub use transaction_status::{PreConfirmationStatus, TransactionStatus, WatchTransactionStatus};
 
 mod chain_watcher_task;
+#[cfg(test)]
+mod contiguous_tests;
 mod inner;
 mod notify;
 mod topic_pubsub;
@@ -367,6 +369,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// Accept a new validated transaction.
     pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
         self.add_tx(tx, /* is_new_tx */ true).await
+    }
+
+    /// Restore previously admitted work deferred by execution, without publishing a
+    /// second admission, rewriting its saved entry, or duplicating external delivery.
+    /// Ordinary nonce, TTL, replacement and capacity checks still apply.
+    pub async fn requeue_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
+        self.add_tx(tx, /* is_new_tx */ false).await
     }
 
     /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
@@ -675,7 +684,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
     /// This holds the lock to the inner mempool - use with care.
     pub async fn get_consumer(&self) -> MempoolConsumer {
-        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
+        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await, successor: None }
     }
 
     pub fn subscribe_new_transactions(&self) -> tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>> {
@@ -691,10 +700,27 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 /// This holds the lock to the inner mempool - use with care.
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
+    successor: Option<(starknet_api::core::ContractAddress, Nonce)>,
+}
+impl MempoolConsumer {
+    /// Takes consecutive nonces within one bounded executor batch, stopping at gaps.
+    /// Dropping the consumer discards its cursor, never advancing the chain nonce.
+    /// The caller must execute in order and requeue future-nonce failures; ordinary
+    /// iteration remains available when only independently ready heads are wanted.
+    pub fn next_contiguous(&mut self) -> Option<ValidatedTransaction> {
+        let tx = self
+            .successor
+            .take()
+            .and_then(|(address, nonce)| self.lock.pop_contiguous(address, nonce))
+            .or_else(|| self.lock.pop_next_ready())?;
+        self.successor = tx.contract_address.try_into().ok().zip(Nonce(tx.transaction.nonce()).try_increment().ok());
+        Some(tx)
+    }
 }
 impl Iterator for MempoolConsumer {
     type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
+        self.successor = None;
         self.lock.pop_next_ready()
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -950,6 +976,32 @@ pub(crate) mod tests {
         let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(outbox.len(), 1);
         assert_eq!(outbox[0].tx, tx);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn requeue_does_not_repeat_admission_or_external_delivery(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+        let mut notifications = mempool.subscribe_new_transactions();
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        assert_eq!(*notifications.try_recv().unwrap(), tx_account);
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<_, _>>().unwrap();
+        assert_eq!(outbox.len(), 1);
+        // Simulate successful external delivery before execution defers the tx.
+        backend.delete_external_outbox(outbox[0].id).unwrap();
+        let tx = mempool.get_consumer().await.next().unwrap();
+        mempool.requeue_tx(tx).await.unwrap();
+        assert!(backend.get_external_outbox_transactions(10).next().is_none());
+        assert_matches::assert_matches!(
+            notifications.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        );
+        assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
     }
 
     #[rstest::rstest]
