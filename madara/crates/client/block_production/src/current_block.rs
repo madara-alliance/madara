@@ -111,8 +111,7 @@ impl CurrentBlockState {
         {
             // A rejected predecessor does not consume its nonce. Its speculative
             // successors remain valid pending work, not permanently rejected txs.
-            if additional_info.from_mempool && blockifier_exec_result.as_ref().is_err_and(|e| is_future_nonce_error(e))
-            {
+            if additional_info.from_mempool && blockifier_exec_result.as_ref().is_err_and(is_future_nonce_error) {
                 if let blockifier::transaction::transaction_execution::Transaction::Account(tx) = blockifier_tx {
                     deferred.push(ValidatedTransaction::from_starknet_api(
                         tx.tx,

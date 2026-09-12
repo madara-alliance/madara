@@ -54,6 +54,101 @@ fn make_l1_handler_tx(
     (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default(), from_mempool: false })
 }
 
+#[rstest::rstest]
+#[case::rejected_predecessor(true)]
+#[case::reverted_predecessor(false)]
+#[tokio::test]
+async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
+    use crate::tests::make_invoke_tx;
+    use crate::CurrentBlockState;
+    use futures::FutureExt;
+    use mc_db::preconfirmed::PreconfirmedBlock;
+    use mc_devnet::{Call, Multicall, Selector};
+
+    let setup = devnet_setup(Duration::from_secs(30000), false, true).await;
+    let sender = &setup.contracts.0[0];
+    let mut first = make_invoke_tx(
+        sender,
+        Multicall::default().with(Call {
+            to: sender.address,
+            selector: Selector::from("deliberately_missing_entrypoint"),
+            calldata: vec![],
+        }),
+        &setup.backend,
+        Felt::ZERO,
+    );
+    if reject {
+        // Fault injection after admission: model validation becoming invalid between
+        // admission and execution. This is NOT a production admission bypass.
+        let mp_rpc::v0_9_0::BroadcastedInvokeTxn::V3(tx) = &mut first else { unreachable!() };
+        tx.signature = vec![Felt::ZERO, Felt::ZERO].into();
+    }
+    let next = make_invoke_tx(sender, Multicall::default(), &setup.backend, Felt::ONE);
+    let to_mempool_tx = |tx| {
+        BroadcastedTxn::Invoke(tx)
+            .into_validated_tx(
+                setup.backend.chain_config().chain_id.to_felt(),
+                StarknetVersion::LATEST,
+                mp_transactions::validated::TxTimestamp::now(),
+            )
+            .unwrap()
+    };
+    setup.mempool.accept_tx(to_mempool_tx(first)).await.unwrap();
+    let successor = to_mempool_tx(next);
+    setup.mempool.accept_tx(successor.clone()).await.unwrap();
+    let take_batch = |mut consumer: mc_mempool::MempoolConsumer| {
+        std::iter::from_fn(|| consumer.next_contiguous())
+            .map(|tx| {
+                let (tx, arrived_at, declared_class) = tx.into_blockifier_for_sequencing().unwrap();
+                (tx, AdditionalTxInfo { arrived_at, declared_class, from_mempool: true })
+            })
+            .collect::<BatchToExecute>()
+    };
+    let batch = take_batch(setup.mempool.get_consumer().await);
+    assert_eq!(batch.len(), 2);
+    let (_commands_sender, commands) = mpsc::unbounded_channel();
+    let mut handle = start_executor_thread(setup.backend.clone(), commands, setup.metrics.clone(), false).unwrap();
+    handle.send_batch.as_ref().unwrap().send(batch).await.unwrap();
+    let Some(ExecutorMessage::StartNewBlock { exec_ctx }) = handle.replies.recv().await else {
+        panic!("expected block start")
+    };
+    let block_n = exec_ctx.block_number;
+    setup.backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header())).unwrap();
+    let Some(ExecutorMessage::BatchExecuted(result)) = handle.replies.recv().await else { panic!("expected results") };
+    assert_eq!(result.blockifier_results.len(), 2);
+    if reject {
+        assert!(result.blockifier_results.iter().all(Result::is_err));
+    } else {
+        assert!(result.blockifier_results[0].as_ref().unwrap().0.is_reverted());
+        assert!(result.blockifier_results[1].is_ok(), "revert must consume the predecessor nonce");
+    }
+    let mut current = CurrentBlockState::new(setup.backend.clone(), block_n);
+    let deferred = current.append_batch(result).await.unwrap();
+    if reject {
+        assert_eq!(deferred, vec![successor]);
+        for tx in deferred {
+            setup.mempool.accept_tx(tx).await.unwrap();
+        }
+        assert!(setup.mempool.get_consumer().now_or_never().is_none());
+        let replacement = make_invoke_tx(sender, Multicall::default(), &setup.backend, Felt::ZERO);
+        setup.mempool.accept_tx(to_mempool_tx(replacement)).await.unwrap();
+        let batch = take_batch(setup.mempool.get_consumer().await);
+        assert_eq!(batch.len(), 2);
+        handle.send_batch.as_ref().unwrap().send(batch).await.unwrap();
+        let Some(ExecutorMessage::BatchExecuted(result)) = handle.replies.recv().await else {
+            panic!("expected retry results")
+        };
+        assert!(result.blockifier_results.iter().all(Result::is_ok));
+        assert!(current.append_batch(result).await.unwrap().is_empty());
+    } else {
+        assert!(deferred.is_empty());
+    }
+    assert_eq!(setup.backend.block_view_on_preconfirmed(block_n).unwrap().num_executed_transactions(), 2);
+    handle.send_batch.take();
+    while tokio::time::timeout(Duration::from_secs(30), handle.replies.recv()).await.unwrap().is_some() {}
+    tokio::time::timeout(Duration::from_secs(30), handle.stop.recv()).await.unwrap().unwrap();
+}
+
 struct L1HandlerSetup {
     backend: Arc<MadaraBackend>,
     handle: ExecutorThreadHandle,
