@@ -138,6 +138,8 @@ use topic_pubsub::TopicWatchPubsub;
 pub use transaction_status::{PreConfirmationStatus, TransactionStatus, WatchTransactionStatus};
 
 mod chain_watcher_task;
+#[cfg(test)]
+mod contiguous_tests;
 mod inner;
 mod notify;
 mod topic_pubsub;
@@ -675,7 +677,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
     /// This holds the lock to the inner mempool - use with care.
     pub async fn get_consumer(&self) -> MempoolConsumer {
-        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
+        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await, successor: None }
     }
 
     pub fn subscribe_new_transactions(&self) -> tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>> {
@@ -691,10 +693,27 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 /// This holds the lock to the inner mempool - use with care.
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
+    successor: Option<(starknet_api::core::ContractAddress, Nonce)>,
+}
+impl MempoolConsumer {
+    /// Takes consecutive nonces within one bounded executor batch, stopping at gaps.
+    /// Dropping the consumer discards its cursor, never advancing the chain nonce.
+    /// The caller must execute in order and requeue future-nonce failures; ordinary
+    /// iteration remains available when only independently ready heads are wanted.
+    pub fn next_contiguous(&mut self) -> Option<ValidatedTransaction> {
+        let tx = self
+            .successor
+            .take()
+            .and_then(|(address, nonce)| self.lock.pop_contiguous(address, nonce))
+            .or_else(|| self.lock.pop_next_ready())?;
+        self.successor = tx.contract_address.try_into().ok().zip(Nonce(tx.transaction.nonce()).try_increment().ok());
+        Some(tx)
+    }
 }
 impl Iterator for MempoolConsumer {
     type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
+        self.successor = None;
         self.lock.pop_next_ready()
     }
     fn size_hint(&self) -> (usize, Option<usize>) {

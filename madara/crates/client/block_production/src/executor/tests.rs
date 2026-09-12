@@ -28,7 +28,7 @@ pub(super) fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (
         .unwrap()
         .into_blockifier_for_sequencing()
         .unwrap();
-    (tx, AdditionalTxInfo { declared_class, arrived_at: ts })
+    (tx, AdditionalTxInfo { declared_class, arrived_at: ts, from_mempool: false })
 }
 
 fn make_l1_handler_tx(
@@ -51,7 +51,7 @@ fn make_l1_handler_tx(
     )
     .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
     .unwrap();
-    (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default() })
+    (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default(), from_mempool: false })
 }
 
 struct L1HandlerSetup {
