@@ -2,9 +2,11 @@
 //! blocks, transactions, and state updates from external sources and applying them to the local
 //! database.
 //!
-//! Before importing, full-node startup reconciles inherited multi-block sequencer execution to
-//! the confirmed trie and discards its unfinished suffix. Upstream blocks then supply that state
-//! again. A single preconfirmed block is retained and follows the configured replacement policy.
+//! Before importing, full-node startup materializes confirmed state left behind by parallel
+//! production, even without a preconfirmed suffix. Inherited multi-block sequencer execution is
+//! reconciled to confirmation and discarded; upstream blocks then supply that state again.
+//! A single preconfirmed block retains its replacement policy, and independent full-node trie
+//! progress ahead of confirmation is preserved.
 //!
 //! # Overview
 //!

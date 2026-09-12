@@ -126,7 +126,7 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
-        self.discard_inherited_execution_suffix().await?;
+        self.reconcile_inherited_execution().await?;
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -149,19 +149,23 @@ impl<P: ForwardPipeline> SyncController<P> {
         Ok(())
     }
 
-    /// Full-node sync imports upstream state and cannot resume a sequencer's dependent execution suffix.
-    /// Normalize it before polling or importing; retain ordinary single-block preconfirmed recovery.
-    async fn discard_inherited_execution_suffix(&mut self) -> anyhow::Result<()> {
+    /// Materialize inherited confirmed state before full-node import and discard dependent execution.
+    /// Preserve single-block preconfirmed recovery and independent full-node trie progress.
+    async fn reconcile_inherited_execution(&mut self) -> anyhow::Result<()> {
         let head = self.backend.chain_head_state();
-        let (Some(external_tip), Some(internal_tip)) = (head.external_preconfirmed_tip, head.internal_preconfirmed_tip)
-        else {
-            return Ok(());
-        };
-        if internal_tip <= external_tip {
+        let discard_suffix = matches!(
+            (head.external_preconfirmed_tip, head.internal_preconfirmed_tip),
+            (Some(external), Some(internal)) if internal > external
+        );
+        // A parallel producer can confirm a non-boundary block without materializing its trie.
+        // Conversely, ordinary full-node trie application can run ahead of other import stages;
+        // retain that progress unless it belongs to a discarded sequencer execution suffix.
+        let trie_behind_confirmed = self.backend.get_latest_applied_trie_update()? < head.confirmed_tip;
+        if !discard_suffix && !trie_behind_confirmed {
             return Ok(());
         }
 
-        tracing::info!(external_tip, internal_tip, "Discarding inherited sequencer execution before full-node sync");
+        tracing::info!(discard_suffix, trie_behind_confirmed, "Reconciling inherited state before full-node sync");
         let backend = self.backend.clone();
         mp_utils::rayon::global_spawn_rayon_task(move || {
             // Backend initialization already removed partial block parts. Reconcile the trie
@@ -170,7 +174,9 @@ impl<P: ForwardPipeline> SyncController<P> {
                 .db
                 .reconcile_confirmed_parallel_merkle_state(head.confirmed_tip, "full_node_inherited_execution")
                 .context("Reconciling inherited sequencer trie state before full-node sync")?;
-            backend.write_access().clear_preconfirmed().context("Discarding inherited sequencer execution")?;
+            if discard_suffix {
+                backend.write_access().clear_preconfirmed().context("Discarding inherited sequencer execution")?;
+            }
             backend.db.flush().context("Flushing inherited execution cleanup before full-node sync")
         })
         .await
