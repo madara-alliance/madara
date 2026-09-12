@@ -162,9 +162,7 @@ impl DbWriteMode {
             opts.disable_wal(true);
         }
 
-        if !self.fsync {
-            opts.set_sync(false);
-        }
+        opts.set_sync(self.fsync);
 
         opts
     }
