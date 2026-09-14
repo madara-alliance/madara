@@ -72,7 +72,7 @@ impl CurrentBlockState {
         if stats.n_executed == 0 {
             return;
         }
-        tracing::debug!(
+        tracing::info!(
             txs_executed_in_batch = stats.n_executed,
             txs_added_to_block = stats.n_added_to_block,
             txs_reverted = stats.n_reverted,
