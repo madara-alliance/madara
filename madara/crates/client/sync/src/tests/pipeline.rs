@@ -342,6 +342,163 @@ async fn full_node_restart_discards_inherited_execution_suffix(
 
 #[rstest]
 #[tokio::test]
+async fn full_node_restart_reconciles_confirmed_trie_without_execution_suffix(
+    gateway_mock: GatewayMock,
+    #[values(false, true)] keep_preconfirmed: bool,
+) {
+    let directory = tempfile::tempdir().unwrap();
+    let open = || {
+        MadaraBackend::open_rocksdb(
+            directory.path(),
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap()
+    };
+    let backend = open();
+    backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                state_diff: Default::default(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .unwrap();
+    backend.reconcile_confirmed_parallel_merkle_state("test_genesis").unwrap();
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+        .unwrap();
+    let diff = mp_state_update::StateDiff {
+        deployed_contracts: vec![mp_state_update::DeployedContractItem {
+            address: felt!("0x123"),
+            class_hash: felt!("0x456"),
+        }],
+        ..Default::default()
+    };
+    let computed = backend
+        .db
+        .compute_root_from_latest_snapshot(1, &diff, backend.chain_config().latest_protocol_version, false)
+        .unwrap();
+    backend
+        .write_access()
+        .write_preconfirmed_with_precomputed_root(false, 1, diff, computed.state_root, computed.timings)
+        .unwrap();
+    backend.write_access().new_confirmed_block(1).unwrap();
+    if keep_preconfirmed {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 2, ..Default::default() }))
+            .unwrap();
+    }
+    backend.db.flush().unwrap();
+    drop(backend);
+
+    let backend = open();
+    let head = backend.chain_head_state();
+    let confirmed = backend.db.get_block_info(1).unwrap().unwrap();
+    assert_eq!(head.confirmed_tip, Some(1));
+    assert_eq!(head.external_preconfirmed_tip, keep_preconfirmed.then_some(2));
+    assert_eq!(head.internal_preconfirmed_tip, head.external_preconfirmed_tip);
+    assert_ne!(backend.db.get_state_root_hash().unwrap(), confirmed.header.global_state_root);
+    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
+    let mut sync = crate::gateway::forward_sync(
+        backend.clone(),
+        importer.clone(),
+        gateway_mock.client(),
+        SyncControllerConfig::default().no_pending_block(true),
+        ForwardSyncConfig::default().disable_reorg_preconfirmed(true),
+    );
+    // Exercise startup without allowing upstream polling to repair the fixture.
+    let ctx = ServiceContext::default();
+    ctx.cancel_global();
+    sync.run(ctx).await.unwrap();
+    assert_eq!(backend.chain_head_state(), head);
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), confirmed.header.global_state_root);
+    assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(1));
+
+    // Startup must flush the repair so another restart retains both the trie and head policy.
+    drop(sync);
+    drop(importer);
+    drop(backend);
+    let backend = open();
+    assert_eq!(backend.chain_head_state(), head);
+    assert_eq!(backend.db.get_state_root_hash().unwrap(), confirmed.header.global_state_root);
+    assert_eq!(backend.get_latest_applied_trie_update().unwrap(), Some(1));
+    let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
+
+    // An empty upstream block must preserve block 1's root; verification stays enabled.
+    let mut header = confirmed.header;
+    header.block_number = 2;
+    backend
+        .write_access()
+        .write_header(mp_block::BlockHeaderWithSignatures {
+            header,
+            block_hash: felt!("0x999"),
+            consensus_signatures: vec![],
+        })
+        .unwrap();
+    importer.run_in_rayon_pool_global(|ctx| ctx.apply_to_global_trie(2..3, vec![Default::default()])).await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn full_node_startup_preserves_independent_trie_progress(ctx: TestContext) {
+    ctx.backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                state_diff: Default::default(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            false,
+        )
+        .unwrap();
+    let diff = mp_state_update::StateDiff {
+        deployed_contracts: vec![mp_state_update::DeployedContractItem {
+            address: felt!("0x123"),
+            class_hash: felt!("0x456"),
+        }],
+        ..Default::default()
+    };
+    ctx.backend
+        .write_access()
+        .apply_to_global_trie(1, [&diff], ctx.backend.chain_config().latest_protocol_version)
+        .unwrap();
+    ctx.backend.write_latest_applied_trie_update(&Some(1)).unwrap();
+    let root = ctx.backend.db.get_state_root_hash().unwrap();
+    assert_ne!(root, Felt::ZERO);
+    let head = ctx.backend.chain_head_state();
+    assert_eq!(head.confirmed_tip, Some(0));
+    assert_eq!(head.internal_preconfirmed_tip, None);
+
+    let mut sync = crate::gateway::forward_sync(
+        ctx.backend.clone(),
+        ctx.importer,
+        ctx.gateway_mock.client(),
+        SyncControllerConfig::default(),
+        ForwardSyncConfig::default(),
+    );
+    let service = ServiceContext::default();
+    service.cancel_global();
+    sync.run(service).await.unwrap();
+    assert_eq!(ctx.backend.chain_head_state(), head);
+    assert_eq!(ctx.backend.db.get_state_root_hash().unwrap(), root);
+    assert_eq!(ctx.backend.get_latest_applied_trie_update().unwrap(), Some(1));
+}
+
+#[rstest]
+#[tokio::test]
 async fn full_node_startup_discards_execution_before_genesis(gateway_mock: GatewayMock) {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_test()),

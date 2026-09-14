@@ -1426,7 +1426,7 @@ mod shutdown_tests {
 
     #[tokio::test(start_paused = true)]
     async fn graceful_runner_stays_active_until_in_flight_work_finishes() {
-        let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::BlockProduction);
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::BlockProduction);
         let mut tasks = JoinSet::new();
         let (started, waiting) = tokio::sync::oneshot::channel();
         let (finish, draining) = std::sync::mpsc::channel();
@@ -1459,7 +1459,7 @@ mod shutdown_tests {
 
     #[tokio::test(start_paused = true)]
     async fn graceful_runner_waits_for_rayon_startup_after_shutdown_deadline() {
-        let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::L2Sync);
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::L2Sync);
         let mut tasks = JoinSet::new();
         let (started, waiting) = tokio::sync::oneshot::channel();
         let (finish, recovering) = std::sync::mpsc::channel();
@@ -1495,7 +1495,7 @@ mod shutdown_tests {
 
     #[tokio::test(start_paused = true)]
     async fn ordinary_runner_keeps_its_force_cancel_timeout() {
-        let ctx = ServiceContext::new_for_testing().with_id(MadaraServiceId::Mempool);
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::Mempool);
         let mut tasks = JoinSet::new();
         let (started, waiting) = tokio::sync::oneshot::channel();
         ServiceRunner::new(ctx.clone(), &mut tasks).service_loop(|mut ctx| async move {
