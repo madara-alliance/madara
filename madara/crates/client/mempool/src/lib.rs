@@ -700,20 +700,35 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 /// This holds the lock to the inner mempool - use with care.
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
-    successor: Option<(starknet_api::core::ContractAddress, Nonce)>,
+    successor: Option<ContiguousNonceCursor>,
+}
+
+struct ContiguousNonceCursor {
+    address: starknet_api::core::ContractAddress,
+    next_nonce: Nonce,
+    taken: usize,
 }
 impl MempoolConsumer {
-    /// Takes consecutive nonces within one bounded executor batch, stopping at gaps.
+    /// Takes consecutive nonces, yielding to another ready account at a gap or the per-account limit.
+    /// Excess transactions stay queued. Zero is treated as a limit of one.
     /// Dropping the consumer discards its cursor, never advancing the chain nonce.
     /// The caller must execute in order and requeue future-nonce failures; ordinary
     /// iteration remains available when only independently ready heads are wanted.
-    pub fn next_contiguous(&mut self) -> Option<ValidatedTransaction> {
-        let tx = self
+    pub fn next_contiguous(&mut self, max_txs_per_account_per_batch: usize) -> Option<ValidatedTransaction> {
+        let (tx, taken) = self
             .successor
             .take()
-            .and_then(|(address, nonce)| self.lock.pop_contiguous(address, nonce))
-            .or_else(|| self.lock.pop_next_ready())?;
-        self.successor = tx.contract_address.try_into().ok().zip(Nonce(tx.transaction.nonce()).try_increment().ok());
+            .filter(|cursor| cursor.taken < max_txs_per_account_per_batch.max(1))
+            .and_then(|cursor| {
+                self.lock.pop_contiguous(cursor.address, cursor.next_nonce).map(|tx| (tx, cursor.taken + 1))
+            })
+            .or_else(|| self.lock.pop_next_ready().map(|tx| (tx, 1)))?;
+        self.successor = tx
+            .contract_address
+            .try_into()
+            .ok()
+            .zip(Nonce(tx.transaction.nonce()).try_increment().ok())
+            .map(|(address, next_nonce)| ContiguousNonceCursor { address, next_nonce, taken });
         Some(tx)
     }
 }

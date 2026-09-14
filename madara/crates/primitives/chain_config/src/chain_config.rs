@@ -111,6 +111,8 @@ pub struct BlockProductionConfig {
     /// Number of workers. Defaults to the number of cores in the system.
     pub n_workers: usize,
     pub batch_size: usize,
+    /// Maximum mempool transactions from one account per batch. Defaults to one; zero is treated as one.
+    pub max_txs_per_account_per_batch: usize,
 }
 
 impl BlockProductionConfig {
@@ -125,6 +127,7 @@ impl Default for BlockProductionConfig {
             disable_concurrency: false,
             n_workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
             batch_size: 1024,
+            max_txs_per_account_per_batch: 1,
         }
     }
 }
@@ -889,6 +892,15 @@ mod tests {
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
+
+    #[rstest]
+    #[case::existing_config("batch_size: 1024", 1)]
+    #[case::configured_limit("batch_size: 1024\nmax_txs_per_account_per_batch: 300", 300)]
+    fn block_production_account_limit_defaults_for_existing_configs(#[case] yaml: &str, #[case] expected: usize) {
+        let config: BlockProductionConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.max_txs_per_account_per_batch, expected);
+        assert_eq!(config.blockifier_config().chunk_size, 1024);
+    }
 
     #[rstest]
     fn test_mainnet_from_yaml() {

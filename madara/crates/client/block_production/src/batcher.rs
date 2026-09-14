@@ -20,6 +20,9 @@ use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+#[cfg(test)]
+mod tests;
+
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
@@ -94,25 +97,27 @@ impl Batcher {
                 (btx, AdditionalTxInfo { declared_class, arrived_at: TxTimestamp::now(), from_mempool: false })
             })?)
         });
+        let mempool = self.mempool.clone();
+        let max_txs_per_account_per_batch =
+            self.backend.chain_config().block_production_concurrency.max_txs_per_account_per_batch;
         let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = match *self.mempool_intake_rx.borrow() {
             MempoolIntakeMode::Paused => stream::pending().boxed(),
-            MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
-                let consumer = mempool.get_consumer().await;
-                Some((consumer, mempool))
-            })
-            .map(|mut consumer| {
-                // This stream lives for one next_batch call. Do not carry its speculative
-                // cursor into another batch before execution has advanced the chain nonce.
-                stream::iter(std::iter::from_fn(move || consumer.next_contiguous()).map(|tx| {
-                    tx.into_blockifier_for_sequencing()
-                        .map(|(btx, ts, declared_class)| {
-                            (btx, AdditionalTxInfo { declared_class, arrived_at: ts, from_mempool: true })
-                        })
-                        .map_err(anyhow::Error::from)
-                }))
-            })
-            .flatten()
-            .boxed(),
+            // Use one locked consumer per batch so neither the nonce cursor nor the
+            // per-account limit can reset by reacquiring the mempool within this batch.
+            MempoolIntakeMode::Running => stream::once(async move { mempool.get_consumer().await })
+                .map(move |mut consumer| {
+                    stream::iter(
+                        std::iter::from_fn(move || consumer.next_contiguous(max_txs_per_account_per_batch)).map(|tx| {
+                            tx.into_blockifier_for_sequencing()
+                                .map(|(btx, ts, declared_class)| {
+                                    (btx, AdditionalTxInfo { declared_class, arrived_at: ts, from_mempool: true })
+                                })
+                                .map_err(anyhow::Error::from)
+                        }),
+                    )
+                })
+                .flatten()
+                .boxed(),
         };
         let tx_stream =
             stream::select_with_strategy(bypass_txs_stream, stream::select(l1_txs_stream, mempool_txs_stream), |()| {

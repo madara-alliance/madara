@@ -45,6 +45,8 @@ block_production_concurrency:
   disable_concurrency: true
   n_workers: 1
   batch_size: 1024
+  # Default: one ready transaction per account. Set to 300 to batch bounded consecutive nonces.
+  max_txs_per_account_per_batch: 1
 
 # /!\ Only used for block production.
 # The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.

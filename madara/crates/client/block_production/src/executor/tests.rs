@@ -97,7 +97,7 @@ async fn contiguous_nonce_execution_preserves_successors(#[case] reject: bool) {
     let successor = to_mempool_tx(next);
     setup.mempool.accept_tx(successor.clone()).await.unwrap();
     let take_batch = |mut consumer: mc_mempool::MempoolConsumer| {
-        std::iter::from_fn(|| consumer.next_contiguous())
+        std::iter::from_fn(|| consumer.next_contiguous(300))
             .map(|tx| {
                 let (tx, arrived_at, declared_class) = tx.into_blockifier_for_sequencing().unwrap();
                 (tx, AdditionalTxInfo { arrived_at, declared_class, from_mempool: true })
