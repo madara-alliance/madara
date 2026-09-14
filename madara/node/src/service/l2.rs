@@ -85,7 +85,9 @@ impl Service for SyncService {
             .stop_on_sync(this.params.stop_on_sync)
             .no_pending_block(this.params.no_pending_sync);
 
-        runner.service_loop(move |ctx| async move {
+        // Startup trie recovery runs in Rayon. Keep awaiting it through shutdown so the
+        // service cannot be reported stopped while recovery still writes to the database.
+        runner.service_loop_with_graceful_shutdown(move |ctx| async move {
             // Warp update
             if let Some(WarpUpdateConfig {
                 warp_update_port_rpc,

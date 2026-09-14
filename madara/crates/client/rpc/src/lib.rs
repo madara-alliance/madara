@@ -334,7 +334,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_estimateFee",
 //!   "params": {
-//!     "request": [/* transaction objects */],
+//!     "request": [
+//!       /* transaction objects */
+//!     ],
 //!     "simulation_flags": [],
 //!     "block_id": "latest"
 //!   },
@@ -353,7 +355,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_estimateMessageFee",
 //!   "params": {
-//!     "message": {/* L1 message object */},
+//!     "message": {
+//!       /* L1 message object */
+//!     },
 //!     "block_id": "latest"
 //!   },
 //!   "id": 1
@@ -500,7 +504,9 @@
 //!   "method": "starknet_simulateTransactions",
 //!   "params": {
 //!     "block_id": "latest",
-//!     "transactions": [/* transaction objects */],
+//!     "transactions": [
+//!       /* transaction objects */
+//!     ],
 //!     "simulation_flags": []
 //!   },
 //!   "id": 1
@@ -541,7 +547,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addInvokeTransaction",
 //!   "params": {
-//!     "invoke_transaction": {/* transaction object */}
+//!     "invoke_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -558,7 +566,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addDeclareTransaction",
 //!   "params": {
-//!     "declare_transaction": {/* transaction object */}
+//!     "declare_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -575,7 +585,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addDeployAccountTransaction",
 //!   "params": {
-//!     "deploy_account_transaction": {/* transaction object */}
+//!     "deploy_account_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -677,7 +689,7 @@
 //! expose these endpoints publicly without proper authentication and authorization mechanisms.
 //! Madara does not perform authorization checks on these methods.
 //!
-//! ### Write Methods
+//! ### Admin Write Methods
 //!
 //! #### `madara_addDeclareV0Transaction`
 //!
@@ -691,7 +703,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "madara_addDeclareV0Transaction",
 //!   "params": {
-//!     "declare_transaction": {/* legacy transaction object */}
+//!     "declare_transaction": {
+//!       /* legacy transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -748,6 +762,23 @@
 //! }
 //! ```
 //!
+//! ### Replay and Mempool Intake Controls
+//!
+//! These methods require `--rpc-unsafe` on the administrative endpoint.
+//!
+//! - `madara_setReplayBoundary` accepts a `replay_boundary` object containing `block_n`,
+//!   `expected_tx_count`, and `last_tx_hash`. With `--replay-mode`, the batcher limits
+//!   dispatch and the executor checks the transaction count and terminal hash before closing
+//!   the source block. A boundary stored without replay mode is ignored by batching and execution.
+//! - `madara_getReplayBoundaryStatus` accepts `block_n` and returns the configured boundary's
+//!   progress, or `null` when no retained boundary exists. Dispatch, execution, and closure are separate
+//!   stages; `boundary_met` does not mean the block has been durably confirmed.
+//! - `madara_setMempoolIntake` accepts `enabled`: `false` pauses further mempool intake and
+//!   `true` resumes it. Transactions already dispatched may still execute. This requires block
+//!   production and leaves L1 messages and administrative bypass submissions active.
+//!
+//! Replay boundaries and intake controls live in memory and must be configured again after restart.
+//!
 //! ### WebSocket Methods
 //!
 //! #### `madara_pulse`
@@ -768,7 +799,7 @@
 //!
 //! ## Special Methods
 //!
-//! #### `rpc_methods`
+//! ### `rpc_methods`
 //!
 //! Returns a list of all available RPC methods on the current endpoint. This is useful for
 //! discovering which methods are supported by a particular node configuration.
@@ -1075,6 +1106,9 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    if starknet.rpc_unsafe_enabled {
+        rpc_api.merge(versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    }
     rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
@@ -1254,6 +1288,7 @@ pub(crate) async fn close_ws_subscription(
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum LiveConfirmedHeadResolution {
     Block(Box<mp_block::MadaraBlockInfo>),
     Reorg(mc_db::ReorgNotification),
@@ -1326,105 +1361,4 @@ impl Drop for WsSubscriptionGuard {
 }
 
 #[cfg(test)]
-mod test {
-    use super::{
-        normalize_sender_address_filter, resolve_live_confirmed_head, LiveConfirmedHeadResolution, WsSubscriptionHandle,
-    };
-    use crate::{errors::StarknetWsApiError, test_utils::rpc_test_setup};
-    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
-    use starknet_types_core::felt::Felt;
-    use std::{collections::HashSet, sync::Arc};
-
-    fn add_block_at(backend: &Arc<mc_db::MadaraBackend>, n: u64) -> Felt {
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader { block_number: n, ..Default::default() },
-                    state_diff: mp_state_update::StateDiff::default(),
-                    transactions: vec![],
-                    events: vec![],
-                },
-                &[],
-                false,
-            )
-            .expect("Storing block")
-            .block_hash
-    }
-
-    #[test]
-    fn resolve_live_confirmed_head_returns_pending_reorg_before_reading_db() {
-        let (backend, _rpc) = rpc_test_setup();
-        let block_0_hash = add_block_at(&backend, 0);
-        let block_1_hash = add_block_at(&backend, 1);
-        let mut reorgs = backend.subscribe_reorgs();
-
-        backend.revert_to(&block_0_hash).expect("Revert should succeed");
-
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 1, || StarknetWsApiError::Internal)
-            .expect("Reorg resolution should succeed")
-        {
-            LiveConfirmedHeadResolution::Reorg(reorg) => {
-                assert_eq!(reorg.first_reverted_block_n, 1);
-                assert_eq!(reorg.first_reverted_block_hash, block_1_hash);
-            }
-            LiveConfirmedHeadResolution::Block(_) => panic!("Expected queued reorg before block read"),
-            LiveConfirmedHeadResolution::RetryBackfill => panic!("Expected queued reorg before backfill retry"),
-        }
-    }
-
-    #[test]
-    fn resolve_live_confirmed_head_retries_backfill_when_block_is_missing() {
-        let (backend, _rpc) = rpc_test_setup();
-        let mut reorgs = backend.subscribe_reorgs();
-
-        match resolve_live_confirmed_head(&backend, &mut reorgs, 0, || StarknetWsApiError::Internal)
-            .expect("Missing block should not error")
-        {
-            LiveConfirmedHeadResolution::RetryBackfill => {}
-            LiveConfirmedHeadResolution::Block(_) => panic!("Expected missing block to retry backfill"),
-            LiveConfirmedHeadResolution::Reorg(_) => panic!("Expected missing block without reorg to retry backfill"),
-        }
-    }
-
-    #[test]
-    fn normalize_sender_address_filter_treats_empty_as_unfiltered() {
-        assert_eq!(normalize_sender_address_filter(None), None);
-        assert_eq!(normalize_sender_address_filter(Some(vec![])), None);
-        assert_eq!(
-            normalize_sender_address_filter(Some(vec![Felt::ONE, Felt::ONE, Felt::TWO])),
-            Some(HashSet::from([Felt::ONE, Felt::TWO]))
-        );
-    }
-
-    #[tokio::test]
-    async fn ws_subscription_handle_cancel_wakes_all_waiters() {
-        let (handle, _cancelled) = WsSubscriptionHandle::new();
-        let handle = Arc::new(handle);
-        let handle_1 = Arc::clone(&handle);
-        let handle_2 = Arc::clone(&handle);
-
-        let waiter_1 = tokio::spawn(async move { handle_1.cancelled().await });
-        let waiter_2 = tokio::spawn(async move { handle_2.cancelled().await });
-
-        tokio::task::yield_now().await;
-        handle.cancel();
-
-        tokio::time::timeout(std::time::Duration::from_secs(1), async {
-            waiter_1.await.expect("First waiter should complete");
-            waiter_2.await.expect("Second waiter should complete");
-        })
-        .await
-        .expect("Cancellation should wake all waiters");
-    }
-
-    #[tokio::test]
-    async fn ws_subscription_handle_cancelled_returns_immediately_after_cancel() {
-        let (handle, _cancelled) = WsSubscriptionHandle::new();
-        handle.cancel();
-
-        tokio::time::timeout(std::time::Duration::from_secs(1), handle.cancelled())
-            .await
-            .expect("Cancelled handle should resolve immediately");
-    }
-}
+mod tests;

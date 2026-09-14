@@ -5,7 +5,7 @@ use blockifier::blockifier::transaction_executor::{
     BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult,
 };
 use mc_db::MadaraBackend;
-use std::{any::Any, panic::AssertUnwindSafe, sync::Arc};
+use std::{any::Any, panic::AssertUnwindSafe, sync::Arc, time::Instant};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
     oneshot,
@@ -58,11 +58,12 @@ pub enum ExecutorMessage {
     EndFinalBlock(Option<Box<BlockExecutionSummary>>),
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct BatchExecutionResult {
     pub executed_txs: BatchToExecute,
     pub blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>>,
     pub stats: ExecutionStats,
+    pub emitted_at: Instant,
 }
 
 /// Receiver for the stop condition of the executor thread.
@@ -81,13 +82,15 @@ pub fn start_executor_thread(
     backend: Arc<MadaraBackend>,
     commands: UnboundedReceiver<ExecutorCommand>,
     metrics: Arc<BlockProductionMetrics>,
+    replay_mode_enabled: bool,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
     let (send_batch, incoming_batches) = mpsc::channel(1);
     let (replies_sender, replies_recv) = mpsc::channel(100);
     let (stop_sender, stop_recv) = oneshot::channel();
 
-    let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands, metrics)?;
+    let executor =
+        thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands, metrics, replay_mode_enabled)?;
     // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable
     std::thread::Builder::new()
         .name("executor".into())

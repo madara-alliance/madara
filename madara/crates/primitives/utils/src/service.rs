@@ -1212,6 +1212,27 @@ impl<'a> ServiceRunner<'a> {
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<anyhow::Error> + Send,
     {
+        self.service_loop_inner(runner, true);
+    }
+
+    /// Runs a service whose in-flight work must finish before it can be reported stopped.
+    ///
+    /// The grace period still emits a warning, but does not cancel the runner. Use this for
+    /// services with blocking writes that cannot be cancelled safely. Administrative callers
+    /// must time out without mutating shared state while this service remains active.
+    pub fn service_loop_with_graceful_shutdown<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static)
+    where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Into<anyhow::Error> + Send,
+    {
+        self.service_loop_inner(runner, false);
+    }
+
+    fn service_loop_inner<F, E>(self, runner: impl FnOnce(ServiceContext) -> F + Send + 'static, force_cancel: bool)
+    where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Into<anyhow::Error> + Send,
+    {
         let Self { ctx, join_set } = self;
         join_set.spawn(async move {
             let id = ctx.id();
@@ -1219,14 +1240,21 @@ impl<'a> ServiceRunner<'a> {
                 tracing::debug!("Starting service with id: {id}");
             }
 
-            // If a service is implemented correctly, `stopper` should never
-            // cancel first. This is a safety measure in case someone forgets to
-            // implement a cancellation check along some branch of the service's
-            // execution, or if they don't read the docs :D
+            // Ordinary workers can be cancelled at the deadline. Writers must finish
+            // draining before the monitor can acknowledge that they have stopped.
             let ctx1 = ctx.clone();
+            let runner = runner(ctx);
+            tokio::pin!(runner);
             tokio::select! {
-                res = runner(ctx) => res.map_err(Into::into)?,
-                _ = Self::stopper(ctx1, &id) => {},
+                res = &mut runner => res.map_err(Into::into)?,
+                _ = Self::shutdown_deadline(ctx1) => {
+                    if force_cancel {
+                        tracing::warn!("Forcefully shutting down service: {}", MadaraServiceId::from(id));
+                    } else {
+                        tracing::warn!("Waiting for in-flight work before stopping service: {}", MadaraServiceId::from(id));
+                        runner.await.map_err(Into::into)?;
+                    }
+                },
             }
 
             if id != MadaraServiceId::Monitor.svc_id() {
@@ -1237,11 +1265,9 @@ impl<'a> ServiceRunner<'a> {
         });
     }
 
-    async fn stopper(mut ctx: ServiceContext, id: &PowerOfTwo) {
+    async fn shutdown_deadline(mut ctx: ServiceContext) {
         ctx.cancelled().await;
         tokio::time::sleep(SERVICE_GRACE_PERIOD).await;
-
-        tracing::warn!("⚠️  Forcefully shutting down service: {}", MadaraServiceId::from(*id));
     }
 }
 
@@ -1391,5 +1417,96 @@ impl ServiceMonitor {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn graceful_runner_stays_active_until_in_flight_work_finishes() {
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::BlockProduction);
+        let mut tasks = JoinSet::new();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let (finish, draining) = std::sync::mpsc::channel();
+        let wrote = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_wrote = wrote.clone();
+        ServiceRunner::new(ctx.clone(), &mut tasks).service_loop_with_graceful_shutdown(move |mut ctx| async move {
+            ctx.cancelled().await;
+            started.send(()).unwrap();
+            tokio::task::spawn_blocking(move || {
+                draining.recv().unwrap();
+                worker_wrote.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await
+            .unwrap();
+            anyhow::Ok(())
+        });
+
+        ctx.cancel_global();
+        waiting.await.unwrap();
+        tokio::time::advance(SERVICE_GRACE_PERIOD + Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert!(tasks.try_join_next().is_none(), "a draining writer must not acknowledge shutdown");
+
+        assert!(!wrote.load(std::sync::atomic::Ordering::SeqCst));
+        finish.send(()).unwrap();
+        let stopped = tasks.join_next().await.unwrap().unwrap().unwrap();
+        assert_eq!(stopped, MadaraServiceId::BlockProduction.svc_id());
+        assert!(wrote.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn graceful_runner_waits_for_rayon_startup_after_shutdown_deadline() {
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::L2Sync);
+        let mut tasks = JoinSet::new();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        let (finish, recovering) = std::sync::mpsc::channel();
+        let wrote = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_wrote = wrote.clone();
+        ServiceRunner::new(ctx.clone(), &mut tasks).service_loop_with_graceful_shutdown(move |_ctx| async move {
+            crate::rayon::global_spawn_rayon_task(move || {
+                started.send(()).unwrap();
+                recovering.recv().unwrap();
+                worker_wrote.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .await;
+            anyhow::Ok(())
+        });
+
+        // Recovery has already started when shutdown arrives; dropping its future cannot stop it.
+        waiting.await.unwrap();
+        ctx.cancel_global();
+        tokio::task::yield_now().await;
+        tokio::time::advance(SERVICE_GRACE_PERIOD + Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        let premature_stop = tasks.try_join_next();
+        let wrote_before_release = wrote.load(std::sync::atomic::Ordering::SeqCst);
+        // Always release the Rayon worker, including when the shutdown assertion fails.
+        finish.send(()).unwrap();
+        assert!(premature_stop.is_none(), "startup recovery must finish before sync acknowledges shutdown");
+        assert!(!wrote_before_release);
+
+        let stopped = tasks.join_next().await.unwrap().unwrap().unwrap();
+        assert_eq!(stopped, MadaraServiceId::L2Sync.svc_id());
+        assert!(wrote.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ordinary_runner_keeps_its_force_cancel_timeout() {
+        let ctx = ServiceContext::new().with_id(MadaraServiceId::Mempool);
+        let mut tasks = JoinSet::new();
+        let (started, waiting) = tokio::sync::oneshot::channel();
+        ServiceRunner::new(ctx.clone(), &mut tasks).service_loop(|mut ctx| async move {
+            ctx.cancelled().await;
+            started.send(()).unwrap();
+            std::future::pending::<anyhow::Result<()>>().await
+        });
+        ctx.cancel_global();
+        waiting.await.unwrap();
+        tokio::time::advance(SERVICE_GRACE_PERIOD + Duration::from_secs(1)).await;
+        let stopped = tasks.join_next().await.unwrap().unwrap().unwrap();
+        assert_eq!(stopped, MadaraServiceId::Mempool.svc_id());
     }
 }

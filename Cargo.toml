@@ -343,8 +343,8 @@ zip = "4.3.0"
 cairo-native = { git = "https://github.com/karnotxyz/cairo_native", rev = "eb59cc0af7d854e60451fe6c6696ead71d2fada7" }
 jsonrpsee-core = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
 jsonrpsee-types = { git = "https://github.com/madara-alliance/jsonrpsee", rev = "52c76441b922b9d1c6b260fcb29d62e94a8ca57c" }
-rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
+rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
+librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", rev = "75f13c78fdf970b0afd2f21f52caf3317341341c" }
 
 [patch."https://github.com/starkware-libs/sequencer"]
 apollo_infra_utils = { git = "https://github.com/karnotxyz/sequencer", rev = "4c5fd9e90f8fed9830849878bad427222b16d1f9" }

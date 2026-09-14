@@ -103,6 +103,12 @@ use serde::{Deserialize, Serialize};
 const KiB: usize = 1024;
 const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
+/// Default interval between full RocksDB obsolete-file discovery scans.
+/// Normal flush and compaction cleanup remains independent of this interval.
+pub const DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS: u64 = 60 * 60 * 1_000_000;
+/// Default number of SST table readers RocksDB may retain across the database.
+/// Operators can lower this for large databases when index/filter memory is constrained.
+pub const DEFAULT_MAX_OPEN_FILES: i32 = 2048;
 
 pub use rocksdb::statistics::StatsLevel;
 
@@ -200,7 +206,8 @@ pub struct RocksDBConfig {
     /// Ratio of the buffer size dedicated to bloom filters for a column
     pub memtable_prefix_bloom_filter_ratio: f64,
 
-    /// Maximum number of trie logs
+    /// Number of block revisions for which global trie logs are retained.
+    /// Parallel Merkle writes sparse boundary logs but uses the same block-based retention window.
     pub max_saved_trie_logs: Option<usize>,
     /// Maximum number of kept snapshots
     pub max_kept_snapshots: Option<usize>,
@@ -214,6 +221,14 @@ pub struct RocksDBConfig {
 
     /// Write durability mode (WAL and fsync settings)
     pub write_mode: DbWriteMode,
+
+    /// Interval between full scans for obsolete files that were not discovered by
+    /// normal flush and compaction cleanup.
+    pub delete_obsolete_files_period_micros: u64,
+
+    /// Maximum number of SST files retained in RocksDB's table cache.
+    /// Lower values reduce index/filter memory at the cost of more file-open work on reads.
+    pub max_open_files: i32,
 
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION SETTINGS
@@ -257,6 +272,8 @@ impl Default for RocksDBConfig {
             backup_dir: None,
             restore_from_latest_backup: false,
             write_mode: DbWriteMode::default(),
+            delete_obsolete_files_period_micros: DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS,
+            max_open_files: DEFAULT_MAX_OPEN_FILES,
             // Write stall prevention defaults (tuned for ~20 GiB volumes)
             max_write_buffer_number: 5,
             level_zero_slowdown_writes_trigger: 20,
@@ -429,8 +446,9 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // LOGGING & FILE MANAGEMENT
     // ═══════════════════════════════════════════════════════════════════════════
     options.set_max_log_file_size(10 * MiB);
-    options.set_max_open_files(2048);
+    options.set_max_open_files(config.max_open_files);
     options.set_keep_log_file_num(3);
+    options.set_delete_obsolete_files_period_micros(config.delete_obsolete_files_period_micros);
     options.set_log_level(rocksdb::LogLevel::Warn);
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -610,5 +628,37 @@ mod tests {
                 column.rocksdb_name
             );
         }
+    }
+
+    #[test]
+    fn global_options_use_configured_file_management_options() {
+        let directory = tempfile::tempdir().unwrap();
+        let configured_period_micros = 1_234_567;
+        let configured_max_open_files = 256;
+        let config = RocksDBConfig {
+            delete_obsolete_files_period_micros: configured_period_micros,
+            max_open_files: configured_max_open_files,
+            ..RocksDBConfig::default()
+        };
+        let _storage = RocksDBStorage::open(directory.path(), config).unwrap();
+
+        let options_path = fs::read_dir(directory.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("OPTIONS-"))
+            })
+            .expect("RocksDB should persist an OPTIONS file");
+        let options = fs::read_to_string(options_path).unwrap();
+
+        assert!(
+            options.contains(&format!("delete_obsolete_files_period_micros={configured_period_micros}")),
+            "obsolete-file scan period should use the configured value"
+        );
+        assert!(
+            options.contains(&format!("max_open_files={configured_max_open_files}")),
+            "maximum open SST files should use the configured value"
+        );
     }
 }

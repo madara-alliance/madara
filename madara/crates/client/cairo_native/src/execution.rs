@@ -1375,6 +1375,10 @@ mod tests {
     #[rstest]
     fn test_compilation_timeout_config(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = test_counters::acquire_and_reset();
+        // A timeout does not cancel native compilation. Own its blocking worker so LLVM
+        // finishes before the test process and its temporary cache directory are torn down.
+        let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(1).enable_all().build().unwrap();
+        let _runtime_guard = runtime.enter();
 
         let class_hash = create_unique_test_class_hash();
 

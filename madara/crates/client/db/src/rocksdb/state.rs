@@ -1,6 +1,9 @@
 use crate::{
     prelude::*,
-    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE},
+    rocksdb::{
+        iter_pinned::DBIterator, snapshots::SnapshotRef, Column, RocksDBStorageInner, WriteBatchWithTransaction,
+        DB_UPDATES_BATCH_SIZE,
+    },
 };
 use mp_convert::Felt;
 use mp_state_update::{
@@ -101,6 +104,23 @@ impl RocksDBStorageInner {
         Ok(n.transpose()?.transpose()?)
     }
 
+    /// Resolves the newest historical value matching a reversed block-key prefix from a fixed snapshot.
+    /// Deserialization and iterator failures are surfaced rather than falling back to live storage.
+    fn db_history_kv_resolve_from_snapshot<V: serde::de::DeserializeOwned + 'static>(
+        &self,
+        snapshot: &SnapshotRef,
+        bin_prefix: &[u8],
+        col: Column,
+    ) -> Result<Option<V>> {
+        let mut options = ReadOptions::default();
+        options.set_prefix_same_as_start(true);
+        let mode = IteratorMode::From(bin_prefix, rocksdb::Direction::Forward);
+        let mut iter = snapshot.iterator_cf(col, options, mode).into_iter_values(|bytes| super::deserialize(bytes));
+        let n = iter.next();
+
+        Ok(n.transpose()?.transpose()?)
+    }
+
     fn db_history_kv_contains(&self, bin_prefix: &[u8], col: Column) -> Result<bool> {
         let mut options = ReadOptions::default();
         options.set_prefix_same_as_start(true);
@@ -123,11 +143,39 @@ impl RocksDBStorageInner {
         self.db_history_kv_resolve(&prefix, CONTRACT_NONCE_COLUMN)
     }
 
+    #[tracing::instrument(skip(self, snapshot))]
+    /// Reads a contract nonce at a block from an immutable RocksDB snapshot.
+    /// Snapshot reads provide the stable base required by concurrent root computation.
+    pub(super) fn get_contract_nonce_at_from_snapshot(
+        &self,
+        snapshot: &SnapshotRef,
+        block_n: u64,
+        contract_address: &Felt,
+    ) -> Result<Option<Felt>> {
+        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
+        let prefix = make_contract_column_key(contract_address, block_n);
+        self.db_history_kv_resolve_from_snapshot(snapshot, &prefix, CONTRACT_NONCE_COLUMN)
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
         let prefix = make_contract_column_key(contract_address, block_n);
         self.db_history_kv_resolve(&prefix, CONTRACT_CLASS_HASH_COLUMN)
+    }
+
+    #[tracing::instrument(skip(self, snapshot))]
+    /// Reads a contract class hash at a block from an immutable RocksDB snapshot.
+    /// The lookup shares historical-key semantics with the live backend read path.
+    pub(super) fn get_contract_class_hash_at_from_snapshot(
+        &self,
+        snapshot: &SnapshotRef,
+        block_n: u64,
+        contract_address: &Felt,
+    ) -> Result<Option<Felt>> {
+        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
+        let prefix = make_contract_column_key(contract_address, block_n);
+        self.db_history_kv_resolve_from_snapshot(snapshot, &prefix, CONTRACT_CLASS_HASH_COLUMN)
     }
 
     #[tracing::instrument(skip(self))]
@@ -219,67 +267,6 @@ impl RocksDBStorageInner {
         for ((contract_address, key), _value) in &value.contract_kv_updates {
             batch.delete_cf(&contract_storage_col, make_storage_column_key(contract_address, key, block_n_u32));
         }
-
-        Ok(())
-    }
-
-    /// Revert items in the contract db.
-    ///
-    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
-    /// to be reverted in that block.
-    ///
-    /// **Warning:** While not enforced, the following should be true:
-    ///  * Each `StateDiff` should include the entire state for its block
-    ///  * `state_diffs` should form a contiguous range of blocks
-    ///  * that range should end with the current blockchain tip
-    ///
-    /// If this isn't the case, the db could end up storing inconsistent state for some blocks.
-    #[tracing::instrument(skip(self, state_diffs))]
-    pub(super) fn contract_db_revert(&self, state_diffs: &[(u64, StateDiff)]) -> Result<()> {
-        tracing::info!("📝 REORG [contract_db_revert]: Starting with {} state diffs", state_diffs.len());
-
-        if state_diffs.is_empty() {
-            tracing::info!("📝 REORG [contract_db_revert]: No state diffs to process, skipping");
-            return Ok(());
-        }
-
-        let mut batch = WriteBatchWithTransaction::default();
-        let mut total_deployed = 0;
-        let mut total_replaced = 0;
-        let mut total_nonces = 0;
-        let mut total_storage_entries = 0;
-
-        for (block_n, diff) in state_diffs {
-            tracing::debug!(
-                "📝 REORG [contract_db_revert]: Processing block {} with {} deployed, {} replaced, {} nonces, {} storage diffs",
-                block_n,
-                diff.deployed_contracts.len(),
-                diff.replaced_classes.len(),
-                diff.nonces.len(),
-                diff.storage_diffs.len()
-            );
-
-            // Reuse existing state_remove logic
-            self.state_remove(*block_n, diff, &mut batch)?;
-
-            // Track totals for logging
-            total_deployed += diff.deployed_contracts.len();
-            total_replaced += diff.replaced_classes.len();
-            total_nonces += diff.nonces.len();
-            total_storage_entries += diff.storage_diffs.iter().map(|sd| sd.storage_entries.len()).sum::<usize>();
-        }
-
-        tracing::info!(
-            "📝 REORG [contract_db_revert]: Removing {} deployed contracts, {} replaced classes, {} nonces, {} storage entries",
-            total_deployed,
-            total_replaced,
-            total_nonces,
-            total_storage_entries
-        );
-
-        self.db.write_opt(batch, &self.writeopts)?;
-
-        tracing::info!("✅ REORG [contract_db_revert]: Successfully removed all contract state");
 
         Ok(())
     }

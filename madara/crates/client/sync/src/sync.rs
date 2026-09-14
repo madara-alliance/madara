@@ -1,4 +1,5 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
+use anyhow::Context;
 use futures::{future::OptionFuture, Future};
 use mc_db::sync_status::SyncStatus;
 use mc_db::MadaraBackend;
@@ -125,6 +126,7 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
+        self.reconcile_inherited_execution().await?;
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -145,6 +147,39 @@ impl<P: ForwardPipeline> SyncController<P> {
             tracing::info!("🌐 Sync process ended");
         }
         Ok(())
+    }
+
+    /// Materialize inherited confirmed state before full-node import and discard dependent execution.
+    /// Preserve single-block preconfirmed recovery and independent full-node trie progress.
+    async fn reconcile_inherited_execution(&mut self) -> anyhow::Result<()> {
+        let head = self.backend.chain_head_state();
+        let discard_suffix = matches!(
+            (head.external_preconfirmed_tip, head.internal_preconfirmed_tip),
+            (Some(external), Some(internal)) if internal > external
+        );
+        // A parallel producer can confirm a non-boundary block without materializing its trie.
+        // Conversely, ordinary full-node trie application can run ahead of other import stages;
+        // retain that progress unless it belongs to a discarded sequencer execution suffix.
+        let trie_behind_confirmed = self.backend.get_latest_applied_trie_update()? < head.confirmed_tip;
+        if !discard_suffix && !trie_behind_confirmed {
+            return Ok(());
+        }
+
+        tracing::info!(discard_suffix, trie_behind_confirmed, "Reconciling inherited state before full-node sync");
+        let backend = self.backend.clone();
+        mp_utils::rayon::global_spawn_rayon_task(move || {
+            // Backend initialization already removed partial block parts. Reconcile the trie
+            // before clearing the projection, so interrupted recovery can still find the suffix.
+            backend
+                .db
+                .reconcile_confirmed_parallel_merkle_state(head.confirmed_tip, "full_node_inherited_execution")
+                .context("Reconciling inherited sequencer trie state before full-node sync")?;
+            if discard_suffix {
+                backend.write_access().clear_preconfirmed().context("Discarding inherited sequencer execution")?;
+            }
+            backend.db.flush().context("Flushing inherited execution cleanup before full-node sync")
+        })
+        .await
     }
 
     fn target_height(&self) -> Option<u64> {

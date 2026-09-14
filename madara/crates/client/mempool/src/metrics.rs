@@ -7,6 +7,7 @@ pub struct MempoolMetrics {
     pub accepted_transaction_counter: Counter<u64>,
     pub mempool_current_size: Gauge<u64>,
     pub mempool_ready_transactions: Gauge<u64>,
+    preconfirmed_transaction_statuses: Gauge<u64>,
 }
 
 impl MempoolMetrics {
@@ -39,12 +40,30 @@ impl MempoolMetrics {
             "transaction".to_string(),
         );
 
-        Self { accepted_transaction_counter, mempool_current_size, mempool_ready_transactions }
+        let preconfirmed_transaction_statuses = register_gauge_metric_instrument(
+            &meter,
+            "mempool_preconfirmed_transaction_statuses".to_string(),
+            "Number of transaction statuses retaining preconfirmed block data".to_string(),
+            "transaction".to_string(),
+        );
+
+        Self {
+            accepted_transaction_counter,
+            mempool_current_size,
+            mempool_ready_transactions,
+            preconfirmed_transaction_statuses,
+        }
     }
 
     pub fn record_mempool_state(&self, summary: &MempoolStateSummary) {
         self.mempool_current_size.record(summary.num_transactions as u64, &[]);
         self.mempool_ready_transactions.record(summary.ready_transactions as u64, &[]);
+    }
+
+    /// Records the number of preconfirmed statuses that retain runtime transaction data.
+    /// This should remain bounded by the unconfirmed runahead window during block production.
+    pub fn record_preconfirmed_transaction_statuses(&self, count: usize) {
+        self.preconfirmed_transaction_statuses.record(count as u64, &[]);
     }
 }
 

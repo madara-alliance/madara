@@ -103,6 +103,13 @@ pub struct InnerMempool {
     eviction_queue: EvictionQueue,
 }
 
+impl InnerMempool {
+    /// Latest nonce known for an account that still has queued transactions.
+    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.get_account_nonce(contract_address)
+    }
+}
+
 #[cfg(any(test, feature = "testing"))]
 #[allow(unused)]
 impl InnerMempool {
@@ -113,10 +120,6 @@ impl InnerMempool {
         self.timestamp_queue.check_invariants(&self.accounts);
         self.by_tx_hash.check_invariants(&self.accounts);
         self.eviction_queue.check_invariants(&self.accounts);
-    }
-
-    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
-        self.accounts.all_accounts().get(contract_address).map(|acc| &acc.current_nonce)
     }
 
     pub fn account_nonces(&self) -> impl Iterator<Item = (&ContractAddress, &Nonce)> {
@@ -132,6 +135,12 @@ impl InnerMempool {
 }
 
 impl InnerMempool {
+    /// Iterates over contract addresses currently represented in the mempool.
+    /// Addresses are copied from the account index without exposing its storage.
+    pub fn contract_addresses(&self) -> impl Iterator<Item = ContractAddress> + '_ {
+        self.accounts.contract_addresses().copied()
+    }
+
     pub fn new(config: InnerMempoolConfig) -> Self {
         Self {
             limiter: MempoolLimiter::new(&config),

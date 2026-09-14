@@ -1,4 +1,5 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+use crate::MempoolIntakeMode;
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
@@ -13,12 +14,14 @@ use mp_rpc::v0_9_0::{
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use std::sync::Arc;
+use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
+    /// Sends a validated transaction directly to the batcher's bypass stream.
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
@@ -26,9 +29,11 @@ impl SubmitValidatedTransaction for BypassInput {
 
 #[async_trait]
 impl TransactionLookup for BypassInput {
+    /// Bypass submission does not maintain a separate transaction lookup index.
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
     }
+    /// Bypass submission does not expose a transaction subscription stream.
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
@@ -42,20 +47,26 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+    replay_mode_enabled: bool,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
 
 impl BlockProductionHandle {
+    /// Creates the shared transaction converter and runtime control channels.
     pub(crate) fn new(
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
         no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            mempool_intake_tx,
+            replay_mode_enabled: false,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
@@ -72,6 +83,29 @@ impl BlockProductionHandle {
             .send(ExecutorCommand::CloseBlock(sender))
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
+    }
+
+    /// Pauses or resumes mempool intake without affecting bypass or L1 traffic.
+    pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {
+        let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
+        let previous_mode = *self.mempool_intake_tx.borrow();
+        self.mempool_intake_tx.send(mode).map_err(|e| anyhow::anyhow!("Mempool intake channel closed: {e}"))?;
+        if previous_mode != mode {
+            tracing::info!(previous_mode = ?previous_mode, new_mode = ?mode, "mempool_intake_updated");
+        } else {
+            tracing::debug!(mode = ?mode, "mempool_intake_already_set");
+        }
+        Ok(())
+    }
+
+    /// Updates the local replay-mode guard used by replay-only handle methods.
+    pub(crate) fn set_replay_mode_enabled(&mut self, enabled: bool) {
+        self.replay_mode_enabled = enabled;
+    }
+
+    /// Returns whether replay-only control methods are enabled.
+    pub fn replay_mode_enabled(&self) -> bool {
+        self.replay_mode_enabled
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.

@@ -47,6 +47,30 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Undo only the local "consumed on L2" projection for transactions that never became
+    /// canonical. L1-origin metadata and pending payloads remain intact so the authoritative L1
+    /// event does not need to be reconstructed from an L2 partial block.
+    pub(super) fn message_to_l2_revert_unconfirmed_consumption(
+        &self,
+        nonces: &[u64],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        if nonces.is_empty() {
+            return Ok(());
+        }
+
+        let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
+        let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        for nonce in nonces.iter().copied() {
+            batch.delete_cf(&on_l2_cf, nonce.to_be_bytes());
+            if let Some(l1_tx_hash) = self.get_l1_txn_hash_by_nonce(nonce)? {
+                let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, nonce);
+                batch.put_cf(&by_l1_tx_hash_cf, by_l1_key, []);
+            }
+        }
+        Ok(())
+    }
+
     fn add_message_to_l2_consumed_transaction_ops(
         &self,
         batch: &mut WriteBatchWithTransaction,
