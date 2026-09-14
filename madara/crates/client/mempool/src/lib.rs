@@ -260,6 +260,13 @@ enum NonceUpdateMode {
     Replace,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InsertionMode {
+    New,
+    Reload,
+    Requeue,
+}
+
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
         if !self.config.save_to_db {
@@ -275,9 +282,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     continue;
                 }
             };
-            let is_new_tx = false; // do not trigger metrics update and db update.
             let tx_hash = tx.hash;
-            if let Err(err) = self.add_tx(tx, is_new_tx).await {
+            if let Err(err) = self.add_tx(tx, InsertionMode::Reload).await {
                 match err {
                     MempoolInsertionError::InnerMempool(TxInsertionError::NonceTooLow { .. }) => {
                         // Admission now rejects transactions already covered by internal execution.
@@ -368,14 +374,23 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Accept a new validated transaction.
     pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
-        self.add_tx(tx, /* is_new_tx */ true).await
+        self.add_tx(tx, InsertionMode::New).await
     }
 
     /// Restore previously admitted work deferred by execution, without publishing a
     /// second admission, rewriting its saved entry, or duplicating external delivery.
     /// Ordinary nonce, TTL, replacement and capacity checks still apply.
     pub async fn requeue_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
-        self.add_tx(tx, /* is_new_tx */ false).await
+        self.add_tx(tx, InsertionMode::Requeue).await
+    }
+
+    /// Releases admission capacity after executor results have been persisted and
+    /// deferred work restored. Releasing an already restored hash is harmless.
+    pub async fn finish_consumed_transactions(&self, hashes: &[Felt]) {
+        let mut lock = self.inner.write().await;
+        for hash in hashes {
+            lock.release_consumed(hash);
+        }
     }
 
     /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
@@ -408,8 +423,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(Nonce(nonce))
     }
 
-    /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
+    /// Reload and requeue preserve the original admission side effects.
+    async fn add_tx(&self, tx: ValidatedTransaction, mode: InsertionMode) -> Result<(), MempoolInsertionError> {
+        let is_new_tx = mode == InsertionMode::New;
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
         let mut outbox_id = None;
@@ -434,6 +450,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         let (ret, summary) = {
             let mut lock = self.inner.write().await;
+            if mode == InsertionMode::Requeue {
+                // Transfer the reservation back to queued capacity under the same lock.
+                lock.release_consumed(&tx.hash);
+            }
             let ret = self.account_nonce_for_insertion(&lock, &tx.contract_address).and_then(|nonce| {
                 lock.insert_tx(TxTimestamp::now(), tx.clone(), nonce, &mut removed_txs).map_err(Into::into)
             });
@@ -712,7 +732,8 @@ impl MempoolConsumer {
     /// Takes consecutive nonces, yielding to another ready account at a gap or the per-account limit.
     /// Excess transactions stay queued. Zero is treated as a limit of one.
     /// Dropping the consumer discards its cursor, never advancing the chain nonce.
-    /// The caller must execute in order and requeue future-nonce failures; ordinary
+    /// The caller must execute in order, requeue future-nonce failures and release
+    /// completed reservations with `finish_consumed_transactions`; ordinary
     /// iteration remains available when only independently ready heads are wanted.
     pub fn next_contiguous(&mut self, max_txs_per_account_per_batch: usize) -> Option<ValidatedTransaction> {
         let (tx, taken) = self
@@ -723,6 +744,7 @@ impl MempoolConsumer {
                 self.lock.pop_contiguous(cursor.address, cursor.next_nonce).map(|tx| (tx, cursor.taken + 1))
             })
             .or_else(|| self.lock.pop_next_ready().map(|tx| (tx, 1)))?;
+        self.lock.reserve_consumed(&tx);
         self.successor = tx
             .contract_address
             .try_into()

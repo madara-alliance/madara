@@ -1,5 +1,6 @@
 use super::*;
 use futures::FutureExt;
+use mc_exec::execution::TxInfo;
 use mc_mempool::MempoolConfig;
 use mc_settlement_client::L1ClientMock;
 use mp_chain_config::{BlockProductionConfig, ChainConfig, MempoolMode};
@@ -104,4 +105,113 @@ async fn next_batch_limits_each_account_and_keeps_remaining_transactions(
         // All heads are in flight: another batch must wait for real nonce progress.
         assert!(batcher.next_batch().now_or_never().is_none());
     }
+}
+
+struct Harness {
+    batcher: Batcher,
+    mempool: Arc<Mempool>,
+    output: mpsc::Receiver<BatchToExecute>,
+    intake: watch::Sender<MempoolIntakeMode>,
+    ctx: ServiceContext,
+    _bypass: mpsc::Sender<ValidatedTransaction>,
+    _l1: Arc<L1ClientMock>,
+}
+
+impl Harness {
+    fn new() -> Self {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+            block_production_concurrency: BlockProductionConfig {
+                batch_size: 100,
+                max_txs_per_account_per_batch: 30,
+                ..Default::default()
+            },
+            ..ChainConfig::madara_test()
+        }));
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default().with_save_to_db(false)));
+        let (out, output) = mpsc::channel(1);
+        let (bypass, bypass_in) = mpsc::channel(1);
+        let (intake, intake_rx) = watch::channel(MempoolIntakeMode::Running);
+        let l1 = Arc::new(L1ClientMock::new());
+        let ctx = ServiceContext::new_for_testing();
+        let batcher = Batcher::new(
+            backend,
+            mempool.clone(),
+            Arc::new(BlockProductionMetrics::register()),
+            l1.clone(),
+            ctx.clone(),
+            out,
+            bypass_in,
+            intake_rx,
+        );
+        Self { batcher, mempool, output, intake, ctx, _bypass: bypass, _l1: l1 }
+    }
+}
+
+fn queued_tx(account: u64, nonce: u64) -> ValidatedTransaction {
+    ValidatedTransaction {
+        transaction: Transaction::Invoke(InvokeTransaction::V3(InvokeTransactionV3 {
+            sender_address: Felt::from(account),
+            nonce: Felt::from(nonce),
+            ..Default::default()
+        })),
+        contract_address: Felt::from(account),
+        hash: Felt::from(account * 1000 + nonce),
+        arrived_at: TxTimestamp::now(),
+        paid_fee_on_l1: None,
+        declared_class: None,
+        charge_fee: true,
+    }
+}
+
+#[tokio::test]
+async fn cancellation_under_output_backpressure_keeps_transactions_and_releases_lock() {
+    let mut h = Harness::new();
+    for nonce in 0..40 {
+        h.mempool.accept_tx(queued_tx(1, nonce)).await.unwrap();
+    }
+    h.batcher.out.send(BatchToExecute::default()).await.unwrap();
+    let mut running = Box::pin(h.batcher.run());
+    assert!(running.as_mut().now_or_never().is_none());
+    h.ctx.cancel_global();
+    tokio::time::timeout(std::time::Duration::from_secs(5), running).await.unwrap().unwrap();
+    let queued = h.mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await;
+    assert_eq!(queued.len(), 40);
+    assert!(h.output.recv().await.unwrap().is_empty());
+    assert!(h.output.recv().await.is_none());
+    h.mempool.accept_tx(queued_tx(2, 0)).await.unwrap();
+    assert_eq!(h.mempool.get_consumer().await.count(), 2);
+}
+
+#[tokio::test]
+async fn pause_resume_rebuilds_waiting_stream_without_losing_transactions() {
+    let mut h = Harness::new();
+    let mut waiting = Box::pin(h.batcher.next_batch());
+    assert!(waiting.as_mut().now_or_never().is_none());
+    h.intake.send(MempoolIntakeMode::Paused).unwrap();
+    assert!(matches!(waiting.await.unwrap(), BatcherStep::RebuildStreams));
+    for nonce in 0..40 {
+        h.mempool.accept_tx(queued_tx(1, nonce)).await.unwrap();
+    }
+    let mut paused = Box::pin(h.batcher.next_batch());
+    assert!(paused.as_mut().now_or_never().is_none());
+    h.intake.send(MempoolIntakeMode::Running).unwrap();
+    assert!(matches!(paused.await.unwrap(), BatcherStep::RebuildStreams));
+    let BatcherStep::Batch(batch) = h.batcher.next_batch().await.unwrap() else { panic!("expected batch") };
+    assert_eq!(
+        batch.txs.iter().map(|tx| tx.tx_hash().to_felt()).collect::<Vec<_>>(),
+        (0..30).map(|nonce| queued_tx(1, nonce).hash).collect::<Vec<_>>()
+    );
+    assert_eq!(h.mempool.snapshot_transactions_matching(0, usize::MAX, false, |_| true).await.len(), 10);
+}
+
+#[tokio::test]
+async fn cancelling_idle_consumer_does_not_lose_next_admission_wakeup() {
+    let mut h = Harness::new();
+    let mut waiting = Box::pin(h.batcher.next_batch());
+    assert!(waiting.as_mut().now_or_never().is_none());
+    h.ctx.cancel_global();
+    assert!(matches!(waiting.await.unwrap(), BatcherStep::Stop));
+    h.mempool.accept_tx(queued_tx(1, 0)).await.unwrap();
+    let mut consumer = tokio::time::timeout(std::time::Duration::from_secs(5), h.mempool.get_consumer()).await.unwrap();
+    assert_eq!(consumer.next().unwrap().hash, queued_tx(1, 0).hash);
 }

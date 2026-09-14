@@ -65,8 +65,11 @@ async fn deferred_successors_wait_for_replacement_of_rejected_head() {
     drop(batch);
     // Nonce 0 is rejected (not reverted). Return only its still-future successors.
     for tx in txs.drain(1..) {
-        pool.write().await.insert_tx(TxTimestamp::now(), tx, Nonce(Felt::ZERO), &mut vec![]).unwrap();
+        let mut lock = pool.write().await;
+        lock.release_consumed(&tx.hash);
+        lock.insert_tx(TxTimestamp::now(), tx, Nonce(Felt::ZERO), &mut vec![]).unwrap();
     }
+    pool.write().await.release_consumed(&txs[0].hash);
     assert!(consumer(&pool).now_or_never().is_none());
     queue(&pool, 1, [0]).await;
     let mut batch = consumer(&pool).await;
@@ -107,4 +110,68 @@ async fn account_cap_keeps_successors_until_nonce_progress_and_resets_for_next_b
         assert_eq!(batch.lock.transactions_by_arrival().count(), (650 - end) as usize);
         batch.lock.check_invariants();
     }
+}
+
+#[rstest::rstest]
+#[tokio::test]
+async fn in_flight_capacity_preserves_deferred_work_against_new_arrivals(
+    #[values(mp_chain_config::MempoolFullPolicy::RejectNew, mp_chain_config::MempoolFullPolicy::EvictLessDesirable)]
+    full_policy: mp_chain_config::MempoolFullPolicy,
+    #[values(mp_chain_config::MempoolMode::Timestamp, mp_chain_config::MempoolMode::Tip)]
+    mode: mp_chain_config::MempoolMode,
+) {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+        mempool_max_transactions: 3,
+        mempool_full_policy: full_policy,
+        mempool_mode: mode,
+        ..ChainConfig::madara_test()
+    }));
+    let mempool = Mempool::new(backend, MempoolConfig::default());
+    let make_tx = |account: u64, nonce: u64| {
+        let mut tx = tests::tx_account(Felt::from(account));
+        let Transaction::Invoke(InvokeTransaction::V3(inner)) = &mut tx.transaction else { unreachable!() };
+        inner.nonce = Felt::from(nonce);
+        inner.tip = if account == 1 { 0 } else { 100 };
+        tx.hash = Felt::from(account * 1000 + nonce);
+        tx
+    };
+    for nonce in 0..3 {
+        mempool.accept_tx(make_tx(1, nonce)).await.unwrap();
+    }
+    let mut consumer = mempool.get_consumer().await;
+    let removed: Vec<_> = std::iter::from_fn(|| consumer.next_contiguous(300)).collect();
+    drop(consumer);
+    for account in 2..5 {
+        assert!(matches!(
+            mempool.accept_tx(make_tx(account, 0)).await,
+            Err(MempoolInsertionError::InnerMempool(inner::TxInsertionError::Limit(_)))
+        ));
+    }
+    assert!(matches!(
+        mempool.accept_tx(make_tx(1, 1)).await,
+        Err(MempoolInsertionError::InnerMempool(inner::TxInsertionError::DuplicateTxn))
+    ));
+    // Only the rejected head releases a slot. A new arrival can use that slot,
+    // but the still-future successors retain theirs until requeue transfers them.
+    mempool.finish_consumed_transactions(&[make_tx(1, 0).hash]).await;
+    mempool.accept_tx(make_tx(2, 0)).await.unwrap();
+    let mut notifications = mempool.subscribe_new_transactions();
+    for tx in removed.into_iter().skip(1) {
+        mempool.requeue_tx(tx).await.unwrap();
+    }
+    let mut hashes: Vec<_> = mempool
+        .snapshot_transactions_matching(0, usize::MAX, false, |_| true)
+        .await
+        .into_iter()
+        .map(|entry| entry.transaction.hash)
+        .collect();
+    hashes.sort();
+    assert_eq!(hashes, [1001u64, 1002, 2000].map(Felt::from));
+    assert!(matches!(notifications.try_recv(), Err(tokio::sync::broadcast::error::TryRecvError::Empty)));
+    mempool.inner.read().await.check_invariants();
+    // Restoring pending successors does not make the rejected head ready.
+    let heads: Vec<_> = mempool.get_consumer().await.map(|tx| tx.hash).collect();
+    assert_eq!(heads.len(), 1);
+    assert!(!heads.contains(&Felt::from(1001u64)));
+    assert!(mempool.get_consumer().now_or_never().is_none());
 }

@@ -184,6 +184,9 @@ impl InnerMempool {
         account_nonce: Nonce,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) -> Result<(), TxInsertionError> {
+        if self.limiter.is_in_flight(&tx.hash) {
+            return Err(TxInsertionError::DuplicateTxn);
+        }
         // Prechecks: TTL
         if let Some(ttl) = self.config.ttl {
             if tx.arrived_at <= now.saturating_sub(ttl) {
@@ -288,6 +291,15 @@ impl InnerMempool {
         tracing::debug!("Update account nonce {contract_address:?} {account_nonce:?}");
         let Some(account_update) = self.accounts.update_account_nonce(contract_address, account_nonce) else { return };
         self.apply_update(account_update, removed_txs);
+    }
+
+    /// Keep admission capacity occupied while the executor owns the transaction.
+    pub(super) fn reserve_consumed(&mut self, tx: &ValidatedTransaction) {
+        self.limiter.reserve_consumed(tx);
+    }
+
+    pub(super) fn release_consumed(&mut self, hash: &mp_convert::Felt) {
+        self.limiter.release_consumed(hash);
     }
 
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.

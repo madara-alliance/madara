@@ -421,3 +421,84 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }
+
+#[tokio::test]
+async fn block_full_tail_precedes_fresh_work_and_drains_on_shutdown() {
+    use blockifier::bouncer::{BouncerConfig, BouncerWeights};
+    use mc_devnet::{ChainGenesisDescription, Multicall};
+    use mp_chain_config::{BlockProductionConfig, ChainConfig};
+
+    let mut genesis = ChainGenesisDescription::base_config().unwrap();
+    let contracts = genesis.add_devnet_contracts(1).unwrap();
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+        block_time: Duration::from_secs(30000),
+        block_production_concurrency: BlockProductionConfig {
+            batch_size: 100,
+            disable_concurrency: true,
+            ..Default::default()
+        },
+        bouncer_config: BouncerConfig {
+            block_max_capacity: BouncerWeights { n_txs: 170, ..BouncerWeights::max() },
+            builtin_weights: Default::default(),
+        },
+        ..ChainConfig::madara_devnet()
+    }));
+    backend.set_l1_gas_quote_for_testing();
+    genesis.build_and_store(&backend).await.unwrap();
+    let (sender, batches) = mpsc::channel(3);
+    let (replies, mut received) = mpsc::channel(100);
+    let (_commands_sender, commands) = mpsc::unbounded_channel();
+    let mut expected_hashes = Vec::new();
+    for start in [0u64, 100, 200] {
+        let mut batch = BatchToExecute::default();
+        for nonce in start..start + 100 {
+            let tx = crate::tests::make_invoke_tx(&contracts.0[0], Multicall::default(), &backend, Felt::from(nonce));
+            let (tx, mut info) = make_tx(&backend, BroadcastedTxn::Invoke(tx));
+            expected_hashes.push(tx.tx_hash().to_felt());
+            info.from_mempool = true;
+            info.arrived_at = mp_transactions::validated::TxTimestamp(nonce);
+            batch.push(tx, info);
+        }
+        sender.send(batch).await.unwrap();
+    }
+    // Close intake before execution: even the retained tail must finish before shutdown.
+    drop(sender);
+    let worker = tokio::task::spawn_blocking(move || {
+        thread::ExecutorThread::new(
+            backend,
+            batches,
+            replies,
+            commands,
+            Arc::new(BlockProductionMetrics::register()),
+            false,
+        )
+        .unwrap()
+        .run()
+    });
+    let mut lengths = Vec::new();
+    let mut actual_hashes = Vec::new();
+    let mut timestamps = Vec::new();
+    let mut final_block = false;
+    while let Some(reply) = tokio::time::timeout(Duration::from_secs(60), received.recv()).await.unwrap() {
+        match reply {
+            ExecutorMessage::BatchExecuted(result) => {
+                assert!(result.blockifier_results.iter().all(Result::is_ok));
+                lengths.push(result.executed_txs.len());
+                for (tx, info) in result.executed_txs {
+                    actual_hashes.push(tx.tx_hash().to_felt());
+                    timestamps.push(info.arrived_at.0);
+                    assert!(info.from_mempool);
+                }
+            }
+            ExecutorMessage::EndFinalBlock(Some(_)) => final_block = true,
+            _ => {}
+        }
+    }
+    worker.await.unwrap().unwrap();
+    // The first 100 leave room for only 70 of the next 100 in block zero.
+    // Block one must begin with the remaining 30 plus 70 fresh, then the last 30.
+    assert_eq!(lengths, [100, 70, 100, 30]);
+    assert_eq!(actual_hashes, expected_hashes);
+    assert_eq!(timestamps, (0..300).collect::<Vec<_>>());
+    assert!(final_block);
+}
