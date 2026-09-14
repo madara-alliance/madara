@@ -1,8 +1,9 @@
 use crate::metrics::BlockProductionMetrics;
 use crate::util::{BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
+use blockifier::blockifier::native_execution_thread::spawn_native_execution_thread;
 use blockifier::blockifier::transaction_executor::{
-    BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult,
+    BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult, DEFAULT_STACK_SIZE,
 };
 use mc_db::MadaraBackend;
 use std::{any::Any, panic::AssertUnwindSafe, sync::Arc, time::Instant};
@@ -89,13 +90,18 @@ pub fn start_executor_thread(
     let (replies_sender, replies_recv) = mpsc::channel(100);
     let (stop_sender, stop_recv) = oneshot::channel();
 
+    let native_enabled = backend.cairo_native_config.is_enabled();
     let executor =
         thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands, metrics, replay_mode_enabled)?;
-    // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable
-    std::thread::Builder::new()
-        .name("executor".into())
-        .spawn(move || stop_sender.send(std::panic::catch_unwind(AssertUnwindSafe(move || executor.run()))))
-        .context("Error when spawning thread")?;
+    let run = move || stop_sender.send(std::panic::catch_unwind(AssertUnwindSafe(move || executor.run())));
+    if native_enabled {
+        // Match new_executor_for_block_production's stack requirement. Keeping this worker
+        // alive preserves Native's thread-local Pedersen cache across batches and blocks.
+        spawn_native_execution_thread("executor".into(), DEFAULT_STACK_SIZE, run)
+            .context("Error when spawning Native executor thread")?;
+    } else {
+        std::thread::Builder::new().name("executor".into()).spawn(run).context("Error when spawning thread")?;
+    }
 
     Ok(ExecutorThreadHandle { send_batch: Some(send_batch), replies: replies_recv, stop: StopErrorReceiver(stop_recv) })
 }

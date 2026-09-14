@@ -158,6 +158,15 @@ pub async fn devnet_setup(
     #[default(false)] use_bouncer_weights: bool,
     #[default(false)] no_empty_blocks: bool,
 ) -> DevnetSetup {
+    devnet_setup_with_native(block_time, use_bouncer_weights, no_empty_blocks, None).await
+}
+
+pub async fn devnet_setup_with_native(
+    block_time: Duration,
+    use_bouncer_weights: bool,
+    no_empty_blocks: bool,
+    native: Option<mc_class_exec::NativeConfig>,
+) -> DevnetSetup {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_test_writer()
@@ -178,7 +187,11 @@ pub async fn devnet_setup(
         Arc::new(ChainConfig { block_time, no_empty_blocks, ..ChainConfig::madara_devnet() })
     };
 
-    let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+    let mut backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+    if let Some(config) = native {
+        // Configure the fresh backend before sharing it with genesis, validation or execution.
+        Arc::get_mut(&mut backend).unwrap().cairo_native_config = Arc::new(config);
+    }
     backend.set_l1_gas_quote_for_testing();
     genesis.build_and_store(&backend).await.unwrap();
 

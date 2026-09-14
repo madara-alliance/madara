@@ -10,6 +10,11 @@ on:
         required: true
         type: boolean
         default: true
+      test-native-worker:
+        description: "Run Native-enabled executor regressions before publishing Madara"
+        required: false
+        type: boolean
+        default: false
       build-orchestrator:
         description: "Build Orchestrator image"
         required: true
@@ -33,6 +38,7 @@ jobs:
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
+      test-native-worker: ${{ inputs.test-native-worker }}
     permissions:
       contents: read
       packages: write
