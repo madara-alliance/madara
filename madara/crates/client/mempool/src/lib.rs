@@ -379,13 +379,15 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Restore previously admitted work deferred by execution, without publishing a
     /// second admission, rewriting its saved entry, or duplicating external delivery.
-    /// Ordinary nonce, TTL, replacement and capacity checks still apply.
+    /// Consumed transactions retain capacity until this transfers it back under
+    /// the mempool lock. Ordinary nonce, TTL and replacement checks still apply.
     pub async fn requeue_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
         self.add_tx(tx, InsertionMode::Requeue).await
     }
 
-    /// Releases admission capacity after executor results have been persisted and
-    /// deferred work restored. Releasing an already restored hash is harmless.
+    /// Releases admission capacity for terminal executor results after persistence.
+    /// Deferred hashes must be excluded: requeue transfers their reservations back
+    /// to queued capacity, and another batch may already have consumed them again.
     pub async fn finish_consumed_transactions(&self, hashes: &[Felt]) {
         let mut lock = self.inner.write().await;
         for hash in hashes {

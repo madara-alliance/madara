@@ -142,7 +142,7 @@ impl BlockProductionTask {
         for tx in deferred {
             let hash = tx.hash;
             if let Err(error) = self.mempool.requeue_tx(tx).await {
-                // Normal TTL, replacement and capacity policies still apply.
+                // Normal TTL, nonce and replacement policies still apply.
                 tracing::warn!("Could not requeue deferred mempool transaction {hash:#x}: {error:#}");
             }
         }

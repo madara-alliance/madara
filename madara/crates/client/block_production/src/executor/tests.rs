@@ -502,3 +502,106 @@ async fn block_full_tail_precedes_fresh_work_and_drains_on_shutdown() {
     assert_eq!(timestamps, (0..300).collect::<Vec<_>>());
     assert!(final_block);
 }
+
+#[tokio::test]
+async fn capped_batches_release_capacity_during_concurrent_admission() {
+    use crate::{BlockProductionStateNotification, BlockProductionTask};
+    use mc_devnet::{ChainGenesisDescription, Multicall};
+    use mc_mempool::{Mempool, MempoolConfig, MempoolInsertionError};
+    use mc_settlement_client::L1ClientMock;
+    use mp_chain_config::{BlockProductionConfig, ChainConfig, MempoolFullPolicy};
+    use mp_utils::{service::ServiceContext, AbortOnDrop};
+
+    let mut genesis = ChainGenesisDescription::base_config().unwrap();
+    let contracts = genesis.add_devnet_contracts(3).unwrap();
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig {
+        block_time: Duration::from_secs(30000),
+        mempool_max_transactions: 120,
+        mempool_full_policy: MempoolFullPolicy::RejectNew,
+        block_production_concurrency: BlockProductionConfig {
+            batch_size: 100,
+            max_txs_per_account_per_batch: 30,
+            disable_concurrency: true,
+            ..Default::default()
+        },
+        ..ChainConfig::madara_devnet()
+    }));
+    backend.set_l1_gas_quote_for_testing();
+    genesis.build_and_store(&backend).await.unwrap();
+    let pool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default().with_save_to_db(false)));
+    let mut expected = Vec::new();
+    let mut later = Vec::new();
+    for account in &contracts.0 {
+        for nonce in 0u64..60 {
+            let tx = BroadcastedTxn::Invoke(crate::tests::make_invoke_tx(
+                account,
+                Multicall::default(),
+                &backend,
+                Felt::from(nonce),
+            ))
+            .into_validated_tx(
+                backend.chain_config().chain_id.to_felt(),
+                StarknetVersion::LATEST,
+                mp_transactions::validated::TxTimestamp::now(),
+            )
+            .unwrap();
+            expected.push(tx.hash);
+            if nonce < 40 {
+                pool.accept_tx(tx).await.unwrap();
+            } else {
+                later.push(tx);
+            }
+        }
+    }
+    let ctx = ServiceContext::new_for_testing();
+    let watcher_ctx = ctx.clone();
+    let watcher_pool = pool.clone();
+    let watcher = AbortOnDrop::spawn(async move { watcher_pool.run_mempool_task(watcher_ctx).await });
+    let mut producer = BlockProductionTask::new(
+        backend.clone(),
+        pool.clone(),
+        Arc::new(BlockProductionMetrics::register()),
+        Arc::new(L1ClientMock::new()),
+        false,
+        false,
+        false,
+    );
+    let mut notifications = producer.subscribe_state_notifications();
+    let producer_ctx = ctx.clone();
+    let production = AbortOnDrop::spawn(async move { producer.run(producer_ctx).await });
+    let admission_pool = pool.clone();
+    let admission = AbortOnDrop::spawn(async move {
+        for tx in later {
+            loop {
+                match admission_pool.accept_tx(tx.clone()).await {
+                    Ok(()) => break,
+                    Err(MempoolInsertionError::InnerMempool(mc_mempool::TxInsertionError::Limit(_))) => {
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) => panic!("unexpected admission failure: {error}"),
+                }
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    });
+    tokio::time::timeout(Duration::from_secs(60), async {
+        admission.await.unwrap();
+        loop {
+            if matches!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted)
+                && backend.block_view_on_current_preconfirmed().unwrap().num_executed_transactions() == expected.len()
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    let mut actual = backend.block_view_on_current_preconfirmed().unwrap().get_block_info().tx_hashes.clone();
+    actual.sort();
+    expected.sort();
+    assert_eq!(actual, expected);
+    assert!(pool.is_empty().await);
+    ctx.cancel_global();
+    tokio::time::timeout(Duration::from_secs(30), production).await.unwrap().unwrap();
+    tokio::time::timeout(Duration::from_secs(30), watcher).await.unwrap().unwrap();
+}
