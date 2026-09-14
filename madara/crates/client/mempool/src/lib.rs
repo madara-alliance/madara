@@ -138,6 +138,8 @@ use topic_pubsub::TopicWatchPubsub;
 pub use transaction_status::{PreConfirmationStatus, TransactionStatus, WatchTransactionStatus};
 
 mod chain_watcher_task;
+#[cfg(test)]
+mod contiguous_tests;
 mod inner;
 mod notify;
 mod topic_pubsub;
@@ -258,6 +260,13 @@ enum NonceUpdateMode {
     Replace,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InsertionMode {
+    New,
+    Reload,
+    Requeue,
+}
+
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
         if !self.config.save_to_db {
@@ -273,9 +282,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     continue;
                 }
             };
-            let is_new_tx = false; // do not trigger metrics update and db update.
             let tx_hash = tx.hash;
-            if let Err(err) = self.add_tx(tx, is_new_tx).await {
+            if let Err(err) = self.add_tx(tx, InsertionMode::Reload).await {
                 match err {
                     MempoolInsertionError::InnerMempool(TxInsertionError::NonceTooLow { .. }) => {
                         // Admission now rejects transactions already covered by internal execution.
@@ -366,7 +374,25 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Accept a new validated transaction.
     pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
-        self.add_tx(tx, /* is_new_tx */ true).await
+        self.add_tx(tx, InsertionMode::New).await
+    }
+
+    /// Restore previously admitted work deferred by execution, without publishing a
+    /// second admission, rewriting its saved entry, or duplicating external delivery.
+    /// Consumed transactions retain capacity until this transfers it back under
+    /// the mempool lock. Ordinary nonce, TTL and replacement checks still apply.
+    pub async fn requeue_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
+        self.add_tx(tx, InsertionMode::Requeue).await
+    }
+
+    /// Releases admission capacity for terminal executor results after persistence.
+    /// Deferred hashes must be excluded: requeue transfers their reservations back
+    /// to queued capacity, and another batch may already have consumed them again.
+    pub async fn finish_consumed_transactions(&self, hashes: &[Felt]) {
+        let mut lock = self.inner.write().await;
+        for hash in hashes {
+            lock.release_consumed(hash);
+        }
     }
 
     /// Resolve a recreated account against execution, which can run ahead of the externally visible head.
@@ -399,8 +425,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(Nonce(nonce))
     }
 
-    /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
+    /// Reload and requeue preserve the original admission side effects.
+    async fn add_tx(&self, tx: ValidatedTransaction, mode: InsertionMode) -> Result<(), MempoolInsertionError> {
+        let is_new_tx = mode == InsertionMode::New;
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
         let mut outbox_id = None;
@@ -425,6 +452,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
         let (ret, summary) = {
             let mut lock = self.inner.write().await;
+            if mode == InsertionMode::Requeue {
+                // Transfer the reservation back to queued capacity under the same lock.
+                lock.release_consumed(&tx.hash);
+            }
             let ret = self.account_nonce_for_insertion(&lock, &tx.contract_address).and_then(|nonce| {
                 lock.insert_tx(TxTimestamp::now(), tx.clone(), nonce, &mut removed_txs).map_err(Into::into)
             });
@@ -675,7 +706,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
     /// This holds the lock to the inner mempool - use with care.
     pub async fn get_consumer(&self) -> MempoolConsumer {
-        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
+        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await, successor: None }
     }
 
     pub fn subscribe_new_transactions(&self) -> tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>> {
@@ -691,10 +722,44 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 /// This holds the lock to the inner mempool - use with care.
 pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
+    successor: Option<ContiguousNonceCursor>,
+}
+
+struct ContiguousNonceCursor {
+    address: starknet_api::core::ContractAddress,
+    next_nonce: Nonce,
+    taken: usize,
+}
+impl MempoolConsumer {
+    /// Takes consecutive nonces, yielding to another ready account at a gap or the per-account limit.
+    /// Excess transactions stay queued. Zero is treated as a limit of one.
+    /// Dropping the consumer discards its cursor, never advancing the chain nonce.
+    /// The caller must execute in order, requeue future-nonce failures and release
+    /// completed reservations with `finish_consumed_transactions`; ordinary
+    /// iteration remains available when only independently ready heads are wanted.
+    pub fn next_contiguous(&mut self, max_txs_per_account_per_batch: usize) -> Option<ValidatedTransaction> {
+        let (tx, taken) = self
+            .successor
+            .take()
+            .filter(|cursor| cursor.taken < max_txs_per_account_per_batch.max(1))
+            .and_then(|cursor| {
+                self.lock.pop_contiguous(cursor.address, cursor.next_nonce).map(|tx| (tx, cursor.taken + 1))
+            })
+            .or_else(|| self.lock.pop_next_ready().map(|tx| (tx, 1)))?;
+        self.lock.reserve_consumed(&tx);
+        self.successor = tx
+            .contract_address
+            .try_into()
+            .ok()
+            .zip(Nonce(tx.transaction.nonce()).try_increment().ok())
+            .map(|(address, next_nonce)| ContiguousNonceCursor { address, next_nonce, taken });
+        Some(tx)
+    }
 }
 impl Iterator for MempoolConsumer {
     type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
+        self.successor = None;
         self.lock.pop_next_ready()
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -950,6 +1015,32 @@ pub(crate) mod tests {
         let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(outbox.len(), 1);
         assert_eq!(outbox[0].tx, tx);
+    }
+
+    #[rstest::rstest]
+    #[tokio::test]
+    async fn requeue_does_not_repeat_admission_or_external_delivery(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+        let mut notifications = mempool.subscribe_new_transactions();
+        mempool.accept_tx(tx_account.clone()).await.unwrap();
+        assert_eq!(*notifications.try_recv().unwrap(), tx_account);
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<_, _>>().unwrap();
+        assert_eq!(outbox.len(), 1);
+        // Simulate successful external delivery before execution defers the tx.
+        backend.delete_external_outbox(outbox[0].id).unwrap();
+        let tx = mempool.get_consumer().await.next().unwrap();
+        mempool.requeue_tx(tx).await.unwrap();
+        assert!(backend.get_external_outbox_transactions(10).next().is_none());
+        assert_matches::assert_matches!(
+            notifications.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        );
+        assert_eq!(backend.get_saved_mempool_transactions().collect::<Result<Vec<_>, _>>().unwrap(), vec![tx_account]);
     }
 
     #[rstest::rstest]
