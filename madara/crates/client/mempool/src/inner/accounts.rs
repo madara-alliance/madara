@@ -349,7 +349,7 @@ impl Accounts {
             Some(removed)
         }) else {
             // not found
-            unreachable!("Invariant violation: AccountKey is invalid: contract_address={contract_address:?}")
+            unreachable!("Invariant violation: AccountKey is invalid")
         };
 
         AccountUpdate {
@@ -364,15 +364,13 @@ impl Accounts {
     pub fn remove_tx(&mut self, TxKey(contract_address, nonce): &TxKey) -> AccountUpdate {
         let Some((data, removed)) = self.account_update_helper(contract_address, move |account_state| {
             let Some(removed) = account_state.remove_tx(nonce) else {
-                unreachable!(
-                    "Invariant violation: TxKey has invalid nonce: contract_address={contract_address:?} nonce={nonce:?}."
-                )
+                unreachable!("Invariant violation: TxKey has invalid nonce")
             };
 
             Some(removed)
         }) else {
             // not found
-            unreachable!("Invariant violation: TxKey has invalid contract_address: contract_address={contract_address:?} nonce={nonce:?}.")
+            unreachable!("Invariant violation: TxKey has invalid contract address")
         };
 
         AccountUpdate {
@@ -392,7 +390,7 @@ impl Accounts {
             Some(removed)
         }) else {
             // not found
-            unreachable!("Invariant violation: AccountKey is invalid: contract_address={contract_address:?}")
+            unreachable!("Invariant violation: AccountKey is invalid")
         };
 
         AccountUpdate {
