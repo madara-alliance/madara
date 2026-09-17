@@ -629,6 +629,8 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
 
     // Create the StateUpdate-specific metadata
     let state_update_metadata = StateUpdateMetadata {
+        blob_settlement_mode: Default::default(),
+        blob_certificate: None,
         snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
         program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
         blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),
