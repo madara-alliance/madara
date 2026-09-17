@@ -1,5 +1,5 @@
 use super::*;
-use alloy::{consensus::TxEip1559, primitives::TxKind, sol, sol_types::SolCall};
+use alloy::{consensus::TxEip1559, primitives::TxKind, rpc::types::TransactionRequest, sol, sol_types::SolCall};
 use kzg_attestation_protocol::{Certificate, Policy};
 use std::result::Result::Ok;
 
@@ -67,7 +67,6 @@ impl EthereumSettlementClient {
             max_fee_per_blob_gas: 0,
         };
         let fees = replacement_fee_floor.map_or(fees, |floor| Self::max_fee_caps(fees, floor));
-        Self::ensure_l2_state_update_fee_within_cap(fees, 0, self.l2_state_update_max_fee_wei)?;
         let call = AttestedCore::updateStateWithBlobAttestationsCall {
             programOutput: program_output.iter().map(|word| U256::from_be_bytes(*word)).collect(),
             committeeEpoch: U256::from(certificate.committee_epoch),
@@ -76,7 +75,7 @@ impl EthereumSettlementClient {
         let mut tx = TxEip1559 {
             chain_id,
             nonce,
-            gas_limit: GAS_LIMIT_STATE_UPDATE,
+            gas_limit: 0,
             max_fee_per_gas: fees.max_fee_per_gas,
             max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
             to: TxKind::Call(self.core_contract_client.contract_address()),
@@ -84,6 +83,13 @@ impl EthereumSettlementClient {
             access_list: AccessList::default(),
             input: call.abi_encode().into(),
         };
+        let mut estimate: TransactionRequest = tx.clone().into();
+        estimate.from = Some(self.wallet.default_signer().address());
+        estimate.gas = None;
+        let gas = self.provider.estimate_gas(estimate).await?;
+        // Allow execution headroom while charging the complete signed liability to the hard cap.
+        tx.gas_limit = gas.checked_add(gas / 5).ok_or_else(|| eyre!("Attestation gas estimate overflow"))?;
+        Self::ensure_state_update_fee_within_cap(fees, tx.gas_limit, 0, self.l2_state_update_max_fee_wei)?;
         let signature = self.wallet.default_signer().sign_transaction(&mut tx).await?;
         Ok(PreparedStateUpdateTransaction {
             tx_envelope: StateUpdateEnvelope::Attested(tx.into_signed(signature)),
@@ -124,6 +130,19 @@ mod tests {
         let call = AttestedCore::updateStateWithBlobAttestationsCall::abi_decode(transaction.tx().input()).unwrap();
         assert_eq!(call.committeeEpoch, U256::from(7));
         assert_eq!(call.signatures, certificate.signatures);
+        // Calldata alone exceeds the old fixed limit; the estimated envelope must cover it.
+        let large_output = vec![[1u8; 32]; 8_000];
+        assert!(client.create_attested_transaction(&large_output, &certificate, 13, None).await.is_err());
+        args.ethereum_l2_state_update_max_fee_wei = 10 * DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI;
+        let client = EthereumSettlementClient::new_with_args(&args);
+        let large = client.create_attested_transaction(&large_output, &certificate, 13, None).await.unwrap();
+        let StateUpdateEnvelope::Attested(large_tx) = large.tx_envelope else { panic!("blob envelope") };
+        assert!(large_tx.tx().gas_limit() > GAS_LIMIT_STATE_UPDATE);
+        let liability = U256::from(large_tx.tx().gas_limit()) * U256::from(large.fee_caps.max_fee_per_gas);
+        assert!(liability <= U256::from(args.ethereum_l2_state_update_max_fee_wei));
+        args.ethereum_l2_state_update_max_fee_wei = liability.to::<u128>() - 1;
+        let capped = EthereumSettlementClient::new_with_args(&args);
+        assert!(capped.create_attested_transaction(&large_output, &certificate, 13, None).await.is_err());
         args.ethereum_l2_state_update_max_fee_wei = 1;
         let client = EthereumSettlementClient::new_with_args(&args);
         assert!(client.create_attested_transaction(&output, &certificate, 12, None).await.is_err());

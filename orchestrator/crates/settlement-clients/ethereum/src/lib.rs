@@ -928,8 +928,17 @@ impl EthereumSettlementClient {
         blob_count: usize,
         max_fee_wei: u128,
     ) -> Result<U256> {
+        Self::ensure_state_update_fee_within_cap(fee_caps, GAS_LIMIT_STATE_UPDATE, blob_count, max_fee_wei)
+    }
+
+    fn ensure_state_update_fee_within_cap(
+        fee_caps: StateUpdateFeeCaps,
+        gas_limit: u64,
+        blob_count: usize,
+        max_fee_wei: u128,
+    ) -> Result<U256> {
         // EIP-1559 max_fee_per_gas already includes both base and priority fees.
-        let execution_fee = U256::from(GAS_LIMIT_STATE_UPDATE) * U256::from(fee_caps.max_fee_per_gas);
+        let execution_fee = U256::from(gas_limit) * U256::from(fee_caps.max_fee_per_gas);
         let blob_fee =
             U256::from(blob_count) * U256::from(DATA_GAS_PER_BLOB) * U256::from(fee_caps.max_fee_per_blob_gas);
         let total_fee = execution_fee + blob_fee;
