@@ -240,7 +240,7 @@ impl UpdateStateJobTrigger {
             }
             let signature: crate::types::jobs::metadata::SignatureCollectionMetadata =
                 signature_job.metadata.specific.try_into()?;
-            if signature.aggregator != aggregator_metadata {
+            if *signature.aggregator != aggregator_metadata {
                 return Err(eyre!("Signature job refers to different aggregator metadata"));
             }
             state_metadata.blob_certificate =

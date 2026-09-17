@@ -280,7 +280,7 @@ pub struct StateUpdateMetadata {
 /// Blob bytes remain in object storage; receipts are separate atomic database records.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignatureCollectionMetadata {
-    pub aggregator: AggregatorMetadata,
+    pub aggregator: Box<AggregatorMetadata>,
     pub policy: kzg_attestation_protocol::Policy,
     #[serde(default)]
     pub program_output: Vec<alloy::primitives::B256>,

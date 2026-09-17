@@ -52,7 +52,7 @@ fn fixture() -> (JobItem, Vec<Attestation>) {
         JobMetadata {
             common: CommonMetadata { orchestrator_version: ORCHESTRATOR_VERSION.into(), ..Default::default() },
             specific: JobSpecificMetadata::SignatureCollection(SignatureCollectionMetadata {
-                aggregator: AggregatorMetadata::default(),
+                aggregator: Box::new(AggregatorMetadata::default()),
                 policy,
                 program_output: output,
                 digest: Some(digest),

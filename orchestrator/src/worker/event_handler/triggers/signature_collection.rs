@@ -37,7 +37,7 @@ impl JobTrigger for SignatureCollectionJobTrigger {
             let metadata = JobMetadata {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::SignatureCollection(SignatureCollectionMetadata {
-                    aggregator,
+                    aggregator: Box::new(aggregator),
                     policy: attestation.policy.clone(),
                     program_output: Vec::new(),
                     digest: None,

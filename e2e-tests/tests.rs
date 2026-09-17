@@ -153,12 +153,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     let queue_params = match aws_prefix {
         Some(prefix) => QueueArgs {
+            blob_attestations: false,
             queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(format!(
                 "{}_{}",
                 prefix, aws_identifier,
             )),
         },
         None => QueueArgs {
+            blob_attestations: false,
             queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(aws_identifier),
         },
     };
