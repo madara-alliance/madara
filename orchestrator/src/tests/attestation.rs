@@ -160,15 +160,17 @@ async fn attestation_api_is_isolated_authenticated_and_receipts_unlock_verificat
         .build()
         .await;
     let mut config = services.config;
+    let token_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(token_file.path(), TOKEN).unwrap();
     Arc::get_mut(&mut config).unwrap().params.blob_attestation = Some(BlobAttestationConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
-        auth_token_file: "unused-in-router-test".into(),
+        auth_token_file: token_file.path().into(),
         policy: metadata.policy,
     });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let router = crate::server::attestation::router(config.clone(), TOKEN);
-    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    // API-only startup must not bind or even resolve the regular server address.
+    Arc::get_mut(&mut config).unwrap().params.server_config.host = "invalid::address".into();
+    let (address, server) = crate::server::setup_attestation_server(config.clone()).await.unwrap();
+    let base = format!("http://{address}");
     let client = reqwest::Client::new();
     for path in ["/admin", "/jobs", "/api/v1/jobs", "/blocks", "/batches"] {
         assert_eq!(client.get(format!("{base}{path}")).bearer_auth(TOKEN).send().await.unwrap().status(), 404);
@@ -204,6 +206,5 @@ async fn attestation_api_is_isolated_authenticated_and_receipts_unlock_verificat
     );
     let verified: SignatureCollectionMetadata = verification_job.metadata.specific.try_into().unwrap();
     assert!(verified.certificate.is_some());
-    server.abort();
-    let _ = server.await;
+    server.shutdown().await.unwrap();
 }

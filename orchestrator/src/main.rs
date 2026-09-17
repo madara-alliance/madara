@@ -17,7 +17,7 @@ use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
 use orchestrator::core::config::Config;
-use orchestrator::server::setup_server;
+use orchestrator::server::{setup_attestation_server, setup_server};
 use orchestrator::setup::setup;
 use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
@@ -89,7 +89,11 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;
 
     // Run the server in a separate tokio spawn task and keep the handle
-    let (api_server_url, server_handle) = setup_server(config.clone()).await?;
+    let (api_server_url, server_handle) = if run_cmd.attestation_api_only {
+        setup_attestation_server(config.clone()).await?
+    } else {
+        setup_server(config.clone()).await?
+    };
     info!("Application server live at {}", api_server_url);
 
     // Set up comprehensive signal handling for Docker/Kubernetes
