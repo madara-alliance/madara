@@ -184,6 +184,9 @@ impl InnerMempool {
         account_nonce: Nonce,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) -> Result<(), TxInsertionError> {
+        if self.limiter.is_in_flight(&tx.hash) {
+            return Err(TxInsertionError::DuplicateTxn);
+        }
         // Prechecks: TTL
         if let Some(ttl) = self.config.ttl {
             if tx.arrived_at <= now.saturating_sub(ttl) {
@@ -290,6 +293,15 @@ impl InnerMempool {
         self.apply_update(account_update, removed_txs);
     }
 
+    /// Keep admission capacity occupied while the executor owns the transaction.
+    pub(super) fn reserve_consumed(&mut self, tx: &ValidatedTransaction) {
+        self.limiter.reserve_consumed(tx);
+    }
+
+    pub(super) fn release_consumed(&mut self, hash: &mp_convert::Felt) {
+        self.limiter.release_consumed(hash);
+    }
+
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.
     /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until an
     /// `update_account_nonce` is issued.
@@ -310,6 +322,15 @@ impl InnerMempool {
 
         assert_eq!(account_update.removed_txs.len(), 1, "pop_next_ready should remove exactly one tx from the mempool");
         account_update.removed_txs.pop().map(|tx| tx.into_inner())
+    }
+
+    /// Pops the successor of a transaction already handed to the same locked consumer.
+    /// Only the batch-local cursor advances; the account's executed nonce is unchanged.
+    pub(crate) fn pop_contiguous(&mut self, address: ContractAddress, nonce: Nonce) -> Option<ValidatedTransaction> {
+        let update = self.accounts.remove_contiguous(address, nonce)?;
+        let mut removed = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        self.apply_update(update, &mut removed);
+        removed.pop()
     }
 
     /// Remove all TTL-exceeded transactions. This needs to be called periodically.

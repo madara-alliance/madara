@@ -542,9 +542,12 @@ impl ExecutorThread {
         {
             self.metrics.executor_inter_batch_wait_duration.record(waited, &[]);
         }
-        let results = execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
+        // A retained block-full tail may have been topped up with another complete
+        // input batch. Keep the overflow owned here for the next execution turn.
+        let offered = to_exec.len().min(self.backend.chain_config().block_production_concurrency.batch_size.max(1));
+        let results = execution_state.executor.execute_txs(&to_exec.txs[..offered], /* execution_deadline */ None);
         let exec_duration = started_at.elapsed();
-        let block_full = results.len() < to_exec.len();
+        let block_full = results.len() < offered;
         let executed_txs = to_exec.remove_n_front(results.len());
         let (stats, replay_hashes) =
             Self::summarize_execution_results(execution_state, &executed_txs, &results, exec_duration, block_empty);
@@ -607,7 +610,7 @@ impl ExecutorThread {
     ///
     /// Each iteration receives work, executes one capped batch, and evaluates the block-close policy.
     pub fn run(mut self) -> anyhow::Result<()> {
-        let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
+        let batch_size = self.backend.chain_config().block_production_concurrency.batch_size.max(1);
         let block_time = self.backend.chain_config().block_time;
         let no_empty_blocks = self.backend.chain_config().no_empty_blocks;
         let mut state = self.initial_state().context("Creating executor initial state")?;

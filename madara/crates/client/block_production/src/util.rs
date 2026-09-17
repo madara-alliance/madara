@@ -122,6 +122,8 @@ pub(crate) struct AdditionalTxInfo {
     pub declared_class: Option<ConvertedClass>,
     /// Earliest known timestamp for this transaction. Used for mempool re-insertion.
     pub arrived_at: TxTimestamp,
+    /// Future-nonce failures from speculative mempool batches must be requeued.
+    pub from_mempool: bool,
 }
 
 /// This is a pending header, without parent_block_hash. Parent block hash is not visible to the execution,

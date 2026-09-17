@@ -383,6 +383,14 @@ impl Accounts {
         }
     }
 
+    /// Remove only an exact front nonce selected by a locked consumer's local cursor.
+    pub fn remove_contiguous(&mut self, address: ContractAddress, nonce: Nonce) -> Option<AccountUpdate> {
+        if self.accounts.get(&address)?.queued_txs.first_key_value()?.0 != &nonce {
+            return None;
+        }
+        Some(self.remove_tx(&TxKey(address, nonce)))
+    }
+
     /// Caller must supply a valid AccountKey.
     /// This function is used with the eviction queue to make room when the mempool is full.
     pub fn pop_last_tx_from_account(&mut self, AccountKey(contract_address): &AccountKey) -> AccountUpdate {
