@@ -51,6 +51,8 @@ fn attestation_api_only_is_opt_in_and_requires_committee_configuration() {
             "http://localhost:9944",
             "--rpc-for-snos",
             "http://localhost:9545",
+            "--max-batch-time-seconds",
+            "1800",
             "--prover",
             "mock",
         ];
