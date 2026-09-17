@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-kzg-attestation-protocol = { path = "../../attestation-protocol" }
 alloy = { workspace = true, features = [
   "full",
   "node-bindings",
@@ -20,6 +19,7 @@ c-kzg = { workspace = true }
 cairo-vm = { workspace = true }
 color-eyre = { workspace = true }
 dotenvy = { workspace = true }
+kzg-attestation-protocol = { path = "../../attestation-protocol" }
 lazy_static = { workspace = true }
 log.workspace = true
 mockall = { workspace = true }
