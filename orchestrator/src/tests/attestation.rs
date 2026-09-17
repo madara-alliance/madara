@@ -28,6 +28,45 @@ use std::{
 };
 
 const TOKEN: &str = "public-attestation-api-test-token-not-a-secret";
+
+#[test]
+fn attestation_api_only_is_opt_in_and_requires_committee_configuration() {
+    use crate::cli::RunCmd;
+    use clap::{CommandFactory, FromArgMatches};
+
+    let parse = |extra: &[&str]| {
+        let mut args = vec![
+            "orchestrator",
+            "--aws",
+            "--aws-s3",
+            "--aws-sqs",
+            "--aws-sns",
+            "--queue-identifier",
+            "test-queue",
+            "--settle-on-ethereum",
+            "--da-on-ethereum",
+            "--ethereum-da-rpc-url",
+            "http://localhost:8545",
+            "--madara-rpc-url",
+            "http://localhost:9944",
+            "--rpc-for-snos",
+            "http://localhost:9545",
+            "--prover",
+            "mock",
+        ];
+        args.extend_from_slice(extra);
+        let matches = RunCmd::command().mut_args(|arg| arg.env(None::<&str>)).try_get_matches_from(args)?;
+        RunCmd::from_arg_matches(&matches)
+    };
+    assert!(!parse(&[]).unwrap().attestation_api_only);
+    let error = parse(&["--attestation-api-only"]).unwrap_err();
+    assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    assert!(error.to_string().contains("--blob-attestation-config"));
+    assert!(
+        parse(&["--attestation-api-only", "--blob-attestation-config", "committee.json"]).unwrap().attestation_api_only
+    );
+}
+
 fn fixture() -> (JobItem, Vec<Attestation>) {
     let value: serde_json::Value = serde_json::from_str(include_str!("attestation-fixture.json")).unwrap();
     let mut policy: Policy = serde_json::from_value(value["policy"].clone()).unwrap();

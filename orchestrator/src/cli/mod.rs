@@ -104,6 +104,11 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_BLOB_ATTESTATION_CONFIG", long)]
     pub blob_attestation_config: Option<std::path::PathBuf>,
 
+    /// Serve HTTP APIs without consuming job queues. Use a separate replica to keep
+    /// attestation polling responsive while other replicas execute SNOS or aggregation.
+    #[arg(env = "MADARA_ORCHESTRATOR_ATTESTATION_API_ONLY", long, requires = "blob_attestation_config")]
+    pub attestation_api_only: bool,
+
     // Provider Config
     #[clap(flatten)]
     pub aws_config_args: AWSConfigCliArgs,
