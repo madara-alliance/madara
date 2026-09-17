@@ -99,6 +99,11 @@ pub enum Commands {
     ),
 )]
 pub struct RunCmd {
+    /// Enable committee blob checks instead of publishing Ethereum blobs (L2 only).
+    /// JSON config contains the coordinator URL, token-file path, and independently trusted policy.
+    #[arg(env = "MADARA_ORCHESTRATOR_BLOB_ATTESTATION_CONFIG", long)]
+    pub blob_attestation_config: Option<std::path::PathBuf>,
+
     // Provider Config
     #[clap(flatten)]
     pub aws_config_args: AWSConfigCliArgs,

@@ -12,6 +12,7 @@ name = "orchestrator"
 path = "src/main.rs"
 
 [dependencies]
+kzg-attestation-protocol = { path = "crates/attestation-protocol" }
 alloy = { workspace = true, features = [
   "full",
   "node-bindings",

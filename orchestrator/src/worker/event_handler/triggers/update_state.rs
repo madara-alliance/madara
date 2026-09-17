@@ -222,6 +222,7 @@ impl UpdateStateJobTrigger {
         state_metadata.program_output_path = Some(aggregator_metadata.program_output_path.clone());
         state_metadata.blob_data_path = Some(aggregator_metadata.blob_data_path.clone());
         state_metadata.da_segment_path = Some(aggregator_metadata.da_segment_path.clone());
+        state_metadata.blob_settlement_mode = aggregator_metadata.blob_settlement_mode;
 
         Ok(())
     }

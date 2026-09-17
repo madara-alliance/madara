@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+kzg-attestation-protocol = { path = "../../attestation-protocol" }
 alloy = { workspace = true, features = [
   "full",
   "node-bindings",

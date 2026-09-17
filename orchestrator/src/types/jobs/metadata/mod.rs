@@ -117,9 +117,20 @@ pub struct StateUpdateTxAttempt {
     pub error: Option<String>,
 }
 
+/// Stored when the aggregator job is created, so changing runtime flags never reroutes an old batch.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BlobSettlementMode {
+    #[default]
+    EthereumBlobs,
+    CommitteeAttestation,
+}
+
 /// Metadata specific to aggregator job
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
+    #[serde(default)]
+    pub blob_settlement_mode: BlobSettlementMode,
     // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
@@ -228,6 +239,11 @@ pub struct SnosMetadata {
 /// TODO(heemankv, 09-01-26): Use enum for paths to type-gate by settlement type (BlobSettlement vs CalldataSettlement)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
+    #[serde(default)]
+    pub blob_settlement_mode: BlobSettlementMode,
+    /// Durable checkpoint populated only after independently validating the complete certificate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_certificate: Option<kzg_attestation_protocol::Certificate>,
     // Worker-initialized fields
     /// Path to SNOS output file for the block/batch
     pub snos_output_path: Option<String>,
@@ -316,4 +332,27 @@ pub struct JobMetadata {
     pub common: CommonMetadata,
     /// Job-specific metadata fields
     pub specific: JobSpecificMetadata,
+}
+
+#[cfg(test)]
+mod attestation_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn old_aggregator_jobs_preserve_blob_settlement() {
+        let mut json = serde_json::to_value(AggregatorMetadata::default()).unwrap();
+        json.as_object_mut().unwrap().remove("blob_settlement_mode");
+        let metadata: AggregatorMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(metadata.blob_settlement_mode, BlobSettlementMode::EthereumBlobs);
+    }
+
+    #[test]
+    fn old_settlement_jobs_have_no_attestation_dependency() {
+        let mut json = serde_json::to_value(StateUpdateMetadata::default()).unwrap();
+        json.as_object_mut().unwrap().remove("blob_settlement_mode");
+        json.as_object_mut().unwrap().remove("blob_certificate");
+        let metadata: StateUpdateMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(metadata.blob_settlement_mode, BlobSettlementMode::EthereumBlobs);
+        assert!(metadata.blob_certificate.is_none());
+    }
 }

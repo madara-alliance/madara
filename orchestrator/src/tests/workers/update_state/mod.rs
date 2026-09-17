@@ -193,6 +193,8 @@ async fn update_state_worker_continues_from_previous_state_update() {
     // Create proper StateUpdateMetadata with blocks 0-4
     // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
+        blob_settlement_mode: Default::default(),
+        blob_certificate: None,
         snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
         program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
@@ -252,6 +254,8 @@ async fn update_state_worker_next_block_missing() {
     // Create proper StateUpdateMetadata with blocks 0-4
     // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
+        blob_settlement_mode: Default::default(),
+        blob_certificate: None,
         snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
         program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),

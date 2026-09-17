@@ -856,6 +856,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     };
 
     let orchestrator_params = ConfigParam {
+        blob_attestation: None,
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
         madara_feeder_gateway_url: Url::parse(&get_env_var_or_default(
