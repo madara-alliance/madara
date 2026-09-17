@@ -99,6 +99,16 @@ pub enum Commands {
     ),
 )]
 pub struct RunCmd {
+    /// Enable committee blob checks instead of publishing Ethereum blobs (L2 only).
+    /// JSON config contains the dedicated listen address, token-file path, and independently trusted policy.
+    #[arg(env = "MADARA_ORCHESTRATOR_BLOB_ATTESTATION_CONFIG", long)]
+    pub blob_attestation_config: Option<std::path::PathBuf>,
+
+    /// Serve HTTP APIs without consuming job queues. Use a separate replica to keep
+    /// attestation polling responsive while other replicas execute SNOS or aggregation.
+    #[arg(env = "MADARA_ORCHESTRATOR_ATTESTATION_API_ONLY", long, requires = "blob_attestation_config")]
+    pub attestation_api_only: bool,
+
     // Provider Config
     #[clap(flatten)]
     pub aws_config_args: AWSConfigCliArgs,
@@ -243,6 +253,10 @@ pub struct RunCmd {
     ),
 )]
 pub struct SetupCmd {
+    /// Provision the optional L2 signature-collection queues and trigger.
+    #[arg(long, default_value_t = false)]
+    pub blob_attestations: bool,
+
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 

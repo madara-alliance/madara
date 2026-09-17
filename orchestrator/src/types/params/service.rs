@@ -37,6 +37,7 @@ impl ServiceParams {
             JobType::DataSubmission => self.data_submission_timeout_seconds,
             JobType::StateTransition => self.state_transition_timeout_seconds,
             JobType::Aggregator => self.aggregator_job_timeout_seconds,
+            JobType::SignatureCollection => self.aggregator_job_timeout_seconds,
         }
     }
 }

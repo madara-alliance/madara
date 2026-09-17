@@ -36,4 +36,6 @@ pub enum JobType {
     StateTransition,
     /// Aggregating the batches
     Aggregator,
+    /// Collect independent blob checks before settlement.
+    SignatureCollection,
 }

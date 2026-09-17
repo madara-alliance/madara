@@ -2,6 +2,7 @@ use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::{AWSResourceIdentifier, QueueArgs, ARN};
+use crate::types::queue::QueueType;
 use crate::types::queue_control::QUEUES;
 use crate::types::Layer;
 use aws_config::{BehaviorVersion, Region};
@@ -35,7 +36,7 @@ async fn cloud_provider(#[future] localstack_config: aws_config::SdkConfig) -> A
 fn queue_args() -> QueueArgs {
     let uuid_prefix = &uuid::Uuid::new_v4().to_string()[0..4];
     let queue_template = format!("test-{}-{{}}_queue", uuid_prefix);
-    QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template) }
+    QueueArgs { blob_attestations: false, queue_template_identifier: AWSResourceIdentifier::Name(queue_template) }
 }
 
 /// Helper function to cleanup queues for a specific test (only deletes queues matching the queue_args identifier)
@@ -57,6 +58,19 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
         }
 
         let queue_name = InnerSQS::get_queue_name_from_type(queue_template_name, queue_type);
+
+        if !queue_args.blob_attestations
+            && matches!(
+                queue_type,
+                QueueType::SignatureCollectionJobProcessing | QueueType::SignatureCollectionJobVerification
+            )
+        {
+            assert!(
+                inner_sqs.get_queue_url_from_client(&queue_name).await.is_err(),
+                "Default setup must not create signature queues"
+            );
+            continue;
+        }
 
         // Verify queue exists
         let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await?;
@@ -163,9 +177,11 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
 #[tokio::test]
 async fn test_setup_with_name_identifier(
     #[future] cloud_provider: Arc<CloudProvider>,
-    queue_args: QueueArgs,
+    mut queue_args: QueueArgs,
     #[case] layer: Layer,
+    #[values(false, true)] blob_attestations: bool,
 ) -> color_eyre::Result<()> {
+    queue_args.blob_attestations = blob_attestations;
     let provider = cloud_provider.await;
     // Use selective cleanup instead of deleting all test queues
     // This prevents conflicts with other parallel tests
@@ -220,7 +236,8 @@ async fn test_setup_with_arn_identifier(
         resource: queue_template,
     };
 
-    let queue_args_arn = QueueArgs { queue_template_identifier: AWSResourceIdentifier::ARN(arn.clone()) };
+    let queue_args_arn =
+        QueueArgs { blob_attestations: false, queue_template_identifier: AWSResourceIdentifier::ARN(arn.clone()) };
 
     // Verify queues are not ready before setup
     let ready_before = inner_sqs.is_ready_to_use(&layer, &queue_args_arn).await?;
@@ -228,7 +245,10 @@ async fn test_setup_with_arn_identifier(
 
     // For ARN-based setup, we need to pre-create the queues since ARN setup skips creation
     // First create queues with name identifier
-    let name_queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(arn.resource.clone()) };
+    let name_queue_args = QueueArgs {
+        blob_attestations: false,
+        queue_template_identifier: AWSResourceIdentifier::Name(arn.resource.clone()),
+    };
     inner_sqs.setup(&layer, name_queue_args.clone()).await?;
     println!("✓ Pre-created queues using Name identifier");
 

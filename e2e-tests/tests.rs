@@ -153,12 +153,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     let queue_params = match aws_prefix {
         Some(prefix) => QueueArgs {
+            blob_attestations: false,
             queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(format!(
                 "{}_{}",
                 prefix, aws_identifier,
             )),
         },
         None => QueueArgs {
+            blob_attestations: false,
             queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(aws_identifier),
         },
     };
@@ -627,6 +629,8 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
 
     // Create the StateUpdate-specific metadata
     let state_update_metadata = StateUpdateMetadata {
+        blob_settlement_mode: Default::default(),
+        blob_certificate: None,
         snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
         program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
         blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),

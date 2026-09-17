@@ -86,6 +86,11 @@ impl JobTrigger for AggregatorJobTrigger {
             let metadata = JobMetadata {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
+                    blob_settlement_mode: if config.params.blob_attestation.is_some() {
+                        crate::types::jobs::metadata::BlobSettlementMode::CommitteeAttestation
+                    } else {
+                        crate::types::jobs::metadata::BlobSettlementMode::EthereumBlobs
+                    },
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id.clone(),
                     download_proof: if config.params.store_audit_artifacts {

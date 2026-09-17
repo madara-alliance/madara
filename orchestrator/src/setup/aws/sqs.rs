@@ -57,7 +57,14 @@ impl Resource for InnerSQS {
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for (queue_type, queue) in QUEUES.iter() {
-            if !queue.supported_layers.contains(layer) {
+            if !queue.supported_layers.contains(layer)
+                || (!args.blob_attestations
+                    && matches!(
+                        queue_type,
+                        crate::types::queue::QueueType::SignatureCollectionJobProcessing
+                            | crate::types::queue::QueueType::SignatureCollectionJobVerification
+                    ))
+            {
                 continue;
             }
 
@@ -174,7 +181,14 @@ impl Resource for InnerSQS {
 
     async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         for (queue_type, queue) in QUEUES.iter() {
-            if !queue.supported_layers.contains(layer) {
+            if !queue.supported_layers.contains(layer)
+                || (!args.blob_attestations
+                    && matches!(
+                        queue_type,
+                        crate::types::queue::QueueType::SignatureCollectionJobProcessing
+                            | crate::types::queue::QueueType::SignatureCollectionJobVerification
+                    ))
+            {
                 continue;
             }
             let queue_exists = match &args.queue_template_identifier {

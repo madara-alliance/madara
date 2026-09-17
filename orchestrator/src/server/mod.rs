@@ -1,3 +1,4 @@
+pub(crate) mod attestation;
 pub mod error;
 pub mod middleware;
 pub mod route;
@@ -20,6 +21,7 @@ pub use error::{ApiServiceError, ApiServiceResult};
 pub struct ServerHandle {
     shutdown_token: CancellationToken,
     task_handle: JoinHandle<()>,
+    attestation_task: Option<JoinHandle<()>>,
 }
 
 impl ServerHandle {
@@ -32,7 +34,12 @@ impl ServerHandle {
     pub async fn shutdown(self) -> Result<(), tokio::task::JoinError> {
         info!("Initiating server graceful shutdown");
         self.shutdown_token.cancel();
-        self.task_handle.await
+        let main_result = self.task_handle.await;
+        let attestation_result = match self.attestation_task {
+            Some(task) => task.await,
+            None => Ok(()),
+        };
+        main_result.and(attestation_result)
     }
 }
 
@@ -58,6 +65,10 @@ pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<(SocketAddr
     let shutdown_token = CancellationToken::new();
     let server_token = shutdown_token.clone();
 
+    // Bind both listeners before spawning either task, so startup failure cannot leave a partial server running.
+    let attestation_listener = bind_attestation_listener(config.clone()).await?;
+    let attestation_task = attestation_listener
+        .map(|(listener, router)| spawn_attestation_server(listener, router, shutdown_token.clone()));
     let app = server_router(config.clone());
     let task_handle = tokio::spawn(async move {
         axum::serve(listener, app)
@@ -66,9 +77,47 @@ pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<(SocketAddr
             .expect("Failed to start axum server")
     });
 
-    let handle = ServerHandle { shutdown_token, task_handle };
+    let handle = ServerHandle { shutdown_token, task_handle, attestation_task };
 
     Ok((api_server_url, handle))
+}
+
+/// Start only the signature listener, without binding administrative or job routes.
+pub async fn setup_attestation_server(config: Arc<Config>) -> OrchestratorResult<(SocketAddr, ServerHandle)> {
+    let (listener, router) = bind_attestation_listener(config).await?.ok_or_else(|| {
+        crate::OrchestratorError::ConfigError("API-only mode requires blob attestation configuration".into())
+    })?;
+    let address = listener.local_addr()?;
+    let shutdown_token = CancellationToken::new();
+    let task_handle = spawn_attestation_server(listener, router, shutdown_token.clone());
+    Ok((address, ServerHandle { shutdown_token, task_handle, attestation_task: None }))
+}
+
+async fn bind_attestation_listener(
+    config: Arc<Config>,
+) -> OrchestratorResult<Option<(tokio::net::TcpListener, axum::Router)>> {
+    Ok(match &config.params.blob_attestation {
+        Some(settings) => {
+            let token = settings.auth_token().map_err(|e| crate::OrchestratorError::ConfigError(e.to_string()))?;
+            let listener = tokio::net::TcpListener::bind(settings.listen).await?;
+            info!(address = %listener.local_addr()?, "Dedicated attestation API listening");
+            Some((listener, attestation::router(config.clone(), &token)))
+        }
+        None => None,
+    })
+}
+
+fn spawn_attestation_server(
+    listener: tokio::net::TcpListener,
+    router: axum::Router,
+    token: CancellationToken,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(token.cancelled_owned())
+            .await
+            .expect("Attestation API server failed");
+    })
 }
 
 pub(crate) async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {

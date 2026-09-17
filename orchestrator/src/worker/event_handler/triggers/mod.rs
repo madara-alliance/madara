@@ -4,6 +4,7 @@ pub(crate) mod batching;
 pub(crate) mod data_submission_worker;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;
+pub(crate) mod signature_collection;
 pub(crate) mod snos;
 pub(crate) mod snos_batching;
 pub(crate) mod storage_cleanup;

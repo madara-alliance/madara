@@ -164,6 +164,7 @@ versions!(
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
+    pub blob_attestation: Option<crate::core::client::blob_attestation::BlobAttestationConfig>,
     pub madara_rpc_url: Url,
     pub madara_feeder_gateway_url: Url,
     pub snos_config: SNOSParams,
@@ -291,7 +292,17 @@ impl Config {
 
         let layer = run_cmd.layer.clone();
 
+        let blob_attestation = run_cmd
+            .blob_attestation_config
+            .as_ref()
+            .map(|path| crate::core::client::blob_attestation::BlobAttestationConfig::load(path))
+            .transpose()
+            .map_err(|e| OrchestratorError::ConfigError(e.to_string()))?;
+        if blob_attestation.is_some() && layer.is_l3() {
+            return Err(OrchestratorError::ConfigError("Blob attestations require L2 Ethereum settlement".into()));
+        }
         let params = ConfigParam {
+            blob_attestation,
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_feeder_gateway_url: run_cmd
                 .madara_feeder_gateway_url
@@ -352,6 +363,12 @@ impl Config {
         );
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
+        if let Some(attestation) = &params.blob_attestation {
+            settlement_client
+                .validate_blob_attestation_policy(&attestation.policy)
+                .await
+                .map_err(|e| OrchestratorError::ConfigError(format!("Attestation policy check failed: {e}")))?;
+        }
 
         Ok(Self {
             layer,

@@ -46,6 +46,7 @@ futures = { workspace = true }
 generate-pie = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true }
+kzg-attestation-protocol = { path = "crates/attestation-protocol" }
 lazy_static = { workspace = true }
 majin-blob-core = { workspace = true }
 majin-blob-types = { workspace = true }

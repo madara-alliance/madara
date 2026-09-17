@@ -1,0 +1,10 @@
+[package]
+name = "kzg-attestation-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+alloy-primitives = { version = "=1.4.1", features = ["serde", "k256"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"

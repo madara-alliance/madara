@@ -709,7 +709,10 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         queue_base
     };
 
-    let queue_params = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_identifier) };
+    let queue_params = QueueArgs {
+        blob_attestations: false,
+        queue_template_identifier: AWSResourceIdentifier::Name(queue_identifier),
+    };
 
     let aws_params = AWSCredentials { prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX") };
 
@@ -856,6 +859,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     };
 
     let orchestrator_params = ConfigParam {
+        blob_attestation: None,
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
         madara_feeder_gateway_url: Url::parse(&get_env_var_or_default(

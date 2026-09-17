@@ -1,0 +1,6 @@
+{
+  "source": "kzg-commitment-attestor/crates/protocol/src/lib.rs",
+  "sha256": "d9dcd420fd5e11bc86e2cdcf0ae49341f7bef9c71142d78aff548c1db5d9aa4e",
+  "note": "Vendored byte-for-byte from the private integration bundle; exact source content is pinned by sha256.",
+  "repository": "https://github.com/karnotxyz/kzg-commitment-attestor"
+}

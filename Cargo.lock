@@ -7092,7 +7092,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
+source = "git+https://github.com/karnotxyz/snos?rev=ad4e12114c1b0864f1f3173c771c2cc62c49ffd1#ad4e12114c1b0864f1f3173c771c2cc62c49ffd1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8857,6 +8857,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0de8b303297635ad57c9f5059fd9cee7a47f8e8daa09df0fcd07dd39fb22977f"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "kzg-attestation-protocol"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives 1.4.1",
+ "serde",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -11278,6 +11287,7 @@ dependencies = [
  "indexmap 2.13.1",
  "itertools 0.14.0",
  "jemallocator",
+ "kzg-attestation-protocol",
  "lazy_static",
  "majin-blob-core",
  "majin-blob-types",
@@ -11438,6 +11448,7 @@ dependencies = [
  "color-eyre",
  "dotenvy",
  "hex",
+ "kzg-attestation-protocol",
  "lazy_static",
  "log",
  "mockall 0.13.1",
@@ -11538,6 +11549,7 @@ dependencies = [
  "axum 0.7.9",
  "c-kzg",
  "color-eyre",
+ "kzg-attestation-protocol",
  "mockall 0.13.1",
  "orchestrator-utils",
  "starknet-rust",
@@ -13103,7 +13115,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
+source = "git+https://github.com/karnotxyz/snos?rev=ad4e12114c1b0864f1f3173c771c2cc62c49ffd1#ad4e12114c1b0864f1f3173c771c2cc62c49ffd1"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -14546,7 +14558,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=26de95986d9914f0e7900eb047e6fce98413852d#26de95986d9914f0e7900eb047e6fce98413852d"
+source = "git+https://github.com/karnotxyz/snos?rev=ad4e12114c1b0864f1f3173c771c2cc62c49ffd1#ad4e12114c1b0864f1f3173c771c2cc62c49ffd1"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",

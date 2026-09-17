@@ -133,7 +133,11 @@ impl JobTrigger for UpdateStateJobTrigger {
 
         // Collect paths for the following - snos output, program output and blob data
         match config.layer() {
-            Layer::L2 => self.collect_paths_l2(&config, batch_or_block_number, &mut state_update_metadata).await?,
+            Layer::L2 => {
+                if !self.collect_paths_l2(&config, batch_or_block_number, &mut state_update_metadata).await? {
+                    return Ok(());
+                }
+            }
             Layer::L3 => self.collect_paths_l3(&config, batch_or_block_number, &mut state_update_metadata).await?,
         }
 
@@ -205,7 +209,7 @@ impl UpdateStateJobTrigger {
         config: &Arc<Config>,
         batch_no: u64,
         state_metadata: &mut StateUpdateMetadata,
-    ) -> color_eyre::Result<()> {
+    ) -> color_eyre::Result<bool> {
         // Get the aggregator job metadata for the batch
         let aggregator_job = config
             .database()
@@ -222,7 +226,26 @@ impl UpdateStateJobTrigger {
         state_metadata.program_output_path = Some(aggregator_metadata.program_output_path.clone());
         state_metadata.blob_data_path = Some(aggregator_metadata.blob_data_path.clone());
         state_metadata.da_segment_path = Some(aggregator_metadata.da_segment_path.clone());
+        state_metadata.blob_settlement_mode = aggregator_metadata.blob_settlement_mode;
 
-        Ok(())
+        if state_metadata.blob_settlement_mode == crate::types::jobs::metadata::BlobSettlementMode::CommitteeAttestation
+        {
+            let Some(signature_job) =
+                config.database().get_job_by_internal_id_and_type(batch_no, &JobType::SignatureCollection).await?
+            else {
+                return Ok(false);
+            };
+            if signature_job.status != JobStatus::Completed {
+                return Ok(false);
+            }
+            let signature: crate::types::jobs::metadata::SignatureCollectionMetadata =
+                signature_job.metadata.specific.try_into()?;
+            if *signature.aggregator != aggregator_metadata {
+                return Err(eyre!("Signature job refers to different aggregator metadata"));
+            }
+            state_metadata.blob_certificate =
+                Some(signature.certificate.ok_or_else(|| eyre!("Completed signature job has no certificate"))?);
+        }
+        Ok(true)
     }
 }

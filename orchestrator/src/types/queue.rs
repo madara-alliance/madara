@@ -43,6 +43,10 @@ pub enum QueueType {
     AggregatorJobVerification,
     #[strum(serialize = "job_handle_failure")]
     JobHandleFailure,
+    #[strum(serialize = "signature_collection_job_processing")]
+    SignatureCollectionJobProcessing,
+    #[strum(serialize = "signature_collection_job_verification")]
+    SignatureCollectionJobVerification,
     #[strum(serialize = "worker_trigger")]
     WorkerTrigger,
     #[strum(serialize = "priority_processing_queue")]
@@ -66,7 +70,9 @@ impl TryFrom<QueueType> for JobState {
             QueueType::UpdateStateJobProcessing => JobState::Processing,
             QueueType::UpdateStateJobVerification => JobState::Verification,
             QueueType::AggregatorJobProcessing => JobState::Processing,
+            QueueType::SignatureCollectionJobProcessing => JobState::Processing,
             QueueType::AggregatorJobVerification => JobState::Verification,
+            QueueType::SignatureCollectionJobVerification => JobState::Verification,
             QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
             QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
             QueueType::PriorityProcessingQueue => {
@@ -94,6 +100,7 @@ impl QueueNameForJobType for JobType {
             JobType::DataSubmission => QueueType::DataSubmissionJobProcessing,
             JobType::StateTransition => QueueType::UpdateStateJobProcessing,
             JobType::Aggregator => QueueType::AggregatorJobProcessing,
+            JobType::SignatureCollection => QueueType::SignatureCollectionJobProcessing,
         }
     }
     fn verify_queue_name(&self) -> QueueType {
@@ -104,6 +111,7 @@ impl QueueNameForJobType for JobType {
             JobType::DataSubmission => QueueType::DataSubmissionJobVerification,
             JobType::StateTransition => QueueType::UpdateStateJobVerification,
             JobType::Aggregator => QueueType::AggregatorJobVerification,
+            JobType::SignatureCollection => QueueType::SignatureCollectionJobVerification,
         }
     }
 }
@@ -123,6 +131,9 @@ impl QueueType {
             Self::DataSubmissionJobProcessing | Self::DataSubmissionJobVerification => Some(JobType::DataSubmission),
             Self::UpdateStateJobProcessing | Self::UpdateStateJobVerification => Some(JobType::StateTransition),
             Self::AggregatorJobProcessing | Self::AggregatorJobVerification => Some(JobType::Aggregator),
+            Self::SignatureCollectionJobProcessing | Self::SignatureCollectionJobVerification => {
+                Some(JobType::SignatureCollection)
+            }
             Self::WorkerTrigger
             | Self::JobHandleFailure
             | Self::PriorityProcessingQueue
@@ -141,13 +152,15 @@ impl QueueType {
             | Self::ProofRegistrationJobProcessing
             | Self::DataSubmissionJobProcessing
             | Self::UpdateStateJobProcessing
-            | Self::AggregatorJobProcessing => Some(JobAction::Process),
+            | Self::AggregatorJobProcessing
+            | Self::SignatureCollectionJobProcessing => Some(JobAction::Process),
             Self::SnosJobVerification
             | Self::ProvingJobVerification
             | Self::ProofRegistrationJobVerification
             | Self::DataSubmissionJobVerification
             | Self::UpdateStateJobVerification
-            | Self::AggregatorJobVerification => Some(JobAction::Verify),
+            | Self::AggregatorJobVerification
+            | Self::SignatureCollectionJobVerification => Some(JobAction::Verify),
             Self::WorkerTrigger
             | Self::JobHandleFailure
             | Self::PriorityProcessingQueue

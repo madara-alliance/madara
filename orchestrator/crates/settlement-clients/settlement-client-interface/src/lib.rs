@@ -78,6 +78,22 @@ pub trait SettlementClient: Send + Sync {
         nonce: u64,
     ) -> Result<StateUpdateTxResult>;
 
+    /// Verify a locally configured committee against the actual settlement core.
+    async fn validate_blob_attestation_policy(&self, _policy: &kzg_attestation_protocol::Policy) -> Result<()> {
+        color_eyre::eyre::bail!("Blob attestations are not supported by this settlement client")
+    }
+
+    /// Submit ordinary calldata containing the checked-output certificate, without a blob sidecar.
+    async fn update_state_with_blob_attestations(
+        &self,
+        _program_output: Vec<[u8; 32]>,
+        _policy: kzg_attestation_protocol::Policy,
+        _certificate: kzg_attestation_protocol::Certificate,
+        _nonce: u64,
+    ) -> Result<StateUpdateTxResult> {
+        color_eyre::eyre::bail!("Blob attestations are not supported by this settlement client")
+    }
+
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus>;
 

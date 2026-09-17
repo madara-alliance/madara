@@ -10,6 +10,7 @@ use crate::types::batch::{
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
+use crate::types::jobs::metadata::SignatureReceipt;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics_recorder::MetricsRecorder;
@@ -627,6 +628,58 @@ impl MongoDbClient {
 
 #[async_trait]
 impl DatabaseClient for MongoDbClient {
+    async fn get_signature_work(&self, after: u64, limit: i64, version: &str) -> Result<Vec<JobItem>, DatabaseError> {
+        let filter = doc! {
+            "job_type": bson::to_bson(&JobType::SignatureCollection)?,
+            "status": bson::to_bson(&JobStatus::PendingVerification)?,
+            "internal_id": { "$gt": i64::try_from(after).unwrap_or(i64::MAX) },
+            "metadata.common.orchestrator_version": version,
+        };
+        let options = FindOptions::builder().sort(doc! {"internal_id": 1}).limit(limit.clamp(1, 32)).build();
+        Ok(self.get_job_collection().find(filter, options).await?.try_collect().await?)
+    }
+
+    async fn store_signature_receipt(&self, receipt: SignatureReceipt) -> Result<(), DatabaseError> {
+        let collection = self.database.collection::<SignatureReceipt>("blob_attestation_signatures");
+        let update = collection
+            .update_one(
+                doc! {"_id": &receipt.id},
+                doc! {"$setOnInsert": bson::to_document(&receipt)?},
+                UpdateOptions::builder().upsert(true).build(),
+            )
+            .await;
+        if let Err(error) = update {
+            // A racing upsert may report duplicate key. Accept only if this exact signer's
+            // immutable receipt is already durable; never swallow an unrelated write error.
+            let duplicate = matches!(error.kind.as_ref(), mongodb::error::ErrorKind::Write(mongodb::error::WriteFailure::WriteError(write)) if write.code == 11000);
+            if !duplicate || collection.find_one(doc! {"_id": &receipt.id}, None).await?.is_none() {
+                return Err(error.into());
+            }
+        }
+        Ok(())
+    }
+
+    async fn get_signature_receipts(
+        &self,
+        job_id: &str,
+        digest: &alloy::primitives::B256,
+    ) -> Result<Vec<SignatureReceipt>, DatabaseError> {
+        // Every receipt ID is job:digest:signer. This bounded prefix range uses Mongo's
+        // built-in unique _id index, without requiring a collection on the default path.
+        let prefix = format!("{job_id}:{digest}");
+        Ok(self
+            .database
+            .collection::<SignatureReceipt>("blob_attestation_signatures")
+            .find(
+                doc! {"_id": {"$gte": format!("{prefix}:"), "$lt": format!("{prefix};")},
+                "job_id": job_id, "digest": bson::to_bson(digest)?},
+                FindOptions::builder().limit(32).build(),
+            )
+            .await?
+            .try_collect()
+            .await?)
+    }
+
     async fn switch_database(&mut self, database_name: &str) -> Result<(), DatabaseError> {
         self.database = Arc::new(self.client.database(database_name));
         Ok(())

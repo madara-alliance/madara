@@ -132,6 +132,8 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         JobType::StateTransition => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
                 blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),

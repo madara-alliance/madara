@@ -181,6 +181,8 @@ async fn test_process_completed_jobs_skips_on_snos_batch_lookup_failure() -> Res
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: None,
                 program_output_path: None,
                 blob_data_path: None,
@@ -240,6 +242,8 @@ async fn test_storage_cleanup_l2_direct_snos_paths_without_listing() -> Result<(
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: None,
                 program_output_path: None,
                 blob_data_path: None,
@@ -335,6 +339,8 @@ async fn test_storage_cleanup_l3_direct_snos_paths_without_listing() -> Result<(
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: None,
                 program_output_path: None,
                 blob_data_path: None,
@@ -471,6 +477,8 @@ async fn test_storage_cleanup_happy_path_integration_l2() -> Result<(), Box<dyn 
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: Some(get_batch_artifact_file(agg_batch_id, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(get_batch_artifact_file(agg_batch_id, PROGRAM_OUTPUT_FILE_NAME)),
                 blob_data_path: Some(get_batch_blob_dir(agg_batch_id)),
@@ -544,6 +552,8 @@ async fn test_storage_cleanup_happy_path_integration_l3() -> Result<(), Box<dyn 
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: Some(format!("{}/{}", get_snos_batch_dir(block_no), SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", get_snos_batch_dir(block_no), PROGRAM_OUTPUT_FILE_NAME)),
                 blob_data_path: Some(format!("{}/{}", get_snos_batch_dir(block_no), BLOB_DATA_FILE_NAME)),
@@ -692,6 +702,8 @@ async fn test_collect_and_tag_artifacts_integration() -> Result<(), Box<dyn Erro
         metadata: JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                blob_settlement_mode: Default::default(),
+                blob_certificate: None,
                 snos_output_path: None,
                 program_output_path: None,
                 blob_data_path: Some(blob_file.clone()),

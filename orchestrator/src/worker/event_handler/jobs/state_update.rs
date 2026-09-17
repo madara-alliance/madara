@@ -7,8 +7,8 @@ use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
-    StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
+    BlobSettlementMode, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData,
+    StateUpdateMetadata, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
 };
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -35,6 +35,7 @@ struct StateUpdateArtifacts {
     snos_output: Option<Vec<Felt>>,
     program_output: Vec<[u8; 32]>,
     blob_data: Vec<Vec<u8>>,
+    attestation: Option<(kzg_attestation_protocol::Policy, kzg_attestation_protocol::Certificate)>,
 }
 
 struct StateUpdateProcessingResult {
@@ -132,11 +133,41 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     }
                 };
             let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
-            let blob_data = match config.layer() {
-                // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
-                // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+            let blob_data = if state_metadata.blob_settlement_mode == BlobSettlementMode::CommitteeAttestation {
+                // The completed signature job already checked the blobs; settlement needs only its certificate.
+                Vec::new()
+            } else {
+                match config.layer() {
+                    Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
+                    Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+                }
+            };
+
+            let attestation = match state_metadata.blob_settlement_mode {
+                BlobSettlementMode::EthereumBlobs => None,
+                BlobSettlementMode::CommitteeAttestation => {
+                    if config.layer().is_l3() {
+                        return Err(JobError::Other(OtherError(eyre!("Attested settlement requires L2"))));
+                    }
+                    let client = config.params.blob_attestation.as_ref().ok_or_else(|| {
+                        JobError::Other(OtherError(eyre!(
+                            "This batch requires blob attestation config; refusing blob fallback"
+                        )))
+                    })?;
+                    config
+                        .settlement_client()
+                        .validate_blob_attestation_policy(&client.policy)
+                        .await
+                        .map_err(|e| JobError::Other(OtherError(e)))?;
+                    let output = program_output.iter().copied().map(alloy::primitives::B256::from).collect::<Vec<_>>();
+                    let certificate = state_metadata
+                        .blob_certificate
+                        .clone()
+                        .ok_or_else(|| OtherError(eyre!("Completed signature collection certificate is required")))?;
+                    kzg_attestation_protocol::verify_certificate(&output, &client.policy, &certificate)
+                        .map_err(|e| OtherError(eyre!(e)))?;
+                    Some((client.policy.clone(), certificate))
+                }
             };
 
             let txn_result = match self
@@ -144,7 +175,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     config.clone(),
                     to_settle_num,
                     nonce,
-                    StateUpdateArtifacts { snos_output, program_output, blob_data },
+                    StateUpdateArtifacts { snos_output, program_output, blob_data, attestation },
                 )
                 .await
             {
@@ -536,10 +567,17 @@ impl StateUpdateJobHandler {
         let settlement_client = config.settlement_client();
 
         // Update state with blobs
-        let result = settlement_client
-            .update_state_with_blobs(artifacts.program_output, artifacts.blob_data, nonce)
-            .await
-            .map_err(|e| JobError::Other(OtherError(e)))?;
+        let result = match artifacts.attestation {
+            Some((policy, certificate)) => {
+                settlement_client
+                    .update_state_with_blob_attestations(artifacts.program_output, policy, certificate, nonce)
+                    .await
+            }
+            None => {
+                settlement_client.update_state_with_blobs(artifacts.program_output, artifacts.blob_data, nonce).await
+            }
+        }
+        .map_err(|e| JobError::Other(OtherError(e)))?;
 
         let tx_attempts = Self::convert_tx_attempts(result.attempts);
 
