@@ -2,6 +2,7 @@ use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::{AWSResourceIdentifier, QueueArgs, ARN};
+use crate::types::queue::QueueType;
 use crate::types::queue_control::QUEUES;
 use crate::types::Layer;
 use aws_config::{BehaviorVersion, Region};
@@ -57,6 +58,19 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
         }
 
         let queue_name = InnerSQS::get_queue_name_from_type(queue_template_name, queue_type);
+
+        if !queue_args.blob_attestations
+            && matches!(
+                queue_type,
+                QueueType::SignatureCollectionJobProcessing | QueueType::SignatureCollectionJobVerification
+            )
+        {
+            assert!(
+                inner_sqs.get_queue_url_from_client(&queue_name).await.is_err(),
+                "Default setup must not create signature queues"
+            );
+            continue;
+        }
 
         // Verify queue exists
         let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await?;
@@ -163,9 +177,11 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
 #[tokio::test]
 async fn test_setup_with_name_identifier(
     #[future] cloud_provider: Arc<CloudProvider>,
-    queue_args: QueueArgs,
+    mut queue_args: QueueArgs,
     #[case] layer: Layer,
+    #[values(false, true)] blob_attestations: bool,
 ) -> color_eyre::Result<()> {
+    queue_args.blob_attestations = blob_attestations;
     let provider = cloud_provider.await;
     // Use selective cleanup instead of deleting all test queues
     // This prevents conflicts with other parallel tests
