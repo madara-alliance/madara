@@ -51,10 +51,13 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn run(&self) -> EventSystemResult<()> {
-        let queues = match self.config.layer() {
+        let mut queues = match self.config.layer() {
             Layer::L2 => Self::get_l2_queues(),
             Layer::L3 => Self::get_l3_queues(),
         };
+        if self.config.params.blob_attestation.is_some() {
+            queues.extend([QueueType::SignatureCollectionJobProcessing, QueueType::SignatureCollectionJobVerification]);
+        }
         let mut worker_set = tokio::task::JoinSet::new();
 
         // Spawn the dedicated Priority Queue Workers (one for processing, one for verification)

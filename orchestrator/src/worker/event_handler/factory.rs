@@ -63,6 +63,9 @@ pub mod factory {
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
             JobType::Aggregator => Box::new(AggregatorJobHandler),
+            JobType::SignatureCollection => {
+                Box::new(crate::worker::event_handler::jobs::signature_collection::SignatureCollectionJobHandler)
+            }
         };
 
         Arc::new(job)

@@ -6,7 +6,6 @@ use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{
     BlobSettlementMode, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData,
     StateUpdateMetadata, StateUpdateTxAttempt, StateUpdateTxAttemptStatus,
@@ -134,11 +133,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     }
                 };
             let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
-            let blob_data = match config.layer() {
-                // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
-                // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+            let blob_data = if state_metadata.blob_settlement_mode == BlobSettlementMode::CommitteeAttestation {
+                // The completed signature job already checked the blobs; settlement needs only its certificate.
+                Vec::new()
+            } else {
+                match config.layer() {
+                    Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
+                    Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
+                }
             };
 
             let attestation = match state_metadata.blob_settlement_mode {
@@ -158,28 +160,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                         .await
                         .map_err(|e| JobError::Other(OtherError(e)))?;
                     let output = program_output.iter().copied().map(alloy::primitives::B256::from).collect::<Vec<_>>();
-                    let cached = state_metadata.blob_certificate.as_ref().filter(|certificate| {
-                        kzg_attestation_protocol::verify_certificate(&output, &client.policy, certificate).is_ok()
-                    });
-                    let certificate = match cached {
-                        Some(certificate) => certificate.clone(),
-                        None => {
-                            let certificate = client
-                                .attest(&program_output, &blob_data)
-                                .await
-                                .map_err(|e| JobError::Other(OtherError(e)))?;
-                            state_metadata.blob_certificate = Some(certificate.clone());
-                            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                            // Persist before any transaction submission; use the returned DB version for later updates.
-                            *job = config
-                                .database()
-                                .update_job(job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
-                                .await?;
-                            info!(batch = to_settle_num, digest = %certificate.digest,
-                                epoch = certificate.committee_epoch, "Blob attestation checkpoint saved");
-                            certificate
-                        }
-                    };
+                    let certificate = state_metadata
+                        .blob_certificate
+                        .clone()
+                        .ok_or_else(|| OtherError(eyre!("Completed signature collection certificate is required")))?;
+                    kzg_attestation_protocol::verify_certificate(&output, &client.policy, &certificate)
+                        .map_err(|e| OtherError(eyre!(e)))?;
                     Some((client.policy.clone(), certificate))
                 }
             };

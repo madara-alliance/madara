@@ -285,6 +285,21 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             message_retention_period: None,
         },
     );
+    for queue in [QueueType::SignatureCollectionJobProcessing, QueueType::SignatureCollectionJobVerification] {
+        map.insert(
+            queue,
+            QueueConfig {
+                visibility_timeout: QUEUE_VISIBILITY_TIMEOUT_SECONDS,
+                dlq_config: Some(DlqConfig {
+                    max_receive_count: QUEUE_MAX_RECEIVE_COUNT,
+                    dlq_name: QueueType::JobHandleFailure,
+                }),
+                queue_control: QueueControlConfig::new(5),
+                supported_layers: vec![Layer::L2],
+                message_retention_period: None,
+            },
+        );
+    }
     map
 });
 

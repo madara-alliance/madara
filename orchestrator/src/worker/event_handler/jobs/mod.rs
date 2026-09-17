@@ -2,6 +2,7 @@ pub mod aggregator;
 pub mod da;
 pub mod proof_registration;
 pub mod proving;
+pub mod signature_collection;
 pub mod snos;
 pub mod state_update;
 

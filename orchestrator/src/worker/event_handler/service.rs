@@ -928,7 +928,9 @@ impl JobHandlerService {
         config: &Arc<Config>,
     ) -> Result<(), JobError> {
         let block_number = match &job_type {
-            JobType::Aggregator => Self::resolve_aggregator_end_block(&job_type, internal_id, config).await,
+            JobType::Aggregator | JobType::SignatureCollection => {
+                Self::resolve_aggregator_end_block(&job_type, internal_id, config).await
+            }
             JobType::StateTransition => match config.layer() {
                 Layer::L2 => Self::resolve_aggregator_end_block(&job_type, internal_id, config).await,
                 Layer::L3 => internal_id as f64,
@@ -1007,6 +1009,9 @@ impl JobHandlerService {
             WorkerTriggerType::DataSubmission => Box::new(DataSubmissionJobTrigger),
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
+            WorkerTriggerType::SignatureCollection => {
+                Box::new(crate::worker::event_handler::triggers::signature_collection::SignatureCollectionJobTrigger)
+            }
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::StorageCleanup => Box::new(StorageCleanupTrigger),
         }

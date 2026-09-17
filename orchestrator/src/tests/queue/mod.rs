@@ -59,7 +59,10 @@ mod tests {
         let (inner_sqs, queue_template, queue_url) = test_queue.await;
 
         // Create SQS client using our QueueClient abstraction
-        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
+        let queue_args = QueueArgs {
+            blob_attestations: false,
+            queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()),
+        };
         let sqs = SQS::new(&config, &queue_args);
 
         // Send message using our QueueClient (which adds version attribute)
@@ -105,7 +108,10 @@ mod tests {
 
         // Create CloudProvider and use Config to build queue client (proper way for tests)
         let provider_config = Arc::new(CloudProvider::AWS(Box::new(config.clone())));
-        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
+        let queue_args = QueueArgs {
+            blob_attestations: false,
+            queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()),
+        };
         let sqs =
             Config::build_queue_client(&queue_args, provider_config).await.expect("Failed to create queue client");
 
@@ -257,7 +263,10 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // Create SQS client
-        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
+        let queue_args = QueueArgs {
+            blob_attestations: false,
+            queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()),
+        };
         let sqs = SQS::new(&config, &queue_args);
 
         // Verify cache starts empty

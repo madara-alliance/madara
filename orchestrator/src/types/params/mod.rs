@@ -116,6 +116,7 @@ impl StorageArgs {
 /// QueueArgs - Arguments used to setup queue resources
 #[derive(Debug, Clone)]
 pub struct QueueArgs {
+    pub blob_attestations: bool,
     pub queue_template_identifier: AWSResourceIdentifier,
 }
 
@@ -140,6 +141,7 @@ impl AlertArgs {
 /// CronArgs - Arguments used to setup cron resources
 #[derive(Debug, Clone)]
 pub struct CronArgs {
+    pub blob_attestations: bool,
     pub target_queue_identifier: AWSResourceIdentifier,
     pub event_bridge_type: EventBridgeType,
     pub cron_time: u64,
@@ -283,7 +285,7 @@ impl TryFrom<SetupCmd> for QueueArgs {
                 AWSResourceIdentifier::Name(name)
             });
 
-            Ok(Self { queue_template_identifier: identifier })
+            Ok(Self { queue_template_identifier: identifier, blob_attestations: setup_cmd.blob_attestations })
         } else {
             Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()))
         }
@@ -305,7 +307,10 @@ impl TryFrom<RunCmd> for QueueArgs {
                 AWSResourceIdentifier::Name(name)
             });
 
-            Ok(Self { queue_template_identifier: identifier })
+            Ok(Self {
+                queue_template_identifier: identifier,
+                blob_attestations: run_cmd.blob_attestation_config.is_some(),
+            })
         } else {
             Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()))
         }
@@ -358,6 +363,7 @@ impl TryFrom<SetupCmd> for CronArgs {
         let trigger_policy_name = format!("{}mo-wt-policy", prefix_str);
 
         Ok(Self {
+            blob_attestations: setup_cmd.blob_attestations,
             target_queue_identifier,
             trigger_role_name,
             trigger_rule_template_name,

@@ -91,6 +91,30 @@ pub struct Certificate {
     pub signatures: Vec<Bytes>,
 }
 
+/// Small polling response; blob bytes are fetched only for work a signer has not completed.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkOffer {
+    pub job_id: String,
+    pub batch: u64,
+    pub digest: B256,
+    pub committee_epoch: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkPage {
+    pub jobs: Vec<WorkOffer>,
+    pub next_cursor: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkData {
+    pub job_id: String,
+    pub request: AttestationRequest,
+}
+
 pub struct ParsedOutput {
     pub z: [u8; 32],
     pub commitments: Vec<[u8; 48]>,

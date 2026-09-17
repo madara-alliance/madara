@@ -19,6 +19,7 @@ pub enum WorkerTriggerType {
     DataSubmission,
     UpdateState,
     Aggregator,
+    SignatureCollection,
     AggregatorBatching,
     SnosBatching,
     StorageCleanup,

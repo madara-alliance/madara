@@ -23,6 +23,7 @@ enum WorkKind {
     DataSubmission,
     StateTransition,
     Aggregator,
+    SignatureCollection,
     SnosBatching,
     AggregatorBatching,
     StorageCleanup,
@@ -38,6 +39,7 @@ impl WorkKind {
             Self::DataSubmission => "DataSubmission",
             Self::StateTransition => "StateTransition",
             Self::Aggregator => "Aggregator",
+            Self::SignatureCollection => "SignatureCollection",
             Self::SnosBatching => "SnosBatching",
             Self::AggregatorBatching => "AggregatorBatching",
             Self::StorageCleanup => "StorageCleanup",
@@ -53,6 +55,7 @@ impl WorkKind {
             JobType::DataSubmission => Self::DataSubmission,
             JobType::StateTransition => Self::StateTransition,
             JobType::Aggregator => Self::Aggregator,
+            JobType::SignatureCollection => Self::SignatureCollection,
         }
     }
 }
@@ -220,6 +223,9 @@ fn workload_descriptor_for_worker_trigger(worker_trigger_type: &WorkerTriggerTyp
         }
         WorkerTriggerType::UpdateState => WorkloadDescriptor::new(WorkKind::StateTransition, WorkPhase::Trigger, None),
         WorkerTriggerType::Aggregator => WorkloadDescriptor::new(WorkKind::Aggregator, WorkPhase::Trigger, None),
+        WorkerTriggerType::SignatureCollection => {
+            WorkloadDescriptor::new(WorkKind::SignatureCollection, WorkPhase::Trigger, None)
+        }
         WorkerTriggerType::AggregatorBatching => {
             WorkloadDescriptor::new(WorkKind::AggregatorBatching, WorkPhase::Trigger, None)
         }
@@ -263,6 +269,12 @@ fn workload_descriptor_for_queue(queue_type: &QueueType) -> Option<WorkloadDescr
         }
         QueueType::AggregatorJobVerification => {
             Some(workload_descriptor_for_job(&JobType::Aggregator, JobState::Verification))
+        }
+        QueueType::SignatureCollectionJobProcessing => {
+            Some(workload_descriptor_for_job(&JobType::SignatureCollection, JobState::Processing))
+        }
+        QueueType::SignatureCollectionJobVerification => {
+            Some(workload_descriptor_for_job(&JobType::SignatureCollection, JobState::Verification))
         }
         // Capacity is intentionally limited to queue-backed processing/verification work.
         // Trigger, failure-handling, priority helper, and maintenance-style workloads still emit

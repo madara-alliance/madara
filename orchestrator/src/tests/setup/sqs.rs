@@ -35,7 +35,7 @@ async fn cloud_provider(#[future] localstack_config: aws_config::SdkConfig) -> A
 fn queue_args() -> QueueArgs {
     let uuid_prefix = &uuid::Uuid::new_v4().to_string()[0..4];
     let queue_template = format!("test-{}-{{}}_queue", uuid_prefix);
-    QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template) }
+    QueueArgs { blob_attestations: false, queue_template_identifier: AWSResourceIdentifier::Name(queue_template) }
 }
 
 /// Helper function to cleanup queues for a specific test (only deletes queues matching the queue_args identifier)
@@ -220,7 +220,8 @@ async fn test_setup_with_arn_identifier(
         resource: queue_template,
     };
 
-    let queue_args_arn = QueueArgs { queue_template_identifier: AWSResourceIdentifier::ARN(arn.clone()) };
+    let queue_args_arn =
+        QueueArgs { blob_attestations: false, queue_template_identifier: AWSResourceIdentifier::ARN(arn.clone()) };
 
     // Verify queues are not ready before setup
     let ready_before = inner_sqs.is_ready_to_use(&layer, &queue_args_arn).await?;
@@ -228,7 +229,10 @@ async fn test_setup_with_arn_identifier(
 
     // For ARN-based setup, we need to pre-create the queues since ARN setup skips creation
     // First create queues with name identifier
-    let name_queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(arn.resource.clone()) };
+    let name_queue_args = QueueArgs {
+        blob_attestations: false,
+        queue_template_identifier: AWSResourceIdentifier::Name(arn.resource.clone()),
+    };
     inner_sqs.setup(&layer, name_queue_args.clone()).await?;
     println!("✓ Pre-created queues using Name identifier");
 

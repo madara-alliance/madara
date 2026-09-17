@@ -8,6 +8,7 @@ use crate::types::batch::{
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
+use crate::types::jobs::metadata::SignatureReceipt;
 use crate::types::jobs::types::{JobStatus, JobType};
 use ::mongodb::bson::Document;
 use ::mongodb::options::FindOneAndUpdateOptions;
@@ -58,6 +59,18 @@ pub struct AggregatorBatchDbQuery {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait DatabaseClient: Send + Sync {
+    /// Bounded, ordered pagination over published signature work.
+    async fn get_signature_work(&self, after: u64, limit: i64, version: &str) -> Result<Vec<JobItem>, DatabaseError>;
+
+    /// One immutable receipt per job, digest and recovered signer, independent of job CAS updates.
+    async fn store_signature_receipt(&self, receipt: SignatureReceipt) -> Result<(), DatabaseError>;
+
+    async fn get_signature_receipts(
+        &self,
+        job_id: &str,
+        digest: &alloy::primitives::B256,
+    ) -> Result<Vec<SignatureReceipt>, DatabaseError>;
+
     /// Switch to a different database
     ///
     /// # Arguments

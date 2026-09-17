@@ -1,7 +1,6 @@
 {
   "source": "kzg-commitment-attestor/crates/protocol/src/lib.rs",
-  "sha256": "964a21943068ec2dd63ce28f416656745b98a9a15d8f614492c0d1b3b5c7d293",
-  "note": "Vendored for self-contained POC builds; source is crates/protocol/src/lib.rs at the pinned private repository revision.",
-  "repository": "https://github.com/karnotxyz/kzg-commitment-attestor",
-  "revision": "4eed2e7d05b04da92b55cd4d789cf39e3ddcdc13"
+  "sha256": "d9dcd420fd5e11bc86e2cdcf0ae49341f7bef9c71142d78aff548c1db5d9aa4e",
+  "note": "Vendored byte-for-byte from the private integration bundle; exact source content is pinned by sha256.",
+  "repository": "https://github.com/karnotxyz/kzg-commitment-attestor"
 }
