@@ -85,7 +85,7 @@ impl RocksDBStorageInner {
         }
         let col = self.get_column(MEMPOOL_EXTERNAL_OUTBOX_COLUMN);
         let id = ExternalOutboxId::new(tx.arrived_at);
-        self.db.put_cf(&col, id.to_key_bytes(), super::serialize(tx)?)?;
+        self.db.put_cf_opt(&col, id.to_key_bytes(), super::serialize(tx)?, &self.writeopts)?;
         Ok(id)
     }
 
