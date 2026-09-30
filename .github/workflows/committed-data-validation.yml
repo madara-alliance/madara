@@ -33,11 +33,17 @@ jobs:
       - uses: ./.github/actions/setup-python-cairo
         with:
           python-version: "3.10"
-      - name: Build contract artifacts
+      - name: Fetch published contract artifacts
         run: |
-          # `yes` may receive SIGPIPE when make closes stdin; preserve make's exit status.
-          set +o pipefail
-          yes | make artifacts
+          artifact_version=$(awk '$1 == "current_version:" { print $2 }' .artifact-versions.yml)
+          [[ "$artifact_version" =~ ^[0-9]+$ ]]
+          artifact_image="ghcr.io/madara-alliance/artifacts:$artifact_version"
+          docker pull "$artifact_image"
+          artifact_container=$(docker create "$artifact_image" do-nothing)
+          trap 'docker rm -f "$artifact_container"' EXIT
+          docker cp "$artifact_container:/artifacts.tar.gz" artifacts.tar.gz
+          tar -xzf artifacts.tar.gz
+          echo "RUST_BUILD_DOCKER=true" >> "$GITHUB_ENV"
       - name: Validate node and production orchestrator
         run: cargo +1.95 check --locked -p mc-db -p mc-exec -p mc-rpc -p orchestrator
       - name: Verify persistence, quota, corruption and cache behavior
