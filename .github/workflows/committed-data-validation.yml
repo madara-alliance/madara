@@ -27,8 +27,8 @@ jobs:
           submodules: recursive
       - uses: ./.github/actions/setup-rust
         with:
-          rust-version: "1.95"
-          cache-key: committed-data-validation-linux-1.95
+          rust-version: "1.89"
+          cache-key: committed-data-validation-linux-1.89
       - uses: ./.github/actions/setup-cairo-native
       - uses: ./.github/actions/setup-python-cairo
         with:
@@ -45,10 +45,10 @@ jobs:
           tar -xzf artifacts.tar.gz
           echo "RUST_BUILD_DOCKER=true" >> "$GITHUB_ENV"
       - name: Validate node and production orchestrator
-        run: cargo +1.95 check --locked -p mc-db -p mc-exec -p mc-rpc -p orchestrator
+        run: cargo +1.89 check --locked -p mc-db -p mc-exec -p mc-rpc -p orchestrator
       - name: Verify persistence, quota, corruption and cache behavior
-        run: cargo +1.95 test --locked -p mc-db committed_data -- --nocapture
+        run: cargo +1.89 test --locked -p mc-db committed_data -- --nocapture
       - name: Verify RPC decoding and local aggregator
-        run: cargo +1.95 test --locked -p mc-rpc committed_data -- --nocapture
+        run: cargo +1.89 test --locked -p mc-rpc committed_data -- --nocapture
       - name: Verify aggregator and chain configuration
-        run: cargo +1.95 test --locked -p orchestrator-aggregator-runner -p mp-chain-config --lib
+        run: cargo +1.89 test --locked -p orchestrator-aggregator-runner -p mp-chain-config --lib
