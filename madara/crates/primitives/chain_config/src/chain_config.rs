@@ -225,6 +225,9 @@ pub struct ChainConfigV2 {
     /// Inclusive height for committed-data reads. Absent keeps ordinary contract dispatch.
     #[serde(default)]
     pub committed_data_activation_block: Option<u64>,
+    /// Approved adapter storage addresses, bound into the OS configuration; empty denies all.
+    #[serde(default)]
+    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
     /// Local retention quota for immutable datasets; data is never automatically pruned.
     #[serde(default = "default_committed_data_storage_bytes")]
     pub committed_data_max_storage_bytes: u64,
@@ -357,6 +360,9 @@ pub struct ChainConfig {
     /// Inclusive height for committed-data reads. Absent keeps ordinary contract dispatch.
     #[serde(default)]
     pub committed_data_activation_block: Option<u64>,
+    /// Approved adapter storage addresses, bound into the OS configuration; empty denies all.
+    #[serde(default)]
+    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
     /// Local retention quota for immutable datasets; data is never automatically pruned.
     #[serde(default = "default_committed_data_storage_bytes")]
     pub committed_data_max_storage_bytes: u64,
@@ -485,6 +491,7 @@ impl Clone for ChainConfig {
             chain_name: self.chain_name.clone(),
             chain_id: self.chain_id.clone(),
             committed_data_activation_block: self.committed_data_activation_block,
+            committed_data_readers: self.committed_data_readers.clone(),
             committed_data_max_storage_bytes: self.committed_data_max_storage_bytes,
             config_version: self.config_version,
             l1_da_mode: self.l1_da_mode,
@@ -527,6 +534,7 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             chain_name: v2.chain_name,
             chain_id: v2.chain_id,
             committed_data_activation_block: v2.committed_data_activation_block,
+            committed_data_readers: v2.committed_data_readers,
             committed_data_max_storage_bytes: v2.committed_data_max_storage_bytes,
             l1_da_mode: v2.l1_da_mode,
             settlement_chain_kind: v2.settlement_chain_kind,
@@ -624,6 +632,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Mainnet".into(),
             committed_data_activation_block: None,
+            committed_data_readers: Default::default(),
             committed_data_max_storage_bytes: default_committed_data_storage_bytes(),
             chain_id: ChainId::Mainnet,
             config_version: CURRENT_CONFIG_VERSION,

@@ -755,6 +755,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
 
     let snos_config = SNOSParams {
         committed_data_activation_block: None,
+        committed_data_readers: Default::default(),
         committed_data_rpc_url: None,
         rpc_for_snos,
         rpc_for_snos_backup,

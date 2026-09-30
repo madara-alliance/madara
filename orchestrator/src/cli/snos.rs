@@ -17,6 +17,10 @@ pub struct SNOSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_ACTIVATION_BLOCK", long)]
     pub committed_data_activation_block: Option<u64>,
 
+    /// Comma-separated approved adapter storage addresses; must match Madara and the OS configuration.
+    #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_READERS", long, default_value = "")]
+    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
+
     /// Madara admin RPC supplying exact-root witnesses to SNOS; separate from Pathfinder.
     #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_RPC_URL", long, requires = "committed_data_activation_block")]
     pub committed_data_rpc_url: Option<Url>,

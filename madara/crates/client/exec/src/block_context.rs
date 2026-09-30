@@ -40,6 +40,7 @@ fn block_context<D: MadaraStorageRead>(
         chain_config.bouncer_config.clone(),
     );
     context.committed_data_activation_block = backend.chain_config().committed_data_activation_block;
+    context.committed_data_readers = backend.chain_config().committed_data_readers.clone();
     context.committed_data_witnesses =
         Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
             backend.committed_data_provider(),
@@ -125,6 +126,7 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
             self.chain_config().bouncer_config.clone(),
         );
         context.committed_data_activation_block = self.chain_config().committed_data_activation_block;
+        context.committed_data_readers = self.chain_config().committed_data_readers.clone();
         context.committed_data_witnesses =
             Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
                 self.committed_data_provider(),
