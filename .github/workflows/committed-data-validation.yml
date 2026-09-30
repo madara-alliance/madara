@@ -1,0 +1,48 @@
+name: Committed Data validation
+
+on:
+  push:
+    branches: [codex/committed-data-reads]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: committed-data-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    runs-on: blacksmith-8vcpu-ubuntu-2204
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: "4"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: ./.github/actions/setup-rust
+        with:
+          rust-version: "1.95"
+          cache-key: committed-data-validation-linux-1.95
+      - uses: ./.github/actions/setup-cairo-native
+      - uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: "3.10"
+      - name: Build contract artifacts
+        run: |
+          # `yes` may receive SIGPIPE when make closes stdin; preserve make's exit status.
+          set +o pipefail
+          yes | make artifacts
+      - name: Validate node and production orchestrator
+        run: cargo +1.95 check --locked -p mc-db -p mc-exec -p mc-rpc -p orchestrator
+      - name: Verify persistence, quota, corruption and cache behavior
+        run: cargo +1.95 test --locked -p mc-db committed_data -- --nocapture
+      - name: Verify RPC decoding and local aggregator
+        run: cargo +1.95 test --locked -p mc-rpc committed_data -- --nocapture
+      - name: Verify aggregator and chain configuration
+        run: cargo +1.95 test --locked -p orchestrator-aggregator-runner -p mp-chain-config --lib

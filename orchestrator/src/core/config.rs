@@ -283,6 +283,19 @@ impl Config {
         let prover_config =
             ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
         let prover_kind = prover_config.kind();
+        if run_cmd.snos_args.committed_data_activation_block.is_some() {
+            if prover_kind != ProverKind::Sharp || run_cmd.layer != Layer::L2 {
+                return Err(anyhow::anyhow!(
+                    "Committed-data activation currently requires the SHARP L2 local-aggregator path"
+                )
+                .into());
+            }
+            if run_cmd.snos_args.committed_data_rpc_url.is_none() {
+                return Err(
+                    anyhow::anyhow!("Committed-data activation requires a Madara witness RPC for SNOS replay").into()
+                );
+            }
+        }
         let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;

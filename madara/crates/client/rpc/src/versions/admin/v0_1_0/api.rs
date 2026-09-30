@@ -30,9 +30,76 @@ pub enum ServiceRequest {
     Restart,
 }
 
+/// Wire-compatible felt array, bounded while decoding rather than after allocation.
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct CommittedDataValues(Vec<Felt>);
+
+impl CommittedDataValues {
+    pub fn into_inner(self) -> Vec<Felt> {
+        self.0
+    }
+}
+
+impl TryFrom<Vec<Felt>> for CommittedDataValues {
+    type Error = blockifier::execution::syscalls::committed_data::CommittedDataError;
+    fn try_from(values: Vec<Felt>) -> Result<Self, Self::Error> {
+        if values.is_empty()
+            || values.len() > blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES
+        {
+            return Err(Self::Error::InvalidLength);
+        }
+        Ok(Self(values))
+    }
+}
+
+impl<'de> Deserialize<'de> for CommittedDataValues {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ValuesVisitor;
+        impl<'de> serde::de::Visitor<'de> for ValuesVisitor {
+            type Value = CommittedDataValues;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("1..=524288 committed-data values")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
+                let mut values = Vec::new();
+                while let Some(value) = sequence.next_element::<Felt>()? {
+                    if values.len() == blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES {
+                        return Err(serde::de::Error::custom("Too many committed-data values"));
+                    }
+                    values.push(value);
+                }
+                if values.is_empty() {
+                    return Err(serde::de::Error::custom("Empty committed-data dataset"));
+                }
+                Ok(CommittedDataValues(values))
+            }
+        }
+        deserializer.deserialize_seq(ValuesVisitor)
+    }
+}
+
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
+    /// Import private snapshot data. Does not publish or authorize its root on-chain.
+    #[method(name = "importCommittedDataSet")]
+    async fn import_committed_data_snapshot(
+        &self,
+        root: Felt,
+        publisher: Felt,
+        values: CommittedDataValues,
+    ) -> RpcResult<()>;
+
+    /// Export a private witness for SNOS or an independently synced replay node.
+    #[method(name = "getCommittedDataWitness")]
+    async fn get_committed_data_witness(
+        &self,
+        root: Felt,
+        publisher: Felt,
+        index: u32,
+    ) -> RpcResult<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>>;
+
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
     /// Only works in block production mode.
     #[method(name = "addDeclareV0Transaction")]
@@ -190,4 +257,20 @@ pub trait MadaraServicesRpcApi {
     /// If the list is empty, returns the status of all externally controllable services.
     #[method(name = "serviceStatus")]
     async fn service_status(&self, service: Vec<MadaraServiceId>) -> RpcResult<Vec<ServiceStatusInfo>>;
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+
+    #[test]
+    fn committed_data_import_array_is_bounded_during_decoding() {
+        assert!(serde_json::from_str::<CommittedDataValues>("[]").is_err());
+        let encoded = serde_json::to_string(&vec![Felt::MAX, Felt::ZERO]).unwrap();
+        let values: CommittedDataValues = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(values.0, vec![Felt::MAX, Felt::ZERO]);
+        let count = blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES + 1;
+        let encoded = format!("[{}]", std::iter::repeat_n("\"0x0\"", count).collect::<Vec<_>>().join(","));
+        assert!(serde_json::from_str::<CommittedDataValues>(&encoded).is_err());
+    }
 }

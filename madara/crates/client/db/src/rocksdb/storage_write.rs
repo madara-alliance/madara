@@ -4,6 +4,10 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn write_committed_data_values(&self, root: Felt, publisher: Felt, values: &[Felt], max_bytes: u64) -> Result<()> {
+        self.store_committed_data_values(root, publisher, values, max_bytes)
+    }
+
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
         tracing::debug!("Writing header {}", header.header.block_number);
         let block_n = header.header.block_number;

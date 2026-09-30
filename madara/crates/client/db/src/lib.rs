@@ -419,6 +419,8 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// - **Must verify** that the block number matches before use
     /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
+    committed_data_cache: committed_data::SnapshotCache,
+
     pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 
     /// Replay boundary metadata and runtime progress.
@@ -476,4 +478,5 @@ mod head_projection;
 mod writer;
 pub use writer::MadaraBackendWriter;
 
+mod committed_data;
 mod service_storage;
