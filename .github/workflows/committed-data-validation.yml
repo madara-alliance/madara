@@ -60,3 +60,6 @@ jobs:
       - name: Verify aggregator and chain configuration
         if: ${{ !cancelled() }}
         run: cargo +1.89 test --locked -p orchestrator-aggregator-runner -p mp-chain-config --lib
+      - name: Verify proving failure and retry classification
+        if: ${{ !cancelled() }}
+        run: cargo +1.89 test --locked -p orchestrator --lib error::job::snos::tests -- --nocapture
