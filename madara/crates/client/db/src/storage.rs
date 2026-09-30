@@ -106,9 +106,14 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
-    /// Immutable off-chain committed_data data, independent of canonical block rollback.
-    fn get_committed_data_values(&self, _root: Felt, _publisher: Felt) -> Result<Option<Vec<Felt>>> {
-        anyhow::bail!("CommittedData snapshot storage is unsupported by this backend")
+    /// Immutable private data; reads must be bounded by the proof path, not dataset size.
+    fn get_committed_data_witness(
+        &self,
+        _root: Felt,
+        _publisher: Felt,
+        _index: u32,
+    ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
     // Blocks
@@ -197,14 +202,12 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
-    fn write_committed_data_values(
+    fn write_committed_data_dataset(
         &self,
-        _root: Felt,
-        _publisher: Felt,
-        _values: &[Felt],
+        _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
         _max_bytes: u64,
     ) -> Result<()> {
-        anyhow::bail!("CommittedData snapshot storage is unsupported by this backend")
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;

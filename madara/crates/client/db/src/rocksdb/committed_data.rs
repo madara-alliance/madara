@@ -1,65 +1,144 @@
-//! Versioned private dataset records. No contract storage or state diff is written here.
+//! Versioned, paged private datasets. A cold read touches at most 21 small records.
 use super::*;
-use blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES;
+use blockifier::execution::syscalls::committed_data::{
+    leaf, CommittedDataSet, CommittedDataWitness, COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
+};
 use rocksdb::WriteBatch;
+use starknet_types_core::hash::{Poseidon, StarkHash};
 
-const PREFIX: &[u8] = b"committed_data_snapshot_v1/";
-const USAGE_KEY: &[u8] = b"committed_data_usage_v1";
+const PREFIX: &[u8] = b"committed_data_pages_v1/";
+const USAGE_KEY: &[u8] = b"committed_data_pages_usage_v1";
+const PAGE_VALUES: usize = 256;
+const PAGE_BYTES: usize = PAGE_VALUES * 32;
+const METADATA_LEVEL: u8 = u8::MAX;
 
-fn key(root: Felt, publisher: Felt) -> Vec<u8> {
+fn key(root: Felt, publisher: Felt, level: u8, page: u32) -> Vec<u8> {
     let mut key = PREFIX.to_vec();
     key.extend_from_slice(&root.to_bytes_be());
     key.extend_from_slice(&publisher.to_bytes_be());
+    key.push(level);
+    key.extend_from_slice(&page.to_be_bytes());
     key
 }
 
-fn decode(bytes: &[u8]) -> Result<Vec<Felt>> {
-    anyhow::ensure!(!bytes.is_empty() && bytes.len() % 32 == 0, "Invalid committed-data record length");
-    anyhow::ensure!(bytes.len() / 32 <= MAX_COMMITTED_DATA_VALUES, "Oversized committed-data record");
-    bytes
-        .chunks_exact(32)
-        .map(|chunk| {
-            let raw: [u8; 32] = chunk.try_into()?;
-            let value = Felt::from_bytes_be(&raw);
-            anyhow::ensure!(value.to_bytes_be() == raw, "Noncanonical committed-data value");
-            Ok(value)
+fn canonical_felt(bytes: &[u8]) -> Result<Felt> {
+    let raw: [u8; 32] = bytes.try_into()?;
+    let value = Felt::from_bytes_be(&raw);
+    anyhow::ensure!(value.to_bytes_be() == raw, "Noncanonical committed-data value");
+    Ok(value)
+}
+
+fn count(bytes: &[u8]) -> Result<usize> {
+    let count = u32::from_be_bytes(bytes.try_into()?) as usize;
+    anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
+    Ok(count)
+}
+
+/// Shared with the instrumented test; the storage callback must bound each record's byte size.
+fn read_witness(
+    root: Felt,
+    publisher: Felt,
+    index: u32,
+    mut read: impl FnMut(&[u8]) -> Result<Option<Vec<u8>>>,
+) -> Result<Option<CommittedDataWitness>> {
+    anyhow::ensure!((index as usize) < MAX_COMMITTED_DATA_VALUES, "Committed-data index out of range");
+    let Some(metadata) = read(&key(root, publisher, METADATA_LEVEL, 0))? else { return Ok(None) };
+    let count = count(&metadata)?;
+    if index as usize >= count {
+        return Ok(None);
+    }
+    let mut read_node = |level: usize, node_index: usize| -> Result<Felt> {
+        let node_count = count.div_ceil(1 << level);
+        let page = node_index / PAGE_VALUES;
+        let bytes = read(&key(root, publisher, level.try_into()?, page.try_into()?))?
+            .ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
+        let expected_bytes = (node_count - page * PAGE_VALUES).min(PAGE_VALUES) * 32;
+        anyhow::ensure!(bytes.len() == expected_bytes, "Invalid committed-data page length");
+        let offset = (node_index % PAGE_VALUES) * 32;
+        canonical_felt(&bytes[offset..offset + 32])
+    };
+    let value = read_node(0, index as usize)?;
+    let mut siblings = [Felt::ZERO; COMMITTED_DATA_TREE_HEIGHT];
+    static EMPTY: std::sync::LazyLock<[Felt; COMMITTED_DATA_TREE_HEIGHT]> = std::sync::LazyLock::new(|| {
+        let mut hashes = [Felt::ZERO; COMMITTED_DATA_TREE_HEIGHT];
+        for height in 1..COMMITTED_DATA_TREE_HEIGHT {
+            hashes[height] = Poseidon::hash(&hashes[height - 1], &hashes[height - 1]);
+        }
+        hashes
+    });
+    for (height, sibling) in siblings.iter_mut().enumerate() {
+        let sibling_index = ((index as usize) >> height) ^ 1;
+        if sibling_index < count.div_ceil(1 << height) {
+            let node = read_node(height, sibling_index)?;
+            *sibling = if height == 0 { leaf(publisher, sibling_index.try_into()?, node) } else { node };
+        } else {
+            *sibling = EMPTY[height];
+        }
+    }
+    Ok(Some(CommittedDataWitness { root, publisher, index, value, siblings }))
+}
+
+fn records(dataset: &CommittedDataSet) -> impl Iterator<Item = (Vec<u8>, Vec<u8>)> + '_ {
+    let levels = std::iter::once(dataset.values()).chain(dataset.internal_levels());
+    levels.enumerate().flat_map(move |(level, nodes)| {
+        nodes.chunks(PAGE_VALUES).enumerate().map(move |(page, values)| {
+            let key = key(dataset.root(), dataset.publisher(), level as u8, page as u32);
+            (key, values.iter().flat_map(Felt::to_bytes_be).collect())
         })
-        .collect()
+    })
 }
 
 impl RocksDBStorage {
-    pub(super) fn committed_data_values(&self, root: Felt, publisher: Felt) -> Result<Option<Vec<Felt>>> {
-        let cf = self.inner.get_column(meta::META_COLUMN);
-        self.inner.db.get_pinned_cf(&cf, key(root, publisher))?.map(|bytes| decode(&bytes)).transpose()
-    }
-
-    // The backend serializes imports, including the quota check and write.
-    pub(super) fn store_committed_data_values(
+    pub(super) fn read_committed_data_witness(
         &self,
         root: Felt,
         publisher: Felt,
-        values: &[Felt],
-        max_bytes: u64,
-    ) -> Result<()> {
-        anyhow::ensure!(!values.is_empty() && values.len() <= MAX_COMMITTED_DATA_VALUES, "Invalid dataset length");
+        index: u32,
+    ) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let key = key(root, publisher);
-        let bytes: Vec<u8> = values.iter().flat_map(Felt::to_bytes_be).collect();
-        if let Some(existing) = self.inner.db.get_pinned_cf(&cf, &key)? {
-            anyhow::ensure!(&*existing == bytes.as_slice(), "Conflicting immutable committed-data dataset");
-            return Ok(());
+        read_witness(root, publisher, index, |key| {
+            self.inner
+                .db
+                .get_pinned_cf(&cf, key)?
+                .map(|bytes| {
+                    anyhow::ensure!(bytes.len() <= PAGE_BYTES, "Oversized committed-data record");
+                    Ok(bytes.to_vec())
+                })
+                .transpose()
+        })
+    }
+
+    // Serialize at the shared storage owner so quota remains atomic across backend wrappers.
+    pub(super) fn store_committed_data_dataset(&self, dataset: &CommittedDataSet, max_bytes: u64) -> Result<()> {
+        let _write = self
+            .inner
+            .committed_data_write
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let metadata_key = key(dataset.root(), dataset.publisher(), METADATA_LEVEL, 0);
+        let existing = self.inner.db.get_pinned_cf(&cf, &metadata_key)?;
+        if let Some(existing) = &existing {
+            anyhow::ensure!(count(existing)? == dataset.values().len(), "Conflicting committed-data metadata");
         }
         let used = self.inner.db.get_pinned_cf(&cf, USAGE_KEY)?;
         let used = used.map(|raw| <[u8; 8]>::try_from(&*raw).map(u64::from_be_bytes)).transpose()?.unwrap_or(0);
-        let next = used
-            .checked_add(bytes.len() as u64 + key.len() as u64)
-            .ok_or_else(|| anyhow::anyhow!("Committed-data quota overflow"))?;
-        anyhow::ensure!(
-            next <= max_bytes,
-            "Committed-data storage quota exceeded; increase configured limit or archive safely"
-        );
+        let mut next = used;
         let mut batch = WriteBatch::default();
-        batch.put_cf(&cf, key, bytes);
+        let metadata = u32::try_from(dataset.values().len())?.to_be_bytes().to_vec();
+        for (key, bytes) in std::iter::once((metadata_key, metadata)).chain(records(dataset)) {
+            if existing.is_none() {
+                next = next
+                    .checked_add(u64::try_from(key.len() + bytes.len())?)
+                    .ok_or_else(|| anyhow::anyhow!("Committed-data quota overflow"))?;
+                anyhow::ensure!(
+                    next <= max_bytes,
+                    "Committed-data storage quota exceeded; archive safely or increase the configured limit"
+                );
+            }
+            // Re-import repairs corrupt pages with the same authenticated logical dataset.
+            batch.put_cf(&cf, key, bytes);
+        }
         batch.put_cf(&cf, USAGE_KEY, next.to_be_bytes());
         let mut options = WriteOptions::default();
         options.set_sync(true);
@@ -72,11 +151,40 @@ impl RocksDBStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
     #[test]
-    fn persisted_values_must_be_canonical_and_bounded() {
-        assert!(decode(&[]).is_err());
-        assert!(decode(&[0_u8; 31]).is_err());
-        assert!(decode(&[0xff_u8; 32]).is_err());
-        assert_eq!(decode(&Felt::MAX.to_bytes_be()).unwrap(), vec![Felt::MAX]);
+    fn committed_data_pages_match_the_tree_and_bound_read_work() {
+        for size in [1_usize, 2, 255, 256, 257, 513] {
+            let dataset = CommittedDataSet::new(Felt::ONE, (0..size).map(Felt::from).collect()).unwrap();
+            let mut pages: HashMap<_, _> = records(&dataset).collect();
+            pages.insert(key(dataset.root(), Felt::ONE, METADATA_LEVEL, 0), (size as u32).to_be_bytes().to_vec());
+            for index in [0, size / 2, size - 1] {
+                let mut reads = 0;
+                let mut bytes = 0;
+                let witness = read_witness(dataset.root(), Felt::ONE, index as u32, |key| {
+                    reads += 1;
+                    let value = pages.get(key).cloned();
+                    bytes += value.as_ref().map_or(0, Vec::len);
+                    Ok(value)
+                })
+                .unwrap()
+                .unwrap();
+                assert_eq!(witness, dataset.witness(index as u32).unwrap());
+                assert!(witness.verify());
+                assert!(reads <= COMMITTED_DATA_TREE_HEIGHT + 2);
+                assert!(bytes <= (COMMITTED_DATA_TREE_HEIGHT + 1) * PAGE_BYTES + 4);
+            }
+        }
+    }
+
+    #[test]
+    fn committed_data_records_reject_noncanonical_and_invalid_lengths() {
+        assert!(canonical_felt(&[0_u8; 31]).is_err());
+        assert!(canonical_felt(&[0xff_u8; 32]).is_err());
+        assert_eq!(canonical_felt(&Felt::MAX.to_bytes_be()).unwrap(), Felt::MAX);
+        assert!(count(&[]).is_err());
+        assert!(count(&0_u32.to_be_bytes()).is_err());
+        assert!(count(&u32::MAX.to_be_bytes()).is_err());
     }
 }

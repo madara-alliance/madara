@@ -127,6 +127,7 @@ fn is_retryable_block_processing_error(error: &BlockProcessingError) -> bool {
         | BlockProcessingError::MissingProofField { .. }
         | BlockProcessingError::MissingProofFieldForContract { .. }
         | BlockProcessingError::InvalidOldBlockNumber { .. }
+        | BlockProcessingError::CommittedFeeReplay { .. }
         | BlockProcessingError::Io(_)
         | BlockProcessingError::Serialization(_)
         | BlockProcessingError::Custom(_) => false,
