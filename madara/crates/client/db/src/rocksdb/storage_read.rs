@@ -4,6 +4,10 @@
 use super::*;
 
 impl MadaraStorageRead for RocksDBStorage {
+    fn get_committed_data_values(&self, root: Felt, publisher: Felt) -> Result<Option<Vec<Felt>>> {
+        self.committed_data_values(root, publisher)
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {

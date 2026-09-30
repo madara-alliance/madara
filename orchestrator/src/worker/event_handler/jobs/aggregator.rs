@@ -451,6 +451,7 @@ impl AggregatorJobHandler {
         let agg_start = Instant::now();
         let aggregator_output = orchestrator_aggregator_runner::run_local_aggregator(
             orchestrator_aggregator_runner::AggregatorRunnerInput {
+                committed_data_activation_block: config.snos_config().committed_data_activation_block,
                 child_program_outputs,
                 layout: LayoutName::all_cairo,
                 full_output: false,

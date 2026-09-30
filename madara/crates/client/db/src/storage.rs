@@ -106,6 +106,11 @@ pub struct StoredChainInfo {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
+    /// Immutable off-chain committed_data data, independent of canonical block rollback.
+    fn get_committed_data_values(&self, _root: Felt, _publisher: Felt) -> Result<Option<Vec<Felt>>> {
+        anyhow::bail!("CommittedData snapshot storage is unsupported by this backend")
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
@@ -192,6 +197,16 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    fn write_committed_data_values(
+        &self,
+        _root: Felt,
+        _publisher: Felt,
+        _values: &[Felt],
+        _max_bytes: u64,
+    ) -> Result<()> {
+        anyhow::bail!("CommittedData snapshot storage is unsupported by this backend")
+    }
+
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     /// Mark L1 handler transactions in a fully confirmed block as consumed.

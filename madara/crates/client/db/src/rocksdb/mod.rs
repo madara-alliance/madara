@@ -45,6 +45,7 @@ mod backup;
 mod blocks;
 mod classes;
 mod column;
+mod committed_data;
 mod events;
 mod events_bloom_filter;
 pub(crate) mod external_outbox;

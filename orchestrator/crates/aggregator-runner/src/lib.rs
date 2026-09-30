@@ -14,6 +14,8 @@ pub use apollo_starknet_os_program::PROGRAM_HASHES;
 
 /// Input configuration for running the local aggregator.
 pub struct AggregatorRunnerInput {
+    /// Extension activation committed into the child OS configuration hash.
+    pub committed_data_activation_block: Option<u64>,
     /// Pre-stored program outputs for each child SNOS batch.
     /// Each element is a `Vec<[u8; 32]>` (bincode-deserialized from S3).
     /// This avoids loading full CairoPIEs (20-40MB each) into memory.
@@ -74,6 +76,7 @@ pub fn run_local_aggregator(input: AggregatorRunnerInput) -> Result<AggregatorRu
 
     // 3. Build AggregatorInput and run the aggregator
     let aggregator_input = AggregatorInput {
+        committed_data_activation_block: input.committed_data_activation_block,
         bootloader_output: Some(bootloader_output),
         full_output: input.full_output,
         debug_mode: input.debug_mode,
@@ -165,6 +168,7 @@ mod tests {
     #[test]
     fn empty_input_returns_error() {
         let input = AggregatorRunnerInput {
+            committed_data_activation_block: None,
             child_program_outputs: vec![],
             layout: LayoutName::all_cairo,
             full_output: false,

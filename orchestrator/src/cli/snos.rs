@@ -13,7 +13,15 @@ pub(crate) fn parse_constants(path: &str) -> Result<VersionedConstants, String> 
 #[derive(Debug, Clone, Args)]
 #[group(requires_all = ["rpc_for_snos"])]
 pub struct SNOSCliArgs {
-    /// Weather to use full output or not
+    /// Inclusive activation block; must match Madara and the settlement OS configuration.
+    #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_ACTIVATION_BLOCK", long)]
+    pub committed_data_activation_block: Option<u64>,
+
+    /// Madara admin RPC supplying exact-root witnesses to SNOS; separate from Pathfinder.
+    #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_RPC_URL", long, requires = "committed_data_activation_block")]
+    pub committed_data_rpc_url: Option<Url>,
+
+    /// Whether to use full output or not
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT", long, default_value = "false")]
     pub snos_full_output: bool,
 

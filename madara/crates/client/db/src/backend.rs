@@ -80,6 +80,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             head_projection_write_lock: Mutex::new(()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             reorg_notifications,
+            committed_data_cache: Default::default(),
             custom_headers: Mutex::new(Default::default()),
             replay_boundaries: Mutex::new(BTreeMap::new()),
         };
