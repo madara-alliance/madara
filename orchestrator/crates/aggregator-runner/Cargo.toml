@@ -9,6 +9,7 @@ cairo-vm.workspace = true
 serde_json.workspace = true
 starknet-types-core.workspace = true
 starknet_os.workspace = true
+starknet_api.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

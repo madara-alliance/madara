@@ -129,6 +129,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         let mut os_hints_config = OsHintsConfiguration::with_layer(config.layer().clone());
         os_hints_config.committed_data_activation_block = config.snos_config().committed_data_activation_block;
+        os_hints_config.committed_data_readers = config.snos_config().committed_data_readers.clone();
         let input = PieGenerationInput {
             committed_data_rpc_url: config.snos_config().committed_data_rpc_url.as_ref().map(ToString::to_string),
             rpc_url: snos_url.to_string(),
