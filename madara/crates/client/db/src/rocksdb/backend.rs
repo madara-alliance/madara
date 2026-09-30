@@ -163,7 +163,13 @@ impl RocksDBStorage {
 
         let writeopts = config.write_mode.to_write_options();
         tracing::info!("📝 Database write mode: {}", config.write_mode);
-        let inner = Arc::new(RocksDBStorageInner { global_opts: opts, writeopts, db, config: config.clone() });
+        let inner = Arc::new(RocksDBStorageInner {
+            global_opts: opts,
+            writeopts,
+            db,
+            config: config.clone(),
+            committed_data_write: Default::default(),
+        });
 
         let head_block_n = inner.get_head_projection_without_content()?.and_then(|c| match c {
             StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(block_n),
