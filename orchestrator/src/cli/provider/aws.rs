@@ -63,5 +63,6 @@ mod tests {
         let result = TestCli::try_parse_from(["test", "--aws-connect-timeout-secs", "0"]);
 
         assert!(result.is_err());
+        assert!(TestCli::try_parse_from(["test", "--aws-identity-load-timeout-secs", "0"]).is_err());
     }
 }
