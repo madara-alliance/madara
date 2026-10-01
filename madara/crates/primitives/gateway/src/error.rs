@@ -19,8 +19,12 @@ pub enum SequencerError {
     HttpError(#[from] hyper::http::Error),
     #[error("Error calling HTTP client: {0:#}")]
     HttpCallError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Feeder response body exceeds the {max_bytes} byte limit")]
+    ResponseBodyTooLarge { max_bytes: usize },
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error },
+    #[error("Failed to decompress gzip response: {source:#}")]
+    DecompressResponse { source: std::io::Error },
     #[error("Serialization or deserialization error: {0:#}")]
     SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]

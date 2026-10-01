@@ -18,6 +18,18 @@ build-artifacts/*
 !build-artifacts/archive.docker
 !build-artifacts/build.docker
 !build-artifacts/cairo_artifacts/
+!build-artifacts/js_tests/
+!build-artifacts/js_tests/madara_contracts.starknet_artifacts.json
+!build-artifacts/js_tests/madara_contracts_DeclareTestContract.compiled_contract_class.json
+!build-artifacts/js_tests/madara_contracts_DeclareTestContract.contract_class.json
+!build-artifacts/js_tests/madara_contracts_HelloStarknet.compiled_contract_class.json
+!build-artifacts/js_tests/madara_contracts_HelloStarknet.contract_class.json
+!build-artifacts/js_tests/madara_contracts_MessagingContract.compiled_contract_class.json
+!build-artifacts/js_tests/madara_contracts_MessagingContract.contract_class.json
+!build-artifacts/js_tests/madara_contracts_StateUpdateContract.compiled_contract_class.json
+!build-artifacts/js_tests/madara_contracts_StateUpdateContract.contract_class.json
+!build-artifacts/js_tests/madara_contracts_TestContract.compiled_contract_class.json
+!build-artifacts/js_tests/madara_contracts_TestContract.contract_class.json
 !build-artifacts/oz-account-sierra-1-4-0
 
 # Ignore the tar.gz file

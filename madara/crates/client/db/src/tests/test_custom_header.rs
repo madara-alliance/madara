@@ -192,7 +192,8 @@ fn custom_header_does_not_mutate_live_preconfirmed_header_when_block_is_already_
     let replacement = sample_custom_header(0, 9);
     backend.set_custom_header(replacement.clone()).unwrap();
 
-    let preconfirmed = backend.block_view_on_preconfirmed().expect("live preconfirmed block should exist");
+    let preconfirmed =
+        backend.block_view_on_preconfirmed(replacement.block_n).expect("live preconfirmed block should exist");
     assert_eq!(preconfirmed.block().header.block_number, replacement.block_n);
     assert_eq!(preconfirmed.block().header.block_timestamp.0, original_header.block_timestamp.0);
     assert_eq!(preconfirmed.block().header.gas_prices, original_header.gas_prices);

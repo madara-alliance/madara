@@ -198,6 +198,48 @@ impl GatewayMock {
 
     /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
     pub fn mock_block_pending_with_ts(&self, block_number: u64, timestamp: usize) -> Mock<'_> {
+        self.mock_block_pending_with_ts_and_count(block_number, timestamp, 1)
+    }
+
+    pub fn mock_block_pending_with_ts_and_count(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+    ) -> Mock<'_> {
+        self.mock_block_pending_with_ts_and_counts(block_number, timestamp, transaction_count, transaction_count)
+    }
+
+    pub fn mock_block_pending_with_ts_and_counts(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_count: usize,
+        executed_count: usize,
+    ) -> Mock<'_> {
+        let transaction_hashes = (0..transaction_count)
+            .map(|index| {
+                if index == 0 {
+                    Felt::from_hex_unchecked("0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1")
+                } else {
+                    Felt::from(index + 1)
+                }
+            })
+            .collect::<Vec<_>>();
+        self.mock_block_pending_with_hashes(block_number, timestamp, &transaction_hashes, executed_count)
+    }
+
+    pub fn mock_block_pending_with_hashes(
+        &self,
+        block_number: u64,
+        timestamp: usize,
+        transaction_hashes: &[Felt],
+        executed_count: usize,
+    ) -> Mock<'_> {
+        assert!(executed_count <= transaction_hashes.len());
+        let transaction_hashes = transaction_hashes.iter().map(|hash| format!("{hash:#x}")).collect::<Vec<_>>();
+        let transaction_count = transaction_hashes.len();
+
         // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
             when.method("GET")
@@ -225,9 +267,8 @@ impl GatewayMock {
                 },
                 "timestamp": timestamp,
                 "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                "transactions": [
-                    {
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                "transactions": transaction_hashes.iter().map(|transaction_hash| json!({
+                        "transaction_hash": transaction_hash,
                         "version": "0x1",
                         "max_fee": "0x0",
                         "signature": [
@@ -250,13 +291,11 @@ impl GatewayMock {
                             "0x1"
                         ],
                         "type": "INVOKE_FUNCTION"
-                    },
-                ],
-                "transaction_receipts": [
-                    {
+                    })).collect::<Vec<_>>(),
+                "transaction_receipts": (0..transaction_count).map(|index| if index < executed_count { json!({
                         "execution_status": "SUCCEEDED",
-                        "transaction_index": 3,
-                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                        "transaction_index": index,
+                        "transaction_hash": transaction_hashes[index],
                         "l2_to_l1_messages": [],
                         "events": [],
                         "execution_resources": {
@@ -269,10 +308,8 @@ impl GatewayMock {
                             "n_memory_holes": 0
                         },
                         "actual_fee": "0x0"
-                    },
-                ],
-                "transaction_state_diffs": [
-                    {
+                    }) } else { Value::Null }).collect::<Vec<_>>(),
+                "transaction_state_diffs": (0..transaction_count).map(|index| if index < executed_count { json!({
                         "storage_diffs": {
                             "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d": [
                                 {
@@ -302,8 +339,7 @@ impl GatewayMock {
                         "old_declared_contracts": [],
                         "declared_classes": [],
                         "replaced_classes": []
-                    }
-                ],
+                    }) } else { Value::Null }).collect::<Vec<_>>(),
             }));
         })
     }

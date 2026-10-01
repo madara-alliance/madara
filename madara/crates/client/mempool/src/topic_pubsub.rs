@@ -48,8 +48,8 @@ impl<K: Hash + Eq + Clone, V: Clone> TopicWatchReceiver<K, V> {
         self.receiver.as_mut().expect("Value already dropped").borrow_and_update()
     }
     /// Marks the newest value as seen when returning.
-    pub async fn changed(&mut self) {
-        self.receiver.as_mut().expect("Value already dropped").changed().await.expect("Sender was dropped")
+    pub async fn changed(&mut self) -> bool {
+        self.receiver.as_mut().expect("Value already dropped").changed().await.is_ok()
     }
 }
 

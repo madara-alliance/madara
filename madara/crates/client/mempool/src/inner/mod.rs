@@ -103,6 +103,13 @@ pub struct InnerMempool {
     eviction_queue: EvictionQueue,
 }
 
+impl InnerMempool {
+    /// Latest nonce known for an account that still has queued transactions.
+    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.get_account_nonce(contract_address)
+    }
+}
+
 #[cfg(any(test, feature = "testing"))]
 #[allow(unused)]
 impl InnerMempool {
@@ -113,10 +120,6 @@ impl InnerMempool {
         self.timestamp_queue.check_invariants(&self.accounts);
         self.by_tx_hash.check_invariants(&self.accounts);
         self.eviction_queue.check_invariants(&self.accounts);
-    }
-
-    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
-        self.accounts.all_accounts().get(contract_address).map(|acc| &acc.current_nonce)
     }
 
     pub fn account_nonces(&self) -> impl Iterator<Item = (&ContractAddress, &Nonce)> {
@@ -132,6 +135,12 @@ impl InnerMempool {
 }
 
 impl InnerMempool {
+    /// Iterates over contract addresses currently represented in the mempool.
+    /// Addresses are copied from the account index without exposing its storage.
+    pub fn contract_addresses(&self) -> impl Iterator<Item = ContractAddress> + '_ {
+        self.accounts.contract_addresses().copied()
+    }
+
     pub fn new(config: InnerMempoolConfig) -> Self {
         Self {
             limiter: MempoolLimiter::new(&config),
@@ -175,6 +184,9 @@ impl InnerMempool {
         account_nonce: Nonce,
         removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) -> Result<(), TxInsertionError> {
+        if self.limiter.is_in_flight(&tx.hash) {
+            return Err(TxInsertionError::DuplicateTxn);
+        }
         // Prechecks: TTL
         if let Some(ttl) = self.config.ttl {
             if tx.arrived_at <= now.saturating_sub(ttl) {
@@ -281,6 +293,15 @@ impl InnerMempool {
         self.apply_update(account_update, removed_txs);
     }
 
+    /// Keep admission capacity occupied while the executor owns the transaction.
+    pub(super) fn reserve_consumed(&mut self, tx: &ValidatedTransaction) {
+        self.limiter.reserve_consumed(tx);
+    }
+
+    pub(super) fn release_consumed(&mut self, hash: &mp_convert::Felt) {
+        self.limiter.release_consumed(hash);
+    }
+
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.
     /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until an
     /// `update_account_nonce` is issued.
@@ -301,6 +322,15 @@ impl InnerMempool {
 
         assert_eq!(account_update.removed_txs.len(), 1, "pop_next_ready should remove exactly one tx from the mempool");
         account_update.removed_txs.pop().map(|tx| tx.into_inner())
+    }
+
+    /// Pops the successor of a transaction already handed to the same locked consumer.
+    /// Only the batch-local cursor advances; the account's executed nonce is unchanged.
+    pub(crate) fn pop_contiguous(&mut self, address: ContractAddress, nonce: Nonce) -> Option<ValidatedTransaction> {
+        let update = self.accounts.remove_contiguous(address, nonce)?;
+        let mut removed = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        self.apply_update(update, &mut removed);
+        removed.pop()
     }
 
     /// Remove all TTL-exceeded transactions. This needs to be called periodically.

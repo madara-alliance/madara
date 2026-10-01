@@ -33,6 +33,9 @@ pub mod to_blockifier;
 mod test_utils;
 
 // Re-export commonly used types
+pub use cairo_native::{
+    configure_pedersen_cache, pedersen_cache_metrics, PedersenCacheConfig, DEFAULT_PEDERSEN_CACHE_CAPACITY,
+};
 pub use compilation::{init_compilation_semaphore, init_tokio_runtime_handle};
 pub use config::{NativeCompilationMode, NativeConfig};
 pub use error::NativeCompilationError;

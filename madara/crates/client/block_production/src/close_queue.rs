@@ -1,0 +1,43 @@
+use crate::CurrentBlockState;
+use anyhow::Result;
+use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
+use mc_db::close_pipeline_contract::CloseJobPayload;
+use mc_db::rocksdb::SnapshotRef;
+use mp_chain_config::StarknetVersion;
+use mp_state_update::StateDiff;
+use std::time::Instant;
+use tokio::sync::oneshot;
+
+/// Close-job data plus the runtime metadata required by deferred finalization.
+///
+/// The DB payload is augmented with the state, execution summary, and timing
+/// context gathered while block production is still on the hot path.
+pub(crate) struct QueuedClosePayload {
+    pub close_job_payload: CloseJobPayload,
+    pub state: CurrentBlockState,
+    pub block_exec_summary: Box<BlockExecutionSummary>,
+    pub state_diff: StateDiff,
+    pub is_boundary: bool,
+    pub parallel_merkle_flush_interval: u64,
+    pub compare_parallel_with_sequential: bool,
+    pub root_base_block_n: Option<u64>,
+    pub root_snapshot: Option<SnapshotRef>,
+    pub root_state_diffs: Vec<StateDiff>,
+    pub protocol_version: StarknetVersion,
+    pub last_execution_finished_at: Option<Instant>,
+    pub close_block_received_at: Instant,
+    pub enqueued_at: Instant,
+}
+
+/// Queue envelope that pairs a close payload with its one-shot acknowledgement.
+pub(crate) struct QueuedCloseJob {
+    pub payload: QueuedClosePayload,
+    pub completion: oneshot::Sender<Result<CloseJobCompletion>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Ordered acknowledgement emitted only after the block reaches its commit point.
+pub(crate) struct CloseJobCompletion {
+    pub block_n: u64,
+    pub durable_checkpoint_committed: bool,
+}

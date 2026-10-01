@@ -137,7 +137,7 @@ impl From<crate::v0_8_1::InvokeTransactionTrace> for InvokeTransactionTrace {
     fn from(t: crate::v0_8_1::InvokeTransactionTrace) -> Self {
         InvokeTransactionTrace {
             execute_invocation: t.execute_invocation,
-            execution_resources: t.execution_resources,
+            execution_resources: t.execution_resources.into(),
             fee_transfer_invocation: t.fee_transfer_invocation,
             state_diff: t.state_diff.map(Into::into),
             validate_invocation: t.validate_invocation,
@@ -148,7 +148,7 @@ impl From<crate::v0_8_1::InvokeTransactionTrace> for InvokeTransactionTrace {
 impl From<crate::v0_8_1::DeclareTransactionTrace> for DeclareTransactionTrace {
     fn from(t: crate::v0_8_1::DeclareTransactionTrace) -> Self {
         DeclareTransactionTrace {
-            execution_resources: t.execution_resources,
+            execution_resources: t.execution_resources.into(),
             fee_transfer_invocation: t.fee_transfer_invocation,
             state_diff: t.state_diff.map(Into::into),
             validate_invocation: t.validate_invocation,
@@ -160,7 +160,7 @@ impl From<crate::v0_8_1::DeployAccountTransactionTrace> for DeployAccountTransac
     fn from(t: crate::v0_8_1::DeployAccountTransactionTrace) -> Self {
         DeployAccountTransactionTrace {
             constructor_invocation: t.constructor_invocation,
-            execution_resources: t.execution_resources,
+            execution_resources: t.execution_resources.into(),
             fee_transfer_invocation: t.fee_transfer_invocation,
             state_diff: t.state_diff.map(Into::into),
             validate_invocation: t.validate_invocation,
@@ -171,7 +171,7 @@ impl From<crate::v0_8_1::DeployAccountTransactionTrace> for DeployAccountTransac
 impl From<crate::v0_9_0::L1HandlerTransactionTrace> for L1HandlerTransactionTrace {
     fn from(t: crate::v0_9_0::L1HandlerTransactionTrace) -> Self {
         L1HandlerTransactionTrace {
-            execution_resources: t.execution_resources,
+            execution_resources: t.execution_resources.into(),
             function_invocation: t.function_invocation,
             state_diff: t.state_diff.map(Into::into),
         }

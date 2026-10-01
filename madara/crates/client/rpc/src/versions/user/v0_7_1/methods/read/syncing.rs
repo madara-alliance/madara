@@ -17,7 +17,7 @@ const SYNC_THRESHOLD_BLOCKS: u64 = 6;
 /// * `Syncing` - An Enum that can either be a `mc_rpc_core::SyncStatus` struct representing the
 ///   sync status, or a `Boolean` (`false`) indicating that the node is not currently synchronizing.
 ///
-/// Following the spec: https://github.com/starkware-libs/starknet-specs/blob/2030a650be4e40cfa34d5051a0334f375384a421/api/starknet_api_openrpc.json#L765
+/// Following the spec: <https://github.com/starkware-libs/starknet-specs/blob/2030a650be4e40cfa34d5051a0334f375384a421/api/starknet_api_openrpc.json#L765>
 /// if the node is synced it will return a SyncingStatus::NotSyncing which is a boolean false, and in case of syncing it will return a SyncStatus struct
 pub fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     use mc_db::sync_status::SyncStatus as BackendSyncStatus;

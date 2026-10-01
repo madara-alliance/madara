@@ -29,7 +29,7 @@ pub fn get_block_with_receipts(
         .get_executed_transactions(..)?
         .into_iter()
         .map(|tx| TransactionAndReceipt {
-            receipt: tx.receipt.to_rpc_v0_9(status.into()),
+            receipt: tx.receipt.to_rpc_v0_10(status.into()),
             transaction: tx.transaction.to_rpc_v0_10_2(include_proof_facts),
         })
         .collect();

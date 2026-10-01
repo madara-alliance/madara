@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Parameters used to config block production.
 #[derive(Clone, Debug, clap::Parser, Deserialize, Serialize)]
+#[serde(default)]
 pub struct BlockProductionParams {
     /// Disable the block production service.
     /// The block production service is only enabled with the authority (sequencer) mode.
@@ -15,7 +16,152 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_DISCARD_PRECONFIRMED_ON_STARTUP", long)]
     pub discard_preconfirmed_on_startup: bool,
 
+    /// Start with mempool intake paused.
+    ///
+    /// Requires `--rpc-admin --rpc-unsafe`.
+    #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
+    pub mempool_paused: bool,
+
+    /// Enable replay mode for block production.
+    ///
+    /// In replay mode, configured replay boundaries are used to constrain batching/execution so
+    /// transaction ingestion does not cross source block boundaries.
+    #[arg(env = "MADARA_REPLAY_MODE", long, default_value_t = false)]
+    pub replay_mode: bool,
+
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(env = "MADARA_DEVNET_CONTRACTS", long, default_value_t = 10)]
     pub devnet_contracts: u64,
+
+    /// Maximum number of in-flight close-block jobs accepted by the close queue.
+    /// This controls queue backpressure independently from tx execution concurrency.
+    #[arg(
+        env = "MADARA_PARALLEL_MERKLE_MAX_INFLIGHT",
+        long,
+        default_value_t = 10,
+        value_parser = clap::value_parser!(u64).range(10..)
+    )]
+    pub parallel_merkle_max_inflight: u64,
+
+    /// Enable parallel merkle root computation.
+    /// Root jobs run on a blocking pool while the finalizer commits block parts and
+    /// checkpoint boundaries in canonical order. Execution can run ahead.
+    #[arg(env = "MADARA_PARALLEL_MERKLE_ENABLED", long, default_value_t = false)]
+    pub parallel_merkle_enabled: bool,
+
+    /// Compare the parallel root against the sequential root implementation.
+    ///
+    /// Testing and diagnostics only; this adds a full sequential computation to each close.
+    /// Root equality is logged at debug level. A mismatch does not reject the parallel root
+    /// or prevent block confirmation, so this is not a production validation gate.
+    #[arg(env = "MADARA_PARALLEL_MERKLE_COMPARE_SEQUENTIAL", long, default_value_t = false)]
+    pub parallel_merkle_compare_sequential: bool,
+
+    /// Maximum number of root-precompute jobs that may run in parallel across blocks.
+    #[arg(
+        env = "MADARA_PARALLEL_MERKLE_ROOT_WORKERS",
+        long,
+        default_value_t = 1,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub parallel_merkle_root_workers: u64,
+
+    /// Parallel merkle boundary flush interval (in blocks).
+    #[arg(
+        env = "MADARA_PARALLEL_MERKLE_FLUSH_INTERVAL",
+        long,
+        default_value_t = 3,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub parallel_merkle_flush_interval: u64,
+}
+
+/// Supplies backward-compatible values when older config files omit newer block-production fields.
+impl Default for BlockProductionParams {
+    fn default() -> Self {
+        Self {
+            block_production_disabled: false,
+            discard_preconfirmed_on_startup: false,
+            mempool_paused: false,
+            replay_mode: false,
+            devnet_contracts: 10,
+            parallel_merkle_max_inflight: 10,
+            parallel_merkle_enabled: false,
+            parallel_merkle_compare_sequential: false,
+            parallel_merkle_root_workers: 1,
+            parallel_merkle_flush_interval: 3,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::defaults(vec!["madara"], 10)]
+    #[case::override_value(vec!["madara", "--parallel-merkle-max-inflight", "42"], 42)]
+    fn block_production_params_parse_parallel_merkle_max_inflight(
+        #[case] args: Vec<&str>,
+        #[case] expected_max_inflight: u64,
+    ) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.parallel_merkle_max_inflight, expected_max_inflight);
+    }
+
+    #[rstest]
+    #[case::below_minimum_zero("0")]
+    #[case::below_minimum_nine("9")]
+    fn block_production_params_rejects_invalid_max_inflight(#[case] invalid_value: &str) {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-max-inflight", invalid_value])
+            .expect_err("max inflight <10 must be rejected");
+
+        let err_text = err.to_string();
+        assert!(err_text.contains("parallel-merkle-max-inflight"));
+    }
+
+    #[rstest]
+    #[case::zero("0")]
+    fn block_production_params_rejects_invalid_flush_interval(#[case] invalid_value: &str) {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-flush-interval", invalid_value])
+            .expect_err("flush interval <1 must be rejected");
+        assert!(err.to_string().contains("parallel-merkle-flush-interval"));
+    }
+
+    #[rstest]
+    #[case::default_disabled(vec!["madara"], false)]
+    #[case::enabled(vec!["madara", "--replay-mode"], true)]
+    fn block_production_params_parse_replay_mode(#[case] args: Vec<&str>, #[case] expected: bool) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.replay_mode, expected);
+    }
+
+    #[rstest]
+    #[case::default_disabled(vec!["madara"], false)]
+    #[case::enabled(vec!["madara", "--parallel-merkle-compare-sequential"], true)]
+    fn block_production_params_parse_parallel_merkle_compare_sequential(
+        #[case] args: Vec<&str>,
+        #[case] expected: bool,
+    ) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.parallel_merkle_compare_sequential, expected);
+    }
+
+    #[rstest]
+    #[case::default_workers(vec!["madara"], 1)]
+    #[case::override_value(vec!["madara", "--parallel-merkle-root-workers", "4"], 4)]
+    fn block_production_params_parse_parallel_merkle_root_workers(#[case] args: Vec<&str>, #[case] expected: u64) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.parallel_merkle_root_workers, expected);
+    }
+
+    #[rstest]
+    #[case::zero("0")]
+    fn block_production_params_rejects_invalid_parallel_merkle_root_workers(#[case] invalid_value: &str) {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-root-workers", invalid_value])
+            .expect_err("root workers <1 must be rejected");
+        assert!(err.to_string().contains("parallel-merkle-root-workers"));
+    }
 }

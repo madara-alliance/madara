@@ -172,6 +172,18 @@ pub struct Accounts {
     accounts: HashMap<ContractAddress, AccountState>,
 }
 
+impl Accounts {
+    pub fn get_account_nonce(&self, address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.get(address).map(|account| &account.current_nonce)
+    }
+
+    /// Iterates over accounts which currently own queued mempool transactions.
+    /// The iterator borrows the account map and does not impose an ordering.
+    pub fn contract_addresses(&self) -> impl Iterator<Item = &ContractAddress> {
+        self.accounts.keys()
+    }
+}
+
 #[cfg(any(test, feature = "testing"))]
 #[allow(unused)]
 impl Accounts {
@@ -369,6 +381,14 @@ impl Accounts {
             added_tx: None,
             account_data: data,
         }
+    }
+
+    /// Remove only an exact front nonce selected by a locked consumer's local cursor.
+    pub fn remove_contiguous(&mut self, address: ContractAddress, nonce: Nonce) -> Option<AccountUpdate> {
+        if self.accounts.get(&address)?.queued_txs.first_key_value()?.0 != &nonce {
+            return None;
+        }
+        Some(self.remove_tx(&TxKey(address, nonce)))
     }
 
     /// Caller must supply a valid AccountKey.

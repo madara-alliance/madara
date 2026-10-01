@@ -1,4 +1,4 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::rocksdb::{DbWriteMode, RocksDBConfig, DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS, DEFAULT_MAX_OPEN_FILES};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::ContractAddress;
@@ -12,6 +12,48 @@ const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
+
+/// Returns the default RocksDB obsolete-file scan interval for config deserialization.
+/// Keeping it aligned with `RocksDBConfig` preserves compatibility with existing configs.
+fn default_delete_obsolete_files_period_micros() -> u64 {
+    DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS
+}
+
+/// Returns the default RocksDB table-cache file limit for config deserialization.
+/// Keeping this aligned with `RocksDBConfig` preserves existing configuration behavior.
+fn default_max_open_files() -> i32 {
+    DEFAULT_MAX_OPEN_FILES
+}
+
+/// Returns the Starknet Keccak cache capacity used when no CLI override is supplied.
+/// The default stays aligned with the execution library's own tuning.
+fn default_exec_hash_cache_starknet_keccak_capacity() -> usize {
+    starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
+}
+
+/// Returns the two-input Pedersen cache capacity used by default.
+/// The value is sourced from Starknet API to avoid duplicating its tuning.
+fn default_exec_hash_cache_pedersen_pair_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
+}
+
+/// Returns the Pedersen-array cache capacity used by default.
+/// The value is sourced from Starknet API to keep CLI defaults consistent.
+fn default_exec_hash_cache_pedersen_array_capacity() -> usize {
+    starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
+}
+
+/// Returns the Poseidon-array cache capacity used by default.
+/// The value is sourced from Starknet API to keep CLI defaults consistent.
+fn default_exec_hash_cache_poseidon_array_capacity() -> usize {
+    starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
+}
+
+/// Returns the Cairo-native Pedersen cache capacity used by default.
+/// The value follows the native executor's configured default.
+fn default_exec_hash_cache_cairo_native_pedersen_capacity() -> usize {
+    mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
+}
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
@@ -123,6 +165,22 @@ pub struct BackendParams {
     #[clap(env = "MADARA_DB_STATISTICS_LEVEL", long)]
     pub db_statistics_level: Option<StatsLevel>,
 
+    /// Interval in microseconds between full RocksDB obsolete-file discovery scans.
+    /// Files obsoleted by normal flush and compaction are cleaned independently.
+    #[clap(
+        env = "MADARA_DB_DELETE_OBSOLETE_FILES_PERIOD_MICROS",
+        long,
+        default_value_t = DEFAULT_DELETE_OBSOLETE_FILES_PERIOD_MICROS
+    )]
+    #[serde(default = "default_delete_obsolete_files_period_micros")]
+    pub db_delete_obsolete_files_period_micros: u64,
+
+    /// Maximum number of SST files RocksDB keeps open in its table cache.
+    /// Lower this for large full-node databases when index and filter memory is constrained.
+    #[clap(env = "MADARA_DB_MAX_OPEN_FILES", long, default_value_t = DEFAULT_MAX_OPEN_FILES)]
+    #[serde(default = "default_max_open_files")]
+    pub db_max_open_files: i32,
+
     /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
     pub db_memtable_blocks_budget_mib: usize,
@@ -209,11 +267,62 @@ pub struct BackendParams {
     /// Maximum size of the execution read cache (MiB).
     #[clap(env = "MADARA_EXEC_READ_CACHE_MAX_MEMORY_MIB", long, default_value_t = DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB)]
     pub exec_read_cache_max_memory_mib: usize,
+
+    /// Enable execution hash memoization in Starknet API and Cairo Native. Default: false.
+    #[clap(env = "MADARA_EXEC_HASH_CACHE_ENABLED", long)]
+    #[serde(default)]
+    pub exec_hash_cache_enabled: bool,
+
+    /// Maximum Starknet Keccak memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_STARKNET_KECCAK_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_starknet_keccak_capacity")]
+    pub exec_hash_cache_starknet_keccak_capacity: usize,
+
+    /// Maximum two-input Pedersen memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_PEDERSEN_PAIR_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_pedersen_pair_capacity")]
+    pub exec_hash_cache_pedersen_pair_capacity: usize,
+
+    /// Maximum Pedersen-array memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_PEDERSEN_ARRAY_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_pedersen_array_capacity")]
+    pub exec_hash_cache_pedersen_array_capacity: usize,
+
+    /// Maximum Poseidon-array memoized values.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_POSEIDON_ARRAY_CAPACITY",
+        long,
+        default_value_t = starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_poseidon_array_capacity")]
+    pub exec_hash_cache_poseidon_array_capacity: usize,
+
+    /// Maximum Cairo Native Pedersen memoized values retained per execution thread.
+    #[clap(
+        env = "MADARA_EXEC_HASH_CACHE_CAIRO_NATIVE_PEDERSEN_CAPACITY",
+        long,
+        default_value_t = mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY
+    )]
+    #[serde(default = "default_exec_hash_cache_cairo_native_pedersen_capacity")]
+    pub exec_hash_cache_cairo_native_pedersen_capacity: usize,
 }
 
 impl BackendParams {
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.validate_exec_read_cache()
+        self.validate_exec_read_cache()?;
+        self.validate_exec_hash_cache()
     }
 
     fn validate_exec_read_cache(&self) -> anyhow::Result<()> {
@@ -244,6 +353,36 @@ impl BackendParams {
             tracing::warn!(
                 "Execution read cache enabled with an empty allowlist; caching will be effectively disabled."
             );
+        }
+
+        Ok(())
+    }
+
+    /// Validates nonzero hash-cache capacities whenever memoization is enabled.
+    /// Disabled caches may retain custom capacities, which are accepted with an operator warning.
+    fn validate_exec_hash_cache(&self) -> anyhow::Result<()> {
+        let capacities = [
+            ("starknet_keccak", self.exec_hash_cache_starknet_keccak_capacity),
+            ("pedersen_pair", self.exec_hash_cache_pedersen_pair_capacity),
+            ("pedersen_array", self.exec_hash_cache_pedersen_array_capacity),
+            ("poseidon_array", self.exec_hash_cache_poseidon_array_capacity),
+            ("cairo_native_pedersen", self.exec_hash_cache_cairo_native_pedersen_capacity),
+        ];
+
+        if self.exec_hash_cache_enabled {
+            for (name, capacity) in capacities {
+                anyhow::ensure!(capacity > 0, "Execution hash cache is enabled but `{name}` capacity is 0.");
+            }
+        } else if capacities
+            != [
+                ("starknet_keccak", starknet_api::DEFAULT_SN_KECCAK_CACHE_CAPACITY),
+                ("pedersen_pair", starknet_api::DEFAULT_PEDERSEN_PAIR_CACHE_CAPACITY),
+                ("pedersen_array", starknet_api::DEFAULT_PEDERSEN_ARRAY_CACHE_CAPACITY),
+                ("poseidon_array", starknet_api::DEFAULT_POSEIDON_ARRAY_CACHE_CAPACITY),
+                ("cairo_native_pedersen", mc_class_exec::DEFAULT_PEDERSEN_CACHE_CAPACITY),
+            ]
+        {
+            tracing::warn!(?capacities, "Execution hash cache capacities are configured but the cache is disabled.");
         }
 
         Ok(())
@@ -282,6 +421,8 @@ impl BackendParams {
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
+            delete_obsolete_files_period_micros: self.db_delete_obsolete_files_period_micros,
+            max_open_files: self.db_max_open_files,
             // Write stall prevention settings
             max_write_buffer_number: self.db_max_write_buffer_number,
             level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,

@@ -142,61 +142,29 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    /// Revert class DB changes for a range of blocks.
+    /// Appends every class-state reversal introduced by one block to `batch`.
     ///
-    /// Handles three types of class changes:
-    /// - Legacy classes (old_declared_contracts): Deleted entirely
-    /// - Sierra classes (declared_classes): Class info and compiled class deleted
-    /// - Migrated classes (migrated_compiled_classes): compiled_class_hash_v2 cleared
-    #[tracing::instrument(skip(self, state_diffs))]
-    pub(super) fn class_db_revert(&self, state_diffs: &[(u64, StateDiff)]) -> Result<()> {
-        tracing::info!("🎓 REORG [class_db_revert]: Starting with {} state diffs", state_diffs.len());
+    /// Reverse-order suffix cleanup calls this once per block so declarations and
+    /// SNIP-34 compiled-hash migrations disappear atomically with that block.
+    pub(super) fn classes_revert_state_diff(
+        &self,
+        state_diff: &StateDiff,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        self.classes_remove(state_diff.all_declared_classes(), batch)?;
 
         let class_info_col = self.get_column(CLASS_INFO_COLUMN);
-        let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
-
-        let mut batch = WriteBatchWithTransaction::default();
-        let mut legacy_count = 0;
-        let mut sierra_count = 0;
-        let mut migrated_count = 0;
-
-        for (_block_n, diff) in state_diffs {
-            for class_hash in &diff.old_declared_contracts {
-                batch.delete_cf(&class_info_col, class_hash.to_bytes_be());
-                legacy_count += 1;
-            }
-
-            for declared_class in &diff.declared_classes {
-                batch.delete_cf(&class_info_col, declared_class.class_hash.to_bytes_be());
-                batch.delete_cf(&class_compiled_col, declared_class.compiled_class_hash.to_bytes_be());
-                sierra_count += 1;
-            }
-
-            // Revert migrated classes: clear their compiled_class_hash_v2
-            for migrated in &diff.migrated_compiled_classes {
-                if let Some(mut class_info_with_block) = self.get_class(&migrated.class_hash)? {
-                    if let mp_class::ClassInfo::Sierra(sierra_info) = &mut class_info_with_block.class_info {
-                        sierra_info.compiled_class_hash_v2 = None;
-                        batch.put_cf(
-                            &class_info_col,
-                            migrated.class_hash.to_bytes_be(),
-                            super::serialize(&class_info_with_block)?,
-                        );
-                        migrated_count += 1;
-                    }
+        for migrated in &state_diff.migrated_compiled_classes {
+            if let Some(mut class_info_with_block) = self.get_class(&migrated.class_hash)? {
+                if let mp_class::ClassInfo::Sierra(sierra_info) = &mut class_info_with_block.class_info {
+                    sierra_info.compiled_class_hash_v2 = None;
+                    batch.put_cf(
+                        &class_info_col,
+                        migrated.class_hash.to_bytes_be(),
+                        super::serialize(&class_info_with_block)?,
+                    );
                 }
             }
-        }
-
-        self.db.write_opt(batch, &self.writeopts)?;
-
-        if legacy_count > 0 || sierra_count > 0 || migrated_count > 0 {
-            tracing::debug!(
-                "Reverted classes: {} legacy, {} sierra, {} migrated",
-                legacy_count,
-                sierra_count,
-                migrated_count
-            );
         }
 
         Ok(())

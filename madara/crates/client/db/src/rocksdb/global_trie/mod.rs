@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 mod classes;
 mod contracts;
+pub mod in_memory;
 
 /// Timing information from contract trie operations
 #[derive(Debug, Clone, Default)]
@@ -124,7 +125,7 @@ pub fn compute_global_trie_staged(
 /// # Arguments
 ///
 /// * `last_block_protocol_version` — protocol version of the last block in the batch. Governs
-///   whether the `class_trie_root == 0` short-circuit applies in [`calculate_state_root`]
+///   whether the `class_trie_root == 0` short-circuit applies in `calculate_state_root`
 ///   (gated on `< 0.14.0`, matching pathfinder's `StateCommitment::calculate`).
 ///
 /// # Errors

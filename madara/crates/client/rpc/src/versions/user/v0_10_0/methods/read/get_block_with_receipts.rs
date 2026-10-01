@@ -25,7 +25,7 @@ pub fn get_block_with_receipts(
         .get_executed_transactions(..)?
         .into_iter()
         .map(|tx| TransactionAndReceipt {
-            receipt: tx.receipt.to_rpc_v0_9(status.into()),
+            receipt: tx.receipt.to_rpc_v0_10(status.into()),
             transaction: tx.transaction.to_rpc_v0_8(),
         })
         .collect();
@@ -72,7 +72,7 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_receipts(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_8, expected_receipts_v0_9, .. }, rpc) =
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_8, expected_receipts_v0_10, .. }, rpc) =
             sample_chain_for_block_getters;
 
         // Block 0 - verify new v0.10.0 BlockHeader fields
@@ -81,7 +81,7 @@ mod tests {
             assert_eq!(block.status, BlockStatus::AcceptedOnL1);
             assert_eq!(block.transactions.len(), 1);
             assert_eq!(block.transactions[0].transaction, expected_txs_v0_8[0].transaction);
-            assert_eq!(block.transactions[0].receipt, expected_receipts_v0_9[0]);
+            assert_eq!(block.transactions[0].receipt, expected_receipts_v0_10[0]);
 
             // Verify existing BlockHeader fields
             assert_eq!(block.block_header.block_hash, block_hashes[0]);

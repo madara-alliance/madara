@@ -146,7 +146,7 @@ impl StarknetReadRpcApiV0_10_2Server for Starknet {
     }
 
     fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo> {
-        V0_9_0Impl::get_transaction_receipt(self, transaction_hash)
+        V0_10_0Impl::get_transaction_receipt(self, transaction_hash)
     }
 
     async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {

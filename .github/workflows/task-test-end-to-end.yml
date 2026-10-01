@@ -13,7 +13,21 @@ permissions:
 
 jobs:
   test-end-to-end:
+    name: E2E (${{ matrix.merkle-mode }} Merkle)
     runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - merkle-mode: sequential
+            finalizer-mode: serial
+            parallel-merkle: "false"
+            root-workers: "1"
+          - merkle-mode: parallel
+            finalizer-mode: parallel_merkle
+            parallel-merkle: "true"
+            root-workers: "2"
 
     steps:
       - name: Checkout Repository
@@ -45,13 +59,13 @@ jobs:
         uses: ./.github/actions/setup-python-cairo
 
       - name: Build Madara
-        run: CARGO_TARGET_DIR=target cargo build --bin madara --release
+        run: CARGO_TARGET_DIR=target cargo build --locked --bin madara --release
 
       - name: Build Orchestrator
-        run: CARGO_TARGET_DIR=target cargo build --bin orchestrator --release
+        run: CARGO_TARGET_DIR=target cargo build --locked --bin orchestrator --release
 
       - name: Build Bootstrapper V2
-        run: CARGO_TARGET_DIR=target cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
+        run: CARGO_TARGET_DIR=target cargo build --locked --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 
       - name: Download and extract Pathfinder binary
         run: |
@@ -69,12 +83,29 @@ jobs:
           chmod +x test_utils/scripts/deploy_dummy_verifier.sh
 
       - name: Build E2E for tests
-        run: cargo build -p e2e
+        run: cargo build --locked -p e2e
 
       - name: Run E2E test
+        shell: bash
         env:
           AWS_REGION: us-east-1
+          # Child Madara processes inherit these CLI environment settings, including during genesis setup.
+          MADARA_PARALLEL_MERKLE_ENABLED: ${{ matrix.parallel-merkle }}
+          MADARA_PARALLEL_MERKLE_ROOT_WORKERS: ${{ matrix.root-workers }}
+          MADARA_PARALLEL_MERKLE_MAX_INFLIGHT: "10"
+          MADARA_PARALLEL_MERKLE_FLUSH_INTERVAL: "3"
+          MADARA_PARALLEL_MERKLE_COMPARE_SEQUENTIAL: "false"
         run: |
-          RUST_LOG=info cargo test \
+          RUST_LOG=info cargo test --locked \
           --package e2e test_bridge_deposit_and_withdraw \
-          -- --test-threads=10 --nocapture
+          -- --test-threads=1 --nocapture 2>&1 | tee e2e-${{ matrix.merkle-mode }}.log
+          grep -F "initialized_finalizer_runtime mode=${{ matrix.finalizer-mode }} " e2e-${{ matrix.merkle-mode }}.log
+
+      - name: Upload E2E log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.merkle-mode }}-log
+          path: e2e-${{ matrix.merkle-mode }}.log
+          if-no-files-found: ignore
+          retention-days: 7

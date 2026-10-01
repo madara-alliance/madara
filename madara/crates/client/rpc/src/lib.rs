@@ -334,7 +334,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_estimateFee",
 //!   "params": {
-//!     "request": [/* transaction objects */],
+//!     "request": [
+//!       /* transaction objects */
+//!     ],
 //!     "simulation_flags": [],
 //!     "block_id": "latest"
 //!   },
@@ -353,7 +355,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_estimateMessageFee",
 //!   "params": {
-//!     "message": {/* L1 message object */},
+//!     "message": {
+//!       /* L1 message object */
+//!     },
 //!     "block_id": "latest"
 //!   },
 //!   "id": 1
@@ -500,7 +504,9 @@
 //!   "method": "starknet_simulateTransactions",
 //!   "params": {
 //!     "block_id": "latest",
-//!     "transactions": [/* transaction objects */],
+//!     "transactions": [
+//!       /* transaction objects */
+//!     ],
 //!     "simulation_flags": []
 //!   },
 //!   "id": 1
@@ -541,7 +547,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addInvokeTransaction",
 //!   "params": {
-//!     "invoke_transaction": {/* transaction object */}
+//!     "invoke_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -558,7 +566,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addDeclareTransaction",
 //!   "params": {
-//!     "declare_transaction": {/* transaction object */}
+//!     "declare_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -575,20 +585,23 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "starknet_addDeployAccountTransaction",
 //!   "params": {
-//!     "deploy_account_transaction": {/* transaction object */}
+//!     "deploy_account_transaction": {
+//!       /* transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
 //! ```
 //!
-//! ### WebSocket Methods (v0.8.0+)
+//! ### WebSocket Methods (v0.10.0+)
 //!
 //! WebSocket methods enable real-time subscriptions to blockchain events. These methods are
-//! accessible through the same port as HTTP RPC methods.
+//! accessible through the same port as HTTP RPC methods. WebSocket subscriptions are exposed only
+//! for RPC v0.10.0 and newer.
 //!
 //! #### `starknet_subscribeNewHeads`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_new_heads`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_heads`]
 //!
 //! Creates a subscription for new block headers.
 //!
@@ -605,7 +618,7 @@
 //!
 //! #### `starknet_subscribeEvents`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_events`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_events`]
 //!
 //! Creates a subscription for contract events.
 //!
@@ -624,7 +637,7 @@
 //!
 //! #### `starknet_subscribeTransactionStatus`
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_transaction_status`]
+//! [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_transaction_status`]
 //!
 //! Creates a subscription for transaction status updates.
 //!
@@ -639,23 +652,17 @@
 //! }
 //! ```
 //!
-//! #### `starknet_subscribePendingTransactions`
+//! #### Transaction Stream Subscriptions
 //!
-//! [`versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::subscribe_pending_transactions`]
+//! Madara supports transaction-stream methods for v0.10.0 and newer:
 //!
-//! Creates a subscription for pending transactions.
+//! - `v0.10.0`: [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transactions`]
+//! - `v0.10.2`: [`versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::subscribe_new_transactions`]
 //!
-//! ```json
-//! {
-//!   "jsonrpc": "2.0",
-//!   "method": "starknet_subscribePendingTransactions",
-//!   "params": {
-//!     "transaction_details": false,
-//!     "sender_address": ["0x123...", "0x456..."]
-//!   },
-//!   "id": 1
-//! }
-//! ```
+//! Receipt streaming is exposed through:
+//!
+//! - [`versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::subscribe_new_transaction_receipts`]
+//! - [`versions::user::v0_10_2::StarknetWsRpcApiV0_10_2Server::subscribe_new_transaction_receipts`]
 //!
 //! #### `starknet_unsubscribe`
 //!
@@ -682,7 +689,7 @@
 //! expose these endpoints publicly without proper authentication and authorization mechanisms.
 //! Madara does not perform authorization checks on these methods.
 //!
-//! ### Write Methods
+//! ### Admin Write Methods
 //!
 //! #### `madara_addDeclareV0Transaction`
 //!
@@ -696,7 +703,9 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "madara_addDeclareV0Transaction",
 //!   "params": {
-//!     "declare_transaction": {/* legacy transaction object */}
+//!     "declare_transaction": {
+//!       /* legacy transaction object */
+//!     }
 //!   },
 //!   "id": 1
 //! }
@@ -753,6 +762,23 @@
 //! }
 //! ```
 //!
+//! ### Replay and Mempool Intake Controls
+//!
+//! These methods require `--rpc-unsafe` on the administrative endpoint.
+//!
+//! - `madara_setReplayBoundary` accepts a `replay_boundary` object containing `block_n`,
+//!   `expected_tx_count`, and `last_tx_hash`. With `--replay-mode`, the batcher limits
+//!   dispatch and the executor checks the transaction count and terminal hash before closing
+//!   the source block. A boundary stored without replay mode is ignored by batching and execution.
+//! - `madara_getReplayBoundaryStatus` accepts `block_n` and returns the configured boundary's
+//!   progress, or `null` when no retained boundary exists. Dispatch, execution, and closure are separate
+//!   stages; `boundary_met` does not mean the block has been durably confirmed.
+//! - `madara_setMempoolIntake` accepts `enabled`: `false` pauses further mempool intake and
+//!   `true` resumes it. Transactions already dispatched may still execute. This requires block
+//!   production and leaves L1 messages and administrative bypass submissions active.
+//!
+//! Replay boundaries and intake controls live in memory and must be configured again after restart.
+//!
 //! ### WebSocket Methods
 //!
 //! #### `madara_pulse`
@@ -773,7 +799,7 @@
 //!
 //! ## Special Methods
 //!
-//! #### `rpc_methods`
+//! ### `rpc_methods`
 //!
 //! Returns a list of all available RPC methods on the current endpoint. This is useful for
 //! discovering which methods are supported by a particular node configuration.
@@ -797,16 +823,37 @@ pub mod versions;
 mod block_id;
 mod constants;
 mod errors;
+mod metrics;
 mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
-use mc_mempool::Mempool;
+use mc_mempool::{
+    Mempool, PreConfirmationStatus, TransactionStatus as MempoolTransactionStatus, WatchTransactionStatus,
+};
 use mc_submit_tx::{SubmitTransaction, TransactionLookup};
+use mp_transactions::{validated::ValidatedTransaction, Transaction};
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
+use std::{
+    collections::HashSet,
+    future::Future,
+    pin::Pin,
+    sync::{atomic::AtomicU64, atomic::Ordering, Arc},
+    time::Instant,
+};
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+
+#[derive(Debug, Default)]
+pub struct StarknetSubscriptionIdProvider {
+    next: AtomicU64,
+}
+
+impl jsonrpsee::server::IdProvider for StarknetSubscriptionIdProvider {
+    fn next_id(&self) -> jsonrpsee::types::SubscriptionId<'static> {
+        self.next.fetch_add(1, Ordering::Relaxed).to_string().into()
+    }
+}
 
 /// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
@@ -825,6 +872,138 @@ impl Default for StorageProofConfig {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TxStatusSnapshot {
+    Received,
+    Candidate,
+    PreConfirmed,
+    AcceptedOnL2,
+    AcceptedOnL1,
+}
+
+pub enum TxStatusWatchUpdate {
+    Status(Option<TxStatusSnapshot>),
+    Closed,
+}
+
+pub trait TxStatusWatch: Send {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot>;
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = TxStatusWatchUpdate> + Send + '_>>;
+}
+
+pub trait TxStatusWatcher: Send + Sync {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewTransactionsWatchError {
+    Lagged,
+}
+
+pub type NewTransactionsWatchOutput = Result<Option<Arc<ValidatedTransaction>>, NewTransactionsWatchError>;
+pub type NewTransactionsWatchFuture<'a> = Pin<Box<dyn Future<Output = NewTransactionsWatchOutput> + Send + 'a>>;
+
+pub trait NewTransactionsWatch: Send {
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_>;
+}
+
+pub trait NewTransactionsWatcher: Send + Sync {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>>;
+}
+
+pub(crate) fn normalize_sender_address_filter(
+    sender_address: Option<Vec<starknet_types_core::felt::Felt>>,
+) -> Option<HashSet<starknet_types_core::felt::Felt>> {
+    sender_address.and_then(|addresses| {
+        let addresses = addresses.into_iter().collect::<HashSet<_>>();
+        (!addresses.is_empty()).then_some(addresses)
+    })
+}
+
+pub(crate) fn transaction_matches_sender(
+    transaction: &Transaction,
+    sender_address: Option<&HashSet<starknet_types_core::felt::Felt>>,
+) -> bool {
+    let Some(sender_address) = sender_address else {
+        return true;
+    };
+    if sender_address.is_empty() {
+        return true;
+    }
+
+    match transaction {
+        Transaction::Invoke(inner) => sender_address.contains(inner.sender_address()),
+        Transaction::L1Handler(inner) => sender_address.contains(&inner.contract_address),
+        Transaction::Declare(inner) => sender_address.contains(inner.sender_address()),
+        Transaction::Deploy(inner) => sender_address.contains(&inner.calculate_contract_address()),
+        Transaction::DeployAccount(inner) => sender_address.contains(&inner.calculate_contract_address()),
+    }
+}
+
+fn tx_status_snapshot(status: Option<MempoolTransactionStatus>) -> Option<TxStatusSnapshot> {
+    match status {
+        Some(MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Received(_))) => {
+            Some(TxStatusSnapshot::Received)
+        }
+        Some(MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Candidate { .. })) => {
+            Some(TxStatusSnapshot::Candidate)
+        }
+        Some(MempoolTransactionStatus::Preconfirmed(PreConfirmationStatus::Executed { .. })) => {
+            Some(TxStatusSnapshot::PreConfirmed)
+        }
+        Some(MempoolTransactionStatus::Confirmed { is_on_l1, .. }) => {
+            Some(if is_on_l1 { TxStatusSnapshot::AcceptedOnL1 } else { TxStatusSnapshot::AcceptedOnL2 })
+        }
+        None => None,
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatch for WatchTransactionStatus<D> {
+    fn take_current(&mut self) -> Option<TxStatusSnapshot> {
+        let snapshot = tx_status_snapshot(WatchTransactionStatus::current(self).clone());
+        WatchTransactionStatus::refresh(self);
+        snapshot
+    }
+
+    fn recv(&mut self) -> Pin<Box<dyn Future<Output = TxStatusWatchUpdate> + Send + '_>> {
+        Box::pin(async move {
+            WatchTransactionStatus::recv(self)
+                .await
+                .map(|status| TxStatusWatchUpdate::Status(tx_status_snapshot(status.clone())))
+                .unwrap_or(TxStatusWatchUpdate::Closed)
+        })
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead> TxStatusWatcher for Mempool<D> {
+    fn watch_transaction_status(&self, transaction_hash: mp_convert::Felt) -> Option<Box<dyn TxStatusWatch + Send>> {
+        let watch = self.watch_transaction_status(transaction_hash).ok()?;
+        Some(Box::new(watch))
+    }
+}
+
+struct BroadcastNewTransactionsWatch {
+    receiver: tokio::sync::broadcast::Receiver<Arc<ValidatedTransaction>>,
+}
+
+impl NewTransactionsWatch for BroadcastNewTransactionsWatch {
+    fn recv(&mut self) -> NewTransactionsWatchFuture<'_> {
+        Box::pin(async move {
+            match self.receiver.recv().await {
+                Ok(tx) => Ok(Some(tx)),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => Err(NewTransactionsWatchError::Lagged),
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => Ok(None),
+            }
+        })
+    }
+}
+
+impl<D: mc_db::MadaraStorageRead + mc_db::MadaraStorageWrite> NewTransactionsWatcher for Mempool<D> {
+    fn watch_new_transactions(&self) -> Option<Box<dyn NewTransactionsWatch + Send>> {
+        Some(Box::new(BroadcastNewTransactionsWatch { receiver: self.subscribe_new_transactions() }))
+    }
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
@@ -834,6 +1013,8 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) transaction_submitter: Arc<dyn SubmitTransaction>,
     pub(crate) transaction_lookup: Arc<dyn TransactionLookup>,
+    pub(crate) tx_status_watcher: Option<Arc<dyn TxStatusWatcher>>,
+    pub(crate) new_transactions_watcher: Option<Arc<dyn NewTransactionsWatcher>>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
@@ -856,6 +1037,8 @@ impl Starknet {
             ws_handles,
             transaction_submitter,
             transaction_lookup,
+            tx_status_watcher: None,
+            new_transactions_watcher: None,
             storage_proof_config,
             block_prod_handle,
             ctx,
@@ -872,8 +1055,21 @@ impl Starknet {
         self.rpc_unsafe_enabled = value;
     }
 
+    pub fn set_tx_status_watcher(&mut self, watcher: Option<Arc<dyn TxStatusWatcher>>) {
+        self.tx_status_watcher = watcher;
+    }
+
+    pub fn set_new_transactions_watcher(&mut self, watcher: Option<Arc<dyn NewTransactionsWatcher>>) {
+        self.new_transactions_watcher = watcher;
+    }
+
     pub fn set_mempool(&mut self, mempool: Arc<Mempool>) {
         self.mempool = Some(mempool);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_ws_subscription_count(&self) -> usize {
+        self.ws_handles.handles.len()
     }
 }
 
@@ -887,12 +1083,10 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
 
     rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWriteRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetTraceRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
 
     rpc_api.merge(versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetWriteRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetTraceRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
 
     rpc_api.merge(versions::user::v0_10_0::StarknetReadRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
@@ -912,11 +1106,39 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    if starknet.rpc_unsafe_enabled {
+        rpc_api.merge(versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    }
     rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
+}
+
+struct WsSubscriptionHandle {
+    cancelled: tokio::sync::watch::Sender<bool>,
+}
+
+impl WsSubscriptionHandle {
+    fn new() -> (Self, tokio::sync::watch::Receiver<bool>) {
+        let (cancelled, receiver) = tokio::sync::watch::channel(false);
+        (Self { cancelled }, receiver)
+    }
+
+    fn cancel(&self) {
+        let _ = self.cancelled.send(true);
+    }
+
+    #[cfg(test)]
+    async fn cancelled(&self) {
+        let mut cancelled = self.cancelled.subscribe();
+        while !*cancelled.borrow_and_update() {
+            if cancelled.changed().await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 pub(crate) struct WsSubscribeHandles {
@@ -948,60 +1170,195 @@ pub(crate) struct WsSubscribeHandles {
     /// [DashMap]: dashmap::DashMap
     /// [DashMap::entry]: dashmap::DashMap::entry
     /// [Arc]: std::sync::Arc
-    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    counts_by_method: std::sync::Arc<dashmap::DashMap<&'static str, u64>>,
 }
 
 impl WsSubscribeHandles {
     pub fn new() -> Self {
-        Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
+        Self {
+            handles: std::sync::Arc::new(dashmap::DashMap::new()),
+            counts_by_method: std::sync::Arc::new(dashmap::DashMap::new()),
+        }
     }
 
     // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
     #[allow(unused)]
-    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
+    pub async fn subscription_register(
+        &self,
+        id: jsonrpsee::types::SubscriptionId<'static>,
+        method: &'static str,
+    ) -> WsSubscriptionGuard {
         let id = match id {
             jsonrpsee::types::SubscriptionId::Num(id) => id,
-            jsonrpsee::types::SubscriptionId::Str(_) => {
-                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
+            jsonrpsee::types::SubscriptionId::Str(id) => {
+                id.parse().expect("Starknet subscription ids should be numeric strings")
             }
         };
 
-        let handle = std::sync::Arc::new(tokio::sync::Notify::new());
+        let (handle, cancelled) = WsSubscriptionHandle::new();
+        let handle = std::sync::Arc::new(handle);
         let map = std::sync::Arc::clone(&self.handles);
 
         self.handles.insert(id, std::sync::Arc::clone(&handle));
+        let method_count = self.increment_method_count(method);
+        let metrics = crate::metrics::ws_metrics();
+        metrics.record_subscription_opened(method);
+        metrics.record_active_subscriptions(self.handles.len() as u64);
+        metrics.record_active_subscriptions_for_method(method, method_count);
+        tracing::info!(
+            "WS subscription opened: method={} subscription_id={} active_subscriptions={} active_method_subscriptions={}",
+            method,
+            id,
+            self.handles.len(),
+            method_count
+        );
 
-        WsSubscriptionGuard { id, handle, map }
+        WsSubscriptionGuard {
+            id,
+            method,
+            opened_at: Instant::now(),
+            _handle: handle,
+            cancelled,
+            map,
+            counts_by_method: std::sync::Arc::clone(&self.counts_by_method),
+        }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
         if let Some((_, handle)) = self.handles.remove(&id) {
-            handle.notify_one();
+            tracing::info!("WS subscription close requested: subscription_id={} reason=starknet_unsubscribe", id);
+            handle.cancel();
             true
         } else {
+            tracing::warn!(
+                "WS subscription close requested for unknown subscription: subscription_id={} reason=starknet_unsubscribe",
+                id
+            );
             false
         }
+    }
+
+    fn increment_method_count(&self, method: &'static str) -> u64 {
+        let mut count = self.counts_by_method.entry(method).or_insert(0);
+        *count += 1;
+        *count
     }
 }
 
 pub(crate) struct WsSubscriptionGuard {
     id: u64,
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
-    handle: std::sync::Arc<tokio::sync::Notify>,
-    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+    method: &'static str,
+    opened_at: Instant,
+    // Keep the registered handle alive until this guard is dropped.
+    _handle: std::sync::Arc<WsSubscriptionHandle>,
+    cancelled: tokio::sync::watch::Receiver<bool>,
+    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<WsSubscriptionHandle>>>,
+    counts_by_method: std::sync::Arc<dashmap::DashMap<&'static str, u64>>,
 }
 
 impl WsSubscriptionGuard {
-    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
-    #[allow(unused)]
     pub async fn cancelled(&self) {
-        self.handle.notified().await
+        let mut cancelled = self.cancelled.clone();
+        while !*cancelled.borrow_and_update() {
+            if cancelled.changed().await.is_err() {
+                return;
+            }
+        }
     }
+
+    pub fn is_cancelled(&self) -> bool {
+        *self.cancelled.borrow()
+    }
+}
+
+pub(crate) async fn close_ws_subscription(
+    starknet: &Starknet,
+    subscription_id: jsonrpsee::types::SubscriptionId<'_>,
+    parse_error_context: &'static str,
+) -> Result<(), errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    let subscription_id = match subscription_id {
+        jsonrpsee::types::SubscriptionId::Num(id) => id,
+        jsonrpsee::types::SubscriptionId::Str(id) => id.parse().or_internal_server_error(parse_error_context)?,
+    };
+
+    let _ = starknet.ws_handles.subscription_close(subscription_id).await;
+    Ok(())
+}
+
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum LiveConfirmedHeadResolution {
+    Block(Box<mp_block::MadaraBlockInfo>),
+    Reorg(mc_db::ReorgNotification),
+    RetryBackfill,
+}
+
+pub(crate) fn try_recv_live_reorg(
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
+) -> Result<Option<mc_db::ReorgNotification>, errors::StarknetWsApiError> {
+    match reorgs.try_recv() {
+        Ok(reorg) => Ok(Some(reorg)),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => Err(missed_reorg_error()),
+        Err(tokio::sync::broadcast::error::TryRecvError::Closed) => Err(errors::StarknetWsApiError::Internal),
+        Err(tokio::sync::broadcast::error::TryRecvError::Empty) => Ok(None),
+    }
+}
+
+pub(crate) fn resolve_live_confirmed_head(
+    backend: &std::sync::Arc<mc_db::MadaraBackend>,
+    reorgs: &mut mc_db::subscription::SubscribeReorgs<mc_db::rocksdb::RocksDBStorage>,
+    next_block_n: u64,
+    missed_reorg_error: impl FnOnce() -> errors::StarknetWsApiError,
+) -> Result<LiveConfirmedHeadResolution, errors::StarknetWsApiError> {
+    use crate::errors::ErrorExtWs;
+
+    if let Some(reorg) = try_recv_live_reorg(reorgs, missed_reorg_error)? {
+        return Ok(LiveConfirmedHeadResolution::Reorg(reorg));
+    }
+
+    let Some(block_view) = backend.block_view_on_confirmed(next_block_n) else {
+        return Ok(LiveConfirmedHeadResolution::RetryBackfill);
+    };
+    let block_info = block_view
+        .get_block_info()
+        .or_else_internal_server_error(|| format!("Failed to retrieve block info for block {next_block_n}"))?;
+
+    if block_info.header.block_number != next_block_n {
+        let err = format!("Retrieved mismatched block {}, expected {next_block_n}", block_info.header.block_number);
+        return Err(errors::StarknetWsApiError::internal_server_error(err));
+    }
+
+    Ok(LiveConfirmedHeadResolution::Block(Box::new(block_info)))
 }
 
 impl Drop for WsSubscriptionGuard {
     fn drop(&mut self) {
         self.map.remove(&self.id);
+        let method_count = if let Some(mut count) = self.counts_by_method.get_mut(self.method) {
+            *count = count.saturating_sub(1);
+            *count
+        } else {
+            0
+        };
+        let age = self.opened_at.elapsed();
+        let metrics = crate::metrics::ws_metrics();
+        metrics.record_subscription_closed(self.method);
+        metrics.record_subscription_duration(self.method, age.as_secs_f64());
+        metrics.record_active_subscriptions(self.map.len() as u64);
+        metrics.record_active_subscriptions_for_method(self.method, method_count);
+        tracing::info!(
+            "WS subscription closed: method={} subscription_id={} age_secs={} active_subscriptions={} active_method_subscriptions={}",
+            self.method,
+            self.id,
+            age.as_secs(),
+            self.map.len(),
+            method_count
+        );
     }
 }
+
+#[cfg(test)]
+mod tests;

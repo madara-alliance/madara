@@ -11,6 +11,21 @@ args_preset:
 backend_params:
   base_path: "/var/lib/madara/"
   restore_from_latest_backup: false
+  # Reuse hot execution-state reads across blocks.
+  exec_read_cache_enabled: true
+  exec_read_cache_contracts: null
+  exec_read_cache_max_memory_mib: 512
+  # Memoize deterministic hashes in Starknet API and the Cairo Native runtime.
+  exec_hash_cache_enabled: true
+  exec_hash_cache_starknet_keccak_capacity: 8192
+  exec_hash_cache_pedersen_pair_capacity: 8192
+  exec_hash_cache_pedersen_array_capacity: 2048
+  exec_hash_cache_poseidon_array_capacity: 2048
+  # Cairo Native Pedersen cache capacity is applied independently per execution thread.
+  exec_hash_cache_cairo_native_pedersen_capacity: 8192
+
+cairo_native_params:
+  enable_native_execution: true
 
 rpc_params:
   rpc_port: 9944

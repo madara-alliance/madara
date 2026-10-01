@@ -396,6 +396,18 @@ pub struct ExecutionResources {
     pub l1_data_gas: u128,
 }
 
+/// RPC v0.9 re-exports this type, so this guards both versions.
+#[cfg(test)]
+#[test]
+fn execution_resources_serialize_as_numbers() {
+    let resources = ExecutionResources { l1_gas: 1, l2_gas: 2, l1_data_gas: 3 };
+
+    assert_eq!(
+        serde_json::to_value(resources).unwrap(),
+        serde_json::json!({ "l1_gas": 1, "l2_gas": 2, "l1_data_gas": 3 })
+    );
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractStorageKeysItem {
     pub contract_address: Felt,

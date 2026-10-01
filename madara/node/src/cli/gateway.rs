@@ -12,6 +12,11 @@ pub struct GatewayParams {
     #[arg(env = "MADARA_FEEDER_GATEWAY_ENABLE", long)]
     pub feeder_gateway_enable: bool,
 
+    /// Return gzip-compressed feeder gateway responses to clients that request gzip.
+    #[arg(env = "MADARA_FEEDER_GATEWAY_GZIP_RESPONSES", long, default_value_t = false)]
+    #[serde(default)]
+    pub feeder_gateway_gzip_responses: bool,
+
     /// Enable the gateway server.
     #[arg(env = "MADARA_GATEWAY_ENABLE", long)]
     pub gateway_enable: bool,
@@ -37,6 +42,7 @@ impl GatewayParams {
     pub fn as_gateway_server_config(&self) -> GatewayServerConfig {
         GatewayServerConfig {
             feeder_gateway_enable: self.feeder_gateway_enable,
+            feeder_gateway_gzip_responses: self.feeder_gateway_gzip_responses,
             gateway_enable: self.gateway_enable,
             gateway_external: self.gateway_external,
             gateway_port: self.gateway_port,

@@ -296,6 +296,7 @@ mod tests {
     use std::io::{BufReader, BufWriter, Read, Write};
     use std::ops::Drop;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use url::Url;
 
     use super::*;
@@ -318,6 +319,27 @@ mod tests {
 
     const CLASS_ERC1155: &str = "0x04be7f1bace6f593abd8e56947c11151f45498030748a950fdaf0b79ac3dc03f";
     const CLASS_ERC1155_BLOCK: u64 = 18507;
+
+    #[tokio::test]
+    async fn transient_decompression_errors_are_retried() {
+        let provider = GatewayProvider::new_from_base_path(Url::parse("http://127.0.0.1:1/").unwrap());
+        let attempts = AtomicUsize::new(0);
+
+        let result: serde_json::Value = provider
+            .retry_get(|| {
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                std::future::ready(if attempt == 0 {
+                    Err(SequencerError::DecompressResponse { source: std::io::Error::other("transient test failure") })
+                } else {
+                    Ok(serde_json::json!({ "ok": true }))
+                })
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result, serde_json::json!({ "ok": true }));
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+    }
 
     struct JsonGatewayProvider {
         client: reqwest::Client,

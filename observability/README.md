@@ -250,6 +250,49 @@ observability/
 | `ws_sessions_opened` | Counter   | WebSocket sessions opened |
 | `ws_sessions_closed` | Counter   | WebSocket sessions closed |
 
+#### WebSocket subscription health
+
+Use these RPC metrics to verify Starknet WebSocket subscription delivery:
+
+| Metric                                       | Type      | Use                                                   |
+| -------------------------------------------- | --------- | ----------------------------------------------------- |
+| `ws_active_subscriptions`                    | Gauge     | Total live subscription streams                       |
+| `ws_active_subscriptions_by_method`          | Gauge     | Live streams by subscription method                   |
+| `ws_subscriptions_opened`                    | Counter   | Subscription handshakes accepted by method            |
+| `ws_subscriptions_closed`                    | Counter   | Subscription streams closed by method                 |
+| `ws_subscription_notifications_sent`         | Counter   | Notifications successfully sent by method             |
+| `ws_subscription_notification_send_failures` | Counter   | Notification send failures by method                  |
+| `ws_subscription_reorg_notifications_sent`   | Counter   | Reorg notifications sent                              |
+| `ws_subscription_lagged_notifications`       | Counter   | Missed broadcast notifications by method and source   |
+| `ws_subscription_duration_seconds`           | Histogram | Subscription lifetime distribution, grouped by method |
+
+Recommended Grafana panels or alert queries:
+
+```promql
+sum by (method) (ws_active_subscriptions_by_method)
+sum(rate(ws_subscription_notification_send_failures[5m])) by (method)
+sum(rate(ws_subscription_lagged_notifications[5m])) by (method, source)
+sum(rate(ws_subscription_notifications_sent[5m])) by (method)
+histogram_quantile(0.95, sum(rate(ws_subscription_duration_seconds_bucket[5m])) by (le, method))
+```
+
+Recommended alerting:
+
+- Page or warn on sustained non-zero `ws_subscription_notification_send_failures`.
+- Warn on any sustained `ws_subscription_lagged_notifications`, because the affected subscriber may have missed canonicality or
+  transaction updates and should reconnect.
+- Track `ws_active_subscriptions_by_method` against expected client volume to catch leaked streams or missing clients.
+
+Synthetic probe:
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"starknet_subscribeNewHeads","params":{}}' \
+  | wscat -c ws://localhost:9944/rpc/v0_10_2
+```
+
+The probe is healthy when the server returns a string subscription id and then emits
+`starknet_subscriptionNewHeads` notifications as blocks are produced.
+
 ### Database
 
 | Metric                       | Type  | Description             |

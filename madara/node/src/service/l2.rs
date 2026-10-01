@@ -85,7 +85,9 @@ impl Service for SyncService {
             .stop_on_sync(this.params.stop_on_sync)
             .no_pending_block(this.params.no_pending_sync);
 
-        runner.service_loop(move |ctx| async move {
+        // Startup trie recovery runs in Rayon. Keep awaiting it through shutdown so the
+        // service cannot be reported stopped while recovery still writes to the database.
+        runner.service_loop_with_graceful_shutdown(move |ctx| async move {
             // Warp update
             if let Some(WarpUpdateConfig {
                 warp_update_port_rpc,
@@ -125,7 +127,8 @@ impl Service for SyncService {
                         .snap_sync(this.params.snap_sync)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                         .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
-                        .disable_reorg(this.params.disable_reorg),
+                        .disable_reorg(this.params.disable_reorg)
+                        .disable_reorg_preconfirmed(this.params.disable_reorg_preconfirmed),
                 )
                 .run(ctx.clone())
                 .await?;
@@ -162,7 +165,8 @@ impl Service for SyncService {
                     .snap_sync(this.params.snap_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                     .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
-                    .disable_reorg(this.params.disable_reorg),
+                    .disable_reorg(this.params.disable_reorg)
+                    .disable_reorg_preconfirmed(this.params.disable_reorg_preconfirmed),
             )
             .run(ctx)
             .await

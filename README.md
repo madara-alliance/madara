@@ -470,6 +470,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 | `madara_bypassAddDeployAccountTransaction` | Bypasses mempool/validation for DeployAccount transactions  |
 | `madara_bypassAddInvokeTransaction`        | Bypasses mempool/validation for Invoke transactions         |
 | `madara_closeBlock`                        | Forces block closure in block production mode               |
+| `madara_setMempoolIntake`                  | Enables/disables mempool intake (requires `--rpc-unsafe`)   |
 | `madara_revertToAndShutdown`               | Reverts chain state to a block hash and shuts down the node |
 | `madara_addL1HandlerMessage`               | Pushes an L1 handler message into bypass input              |
 | `madara_setCustomBlockHeader`              | Sets custom block header fields for upcoming block          |
@@ -505,6 +506,21 @@ are exposed on a separate port **9943** unless specified otherwise with
 | `madara_pulse` | Periodically sends a signal that the node is alive |
 
 </details>
+
+#### Mempool Intake Control (Unsafe Admin RPC)
+
+`madara_setMempoolIntake` is only exposed when unsafe admin RPC methods are
+enabled (`--rpc-admin --rpc-unsafe`).
+When `--rpc-unsafe` is disabled, the method is not registered and returns
+`Method not found` if called.
+
+When enabled:
+
+- `madara_setMempoolIntake(true)` resumes intake from the mempool.
+- `madara_setMempoolIntake(false)` pauses intake from the mempool.
+- Bypass/L1 message paths remain active while intake is paused.
+- You can start with intake paused via `--mempool-paused`, which requires
+  `--rpc-admin --rpc-unsafe`.
 
 > [!CAUTION]
 > These methods are exposed on `localhost` by default for obvious security
@@ -836,6 +852,39 @@ When native execution is enabled:
 This means native compilation is resumable in practice through persisted cache
 reuse: compiled classes survive restarts, while classes not yet compiled are
 compiled on-demand after restart.
+
+For workloads with repeated state reads and hashes, the sequencer and chain
+configuration examples also demonstrate three independent execution optimizations:
+
+1. `backend_params.exec_read_cache_enabled` reuses hot state reads across blocks.
+2. `backend_params.exec_hash_cache_enabled` memoizes deterministic hashes in
+   Starknet API and the Cairo Native runtime. The Starknet Keccak, Pedersen-pair,
+   Pedersen-array, Poseidon-array, and per-thread Cairo Native Pedersen capacities
+   are independently configurable. Madara exports `exec_hash_cache_calls_call_total`,
+   `exec_hash_cache_hits_hit_total`,
+   `exec_hash_cache_misses_miss_total`, and
+   `exec_hash_cache_capacity_clears_clear_total` with a `kind` label and includes
+   them in the overview dashboard.
+3. `block_production_concurrency.disable_concurrency: true` with `n_workers: 1`
+   executes Blockifier batches sequentially, avoiding speculative re-execution
+   when transactions frequently conflict.
+
+Madara also exports process-lifetime Blockifier executor counters:
+
+- `blockifier_transactions_total`: transactions submitted to completed execution chunks.
+- `blockifier_committed_transactions_total`: transactions in the committed chunk prefixes.
+- `blockifier_execution_attempts_total`: initial and speculative re-execution attempts.
+- `blockifier_validation_attempts_total`: speculative validation attempts.
+- `blockifier_aborts_total`: executions invalidated and scheduled for re-execution.
+- `blockifier_commit_phase_aborts_total`: aborts first discovered during commit.
+
+These raw counters support rates and amplification ratios without adding labels or
+per-transaction metric cardinality. For example, execution amplification is the
+rate of `blockifier_execution_attempts_total` divided by the rate of
+`blockifier_committed_transactions_total`.
+
+All three are opt-in. The read and hash caches store only deterministic results;
+disabling them changes performance, not execution semantics.
 
 ### L3 Support
 
