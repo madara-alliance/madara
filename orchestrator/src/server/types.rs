@@ -158,6 +158,9 @@ pub struct JobStatusResponseItem {
     pub job_type: JobType,
     pub id: Uuid,
     pub status: JobStatus,
+    /// Current failure from the job's common metadata, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

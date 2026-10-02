@@ -42,7 +42,9 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     let (addr, config) = setup_trigger.await;
 
     // Create a failed job
-    let failed_job = build_job_item(JobType::SnosRun, JobStatus::Failed, 1);
+    let mut failed_job = build_job_item(JobType::SnosRun, JobStatus::Failed, 1);
+    let failure_reason = "Processing attempt 1 failed: Failed to read from state: error sending request for url (http://madara:9545/rpc/v0_10)";
+    failed_job.metadata.common.failure_reason = Some(failure_reason.to_string());
     config.database().create_job(failed_job.clone()).await.unwrap();
 
     // Create a successful job (should not be returned)
@@ -74,6 +76,7 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     let found_failed_job = found_failed_job.unwrap();
     assert_eq!(found_failed_job.job_type, JobType::SnosRun);
     assert_eq!(found_failed_job.status, JobStatus::Failed);
+    assert_eq!(found_failed_job.failure_reason.as_deref(), Some(failure_reason));
 
     let found_success_job = jobs_response.iter().find(|j| j.id == success_job.id);
     assert!(found_success_job.is_none(), "Success job should NOT be in the response");

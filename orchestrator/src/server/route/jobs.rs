@@ -240,7 +240,12 @@ async fn handle_get_jobs_by_status(
             debug!("Jobs with status {} : {:#?}", status, jobs);
             let job_status_items: Vec<_> = jobs
                 .into_iter()
-                .map(|job| JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status })
+                .map(|job| JobStatusResponseItem {
+                    job_type: job.job_type,
+                    id: job.id,
+                    status: job.status,
+                    failure_reason: job.metadata.common.failure_reason,
+                })
                 .collect();
             let count = job_status_items.len();
             info!(count = count, "Successfully fetched jobs with status {}", status);
@@ -276,7 +281,12 @@ async fn handle_get_job_status_by_block_request(
             let mut job_status_items = Vec::new();
             for job in jobs {
                 // ProofRegistration is now always included if found
-                job_status_items.push(JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status });
+                job_status_items.push(JobStatusResponseItem {
+                    job_type: job.job_type,
+                    id: job.id,
+                    status: job.status,
+                    failure_reason: job.metadata.common.failure_reason,
+                });
             }
             info!(count = job_status_items.len(), "Successfully fetched job statuses for block");
             Ok(Json(ApiResponse::<JobStatusResponse>::success_with_data(
