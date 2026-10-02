@@ -1,4 +1,5 @@
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, SnosBatch, SnosBatchStatus};
+use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::types::{JobStatus, JobType};
 use axum::response::Response;
 use chrono::{DateTime, Utc};
@@ -158,9 +159,18 @@ pub struct JobStatusResponseItem {
     pub job_type: JobType,
     pub id: Uuid,
     pub status: JobStatus,
-    /// Current failure from the job's common metadata, when available.
+    /// Stored failure reason, exposed only while the job is Failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
+}
+
+impl From<JobItem> for JobStatusResponseItem {
+    fn from(job: JobItem) -> Self {
+        // Successful retries retain their failure history in common metadata.
+        // Do not present that history as a current failure on status endpoints.
+        let failure_reason = if job.status == JobStatus::Failed { job.metadata.common.failure_reason } else { None };
+        Self { job_type: job.job_type, id: job.id, status: job.status, failure_reason }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

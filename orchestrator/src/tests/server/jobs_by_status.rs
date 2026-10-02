@@ -48,7 +48,8 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     config.database().create_job(failed_job.clone()).await.unwrap();
 
     // Create a successful job (should not be returned)
-    let success_job = build_job_item(JobType::ProofCreation, JobStatus::Completed, 2);
+    let mut success_job = build_job_item(JobType::ProofCreation, JobStatus::Completed, 2);
+    success_job.metadata.common.failure_reason = Some("Transient failure before successful retry".to_string());
     config.database().create_job(success_job.clone()).await.unwrap();
 
     let client = hyper::Client::new();
@@ -80,4 +81,20 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
 
     let found_success_job = jobs_response.iter().find(|j| j.id == success_job.id);
     assert!(found_success_job.is_none(), "Success job should NOT be in the response");
+
+    // Completed jobs can retain stored errors, but must not expose them as current failures.
+    let response = client
+        .request(Request::builder().uri(format!("http://{}/jobs?status=Completed", addr)).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let completed_job = response_body["data"]["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|job| job["id"].as_str() == Some(success_job.id.to_string().as_str()))
+        .unwrap();
+    assert!(completed_job.get("failure_reason").is_none());
 }

@@ -297,13 +297,16 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
 
     // Create some jobs for the block
     let mut snos_job = build_job_item(JobType::SnosRun, JobStatus::Completed, 1); // internal_id is not block_number for SnosRun jobs
+    snos_job.metadata.common.failure_reason = Some("Transient failure before successful retry".to_string());
     if let JobSpecificMetadata::Snos(ref mut x) = snos_job.metadata.specific {
         x.start_block = block_number - 1;
         x.end_block = block_number + 1;
     }
 
     let proving_job = build_job_item(JobType::ProofCreation, JobStatus::PendingVerification, block_number);
-    let data_submission_job = build_job_item(JobType::DataSubmission, JobStatus::Created, block_number);
+    let mut data_submission_job = build_job_item(JobType::DataSubmission, JobStatus::Failed, block_number);
+    let failure_reason = "error sending request for url (http://madara:9545/rpc/v0_10)";
+    data_submission_job.metadata.common.failure_reason = Some(failure_reason.to_string());
 
     let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 1); // internal_id is not block_number for ST
     let mut state_transition_job_specific_metadata = state_transition_job.metadata.specific.clone();
@@ -353,8 +356,12 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     // Check that the correct jobs are returned
     assert!(jobs_response.iter().any(|j| j.id == snos_job.id && j.status == JobStatus::Completed));
     assert!(jobs_response.iter().any(|j| j.id == proving_job.id && j.status == JobStatus::PendingVerification));
-    assert!(jobs_response.iter().any(|j| j.id == data_submission_job.id && j.status == JobStatus::Created));
+    assert!(jobs_response.iter().any(|j| j.id == data_submission_job.id && j.status == JobStatus::Failed));
     assert!(jobs_response.iter().any(|j| j.id == state_transition_job_updated.id && j.status == JobStatus::Completed));
+    let failed_job = jobs_response.iter().find(|j| j.id == data_submission_job.id).unwrap();
+    assert_eq!(failed_job.failure_reason.as_deref(), Some(failure_reason));
+    let completed_job = jobs_response.iter().find(|j| j.id == snos_job.id).unwrap();
+    assert!(serde_json::to_value(completed_job).unwrap().get("failure_reason").is_none());
 }
 
 #[tokio::test]
