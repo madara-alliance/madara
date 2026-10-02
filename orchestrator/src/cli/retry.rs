@@ -15,6 +15,11 @@ pub struct UpstreamReadRetryCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_UPSTREAM_READ_MAX_ATTEMPTS", long, default_value = "3")]
     pub upstream_read_max_attempts: NonZeroU32,
 
+    /// Timeout for establishing each upstream connection, including DNS and TLS.
+    /// Kept shorter than the total deadline so a stalled connection can be retried.
+    #[arg(env = "MADARA_ORCHESTRATOR_UPSTREAM_READ_CONNECT_TIMEOUT_SECS", long, default_value = "5")]
+    pub upstream_read_connect_timeout_secs: NonZeroU64,
+
     /// Overall timeout for each upstream read, in seconds.
     #[arg(env = "MADARA_ORCHESTRATOR_UPSTREAM_READ_TIMEOUT_SECS", long, default_value = "30")]
     pub upstream_read_timeout_secs: NonZeroU64,
@@ -22,6 +27,10 @@ pub struct UpstreamReadRetryCliArgs {
 
 impl UpstreamReadRetryCliArgs {
     pub(crate) fn build_http_client(&self, url: &Url) -> Result<Client> {
+        self.http_client_builder(url)?.build().context("failed to build upstream HTTP client")
+    }
+
+    fn http_client_builder(&self, url: &Url) -> Result<reqwest_13::ClientBuilder> {
         let host = url.host_str().context("upstream URL must include a host")?.to_owned();
         // These clients are dedicated to idempotent reads, including JSON-RPC POSTs.
         // Keep reqwest's shared retry budget to avoid amplifying an upstream outage.
@@ -40,11 +49,10 @@ impl UpstreamReadRetryCliArgs {
                 }
             });
 
-        Client::builder()
+        Ok(Client::builder()
+            .connect_timeout(Duration::from_secs(self.upstream_read_connect_timeout_secs.get()))
             .timeout(Duration::from_secs(self.upstream_read_timeout_secs.get()))
-            .retry(retry_policy)
-            .build()
-            .context("failed to build upstream HTTP client")
+            .retry(retry_policy))
     }
 }
 
@@ -68,12 +76,18 @@ mod tests {
             "4",
             "--upstream-read-timeout-secs",
             "45",
+            "--upstream-read-connect-timeout-secs",
+            "7",
         ])
         .unwrap();
 
         assert_eq!(
-            (parsed.retry.upstream_read_max_attempts.get(), parsed.retry.upstream_read_timeout_secs.get()),
-            (4, 45)
+            (
+                parsed.retry.upstream_read_max_attempts.get(),
+                parsed.retry.upstream_read_timeout_secs.get(),
+                parsed.retry.upstream_read_connect_timeout_secs.get(),
+            ),
+            (4, 45, 7)
         );
     }
 
@@ -102,6 +116,7 @@ mod tests {
     #[test]
     fn upstream_retry_rejects_zero_timeout() {
         assert!(TestCli::try_parse_from(["test", "--upstream-read-timeout-secs", "0"]).is_err());
+        assert!(TestCli::try_parse_from(["test", "--upstream-read-connect-timeout-secs", "0"]).is_err());
     }
 
     #[tokio::test]
@@ -223,5 +238,58 @@ mod tests {
                 .unwrap();
         assert_eq!(response.text().await.unwrap(), "ok");
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn http_client_retries_a_stalled_connection_before_total_deadline() {
+        use reqwest_13::dns::{Addrs, Name, Resolve, Resolving};
+        use std::net::SocketAddr;
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        struct StallFirstLookup {
+            calls: AtomicUsize,
+            address: SocketAddr,
+        }
+        impl Resolve for StallFirstLookup {
+            fn resolve(&self, _: Name) -> Resolving {
+                let first = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
+                let address = self.address;
+                Box::pin(async move {
+                    if first {
+                        std::future::pending::<()>().await;
+                    }
+                    Ok(Box::new(std::iter::once(address)) as Addrs)
+                })
+            }
+        }
+
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(httpmock::Method::POST).path("/rpc");
+            then.status(200).body("recovered");
+        });
+        let resolver = Arc::new(StallFirstLookup { calls: AtomicUsize::new(0), address: *server.address() });
+        let retry = TestCli::try_parse_from([
+            "test",
+            "--upstream-read-connect-timeout-secs",
+            "1",
+            "--upstream-read-timeout-secs",
+            "5",
+        ])
+        .unwrap()
+        .retry;
+        let url = Url::parse(&format!("http://upstream.invalid:{}/rpc", server.port())).unwrap();
+        let client =
+            retry.http_client_builder(&url).unwrap().no_proxy().dns_resolver(resolver.clone()).build().unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(4), client.post(url).body("read-only RPC").send())
+            .await
+            .expect("connection retry must finish before the total deadline")
+            .unwrap();
+        assert_eq!(response.text().await.unwrap(), "recovered");
+        assert_eq!(resolver.calls.load(Ordering::SeqCst), 2);
+        mock.assert_calls(1);
     }
 }

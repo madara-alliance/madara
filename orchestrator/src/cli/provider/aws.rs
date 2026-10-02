@@ -17,8 +17,9 @@ pub struct AWSConfigCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_PREFIX", long, default_value = None)]
     pub aws_prefix: Option<String>,
 
-    /// AWS HTTP connection timeout, in seconds. When unset, uses the AWS SDK default.
-    #[arg(env = "MADARA_ORCHESTRATOR_AWS_CONNECT_TIMEOUT_SECS", long)]
+    /// AWS HTTP connection timeout, in seconds. Allows transient connection stalls
+    /// to recover before the SDK retries; this is not an upload or operation deadline.
+    #[arg(env = "MADARA_ORCHESTRATOR_AWS_CONNECT_TIMEOUT_SECS", long, default_value = "10")]
     pub aws_connect_timeout_secs: Option<NonZeroU64>,
 
     /// AWS identity-provider load timeout, in seconds. When unset, uses the AWS SDK default.
@@ -36,6 +37,13 @@ mod tests {
     struct TestCli {
         #[command(flatten)]
         aws: AWSConfigCliArgs,
+    }
+
+    #[test]
+    fn aws_connection_timeout_defaults_to_ten_seconds() {
+        let parsed = TestCli::try_parse_from(["test"]).unwrap();
+        assert_eq!(parsed.aws.aws_connect_timeout_secs.map(NonZeroU64::get), Some(10));
+        assert_eq!(parsed.aws.aws_identity_load_timeout_secs, None);
     }
 
     #[test]
