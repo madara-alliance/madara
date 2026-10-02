@@ -308,7 +308,7 @@ impl AggregatorHandler {
             .madara_rpc_client()
             .get_state_update(BlockId::Number(block_num))
             .await
-            .map_err(|e| JobError::ProviderError(e.to_string()))?;
+            .map_err(|e| JobError::upstream_read("starknet_getStateUpdate", e))?;
         match &update {
             Update(state_update) => {
                 let (modified_contracts, storage_updates, declared_classes) =

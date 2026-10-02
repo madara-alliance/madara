@@ -138,10 +138,10 @@ pub async fn fetch_block_starknet_version(
     debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
     // Fetch block with transaction hashes (lighter than full txs)
-    let block = provider
-        .get_block_with_tx_hashes(BlockId::Number(block_number))
-        .await
-        .map_err(|e| eyre!("Failed to fetch block {} from sequencer: {}", block_number, e))?;
+    let block = provider.get_block_with_tx_hashes(BlockId::Number(block_number)).await.map_err(|e| {
+        eyre!(crate::error::job::JobError::upstream_read("starknet_getBlockWithTxHashes", e))
+            .wrap_err(format!("Failed to fetch block {block_number} from sequencer"))
+    })?;
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,

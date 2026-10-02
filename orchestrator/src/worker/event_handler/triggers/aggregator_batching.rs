@@ -178,7 +178,7 @@ impl AggregatorBatchingTrigger {
         // Getting the latest block number from the sequencer
         let provider = config.madara_rpc_client();
         let last_block_in_provider =
-            provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
+            provider.block_number().await.map_err(|e| JobError::upstream_read("starknet_blockNumber", e))?;
 
         // Calculating the last block number that needs to be assigned to a batch
         let last_block = config

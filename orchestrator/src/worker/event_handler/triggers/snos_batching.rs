@@ -229,7 +229,7 @@ impl SnosBatchingTrigger {
         // Get the latest block number from the sequencer
         let provider = config.madara_rpc_client();
         let block_number_provider =
-            provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
+            provider.block_number().await.map_err(|e| JobError::upstream_read("starknet_blockNumber", e))?;
 
         // Calculate the first block to assign to SNOS batch
         let first_block = max(config.service_config().min_block_to_process, (last_processed_block + 1) as u64);
