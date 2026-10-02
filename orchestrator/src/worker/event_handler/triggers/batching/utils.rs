@@ -24,7 +24,12 @@ pub async fn get_block_builtin_weights(
     let response = fgw
         .get(&format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number))
         .await
-        .map_err(|e| JobError::Other(OtherError(eyre!("Failed to send REST request: {}", e))))?;
+        .map_err(|e| {
+            JobError::Other(OtherError(
+                eyre!(e.without_url())
+                    .wrap_err(format!("get_block_bouncer_weights request failed for block {block_number}")),
+            ))
+        })?;
 
     // Check for HTTP errors
     if !response.status().is_success() {
@@ -34,10 +39,12 @@ pub async fn get_block_builtin_weights(
     }
 
     // Parse the response
-    let mut bouncer_weights: BouncerWeights = response
-        .json()
-        .await
-        .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse REST response: {}", e))))?;
+    let mut bouncer_weights: BouncerWeights = response.json().await.map_err(|e| {
+        JobError::Other(OtherError(
+            eyre!(e.without_url())
+                .wrap_err(format!("get_block_bouncer_weights response decoding failed for block {block_number}")),
+        ))
+    })?;
 
     // If proving_gas is zero (empty block), use the configured default value.
     // Every block has some proving cost regardless of transactions.
@@ -58,6 +65,6 @@ pub async fn get_block_version(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StarknetVersion, JobError> {
     fetch_block_starknet_version(provider, block_num).await.map_err(|e| {
-        JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
+        JobError::Other(OtherError(e.wrap_err(format!("Failed to fetch Starknet version for block {block_num}"))))
     })
 }

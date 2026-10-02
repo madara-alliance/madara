@@ -54,6 +54,13 @@ pub enum JobError {
     #[error("Provider Error: {0}")]
     ProviderError(String),
 
+    #[error("Upstream RPC read {operation} failed: {source}")]
+    UpstreamRead {
+        operation: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
     /// Indicates an invalid job ID was provided
     #[error("Job id {id:?} is invalid.")]
     InvalidId { id: String },
@@ -118,5 +125,49 @@ pub enum JobError {
 impl JobError {
     pub fn is_fail_fast_snos_processing_failure(&self) -> bool {
         matches!(self, Self::SnosJobError(error) if !error.is_retryable())
+    }
+}
+
+impl JobError {
+    /// ProviderError::Other does not expose its boxed error through source().
+    /// Unwrap it here so transport causes survive into worker reports and alerts.
+    pub fn upstream_read(operation: &'static str, error: starknet::providers::ProviderError) -> Self {
+        let source: Box<dyn std::error::Error + Send + Sync> = match error {
+            starknet::providers::ProviderError::Other(source) => source,
+            error => Box::new(error),
+        };
+        Self::UpstreamRead { operation, source }
+    }
+}
+
+#[cfg(test)]
+mod upstream_error_tests {
+    use super::JobError;
+    use starknet::providers::{ProviderError, ProviderImplError};
+    use std::error::Error;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("transport failed")]
+    struct TransportError(#[source] std::io::Error);
+
+    impl ProviderImplError for TransportError {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[test]
+    fn upstream_read_preserves_boxed_provider_transport_cause() {
+        let error = JobError::upstream_read(
+            "starknet_blockNumber",
+            ProviderError::Other(Box::new(TransportError(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "connection refused by upstream",
+            )))),
+        );
+        assert!(error.to_string().contains("starknet_blockNumber"));
+        let transport = error.source().expect("provider transport source");
+        let socket = transport.source().unwrap().downcast_ref::<std::io::Error>().unwrap();
+        assert_eq!(socket.kind(), std::io::ErrorKind::ConnectionRefused);
     }
 }

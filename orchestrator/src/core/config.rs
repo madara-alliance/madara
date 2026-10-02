@@ -293,6 +293,8 @@ impl Config {
         info!(
             upstream_read_max_attempts = run_cmd.upstream_read_retry_args.upstream_read_max_attempts.get(),
             upstream_read_timeout_secs = run_cmd.upstream_read_retry_args.upstream_read_timeout_secs.get(),
+            upstream_read_connect_timeout_secs =
+                run_cmd.upstream_read_retry_args.upstream_read_connect_timeout_secs.get(),
             "Configured upstream read resilience"
         );
 

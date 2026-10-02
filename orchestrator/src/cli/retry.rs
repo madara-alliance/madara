@@ -37,6 +37,19 @@ impl UpstreamReadRetryCliArgs {
         let retry_policy = retry::for_host(host)
             .max_retries_per_request(self.upstream_read_max_attempts.get() - 1)
             .classify_fn(|request| {
+                if let Some(error) = request.error() {
+                    // Do not log the URI: upstream URLs can contain credentials.
+                    let http_error = error.downcast_ref::<reqwest_13::Error>();
+                    tracing::warn!(
+                        method = %request.method(),
+                        host = request.uri().host().unwrap_or("unknown"),
+                        port = request.uri().port_u16(),
+                        is_timeout = http_error.map(|error| error.is_timeout()),
+                        is_connect = http_error.map(|error| error.is_connect()),
+                        causes = %transport_causes(error),
+                        "Upstream read HTTP attempt failed; retry policy will decide whether to retry"
+                    );
+                }
                 let retryable = request.error().is_some()
                     || request
                         .status()
@@ -56,6 +69,26 @@ impl UpstreamReadRetryCliArgs {
     }
 }
 
+// Skip reqwest's outer display, which contains the full request URL. Its sources
+// retain DNS, TLS, socket and timeout details without logging request bodies.
+fn transport_causes(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut causes = Vec::new();
+    let mut current = error.source();
+    while let Some(cause) = current {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            causes.push(format!("{io} (kind={:?}, os_code={:?})", io.kind(), io.raw_os_error()));
+        } else {
+            causes.push(cause.to_string());
+        }
+        current = cause.source();
+    }
+    if causes.is_empty() {
+        "No nested transport cause supplied".to_owned()
+    } else {
+        causes.join(": caused by: ")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser;
@@ -66,6 +99,60 @@ mod tests {
     struct TestCli {
         #[command(flatten)]
         retry: UpstreamReadRetryCliArgs,
+    }
+
+    #[tokio::test]
+    async fn transport_diagnostics_retain_dns_cause_without_request_secrets() {
+        use reqwest_13::dns::{Name, Resolve, Resolving};
+        use std::sync::Arc;
+
+        #[derive(Debug)]
+        struct FailedDns;
+        impl Resolve for FailedDns {
+            fn resolve(&self, _: Name) -> Resolving {
+                Box::pin(async {
+                    Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "diagnostic DNS lookup failure"))
+                        as Box<dyn std::error::Error + Send + Sync>)
+                })
+            }
+        }
+        let error = Client::builder()
+            .no_proxy()
+            .dns_resolver(Arc::new(FailedDns))
+            .build()
+            .unwrap()
+            .get("http://user:password@diagnostic.invalid/private-key?token=secret")
+            .send()
+            .await
+            .unwrap_err();
+        let details = transport_causes(&error);
+        assert!(error.is_connect());
+        assert!(details.contains("diagnostic DNS lookup failure"), "{details}");
+        assert!(details.contains("NotFound"), "{details}");
+        for secret in ["password", "private-key", "secret", "token="] {
+            assert!(!details.contains(secret), "{details}");
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_diagnostics_retain_timeout_cause() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.path("/slow");
+            then.status(200).delay(Duration::from_secs(1));
+        });
+        let error = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(50))
+            .build()
+            .unwrap()
+            .get(server.url("/slow"))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(error.is_timeout());
+        assert!(!error.is_connect());
+        assert!(transport_causes(&error).contains("timed out"));
     }
 
     #[test]
