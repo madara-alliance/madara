@@ -228,6 +228,9 @@ pub struct SnosMetadata {
     /// Wall-clock time SNOS spent on local execution/processing outside RPC waits.
     #[serde(default)]
     pub snos_execution_time_ms: Option<u64>,
+    /// Wall-clock time SNOS spent waiting for the per-process finalization lane.
+    #[serde(default)]
+    pub snos_finalization_wait_time_ms: Option<u64>,
     /// RPC calls SNOS made grouped by method name, including a `total` entry.
     #[serde(default)]
     pub snos_rpc_calls_by_method: Option<HashMap<String, u64>>,

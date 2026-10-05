@@ -93,6 +93,7 @@ tokio-util = { workspace = true }
 url = { workspace = true }
 utils-mock-atlantic-server = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
+zip = { workspace = true }
 
 aws-sdk-iam = { workspace = true }
 aws-sdk-scheduler = { workspace = true }
