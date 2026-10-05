@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+generate-pie.workspace = true
 mc-db.workspace = true
 mc-rpc.workspace = true
 mc-submit-tx.workspace = true
@@ -28,7 +29,6 @@ mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
-generate-pie.workspace = true
 
 # Starknet
 blockifier.workspace = true
