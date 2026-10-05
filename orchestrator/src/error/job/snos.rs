@@ -295,7 +295,9 @@ mod tests {
                 cause,
             )));
         }
-        for cause in [CommittedDataError::InvalidWitness, CommittedDataError::TooManyWitnesses] {
+        for cause in
+            [CommittedDataError::Disabled, CommittedDataError::InvalidWitness, CommittedDataError::TooManyWitnesses]
+        {
             assert!(!is_retryable_transaction_execution_error(&TransactionExecutionError::CommittedDataAvailability(
                 cause,
             )));

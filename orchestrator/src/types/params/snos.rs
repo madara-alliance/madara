@@ -4,8 +4,9 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct SNOSParams {
-    pub committed_data_activation_block: Option<u64>,
-    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
+    /// Local execution permission forwarded to both SNOS replay and Cairo OS input.
+    pub use_committed_data: bool,
+    /// Operator-controlled endpoint for exact-root private witnesses, independent of Pathfinder.
     pub committed_data_rpc_url: Option<Url>,
     pub rpc_for_snos: Url,
     pub rpc_for_snos_backup: Option<Url>,
@@ -16,8 +17,7 @@ pub struct SNOSParams {
 impl From<SNOSCliArgs> for SNOSParams {
     fn from(args: SNOSCliArgs) -> Self {
         Self {
-            committed_data_activation_block: args.committed_data_activation_block,
-            committed_data_readers: args.committed_data_readers,
+            use_committed_data: args.use_committed_data,
             committed_data_rpc_url: args.committed_data_rpc_url,
             rpc_for_snos: args.rpc_for_snos,
             rpc_for_snos_backup: args.rpc_for_snos_backup,

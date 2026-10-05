@@ -115,7 +115,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     async fn import_committed_data_snapshot(
         &self,
         root: Felt,
-        publisher: Felt,
         values: crate::versions::admin::v0_1_0::api::CommittedDataValues,
     ) -> RpcResult<()> {
         if !self.rpc_unsafe_enabled {
@@ -124,11 +123,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
             .into());
         }
-        let values = values.into_inner();
-        let backend = Arc::clone(&self.backend);
-        tokio::task::spawn_blocking(move || backend.import_committed_data_snapshot(root, publisher, values))
+        self.backend
+            .import_committed_data_snapshot(root, values.into_inner())
             .await
-            .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))?
             .map_err(StarknetRpcApiError::from)?;
         Ok(())
     }
@@ -136,7 +133,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     async fn get_committed_data_witness(
         &self,
         root: Felt,
-        publisher: Felt,
         index: u32,
     ) -> RpcResult<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
         if !self.rpc_unsafe_enabled {
@@ -146,7 +142,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
         let backend = Arc::clone(&self.backend);
-        let witness = tokio::task::spawn_blocking(move || backend.committed_data_witness(root, publisher, index))
+        let witness = tokio::task::spawn_blocking(move || backend.committed_data_witness(root, index))
             .await
             .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))?
             .map_err(StarknetRpcApiError::from)?;

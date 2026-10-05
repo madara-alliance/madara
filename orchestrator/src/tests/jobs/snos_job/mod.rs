@@ -64,8 +64,7 @@ async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_first_attempt() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
-        committed_data_activation_block: None,
-        committed_data_readers: Default::default(),
+        use_committed_data: false,
         committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url.clone(),
         rpc_for_snos_backup: Some(backup_rpc_url),
@@ -89,8 +88,7 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let backup_rpc_url = Url::parse("http://localhost:9546").unwrap();
     let snos_config = SNOSParams {
-        committed_data_activation_block: None,
-        committed_data_readers: Default::default(),
+        use_committed_data: false,
         committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url,
         rpc_for_snos_backup: Some(backup_rpc_url.clone()),
@@ -112,8 +110,7 @@ async fn test_rpc_for_snos_attempt_uses_backup_rpc_for_retry_attempt() {
 async fn test_rpc_for_snos_attempt_uses_primary_rpc_for_retry_attempt_without_backup() {
     let primary_rpc_url = Url::parse("http://localhost:9545").unwrap();
     let snos_config = SNOSParams {
-        committed_data_activation_block: None,
-        committed_data_readers: Default::default(),
+        use_committed_data: false,
         committed_data_rpc_url: None,
         rpc_for_snos: primary_rpc_url.clone(),
         rpc_for_snos_backup: None,

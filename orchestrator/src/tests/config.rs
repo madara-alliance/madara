@@ -754,8 +754,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .map(|url| Url::parse(&url).expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP"));
 
     let snos_config = SNOSParams {
-        committed_data_activation_block: None,
-        committed_data_readers: Default::default(),
+        use_committed_data: false,
         committed_data_rpc_url: None,
         rpc_for_snos,
         rpc_for_snos_backup,

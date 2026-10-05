@@ -110,7 +110,6 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_committed_data_witness(
         &self,
         _root: Felt,
-        _publisher: Felt,
         _index: u32,
     ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
@@ -202,6 +201,8 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    /// Durably persists an authenticated immutable dataset within the logical storage quota.
+    /// Re-importing the same dataset must be idempotent; unsupported backends return an error.
     fn write_committed_data_dataset(
         &self,
         _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,

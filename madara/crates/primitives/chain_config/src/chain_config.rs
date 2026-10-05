@@ -222,12 +222,10 @@ pub struct ChainConfigV2 {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
-    /// Inclusive height for committed-data reads. Absent keeps ordinary contract dispatch.
+    /// Permit committed-data reads in account execution; the address is reserved even when disabled.
+    /// L1-handler reads are unsupported by the pinned sequencer and must not be used.
     #[serde(default)]
-    pub committed_data_activation_block: Option<u64>,
-    /// Approved adapter storage addresses, bound into the OS configuration; empty denies all.
-    #[serde(default)]
-    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
+    pub use_committed_data: bool,
     /// Local retention quota for immutable datasets; data is never automatically pruned.
     #[serde(default = "default_committed_data_storage_bytes")]
     pub committed_data_max_storage_bytes: u64,
@@ -357,12 +355,10 @@ pub struct ChainConfig {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
-    /// Inclusive height for committed-data reads. Absent keeps ordinary contract dispatch.
+    /// Permit committed-data reads in account execution; the address is reserved even when disabled.
+    /// L1-handler reads are unsupported by the pinned sequencer and must not be used.
     #[serde(default)]
-    pub committed_data_activation_block: Option<u64>,
-    /// Approved adapter storage addresses, bound into the OS configuration; empty denies all.
-    #[serde(default)]
-    pub committed_data_readers: starknet_api::committed_data::CommittedDataReaders,
+    pub use_committed_data: bool,
     /// Local retention quota for immutable datasets; data is never automatically pruned.
     #[serde(default = "default_committed_data_storage_bytes")]
     pub committed_data_max_storage_bytes: u64,
@@ -490,8 +486,7 @@ impl Clone for ChainConfig {
         Self {
             chain_name: self.chain_name.clone(),
             chain_id: self.chain_id.clone(),
-            committed_data_activation_block: self.committed_data_activation_block,
-            committed_data_readers: self.committed_data_readers.clone(),
+            use_committed_data: self.use_committed_data,
             committed_data_max_storage_bytes: self.committed_data_max_storage_bytes,
             config_version: self.config_version,
             l1_da_mode: self.l1_da_mode,
@@ -533,8 +528,7 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             config_version: CURRENT_CONFIG_VERSION,
             chain_name: v2.chain_name,
             chain_id: v2.chain_id,
-            committed_data_activation_block: v2.committed_data_activation_block,
-            committed_data_readers: v2.committed_data_readers,
+            use_committed_data: v2.use_committed_data,
             committed_data_max_storage_bytes: v2.committed_data_max_storage_bytes,
             l1_da_mode: v2.l1_da_mode,
             settlement_chain_kind: v2.settlement_chain_kind,
@@ -631,8 +625,7 @@ impl ChainConfig {
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
         Self {
             chain_name: "Starknet Mainnet".into(),
-            committed_data_activation_block: None,
-            committed_data_readers: Default::default(),
+            use_committed_data: false,
             committed_data_max_storage_bytes: default_committed_data_storage_bytes(),
             chain_id: ChainId::Mainnet,
             config_version: CURRENT_CONFIG_VERSION,

@@ -36,6 +36,7 @@ pub enum ServiceRequest {
 pub struct CommittedDataValues(Vec<Felt>);
 
 impl CommittedDataValues {
+    /// Consumes the bounded wire value without copying its dataset.
     pub fn into_inner(self) -> Vec<Felt> {
         self.0
     }
@@ -82,21 +83,17 @@ impl<'de> Deserialize<'de> for CommittedDataValues {
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
-    /// Import private snapshot data. Does not publish or authorize its root on-chain.
+    /// Imports and authenticates private data; requires `--rpc-unsafe` and available import capacity.
+    /// Acknowledges only after durable storage. Does not publish or authorize its root on-chain.
     #[method(name = "importCommittedDataSet")]
-    async fn import_committed_data_snapshot(
-        &self,
-        root: Felt,
-        publisher: Felt,
-        values: CommittedDataValues,
-    ) -> RpcResult<()>;
+    async fn import_committed_data_snapshot(&self, root: Felt, values: CommittedDataValues) -> RpcResult<()>;
 
-    /// Export a private witness for SNOS or an independently synced replay node.
+    /// Exports an authenticated private witness; requires `--rpc-unsafe`.
+    /// Missing roots/unused indices return null; corrupt data fails rather than fabricating a value.
     #[method(name = "getCommittedDataWitness")]
     async fn get_committed_data_witness(
         &self,
         root: Felt,
-        publisher: Felt,
         index: u32,
     ) -> RpcResult<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>>;
 
