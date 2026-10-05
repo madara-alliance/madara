@@ -85,8 +85,6 @@ async fn test_local_aggregator_with_fact_registration() -> color_eyre::Result<()
 
     // 3. Run local aggregator.
     let input = AggregatorRunnerInput {
-        committed_data_activation_block: None,
-        committed_data_readers: Default::default(),
         child_program_outputs,
         layout: LayoutName::all_cairo,
         full_output: false,

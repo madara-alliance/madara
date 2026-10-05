@@ -17,6 +17,7 @@ use starknet_api::{
 };
 use std::sync::Arc;
 
+/// Builds historical execution context with the node's read permission and authenticated dataset provider.
 fn block_context<D: MadaraStorageRead>(
     backend: &Arc<MadaraBackend<D>>,
     block_info: MadaraMaybePreconfirmedBlockInfo,
@@ -39,8 +40,7 @@ fn block_context<D: MadaraStorageRead>(
         chain_config.exec_constants_by_protocol_version(*protocol_version)?,
         chain_config.bouncer_config.clone(),
     );
-    context.committed_data_activation_block = backend.chain_config().committed_data_activation_block;
-    context.committed_data_readers = backend.chain_config().committed_data_readers.clone();
+    context.use_committed_data = backend.chain_config().use_committed_data;
     context.committed_data_witnesses =
         Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
             backend.committed_data_provider(),
@@ -125,8 +125,7 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
             self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
             self.chain_config().bouncer_config.clone(),
         );
-        context.committed_data_activation_block = self.chain_config().committed_data_activation_block;
-        context.committed_data_readers = self.chain_config().committed_data_readers.clone();
+        context.use_committed_data = self.chain_config().use_committed_data;
         context.committed_data_witnesses =
             Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
                 self.committed_data_provider(),

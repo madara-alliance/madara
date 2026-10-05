@@ -7,10 +7,9 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_committed_data_witness(
         &self,
         root: Felt,
-        publisher: Felt,
         index: u32,
     ) -> Result<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
-        self.read_committed_data_witness(root, publisher, index)
+        self.read_committed_data_witness(root, index)
     }
 
     // Blocks

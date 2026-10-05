@@ -63,6 +63,9 @@ jobs:
       - name: Verify proving failure and retry classification
         if: ${{ !cancelled() }}
         run: cargo +1.89 test --locked -p orchestrator --lib error::job::snos::tests -- --nocapture
+      - name: Verify committed-data CLI permission combinations
+        if: ${{ !cancelled() }}
+        run: cargo +1.89 test --locked -p orchestrator --lib cli::snos::tests -- --nocapture
       - name: Verify node configuration overrides
         if: ${{ !cancelled() }}
         run: cargo +1.89 test --locked -p madara --bin madara committed_data_settings -- --nocapture
