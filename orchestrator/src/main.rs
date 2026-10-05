@@ -67,6 +67,12 @@ async fn main() {
                 panic!("Failed to setup orchestrator: {}", e);
             }
         },
+        Commands::SnosRunner { runner_command } => {
+            if let Err(error) = orchestrator::snos_runner::run(runner_command.clone()).await {
+                error!(error = %error, "SNOS runner failed");
+                panic!("SNOS runner failed: {error}");
+            }
+        }
     }
 }
 

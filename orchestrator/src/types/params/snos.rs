@@ -6,6 +6,7 @@ use url::Url;
 pub struct SNOSParams {
     pub rpc_for_snos: Url,
     pub rpc_for_snos_backup: Option<Url>,
+    pub snos_witness_url: Option<Url>,
     pub snos_full_output: bool,
     pub versioned_constants: Option<VersionedConstants>,
 }
@@ -15,6 +16,7 @@ impl From<SNOSCliArgs> for SNOSParams {
         Self {
             rpc_for_snos: args.rpc_for_snos,
             rpc_for_snos_backup: args.rpc_for_snos_backup,
+            snos_witness_url: args.snos_witness_url,
             snos_full_output: args.snos_full_output,
             versioned_constants: args.versioned_constants,
         }

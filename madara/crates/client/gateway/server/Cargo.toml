@@ -28,6 +28,7 @@ mp-receipt.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
+generate-pie.workspace = true
 
 # Starknet
 blockifier.workspace = true

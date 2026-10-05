@@ -1,4 +1,5 @@
 use super::{metrics::GatewayMetrics, router::main_router};
+use crate::witness::SnosWitnessService;
 use anyhow::Context;
 use bytes::Bytes;
 use flate2::{write::GzEncoder, Compression};
@@ -70,6 +71,8 @@ pub async fn start_server(
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
     let gateway_metrics = GatewayMetrics::register();
+    let witness_service = SnosWitnessService::from_env(Arc::clone(&db_backend))?;
+    let witness_builder = witness_service.as_ref().map(|service| service.clone().spawn_head_builder());
 
     while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
         // Handle new incoming connections
@@ -83,6 +86,7 @@ pub async fn start_server(
             let config = config.clone();
             let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
             let gateway_metrics = gateway_metrics.clone();
+            let witness_service = witness_service.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
@@ -93,6 +97,7 @@ pub async fn start_server(
                     let config = config.clone();
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
                     let gateway_metrics = gateway_metrics.clone();
+                    let witness_service = witness_service.clone();
                     async move {
                         let path = req
                             .uri()
@@ -113,6 +118,7 @@ pub async fn start_server(
                             transaction_lookup,
                             submit_validated,
                             config,
+                            witness_service,
                         )
                         .await;
 
@@ -159,6 +165,10 @@ pub async fn start_server(
         }
     }
 
+    if let Some(witness_builder) = witness_builder {
+        witness_builder.abort();
+    }
+
     Ok(())
 }
 
@@ -189,6 +199,7 @@ fn telemetry_route(path: &str) -> &'static str {
         "feeder_gateway/get_contract_addresses" => "feeder_gateway/get_contract_addresses",
         "feeder_gateway/get_public_key" => "feeder_gateway/get_public_key",
         "feeder_gateway/get_block_bouncer_weights" => "feeder_gateway/get_block_bouncer_weights",
+        "feeder_gateway/get_block_witness" => "feeder_gateway/get_block_witness",
         _ => "unknown",
     }
 }

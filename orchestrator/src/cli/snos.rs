@@ -25,6 +25,10 @@ pub struct SNOSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS_BACKUP", long)]
     pub rpc_for_snos_backup: Option<Url>,
 
+    /// Optional Madara feeder-gateway base URL serving retained SNOS block witnesses.
+    #[arg(env = "MADARA_ORCHESTRATOR_SNOS_WITNESS_URL", long)]
+    pub snos_witness_url: Option<Url>,
+
     /// Path to a JSON file containing versioned constants to override the default Starknet constants.
     /// By default, versioned constants are picked from the official Starknet constants loaded in blockifier.
     /// Use this argument to override those defaults with custom versioned constants from a file.

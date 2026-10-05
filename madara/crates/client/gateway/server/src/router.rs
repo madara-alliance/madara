@@ -7,6 +7,7 @@ use super::handler::{
 use super::helpers::{not_found_response, service_unavailable_response};
 use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
 use crate::service::GatewayServerConfig;
+use crate::witness::SnosWitnessService;
 use hyper::{body::Incoming, Method, Request, Response};
 use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLookup};
@@ -21,12 +22,13 @@ pub(crate) async fn main_router(
     transaction_lookup: Arc<dyn TransactionLookup>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     config: GatewayServerConfig,
+    witness_service: Option<Arc<SnosWitnessService>>,
 ) -> Result<Response<String>, Infallible> {
     match (path, config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
         (path, _, true) if path.starts_with("gateway/") => Ok(gateway_router(req, path, transaction_submitter).await?),
         (path, true, _) if path.starts_with("feeder_gateway/") => {
-            Ok(feeder_gateway_router(req, path, backend, transaction_lookup).await?)
+            Ok(feeder_gateway_router(req, path, backend, transaction_lookup, witness_service).await?)
         }
         (path, _, true)
             if path.starts_with("madara/trusted_add_validated_transaction")
@@ -49,6 +51,7 @@ async fn feeder_gateway_router(
     path: &str,
     backend: Arc<MadaraBackend>,
     transaction_lookup: Arc<dyn TransactionLookup>,
+    witness_service: Option<Arc<SnosWitnessService>>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
@@ -92,6 +95,9 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_block_bouncer_weights") => {
             Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_witness") => {
+            Ok(crate::handler::handle_get_block_witness(req, witness_service).await.unwrap_or_else(Into::into))
         }
         _ => {
             tracing::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");

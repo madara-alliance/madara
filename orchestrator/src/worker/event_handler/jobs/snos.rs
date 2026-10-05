@@ -16,10 +16,11 @@ use async_trait::async_trait;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use generate_pie::error::PieGenerationError;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationTiming};
-use generate_pie::{execute_prepared_pie, prepare_pie, PreparedPieGeneration};
+use generate_pie::{execute_prepared_pie, prepare_pie, prepare_pie_from_witness, PreparedPieGeneration, RpcWitness};
 use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -37,6 +38,7 @@ const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
 
 /// Only one job per process may own a full CairoPIE/finalization footprint.
 static SNOS_FINALIZATION_SEMAPHORE: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(1)));
+static SNOS_WITNESS_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 struct FinalizedSnosOutput {
     timing: PieGenerationTiming,
@@ -147,10 +149,11 @@ impl JobHandlerTrait for SnosJobHandler {
             public_keys,
         };
 
-        let prepared = prepare_pie(input).await.map_err(|e| {
-            error!(error = %e, "SNOS preparation failed");
-            SnosError::SnosExecutionError { internal_id, source: e }
-        })?;
+        let (prepared, witness_fetch_time_ms, witness_response_count) =
+            prepare_snos(input, config.snos_config().snos_witness_url.as_ref()).await.map_err(|e| {
+                error!(error = %e, "SNOS preparation failed");
+                SnosError::SnosExecutionError { internal_id, source: e }
+            })?;
         let finalized =
             run_in_snos_finalization_lane(move || finalize_snos(prepared, internal_id)).await.map_err(|source| {
                 SnosError::SnosExecutionError {
@@ -179,6 +182,8 @@ impl JobHandlerTrait for SnosJobHandler {
             metadata.snos_execution_time_ms = Some(execution_time_ms);
             metadata.snos_finalization_wait_time_ms = Some(finalization_wait_time_ms);
             metadata.snos_rpc_calls_by_method = Some(rpc_calls_by_method);
+            metadata.snos_witness_fetch_time_ms = witness_fetch_time_ms;
+            metadata.snos_witness_response_count = witness_response_count;
         }
 
         debug!("Storing SNOS outputs");
@@ -213,6 +218,20 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn check_ready_to_process(&self, config: Arc<Config>, job: &JobItem) -> Result<(), Duration> {
+        if let Some(witness_url) = config.snos_config().snos_witness_url.as_ref() {
+            let healthy = match witness_url.join("health") {
+                Ok(url) => {
+                    SNOS_WITNESS_HTTP_CLIENT.get(url).send().await.is_ok_and(|response| response.status().is_success())
+                }
+                Err(_) => false,
+            };
+            if healthy {
+                return Ok(());
+            }
+            warn!(witness_url = %witness_url, "SNOS witness service is unavailable, job will be requeued");
+            return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
+        }
+
         let snos_url = rpc_for_snos_attempt(config.snos_config(), job);
 
         if !check_snos_health(snos_url).await {
@@ -224,6 +243,44 @@ impl JobHandlerTrait for SnosJobHandler {
 
         Ok(())
     }
+}
+
+async fn prepare_snos(
+    input: PieGenerationInput,
+    witness_url: Option<&Url>,
+) -> Result<(PreparedPieGeneration, Option<u64>, Option<usize>), PieGenerationError> {
+    let Some(witness_url) = witness_url else {
+        return Ok((prepare_pie(input).await?, None, None));
+    };
+
+    let started_at = Instant::now();
+    let mut witnesses = Vec::with_capacity(input.blocks.len());
+    for block_number in &input.blocks {
+        let endpoint = witness_url
+            .join("feeder_gateway/get_block_witness")
+            .map_err(|error| PieGenerationError::RpcClient(format!("Invalid SNOS witness URL: {error}")))?;
+        let witness = SNOS_WITNESS_HTTP_CLIENT
+            .get(endpoint)
+            .query(&[("blockNumber", block_number)])
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|error| {
+                PieGenerationError::RpcClient(format!("Failed to fetch block {block_number} witness: {error}"))
+            })?
+            .json::<RpcWitness>()
+            .await
+            .map_err(|error| {
+                PieGenerationError::RpcClient(format!("Failed to decode block {block_number} witness: {error}"))
+            })?;
+        witnesses.push(witness);
+    }
+    let witness = RpcWitness::merge(witnesses)
+        .map_err(|error| PieGenerationError::RpcClient(format!("Failed to merge SNOS witnesses: {error}")))?;
+    let response_count = witness.response_count();
+    let fetch_time_ms = started_at.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+    info!(fetch_time_ms, response_count, blocks = input.blocks.len(), "SNOS witnesses loaded");
+    Ok((prepare_pie_from_witness(input, witness).await?, Some(fetch_time_ms), Some(response_count)))
 }
 
 impl SnosJobHandler {

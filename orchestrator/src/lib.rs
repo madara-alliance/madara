@@ -8,6 +8,7 @@ pub mod core;
 pub mod error;
 pub mod server;
 pub mod setup;
+pub mod snos_runner;
 pub mod types;
 pub mod utils;
 pub mod worker;

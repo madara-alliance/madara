@@ -234,6 +234,12 @@ pub struct SnosMetadata {
     /// RPC calls SNOS made grouped by method name, including a `total` entry.
     #[serde(default)]
     pub snos_rpc_calls_by_method: Option<HashMap<String, u64>>,
+    /// Wall-clock time spent downloading and merging retained block witnesses.
+    #[serde(default)]
+    pub snos_witness_fetch_time_ms: Option<u64>,
+    /// Number of deduplicated RPC responses replayed from the retained witness.
+    #[serde(default)]
+    pub snos_witness_response_count: Option<usize>,
 }
 
 /// Metadata specific to state update jobs.

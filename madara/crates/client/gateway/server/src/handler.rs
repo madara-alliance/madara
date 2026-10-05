@@ -6,6 +6,7 @@ use super::{
     },
 };
 use crate::helpers::{block_view_from_params, not_found_response, view_from_params};
+use crate::witness::SnosWitnessService;
 use anyhow::Context;
 use bincode::Options;
 use bytes::Buf;
@@ -328,6 +329,23 @@ pub async fn handle_get_block_bouncer_config(
     let bouncer_weights = block.get_bouncer_weights()?;
 
     Ok(create_json_response(hyper::StatusCode::OK, &bouncer_weights))
+}
+
+pub async fn handle_get_block_witness(
+    req: Request<Incoming>,
+    witness_service: Option<Arc<SnosWitnessService>>,
+) -> Result<Response<String>, GatewayError> {
+    let witness_service = witness_service.ok_or(GatewayError::Unsupported)?;
+    let params = get_params_from_request(&req);
+    let block_number = params.get("blockNumber").ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockNumber is required.".into())
+    })?;
+    let block_number = block_number
+        .parse::<u64>()
+        .map_err(|error| StarknetError::new(StarknetErrorCode::MalformedRequest, error.to_string()))?;
+
+    let witness = witness_service.get_or_create_json(block_number).await?;
+    Ok(create_response_with_json_body(StatusCode::OK, witness))
 }
 
 pub async fn handle_get_block(

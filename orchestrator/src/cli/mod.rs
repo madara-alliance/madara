@@ -1,6 +1,7 @@
 use crate::types::params::prover::ProverKind;
 use crate::types::Layer;
-use clap::{ArgGroup, Parser, Subcommand};
+use blockifier::blockifier_versioned_constants::VersionedConstants;
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
 use provider::aws::AWSConfigCliArgs;
 pub use server::ServerCliArgs as ServerParams;
@@ -53,6 +54,35 @@ pub enum Commands {
         #[command(flatten)]
         setup_command: Box<SetupCmd>,
     },
+    /// Run the lightweight RPC-versus-witness SNOS benchmark server.
+    SnosRunner {
+        #[command(flatten)]
+        runner_command: SnosRunnerCmd,
+    },
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SnosRunnerCmd {
+    #[arg(env = "SNOS_RUNNER_RPC_URL", long)]
+    pub rpc_url: Url,
+    #[arg(env = "SNOS_RUNNER_WITNESS_URL", long)]
+    pub witness_url: Url,
+    #[arg(env = "SNOS_RUNNER_CHAIN_ID", long)]
+    pub chain_id: String,
+    #[arg(env = "SNOS_RUNNER_STRK_FEE_TOKEN_ADDRESS", long)]
+    pub strk_fee_token_address: String,
+    #[arg(env = "SNOS_RUNNER_ETH_FEE_TOKEN_ADDRESS", long)]
+    pub eth_fee_token_address: String,
+    #[arg(env = "SNOS_RUNNER_IS_L3", long, default_value_t = false)]
+    pub is_l3: bool,
+    #[arg(env = "SNOS_RUNNER_PORT", long, default_value_t = 3001)]
+    pub port: u16,
+    #[arg(
+        env = "SNOS_RUNNER_VERSIONED_CONSTANTS_PATH",
+        long,
+        value_parser = snos::parse_constants
+    )]
+    pub versioned_constants: Option<VersionedConstants>,
 }
 
 #[derive(Parser, Debug, Clone)]

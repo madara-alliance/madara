@@ -69,7 +69,7 @@ orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["gzip", "json"] }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
