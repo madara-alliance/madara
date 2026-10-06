@@ -162,7 +162,7 @@ async fn run_snos_inner(state: &RunnerState, request: RunRequest) -> anyhow::Res
 
 fn pie_input(config: &SnosRunnerCmd, blocks: Vec<u64>) -> anyhow::Result<PieGenerationInput> {
     Ok(PieGenerationInput {
-        rpc_url: config.rpc_url.to_string(),
+        rpc_url: config.rpc_url.as_str().trim_end_matches('/').to_owned(),
         blocks,
         layout: generate_pie::parse_layout("all_cairo")?,
         chain_config: ChainConfig::new(
