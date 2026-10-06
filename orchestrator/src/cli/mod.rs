@@ -57,7 +57,7 @@ pub enum Commands {
     /// Run the lightweight RPC-versus-witness SNOS benchmark server.
     SnosRunner {
         #[command(flatten)]
-        runner_command: SnosRunnerCmd,
+        runner_command: Box<SnosRunnerCmd>,
     },
 }
 

@@ -68,7 +68,7 @@ async fn main() {
             }
         },
         Commands::SnosRunner { runner_command } => {
-            if let Err(error) = orchestrator::snos_runner::run(runner_command.clone()).await {
+            if let Err(error) = orchestrator::snos_runner::run(runner_command.as_ref().clone()).await {
                 error!(error = %error, "SNOS runner failed");
                 panic!("SNOS runner failed: {error}");
             }

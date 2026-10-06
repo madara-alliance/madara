@@ -139,7 +139,7 @@ async fn run_snos_inner(state: &RunnerState, request: RunRequest) -> anyhow::Res
     } else {
         None
     };
-    let pie_zip_ms = request.include_zip.then(|| elapsed_ms(zip_started_at)).unwrap_or_default();
+    let pie_zip_ms = if request.include_zip { elapsed_ms(zip_started_at) } else { 0 };
 
     let PieGenerationTiming { rpc_wait_time_ms, execution_time_ms, rpc_calls_by_method, .. } = timing;
     Ok(RunResponse {
