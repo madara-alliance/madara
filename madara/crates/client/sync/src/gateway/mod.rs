@@ -15,6 +15,7 @@ use std::{iter, sync::Arc, time::Duration};
 
 pub(crate) mod blocks;
 pub(crate) mod classes;
+mod committed_data;
 
 pub struct ForwardSyncConfig {
     pub block_parallelization: usize,
@@ -26,7 +27,8 @@ pub struct ForwardSyncConfig {
     pub disable_tries: bool,
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
-    pub enable_bouncer_config_sync: bool,
+    /// Sync bouncer weights and committed datasets from a compatible Madara feeder.
+    pub madara_extra_data_sync: bool,
     pub disable_reorg: bool,
     pub disable_reorg_preconfirmed: bool,
 }
@@ -43,7 +45,7 @@ impl Default for ForwardSyncConfig {
             disable_tries: false,
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
-            enable_bouncer_config_sync: false,
+            madara_extra_data_sync: false,
             disable_reorg: false,
             disable_reorg_preconfirmed: false,
         }
@@ -61,8 +63,9 @@ impl ForwardSyncConfig {
         Self { snap_sync: val, ..self }
     }
 
-    pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
-        Self { enable_bouncer_config_sync: val, ..self }
+    /// Enables the Madara-specific bouncer and committed-data extensions together.
+    pub fn madara_extra_data_sync(self, enabled: bool) -> Self {
+        Self { madara_extra_data_sync: enabled, ..self }
     }
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
@@ -80,7 +83,7 @@ pub fn forward_sync(
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
 ) -> GatewaySync {
-    let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
+    let probe = Arc::new(GatewayLatestProbe::new(client.clone(), backend.clone(), config.madara_extra_data_sync));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(
         client.clone(),
@@ -124,7 +127,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
-            config.enable_bouncer_config_sync,
+            config.madara_extra_data_sync,
             config.disable_reorg,
         );
         let classes_pipeline = classes::classes_pipeline(
@@ -333,11 +336,13 @@ impl ForwardPipeline for GatewayForwardSync {
 
 struct GatewayLatestProbe {
     client: Arc<GatewayProvider>,
+    backend: Arc<MadaraBackend>,
+    sync_committed_data: bool,
 }
 
 impl GatewayLatestProbe {
-    pub fn new(client: Arc<GatewayProvider>) -> Self {
-        Self { client }
+    pub fn new(client: Arc<GatewayProvider>, backend: Arc<MadaraBackend>, sync_committed_data: bool) -> Self {
+        Self { client, backend, sync_committed_data }
     }
 
     async fn probe(
@@ -346,6 +351,14 @@ impl GatewayLatestProbe {
     ) -> anyhow::Result<Option<ProviderBlockHeader>> {
         match self.client.get_header(BlockId::Tag(BlockTag::Latest)).await {
             Ok(header) => {
+                if self.sync_committed_data {
+                    // Gate new confirmed targets on a successful pass. Dataset import precedes
+                    // publication on the upstream; a concurrent lexical insertion is caught next pass.
+                    if let Err(error) = committed_data::sync_available(&self.backend, &self.client).await {
+                        tracing::warn!("Committed-data replication failed; retaining previous target: {error:#}");
+                        return Ok(highest_known_block);
+                    }
+                }
                 tracing::debug!("Probe got header {header:?}");
                 Ok(Some(header))
             }

@@ -107,6 +107,32 @@ impl GatewayProvider {
         .await
     }
 
+    /// Enumerates one bounded page of available datasets, including imports not yet used by a block.
+    pub async fn get_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>, SequencerError> {
+        let mut request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_committed_data_roots")
+            .expect("static URI segment");
+        if let Some(after) = after {
+            request = request.add_param("after", format!("{after:#x}"));
+        }
+        request.send_get_bounded(8192).await
+    }
+
+    /// Fetches at most 4096 values. The receiving node must verify the completed root.
+    pub async fn get_committed_data_page(
+        &self,
+        root: Felt,
+        start: u32,
+    ) -> Result<Option<mp_gateway::committed_data::CommittedDataPage>, SequencerError> {
+        RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_committed_data")
+            .expect("static URI segment")
+            .add_param("root", format!("{root:#x}"))
+            .add_param("start", start.to_string())
+            .send_get_bounded(512 * 1024)
+            .await
+    }
+
     /// Fetches block bouncer weights from a remote Madara feeder gateway.
     ///
     /// This is a Madara-specific endpoint used by Orchestrator. It is not part of the standard

@@ -16,7 +16,7 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 use tokio::time::Instant;
 
 const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
@@ -99,12 +99,13 @@ fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
 }
 
 // Only include services controlled by ServiceMonitor.
-fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
+fn services_to_stop_for_revert() -> [MadaraServiceId; 7] {
     [
         MadaraServiceId::L1Sync,
         MadaraServiceId::L2Sync,
         MadaraServiceId::BlockProduction,
         MadaraServiceId::RpcUser,
+        MadaraServiceId::RpcCommittedData,
         MadaraServiceId::Gateway,
         MadaraServiceId::Mempool,
     ]
@@ -112,43 +113,6 @@ fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
-    async fn import_committed_data_snapshot(
-        &self,
-        root: Felt,
-        values: crate::versions::admin::v0_1_0::api::CommittedDataValues,
-    ) -> RpcResult<()> {
-        if !self.rpc_unsafe_enabled {
-            return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
-            }
-            .into());
-        }
-        self.backend
-            .import_committed_data_snapshot(root, values.into_inner())
-            .await
-            .map_err(StarknetRpcApiError::from)?;
-        Ok(())
-    }
-
-    async fn get_committed_data_witness(
-        &self,
-        root: Felt,
-        index: u32,
-    ) -> RpcResult<Option<blockifier::execution::syscalls::committed_data::CommittedDataWitness>> {
-        if !self.rpc_unsafe_enabled {
-            return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
-            }
-            .into());
-        }
-        let backend = Arc::clone(&self.backend);
-        let witness = tokio::task::spawn_blocking(move || backend.committed_data_witness(root, index))
-            .await
-            .map_err(|error| StarknetRpcApiError::from(anyhow::anyhow!(error)))?
-            .map_err(StarknetRpcApiError::from)?;
-        Ok(witness)
-    }
-
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
     /// Only works in block production mode.
     async fn add_declare_v0_transaction(

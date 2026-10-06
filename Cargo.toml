@@ -314,7 +314,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "2ab454a869d9546ecbe18709dc27fd7fb15f6960" }
+generate-pie = { git = "https://github.com/karnotxyz/snos", rev = "9dcf76afc4ab71d99079e58d0e6c23156b76021f" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
