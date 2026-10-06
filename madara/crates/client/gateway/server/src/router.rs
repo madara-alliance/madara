@@ -98,7 +98,11 @@ async fn feeder_gateway_router(
             Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_witness") => {
-            Ok(crate::handler::handle_get_block_witness(req, witness_service).await.unwrap_or_else(Into::into))
+            // The service layer serves this large pre-compressed artifact directly.
+            Ok(not_found_response())
+        }
+        (&Method::GET, "feeder_gateway/get_block_witness_status") => {
+            Ok(crate::handler::handle_get_block_witness_status(req, witness_service).await.unwrap_or_else(Into::into))
         }
         _ => {
             tracing::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");

@@ -219,16 +219,31 @@ impl JobHandlerTrait for SnosJobHandler {
 
     async fn check_ready_to_process(&self, config: Arc<Config>, job: &JobItem) -> Result<(), Duration> {
         if let Some(witness_url) = config.snos_config().snos_witness_url.as_ref() {
-            let healthy = match witness_url.join("health") {
-                Ok(url) => {
-                    SNOS_WITNESS_HTTP_CLIENT.get(url).send().await.is_ok_and(|response| response.status().is_success())
+            let snos_metadata: SnosMetadata = match job.metadata.specific.clone().try_into() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    warn!(%error, job_id = %job.id, "Cannot determine SNOS witness range; job will be requeued");
+                    return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
                 }
+            };
+            let ready = match witness_url.join("feeder_gateway/get_block_witness_status") {
+                Ok(url) => SNOS_WITNESS_HTTP_CLIENT
+                    .get(url)
+                    .query(&[("startBlock", snos_metadata.start_block), ("endBlock", snos_metadata.end_block)])
+                    .send()
+                    .await
+                    .is_ok_and(|response| response.status() == reqwest::StatusCode::OK),
                 Err(_) => false,
             };
-            if healthy {
+            if ready {
                 return Ok(());
             }
-            warn!(witness_url = %witness_url, "SNOS witness service is unavailable, job will be requeued");
+            warn!(
+                witness_url = %witness_url,
+                start_block = snos_metadata.start_block,
+                end_block = snos_metadata.end_block,
+                "SNOS witness range is not ready; job will be requeued"
+            );
             return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }
 
