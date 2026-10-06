@@ -669,7 +669,7 @@ mod tests {
         assert_ne!(trie.root_hash(identifier).unwrap(), root_at_zero);
         assert_eq!(storage.snapshots.inventory().oldest_historical, Some(1));
 
-        let mut historical = trie
+        let historical = trie
             .get_transactional_state(BasicId::new(0), trie.get_config())
             .unwrap()
             .expect("revision zero should be reconstructable from the future snapshot");

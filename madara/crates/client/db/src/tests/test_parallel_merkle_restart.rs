@@ -626,8 +626,8 @@ fn full_node_startup_preserves_independent_sync_pipeline_progress() {
         Some(1),
         "the RocksDB snapshot must be labelled with the trie revision it actually contains"
     );
-    let mut storage_trie = reopened.db.contract_storage_trie();
-    let mut historical = storage_trie
+    let storage_trie = reopened.db.contract_storage_trie();
+    let historical = storage_trie
         .get_transactional_state(BasicId::new(0), storage_trie.get_config())
         .expect("creating historical storage view should succeed")
         .expect("block 0 should be retained");
