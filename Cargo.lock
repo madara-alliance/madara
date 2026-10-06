@@ -2802,7 +2802,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -2822,7 +2822,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2842,7 +2842,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -5336,7 +5336,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -5345,7 +5345,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -7121,7 +7121,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=bbe7db85c79fdaaacbd946dc30f403f6dd98235c#bbe7db85c79fdaaacbd946dc30f403f6dd98235c"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=e819260d61c299661af88631db239bf20fa2ef0e#e819260d61c299661af88631db239bf20fa2ef0e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -12519,7 +12519,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -12532,7 +12532,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -13134,7 +13134,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=bbe7db85c79fdaaacbd946dc30f403f6dd98235c#bbe7db85c79fdaaacbd946dc30f403f6dd98235c"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=e819260d61c299661af88631db239bf20fa2ef0e#e819260d61c299661af88631db239bf20fa2ef0e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -14578,7 +14578,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos.git?rev=bbe7db85c79fdaaacbd946dc30f403f6dd98235c#bbe7db85c79fdaaacbd946dc30f403f6dd98235c"
+source = "git+https://github.com/keep-starknet-strange/snos.git?rev=e819260d61c299661af88631db239bf20fa2ef0e#e819260d61c299661af88631db239bf20fa2ef0e"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -16758,7 +16758,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
