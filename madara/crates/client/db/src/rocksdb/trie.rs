@@ -576,8 +576,9 @@ fn rollback_snapshot_changes(
         let prefix = revision.to_be_bytes();
         let mut readopts = rocksdb::ReadOptions::default();
         readopts.set_prefix_same_as_start(true);
-        let iter =
-            snapshot.iterator_cf(column_mapping.log.clone(), readopts, IteratorMode::From(&prefix, Direction::Forward));
+        let iter = snapshot
+            .iterator_cf(column_mapping.log.clone(), readopts, IteratorMode::From(&prefix, Direction::Forward))
+            .into_iter_items(|(key, value)| (key.to_vec(), value.to_vec()));
         let mut revision_changes = BTreeMap::new();
 
         for row in iter {
