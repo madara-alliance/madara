@@ -83,24 +83,47 @@ impl SnosWitnessService {
         tokio::spawn(async move {
             let mut heads = self.backend.watch_chain_head_state();
             let mut last_seen = heads.current().confirmed_tip;
+            let mut pending = None;
+            let mut builds = tokio::task::JoinSet::new();
+
             loop {
-                let current = heads.recv().await.confirmed_tip;
-                let Some(current) = current else {
-                    last_seen = None;
-                    continue;
-                };
-                let first = last_seen.map_or(current, |last| last.saturating_add(1));
-                if first <= current {
-                    for block_number in first..=current {
-                        let service = Arc::clone(&self);
-                        tokio::spawn(async move {
-                            if let Err(error) = service.ensure_exists(block_number).await {
-                                tracing::error!(block_number, error = %error, "Failed to build SNOS block witness");
+                while builds.len() < self.config.build_concurrency {
+                    let Some(block_number) = pending.take() else { break };
+                    let service = Arc::clone(&self);
+                    builds.spawn(async move {
+                        let result = service.ensure_exists(block_number).await;
+                        (block_number, result)
+                    });
+                }
+
+                tokio::select! {
+                    state = heads.recv() => {
+                        let Some(current) = state.confirmed_tip else {
+                            last_seen = None;
+                            continue;
+                        };
+                        if last_seen.is_none_or(|last| current > last) {
+                            // Keep only the newest unscheduled head. This prevents restored or
+                            // temporarily slow nodes from creating an unbounded historical build
+                            // queue; retained gaps are still generated lazily on request.
+                            pending = Some(current);
+                        }
+                        last_seen = Some(current);
+                    }
+                    joined = builds.join_next(), if !builds.is_empty() => {
+                        match joined {
+                            Some(Ok((block_number, result))) => {
+                                if let Err(error) = result {
+                                    tracing::error!(block_number, error = %error, "Failed to build SNOS block witness");
+                                }
                             }
-                        });
+                            Some(Err(error)) => {
+                                tracing::error!(error = %error, "SNOS block witness task failed");
+                            }
+                            None => {}
+                        }
                     }
                 }
-                last_seen = Some(current);
             }
         })
     }
