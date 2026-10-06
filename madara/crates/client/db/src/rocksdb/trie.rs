@@ -605,7 +605,7 @@ fn rollback_snapshot_changes(
                     revision_changes.entry(changed_key).or_insert(None);
                 }
                 OLD_VALUE => {
-                    revision_changes.insert(changed_key, Some(value.as_ref().into()));
+                    revision_changes.insert(changed_key, Some(ByteVec::from(value.as_slice())));
                 }
                 _ => return Err(TrieError::MalformedTrieLogKey),
             }
