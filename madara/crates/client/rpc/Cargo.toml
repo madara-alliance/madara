@@ -54,6 +54,7 @@ jsonrpsee = { workspace = true, default-features = true, features = [
   "server",
 ] }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

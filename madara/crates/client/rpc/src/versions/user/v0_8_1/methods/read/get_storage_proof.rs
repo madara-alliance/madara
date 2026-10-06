@@ -133,30 +133,54 @@ pub fn get_storage_proof(
 
     // Make the proofs.
 
-    let (classes_tree_root, classes_proof) = make_trie_proof(
-        block_view.block_number(),
-        &mut starknet.backend.db.class_trie(),
-        StorageProofTrie::Classes,
-        bonsai_identifier::CLASS,
-        class_hashes,
-    )?;
-
-    let mut contract_root_hashes = std::collections::HashMap::new();
-    let contracts_storage_proofs = contracts_storage_keys
-        .into_iter()
-        .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
-            let identifier = contract_address.to_bytes_be();
-            let (root_hash, proof) = make_trie_proof(
-                block_view.block_number(),
-                &mut starknet.backend.db.contract_storage_trie(),
-                StorageProofTrie::ContractStorage(contract_address),
-                &identifier,
-                storage_keys,
-            )?;
-            contract_root_hashes.insert(contract_address, root_hash);
-            Ok(proof)
-        })
-        .collect::<StarknetRpcResult<_>>()?;
+    let block_number = block_view.block_number();
+    let contracts_for_proof = contract_addresses.clone();
+    let (classes_result, (storage_result, contracts_result)) = rayon::join(
+        || {
+            make_trie_proof(
+                block_number,
+                &mut starknet.backend.db.class_trie(),
+                StorageProofTrie::Classes,
+                bonsai_identifier::CLASS,
+                class_hashes,
+            )
+        },
+        || {
+            rayon::join(
+                || {
+                    let mut contract_root_hashes = std::collections::HashMap::new();
+                    let proofs = contracts_storage_keys
+                        .into_iter()
+                        .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
+                            let identifier = contract_address.to_bytes_be();
+                            let (root_hash, proof) = make_trie_proof(
+                                block_number,
+                                &mut starknet.backend.db.contract_storage_trie(),
+                                StorageProofTrie::ContractStorage(contract_address),
+                                &identifier,
+                                storage_keys,
+                            )?;
+                            contract_root_hashes.insert(contract_address, root_hash);
+                            Ok(proof)
+                        })
+                        .collect::<StarknetRpcResult<_>>()?;
+                    Ok::<_, StarknetRpcApiError>((contract_root_hashes, proofs))
+                },
+                || {
+                    make_trie_proof(
+                        block_number,
+                        &mut starknet.backend.db.contract_trie(),
+                        StorageProofTrie::Contracts,
+                        bonsai_identifier::CONTRACT,
+                        contracts_for_proof,
+                    )
+                },
+            )
+        },
+    );
+    let (classes_tree_root, classes_proof) = classes_result?;
+    let (contract_root_hashes, contracts_storage_proofs) = storage_result?;
+    let (contracts_tree_root, contracts_proof_nodes) = contracts_result?;
 
     // contract leaves data
     let state_view = block_view.state_view();
@@ -170,14 +194,6 @@ pub fn get_storage_proof(
             })
         })
         .collect::<StarknetRpcResult<_>>()?;
-    let (contracts_tree_root, contracts_proof_nodes) = make_trie_proof(
-        block_view.block_number(),
-        &mut starknet.backend.db.contract_trie(),
-        StorageProofTrie::Contracts,
-        bonsai_identifier::CONTRACT,
-        contract_addresses,
-    )?;
-
     let contracts_proof = ContractsProof { nodes: contracts_proof_nodes, contract_leaves_data };
 
     Ok(GetStorageProofResult {

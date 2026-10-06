@@ -13,7 +13,8 @@ pub type SnapshotRef = Arc<SnapshotWithDBArc>;
 // Parallel Merkle root jobs clone the base snapshot before they start, so the shared inventory
 // only needs the newest durable checkpoint. Older in-flight jobs keep their own Arc alive.
 const MAX_DURABLE_EXACT_SNAPSHOTS: usize = 1;
-const MAX_ROLLBACK_OVERLAYS: usize = 12;
+const ROLLBACK_OVERLAY_CACHE_ENTRIES_ENV: &str = "MADARA_RPC_HISTORICAL_OVERLAY_CACHE_ENTRIES";
+const DEFAULT_MAX_ROLLBACK_OVERLAYS: usize = 12;
 
 pub(crate) type RollbackOverlay = BTreeMap<(u8, ByteVec), Option<ByteVec>>;
 
@@ -70,6 +71,7 @@ pub struct Snapshots {
     max_kept_snapshots: Option<usize>,
     snapshot_interval: u64,
     rollback_overlays: Mutex<RollbackOverlayCache>,
+    max_rollback_overlays: usize,
 }
 impl fmt::Debug for Snapshots {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -91,6 +93,11 @@ impl Snapshots {
         tracing::debug!(
             "initialized_db_snapshots head_block_n={head_block_n:?} max_kept_snapshots={max_kept_snapshots:?} snapshot_interval={snapshot_interval}"
         );
+        let max_rollback_overlays = std::env::var(ROLLBACK_OVERLAY_CACHE_ENTRIES_ENV)
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_ROLLBACK_OVERLAYS)
+            .max(1);
         Self {
             db,
             inner: SnapshotsInner {
@@ -104,6 +111,7 @@ impl Snapshots {
             max_kept_snapshots,
             snapshot_interval,
             rollback_overlays: Mutex::new(RollbackOverlayCache::default()),
+            max_rollback_overlays,
         }
     }
 
@@ -125,7 +133,7 @@ impl Snapshots {
                 });
                 cache.entries.insert(key, Arc::clone(&entry));
                 cache.insertion_order.push_back(key);
-                while cache.entries.len() > MAX_ROLLBACK_OVERLAYS {
+                while cache.entries.len() > self.max_rollback_overlays {
                     if let Some(oldest) = cache.insertion_order.pop_front() {
                         if oldest != key {
                             cache.entries.remove(&oldest);
