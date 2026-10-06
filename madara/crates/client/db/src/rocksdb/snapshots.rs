@@ -1,8 +1,10 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, VecDeque},
     fmt,
-    sync::{Arc, RwLock},
+    sync::{Arc, Condvar, Mutex, RwLock},
 };
+
+use bonsai_trie::ByteVec;
 
 use crate::rocksdb::{rocksdb_snapshot::SnapshotWithDBArc, RocksDBStorageInner};
 
@@ -11,6 +13,33 @@ pub type SnapshotRef = Arc<SnapshotWithDBArc>;
 // Parallel Merkle root jobs clone the base snapshot before they start, so the shared inventory
 // only needs the newest durable checkpoint. Older in-flight jobs keep their own Arc alive.
 const MAX_DURABLE_EXACT_SNAPSHOTS: usize = 1;
+const MAX_ROLLBACK_OVERLAYS: usize = 12;
+
+pub(crate) type RollbackOverlay = BTreeMap<(u8, ByteVec), Option<ByteVec>>;
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(crate) struct RollbackOverlayKey {
+    pub column: &'static str,
+    pub requested_block: u64,
+    pub snapshot_block: u64,
+}
+
+enum RollbackOverlayState {
+    Empty,
+    Building,
+    Ready(Arc<RollbackOverlay>),
+}
+
+struct RollbackOverlayEntry {
+    state: Mutex<RollbackOverlayState>,
+    ready: Condvar,
+}
+
+#[derive(Default)]
+struct RollbackOverlayCache {
+    entries: HashMap<RollbackOverlayKey, Arc<RollbackOverlayEntry>>,
+    insertion_order: VecDeque<RollbackOverlayKey>,
+}
 
 struct SnapshotsInner {
     exact: BTreeMap<u64, SnapshotRef>,
@@ -40,6 +69,7 @@ pub struct Snapshots {
     db: Arc<RocksDBStorageInner>,
     max_kept_snapshots: Option<usize>,
     snapshot_interval: u64,
+    rollback_overlays: Mutex<RollbackOverlayCache>,
 }
 impl fmt::Debug for Snapshots {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -73,7 +103,64 @@ impl Snapshots {
             .into(),
             max_kept_snapshots,
             snapshot_interval,
+            rollback_overlays: Mutex::new(RollbackOverlayCache::default()),
         }
+    }
+
+    /// Returns a shared historical rollback overlay. Concurrent requests for the
+    /// same trie revision wait for the first scan instead of repeating it.
+    pub(crate) fn rollback_overlay<E>(
+        &self,
+        key: RollbackOverlayKey,
+        build: impl FnOnce() -> Result<RollbackOverlay, E>,
+    ) -> Result<Arc<RollbackOverlay>, E> {
+        let entry = {
+            let mut cache = self.rollback_overlays.lock().expect("Poisoned rollback overlay cache");
+            if let Some(entry) = cache.entries.get(&key) {
+                Arc::clone(entry)
+            } else {
+                let entry = Arc::new(RollbackOverlayEntry {
+                    state: Mutex::new(RollbackOverlayState::Empty),
+                    ready: Condvar::new(),
+                });
+                cache.entries.insert(key, Arc::clone(&entry));
+                cache.insertion_order.push_back(key);
+                while cache.entries.len() > MAX_ROLLBACK_OVERLAYS {
+                    if let Some(oldest) = cache.insertion_order.pop_front() {
+                        if oldest != key {
+                            cache.entries.remove(&oldest);
+                        }
+                    }
+                }
+                entry
+            }
+        };
+
+        let mut state = entry.state.lock().expect("Poisoned rollback overlay entry");
+        loop {
+            match &*state {
+                RollbackOverlayState::Ready(overlay) => return Ok(Arc::clone(overlay)),
+                RollbackOverlayState::Building => {
+                    state = entry.ready.wait(state).expect("Poisoned rollback overlay entry");
+                }
+                RollbackOverlayState::Empty => {
+                    *state = RollbackOverlayState::Building;
+                    drop(state);
+                    let result = build().map(Arc::new);
+                    let mut state = entry.state.lock().expect("Poisoned rollback overlay entry");
+                    match &result {
+                        Ok(overlay) => *state = RollbackOverlayState::Ready(Arc::clone(overlay)),
+                        Err(_) => *state = RollbackOverlayState::Empty,
+                    }
+                    entry.ready.notify_all();
+                    return result;
+                }
+            }
+        }
+    }
+
+    fn clear_rollback_overlays(&self) {
+        *self.rollback_overlays.lock().expect("Poisoned rollback overlay cache") = RollbackOverlayCache::default();
     }
 
     /// Stores one historical interval snapshot and enforces the configured retention bound.
@@ -166,6 +253,9 @@ impl Snapshots {
         inner.historical.retain(|saved_block_n, _| *saved_block_n <= block_n);
         inner.head = snapshot;
         inner.head_block_n = Some(block_n);
+        drop(inner);
+        self.clear_rollback_overlays();
+        let inner = self.inner.read().expect("Poisoned lock");
         tracing::debug!(
             "db_snapshots_rewound target_block={} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?}",
             block_n,
@@ -189,6 +279,8 @@ impl Snapshots {
         inner.head = Arc::clone(&snapshot);
         inner.head_block_n = None;
         inner.empty_base = Some(snapshot);
+        drop(inner);
+        self.clear_rollback_overlays();
         tracing::debug!("db_snapshots_rewound_to_empty");
     }
 
@@ -308,13 +400,53 @@ impl Snapshots {
 
 #[cfg(test)]
 mod tests {
+    use super::RollbackOverlayKey;
     use crate::rocksdb::{RocksDBConfig, RocksDBStorage};
-    use std::sync::Arc;
+    use std::{
+        collections::BTreeMap,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Barrier,
+        },
+        thread,
+        time::Duration,
+    };
 
     fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
         let temp_dir = tempfile::TempDir::with_prefix("snapshot-test").unwrap();
         let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
         (temp_dir, storage)
+    }
+
+    #[test]
+    fn rollback_overlay_is_built_once_for_concurrent_readers() {
+        let (_temp_dir, storage) = create_test_storage(RocksDBConfig::default());
+        let snapshots = Arc::clone(&storage.snapshots);
+        let builds = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(8));
+        let key = RollbackOverlayKey { column: "test", requested_block: 10, snapshot_block: 20 };
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let snapshots = Arc::clone(&snapshots);
+                let builds = Arc::clone(&builds);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    snapshots
+                        .rollback_overlay(key, || {
+                            builds.fetch_add(1, Ordering::SeqCst);
+                            thread::sleep(Duration::from_millis(50));
+                            Ok::<_, ()>(BTreeMap::new())
+                        })
+                        .expect("rollback overlay")
+                })
+            })
+            .collect();
+
+        let overlays: Vec<_> = threads.into_iter().map(|thread| thread.join().expect("reader thread")).collect();
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+        assert!(overlays.windows(2).all(|pair| Arc::ptr_eq(&pair[0], &pair[1])));
     }
 
     /// When `max_kept_snapshots = Some(0)`, no snapshots should be created in historical.

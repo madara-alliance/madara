@@ -1,6 +1,6 @@
 use crate::metrics::metrics;
 use crate::rocksdb::column::Column;
-use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
+use crate::rocksdb::snapshots::{RollbackOverlay, RollbackOverlayKey, SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
 use bonsai_trie::id::Id;
 use bonsai_trie::{
@@ -423,7 +423,7 @@ pub struct BonsaiTransaction {
     /// The changes on top of the snapshot.
     /// Key is (column id, key) and value is Some(value) if the change is an insert, and None
     /// if the change is a deletion of the key.
-    changed: BTreeMap<(u8, ByteVec), Option<ByteVec>>,
+    changed: Arc<RollbackOverlay>,
     column_mapping: DatabaseKeyMapping,
 }
 
@@ -473,7 +473,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        self.changed.insert(to_changed_key(key), Some(value.into()));
+        Arc::make_mut(&mut self.changed).insert(to_changed_key(key), Some(value.into()));
         Ok(None)
     }
 
@@ -482,7 +482,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        self.changed.insert(to_changed_key(key), None);
+        Arc::make_mut(&mut self.changed).insert(to_changed_key(key), None);
         Ok(None)
     }
 
@@ -528,7 +528,11 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
             );
             return Some((
                 requested_id,
-                BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: BTreeMap::new() },
+                BonsaiTransaction {
+                    snapshot,
+                    column_mapping: self.column_mapping.clone(),
+                    changed: Arc::new(BTreeMap::new()),
+                },
             ));
         }
 
@@ -537,8 +541,11 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
         // returned snapshot id, so a future snapshot would otherwise perform no rollback at all.
         // Apply inverse trie-log values here and report the transaction as already positioned at
         // the requested revision; this also makes live full-node snapshots with trie runahead safe.
-        let changed = match rollback_snapshot_changes(&snapshot, &self.column_mapping, requested_block, snapshot_block)
-        {
+        let cache_key =
+            RollbackOverlayKey { column: self.column_mapping.log.rocksdb_name, requested_block, snapshot_block };
+        let changed = match self.snapshots.rollback_overlay(cache_key, || {
+            rollback_snapshot_changes(&snapshot, &self.column_mapping, requested_block, snapshot_block)
+        }) {
             Ok(changed) => changed,
             Err(error) => {
                 tracing::error!(requested_block, snapshot_block, %error, "Failed to roll back historical trie snapshot");
@@ -568,7 +575,7 @@ fn rollback_snapshot_changes(
     column_mapping: &DatabaseKeyMapping,
     requested_block: u64,
     snapshot_block: u64,
-) -> Result<BTreeMap<(u8, ByteVec), Option<ByteVec>>, TrieError> {
+) -> Result<RollbackOverlay, TrieError> {
     const NEW_VALUE: u8 = 0;
     const OLD_VALUE: u8 = 1;
     const ID_BYTES: usize = std::mem::size_of::<u64>();
