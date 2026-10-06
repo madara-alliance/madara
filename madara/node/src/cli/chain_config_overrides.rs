@@ -80,9 +80,6 @@ pub struct ChainConfigOverrideParams {
 pub struct ChainConfigOverridesInner {
     pub chain_name: String,
     pub chain_id: ChainId,
-    #[serde(default)]
-    pub use_committed_data: bool,
-    pub committed_data_max_storage_bytes: u64,
     pub settlement_chain_kind: SettlementChainKind,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub feeder_gateway_url: Url,
@@ -128,8 +125,6 @@ impl ChainConfigOverrideParams {
         let mut chain_config_overrides = serde_yaml::to_value(ChainConfigOverridesInner {
             chain_name: chain_config.chain_name,
             chain_id: chain_config.chain_id,
-            use_committed_data: chain_config.use_committed_data,
-            committed_data_max_storage_bytes: chain_config.committed_data_max_storage_bytes,
             l1_da_mode: chain_config.l1_da_mode,
             settlement_chain_kind: chain_config.settlement_chain_kind,
             native_fee_token_address: chain_config.native_fee_token_address,
@@ -190,8 +185,6 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
-            use_committed_data: chain_config_overrides.use_committed_data,
-            committed_data_max_storage_bytes: chain_config_overrides.committed_data_max_storage_bytes,
             config_version: chain_config.config_version,
             settlement_chain_kind: chain_config_overrides.settlement_chain_kind,
             l1_da_mode: chain_config_overrides.l1_da_mode,
@@ -226,26 +219,6 @@ impl ChainConfigOverrideParams {
 mod tests {
     use super::*;
     use std::time::Duration;
-
-    #[test]
-    fn committed_data_settings_survive_and_accept_cli_overrides() {
-        let mut original = ChainConfig::madara_test();
-        original.use_committed_data = true;
-        original.committed_data_max_storage_bytes = 123456;
-        let unchanged = ChainConfigOverrideParams { overrides: Vec::new() }.override_chain_config(original).unwrap();
-        assert!(unchanged.use_committed_data);
-        assert_eq!(unchanged.committed_data_max_storage_bytes, 123456);
-        let updated = ChainConfigOverrideParams {
-            overrides: vec![
-                ("use_committed_data".into(), serde_yaml::from_str("false").unwrap()),
-                ("committed_data_max_storage_bytes".into(), serde_yaml::from_str("654321").unwrap()),
-            ],
-        }
-        .override_chain_config(unchanged)
-        .unwrap();
-        assert!(!updated.use_committed_data);
-        assert_eq!(updated.committed_data_max_storage_bytes, 654321);
-    }
 
     #[test]
     fn test_override_chain_config_updates_mempool_fields() {

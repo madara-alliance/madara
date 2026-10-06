@@ -101,6 +101,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
+    // ponytail: serialize the quota read/check/write; the unit value carries no data.
     committed_data_write: std::sync::Mutex<()>,
     writeopts: WriteOptions,
     config: RocksDBConfig,
