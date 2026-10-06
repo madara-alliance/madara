@@ -517,12 +517,19 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
 
         let snapshot_block = snapshot_block?;
         if snapshot_block < requested_block {
-            tracing::warn!(
+            // The snapshot is labelled with the latest revision that actually changed this trie,
+            // not necessarily the latest confirmed block. A later block with no trie changes has
+            // exactly the same state, so expose the pinned snapshot at the requested revision and
+            // prevent Bonsai from trying to replay a non-existent forward log range.
+            tracing::debug!(
                 requested_block,
                 snapshot_block,
-                "Cannot serve historical trie state from an older snapshot"
+                "Serving unchanged trie state carried forward from an older revision"
             );
-            return None;
+            return Some((
+                requested_id,
+                BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed: BTreeMap::new() },
+            ));
         }
 
         // Madara deliberately chooses the closest snapshot at or after the requested block and
@@ -675,6 +682,28 @@ mod tests {
             .expect("revision zero should be reconstructable from the future snapshot");
         assert_eq!(historical.get(identifier, &key).unwrap(), Some(Felt::from(11_u64)));
         assert_eq!(historical.root_hash(identifier).unwrap(), root_at_zero);
+    }
+
+    #[test]
+    fn unchanged_state_is_carried_forward_past_latest_trie_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(directory.path(), RocksDBConfig::default()).unwrap();
+        let identifier = b"contract";
+        let key_bytes = Felt::ONE.to_bytes_be();
+        let key = key_bytes.as_bits()[5..].to_owned();
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(identifier, &key, &Felt::from(11_u64)).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+        let root_at_zero = trie.root_hash(identifier).unwrap();
+
+        let carried = trie
+            .get_transactional_state(BasicId::new(1), trie.get_config())
+            .unwrap()
+            .expect("unchanged state should carry forward to a later block");
+        assert_eq!(carried.get(identifier, &key).unwrap(), Some(Felt::from(11_u64)));
+        assert_eq!(carried.root_hash(identifier).unwrap(), root_at_zero);
     }
 
     #[test]
