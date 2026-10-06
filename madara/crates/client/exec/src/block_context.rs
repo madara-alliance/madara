@@ -40,7 +40,7 @@ fn block_context<D: MadaraStorageRead>(
         chain_config.exec_constants_by_protocol_version(*protocol_version)?,
         chain_config.bouncer_config.clone(),
     );
-    context.use_committed_data = backend.chain_config().use_committed_data;
+    context.use_committed_data = backend.use_committed_data();
     context.committed_data_witnesses =
         Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
             backend.committed_data_provider(),
@@ -125,7 +125,7 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
             self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
             self.chain_config().bouncer_config.clone(),
         );
-        context.use_committed_data = self.chain_config().use_committed_data;
+        context.use_committed_data = self.use_committed_data();
         context.committed_data_witnesses =
             Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
                 self.committed_data_provider(),

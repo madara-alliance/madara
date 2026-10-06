@@ -222,13 +222,6 @@ pub struct ChainConfigV2 {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
-    /// Permit committed-data reads in account execution; the address is reserved even when disabled.
-    /// L1-handler reads are unsupported by the pinned sequencer and must not be used.
-    #[serde(default)]
-    pub use_committed_data: bool,
-    /// Local retention quota for immutable datasets; data is never automatically pruned.
-    #[serde(default = "default_committed_data_storage_bytes")]
-    pub committed_data_max_storage_bytes: u64,
 
     /// The DA mode supported by L1.
     #[serde(default)]
@@ -355,13 +348,6 @@ pub struct ChainConfig {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
-    /// Permit committed-data reads in account execution; the address is reserved even when disabled.
-    /// L1-handler reads are unsupported by the pinned sequencer and must not be used.
-    #[serde(default)]
-    pub use_committed_data: bool,
-    /// Local retention quota for immutable datasets; data is never automatically pruned.
-    #[serde(default = "default_committed_data_storage_bytes")]
-    pub committed_data_max_storage_bytes: u64,
 
     /// Chain config version. This is used to track breaking changes to the chain config format.
     /// Version must be explicitly specified in the config file.
@@ -486,8 +472,6 @@ impl Clone for ChainConfig {
         Self {
             chain_name: self.chain_name.clone(),
             chain_id: self.chain_id.clone(),
-            use_committed_data: self.use_committed_data,
-            committed_data_max_storage_bytes: self.committed_data_max_storage_bytes,
             config_version: self.config_version,
             l1_da_mode: self.l1_da_mode,
             settlement_chain_kind: self.settlement_chain_kind,
@@ -528,8 +512,6 @@ impl TryFrom<ChainConfigV2> for ChainConfig {
             config_version: CURRENT_CONFIG_VERSION,
             chain_name: v2.chain_name,
             chain_id: v2.chain_id,
-            use_committed_data: v2.use_committed_data,
-            committed_data_max_storage_bytes: v2.committed_data_max_storage_bytes,
             l1_da_mode: v2.l1_da_mode,
             settlement_chain_kind: v2.settlement_chain_kind,
             feeder_gateway_url: v2.feeder_gateway_url,
@@ -625,8 +607,6 @@ impl ChainConfig {
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
         Self {
             chain_name: "Starknet Mainnet".into(),
-            use_committed_data: false,
-            committed_data_max_storage_bytes: default_committed_data_storage_bytes(),
             chain_id: ChainId::Mainnet,
             config_version: CURRENT_CONFIG_VERSION,
             // Since L1 here is Ethereum, that supports Blob.
@@ -1038,8 +1018,4 @@ mod tests {
         );
         assert!(chain_config.exec_constants_by_protocol_version(StarknetVersion::new(0, 0, 0, 0)).is_err(),);
     }
-}
-
-fn default_committed_data_storage_bytes() -> u64 {
-    16 * 1024 * 1024 * 1024
 }

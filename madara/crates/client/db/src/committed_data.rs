@@ -3,10 +3,11 @@ use super::*;
 use blockifier::execution::syscalls::committed_data::{
     CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Mutex};
 use tokio::sync::Semaphore;
 
 /// Two imported trees at most; cold proof reads never wait on the import gate.
+// ponytail: a two-entry FIFO needs only a short mutex, not an LRU framework.
 #[derive(Debug)]
 pub(crate) struct SnapshotCache {
     entries: Mutex<VecDeque<Arc<CommittedDataSet>>>,
@@ -40,6 +41,11 @@ impl SnapshotCache {
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
+    /// Node-local execution switch; dataset imports and reads do not require activation.
+    pub fn use_committed_data(&self) -> bool {
+        self.config.use_committed_data
+    }
+
     /// Returns an authenticated proof for an imported root and occupied index.
     ///
     /// Missing roots/unused leaves return `None`; out-of-range indices, corrupt records and
@@ -85,7 +91,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             let _permit = permit;
             let tree = Arc::new(CommittedDataSet::new(values)?);
             anyhow::ensure!(tree.root() == root, "Imported committed-data root mismatch");
-            backend.db.write_committed_data_dataset(&tree, backend.chain_config().committed_data_max_storage_bytes)?;
+            backend.db.write_committed_data_dataset(&tree, backend.config.committed_data_max_storage_bytes)?;
             backend.committed_data_cache.insert(tree)
         })
         .await?
@@ -255,14 +261,12 @@ mod tests {
         let directory = tempfile::TempDir::new().unwrap();
         let first = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
         let second = CommittedDataSet::new(vec![Felt::from(3_u32)]).unwrap();
-        let mut config = ChainConfig::madara_test();
         // One paged dataset fits, two do not (including metadata and keys).
-        config.committed_data_max_storage_bytes = 3000;
         let open = || {
             MadaraBackend::open_rocksdb(
                 directory.path(),
-                Arc::new(config.clone()),
-                MadaraBackendConfig::default(),
+                Arc::new(ChainConfig::madara_test()),
+                MadaraBackendConfig { committed_data_max_storage_bytes: 3000, ..Default::default() },
                 RocksDBConfig::default(),
                 Arc::new(NativeConfig::default()),
             )
@@ -283,12 +287,10 @@ mod tests {
     #[tokio::test]
     async fn committed_data_legacy_storage_usage_still_counts_toward_quota() {
         let directory = tempfile::TempDir::new().unwrap();
-        let mut config = ChainConfig::madara_test();
-        config.committed_data_max_storage_bytes = 3000;
         let backend = MadaraBackend::open_rocksdb(
             directory.path(),
-            Arc::new(config),
-            MadaraBackendConfig::default(),
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig { committed_data_max_storage_bytes: 3000, ..Default::default() },
             RocksDBConfig::default(),
             Arc::new(NativeConfig::default()),
         )

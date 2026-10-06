@@ -408,6 +408,9 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
+    /// Bounded cache of authenticated immutable datasets; empty until import.
+    committed_data_cache: committed_data::SnapshotCache,
+
     /// Custom headers used during block replay to ensure deterministic execution.
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
@@ -419,8 +422,6 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// - **Must verify** that the block number matches before use
     /// - **Must clear** the matching block entry after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
-    committed_data_cache: committed_data::SnapshotCache,
-
     pub custom_headers: Mutex<std::collections::HashMap<u64, CustomHeader>>,
 
     /// Replay boundary metadata and runtime progress.
@@ -444,8 +445,15 @@ pub struct ExecutionReadCacheConfig {
     pub max_memory_bytes: usize,
 }
 
-#[derive(Debug, Default)]
+/// Default node-local logical-byte quota for retained committed datasets (16 GiB).
+pub const DEFAULT_COMMITTED_DATA_STORAGE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+
+#[derive(Debug)]
 pub struct MadaraBackendConfig {
+    /// Permit committed reads during account execution, independently of dataset ingestion.
+    pub use_committed_data: bool,
+    /// Node-local logical-byte quota; immutable datasets are never automatically pruned.
+    pub committed_data_max_storage_bytes: u64,
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
@@ -456,6 +464,20 @@ pub struct MadaraBackendConfig {
     pub skip_migration_backup: bool,
     /// Execution-time read cache for hot contract state.
     pub execution_read_cache: ExecutionReadCacheConfig,
+}
+
+impl Default for MadaraBackendConfig {
+    fn default() -> Self {
+        Self {
+            use_committed_data: false,
+            committed_data_max_storage_bytes: DEFAULT_COMMITTED_DATA_STORAGE_BYTES,
+            flush_every_n_blocks: None,
+            save_preconfirmed: false,
+            unsafe_starting_block: None,
+            skip_migration_backup: false,
+            execution_read_cache: Default::default(),
+        }
+    }
 }
 
 mod backend;

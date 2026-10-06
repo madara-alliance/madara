@@ -14,6 +14,8 @@
     "rpc": false
   },
   "backend_params": {
+    "use_committed_data": false,
+    "committed_data_max_storage_bytes": 17179869184,
     "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,
