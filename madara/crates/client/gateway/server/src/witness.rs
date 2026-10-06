@@ -112,15 +112,13 @@ impl SnosWitnessService {
                     }
                     joined = builds.join_next(), if !builds.is_empty() => {
                         match joined {
-                            Some(Ok((block_number, result))) => {
-                                if let Err(error) = result {
-                                    tracing::error!(block_number, error = %error, "Failed to build SNOS block witness");
-                                }
+                            Some(Ok((block_number, Err(error)))) => {
+                                tracing::error!(block_number, error = %error, "Failed to build SNOS block witness");
                             }
                             Some(Err(error)) => {
                                 tracing::error!(error = %error, "SNOS block witness task failed");
                             }
-                            None => {}
+                            Some(Ok((_, Ok(_)))) | None => {}
                         }
                     }
                 }
