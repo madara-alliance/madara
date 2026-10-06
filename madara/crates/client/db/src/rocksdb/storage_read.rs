@@ -12,6 +12,18 @@ impl MadaraStorageRead for RocksDBStorage {
         self.read_committed_data_witness(root, index)
     }
 
+    fn list_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {
+        self.read_committed_data_roots(after)
+    }
+
+    fn get_committed_data_count(&self, root: Felt) -> Result<Option<u32>> {
+        self.read_committed_data_count(root)
+    }
+
+    fn get_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<Felt>)>> {
+        self.read_committed_data_page(root, start)
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {

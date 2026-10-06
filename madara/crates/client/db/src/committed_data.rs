@@ -118,6 +118,29 @@ mod tests {
     use crate::rocksdb::RocksDBConfig;
 
     #[tokio::test]
+    async fn committed_data_catalog_pages_existing_roots_and_values_without_schema_rewrite() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mut roots = Vec::new();
+        for value in 0..65_u32 {
+            let values = vec![Felt::from(value)];
+            let root = CommittedDataSet::new(values.clone()).unwrap().root();
+            backend.import_committed_data_snapshot(root, values).await.unwrap();
+            roots.push(root);
+        }
+        roots.sort_unstable();
+        assert_eq!(backend.db.list_committed_data_roots(None).unwrap(), roots[..64]);
+        assert_eq!(backend.db.list_committed_data_roots(Some(roots[63])).unwrap(), roots[64..]);
+        assert!(backend.db.list_committed_data_roots(Some(roots[64])).unwrap().is_empty());
+        let values: Vec<_> = (0..4097_u32).map(Felt::from).collect();
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
+        assert_eq!(backend.db.get_committed_data_page(root, 0).unwrap(), Some((4097, values[..4096].to_vec())));
+        assert_eq!(backend.db.get_committed_data_page(root, 4096).unwrap(), Some((4097, values[4096..].to_vec())));
+        assert!(backend.db.get_committed_data_page(root, 1).is_err());
+        assert!(backend.db.get_committed_data_page(root, 8192).is_err());
+    }
+
+    #[tokio::test]
     async fn committed_data_snapshot_persists_and_authenticates_after_reopen() {
         let directory = tempfile::TempDir::new().unwrap();
         let values = vec![Felt::from(123_u32), Felt::from(456_u32), Felt::MAX];

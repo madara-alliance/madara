@@ -57,11 +57,12 @@ where
         async move {
             let now = std::time::Instant::now();
 
-            tracing::trace!(
-                target: "rpc_raw_request",
-                "{:?}",
-                req.params().as_str()
-            );
+            // Private datasets and witness requests must not enter raw RPC parameter logs.
+            let private_data =
+                req.method.ends_with("_importCommittedDataSet") || req.method.ends_with("_getCommittedDataWitness");
+            if !private_data {
+                tracing::trace!(target: "rpc_raw_request", "{:?}", req.params().as_str());
+            }
 
             metrics.on_call(&req);
             let rp = inner.call(req.clone()).await;
@@ -80,11 +81,9 @@ where
                 "{method} {status} {res_len} - {response_time} micros"
             );
 
-            tracing::trace!(
-                target: "rpc_raw_response",
-                "{:?}",
-                rp.as_result()
-            );
+            if !private_data {
+                tracing::trace!(target: "rpc_raw_response", "{:?}", rp.as_result());
+            }
 
             metrics.on_response(&req, &rp, now);
 

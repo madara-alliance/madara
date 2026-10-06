@@ -115,6 +115,21 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }
 
+    /// Lists at most 64 complete root-keyed datasets strictly after the cursor.
+    fn list_committed_data_roots(&self, _after: Option<Felt>) -> Result<Vec<Felt>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the durable occupied count without reading value pages.
+    fn get_committed_data_count(&self, _root: Felt) -> Result<Option<u32>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
+    /// Returns the occupied count and up to 4096 values at an aligned offset.
+    fn get_committed_data_page(&self, _root: Felt, _start: u32) -> Result<Option<(u32, Vec<Felt>)>> {
+        anyhow::bail!("Committed-data storage is unsupported by this backend")
+    }
+
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;

@@ -28,7 +28,8 @@ pub struct SNOSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_USE_COMMITTED_DATA", long, default_value_t = false)]
     pub use_committed_data: bool,
 
-    /// Madara admin RPC supplying exact-root witnesses to SNOS; separate from Pathfinder.
+    /// Madara feeder-gateway base URL ending in /feeder_gateway/, supplying exact-root witnesses.
+    /// Separate from Pathfinder. Legacy JSON-RPC witness endpoints remain supported by SNOS.
     #[arg(env = "MADARA_ORCHESTRATOR_COMMITTED_DATA_RPC_URL", long, requires = "use_committed_data", value_parser = parse_committed_data_rpc_url)]
     pub committed_data_rpc_url: Option<Url>,
 

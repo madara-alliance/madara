@@ -1,4 +1,4 @@
-//! Versioned, paged private datasets. A cold read touches at most 21 small records.
+//! Versioned, paged immutable datasets. A cold read touches at most 21 small records.
 use super::*;
 use blockifier::execution::syscalls::committed_data::{
     leaf, CommittedDataSet, CommittedDataWitness, COMMITTED_DATA_TREE_HEIGHT, MAX_COMMITTED_DATA_VALUES,
@@ -96,6 +96,74 @@ fn records(dataset: &CommittedDataSet) -> impl Iterator<Item = (Vec<u8>, Vec<u8>
 }
 
 impl RocksDBStorage {
+    /// Seek over complete roots without scanning their value/hash pages. Each response is bounded.
+    /// Cursors are lexical, not a durable high watermark: readers must rescan from the start.
+    pub(super) fn read_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        match after {
+            Some(root) => iterator.seek(key(root, METADATA_LEVEL, u32::MAX)),
+            None => iterator.seek(PREFIX),
+        }
+        let mut roots = Vec::new();
+        while let Some(raw) = iterator.key().filter(|raw| raw.starts_with(PREFIX)) {
+            anyhow::ensure!(raw.len() == PREFIX.len() + 37, "Invalid committed-data key");
+            let root = canonical_felt(&raw[PREFIX.len()..PREFIX.len() + 32])?;
+            let metadata = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?
+                .ok_or_else(|| anyhow::anyhow!("Incomplete committed-data dataset"))?;
+            count(&metadata)?;
+            roots.push(root);
+            if roots.len() == 64 {
+                break;
+            }
+            iterator.seek(key(root, METADATA_LEVEL, u32::MAX));
+        }
+        iterator.status()?;
+        Ok(roots)
+    }
+
+    /// Presence probes are a single small metadata read, independent of dataset size.
+    pub(super) fn read_committed_data_count(&self, root: Felt) -> Result<Option<u32>> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        self.inner
+            .db
+            .get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?
+            .map(|bytes| count(&bytes).map(|count| count as u32))
+            .transpose()
+    }
+
+    /// Reads a bounded slice of raw values. Replicas authenticate the assembled dataset before import.
+    pub(super) fn read_committed_data_page(&self, root: Felt, start: u32) -> Result<Option<(u32, Vec<Felt>)>> {
+        anyhow::ensure!(
+            start % 4096 == 0 && (start as usize) < MAX_COMMITTED_DATA_VALUES,
+            "Invalid committed-data page offset"
+        );
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let Some(metadata) = self.inner.db.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
+        let count = count(&metadata)?;
+        anyhow::ensure!((start as usize) < count, "Committed-data page outside dataset");
+        let end = (start as usize + 4096).min(count);
+        let mut values = Vec::with_capacity(end - start as usize);
+        for offset in (start as usize..end).step_by(PAGE_VALUES) {
+            let bytes = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, key(root, 0, (offset / PAGE_VALUES) as u32))?
+                .ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
+            anyhow::ensure!(
+                bytes.len() == (count - offset).min(PAGE_VALUES) * 32,
+                "Invalid committed-data page length"
+            );
+            for raw in bytes.chunks_exact(32) {
+                values.push(canonical_felt(raw)?);
+            }
+        }
+        Ok(Some((count as u32, values)))
+    }
+
     /// Reads at most one metadata record and 20 bounded page records, without rebuilding a tree.
     pub(super) fn read_committed_data_witness(&self, root: Felt, index: u32) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);

@@ -357,6 +357,10 @@ async fn main() -> anyhow::Result<()> {
             deferred_service_start.push(MadaraServiceId::RpcAdmin);
         }
 
+        if run_cmd.rpc_params.rpc_committed_data {
+            deferred_service_start.push(MadaraServiceId::RpcCommittedData);
+        }
+
         if run_cmd.gateway_params.any_enabled() {
             deferred_service_start.push(MadaraServiceId::Gateway);
         }
@@ -476,6 +480,9 @@ async fn main() -> anyhow::Result<()> {
         service_mempool.mempool(),
     );
 
+    let service_rpc_committed_data =
+        RpcService::committed_data(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone(), tx_lookup.clone());
+
     // Feeder gateway
 
     let service_gateway = GatewayService::new(
@@ -504,6 +511,7 @@ async fn main() -> anyhow::Result<()> {
         .with(service_block_production)?
         .with(service_rpc_user)?
         .with(service_rpc_admin)?
+        .with(service_rpc_committed_data)?
         .with(service_gateway)?;
 
     if let Some(service_external_db) = service_external_db {
@@ -542,6 +550,10 @@ async fn main() -> anyhow::Result<()> {
 
     if run_cmd.rpc_params.rpc_admin && !warp_update_receiver {
         app.activate(MadaraServiceId::RpcAdmin);
+    }
+
+    if run_cmd.rpc_params.rpc_committed_data && !warp_update_receiver {
+        app.activate(MadaraServiceId::RpcCommittedData);
     }
 
     if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {
