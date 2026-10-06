@@ -14,6 +14,7 @@ use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction, TransactionLoo
 use std::{convert::Infallible, sync::Arc};
 
 // Main router to redirect to the appropriate sub-router
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn main_router(
     req: Request<Incoming>,
     path: &str,
