@@ -516,12 +516,13 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
         tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={snapshot_block:?}");
 
         let snapshot_block = snapshot_block?;
-        if snapshot_block <= requested_block {
-            // Preserve Bonsai's normal forward-log replay for a snapshot at or before the
-            // requested revision. This also carries unchanged state forward naturally when a
-            // range contains no writes. Only a future snapshot needs Madara's inverse overlay.
+        if snapshot_block < requested_block {
+            // The snapshot is labelled with the latest revision that actually changed this trie,
+            // not necessarily the latest confirmed block. A later block with no trie changes has
+            // exactly the same state, so expose the pinned snapshot at the requested revision and
+            // prevent Bonsai from trying to replay a non-existent log range.
             return Some((
-                BasicId::new(snapshot_block),
+                requested_id,
                 BonsaiTransaction {
                     snapshot,
                     column_mapping: self.column_mapping.clone(),
