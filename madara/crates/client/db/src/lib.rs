@@ -447,13 +447,20 @@ pub struct ExecutionReadCacheConfig {
 
 /// Default node-local logical-byte quota for retained committed datasets (16 GiB).
 pub const DEFAULT_COMMITTED_DATA_STORAGE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+/// Keep this many additional L2 blocks after a block settles on L1 before pruning its retired roots.
+pub const DEFAULT_COMMITTED_DATA_RETENTION_BLOCKS: u64 = 1_000;
 
 #[derive(Debug)]
 pub struct MadaraBackendConfig {
     /// Permit committed reads during account execution, independently of dataset ingestion.
     pub use_committed_data: bool,
-    /// Node-local logical-byte quota; immutable datasets are never automatically pruned.
+    /// Node-local logical-byte quota for retained committed datasets.
     pub committed_data_max_storage_bytes: u64,
+    /// L1-settled L2 block buffer retained after a root is replaced.
+    pub committed_data_retention_blocks: u64,
+    /// Complete set of Oracle contracts whose canonical `CommittedRootPublished` events drive
+    /// root lifecycles. An empty list disables pruning.
+    pub committed_data_oracle_addresses: Vec<Felt>,
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
@@ -471,6 +478,8 @@ impl Default for MadaraBackendConfig {
         Self {
             use_committed_data: false,
             committed_data_max_storage_bytes: DEFAULT_COMMITTED_DATA_STORAGE_BYTES,
+            committed_data_retention_blocks: DEFAULT_COMMITTED_DATA_RETENTION_BLOCKS,
+            committed_data_oracle_addresses: Vec::new(),
             flush_every_n_blocks: None,
             save_preconfirmed: false,
             unsafe_starting_block: None,
