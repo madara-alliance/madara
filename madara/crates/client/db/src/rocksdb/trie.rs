@@ -1,6 +1,6 @@
 use crate::metrics::metrics;
 use crate::rocksdb::column::Column;
-use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
+use crate::rocksdb::snapshots::{RollbackOverlay, RollbackOverlayKey, SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
 use bonsai_trie::id::Id;
 use bonsai_trie::{
@@ -37,6 +37,8 @@ pub enum TrieError {
     RocksDb(#[from] rocksdb::Error),
     #[error("Cannot delete an unbounded trie-log prefix")]
     UnboundedPrefix,
+    #[error("Malformed Bonsai trie-log key")]
+    MalformedTrieLogKey,
 }
 impl DBError for TrieError {}
 
@@ -421,7 +423,7 @@ pub struct BonsaiTransaction {
     /// The changes on top of the snapshot.
     /// Key is (column id, key) and value is Some(value) if the change is an insert, and None
     /// if the change is a deletion of the key.
-    changed: BTreeMap<(u8, ByteVec), Option<ByteVec>>,
+    changed: Arc<RollbackOverlay>,
     column_mapping: DatabaseKeyMapping,
 }
 
@@ -471,7 +473,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        self.changed.insert(to_changed_key(key), Some(value.into()));
+        Arc::make_mut(&mut self.changed).insert(to_changed_key(key), Some(value.into()));
         Ok(None)
     }
 
@@ -480,7 +482,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        self.changed.insert(to_changed_key(key), None);
+        Arc::make_mut(&mut self.changed).insert(to_changed_key(key), None);
         Ok(None)
     }
 
@@ -508,20 +510,45 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
     #[tracing::instrument(skip(self))]
     fn transaction(&self, requested_id: BasicId) -> Option<(BasicId, Self::Transaction<'_>)> {
         tracing::trace!("Generating RocksDB transaction");
-        let (id, snapshot) = self.snapshots.get_closest(requested_id.as_u64());
+        let requested_block = requested_id.as_u64();
+        let (snapshot_block, snapshot) = self.snapshots.get_closest(requested_block);
 
-        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={id:?}");
+        tracing::debug!("Snapshot for requested block_id={requested_id:?} => got block_id={snapshot_block:?}");
 
-        id.map(|id| {
-            (
-                BasicId::new(id),
+        let snapshot_block = snapshot_block?;
+        if snapshot_block < requested_block {
+            // The snapshot is labelled with the latest revision that actually changed this trie,
+            // not necessarily the latest confirmed block. A later block with no trie changes has
+            // exactly the same state, so expose the pinned snapshot at the requested revision and
+            // prevent Bonsai from trying to replay a non-existent log range.
+            return Some((
+                requested_id,
                 BonsaiTransaction {
                     snapshot,
                     column_mapping: self.column_mapping.clone(),
-                    changed: Default::default(),
+                    changed: Arc::new(BTreeMap::new()),
                 },
-            )
-        })
+            ));
+        }
+
+        // Madara deliberately chooses the closest snapshot at or after the requested block and
+        // rolls it backwards. Bonsai's generic transaction helper only iterates forward from the
+        // returned snapshot id, so a future snapshot would otherwise perform no rollback at all.
+        // Apply inverse trie-log values here and report the transaction as already positioned at
+        // the requested revision; this also makes live full-node snapshots with trie runahead safe.
+        let cache_key =
+            RollbackOverlayKey { column: self.column_mapping.log.rocksdb_name, requested_block, snapshot_block };
+        let changed = match self.snapshots.rollback_overlay(cache_key, || {
+            rollback_snapshot_changes(&snapshot, &self.column_mapping, requested_block, snapshot_block)
+        }) {
+            Ok(changed) => changed,
+            Err(error) => {
+                tracing::error!(requested_block, snapshot_block, %error, "Failed to roll back historical trie snapshot");
+                return None;
+            }
+        };
+
+        Some((requested_id, BonsaiTransaction { snapshot, column_mapping: self.column_mapping.clone(), changed }))
     }
 
     fn merge<'a>(&mut self, _transaction: Self::Transaction<'a>) -> Result<(), Self::DatabaseError>
@@ -532,10 +559,81 @@ impl BonsaiPersistentDatabase<BasicId> for BonsaiDB {
     }
 }
 
+/// Builds the inverse overlay required to move a future RocksDB snapshot to `requested_block`.
+///
+/// A commit at revision `N` stores the values that existed before `N` under the `N` trie-log
+/// prefix. Revisions therefore have to be applied newest-to-oldest for
+/// `(requested_block, snapshot_block]`. Within one revision, an old-value row restores the value;
+/// a key with only a new-value row did not exist before that revision and becomes a tombstone.
+fn rollback_snapshot_changes(
+    snapshot: &SnapshotRef,
+    column_mapping: &DatabaseKeyMapping,
+    requested_block: u64,
+    snapshot_block: u64,
+) -> Result<RollbackOverlay, TrieError> {
+    const NEW_VALUE: u8 = 0;
+    const OLD_VALUE: u8 = 1;
+    const ID_BYTES: usize = std::mem::size_of::<u64>();
+    const LOG_KEY_SUFFIX_BYTES: usize = 2;
+
+    let mut changed = BTreeMap::new();
+    let Some(first_reverted_revision) = requested_block.checked_add(1) else {
+        return Ok(changed);
+    };
+
+    for revision in (first_reverted_revision..=snapshot_block).rev() {
+        let prefix = revision.to_be_bytes();
+        let mut readopts = rocksdb::ReadOptions::default();
+        readopts.set_prefix_same_as_start(true);
+        let iter = snapshot
+            .iterator_cf(column_mapping.log.clone(), readopts, IteratorMode::From(&prefix, Direction::Forward))
+            .into_iter_items(|(key, value)| (key.to_vec(), value.to_vec()));
+        let mut revision_changes = BTreeMap::new();
+
+        for row in iter {
+            let (serialized_key, value) = row?;
+            if !serialized_key.starts_with(&prefix) {
+                break;
+            }
+            if serialized_key.len() < ID_BYTES + 1 + LOG_KEY_SUFFIX_BYTES || serialized_key[ID_BYTES] != 0 {
+                return Err(TrieError::MalformedTrieLogKey);
+            }
+
+            let key_type = serialized_key[serialized_key.len() - 2];
+            if key_type > 1 {
+                return Err(TrieError::MalformedTrieLogKey);
+            }
+            let change_type = serialized_key[serialized_key.len() - 1];
+            let key: ByteVec = serialized_key[ID_BYTES + 1..serialized_key.len() - LOG_KEY_SUFFIX_BYTES].into();
+            let changed_key = (key_type, key);
+
+            match change_type {
+                // NEW is encountered before OLD in RocksDB key order. It is a tombstone only
+                // when no OLD row for the same key follows in this revision.
+                NEW_VALUE => {
+                    revision_changes.entry(changed_key).or_insert(None);
+                }
+                OLD_VALUE => {
+                    revision_changes.insert(changed_key, Some(ByteVec::from(value.as_slice())));
+                }
+                _ => return Err(TrieError::MalformedTrieLogKey),
+            }
+        }
+
+        // Iteration is newest-to-oldest, so an older revision intentionally overwrites the
+        // inverse value selected for the same key by a newer revision.
+        changed.extend(revision_changes);
+    }
+
+    Ok(changed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::rocksdb::RocksDBConfig;
+    use bitvec::view::AsBits;
+    use starknet_types_core::felt::Felt;
 
     #[test]
     fn trie_log_revision_valid_prefix_returns_revision() {
@@ -557,6 +655,57 @@ mod tests {
         assert_eq!(prefix_upper_bound(&[0x00, 0x12, 0x34]), Some(vec![0x00, 0x12, 0x35]));
         assert_eq!(prefix_upper_bound(&[0x00, 0x12, 0xff]), Some(vec![0x00, 0x13]));
         assert_eq!(prefix_upper_bound(&[0xff, 0xff]), None);
+    }
+
+    #[test]
+    fn future_snapshot_is_rolled_back_to_requested_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = RocksDBConfig { max_kept_snapshots: Some(1), snapshot_interval: 1, ..RocksDBConfig::default() };
+        let storage = RocksDBStorage::open(directory.path(), config).unwrap();
+        let identifier = b"contract";
+        let key_bytes = Felt::ONE.to_bytes_be();
+        let key = key_bytes.as_bits()[5..].to_owned();
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(identifier, &key, &Felt::from(11_u64)).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+        let root_at_zero = trie.root_hash(identifier).unwrap();
+
+        trie.insert(identifier, &key, &Felt::from(22_u64)).unwrap();
+        trie.commit(BasicId::new(1)).unwrap();
+        storage.snapshots.set_new_head(1);
+        assert_ne!(trie.root_hash(identifier).unwrap(), root_at_zero);
+        assert_eq!(storage.snapshots.inventory().oldest_historical, Some(1));
+
+        let historical = trie
+            .get_transactional_state(BasicId::new(0), trie.get_config())
+            .unwrap()
+            .expect("revision zero should be reconstructable from the future snapshot");
+        assert_eq!(historical.get(identifier, &key).unwrap(), Some(Felt::from(11_u64)));
+        assert_eq!(historical.root_hash(identifier).unwrap(), root_at_zero);
+    }
+
+    #[test]
+    fn unchanged_state_is_carried_forward_past_latest_trie_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(directory.path(), RocksDBConfig::default()).unwrap();
+        let identifier = b"contract";
+        let key_bytes = Felt::ONE.to_bytes_be();
+        let key = key_bytes.as_bits()[5..].to_owned();
+        let mut trie = storage.contract_storage_trie();
+
+        trie.insert(identifier, &key, &Felt::from(11_u64)).unwrap();
+        trie.commit(BasicId::new(0)).unwrap();
+        storage.snapshots.set_new_head(0);
+        let root_at_zero = trie.root_hash(identifier).unwrap();
+
+        let carried = trie
+            .get_transactional_state(BasicId::new(1), trie.get_config())
+            .unwrap()
+            .expect("unchanged state should carry forward to a later block");
+        assert_eq!(carried.get(identifier, &key).unwrap(), Some(Felt::from(11_u64)));
+        assert_eq!(carried.root_hash(identifier).unwrap(), root_at_zero);
     }
 
     #[test]

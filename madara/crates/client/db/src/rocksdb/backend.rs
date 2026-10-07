@@ -122,6 +122,11 @@ pub(super) fn ensure_reorg_target_root_matches(
 }
 
 impl RocksDBStorage {
+    #[cfg(test)]
+    pub(crate) fn snapshot_inventory(&self) -> snapshots::SnapshotInventory {
+        self.snapshots.inventory()
+    }
+
     /// Builds descriptors for every column family already present on disk.
     ///
     /// Known Madara columns keep their tuned options. Unknown columns are opened
@@ -169,13 +174,21 @@ impl RocksDBStorage {
             StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(block_n),
             StoredHeadProjectionWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
         });
+        // The sync state pipeline is intentionally allowed to run ahead of confirmed block
+        // persistence. The RocksDB trie therefore corresponds to the durable trie cursor, not
+        // necessarily to the externally visible confirmed head. Historical Bonsai transactions
+        // must start from the revision represented by the snapshot contents; labelling a runahead
+        // trie snapshot with the older confirmed height skips inverse logs and produces invalid
+        // storage proofs after a restart (notably for live EBS snapshots of full nodes).
+        let snapshot_head_block_n = inner.get_latest_applied_trie_update()?.or(head_block_n);
         tracing::debug!(
-            "opened_db_snapshot_config head_block_n={head_block_n:?} max_kept_snapshots={:?} snapshot_interval={}",
+            "opened_db_snapshot_config confirmed_head_block_n={head_block_n:?} snapshot_head_block_n={snapshot_head_block_n:?} max_kept_snapshots={:?} snapshot_interval={}",
             config.max_kept_snapshots,
             config.snapshot_interval
         );
 
-        let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
+        let snapshot =
+            Snapshots::new(inner.clone(), snapshot_head_block_n, config.max_kept_snapshots, config.snapshot_interval);
 
         let storage = Self {
             inner,

@@ -6,6 +6,7 @@ use super::{
     },
 };
 use crate::helpers::{block_view_from_params, not_found_response, view_from_params};
+use crate::witness::SnosWitnessService;
 use anyhow::Context;
 use bincode::Options;
 use bytes::Buf;
@@ -328,6 +329,58 @@ pub async fn handle_get_block_bouncer_config(
     let bouncer_weights = block.get_bouncer_weights()?;
 
     Ok(create_json_response(hyper::StatusCode::OK, &bouncer_weights))
+}
+
+pub async fn handle_get_block_witness_status(
+    req: Request<Incoming>,
+    witness_service: Option<Arc<SnosWitnessService>>,
+) -> Result<Response<String>, GatewayError> {
+    let witness_service = witness_service.ok_or(GatewayError::Unsupported)?;
+    let params = get_params_from_request(&req);
+    let start_block = params.get("startBlock").or_else(|| params.get("blockNumber")).ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field startBlock or blockNumber is required.".into())
+    })?;
+    let start_block = start_block
+        .parse::<u64>()
+        .map_err(|error| StarknetError::new(StarknetErrorCode::MalformedRequest, error.to_string()))?;
+    let end_block = params
+        .get("endBlock")
+        .map(|value| value.parse::<u64>())
+        .transpose()
+        .map_err(|error| StarknetError::new(StarknetErrorCode::MalformedRequest, error.to_string()))?
+        .unwrap_or(start_block);
+    if end_block.saturating_sub(start_block) >= 10_000 {
+        return Err(StarknetError::new(
+            StarknetErrorCode::MalformedRequest,
+            "SNOS witness status ranges are limited to 10,000 blocks.".into(),
+        )
+        .into());
+    }
+
+    let status = match witness_service.range_status(start_block, end_block).await {
+        Ok(status) => status,
+        Err(crate::witness::SnosWitnessAvailabilityError::OutsideRetention { .. }) => {
+            return Ok(create_json_response(
+                StatusCode::GONE,
+                &serde_json::json!({"ready": false, "error": "requested range is outside witness retention"}),
+            ));
+        }
+        Err(crate::witness::SnosWitnessAvailabilityError::NoWitnessableHead) => {
+            return Ok(create_json_response(
+                StatusCode::ACCEPTED,
+                &serde_json::json!({"ready": false, "error": "no trie-applied confirmed head is available yet"}),
+            ));
+        }
+        Err(error) => return Err(anyhow::Error::new(error).into()),
+    };
+    let response_status = if status.ready {
+        StatusCode::OK
+    } else if start_block < status.generation_floor {
+        StatusCode::GONE
+    } else {
+        StatusCode::ACCEPTED
+    };
+    Ok(create_json_response(response_status, &status))
 }
 
 pub async fn handle_get_block(

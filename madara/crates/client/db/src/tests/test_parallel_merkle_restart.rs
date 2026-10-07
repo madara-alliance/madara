@@ -576,7 +576,8 @@ fn startup_rolls_first_boundary_back_to_empty_base_before_replaying_confirmed_bl
 #[test]
 fn full_node_startup_preserves_independent_sync_pipeline_progress() {
     let temp_dir = tempfile::TempDir::new().expect("tempdir");
-    let (confirmed_root, runahead_root) = {
+    let contract_address = Felt::from(10_000_u64);
+    let (confirmed_root, confirmed_storage_root, runahead_root) = {
         let backend = open_backend_without_trie_reconciliation(temp_dir.path());
         backend
             .write_access()
@@ -589,17 +590,28 @@ fn full_node_startup_preserves_independent_sync_pipeline_progress() {
             .expect("confirmed block 0 should exist")
             .header
             .global_state_root;
+        let confirmed_storage_root = backend
+            .db
+            .contract_storage_trie()
+            .root_hash(&contract_address.to_bytes_be())
+            .expect("reading confirmed storage root should succeed");
+
+        let mut runahead_diff = synthetic_state_diff(1);
+        runahead_diff.storage_diffs.push(ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::from(99_999_u64) }],
+        });
 
         let (runahead_root, _) = backend
             .write_access()
-            .apply_to_global_trie(1, [&synthetic_state_diff(1)], backend.chain_config().latest_protocol_version)
+            .apply_to_global_trie(1, [&runahead_diff], backend.chain_config().latest_protocol_version)
             .expect("applying an unsealed sync batch should succeed");
         backend.write_latest_applied_trie_update(&Some(1)).expect("writing trie runahead cursor should succeed");
         backend.write_snap_sync_latest_block(&Some(1)).expect("writing SnapSync runahead cursor should succeed");
         backend.flush().expect("flushing full-node runahead fixture should succeed");
 
         assert_ne!(runahead_root, confirmed_root, "fixture must leave trie state ahead of the confirmed head");
-        (confirmed_root, runahead_root)
+        (confirmed_root, confirmed_storage_root, runahead_root)
     };
 
     let reopened = open_backend_without_trie_reconciliation(temp_dir.path());
@@ -609,6 +621,21 @@ fn full_node_startup_preserves_independent_sync_pipeline_progress() {
     assert_ne!(runahead_root, confirmed_root);
     assert_eq!(reopened.get_latest_applied_trie_update().expect("reading trie cursor"), Some(1));
     assert_eq!(reopened.get_snap_sync_latest_block().expect("reading SnapSync cursor"), Some(1));
+    assert_eq!(
+        reopened.db.snapshot_inventory().head_block_n,
+        Some(1),
+        "the RocksDB snapshot must be labelled with the trie revision it actually contains"
+    );
+    let storage_trie = reopened.db.contract_storage_trie();
+    let historical = storage_trie
+        .get_transactional_state(BasicId::new(0), storage_trie.get_config())
+        .expect("creating historical storage view should succeed")
+        .expect("block 0 should be retained");
+    assert_eq!(
+        historical.root_hash(&contract_address.to_bytes_be()).expect("reading historical storage root should succeed"),
+        confirmed_storage_root,
+        "historical proof state must roll back from the actual runahead trie revision"
+    );
 }
 
 #[test]

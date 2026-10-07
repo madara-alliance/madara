@@ -69,7 +69,7 @@ orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["gzip", "json"] }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -93,6 +93,7 @@ tokio-util = { workspace = true }
 url = { workspace = true }
 utils-mock-atlantic-server = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
+zip = { workspace = true }
 
 aws-sdk-iam = { workspace = true }
 aws-sdk-scheduler = { workspace = true }

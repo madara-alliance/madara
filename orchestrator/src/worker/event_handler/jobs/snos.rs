@@ -13,14 +13,14 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
-use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use generate_pie::generate_pie;
+use generate_pie::error::PieGenerationError;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
-use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
+use generate_pie::types::pie::{PieGenerationInput, PieGenerationTiming};
+use generate_pie::{execute_prepared_pie, prepare_pie, prepare_pie_from_witness, PreparedPieGeneration, RpcWitness};
 use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -28,12 +28,26 @@ use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::Felt;
 use url::Url;
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tokio::sync::Semaphore;
+use tracing::{debug, error, info, warn, Span};
 
 /// Delay before retrying when SNOS RPC is unavailable (in seconds)
 const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
+
+/// Only one job per process may own a full CairoPIE/finalization footprint.
+static SNOS_FINALIZATION_SEMAPHORE: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(1)));
+static SNOS_WITNESS_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
+struct FinalizedSnosOutput {
+    timing: PieGenerationTiming,
+    cairo_pie_zip_bytes: bytes::Bytes,
+    snos_output: Vec<Felt>,
+    program_output: Vec<Felt252>,
+    fact_hash: String,
+    n_steps: usize,
+}
 
 /// Check if SNOS RPC is healthy by calling chain_id.
 /// Returns true if the RPC is reachable and responds, false otherwise.
@@ -135,57 +149,46 @@ impl JobHandlerTrait for SnosJobHandler {
             public_keys,
         };
 
-        let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
-            error!(error = %e, "SNOS execution failed");
-            SnosError::SnosExecutionError { internal_id, source: e }
-        })?;
-        debug!("generate_pie function completed successfully");
-
-        let cairo_pie = snos_output.output.cairo_pie;
-
-        // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
-        //       maybe we can add our own struct meanwhile in the snos code? something to think about!!!
-        let os_output = snos_output.output.raw_os_output;
-        // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
-        // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
-        // calldata based DA.
-        // So in case of KZG flag == 0 :
-        //      we calculate the l2 fact
-        // And in case of KZG flag == 1 :
-        //      we calculate the fact info
-        let (fact_hash, program_output) = if os_output.get(8) == Some(&Felt::ZERO) {
-            debug!("Using calldata for settlement layer");
-            // Get the program output from CairoPie
-            let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
-                error!(error = %e, "Failed to get fact hash");
-                JobError::FactError(FactError::L2FactCompute)
+        let (prepared, witness_fetch_time_ms, witness_response_count) =
+            prepare_snos(input, config.snos_config().snos_witness_url.as_ref()).await.map_err(|e| {
+                error!(error = %e, "SNOS preparation failed");
+                SnosError::SnosExecutionError { internal_id, source: e }
             })?;
-            let program_output = get_program_output(&cairo_pie, false).map_err(|e| {
-                error!(error = %e, "Failed to get program output");
-                JobError::FactError(FactError::ProgramOutputCompute)
-            })?;
-            (fact_hash, program_output)
-        } else if os_output.get(8) == Some(&Felt::ONE) {
-            debug!("Using blobs for settlement layer");
-            // Get the program output from CairoPie
-            let fact_info = get_fact_info(&cairo_pie, None, false)?;
-            (fact_info.fact, fact_info.program_output)
-        } else {
-            error!("Invalid KZG flag");
-            return Err(JobError::from(SnosError::UnsupportedKZGFlag));
-        };
+        let finalized =
+            run_in_snos_finalization_lane(move || finalize_snos(prepared, internal_id)).await.map_err(|source| {
+                SnosError::SnosExecutionError {
+                    internal_id,
+                    source: generate_pie::error::PieGenerationError::TaskJoin(source),
+                }
+            })??;
+        debug!("SNOS finalization completed successfully");
 
-        debug!("Fact info calculated successfully");
+        let FinalizedSnosOutput { timing, cairo_pie_zip_bytes, snos_output, program_output, fact_hash, n_steps } =
+            finalized;
+        let PieGenerationTiming {
+            total_processing_time_ms,
+            rpc_wait_time_ms,
+            execution_time_ms,
+            finalization_wait_time_ms,
+            rpc_calls_by_method,
+        } = timing;
 
         // Update the metadata with new paths and fact info
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
-            metadata.snos_fact = Some(fact_hash.to_string());
-            metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
+            metadata.snos_fact = Some(fact_hash);
+            metadata.snos_n_steps = Some(n_steps);
+            metadata.snos_total_processing_time_ms = Some(total_processing_time_ms);
+            metadata.snos_rpc_wait_time_ms = Some(rpc_wait_time_ms);
+            metadata.snos_execution_time_ms = Some(execution_time_ms);
+            metadata.snos_finalization_wait_time_ms = Some(finalization_wait_time_ms);
+            metadata.snos_rpc_calls_by_method = Some(rpc_calls_by_method);
+            metadata.snos_witness_fetch_time_ms = witness_fetch_time_ms;
+            metadata.snos_witness_response_count = witness_response_count;
         }
 
         debug!("Storing SNOS outputs");
-        // Store the Cairo Pie path
-        self.store(internal_id, config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
+        self.store(internal_id, config.storage(), &snos_metadata, cairo_pie_zip_bytes, snos_output, program_output)
+            .await?;
 
         MetricsRecorder::record_snos_job_processing_time(start_time.elapsed().as_secs_f64());
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
@@ -215,6 +218,35 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn check_ready_to_process(&self, config: Arc<Config>, job: &JobItem) -> Result<(), Duration> {
+        if let Some(witness_url) = config.snos_config().snos_witness_url.as_ref() {
+            let snos_metadata: SnosMetadata = match job.metadata.specific.clone().try_into() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    warn!(%error, job_id = %job.id, "Cannot determine SNOS witness range; job will be requeued");
+                    return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
+                }
+            };
+            let ready = match witness_url.join("feeder_gateway/get_block_witness_status") {
+                Ok(url) => SNOS_WITNESS_HTTP_CLIENT
+                    .get(url)
+                    .query(&[("startBlock", snos_metadata.start_block), ("endBlock", snos_metadata.end_block)])
+                    .send()
+                    .await
+                    .is_ok_and(|response| response.status() == reqwest::StatusCode::OK),
+                Err(_) => false,
+            };
+            if ready {
+                return Ok(());
+            }
+            warn!(
+                witness_url = %witness_url,
+                start_block = snos_metadata.start_block,
+                end_block = snos_metadata.end_block,
+                "SNOS witness range is not ready; job will be requeued"
+            );
+            return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
+        }
+
         let snos_url = rpc_for_snos_attempt(config.snos_config(), job);
 
         if !check_snos_health(snos_url).await {
@@ -228,6 +260,44 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 }
 
+async fn prepare_snos(
+    input: PieGenerationInput,
+    witness_url: Option<&Url>,
+) -> Result<(PreparedPieGeneration, Option<u64>, Option<usize>), PieGenerationError> {
+    let Some(witness_url) = witness_url else {
+        return Ok((prepare_pie(input).await?, None, None));
+    };
+
+    let started_at = Instant::now();
+    let mut witnesses = Vec::with_capacity(input.blocks.len());
+    for block_number in &input.blocks {
+        let endpoint = witness_url
+            .join("feeder_gateway/get_block_witness")
+            .map_err(|error| PieGenerationError::RpcClient(format!("Invalid SNOS witness URL: {error}")))?;
+        let witness = SNOS_WITNESS_HTTP_CLIENT
+            .get(endpoint)
+            .query(&[("blockNumber", block_number)])
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(|error| {
+                PieGenerationError::RpcClient(format!("Failed to fetch block {block_number} witness: {error}"))
+            })?
+            .json::<RpcWitness>()
+            .await
+            .map_err(|error| {
+                PieGenerationError::RpcClient(format!("Failed to decode block {block_number} witness: {error}"))
+            })?;
+        witnesses.push(witness);
+    }
+    let witness = RpcWitness::merge(witnesses)
+        .map_err(|error| PieGenerationError::RpcClient(format!("Failed to merge SNOS witnesses: {error}")))?;
+    let response_count = witness.response_count();
+    let fetch_time_ms = started_at.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+    info!(fetch_time_ms, response_count, blocks = input.blocks.len(), "SNOS witnesses loaded");
+    Ok((prepare_pie_from_witness(input, witness).await?, Some(fetch_time_ms), Some(response_count)))
+}
+
 impl SnosJobHandler {
     /// Stores the [CairoPie] and the [StarknetOsOutput] in the Data Storage.
     /// The paths will be:
@@ -238,7 +308,7 @@ impl SnosJobHandler {
         internal_id: u64,
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
-        cairo_pie: CairoPie,
+        cairo_pie_zip_bytes: bytes::Bytes,
         snos_output: Vec<Felt>,
         program_output: Vec<Felt252>,
     ) -> Result<(), SnosError> {
@@ -260,9 +330,6 @@ impl SnosJobHandler {
 
         // Store Cairo Pie
         {
-            let cairo_pie_zip_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes(cairo_pie)
-                .await
-                .map_err(|e| SnosError::CairoPieUnserializable { internal_id, message: e.to_string() })?;
             data_storage
                 .put_data(cairo_pie_zip_bytes, cairo_pie_key)
                 .await
@@ -291,5 +358,98 @@ impl SnosJobHandler {
         }
 
         Ok(())
+    }
+}
+
+async fn run_in_snos_finalization_lane<F, T>(finalize: F) -> Result<T, tokio::task::JoinError>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let permit = Arc::clone(&SNOS_FINALIZATION_SEMAPHORE)
+        .acquire_owned()
+        .await
+        .expect("SNOS finalization semaphore must remain open");
+    let span = Span::current();
+
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        span.in_scope(finalize)
+    })
+    .await
+}
+
+fn finalize_snos(prepared: PreparedPieGeneration, internal_id: u64) -> Result<FinalizedSnosOutput, JobError> {
+    let snos_output = execute_prepared_pie(prepared).map_err(|source| {
+        error!(error = %source, "SNOS execution failed");
+        SnosError::SnosExecutionError { internal_id, source }
+    })?;
+    let timing = snos_output.timing;
+    let output = snos_output.output;
+    let cairo_pie = output.cairo_pie;
+    let snos_output = output.raw_os_output;
+    let n_steps = cairo_pie.execution_resources.n_steps;
+
+    // TODO: Return a typed OS output from SNOS instead of indexing a Vec<Felt>.
+    let (fact_hash, program_output) = if snos_output.get(8) == Some(&Felt::ZERO) {
+        debug!("Using calldata for settlement layer");
+        let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
+            error!(error = %e, "Failed to get fact hash");
+            JobError::FactError(FactError::L2FactCompute)
+        })?;
+        let program_output = get_program_output(&cairo_pie, false).map_err(|e| {
+            error!(error = %e, "Failed to get program output");
+            JobError::FactError(FactError::ProgramOutputCompute)
+        })?;
+        (fact_hash, program_output)
+    } else if snos_output.get(8) == Some(&Felt::ONE) {
+        debug!("Using blobs for settlement layer");
+        let fact_info = get_fact_info(&cairo_pie, None, false)?;
+        (fact_info.fact, fact_info.program_output)
+    } else {
+        error!("Invalid KZG flag");
+        return Err(SnosError::UnsupportedKZGFlag.into());
+    };
+
+    let cairo_pie_zip_bytes = crate::worker::utils::pie::cairo_pie_to_zip_bytes_blocking(cairo_pie)
+        .map_err(|e| SnosError::CairoPieUnserializable { internal_id, message: e.to_string() })?;
+
+    Ok(FinalizedSnosOutput {
+        timing,
+        cairo_pie_zip_bytes,
+        snos_output,
+        program_output,
+        fact_hash: fact_hash.to_string(),
+        n_steps,
+    })
+}
+
+#[cfg(test)]
+mod finalization_tests {
+    use super::run_in_snos_finalization_lane;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn finalization_lane_runs_only_one_closure_at_a_time() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let run = || {
+            let active = Arc::clone(&active);
+            let max_active = Arc::clone(&max_active);
+            run_in_snos_finalization_lane(move || {
+                let current = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max_active.fetch_max(current, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(50));
+                active.fetch_sub(1, Ordering::SeqCst);
+            })
+        };
+
+        let (first, second) = tokio::join!(run(), run());
+        first.unwrap();
+        second.unwrap();
+        assert_eq!(max_active.load(Ordering::SeqCst), 1);
     }
 }

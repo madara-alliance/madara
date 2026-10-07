@@ -301,11 +301,16 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
         tracing::debug!("on_new_confirmed_head block_n={block_n}");
         let started_at = Instant::now();
-        self.snapshots.set_new_head(block_n);
+        // A full node's state pipeline may be ahead of block persistence. Snapshot contents then
+        // represent the durable trie cursor, so use that revision rather than mislabelling the
+        // snapshot with the older confirmed head. Bonsai uses this id as the starting revision
+        // when it rolls a snapshot back for historical storage proofs.
+        let snapshot_block_n = self.get_latest_applied_trie_update()?.unwrap_or(block_n);
+        self.snapshots.set_new_head(snapshot_block_n);
         crate::warn_if_confirmed_head_phase_slow(block_n, "snapshot_head_rotation", started_at.elapsed());
 
         let started_at = Instant::now();
-        if self.has_parallel_merkle_checkpoint(block_n)? {
+        if snapshot_block_n == block_n && self.has_parallel_merkle_checkpoint(block_n)? {
             self.snapshots.pin_head(block_n);
         }
         crate::warn_if_confirmed_head_phase_slow(block_n, "checkpoint_snapshot_pin", started_at.elapsed());

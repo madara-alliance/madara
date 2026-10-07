@@ -553,6 +553,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
         program_output_path: Some(format!("{}/{}", &l2_block_number, PROGRAM_OUTPUT_FILE_NAME)),
         snos_fact: None,
         snos_n_steps: None,
+        ..Default::default()
     };
 
     // Create the common metadata with default values

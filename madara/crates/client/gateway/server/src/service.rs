@@ -1,13 +1,19 @@
 use super::{metrics::GatewayMetrics, router::main_router};
+use crate::witness::{SnosWitnessAvailabilityError, SnosWitnessService};
 use anyhow::Context;
 use bytes::Bytes;
 use flate2::{write::GzEncoder, Compression};
-use http_body_util::Full;
+use futures::TryStreamExt;
+use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Full, StreamBody};
 use hyper::{
-    header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_LENGTH, VARY},
+    body::{Frame, Incoming},
+    header::{
+        HeaderMap, HeaderValue, ACCEPT_ENCODING, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG,
+        RETRY_AFTER, VARY,
+    },
     server::conn::http1,
     service::service_fn,
-    Response,
+    Method, Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
 use mc_db::MadaraBackend;
@@ -21,8 +27,11 @@ use std::{
     time::Instant,
 };
 use tokio::{net::TcpListener, sync::Semaphore};
+use tokio_util::io::ReaderStream;
 
 const MAX_CONCURRENT_GZIP_COMPRESSIONS: usize = 4;
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+type GatewayBody = UnsyncBoxBody<Bytes, BoxError>;
 
 #[derive(Debug, Clone)]
 pub struct GatewayServerConfig {
@@ -70,6 +79,8 @@ pub async fn start_server(
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
     let gzip_compression_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_GZIP_COMPRESSIONS));
     let gateway_metrics = GatewayMetrics::register();
+    let witness_service = SnosWitnessService::from_env(Arc::clone(&db_backend))?;
+    let witness_builder = witness_service.as_ref().map(|service| service.clone().spawn_builder());
 
     while let Some(res) = ctx.run_until_cancelled(listener.accept()).await {
         // Handle new incoming connections
@@ -83,6 +94,7 @@ pub async fn start_server(
             let config = config.clone();
             let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
             let gateway_metrics = gateway_metrics.clone();
+            let witness_service = witness_service.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
@@ -93,6 +105,7 @@ pub async fn start_server(
                     let config = config.clone();
                     let gzip_compression_semaphore = Arc::clone(&gzip_compression_semaphore);
                     let gateway_metrics = gateway_metrics.clone();
+                    let witness_service = witness_service.clone();
                     async move {
                         let path = req
                             .uri()
@@ -105,20 +118,24 @@ pub async fn start_server(
                         let gzip_enabled = config.feeder_gateway_gzip_responses;
                         let telemetry_route = telemetry_route(&path);
                         let start = Instant::now();
-                        let Ok(res) = main_router(
-                            req,
-                            &path,
-                            db_backend,
-                            transaction_submitter,
-                            transaction_lookup,
-                            submit_validated,
-                            config,
-                        )
-                        .await;
-
                         let (res, response_stats) =
-                            prepare_response(&request_headers, &path, res, gzip_enabled, gzip_compression_semaphore)
+                            if path == "feeder_gateway/get_block_witness" && config.feeder_gateway_enable {
+                                prepare_witness_response(&request_headers, req, witness_service).await
+                            } else {
+                                let Ok(res) = main_router(
+                                    req,
+                                    &path,
+                                    db_backend,
+                                    transaction_submitter,
+                                    transaction_lookup,
+                                    submit_validated,
+                                    config,
+                                    witness_service,
+                                )
                                 .await;
+                                prepare_response(&request_headers, &path, res, gzip_enabled, gzip_compression_semaphore)
+                                    .await
+                            };
                         let status = res.status().as_u16() as i64;
                         let response_time = start.elapsed().as_micros();
 
@@ -159,6 +176,10 @@ pub async fn start_server(
         }
     }
 
+    if let Some(witness_builder) = witness_builder {
+        witness_builder.abort();
+    }
+
     Ok(())
 }
 
@@ -189,8 +210,120 @@ fn telemetry_route(path: &str) -> &'static str {
         "feeder_gateway/get_contract_addresses" => "feeder_gateway/get_contract_addresses",
         "feeder_gateway/get_public_key" => "feeder_gateway/get_public_key",
         "feeder_gateway/get_block_bouncer_weights" => "feeder_gateway/get_block_bouncer_weights",
+        "feeder_gateway/get_block_witness" => "feeder_gateway/get_block_witness",
+        "feeder_gateway/get_block_witness_status" => "feeder_gateway/get_block_witness_status",
         _ => "unknown",
     }
+}
+
+async fn prepare_witness_response(
+    request_headers: &HeaderMap,
+    req: Request<Incoming>,
+    witness_service: Option<Arc<SnosWitnessService>>,
+) -> (Response<GatewayBody>, ResponseStats) {
+    if req.method() != Method::GET {
+        return witness_error_response(StatusCode::METHOD_NOT_ALLOWED, "only GET is supported", None);
+    }
+    let Some(witness_service) = witness_service else {
+        return witness_error_response(StatusCode::NOT_FOUND, "SNOS witness service is disabled", None);
+    };
+    let Some(block_number) = query_parameter(req.uri().query(), "blockNumber") else {
+        return witness_error_response(StatusCode::BAD_REQUEST, "blockNumber is required", None);
+    };
+    let Ok(block_number) = block_number.parse::<u64>() else {
+        return witness_error_response(StatusCode::BAD_REQUEST, "blockNumber must be an unsigned integer", None);
+    };
+
+    let (path, manifest) = match witness_service.ready_artifact(block_number).await {
+        Ok(artifact) => artifact,
+        Err(SnosWitnessAvailabilityError::Pending { .. } | SnosWitnessAvailabilityError::NoWitnessableHead) => {
+            return witness_error_response(StatusCode::ACCEPTED, "SNOS witness is pending", Some(5));
+        }
+        Err(
+            error @ (SnosWitnessAvailabilityError::OutsideRetention { .. }
+            | SnosWitnessAvailabilityError::BeforeGenerationFloor { .. }),
+        ) => return witness_error_response(StatusCode::GONE, &error.to_string(), None),
+        Err(SnosWitnessAvailabilityError::Internal(error)) => {
+            tracing::error!(target: "gateway_errors", %error, block_number, "Failed to inspect SNOS witness");
+            return witness_error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error", None);
+        }
+    };
+
+    let send_gzip = accepts_gzip(request_headers);
+    let (body, transmitted_bytes) = if send_gzip {
+        let file = match tokio::fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(error) => {
+                tracing::error!(target: "gateway_errors", %error, block_number, "Failed to open SNOS witness");
+                return witness_error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error", None);
+            }
+        };
+        let stream = ReaderStream::new(file).map_ok(Frame::data);
+        let body = BodyExt::map_err(StreamBody::new(stream), |error| -> BoxError { Box::new(error) }).boxed_unsync();
+        (body, manifest.compressed_bytes)
+    } else {
+        let body = match witness_service.read_uncompressed(path).await {
+            Ok(body) => Bytes::from(body),
+            Err(error) => {
+                tracing::error!(target: "gateway_errors", %error, block_number, "Failed to read SNOS witness");
+                return witness_error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error", None);
+            }
+        };
+        let transmitted_bytes = body.len() as u64;
+        (full_body(body), transmitted_bytes)
+    };
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "application/json")
+        .header(CONTENT_LENGTH, transmitted_bytes)
+        .header(CACHE_CONTROL, "private, max-age=60")
+        .header(VARY, "Accept-Encoding")
+        .header(ETAG, format!("\"{:#x}-v{}\"", manifest.block_hash, manifest.schema_version));
+    if send_gzip {
+        response = response.header(CONTENT_ENCODING, "gzip");
+    }
+    let response = response.body(body).expect("valid static SNOS witness response");
+    (
+        response,
+        ResponseStats {
+            encoding: if send_gzip { "gzip" } else { "identity" },
+            uncompressed_bytes: manifest.uncompressed_bytes,
+            transmitted_bytes,
+            compression_duration: 0,
+        },
+    )
+}
+
+fn query_parameter<'a>(query: Option<&'a str>, name: &str) -> Option<&'a str> {
+    query?
+        .split('&')
+        .filter_map(|parameter| parameter.split_once('='))
+        .find_map(|(key, value)| (key == name).then_some(value))
+}
+
+fn witness_error_response(
+    status: StatusCode,
+    message: &str,
+    retry_after_seconds: Option<u64>,
+) -> (Response<GatewayBody>, ResponseStats) {
+    let body = Bytes::from(serde_json::json!({ "error": message }).to_string());
+    let transmitted_bytes = body.len() as u64;
+    let mut response = Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, "application/json")
+        .header(CONTENT_LENGTH, transmitted_bytes);
+    if let Some(retry_after_seconds) = retry_after_seconds {
+        response = response.header(RETRY_AFTER, retry_after_seconds);
+    }
+    (
+        response.body(full_body(body)).expect("valid static SNOS witness error response"),
+        ResponseStats {
+            encoding: "identity",
+            uncompressed_bytes: transmitted_bytes,
+            transmitted_bytes,
+            compression_duration: 0,
+        },
+    )
 }
 
 async fn prepare_response(
@@ -199,7 +332,7 @@ async fn prepare_response(
     mut response: Response<String>,
     gzip_enabled: bool,
     gzip_compression_semaphore: Arc<Semaphore>,
-) -> (Response<Full<Bytes>>, ResponseStats) {
+) -> (Response<GatewayBody>, ResponseStats) {
     let uncompressed_bytes = response.body().len() as u64;
     let eligible_for_compression =
         gzip_enabled && path.starts_with("feeder_gateway/") && response.status().is_success() && uncompressed_bytes > 0;
@@ -286,12 +419,12 @@ fn gzip(body: &[u8]) -> io::Result<Vec<u8>> {
     encoder.finish()
 }
 
-fn identity_response(response: Response<String>, compression_duration: u128) -> (Response<Full<Bytes>>, ResponseStats) {
+fn identity_response(response: Response<String>, compression_duration: u128) -> (Response<GatewayBody>, ResponseStats) {
     let (parts, body) = response.into_parts();
     let bytes = Bytes::from(body);
     let transmitted_bytes = bytes.len() as u64;
     (
-        Response::from_parts(parts, Full::new(bytes)),
+        Response::from_parts(parts, full_body(bytes)),
         ResponseStats {
             encoding: "identity",
             uncompressed_bytes: transmitted_bytes,
@@ -306,7 +439,7 @@ fn finish_compression(
     body: Bytes,
     compressed: io::Result<Vec<u8>>,
     compression_duration: u128,
-) -> (Response<Full<Bytes>>, ResponseStats) {
+) -> (Response<GatewayBody>, ResponseStats) {
     let uncompressed_bytes = body.len() as u64;
     let (body, encoding) = match compressed {
         Ok(compressed) => {
@@ -323,9 +456,17 @@ fn finish_compression(
     let transmitted_bytes = body.len() as u64;
 
     (
-        Response::from_parts(parts, Full::new(body)),
+        Response::from_parts(parts, full_body(body)),
         ResponseStats { encoding, uncompressed_bytes, transmitted_bytes, compression_duration },
     )
+}
+
+fn full_body(body: Bytes) -> GatewayBody {
+    Full::new(body).map_err(infallible_to_box).boxed_unsync()
+}
+
+fn infallible_to_box(error: Infallible) -> BoxError {
+    match error {}
 }
 
 fn append_vary_accept_encoding(headers: &mut HeaderMap) {
@@ -365,6 +506,14 @@ mod tests {
         assert!(accepts_gzip(&headers(&["br, *;q=0.5"])));
         assert!(!accepts_gzip(&headers(&["gzip;q=0", "*;q=1"])));
         assert!(!accepts_gzip(&headers(&["gzip;q=1.1"])));
+    }
+
+    #[test]
+    fn parses_witness_query_parameters() {
+        let query = Some("foo=bar&blockNumber=123&unused=value");
+        assert_eq!(query_parameter(query, "blockNumber"), Some("123"));
+        assert_eq!(query_parameter(query, "missing"), None);
+        assert_eq!(query_parameter(None, "blockNumber"), None);
     }
 
     #[test]

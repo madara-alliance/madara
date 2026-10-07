@@ -48,6 +48,11 @@ jobs:
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
 
+      - name: Python Cairo setup (before Madara binary build)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       # Build Madara
       - name: Cargo build
         run: |

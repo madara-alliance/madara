@@ -42,6 +42,11 @@ jobs:
       - name: Cairo Native setup
         uses: ./.github/actions/setup-cairo-native
 
+      - name: Python Cairo setup (before Madara test archive build)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 

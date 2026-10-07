@@ -756,6 +756,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let snos_config = SNOSParams {
         rpc_for_snos,
         rpc_for_snos_backup,
+        snos_witness_url: None,
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
         versioned_constants,
     };
