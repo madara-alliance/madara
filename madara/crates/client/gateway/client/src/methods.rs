@@ -75,7 +75,10 @@ impl GatewayProvider {
             let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
                 .add_uri_segment("get_preconfirmed_block")
                 .expect("Failed to add URI segment. This should not fail in prod.")
-                .with_block_id(&BlockId::Number(block_number));
+                .with_block_id(&BlockId::Number(block_number))
+                // Starknet's hosted feeder requires this newer name, while Madara's feeder still
+                // accepts `blockNumber`. Sending both keeps the client interoperable with both.
+                .add_param("blockIdentifier", block_number.to_string());
 
             request.send_get::<ProviderBlockPreConfirmed>().await
         })

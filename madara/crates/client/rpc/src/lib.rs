@@ -766,7 +766,7 @@
 //!
 //! Dataset ingestion is exposed only on the separately enabled `--rpc-committed-data`
 //! listener (default loopback port 9945). Neither the public nor admin RPC exports them.
-//! `madara_importCommittedDataSet(root, values, signatures)` authenticates and durably persists a
+//! `madara_V0_1_0_importCommittedDataSet(root, values, signatures)` authenticates and durably persists a
 //! dataset. An optional node-local signer allowlist protects ingestion. Witness and paged dataset
 //! retrieval use feeder-gateway GET endpoints, not this RPC listener.
 //! Import success is a JSON-RPC result, not simply HTTP 200. It does not publish a root on-chain.

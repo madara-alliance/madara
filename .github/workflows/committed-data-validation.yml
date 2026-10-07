@@ -1,8 +1,9 @@
 name: Committed Data validation
 
 on:
+  pull_request:
   push:
-    branches: [codex/committed-data-reads]
+    branches: [codex/committed-data-reads-cloud-ready]
   workflow_dispatch:
 
 permissions:
