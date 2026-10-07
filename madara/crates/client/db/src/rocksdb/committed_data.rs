@@ -11,6 +11,11 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 const PREFIX: &[u8] = b"committed_data_pages_v2/";
 // Retain the shared quota counter so preserved legacy pages still count toward storage usage.
 const USAGE_KEY: &[u8] = b"committed_data_pages_usage_v1";
+const STAGED_PREFIX: &[u8] = b"committed_data_staged_v1/";
+const ACTIVE_PREFIX: &[u8] = b"committed_data_active_v1/";
+const RETIRED_BY_ROOT_PREFIX: &[u8] = b"committed_data_retired_root_v1/";
+const RETIRED_BY_BLOCK_PREFIX: &[u8] = b"committed_data_retired_block_v1/";
+const SCAN_CURSOR_PREFIX: &[u8] = b"committed_data_lifecycle_next_block_v1/";
 const PAGE_VALUES: usize = 256;
 const PAGE_BYTES: usize = PAGE_VALUES * 32;
 const METADATA_LEVEL: u8 = u8::MAX;
@@ -22,6 +27,30 @@ fn key(root: Felt, level: u8, page: u32) -> Vec<u8> {
     key.push(level);
     key.extend_from_slice(&page.to_be_bytes());
     key
+}
+
+fn root_key(prefix: &[u8], root: Felt) -> Vec<u8> {
+    let mut key = prefix.to_vec();
+    key.extend_from_slice(&root.to_bytes_be());
+    key
+}
+
+fn active_key(oracle: Felt, slot: u8) -> Vec<u8> {
+    let mut key = ACTIVE_PREFIX.to_vec();
+    key.extend_from_slice(&oracle.to_bytes_be());
+    key.push(slot);
+    key
+}
+
+fn retired_block_key(block: u64, root: Felt) -> Vec<u8> {
+    let mut key = RETIRED_BY_BLOCK_PREFIX.to_vec();
+    key.extend_from_slice(&block.to_be_bytes());
+    key.extend_from_slice(&root.to_bytes_be());
+    key
+}
+
+fn u64_value(bytes: &[u8], name: &str) -> Result<u64> {
+    Ok(u64::from_be_bytes(bytes.try_into().with_context(|| format!("Invalid {name}"))?))
 }
 
 /// Decodes exactly one canonical field element without silently reducing corrupt bytes.
@@ -37,6 +66,24 @@ fn count(bytes: &[u8]) -> Result<usize> {
     let count = u32::from_be_bytes(bytes.try_into()?) as usize;
     anyhow::ensure!((1..=MAX_COMMITTED_DATA_VALUES).contains(&count), "Invalid committed-data size");
     Ok(count)
+}
+
+/// Exact logical bytes charged by the v2 page layout, derived without reading page contents.
+fn dataset_logical_bytes(occupied: usize) -> Result<u64> {
+    let key_bytes = u64::try_from(PREFIX.len() + 37)?;
+    let mut total = key_bytes + 4; // Metadata key and occupied-count value.
+    let mut nodes = occupied;
+    for _ in 0..COMMITTED_DATA_TREE_HEIGHT {
+        let pages = nodes.div_ceil(PAGE_VALUES);
+        let page_bytes = u64::try_from(pages)?.checked_mul(key_bytes).context("Committed-data size overflow")?;
+        let node_bytes = u64::try_from(nodes)?.checked_mul(32).context("Committed-data size overflow")?;
+        total = total
+            .checked_add(page_bytes)
+            .and_then(|value| value.checked_add(node_bytes))
+            .context("Committed-data size overflow")?;
+        nodes = nodes.div_ceil(2);
+    }
+    Ok(total)
 }
 
 /// Reconstructs a fixed-height path from occupied-prefix pages and deterministic padding.
@@ -182,7 +229,12 @@ impl RocksDBStorage {
     /// Atomically writes all pages and the shared logical-byte quota with synchronous WAL.
     /// Existing roots are repaired in place without a second quota charge. Serialization at
     /// the shared storage owner prevents concurrent backend wrappers from overspending quota.
-    pub(super) fn store_committed_data_dataset(&self, dataset: &CommittedDataSet, max_bytes: u64) -> Result<()> {
+    pub(super) fn store_committed_data_dataset(
+        &self,
+        dataset: &CommittedDataSet,
+        max_bytes: u64,
+        staged_at_block: u64,
+    ) -> Result<()> {
         let _write = self
             .inner
             .committed_data_write
@@ -197,13 +249,15 @@ impl RocksDBStorage {
         let used = self.inner.db.get_pinned_cf(&cf, USAGE_KEY)?;
         let used = used.map(|raw| <[u8; 8]>::try_from(&*raw).map(u64::from_be_bytes)).transpose()?.unwrap_or(0);
         let mut next = used;
+        let mut dataset_bytes = 0_u64;
         let mut batch = WriteBatch::default();
         let metadata = u32::try_from(dataset.values().len())?.to_be_bytes().to_vec();
         for (key, bytes) in std::iter::once((metadata_key, metadata)).chain(records(dataset)) {
+            let record_bytes = u64::try_from(key.len() + bytes.len())?;
+            dataset_bytes = dataset_bytes.checked_add(record_bytes).context("Committed-data size overflow")?;
             if existing.is_none() {
-                next = next
-                    .checked_add(u64::try_from(key.len() + bytes.len())?)
-                    .ok_or_else(|| anyhow::anyhow!("Committed-data quota overflow"))?;
+                next =
+                    next.checked_add(record_bytes).ok_or_else(|| anyhow::anyhow!("Committed-data quota overflow"))?;
                 anyhow::ensure!(
                     next <= max_bytes,
                     "Committed-data storage quota exceeded; archive safely or increase the configured limit"
@@ -212,12 +266,237 @@ impl RocksDBStorage {
             // Re-import repairs corrupt pages with the same authenticated logical dataset.
             batch.put_cf(&cf, key, bytes);
         }
+        let root = dataset.root();
+        debug_assert_eq!(dataset_bytes, dataset_logical_bytes(dataset.values().len())?);
+        // Protect the import/publication race until lifecycle replay reaches the next local block.
+        batch.put_cf(&cf, root_key(STAGED_PREFIX, root), staged_at_block.to_be_bytes());
         batch.put_cf(&cf, USAGE_KEY, next.to_be_bytes());
         let mut options = WriteOptions::default();
         options.set_sync(true);
         options.disable_wal(false);
         self.inner.db.write_opt(batch, &options)?;
         Ok(())
+    }
+
+    /// Applies one canonical Oracle root rotation. Active slots are keyed by Oracle contract,
+    /// while retirement is root-global so a root shared by slots/contracts stays pinned.
+    pub(crate) fn record_committed_data_publication(
+        &self,
+        oracle: Felt,
+        block: u64,
+        price_root: Felt,
+        funding_root: Felt,
+    ) -> Result<()> {
+        anyhow::ensure!(price_root != Felt::ZERO && funding_root != Felt::ZERO, "Empty committed-data root event");
+        let _write = self
+            .inner
+            .committed_data_write
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        let cf = self.inner.get_column(meta::META_COLUMN);
+
+        let mut active_counts = std::collections::HashMap::<Felt, usize>::new();
+        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        iterator.seek(ACTIVE_PREFIX);
+        while let Some(raw_key) = iterator.key().filter(|key| key.starts_with(ACTIVE_PREFIX)) {
+            anyhow::ensure!(raw_key.len() == ACTIVE_PREFIX.len() + 33, "Invalid committed-data active key");
+            let raw_root = iterator.value().context("Missing committed-data active root")?;
+            *active_counts.entry(canonical_felt(raw_root)?).or_default() += 1;
+            iterator.next();
+        }
+        iterator.status()?;
+        drop(iterator);
+
+        let previous_price =
+            self.inner.db.get_pinned_cf(&cf, active_key(oracle, 0))?.map(|root| canonical_felt(&root)).transpose()?;
+        let previous_funding =
+            self.inner.db.get_pinned_cf(&cf, active_key(oracle, 1))?.map(|root| canonical_felt(&root)).transpose()?;
+        let previous = [previous_price, previous_funding];
+        for root in previous.into_iter().flatten() {
+            let count = active_counts.get_mut(&root).context("Missing committed-data active reference")?;
+            *count -= 1;
+        }
+        for root in [price_root, funding_root] {
+            *active_counts.entry(root).or_default() += 1;
+        }
+
+        let mut batch = WriteBatch::default();
+        batch.put_cf(&cf, active_key(oracle, 0), price_root.to_bytes_be());
+        batch.put_cf(&cf, active_key(oracle, 1), funding_root.to_bytes_be());
+        for root in [price_root, funding_root] {
+            let staged_key = root_key(STAGED_PREFIX, root);
+            if self
+                .inner
+                .db
+                .get_pinned_cf(&cf, &staged_key)?
+                .map(|value| u64_value(&value, "committed-data staging block"))
+                .transpose()?
+                .is_some_and(|staged_at| block >= staged_at)
+            {
+                batch.delete_cf(&cf, staged_key);
+            }
+        }
+        for root in previous.into_iter().flatten() {
+            if active_counts.get(&root).copied().unwrap_or_default() == 0 {
+                let staged_key = root_key(STAGED_PREFIX, root);
+                if self
+                    .inner
+                    .db
+                    .get_pinned_cf(&cf, &staged_key)?
+                    .map(|value| u64_value(&value, "committed-data staging block"))
+                    .transpose()?
+                    .is_some_and(|staged_at| block >= staged_at)
+                {
+                    batch.delete_cf(&cf, staged_key);
+                }
+                let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
+                let previous_retirement = self
+                    .inner
+                    .db
+                    .get_pinned_cf(&cf, &retired_key)?
+                    .map(|value| u64_value(&value, "committed-data retirement block"))
+                    .transpose()?;
+                let retirement = previous_retirement.map_or(block, |previous| previous.max(block));
+                if previous_retirement != Some(retirement) {
+                    if let Some(previous) = previous_retirement {
+                        batch.delete_cf(&cf, retired_block_key(previous, root));
+                    }
+                    batch.put_cf(&cf, &retired_key, retirement.to_be_bytes());
+                    batch.put_cf(&cf, retired_block_key(retirement, root), []);
+                }
+            }
+        }
+        // Lifecycle rows precede a synchronous cursor write. Keep them in the WAL even when the
+        // general database setting disables it, so a durable cursor can never skip lost rows.
+        let mut options = WriteOptions::default();
+        options.disable_wal(false);
+        self.inner.db.write_opt(batch, &options)?;
+        Ok(())
+    }
+
+    pub(crate) fn committed_data_lifecycle_cursor(&self, oracle: Felt) -> Result<u64> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        self.inner
+            .db
+            .get_pinned_cf(&cf, root_key(SCAN_CURSOR_PREFIX, oracle))?
+            .map(|value| u64_value(&value, "committed-data lifecycle cursor"))
+            .transpose()
+            .map(|cursor| cursor.unwrap_or(0))
+    }
+
+    pub(crate) fn write_committed_data_lifecycle_cursor(&self, oracle: Felt, next_block: u64) -> Result<()> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let mut options = WriteOptions::default();
+        options.set_sync(true);
+        options.disable_wal(false);
+        self.inner.db.put_cf_opt(&cf, root_key(SCAN_CURSOR_PREFIX, oracle), next_block.to_be_bytes(), &options)?;
+        Ok(())
+    }
+
+    /// Deletes a tiny bounded batch using range tombstones. It never forces compaction, so normal
+    /// RocksDB background policy controls physical reclamation without blocking sequencing.
+    pub(crate) fn prune_committed_data(
+        &self,
+        settled_tip: u64,
+        cutoff: u64,
+        limit: usize,
+        current_roots: &std::collections::HashSet<Felt>,
+    ) -> Result<Vec<Felt>> {
+        let _write = self
+            .inner
+            .committed_data_write
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        let cf = self.inner.get_column(meta::META_COLUMN);
+
+        let mut active = std::collections::HashSet::new();
+        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        iterator.seek(ACTIVE_PREFIX);
+        while let Some(raw_key) = iterator.key().filter(|key| key.starts_with(ACTIVE_PREFIX)) {
+            anyhow::ensure!(raw_key.len() == ACTIVE_PREFIX.len() + 33, "Invalid committed-data active key");
+            active.insert(canonical_felt(iterator.value().context("Missing committed-data active root")?)?);
+            iterator.next();
+        }
+        iterator.status()?;
+        drop(iterator);
+
+        let mut candidates = Vec::new();
+        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        iterator.seek(RETIRED_BY_BLOCK_PREFIX);
+        while candidates.len() < limit.saturating_mul(16).max(1) {
+            let Some(raw_key) = iterator.key().filter(|key| key.starts_with(RETIRED_BY_BLOCK_PREFIX)) else { break };
+            anyhow::ensure!(
+                raw_key.len() == RETIRED_BY_BLOCK_PREFIX.len() + 40,
+                "Invalid committed-data retirement key"
+            );
+            let offset = RETIRED_BY_BLOCK_PREFIX.len();
+            let block = u64_value(&raw_key[offset..offset + 8], "committed-data retirement index block")?;
+            if block > cutoff {
+                break;
+            }
+            let root = canonical_felt(&raw_key[offset + 8..])?;
+            let staging_pending = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, root_key(STAGED_PREFIX, root))?
+                .map(|value| u64_value(&value, "committed-data staging block"))
+                .transpose()?
+                .is_some_and(|staged_at| staged_at > settled_tip);
+            if !active.contains(&root) && !current_roots.contains(&root) && !staging_pending {
+                candidates.push((block, root));
+            }
+            iterator.next();
+        }
+        iterator.status()?;
+        drop(iterator);
+
+        let used = self.inner.db.get_pinned_cf(&cf, USAGE_KEY)?;
+        let mut used = used.map(|raw| u64_value(&raw, "committed-data quota usage")).transpose()?.unwrap_or(0);
+        let mut deleted = Vec::new();
+        let mut batch = WriteBatch::default();
+        for (block, root) in candidates {
+            if deleted.len() == limit {
+                break;
+            }
+            let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
+            let Some(retired_at) = self.inner.db.get_pinned_cf(&cf, &retired_key)? else {
+                batch.delete_cf(&cf, retired_block_key(block, root));
+                continue;
+            };
+            if u64_value(&retired_at, "committed-data retirement block")? != block {
+                batch.delete_cf(&cf, retired_block_key(block, root));
+                continue;
+            }
+
+            let metadata_key = key(root, METADATA_LEVEL, 0);
+            if self.inner.db.get_pinned_cf(&cf, &metadata_key)?.is_none() {
+                batch.delete_cf(&cf, retired_block_key(block, root));
+                batch.delete_cf(&cf, retired_key);
+                continue;
+            }
+            let metadata = self.inner.db.get_pinned_cf(&cf, &metadata_key)?.expect("metadata presence checked");
+            let size = dataset_logical_bytes(count(&metadata)?)?;
+            used = used.checked_sub(size).context("Committed-data quota usage underflow")?;
+
+            let range_start = root_key(PREFIX, root);
+            let mut range_end = range_start.clone();
+            range_end.extend_from_slice(&[u8::MAX; 6]);
+            batch.delete_range_cf(&cf, range_start, range_end);
+            batch.delete_cf(&cf, retired_block_key(block, root));
+            batch.delete_cf(&cf, retired_key);
+            batch.delete_cf(&cf, root_key(STAGED_PREFIX, root));
+            deleted.push(root);
+        }
+        if !deleted.is_empty() {
+            batch.put_cf(&cf, USAGE_KEY, used.to_be_bytes());
+        }
+        if batch.len() > 0 {
+            let mut options = WriteOptions::default();
+            options.set_sync(true);
+            options.disable_wal(false);
+            self.inner.db.write_opt(batch, &options)?;
+        }
+        Ok(deleted)
     }
 }
 

@@ -15,6 +15,10 @@ fn default_committed_data_storage_bytes() -> u64 {
     mc_db::DEFAULT_COMMITTED_DATA_STORAGE_BYTES
 }
 
+fn default_committed_data_retention_blocks() -> u64 {
+    mc_db::DEFAULT_COMMITTED_DATA_RETENTION_BLOCKS
+}
+
 const DEFAULT_EXEC_READ_CACHE_MAX_MEMORY_MIB: usize = 64;
 
 /// Returns the default RocksDB obsolete-file scan interval for config deserialization.
@@ -99,10 +103,21 @@ pub struct BackendParams {
     #[serde(default)]
     pub use_committed_data: bool,
 
-    /// Node-local committed dataset quota in logical bytes. No automatic pruning.
+    /// Node-local committed dataset quota in logical bytes.
     #[arg(long, env = "MADARA_COMMITTED_DATA_MAX_STORAGE_BYTES", default_value_t = mc_db::DEFAULT_COMMITTED_DATA_STORAGE_BYTES)]
     #[serde(default = "default_committed_data_storage_bytes")]
     pub committed_data_max_storage_bytes: u64,
+
+    /// L1-settled L2 block buffer retained after a committed Oracle root is replaced.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_RETENTION_BLOCKS", default_value_t = mc_db::DEFAULT_COMMITTED_DATA_RETENTION_BLOCKS)]
+    #[serde(default = "default_committed_data_retention_blocks")]
+    pub committed_data_retention_blocks: u64,
+
+    /// Complete comma-separated set of Oracle contracts whose root-publication events enable
+    /// pruning. Empty by default, which disables pruning.
+    #[arg(long, env = "MADARA_COMMITTED_DATA_ORACLE_ADDRESSES", value_delimiter = ',')]
+    #[serde(default)]
+    pub committed_data_oracle_addresses: Vec<mp_convert::Felt>,
 
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]
@@ -410,6 +425,8 @@ impl BackendParams {
         MadaraBackendConfig {
             use_committed_data: self.use_committed_data,
             committed_data_max_storage_bytes: self.committed_data_max_storage_bytes,
+            committed_data_retention_blocks: self.committed_data_retention_blocks,
+            committed_data_oracle_addresses: self.committed_data_oracle_addresses.clone(),
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
@@ -466,18 +483,37 @@ mod committed_data_tests {
         let config = defaults.backend_config();
         assert!(!config.use_committed_data);
         assert_eq!(config.committed_data_max_storage_bytes, mc_db::DEFAULT_COMMITTED_DATA_STORAGE_BYTES);
-        let enabled =
-            Args::try_parse_from(["test", "--use-committed-data", "--committed-data-max-storage-bytes", "3000"])
-                .unwrap()
-                .backend;
+        assert_eq!(config.committed_data_retention_blocks, 1_000);
+        assert!(config.committed_data_oracle_addresses.is_empty());
+        let enabled = Args::try_parse_from([
+            "test",
+            "--use-committed-data",
+            "--committed-data-max-storage-bytes",
+            "3000",
+            "--committed-data-retention-blocks",
+            "250",
+            "--committed-data-oracle-addresses",
+            "0x123,0x456",
+        ])
+        .unwrap()
+        .backend;
         let config = enabled.backend_config();
         assert!(config.use_committed_data);
         assert_eq!(config.committed_data_max_storage_bytes, 3000);
+        assert_eq!(config.committed_data_retention_blocks, 250);
+        assert_eq!(
+            config.committed_data_oracle_addresses,
+            vec![mp_convert::Felt::from(0x123_u64), mp_convert::Felt::from(0x456_u64)]
+        );
         let mut old = serde_json::to_value(defaults).unwrap();
         old.as_object_mut().unwrap().remove("use_committed_data");
         old.as_object_mut().unwrap().remove("committed_data_max_storage_bytes");
+        old.as_object_mut().unwrap().remove("committed_data_retention_blocks");
+        old.as_object_mut().unwrap().remove("committed_data_oracle_addresses");
         let restored = serde_json::from_value::<BackendParams>(old).unwrap().backend_config();
         assert!(!restored.use_committed_data);
         assert_eq!(restored.committed_data_max_storage_bytes, mc_db::DEFAULT_COMMITTED_DATA_STORAGE_BYTES);
+        assert_eq!(restored.committed_data_retention_blocks, 1_000);
+        assert!(restored.committed_data_oracle_addresses.is_empty());
     }
 }
