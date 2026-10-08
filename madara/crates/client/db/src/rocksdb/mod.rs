@@ -46,6 +46,7 @@ mod blocks;
 mod classes;
 mod column;
 mod committed_data;
+pub(crate) use committed_data::CommittedDataLifecycleCursor;
 mod events;
 mod events_bloom_filter;
 pub(crate) mod external_outbox;

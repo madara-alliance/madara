@@ -12,10 +12,12 @@ const PREFIX: &[u8] = b"committed_data_pages_v2/";
 // Retain the shared quota counter so preserved legacy pages still count toward storage usage.
 const USAGE_KEY: &[u8] = b"committed_data_pages_usage_v1";
 const STAGED_PREFIX: &[u8] = b"committed_data_staged_v1/";
+const STAGED_BY_BLOCK_PREFIX: &[u8] = b"committed_data_staged_block_v1/";
 const ACTIVE_PREFIX: &[u8] = b"committed_data_active_v1/";
 const RETIRED_BY_ROOT_PREFIX: &[u8] = b"committed_data_retired_root_v1/";
 const RETIRED_BY_BLOCK_PREFIX: &[u8] = b"committed_data_retired_block_v1/";
 const SCAN_CURSOR_PREFIX: &[u8] = b"committed_data_lifecycle_next_block_v1/";
+const PRUNE_WATERMARK_KEY: &[u8] = b"committed_data_prune_watermark_v1";
 const PAGE_VALUES: usize = 256;
 const PAGE_BYTES: usize = PAGE_VALUES * 32;
 const METADATA_LEVEL: u8 = u8::MAX;
@@ -49,8 +51,34 @@ fn retired_block_key(block: u64, root: Felt) -> Vec<u8> {
     key
 }
 
+fn staged_block_key(block: u64, root: Felt) -> Vec<u8> {
+    let mut key = STAGED_BY_BLOCK_PREFIX.to_vec();
+    key.extend_from_slice(&block.to_be_bytes());
+    key.extend_from_slice(&root.to_bytes_be());
+    key
+}
+
+fn prefix_upper_bound(prefix: &[u8]) -> Vec<u8> {
+    let mut end = prefix.to_vec();
+    let last = end.last_mut().expect("non-empty committed-data prefix");
+    *last = last.checked_add(1).expect("committed-data prefix does not end in 0xff");
+    end
+}
+
 fn u64_value(bytes: &[u8], name: &str) -> Result<u64> {
     Ok(u64::from_be_bytes(bytes.try_into().with_context(|| format!("Invalid {name}"))?))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CommittedDataLifecycleCursor {
+    pub(crate) next_block: u64,
+    pub(crate) last_scanned_block_hash: Option<Felt>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CommittedDataPruneWatermark {
+    pub(crate) block: u64,
+    pub(crate) block_hash: Felt,
 }
 
 /// Decodes exactly one canonical field element without silently reducing corrupt bytes.
@@ -147,18 +175,22 @@ impl RocksDBStorage {
     /// Cursors are lexical, not a durable high watermark: readers must rescan from the start.
     pub(super) fn read_committed_data_roots(&self, after: Option<Felt>) -> Result<Vec<Felt>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let mut iterator =
+            snapshot.iterator_cf(meta::META_COLUMN, rocksdb::ReadOptions::default(), rocksdb::IteratorMode::Start);
         match after {
-            Some(root) => iterator.seek(key(root, METADATA_LEVEL, u32::MAX)),
-            None => iterator.seek(PREFIX),
+            Some(root) => iterator.set_mode(rocksdb::IteratorMode::From(
+                &key(root, METADATA_LEVEL, u32::MAX),
+                rocksdb::Direction::Forward,
+            )),
+            None => iterator.set_mode(rocksdb::IteratorMode::From(PREFIX, rocksdb::Direction::Forward)),
         }
         let mut roots = Vec::new();
-        while let Some(raw) = iterator.key().filter(|raw| raw.starts_with(PREFIX)) {
+        while iterator.next()? {
+            let Some(raw) = iterator.key().filter(|raw| raw.starts_with(PREFIX)) else { break };
             anyhow::ensure!(raw.len() == PREFIX.len() + 37, "Invalid committed-data key");
             let root = canonical_felt(&raw[PREFIX.len()..PREFIX.len() + 32])?;
-            let metadata = self
-                .inner
-                .db
+            let metadata = snapshot
                 .get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))?
                 .ok_or_else(|| anyhow::anyhow!("Incomplete committed-data dataset"))?;
             count(&metadata)?;
@@ -166,9 +198,11 @@ impl RocksDBStorage {
             if roots.len() == 64 {
                 break;
             }
-            iterator.seek(key(root, METADATA_LEVEL, u32::MAX));
+            iterator.set_mode(rocksdb::IteratorMode::From(
+                &key(root, METADATA_LEVEL, u32::MAX),
+                rocksdb::Direction::Forward,
+            ));
         }
-        iterator.status()?;
         Ok(roots)
     }
 
@@ -189,15 +223,14 @@ impl RocksDBStorage {
             "Invalid committed-data page offset"
         );
         let cf = self.inner.get_column(meta::META_COLUMN);
-        let Some(metadata) = self.inner.db.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
+        let Some(metadata) = snapshot.get_pinned_cf(&cf, key(root, METADATA_LEVEL, 0))? else { return Ok(None) };
         let count = count(&metadata)?;
         anyhow::ensure!((start as usize) < count, "Committed-data page outside dataset");
         let end = (start as usize + 4096).min(count);
         let mut values = Vec::with_capacity(end - start as usize);
         for offset in (start as usize..end).step_by(PAGE_VALUES) {
-            let bytes = self
-                .inner
-                .db
+            let bytes = snapshot
                 .get_pinned_cf(&cf, key(root, 0, (offset / PAGE_VALUES) as u32))?
                 .ok_or_else(|| anyhow::anyhow!("Committed-data page unavailable"))?;
             anyhow::ensure!(
@@ -214,9 +247,9 @@ impl RocksDBStorage {
     /// Reads at most one metadata record and 20 bounded page records, without rebuilding a tree.
     pub(super) fn read_committed_data_witness(&self, root: Felt, index: u32) -> Result<Option<CommittedDataWitness>> {
         let cf = self.inner.get_column(meta::META_COLUMN);
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&self.inner));
         read_witness(root, index, |key| {
-            self.inner
-                .db
+            snapshot
                 .get_pinned_cf(&cf, key)?
                 .map(|bytes| {
                     anyhow::ensure!(bytes.len() <= PAGE_BYTES, "Oversized committed-data record");
@@ -268,8 +301,13 @@ impl RocksDBStorage {
         }
         let root = dataset.root();
         debug_assert_eq!(dataset_bytes, dataset_logical_bytes(dataset.values().len())?);
-        // Protect the import/publication race until lifecycle replay reaches the next local block.
-        batch.put_cf(&cf, root_key(STAGED_PREFIX, root), staged_at_block.to_be_bytes());
+        let staged_key = root_key(STAGED_PREFIX, root);
+        if let Some(previous) = self.inner.db.get_pinned_cf(&cf, &staged_key)? {
+            batch.delete_cf(&cf, staged_block_key(u64_value(&previous, "committed-data staging block")?, root));
+        }
+        // The reverse index makes abandoned imports discoverable; re-import atomically renews the lease.
+        batch.put_cf(&cf, &staged_key, staged_at_block.to_be_bytes());
+        batch.put_cf(&cf, staged_block_key(staged_at_block, root), []);
         batch.put_cf(&cf, USAGE_KEY, next.to_be_bytes());
         let mut options = WriteOptions::default();
         options.set_sync(true);
@@ -325,29 +363,46 @@ impl RocksDBStorage {
         batch.put_cf(&cf, active_key(oracle, 1), funding_root.to_bytes_be());
         for root in [price_root, funding_root] {
             let staged_key = root_key(STAGED_PREFIX, root);
-            if self
+            if let Some(staged_at) = self
                 .inner
                 .db
                 .get_pinned_cf(&cf, &staged_key)?
                 .map(|value| u64_value(&value, "committed-data staging block"))
                 .transpose()?
-                .is_some_and(|staged_at| block >= staged_at)
             {
-                batch.delete_cf(&cf, staged_key);
+                if block >= staged_at {
+                    batch.delete_cf(&cf, staged_block_key(staged_at, root));
+                    batch.delete_cf(&cf, staged_key);
+                }
+            }
+            let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
+            if let Some(retired_at) = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, &retired_key)?
+                .map(|value| u64_value(&value, "committed-data retirement block"))
+                .transpose()?
+            {
+                if block > retired_at {
+                    batch.delete_cf(&cf, retired_block_key(retired_at, root));
+                    batch.delete_cf(&cf, retired_key);
+                }
             }
         }
         for root in previous.into_iter().flatten() {
             if active_counts.get(&root).copied().unwrap_or_default() == 0 {
                 let staged_key = root_key(STAGED_PREFIX, root);
-                if self
+                if let Some(staged_at) = self
                     .inner
                     .db
                     .get_pinned_cf(&cf, &staged_key)?
                     .map(|value| u64_value(&value, "committed-data staging block"))
                     .transpose()?
-                    .is_some_and(|staged_at| block >= staged_at)
                 {
-                    batch.delete_cf(&cf, staged_key);
+                    if block >= staged_at {
+                        batch.delete_cf(&cf, staged_block_key(staged_at, root));
+                        batch.delete_cf(&cf, staged_key);
+                    }
                 }
                 let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
                 let previous_retirement = self
@@ -374,22 +429,67 @@ impl RocksDBStorage {
         Ok(())
     }
 
-    pub(crate) fn committed_data_lifecycle_cursor(&self, oracle: Felt) -> Result<u64> {
+    pub(crate) fn committed_data_lifecycle_cursor(&self, oracle: Felt) -> Result<CommittedDataLifecycleCursor> {
         let cf = self.inner.get_column(meta::META_COLUMN);
-        self.inner
-            .db
-            .get_pinned_cf(&cf, root_key(SCAN_CURSOR_PREFIX, oracle))?
-            .map(|value| u64_value(&value, "committed-data lifecycle cursor"))
-            .transpose()
-            .map(|cursor| cursor.unwrap_or(0))
+        let Some(value) = self.inner.db.get_pinned_cf(&cf, root_key(SCAN_CURSOR_PREFIX, oracle))? else {
+            return Ok(CommittedDataLifecycleCursor { next_block: 0, last_scanned_block_hash: None });
+        };
+        let next_block = u64_value(
+            value.get(..8).context("Invalid committed-data lifecycle cursor")?,
+            "committed-data lifecycle cursor",
+        )?;
+        let last_scanned_block_hash = match value.len() {
+            8 => None, // Legacy unanchored cursor; the caller rebuilds lifecycle metadata.
+            40 => Some(canonical_felt(&value[8..])?),
+            _ => anyhow::bail!("Invalid committed-data lifecycle cursor"),
+        };
+        Ok(CommittedDataLifecycleCursor { next_block, last_scanned_block_hash })
     }
 
-    pub(crate) fn write_committed_data_lifecycle_cursor(&self, oracle: Felt, next_block: u64) -> Result<()> {
+    pub(crate) fn write_committed_data_lifecycle_cursor(
+        &self,
+        oracle: Felt,
+        next_block: u64,
+        last_scanned_block_hash: Felt,
+    ) -> Result<()> {
         let cf = self.inner.get_column(meta::META_COLUMN);
+        let mut value = Vec::with_capacity(40);
+        value.extend_from_slice(&next_block.to_be_bytes());
+        value.extend_from_slice(&last_scanned_block_hash.to_bytes_be());
         let mut options = WriteOptions::default();
         options.set_sync(true);
         options.disable_wal(false);
-        self.inner.db.put_cf_opt(&cf, root_key(SCAN_CURSOR_PREFIX, oracle), next_block.to_be_bytes(), &options)?;
+        self.inner.db.put_cf_opt(&cf, root_key(SCAN_CURSOR_PREFIX, oracle), value, &options)?;
+        Ok(())
+    }
+
+    pub(crate) fn committed_data_prune_watermark(&self) -> Result<Option<CommittedDataPruneWatermark>> {
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let Some(value) = self.inner.db.get_pinned_cf(&cf, PRUNE_WATERMARK_KEY)? else { return Ok(None) };
+        anyhow::ensure!(value.len() == 40, "Invalid committed-data prune watermark");
+        Ok(Some(CommittedDataPruneWatermark {
+            block: u64_value(&value[..8], "committed-data prune watermark block")?,
+            block_hash: canonical_felt(&value[8..])?,
+        }))
+    }
+
+    /// Clears only chain-derived lifecycle rows. Imported datasets and staging leases survive and
+    /// are protected while canonical publication events are replayed from genesis.
+    pub(crate) fn reset_committed_data_lifecycle(&self) -> Result<()> {
+        let _write = self
+            .inner
+            .committed_data_write
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data write lock poisoned"))?;
+        let cf = self.inner.get_column(meta::META_COLUMN);
+        let mut batch = WriteBatch::default();
+        for prefix in [ACTIVE_PREFIX, RETIRED_BY_ROOT_PREFIX, RETIRED_BY_BLOCK_PREFIX, SCAN_CURSOR_PREFIX] {
+            batch.delete_range_cf(&cf, prefix.to_vec(), prefix_upper_bound(prefix));
+        }
+        let mut options = WriteOptions::default();
+        options.set_sync(true);
+        options.disable_wal(false);
+        self.inner.db.write_opt(batch, &options)?;
         Ok(())
     }
 
@@ -397,8 +497,8 @@ impl RocksDBStorage {
     /// RocksDB background policy controls physical reclamation without blocking sequencing.
     pub(crate) fn prune_committed_data(
         &self,
-        settled_tip: u64,
         cutoff: u64,
+        cutoff_hash: Felt,
         limit: usize,
         current_roots: &std::collections::HashSet<Felt>,
     ) -> Result<Vec<Felt>> {
@@ -420,11 +520,16 @@ impl RocksDBStorage {
         iterator.status()?;
         drop(iterator);
 
+        let scan_limit = limit.saturating_mul(16).max(1);
         let mut candidates = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut stale_index_keys = Vec::new();
         let mut iterator = self.inner.db.raw_iterator_cf(&cf);
         iterator.seek(RETIRED_BY_BLOCK_PREFIX);
-        while candidates.len() < limit.saturating_mul(16).max(1) {
+        let mut examined = 0;
+        while examined < scan_limit {
             let Some(raw_key) = iterator.key().filter(|key| key.starts_with(RETIRED_BY_BLOCK_PREFIX)) else { break };
+            examined += 1;
             anyhow::ensure!(
                 raw_key.len() == RETIRED_BY_BLOCK_PREFIX.len() + 40,
                 "Invalid committed-data retirement key"
@@ -435,14 +540,47 @@ impl RocksDBStorage {
                 break;
             }
             let root = canonical_felt(&raw_key[offset + 8..])?;
-            let staging_pending = self
+            let reverse = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, root_key(RETIRED_BY_ROOT_PREFIX, root))?
+                .map(|value| u64_value(&value, "committed-data retirement block"))
+                .transpose()?;
+            if reverse != Some(block) {
+                stale_index_keys.push(raw_key.to_vec());
+            } else if seen.insert(root) {
+                candidates.push((block, root));
+            }
+            iterator.next();
+        }
+        iterator.status()?;
+        drop(iterator);
+
+        let mut iterator = self.inner.db.raw_iterator_cf(&cf);
+        iterator.seek(STAGED_BY_BLOCK_PREFIX);
+        examined = 0;
+        while examined < scan_limit {
+            let Some(raw_key) = iterator.key().filter(|key| key.starts_with(STAGED_BY_BLOCK_PREFIX)) else { break };
+            examined += 1;
+            anyhow::ensure!(
+                raw_key.len() == STAGED_BY_BLOCK_PREFIX.len() + 40,
+                "Invalid committed-data staging index key"
+            );
+            let offset = STAGED_BY_BLOCK_PREFIX.len();
+            let block = u64_value(&raw_key[offset..offset + 8], "committed-data staging index block")?;
+            if block > cutoff {
+                break;
+            }
+            let root = canonical_felt(&raw_key[offset + 8..])?;
+            let reverse = self
                 .inner
                 .db
                 .get_pinned_cf(&cf, root_key(STAGED_PREFIX, root))?
                 .map(|value| u64_value(&value, "committed-data staging block"))
-                .transpose()?
-                .is_some_and(|staged_at| staged_at > settled_tip);
-            if !active.contains(&root) && !current_roots.contains(&root) && !staging_pending {
+                .transpose()?;
+            if reverse != Some(block) {
+                stale_index_keys.push(raw_key.to_vec());
+            } else if seen.insert(root) {
                 candidates.push((block, root));
             }
             iterator.next();
@@ -454,24 +592,75 @@ impl RocksDBStorage {
         let mut used = used.map(|raw| u64_value(&raw, "committed-data quota usage")).transpose()?.unwrap_or(0);
         let mut deleted = Vec::new();
         let mut batch = WriteBatch::default();
-        for (block, root) in candidates {
+        for stale_key in stale_index_keys {
+            batch.delete_cf(&cf, stale_key);
+        }
+        for (_, root) in candidates {
             if deleted.len() == limit {
                 break;
             }
-            let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
-            let Some(retired_at) = self.inner.db.get_pinned_cf(&cf, &retired_key)? else {
-                batch.delete_cf(&cf, retired_block_key(block, root));
+            if active.contains(&root) {
+                let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
+                if let Some(retired_at) = self
+                    .inner
+                    .db
+                    .get_pinned_cf(&cf, &retired_key)?
+                    .map(|value| u64_value(&value, "committed-data retirement block"))
+                    .transpose()?
+                {
+                    batch.delete_cf(&cf, retired_block_key(retired_at, root));
+                    batch.delete_cf(&cf, retired_key);
+                }
+                let staged_key = root_key(STAGED_PREFIX, root);
+                if let Some(staged_at) = self
+                    .inner
+                    .db
+                    .get_pinned_cf(&cf, &staged_key)?
+                    .map(|value| u64_value(&value, "committed-data staging block"))
+                    .transpose()?
+                    .filter(|block| *block <= cutoff)
+                {
+                    batch.delete_cf(&cf, staged_block_key(staged_at, root));
+                    batch.delete_cf(&cf, staged_key);
+                }
                 continue;
-            };
-            if u64_value(&retired_at, "committed-data retirement block")? != block {
-                batch.delete_cf(&cf, retired_block_key(block, root));
+            }
+            if current_roots.contains(&root) {
+                continue;
+            }
+
+            let staged_key = root_key(STAGED_PREFIX, root);
+            let staged_at = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, &staged_key)?
+                .map(|value| u64_value(&value, "committed-data staging block"))
+                .transpose()?;
+            if staged_at.is_some_and(|block| block > cutoff) {
+                continue;
+            }
+
+            let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
+            let retired_at = self
+                .inner
+                .db
+                .get_pinned_cf(&cf, &retired_key)?
+                .map(|value| u64_value(&value, "committed-data retirement block"))
+                .transpose()?;
+            if !retired_at.is_some_and(|block| block <= cutoff) && !staged_at.is_some_and(|block| block <= cutoff) {
                 continue;
             }
 
             let metadata_key = key(root, METADATA_LEVEL, 0);
             if self.inner.db.get_pinned_cf(&cf, &metadata_key)?.is_none() {
-                batch.delete_cf(&cf, retired_block_key(block, root));
-                batch.delete_cf(&cf, retired_key);
+                if let Some(block) = retired_at {
+                    batch.delete_cf(&cf, retired_block_key(block, root));
+                    batch.delete_cf(&cf, &retired_key);
+                }
+                if let Some(block) = staged_at {
+                    batch.delete_cf(&cf, staged_block_key(block, root));
+                    batch.delete_cf(&cf, &staged_key);
+                }
                 continue;
             }
             let metadata = self.inner.db.get_pinned_cf(&cf, &metadata_key)?.expect("metadata presence checked");
@@ -482,15 +671,31 @@ impl RocksDBStorage {
             let mut range_end = range_start.clone();
             range_end.extend_from_slice(&[u8::MAX; 6]);
             batch.delete_range_cf(&cf, range_start, range_end);
-            batch.delete_cf(&cf, retired_block_key(block, root));
-            batch.delete_cf(&cf, retired_key);
-            batch.delete_cf(&cf, root_key(STAGED_PREFIX, root));
+            if let Some(block) = retired_at {
+                batch.delete_cf(&cf, retired_block_key(block, root));
+                batch.delete_cf(&cf, &retired_key);
+            }
+            if let Some(block) = staged_at {
+                batch.delete_cf(&cf, staged_block_key(block, root));
+                batch.delete_cf(&cf, &staged_key);
+            }
             deleted.push(root);
         }
         if !deleted.is_empty() {
             batch.put_cf(&cf, USAGE_KEY, used.to_be_bytes());
+            let previous = self.committed_data_prune_watermark()?;
+            if let Some(previous) = previous.filter(|watermark| watermark.block == cutoff) {
+                anyhow::ensure!(previous.block_hash == cutoff_hash, "Committed-data prune watermark hash changed");
+            }
+            let watermark = previous
+                .filter(|watermark| watermark.block > cutoff)
+                .unwrap_or(CommittedDataPruneWatermark { block: cutoff, block_hash: cutoff_hash });
+            let mut value = Vec::with_capacity(40);
+            value.extend_from_slice(&watermark.block.to_be_bytes());
+            value.extend_from_slice(&watermark.block_hash.to_bytes_be());
+            batch.put_cf(&cf, PRUNE_WATERMARK_KEY, value);
         }
-        if batch.len() > 0 {
+        if !batch.is_empty() {
             let mut options = WriteOptions::default();
             options.set_sync(true);
             options.disable_wal(false);
@@ -503,6 +708,8 @@ impl RocksDBStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
+    use mp_chain_config::ChainConfig;
     use std::collections::HashMap;
 
     #[test]
@@ -551,6 +758,37 @@ mod tests {
         })
         .unwrap_err();
         assert!(error.to_string().contains("page unavailable"));
+    }
+
+    #[test]
+    fn committed_data_snapshot_keeps_an_in_progress_witness_read_alive_during_pruning() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let old = CommittedDataSet::new((0..513_u32).map(Felt::from).collect()).unwrap();
+        let replacement = CommittedDataSet::new(vec![Felt::from(900_u64)]).unwrap();
+        backend.db.write_committed_data_dataset(&old, u64::MAX, 0).unwrap();
+        backend.db.write_committed_data_dataset(&replacement, u64::MAX, 0).unwrap();
+        backend.db.record_committed_data_publication(Felt::ONE, 0, old.root(), old.root()).unwrap();
+        backend.db.record_committed_data_publication(Felt::ONE, 1, replacement.root(), replacement.root()).unwrap();
+
+        let snapshot = rocksdb_snapshot::SnapshotWithDBArc::new(Arc::clone(&backend.db.inner));
+        let cf = backend.db.inner.get_column(meta::META_COLUMN);
+        let mut pruned = false;
+        let witness = read_witness(old.root(), 512, |key| {
+            let value = snapshot.get_pinned_cf(&cf, key)?.map(|bytes| bytes.to_vec());
+            if !pruned {
+                pruned = true;
+                assert_eq!(
+                    backend.db.prune_committed_data(1, Felt::ONE, 8, &std::collections::HashSet::new())?,
+                    vec![old.root()]
+                );
+            }
+            Ok(value)
+        })
+        .unwrap()
+        .unwrap();
+
+        assert!(witness.verify());
+        assert!(backend.db.get_committed_data_witness(old.root(), 512).unwrap().is_none());
     }
 
     #[test]

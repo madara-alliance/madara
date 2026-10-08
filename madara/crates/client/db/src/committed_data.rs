@@ -126,6 +126,11 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
     }
 
     fn scan_committed_data_publications(&self, oracle: Felt, start_block: u64, end_block: u64) -> Result<()> {
+        let block_hash = self
+            .db
+            .get_block_info(end_block)?
+            .with_context(|| format!("Committed-data lifecycle block {end_block} is unavailable"))?
+            .block_hash;
         let mut page_start = start_block;
         let mut skip_in_start_block = 0;
         loop {
@@ -158,7 +163,50 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
                 if last_block == page_start { skip_in_start_block + in_last_block } else { in_last_block };
             page_start = last_block;
         }
-        self.db.write_committed_data_lifecycle_cursor(oracle, end_block.saturating_add(1))
+        let verified_block_hash = self
+            .db
+            .get_block_info(end_block)?
+            .with_context(|| format!("Committed-data lifecycle block {end_block} is unavailable"))?
+            .block_hash;
+        anyhow::ensure!(
+            verified_block_hash == block_hash,
+            "Committed-data lifecycle block {end_block} changed while publications were scanned"
+        );
+        self.db.write_committed_data_lifecycle_cursor(oracle, end_block.saturating_add(1), block_hash)
+    }
+
+    fn committed_data_lifecycle_cursor_is_canonical(
+        &self,
+        cursor: crate::rocksdb::CommittedDataLifecycleCursor,
+    ) -> Result<bool> {
+        match (cursor.next_block, cursor.last_scanned_block_hash) {
+            (0, None) => Ok(true),
+            (0, Some(_)) | (_, None) => Ok(false),
+            (next_block, Some(expected)) => {
+                Ok(self.db.get_block_info(next_block - 1)?.is_some_and(|block| block.block_hash == expected))
+            }
+        }
+    }
+
+    /// Returns false after atomically clearing stale chain-derived rows for a safe full replay.
+    /// A reorg crossing the durable prune watermark cannot be recovered without archived payloads.
+    fn committed_data_lifecycle_ready(&self) -> Result<bool> {
+        if let Some(watermark) = self.db.committed_data_prune_watermark()? {
+            let canonical = self.db.get_block_info(watermark.block)?.map(|block| block.block_hash);
+            anyhow::ensure!(
+                canonical == Some(watermark.block_hash),
+                "Committed-data reorg crossed pruned block {}; restore committed data from an archive before resuming pruning",
+                watermark.block
+            );
+        }
+        for oracle in &self.config.committed_data_oracle_addresses {
+            if !self.committed_data_lifecycle_cursor_is_canonical(self.db.committed_data_lifecycle_cursor(*oracle)?)? {
+                tracing::warn!("Committed-data lifecycle cursor is no longer canonical; rebuilding lifecycle metadata");
+                self.db.reset_committed_data_lifecycle()?;
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Reads the canonical latest (including executed preconfirmed state) Oracle storage roots.
@@ -187,11 +235,18 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
         };
         let mut more = local_tip < observed_settled_tip;
         let settled_tip = observed_settled_tip.min(local_tip);
+        if !self.committed_data_lifecycle_ready()? {
+            return Ok(true);
+        }
         for oracle in &self.config.committed_data_oracle_addresses {
-            let next_block = self.db.committed_data_lifecycle_cursor(*oracle)?;
+            let cursor = self.db.committed_data_lifecycle_cursor(*oracle)?;
+            let next_block = cursor.next_block;
             if next_block <= settled_tip {
                 let end_block = settled_tip.min(next_block.saturating_add(LIFECYCLE_SCAN_BLOCKS - 1));
-                self.scan_committed_data_publications(*oracle, next_block, end_block)?;
+                if let Err(error) = self.scan_committed_data_publications(*oracle, next_block, end_block) {
+                    self.db.reset_committed_data_lifecycle()?;
+                    return Err(error.context("Rebuilding committed-data lifecycle after an incomplete scan"));
+                }
                 more |= end_block < settled_tip;
             }
         }
@@ -206,8 +261,20 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
         let Some(cutoff) = settled_tip.checked_sub(self.config.committed_data_retention_blocks) else {
             return Ok(more);
         };
+        // Keep this critical section short: a revert or head transition cannot invalidate the
+        // canonical guards between their final check and the bounded two-root deletion batch.
+        let _projection_guard =
+            self.head_projection_write_lock.lock().map_err(|_| anyhow::anyhow!("Head projection lock poisoned"))?;
+        if !self.committed_data_lifecycle_ready()? {
+            return Ok(true);
+        }
         let current_roots = self.current_committed_data_roots()?;
-        let deleted = self.db.prune_committed_data(settled_tip, cutoff, PRUNE_ROOTS_PER_PASS, &current_roots)?;
+        let cutoff_hash = self
+            .db
+            .get_block_info(cutoff)?
+            .with_context(|| format!("Committed-data prune cutoff block {cutoff} is unavailable"))?
+            .block_hash;
+        let deleted = self.db.prune_committed_data(cutoff, cutoff_hash, PRUNE_ROOTS_PER_PASS, &current_roots)?;
         for root in &deleted {
             self.committed_data_cache.remove(*root)?;
             tracing::info!(root = %root, cutoff, settled_tip, "Pruned retired committed-data dataset");
@@ -291,7 +358,7 @@ impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rocksdb::RocksDBConfig;
+    use crate::{rocksdb::RocksDBConfig, test_utils::add_test_block};
 
     #[test]
     fn committed_root_event_selector_matches_contract_abi() {
@@ -486,18 +553,25 @@ mod tests {
         let old_funding = CommittedDataSet::new(vec![Felt::from(2_u64)]).unwrap();
         let new_price = CommittedDataSet::new(vec![Felt::from(3_u64)]).unwrap();
         let new_funding = CommittedDataSet::new(vec![Felt::from(4_u64)]).unwrap();
-        for dataset in [&old_price, &old_funding, &new_price, &new_funding] {
+        for dataset in [&old_price, &old_funding] {
             backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
         }
 
         backend.db.record_committed_data_publication(oracle, 11, old_price.root(), old_funding.root()).unwrap();
-        assert!(backend.db.prune_committed_data(u64::MAX, u64::MAX, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend
+            .db
+            .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
+            .unwrap()
+            .is_empty());
 
+        for dataset in [&new_price, &new_funding] {
+            backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
+        }
         backend.db.record_committed_data_publication(oracle, 6_012, new_price.root(), new_funding.root()).unwrap();
-        assert!(backend.db.prune_committed_data(6_011, 6_011, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(6_011, Felt::from(6_011_u64), 8, &HashSet::new()).unwrap().is_empty());
         let current_roots = HashSet::from([old_price.root(), old_funding.root()]);
-        assert!(backend.db.prune_committed_data(6_012, 6_012, 8, &current_roots).unwrap().is_empty());
-        let mut deleted = backend.db.prune_committed_data(6_012, 6_012, 8, &HashSet::new()).unwrap();
+        assert!(backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &current_roots).unwrap().is_empty());
+        let mut deleted = backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &HashSet::new()).unwrap();
         deleted.sort_unstable();
         let mut expected = vec![old_price.root(), old_funding.root()];
         expected.sort_unstable();
@@ -506,7 +580,11 @@ mod tests {
         assert!(backend.db.get_committed_data_count(old_funding.root()).unwrap().is_none());
         assert!(backend.db.get_committed_data_count(new_price.root()).unwrap().is_some());
         assert!(backend.db.get_committed_data_count(new_funding.root()).unwrap().is_some());
-        assert!(backend.db.prune_committed_data(u64::MAX, u64::MAX, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend
+            .db
+            .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -527,17 +605,24 @@ mod tests {
             .record_committed_data_publication(first_oracle, 250, replacement.root(), replacement.root())
             .unwrap();
         backend.db.record_committed_data_publication(second_oracle, 100, shared.root(), replacement.root()).unwrap();
-        assert!(backend.db.prune_committed_data(u64::MAX, u64::MAX, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend
+            .db
+            .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
+            .unwrap()
+            .is_empty());
 
         backend
             .db
             .record_committed_data_publication(second_oracle, 200, replacement.root(), replacement.root())
             .unwrap();
-        assert!(backend.db.prune_committed_data(249, 249, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(249, Felt::from(249_u64), 8, &HashSet::new()).unwrap().is_empty());
         backend.db.write_committed_data_dataset(&shared, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 1_000).unwrap();
-        assert!(backend.db.prune_committed_data(999, 250, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().is_empty());
         assert!(backend.db.get_committed_data_count(shared.root()).unwrap().is_some());
-        assert_eq!(backend.db.prune_committed_data(1_000, 250, 8, &HashSet::new()).unwrap(), vec![shared.root()]);
+        assert_eq!(
+            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap(),
+            vec![shared.root()]
+        );
     }
 
     #[tokio::test]
@@ -563,9 +648,82 @@ mod tests {
             .record_committed_data_publication(second_oracle, 200, replacement.root(), replacement.root())
             .unwrap();
 
-        assert!(backend.db.prune_committed_data(999, 999, 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().is_empty());
         assert!(backend.db.get_committed_data_count(staged.root()).unwrap().is_some());
-        assert_eq!(backend.db.prune_committed_data(1_000, 1_000, 8, &HashSet::new()).unwrap(), vec![staged.root()]);
+        assert_eq!(
+            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap(),
+            vec![staged.root()]
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_data_prunes_abandoned_imports_and_reimport_renews_the_lease() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let dataset = CommittedDataSet::new(vec![Felt::from(40_u64)]).unwrap();
+        backend.db.write_committed_data_dataset(&dataset, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 10).unwrap();
+        backend.db.write_committed_data_dataset(&dataset, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 20).unwrap();
+
+        assert!(backend.db.prune_committed_data(19, Felt::from(19_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_some());
+        assert_eq!(
+            backend.db.prune_committed_data(20, Felt::from(20_u64), 8, &HashSet::new()).unwrap(),
+            vec![dataset.root()]
+        );
+        assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn committed_data_reorg_rebuilds_unpruned_lifecycle_metadata() {
+        let oracle = Felt::from(81_u64);
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig {
+                committed_data_retention_blocks: 1_000,
+                committed_data_oracle_addresses: vec![oracle],
+                ..Default::default()
+            },
+        );
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        add_test_block(&backend, 1, vec![]);
+        let block_2_hash = add_test_block(&backend, 2, vec![]);
+
+        assert!(!backend.committed_data_pruning_pass(2).unwrap());
+        assert_eq!(
+            backend.db.committed_data_lifecycle_cursor(oracle).unwrap(),
+            crate::rocksdb::CommittedDataLifecycleCursor { next_block: 3, last_scanned_block_hash: Some(block_2_hash) }
+        );
+
+        backend.revert_to(&block_0_hash).unwrap();
+        assert!(backend.committed_data_pruning_pass(0).unwrap());
+        assert_eq!(backend.db.committed_data_lifecycle_cursor(oracle).unwrap().next_block, 0);
+        assert!(!backend.committed_data_pruning_pass(0).unwrap());
+        assert_eq!(backend.db.committed_data_lifecycle_cursor(oracle).unwrap().next_block, 1);
+    }
+
+    #[tokio::test]
+    async fn committed_data_reorg_across_pruned_history_fails_closed() {
+        let oracle = Felt::from(82_u64);
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig {
+                committed_data_retention_blocks: 1_000,
+                committed_data_oracle_addresses: vec![oracle],
+                ..Default::default()
+            },
+        );
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        let block_1_hash = add_test_block(&backend, 1, vec![]);
+        add_test_block(&backend, 2, vec![]);
+        assert!(!backend.committed_data_pruning_pass(2).unwrap());
+
+        let orphan = CommittedDataSet::new(vec![Felt::from(41_u64)]).unwrap();
+        backend.db.write_committed_data_dataset(&orphan, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 0).unwrap();
+        assert_eq!(backend.db.prune_committed_data(1, block_1_hash, 8, &HashSet::new()).unwrap(), vec![orphan.root()]);
+
+        backend.revert_to(&block_0_hash).unwrap();
+        let error = backend.committed_data_pruning_pass(0).unwrap_err();
+        assert!(error.to_string().contains("restore committed data from an archive"));
+        assert_eq!(backend.db.committed_data_lifecycle_cursor(oracle).unwrap().next_block, 3);
     }
 
     #[tokio::test]
@@ -590,7 +748,7 @@ mod tests {
         assert!(backend.committed_data_pruning_pass(2_000).unwrap());
         assert!(backend.db.get_committed_data_count(old.root()).unwrap().is_some());
 
-        assert_eq!(backend.db.committed_data_lifecycle_cursor(oracle).unwrap(), 0);
+        assert_eq!(backend.db.committed_data_lifecycle_cursor(oracle).unwrap().next_block, 0);
         assert!(backend.db.get_committed_data_count(new.root()).unwrap().is_some());
     }
 

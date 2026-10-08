@@ -48,6 +48,10 @@ impl<'a> DBIterator<'a> {
         };
     }
 
+    pub fn key(&self) -> Option<&[u8]> {
+        self.raw.key()
+    }
+
     fn pre_advance(&mut self) -> bool {
         if self.should_advance {
             match self.direction {
