@@ -74,8 +74,12 @@ trait OsHintsConfigurationFromLayer {
 impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
     fn with_layer(layer: Layer) -> OsHintsConfiguration {
         match layer {
-            Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false },
-            Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true },
+            Layer::L2 => {
+                OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false, ..Default::default() }
+            }
+            Layer::L3 => {
+                OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true, ..Default::default() }
+            }
         }
     }
 }
@@ -123,12 +127,15 @@ impl JobHandlerTrait for SnosJobHandler {
         // Get DA public keys (already parsed as Felt values in config)
         let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
 
+        let mut os_hints_config = OsHintsConfiguration::with_layer(config.layer().clone());
+        os_hints_config.use_committed_data = config.snos_config().use_committed_data;
         let input = PieGenerationInput {
+            committed_data_rpc_url: config.snos_config().committed_data_rpc_url.as_ref().map(ToString::to_string),
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
             // Use chain details fetched at orchestrator startup (no RPC call needed here)
             chain_config: config.chain_details().to_chain_config(),
-            os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
+            os_hints_config,
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
             versioned_constants: config.snos_config().versioned_constants.clone(),

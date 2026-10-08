@@ -126,7 +126,7 @@ impl Service for SyncService {
                         .disable_tries(this.params.disable_tries)
                         .snap_sync(this.params.snap_sync)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
-                        .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
+                        .madara_extra_data_sync(this.params.madara_extra_data_sync)
                         .disable_reorg(this.params.disable_reorg)
                         .disable_reorg_preconfirmed(this.params.disable_reorg_preconfirmed),
                 )
@@ -164,7 +164,7 @@ impl Service for SyncService {
                     .disable_tries(this.params.disable_tries)
                     .snap_sync(this.params.snap_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
-                    .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
+                    .madara_extra_data_sync(this.params.madara_extra_data_sync)
                     .disable_reorg(this.params.disable_reorg)
                     .disable_reorg_preconfirmed(this.params.disable_reorg_preconfirmed),
             )

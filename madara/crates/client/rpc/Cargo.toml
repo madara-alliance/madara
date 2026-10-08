@@ -41,6 +41,7 @@ mp-utils = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
+starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 
@@ -69,4 +70,3 @@ mc-devnet = { workspace = true }
 mc-mempool = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
 rstest = { workspace = true }
-starknet-core = { workspace = true }

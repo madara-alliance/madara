@@ -9,6 +9,17 @@ use std::str::FromStr;
 pub const RPC_DEFAULT_PORT: u16 = 9944;
 /// Default port for sensitive RPC methods
 pub const RPC_DEFAULT_PORT_ADMIN: u16 = 9943;
+/// Default port for private committed-data ingestion and witnesses.
+pub const RPC_DEFAULT_PORT_COMMITTED_DATA: u16 = 9945;
+const fn default_committed_data_port() -> u16 {
+    RPC_DEFAULT_PORT_COMMITTED_DATA
+}
+const fn default_committed_data_request_size() -> u32 {
+    64
+}
+const fn default_committed_data_connections() -> u32 {
+    4
+}
 /// The default max number of subscriptions per connection.
 pub const RPC_DEFAULT_MAX_SUBS_PER_CONN: u32 = 1024;
 /// The default max request size in MiB.
@@ -96,6 +107,36 @@ pub struct RpcParams {
     /// careful however when exposing this endpoint to the outside world.
     #[arg(env = "MADARA_RPC_ADMIN_EXTERNAL", long, default_value_t = false)]
     pub rpc_admin_external: bool,
+
+    /// Enables the separate private dataset RPC. Does not enable admin or unsafe methods.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA", long, default_value_t = false)]
+    #[serde(default)]
+    pub rpc_committed_data: bool,
+
+    /// Binds Committed Data RPC to all interfaces. Protect it with authenticated private ingress.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_EXTERNAL", long, default_value_t = false, requires = "rpc_committed_data")]
+    #[serde(default)]
+    pub rpc_committed_data_external: bool,
+
+    /// Port for the dedicated dataset RPC listener.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_PORT", long, default_value_t = RPC_DEFAULT_PORT_COMMITTED_DATA)]
+    #[serde(default = "default_committed_data_port")]
+    pub rpc_committed_data_port: u16,
+
+    /// Dataset request limit in MiB, independent of the public/admin RPC limits.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_MAX_REQUEST_SIZE", long, default_value_t = 64)]
+    #[serde(default = "default_committed_data_request_size")]
+    pub rpc_committed_data_max_request_size: u32,
+
+    /// Maximum connections to the dataset listener. Imports also have one-worker admission control.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_MAX_CONNECTIONS", long, default_value_t = 4)]
+    #[serde(default = "default_committed_data_connections")]
+    pub rpc_committed_data_max_connections: u32,
+
+    /// Stark-curve public keys allowed to import datasets. Empty disables signature enforcement.
+    #[arg(env = "MADARA_RPC_COMMITTED_DATA_SIGNERS", long, value_delimiter = ',')]
+    #[serde(default)]
+    pub rpc_committed_data_signers: Vec<starknet_types_core::felt::Felt>,
 
     /// Enables unsafe admin RPC methods. This includes dangerous methods like
     /// `setMempoolIntake`, `revertToAndShutdown`, and `setCustomBlockHeader` that can modify
@@ -225,6 +266,12 @@ impl RpcParams {
         SocketAddr::new(listen_addr.into(), self.rpc_port)
     }
 
+    /// Bind privately by default, independently of the public and admin listener settings.
+    pub fn addr_committed_data(&self) -> SocketAddr {
+        let ip = if self.rpc_committed_data_external { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST };
+        SocketAddr::new(ip.into(), self.rpc_committed_data_port)
+    }
+
     pub fn addr_admin(&self) -> SocketAddr {
         let listen_addr = if self.rpc_admin_external {
             Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
@@ -251,5 +298,53 @@ impl RpcParams {
             max_tries: self.rpc_storage_proof_max_tries,
             max_distance: self.rpc_storage_proof_max_distance,
         }
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Args {
+        #[command(flatten)]
+        rpc: RpcParams,
+    }
+
+    #[test]
+    fn committed_listener_is_opt_in_and_independent_of_public_exposure() {
+        let args = Args::try_parse_from(["test", "--rpc-external"]).unwrap();
+        assert!(!args.rpc.rpc_committed_data);
+        assert_eq!(args.rpc.addr_committed_data(), "127.0.0.1:9945".parse().unwrap());
+        let args = Args::try_parse_from([
+            "test",
+            "--rpc-disable",
+            "--rpc-committed-data",
+            "--rpc-committed-data-external",
+            "--rpc-committed-data-port",
+            "9955",
+            "--rpc-committed-data-max-request-size",
+            "40",
+        ])
+        .unwrap();
+        assert!(args.rpc.rpc_committed_data);
+        assert!(!args.rpc.rpc_admin && !args.rpc.rpc_unsafe);
+        assert_eq!(args.rpc.addr_committed_data(), "0.0.0.0:9955".parse().unwrap());
+        assert_eq!(args.rpc.rpc_committed_data_max_request_size, 40);
+        assert_eq!(args.rpc.rpc_committed_data_max_connections, 4);
+        assert!(Args::try_parse_from(["test", "--rpc-committed-data-external"]).is_err());
+    }
+
+    #[test]
+    fn existing_serialized_rpc_config_keeps_new_listener_disabled() {
+        let args = Args::try_parse_from(["test"]).unwrap();
+        let mut encoded = serde_json::to_value(args.rpc).unwrap();
+        encoded.as_object_mut().unwrap().retain(|key, _| !key.starts_with("rpc_committed_data"));
+        let rpc: RpcParams = serde_json::from_value(encoded).unwrap();
+        assert!(!rpc.rpc_committed_data && !rpc.rpc_committed_data_external);
+        assert_eq!(rpc.rpc_committed_data_port, 9945);
+        assert_eq!(rpc.rpc_committed_data_max_request_size, 64);
+        assert_eq!(rpc.rpc_committed_data_max_connections, 4);
     }
 }

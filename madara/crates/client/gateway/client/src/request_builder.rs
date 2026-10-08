@@ -85,6 +85,15 @@ impl<'a> RequestBuilder<'a> {
         unpack(self.send_get_raw().await?).await
     }
 
+    /// Limits both compressed and decoded bytes before deserializing small feeder responses.
+    pub async fn send_get_bounded<T: DeserializeOwned>(self, max_bytes: usize) -> Result<T, SequencerError> {
+        let response = self.send_get_raw().await?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = collect_response_body(response.into_body(), max_bytes).await?;
+        unpack_bytes_with_limit(status, &headers, body, max_bytes)
+    }
+
     pub async fn send_get_raw(self) -> Result<Response<Incoming>, SequencerError> {
         let mut client = self.client.clone();
         let req = self.build_get_request()?;
@@ -207,7 +216,16 @@ fn unpack_bytes<T>(http_status: StatusCode, headers: &HeaderMap, body: Bytes) ->
 where
     T: ::serde::de::DeserializeOwned,
 {
-    let body = decode_response_body(headers, body)?;
+    unpack_bytes_with_limit(http_status, headers, body, MAX_FEEDER_RESPONSE_BODY_BYTES)
+}
+
+fn unpack_bytes_with_limit<T: DeserializeOwned>(
+    http_status: StatusCode,
+    headers: &HeaderMap,
+    body: Bytes,
+    max_bytes: usize,
+) -> Result<T, SequencerError> {
+    let body = decode_response_body_with_limit(headers, body, max_bytes)?;
 
     if http_status == StatusCode::TOO_MANY_REQUESTS {
         return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
@@ -219,10 +237,6 @@ where
     }
 
     serde_json::from_slice(&body).map_err(|serde_error| SequencerError::DeserializeBody { serde_error })
-}
-
-fn decode_response_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, SequencerError> {
-    decode_response_body_with_limit(headers, body, MAX_FEEDER_RESPONSE_BODY_BYTES)
 }
 
 fn decode_response_body_with_limit(

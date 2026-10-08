@@ -27,6 +27,8 @@ pub struct ServerConfig {
     pub name: String,
     pub addr: SocketAddr,
     pub cors: Option<Vec<String>>,
+    /// Restrict HTTP Host independently from browser-origin policy.
+    pub restrict_hosts: bool,
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
@@ -62,6 +64,7 @@ pub async fn start_server(
         name,
         addr,
         cors,
+        restrict_hosts,
         rpc_version_default,
         max_connections,
         max_subs_per_conn,
@@ -86,7 +89,7 @@ pub async fn start_server(
         .max_failures(WS_MAX_PING_FAILURES);
 
     let http_middleware = tower::ServiceBuilder::new()
-        .option_layer(host_filtering(cors.is_some(), local_addr))
+        .option_layer(host_filtering(restrict_hosts, local_addr))
         .layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()

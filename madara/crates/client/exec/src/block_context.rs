@@ -10,19 +10,21 @@ use blockifier::{
 };
 use mc_db::{MadaraBackend, MadaraBlockView, MadaraStateView, MadaraStorageRead};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
-use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
+use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use starknet_api::{
     block::{BlockInfo, BlockNumber, BlockTimestamp},
     core::ContractAddress,
 };
 use std::sync::Arc;
 
-fn block_context(
-    chain_config: &ChainConfig,
+/// Builds historical execution context with the node's read permission and authenticated dataset provider.
+fn block_context<D: MadaraStorageRead>(
+    backend: &Arc<MadaraBackend<D>>,
     block_info: MadaraMaybePreconfirmedBlockInfo,
 ) -> Result<Arc<BlockContext>, Error> {
+    let chain_config = backend.chain_config();
     let protocol_version = block_info.protocol_version();
-    Ok(BlockContext::new(
+    let mut context = BlockContext::new(
         BlockInfo {
             block_number: BlockNumber(block_info.block_number()),
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
@@ -37,8 +39,13 @@ fn block_context(
         chain_config.blockifier_chain_info(),
         chain_config.exec_constants_by_protocol_version(*protocol_version)?,
         chain_config.bouncer_config.clone(),
-    )
-    .into())
+    );
+    context.use_committed_data = backend.use_committed_data();
+    context.committed_data_witnesses =
+        Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
+            backend.committed_data_provider(),
+        ));
+    Ok(context.into())
 }
 
 pub struct ExecutionContext<D: MadaraStorageRead> {
@@ -80,7 +87,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
         Ok(ExecutionContext {
             protocol_version: *block_info.protocol_version(),
             state: CachedState::new(BlockifierStateAdapter::new(self.clone().into(), block_info.block_number())),
-            block_context: block_context(self.backend().chain_config(), block_info)?,
+            block_context: block_context(self.backend(), block_info)?,
         })
     }
     fn new_execution_context_at_block_start(&self) -> Result<ExecutionContext<D>, Error> {
@@ -91,7 +98,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
                 self.clone().state_view_on_parent(), // Only make the parent block state visible..
                 block_info.block_number(),
             )),
-            block_context: block_context(self.backend().chain_config(), block_info)?, // ..but use the current block context
+            block_context: block_context(self.backend(), block_info)?, // ..but use the current block context
         })
     }
 }
@@ -112,14 +119,20 @@ impl<D: MadaraStorageRead> MadaraBackendExecutionExt<D> for MadaraBackend<D> {
         state_adaptor: LayeredStateAdapter<D>,
         block_info: BlockInfo,
     ) -> Result<TransactionExecutor<LayeredStateAdapter<D>>, Error> {
+        let mut context = BlockContext::new(
+            block_info,
+            self.chain_config().blockifier_chain_info(),
+            self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
+            self.chain_config().bouncer_config.clone(),
+        );
+        context.use_committed_data = self.use_committed_data();
+        context.committed_data_witnesses =
+            Arc::new(blockifier::execution::syscalls::committed_data::CommittedDataWitnesses::from_provider(
+                self.committed_data_provider(),
+            ));
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
-            BlockContext::new(
-                block_info,
-                self.chain_config().blockifier_chain_info(),
-                self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
-                self.chain_config().bouncer_config.clone(),
-            ),
+            context,
             TransactionExecutorConfig {
                 concurrency_config: self.chain_config().block_production_concurrency.blockifier_config(),
                 stack_size: DEFAULT_STACK_SIZE,

@@ -4,6 +4,15 @@
 use super::*;
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn write_committed_data_dataset(
+        &self,
+        dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
+        max_bytes: u64,
+        staged_at_block: u64,
+    ) -> Result<()> {
+        self.store_committed_data_dataset(dataset, max_bytes, staged_at_block)
+    }
+
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
         tracing::debug!("Writing header {}", header.header.block_number);
         let block_n = header.header.block_number;

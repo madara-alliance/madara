@@ -51,6 +51,15 @@ async fn feeder_gateway_router(
     transaction_lookup: Arc<dyn TransactionLookup>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
+        (&Method::GET, "feeder_gateway/get_committed_data_roots") => {
+            Ok(crate::committed_data::get(req, backend, "roots").await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_committed_data") => {
+            Ok(crate::committed_data::get(req, backend, "page").await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_committed_data_witness") => {
+            Ok(crate::committed_data::get(req, backend, "witness").await.unwrap_or_else(Into::into))
+        }
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
             Ok(handle_get_preconfirmed_block(req, backend).await.unwrap_or_else(Into::into))
         }
@@ -114,5 +123,77 @@ async fn gateway_router(
             tracing::debug!(target: "feeder_gateway", "Gateway received invalid request: {path}");
             Ok(not_found_response())
         }
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+    use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+    use starknet_types_core::felt::Felt;
+
+    struct NoTransactions;
+    #[async_trait::async_trait]
+    impl TransactionLookup for NoTransactions {
+        async fn received_transaction(&self, _: Felt) -> Option<bool> {
+            None
+        }
+        async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
+            None
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_data_feeder_serves_gets_and_rejects_post_and_invalid_offsets() {
+        use std::io::{Read, Write};
+        let backend = MadaraBackend::open_for_testing(Arc::new(mp_chain_config::ChainConfig::madara_test()));
+        let values = vec![Felt::ONE, Felt::TWO];
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            for _ in 0..5 {
+                let (stream, _) = listener.accept().await.unwrap();
+                let backend = backend.clone();
+                let service = hyper::service::service_fn(move |req: Request<Incoming>| {
+                    let backend = backend.clone();
+                    async move {
+                        let path = req.uri().path().trim_start_matches('/').to_string();
+                        let response =
+                            feeder_gateway_router(req, &path, backend, Arc::new(NoTransactions)).await.unwrap();
+                        Ok::<_, Infallible>(response.map(|body| http_body_util::Full::new(bytes::Bytes::from(body))))
+                    }
+                });
+                hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await
+                    .unwrap();
+            }
+        });
+        let query = move |method: &'static str, path: String| async move {
+            tokio::task::spawn_blocking(move || {
+                let mut stream = std::net::TcpStream::connect(addr).unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                write!(stream, "{method} /feeder_gateway/{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").unwrap();
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                let (head, body) = response.split_once("\r\n\r\n").unwrap();
+                (head.to_string(), body.to_string())
+            }).await.unwrap()
+        };
+        let (head, body) = query("GET", "get_committed_data_roots".into()).await;
+        assert!(head.starts_with("HTTP/1.1 200"));
+        assert_eq!(serde_json::from_str::<Vec<Felt>>(&body).unwrap(), vec![root]);
+        let (_, body) = query("GET", format!("get_committed_data?root={root:#x}&start=0")).await;
+        let page: mp_gateway::committed_data::CommittedDataPage = serde_json::from_str(&body).unwrap();
+        assert_eq!(page.values, values);
+        let (_, body) = query("GET", format!("get_committed_data_witness?root={root:#x}&index=1")).await;
+        let witness: blockifier::execution::syscalls::committed_data::CommittedDataWitness =
+            serde_json::from_str(&body).unwrap();
+        assert!(witness.verify());
+        assert!(query("GET", format!("get_committed_data?root={root:#x}&start=1")).await.0.starts_with("HTTP/1.1 400"));
+        assert!(query("POST", "get_committed_data".into()).await.0.starts_with("HTTP/1.1 404"));
+        server.await.unwrap();
     }
 }

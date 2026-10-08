@@ -104,6 +104,8 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
         use TransactionExecutionError as E;
 
         match err {
+            // Missing private data is a node availability failure, not invalid user input.
+            E::CommittedDataAvailability(err) => SubmitTransactionError::Internal(err.into()),
             err @ E::ContractClassVersionMismatch { .. } => rejected(InvalidContractClassVersion, format!("{err:#}")),
             err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
             err @ (E::ExecutionError { .. }
@@ -497,5 +499,19 @@ impl TransactionLookup for TransactionValidator {
         hash: Felt,
     ) -> Result<Option<ProviderTransactionResponse>, SubmitTransactionError> {
         self.inner.feeder_transaction(hash).await
+    }
+}
+
+#[cfg(test)]
+mod committed_data_tests {
+    use super::*;
+    use blockifier::execution::syscalls::committed_data::CommittedDataError;
+
+    #[test]
+    fn committed_data_unavailability_is_an_internal_submission_failure() {
+        let error = SubmitTransactionError::from(TransactionExecutionError::CommittedDataAvailability(
+            CommittedDataError::Unavailable,
+        ));
+        assert!(matches!(error, SubmitTransactionError::Internal(_)));
     }
 }

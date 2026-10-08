@@ -7,7 +7,7 @@ use jsonrpsee::server::ServerHandle;
 use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
-use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
+use mc_rpc::{rpc_api_admin, rpc_api_committed_data, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
 use mp_chain_config::RpcVersion;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -22,6 +22,7 @@ mod server;
 pub enum RpcType {
     User,
     Admin,
+    CommittedData,
 }
 
 pub struct RpcService {
@@ -55,6 +56,18 @@ impl RpcService {
             block_prod_handle: None,
             mempool: None,
         }
+    }
+
+    /// Creates an independently controlled listener exposing only committed-data ingestion.
+    pub fn committed_data(
+        config: RpcParams,
+        backend: Arc<MadaraBackend>,
+        submit_tx_provider: MakeSubmitTransactionSwitch,
+        transaction_lookup_provider: MakeTransactionLookupSwitch,
+    ) -> Self {
+        let mut service = Self::user(config, backend, submit_tx_provider, transaction_lookup_provider, None);
+        service.rpc_type = RpcType::CommittedData;
+        service
     }
 
     pub fn admin(
@@ -111,6 +124,7 @@ impl Service for RpcService {
                 block_prod_handle,
                 ctx.clone(),
             );
+            starknet.set_committed_data_signers(config.rpc_committed_data_signers.clone())?;
             if let Some(mempool_watcher) = tx_status_watcher.clone() {
                 starknet.set_tx_status_watcher(Some(mempool_watcher.clone()));
                 starknet.set_new_transactions_watcher(Some(mempool_watcher));
@@ -138,6 +152,13 @@ impl Service for RpcService {
                             RpcVersion::RPC_VERSION_0_10_2,
                         ],
                     ),
+                    RpcType::CommittedData => (
+                        "JSON-RPC (Committed Data)".to_string(),
+                        config.addr_committed_data(),
+                        rpc_api_committed_data(&starknet)?,
+                        RpcVersion::RPC_VERSION_ADMIN_0_1_0,
+                        vec![RpcVersion::RPC_VERSION_ADMIN_0_1_0],
+                    ),
                     RpcType::Admin => (
                         "JSON-RPC (Admin)".to_string(),
                         config.addr_admin(),
@@ -146,21 +167,42 @@ impl Service for RpcService {
                         vec![RpcVersion::RPC_VERSION_ADMIN_0_1_0],
                     ),
                 };
-                let methods = rpc_api_build("rpc", api_rpc).into();
+                let committed_data = matches!(rpc_type, RpcType::CommittedData);
+                // Keep the dedicated surface to its import method; no rpc_methods discovery endpoint.
+                let methods = if committed_data { api_rpc } else { rpc_api_build("rpc", api_rpc) }.into();
 
                 ServerConfig {
                     name,
                     addr,
-                    batch_config: config.batch_config(),
-                    max_connections: config.rpc_max_connections,
-                    max_payload_in_mib: config.rpc_max_request_size,
+                    batch_config: if committed_data {
+                        jsonrpsee::server::BatchRequestConfig::Disabled
+                    } else {
+                        config.batch_config()
+                    },
+                    max_connections: if committed_data {
+                        config.rpc_committed_data_max_connections
+                    } else {
+                        config.rpc_max_connections
+                    },
+                    max_payload_in_mib: if committed_data {
+                        config.rpc_committed_data_max_request_size
+                    } else {
+                        config.rpc_max_request_size
+                    },
                     max_payload_out_mib: config.rpc_max_response_size,
                     max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                     ws_inactive_timeout_secs: config.rpc_ws_inactive_timeout_secs,
                     message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
                     methods,
                     metrics,
-                    cors: config.cors(),
+                    // No browser origins on the private dataset API. External service DNS must
+                    // still work; ingress authentication is the operator's responsibility.
+                    cors: if committed_data { Some(Vec::new()) } else { config.cors() },
+                    restrict_hosts: if committed_data {
+                        !config.rpc_committed_data_external
+                    } else {
+                        config.cors().is_some()
+                    },
                     rpc_version_default,
                     supported_versions,
                 }
@@ -181,6 +223,7 @@ impl ServiceId for RpcService {
         match self.rpc_type {
             RpcType::User => MadaraServiceId::RpcUser.svc_id(),
             RpcType::Admin => MadaraServiceId::RpcAdmin.svc_id(),
+            RpcType::CommittedData => MadaraServiceId::RpcCommittedData.svc_id(),
         }
     }
 }
