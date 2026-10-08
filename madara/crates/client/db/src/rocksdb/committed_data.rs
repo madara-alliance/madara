@@ -599,30 +599,9 @@ impl RocksDBStorage {
             if deleted.len() == limit {
                 break;
             }
+            // Do not clean an active root's older indexes here: Oracle histories are replayed
+            // independently, so a lower-block activation can be observed after a later retirement.
             if active.contains(&root) {
-                let retired_key = root_key(RETIRED_BY_ROOT_PREFIX, root);
-                if let Some(retired_at) = self
-                    .inner
-                    .db
-                    .get_pinned_cf(&cf, &retired_key)?
-                    .map(|value| u64_value(&value, "committed-data retirement block"))
-                    .transpose()?
-                {
-                    batch.delete_cf(&cf, retired_block_key(retired_at, root));
-                    batch.delete_cf(&cf, retired_key);
-                }
-                let staged_key = root_key(STAGED_PREFIX, root);
-                if let Some(staged_at) = self
-                    .inner
-                    .db
-                    .get_pinned_cf(&cf, &staged_key)?
-                    .map(|value| u64_value(&value, "committed-data staging block"))
-                    .transpose()?
-                    .filter(|block| *block <= cutoff)
-                {
-                    batch.delete_cf(&cf, staged_block_key(staged_at, root));
-                    batch.delete_cf(&cf, staged_key);
-                }
                 continue;
             }
             if current_roots.contains(&root) {
