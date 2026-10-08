@@ -52,6 +52,7 @@ jobs:
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
+      skip-cargo-check: ${{ inputs.skip-cargo-check }}
     permissions:
       contents: read
       packages: write
@@ -65,6 +66,7 @@ jobs:
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
+      skip-cargo-check: ${{ inputs.skip-cargo-check }}
     permissions:
       contents: read
       packages: write
@@ -78,6 +80,7 @@ jobs:
     with:
       image-name: bootstrapper-v2
       image-file: ./bootstrapper-v2/Dockerfile
+      skip-cargo-check: ${{ inputs.skip-cargo-check }}
     permissions:
       contents: read
       packages: write
