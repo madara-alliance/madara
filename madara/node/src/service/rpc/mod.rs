@@ -117,6 +117,7 @@ impl Service for RpcService {
             }
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
+            starknet.set_sync_threshold_blocks(config.rpc_sync_threshold_blocks);
             if let Some(mempool) = mempool.clone() {
                 starknet.set_mempool(mempool);
             }
