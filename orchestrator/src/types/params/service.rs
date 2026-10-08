@@ -15,6 +15,7 @@ pub struct ServiceParams {
     pub proof_registration_timeout_seconds: u64,
     pub data_submission_timeout_seconds: u64,
     pub state_transition_timeout_seconds: u64,
+    pub state_transition_verification_delay_seconds: u64,
     pub aggregator_job_timeout_seconds: u64,
     pub snos_job_buffer_size: u64,
     pub aggregator_job_buffer_size: u64,
@@ -22,6 +23,14 @@ pub struct ServiceParams {
 }
 
 impl ServiceParams {
+    /// Override only state-update verification; other handlers retain their own polling cadence.
+    pub fn verification_delay_seconds(&self, job_type: &JobType, handler_default: u64) -> u64 {
+        match job_type {
+            JobType::StateTransition => self.state_transition_verification_delay_seconds,
+            _ => handler_default,
+        }
+    }
+
     /// Get the timeout for a specific job type
     ///
     /// # Arguments
@@ -55,6 +64,7 @@ impl From<ServiceCliArgs> for ServiceParams {
             proof_registration_timeout_seconds: args.proof_registration_timeout_seconds,
             data_submission_timeout_seconds: args.data_submission_timeout_seconds,
             state_transition_timeout_seconds: args.state_transition_timeout_seconds,
+            state_transition_verification_delay_seconds: args.state_transition_verification_delay_seconds,
             aggregator_job_timeout_seconds: args.aggregator_job_timeout_seconds,
             snos_job_buffer_size: args.snos_job_buffer_size,
             aggregator_job_buffer_size: args.aggregator_job_buffer_size,
@@ -73,5 +83,52 @@ pub struct ServerParams {
 impl From<ServerCliArgs> for ServerParams {
     fn from(value: ServerCliArgs) -> Self {
         Self { host: value.host, port: value.port, admin_enabled: value.admin_enabled }
+    }
+}
+
+#[cfg(test)]
+mod verification_delay_tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        service: ServiceCliArgs,
+    }
+
+    #[test]
+    fn validates_sqs_delay_and_preserves_other_job_delays() {
+        let defaults: ServiceParams = TestCli::try_parse_from(["test"]).unwrap().service.into();
+        assert_eq!(defaults.verification_delay_seconds(&JobType::StateTransition, 60), 60);
+        for delay in [0, 5, 900] {
+            let configured: ServiceParams =
+                TestCli::try_parse_from(["test", "--state-transition-verification-delay-seconds", &delay.to_string()])
+                    .unwrap()
+                    .service
+                    .into();
+            assert_eq!(configured.verification_delay_seconds(&JobType::StateTransition, 60), delay);
+            for job_type in [
+                JobType::SnosRun,
+                JobType::ProofCreation,
+                JobType::ProofRegistration,
+                JobType::DataSubmission,
+                JobType::Aggregator,
+            ] {
+                assert_eq!(configured.verification_delay_seconds(&job_type, 37), 37);
+            }
+        }
+        assert!(TestCli::try_parse_from(["test", "--state-transition-verification-delay-seconds", "901"]).is_err());
+    }
+
+    #[test]
+    fn exposes_verification_delay_through_env() {
+        let command = TestCli::command();
+        let arg =
+            command.get_arguments().find(|arg| arg.get_id() == "state_transition_verification_delay_seconds").unwrap();
+        assert_eq!(
+            arg.get_env(),
+            Some(std::ffi::OsStr::new("MADARA_ORCHESTRATOR_STATE_TRANSITION_VERIFICATION_DELAY_SECONDS"))
+        );
     }
 }

@@ -471,6 +471,24 @@ MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS=<starknet-account-address>
 MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS=<starknet-core-contract-address>
 ```
 
+#### Settlement waiting times
+
+These environment variables are read when the orchestrator starts. Defaults preserve the existing settlement cadence.
+
+| Environment variable | Default | Meaning |
+| --- | --- | --- |
+| `MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS` | `60` | Seconds between L1 receipt/confirmation checks; must be at least 1. |
+| `MADARA_ORCHESTRATOR_ETHEREUM_REQUIRED_BLOCK_CONFIRMATIONS` | `3` | Additional L1 blocks after transaction inclusion. `0` accepts successful inclusion immediately. |
+| `MADARA_ORCHESTRATOR_STATE_TRANSITION_VERIFICATION_DELAY_SECONDS` | `60` | SQS message delay in seconds before StateTransition verification, including initial enqueue, pending-verification retries and normal-queue manual requeues; valid range 0–900. |
+
+Confirmation depth is not Ethereum consensus finality. Lowering it reduces reorg protection.
+The verification delay applies to StateTransition jobs on either settlement layer; other job types and manual priority
+requeues keep their existing behavior. It does not change SQS visibility timeouts or the worker-trigger schedule.
+
+Polling intervals do not change `MADARA_ORCHESTRATOR_ETHEREUM_TX_CONFIRMATION_TIMEOUT_SECS` (default 300), which bounds
+the state-update confirmation wait before fee-bump handling. Attempt-limited confirmation and job-verification paths
+retain their attempt limits, so reducing their polling delay also shortens their total retry window.
+
 ### Service Configuration
 
 ```env

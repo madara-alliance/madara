@@ -737,6 +737,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         ))
         .expect("Invalid Starknet operator address"),
         ethereum_finality_retry_wait_in_secs: 60u64,
+        ethereum_required_block_confirmations: 3,
         ethereum_tx_confirmation_timeout_secs: 300,
         ethereum_max_fee_bumps: 2,
         ethereum_l2_state_update_max_fee_wei: DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,
@@ -841,7 +842,8 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         proof_registration_timeout_seconds: 1800, // 30 minutes for proof registration
         data_submission_timeout_seconds: 1800,    // 30 minutes for data submission
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
-        aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
+        state_transition_verification_delay_seconds: 60,
+        aggregator_job_timeout_seconds: 1800, // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
         aggregator_job_buffer_size: 5,
         max_priority_queue_size: 20,

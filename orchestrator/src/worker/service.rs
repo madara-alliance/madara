@@ -181,13 +181,10 @@ impl JobService {
             Self::add_job_to_priority_queue(id, JobAction::Verify, config).await?;
         } else {
             // Add to verification queue with appropriate delay
-            Self::add_job_to_verify_queue(
-                config,
-                id,
-                &job.job_type,
-                Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
-            )
-            .await?;
+            let delay = config
+                .service_config()
+                .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds());
+            Self::add_job_to_verify_queue(config, id, &job.job_type, Some(Duration::from_secs(delay))).await?;
         }
 
         Ok(())
