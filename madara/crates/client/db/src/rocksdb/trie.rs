@@ -15,12 +15,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LockResult, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Instant;
 
-pub const BONSAI_CONTRACT_FLAT_COLUMN: Column = Column::new("bonsai_contract_flat").set_point_lookup();
-pub const BONSAI_CONTRACT_TRIE_COLUMN: Column = Column::new("bonsai_contract_trie").set_point_lookup();
-pub const BONSAI_CONTRACT_LOG_COLUMN: Column = Column::new("bonsai_contract_log").set_log_cf();
-pub const BONSAI_CONTRACT_STORAGE_FLAT_COLUMN: Column = Column::new("bonsai_contract_storage_flat").set_point_lookup();
-pub const BONSAI_CONTRACT_STORAGE_TRIE_COLUMN: Column = Column::new("bonsai_contract_storage_trie").set_point_lookup();
-pub const BONSAI_CONTRACT_STORAGE_LOG_COLUMN: Column = Column::new("bonsai_contract_storage_log").set_log_cf();
+pub const BONSAI_CONTRACT_FLAT_COLUMN: Column =
+    Column::new("bonsai_contract_flat").use_contracts_mem_budget().set_point_lookup();
+pub const BONSAI_CONTRACT_TRIE_COLUMN: Column =
+    Column::new("bonsai_contract_trie").use_contracts_mem_budget().set_point_lookup();
+pub const BONSAI_CONTRACT_LOG_COLUMN: Column =
+    Column::new("bonsai_contract_log").use_contracts_mem_budget().set_log_cf();
+pub const BONSAI_CONTRACT_STORAGE_FLAT_COLUMN: Column =
+    Column::new("bonsai_contract_storage_flat").use_contracts_mem_budget().set_point_lookup();
+pub const BONSAI_CONTRACT_STORAGE_TRIE_COLUMN: Column =
+    Column::new("bonsai_contract_storage_trie").use_contracts_mem_budget().set_point_lookup();
+pub const BONSAI_CONTRACT_STORAGE_LOG_COLUMN: Column =
+    Column::new("bonsai_contract_storage_log").use_contracts_mem_budget().set_log_cf();
 pub const BONSAI_CLASS_FLAT_COLUMN: Column = Column::new("bonsai_class_flat").set_point_lookup();
 pub const BONSAI_CLASS_TRIE_COLUMN: Column = Column::new("bonsai_class_trie").set_point_lookup();
 pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log").set_log_cf();
@@ -319,6 +325,41 @@ impl BonsaiDatabase for BonsaiDB {
         Ok(self.backend.db.get_cf(&handle, key.as_slice())?.map(Into::into))
     }
 
+    #[tracing::instrument(skip(self, keys))]
+    fn get_multi(&self, keys: &[DatabaseKey<'_>]) -> Result<Vec<Option<ByteVec>>, Self::DatabaseError> {
+        let mut values = vec![None; keys.len()];
+
+        for kind in 0..3 {
+            let indices = keys
+                .iter()
+                .enumerate()
+                .filter_map(|(index, key)| {
+                    let key_kind = match key {
+                        DatabaseKey::Trie(_) => 0,
+                        DatabaseKey::Flat(_) => 1,
+                        DatabaseKey::TrieLog(_) => 2,
+                    };
+                    (key_kind == kind).then_some(index)
+                })
+                .collect::<Vec<_>>();
+            let Some(&first_index) = indices.first() else {
+                continue;
+            };
+
+            let handle = self.backend.get_column(self.column_mapping.map(&keys[first_index]).clone());
+            let results = self.backend.db.batched_multi_get_cf(
+                &handle,
+                indices.iter().map(|&index| keys[index].as_slice()),
+                false,
+            );
+            for (index, value) in indices.into_iter().zip(results) {
+                values[index] = value?.map(|value| value.as_ref().into());
+            }
+        }
+
+        Ok(values)
+    }
+
     #[tracing::instrument(skip(self, prefix))]
     fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
         tracing::trace!("Getting by prefix from RocksDB: {:?}", prefix);
@@ -376,6 +417,23 @@ impl BonsaiDatabase for BonsaiDB {
         Ok(old_value)
     }
 
+    #[tracing::instrument(skip(self, key, value, batch))]
+    fn insert_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        value: &[u8],
+        batch: Option<&mut Self::Batch>,
+    ) -> Result<(), Self::DatabaseError> {
+        tracing::trace!("Inserting untracked value into RocksDB: {:?} {:?}", key, value);
+        let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        if let Some(batch) = batch {
+            batch.put_cf(&handle, key.as_slice(), value);
+        } else {
+            self.backend.db.put_cf_opt(&handle, key.as_slice(), value, &self.backend.writeopts)?;
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, key, batch))]
     fn remove(
         &mut self,
@@ -395,6 +453,22 @@ impl BonsaiDatabase for BonsaiDB {
             self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
         }
         Ok(old_value)
+    }
+
+    #[tracing::instrument(skip(self, key, batch))]
+    fn remove_untracked(
+        &mut self,
+        key: &DatabaseKey,
+        batch: Option<&mut Self::Batch>,
+    ) -> Result<(), Self::DatabaseError> {
+        tracing::trace!("Removing untracked value from RocksDB: {:?}", key);
+        let handle = self.backend.get_column(self.column_mapping.map(key).clone());
+        if let Some(batch) = batch {
+            batch.delete_cf(&handle, key.as_slice());
+        } else {
+            self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, prefix))]
