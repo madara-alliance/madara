@@ -1,5 +1,5 @@
 use jsonrpsee::server::BatchRequestConfig;
-use mc_rpc::StorageProofConfig;
+use mc_rpc::{StorageProofConfig, DEFAULT_SYNC_THRESHOLD_BLOCKS};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -104,6 +104,11 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_UNSAFE", long, default_value_t = false, requires = "rpc_admin")]
     pub rpc_unsafe: bool,
 
+    /// Number of blocks the node may lag behind its sync target before reporting that it is syncing.
+    #[arg(env = "MADARA_RPC_SYNC_THRESHOLD_BLOCKS", long, default_value_t = DEFAULT_SYNC_THRESHOLD_BLOCKS)]
+    #[serde(default = "default_rpc_sync_threshold_blocks")]
+    pub rpc_sync_threshold_blocks: u64,
+
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in mebibytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MIB)]
     pub rpc_max_request_size: u32,
@@ -192,6 +197,10 @@ pub struct RpcParams {
     /// storage is queried count as one each.
     #[arg(env = "MADARA_RPC_STORAGE_PROOF_MAX_TRIES", long, default_value_t = 5)]
     pub rpc_storage_proof_max_tries: usize,
+}
+
+const fn default_rpc_sync_threshold_blocks() -> u64 {
+    DEFAULT_SYNC_THRESHOLD_BLOCKS
 }
 
 impl RpcParams {
