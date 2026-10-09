@@ -164,6 +164,23 @@ impl SnapshotWithDBArc {
     {
         self.readopts_with_raw_snapshot(readopts, |readopts| self.db.db.multi_get_cf_opt(keys_cf, readopts))
     }
+
+    /// Returns pinned values for one column using RocksDB's optimized batched multi-get
+    /// while preserving this snapshot's point-in-time view.
+    pub fn batched_multi_get_cf<'a, K, I>(
+        &self,
+        cf: &impl AsColumnFamilyRef,
+        keys: I,
+        sorted_input: bool,
+    ) -> Vec<Result<Option<DBPinnableSlice<'_>>, Error>>
+    where
+        K: AsRef<[u8]> + 'a + ?Sized,
+        I: IntoIterator<Item = &'a K>,
+    {
+        self.readopts_with_raw_snapshot(ReadOptions::default(), |readopts| {
+            self.db.db.batched_multi_get_cf_opt(cf, keys, sorted_input, readopts)
+        })
+    }
 }
 
 impl Drop for SnapshotWithDBArc {
