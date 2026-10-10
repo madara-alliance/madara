@@ -89,7 +89,7 @@ impl From<ServerCliArgs> for ServerParams {
 #[cfg(test)]
 mod verification_delay_tests {
     use super::*;
-    use clap::{CommandFactory, Parser};
+    use clap::{CommandFactory, FromArgMatches, Parser};
 
     #[derive(Parser)]
     struct TestCli {
@@ -97,13 +97,18 @@ mod verification_delay_tests {
         service: ServiceCliArgs,
     }
 
+    fn parse_without_env<const N: usize>(args: [&str; N]) -> clap::error::Result<TestCli> {
+        let matches = TestCli::command().mut_args(|arg| arg.env(None::<&'static str>)).try_get_matches_from(args)?;
+        TestCli::from_arg_matches(&matches)
+    }
+
     #[test]
     fn validates_sqs_delay_and_preserves_other_job_delays() {
-        let defaults: ServiceParams = TestCli::try_parse_from(["test"]).unwrap().service.into();
+        let defaults: ServiceParams = parse_without_env(["test"]).unwrap().service.into();
         assert_eq!(defaults.verification_delay_seconds(&JobType::StateTransition, 60), 60);
         for delay in [0, 5, 900] {
             let configured: ServiceParams =
-                TestCli::try_parse_from(["test", "--state-transition-verification-delay-seconds", &delay.to_string()])
+                parse_without_env(["test", "--state-transition-verification-delay-seconds", &delay.to_string()])
                     .unwrap()
                     .service
                     .into();
@@ -118,7 +123,7 @@ mod verification_delay_tests {
                 assert_eq!(configured.verification_delay_seconds(&job_type, 37), 37);
             }
         }
-        assert!(TestCli::try_parse_from(["test", "--state-transition-verification-delay-seconds", "901"]).is_err());
+        assert!(parse_without_env(["test", "--state-transition-verification-delay-seconds", "901"]).is_err());
     }
 
     #[test]

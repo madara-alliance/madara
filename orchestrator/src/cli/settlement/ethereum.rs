@@ -78,7 +78,7 @@ pub struct EthereumSettlementCliArgs {
 #[cfg(test)]
 mod settlement_wait_tests {
     use super::*;
-    use clap::{CommandFactory, Parser};
+    use clap::{CommandFactory, FromArgMatches, Parser};
 
     #[derive(Parser)]
     struct TestCli {
@@ -86,12 +86,17 @@ mod settlement_wait_tests {
         ethereum: EthereumSettlementCliArgs,
     }
 
+    fn parse_without_env<const N: usize>(args: [&str; N]) -> clap::error::Result<TestCli> {
+        let matches = TestCli::command().mut_args(|arg| arg.env(None::<&'static str>)).try_get_matches_from(args)?;
+        TestCli::from_arg_matches(&matches)
+    }
+
     #[test]
     fn preserves_defaults_and_accepts_shorter_waits() {
-        let defaults = TestCli::try_parse_from(["test"]).unwrap().ethereum;
+        let defaults = parse_without_env(["test"]).unwrap().ethereum;
         assert_eq!(defaults.ethereum_finality_retry_wait_in_secs, Some(60));
         assert_eq!(defaults.ethereum_required_block_confirmations, 3);
-        let configured = TestCli::try_parse_from([
+        let configured = parse_without_env([
             "test",
             "--ethereum-finality-retry-wait-in-secs",
             "5",
@@ -102,7 +107,7 @@ mod settlement_wait_tests {
         .ethereum;
         assert_eq!(configured.ethereum_finality_retry_wait_in_secs, Some(5));
         assert_eq!(configured.ethereum_required_block_confirmations, 0);
-        assert!(TestCli::try_parse_from(["test", "--ethereum-finality-retry-wait-in-secs", "0"]).is_err());
+        assert!(parse_without_env(["test", "--ethereum-finality-retry-wait-in-secs", "0"]).is_err());
     }
 
     #[test]

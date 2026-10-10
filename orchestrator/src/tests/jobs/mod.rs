@@ -60,7 +60,7 @@ pub mod snos_job;
 #[cfg(test)]
 mod aggregator_job;
 
-use crate::core::client::queue::QueueError;
+use crate::core::client::queue::{MockQueueClient, QueueError};
 use crate::error::job::JobError;
 use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
 use crate::tests::common::consume_message_with_retry;
@@ -307,6 +307,78 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
+}
+
+#[tokio::test]
+async fn process_job_uses_configured_state_transition_verification_delay() {
+    let _test_lock = acquire_test_lock();
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(|queue, _, delay| {
+            *queue == QueueType::UpdateStateJobVerification && *delay == Some(Duration::from_secs(7))
+        })
+        .times(1)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_state_transition_verification_delay_seconds(7)
+        .build()
+        .await;
+    let job = build_job_item(JobType::StateTransition, JobStatus::Created, 1);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
+    job_handler.expect_process_job().times(1).returning(|_, _| Ok("0xbeef".to_string()));
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::process_job(job.id, services.config).await.unwrap();
+}
+
+#[rstest]
+#[case(JobType::StateTransition, false, QueueType::UpdateStateJobVerification, Some(Duration::from_secs(7)))]
+#[case(JobType::StateTransition, true, QueueType::PriorityVerificationQueue, None)]
+#[case(JobType::DataSubmission, false, QueueType::DataSubmissionJobVerification, Some(Duration::from_secs(2)))]
+#[tokio::test]
+async fn manual_verification_requeue_uses_expected_delay(
+    #[case] job_type: JobType,
+    #[case] priority: bool,
+    #[case] expected_queue: QueueType,
+    #[case] expected_delay: Option<Duration>,
+) {
+    let _test_lock = acquire_test_lock();
+    let mut queue = MockQueueClient::new();
+    if priority {
+        queue.expect_get_queue_depth().with(eq(QueueType::PriorityVerificationQueue)).times(1).returning(|_| Ok(0));
+    }
+    queue
+        .expect_send_message()
+        .withf(move |queue, _, delay| *queue == expected_queue && *delay == expected_delay)
+        .times(1)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_state_transition_verification_delay_seconds(7)
+        .build()
+        .await;
+    let job = build_job_item(job_type.clone(), JobStatus::VerificationTimeout, 1);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verification_polling_delay_seconds().times(usize::from(!priority)).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
+
+    JobService::queue_job_for_verification(job.id, services.config, priority).await.unwrap();
 }
 
 /// Tests that SNOS panics restore the original job status and rely on SQS/DLQ retries.
@@ -1139,6 +1211,43 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
+}
+
+#[rstest]
+#[case(JobType::StateTransition, QueueType::UpdateStateJobVerification, Duration::from_secs(7))]
+#[case(JobType::DataSubmission, QueueType::DataSubmissionJobVerification, Duration::from_secs(2))]
+#[tokio::test]
+async fn pending_verification_requeue_uses_expected_delay(
+    #[case] job_type: JobType,
+    #[case] expected_queue: QueueType,
+    #[case] expected_delay: Duration,
+) {
+    let _test_lock = acquire_test_lock();
+    let mut queue = MockQueueClient::new();
+    queue
+        .expect_send_message()
+        .withf(move |queue, _, delay| *queue == expected_queue && *delay == Some(expected_delay))
+        .times(1)
+        .returning(|_, _, _| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Mock(MockType::Queue(Box::new(queue))))
+        .configure_state_transition_verification_delay_seconds(7)
+        .build()
+        .await;
+    let job = build_job_item(job_type.clone(), JobStatus::PendingVerification, 1);
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verify_job().times(1).returning(|_, _| Ok(JobVerificationStatus::Pending));
+    job_handler.expect_max_verification_attempts().times(1).return_const(2u64);
+    job_handler.expect_verification_polling_delay_seconds().times(1).return_const(2u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(job_type)).returning(move |_| Arc::clone(&job_handler));
+
+    JobHandlerService::verify_job(job.id, services.config).await.unwrap();
 }
 
 /// Tests `verify_job` function when job is having expected status
