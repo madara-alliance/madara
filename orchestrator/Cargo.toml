@@ -34,7 +34,9 @@ aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
 base64 = { workspace = true }
 bincode = { workspace = true }
-blockifier = { workspace = true }
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1", features = [
+  "node_api",
+] }
 bytes.workspace = true
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
@@ -77,7 +79,7 @@ starknet = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }
 starknet-types-core = { workspace = true }
-starknet_api = { workspace = true }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "9a919da83014beec95d5e1f24ad2b1eaabbf3de1" }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 swiftness_proof_parser = { workspace = true }
