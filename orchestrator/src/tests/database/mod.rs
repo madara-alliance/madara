@@ -8,6 +8,7 @@ use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatc
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
+use chrono::{Duration, SubsecRound, Utc};
 use rstest::*;
 
 #[rstest]
@@ -15,6 +16,62 @@ use rstest::*;
 async fn test_database_connection() -> color_eyre::Result<()> {
     let _services = TestConfigBuilder::new().build().await;
     Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_get_job_queue_summary_filters_and_finds_oldest_created_job() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let database_client = services.config.database();
+    let now = Utc::now().round_subsecs(0);
+
+    let empty = database_client
+        .get_job_queue_summary(
+            JobType::SnosRun,
+            JobStatus::Created,
+            Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(empty.depth, 0);
+    assert_eq!(empty.oldest_created_at, None);
+
+    let mut oldest = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    oldest.created_at = now - Duration::minutes(10);
+    let oldest_created_at = oldest.created_at;
+
+    let mut newest = build_job_item(JobType::SnosRun, JobStatus::Created, 2);
+    newest.created_at = now - Duration::minutes(1);
+
+    let mut other_version =
+        build_job_item_with_version(JobType::SnosRun, JobStatus::Created, 3, "old-version".to_string());
+    other_version.created_at = now - Duration::minutes(20);
+    let other_version_created_at = other_version.created_at;
+
+    for excluded in [
+        build_job_item(JobType::SnosRun, JobStatus::Completed, 4),
+        build_job_item(JobType::ProofCreation, JobStatus::Created, 5),
+    ] {
+        database_client.create_job(excluded).await.unwrap();
+    }
+    for included in [oldest, newest, other_version] {
+        database_client.create_job(included).await.unwrap();
+    }
+
+    let current_version = database_client
+        .get_job_queue_summary(
+            JobType::SnosRun,
+            JobStatus::Created,
+            Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(current_version.depth, 2);
+    assert_eq!(current_version.oldest_created_at, Some(oldest_created_at));
+
+    let all_versions = database_client.get_job_queue_summary(JobType::SnosRun, JobStatus::Created, None).await.unwrap();
+    assert_eq!(all_versions.depth, 3);
+    assert_eq!(all_versions.oldest_created_at, Some(other_version_created_at));
 }
 
 /// Tests for `create_job` operation in database trait.
