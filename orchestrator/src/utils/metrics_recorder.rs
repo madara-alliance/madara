@@ -356,6 +356,10 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.job_queue_snapshot_timestamp.record(now.timestamp() as f64, &attributes);
     }
 
+    pub fn record_snos_verified_blocks(num_blocks: u64) {
+        ORCHESTRATOR_METRICS.snos_verified.add(num_blocks as f64, &[]);
+    }
+
     pub fn record_verification_time(job_type: &JobType, duration_ms: f64) {
         ORCHESTRATOR_METRICS
             .verification_time

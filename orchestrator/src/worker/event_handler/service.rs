@@ -13,7 +13,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
+use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -639,6 +639,9 @@ impl JobHandlerService {
 
                 // Update job status tracking metrics for Completed
                 MetricsRecorder::record_job_status(&job, &JobStatus::Completed);
+                if let JobSpecificMetadata::Snos(snos_metadata) = &job.metadata.specific {
+                    MetricsRecorder::record_snos_verified_blocks(snos_metadata.num_blocks);
+                }
 
                 operation_job_status = Some(JobStatus::Completed);
             }

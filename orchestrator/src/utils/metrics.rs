@@ -37,6 +37,7 @@ pub struct OrchestratorMetrics {
     pub proof_generation_time: Gauge<f64>,
     pub snos_job_processing_time: Histogram<f64>,
     pub snos_batch_blocks: Histogram<f64>,
+    pub snos_verified: Counter<f64>,
     pub snos_rpc_fallback_total: Counter<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
@@ -259,6 +260,16 @@ impl Metrics for OrchestratorMetrics {
             "Number of blocks included in closed SNOS batches".to_string(),
             "blocks".to_string(),
         );
+
+        // This becomes snos_verified_blocks_total in Prometheus. Initialize the
+        // series so the first completed batch has a baseline for rate/increase.
+        let snos_verified = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "snos_verified".to_string(),
+            "Cumulative number of blocks in successfully verified SNOS jobs".to_string(),
+            "blocks".to_string(),
+        );
+        snos_verified.add(0.0, &[]);
 
         let snos_rpc_fallback_total = register_counter_metric_instrument(
             &orchestrator_meter,
@@ -561,6 +572,7 @@ impl Metrics for OrchestratorMetrics {
             proof_generation_time,
             snos_job_processing_time,
             snos_batch_blocks,
+            snos_verified,
             snos_rpc_fallback_total,
             settlement_time,
             jobs_per_minute,
