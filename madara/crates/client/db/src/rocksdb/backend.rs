@@ -180,6 +180,7 @@ impl RocksDBStorage {
         let storage = Self {
             inner,
             snapshots: snapshot.into(),
+            contract_storage_hot_cache: Default::default(),
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         };
