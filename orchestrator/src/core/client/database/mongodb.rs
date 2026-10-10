@@ -2,7 +2,9 @@ use super::error::DatabaseError;
 use crate::core::client::database::constant::{
     AGGREGATOR_BATCHES_COLLECTION, BLOCK_BATCH_LOOKUPS_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
-use crate::core::client::database::{AggregatorBatchDbQuery, BatchIndexSort, DatabaseClient, SnosBatchDbQuery};
+use crate::core::client::database::{
+    AggregatorBatchDbQuery, BatchIndexSort, DatabaseClient, JobQueueSummary, SnosBatchDbQuery,
+};
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, BlockBatchLookup, SnosBatch, SnosBatchStatus,
@@ -67,6 +69,12 @@ pub struct MissingBlocksResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct MissingBatchIndicesResponse {
     pub missing_batch_indices: Vec<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JobQueueSummaryDocument {
+    depth: i64,
+    oldest_created_at: bson::DateTime,
 }
 
 /// MongoDB client implementation
@@ -1028,6 +1036,52 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(jobs)
+    }
+
+    async fn get_job_queue_summary(
+        &self,
+        job_type: JobType,
+        status: JobStatus,
+        orchestrator_version: Option<String>,
+    ) -> Result<JobQueueSummary, DatabaseError> {
+        let mut match_filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": bson::to_bson(&status)?,
+        };
+        if let Some(version) = &orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
+
+        let pipeline = vec![
+            doc! { "$match": match_filter },
+            doc! {
+                "$group": {
+                    "_id": null,
+                    "depth": { "$sum": 1 },
+                    "oldest_created_at": { "$min": "$created_at" },
+                }
+            },
+            doc! { "$project": { "_id": 0 } },
+        ];
+
+        let result = self
+            .execute_pipeline::<JobItem, JobQueueSummaryDocument>(self.get_job_collection(), pipeline, None)
+            .await?
+            .into_iter()
+            .next();
+
+        match result {
+            Some(summary) => Ok(JobQueueSummary {
+                depth: u64::try_from(summary.depth).map_err(|_| {
+                    DatabaseError::FailedToSerializeDocument(format!(
+                        "job queue depth cannot be negative: {}",
+                        summary.depth
+                    ))
+                })?,
+                oldest_created_at: Some(summary.oldest_created_at.to_chrono()),
+            }),
+            None => Ok(JobQueueSummary::default()),
+        }
     }
 
     async fn get_jobs_without_storage_artifacts_tagged(

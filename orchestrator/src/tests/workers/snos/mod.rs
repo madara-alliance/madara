@@ -1,6 +1,6 @@
 #![allow(clippy::await_holding_lock)]
 
-use crate::core::client::database::{MockDatabaseClient, SnosBatchDbQuery};
+use crate::core::client::database::{JobQueueSummary, MockDatabaseClient, SnosBatchDbQuery};
 use crate::core::client::queue::MockQueueClient;
 use crate::core::config::StarknetVersion;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
@@ -41,6 +41,11 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
     let mut job_handler = MockJobHandlerTrait::new();
+
+    db.expect_get_job_queue_summary()
+        .with(eq(JobType::SnosRun), eq(JobStatus::Created), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .times(1)
+        .returning(|_, _, _| Ok(JobQueueSummary::default()));
 
     db.expect_get_latest_job_by_type()
         .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
@@ -151,6 +156,11 @@ async fn test_create_snos_job_for_existing_batch(
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
     let mut job_handler = MockJobHandlerTrait::new();
+
+    db.expect_get_job_queue_summary()
+        .with(eq(JobType::SnosRun), eq(JobStatus::Created), eq(Some(ORCHESTRATOR_VERSION.to_string())))
+        .times(1)
+        .returning(|_, _, _| Ok(JobQueueSummary::default()));
 
     // Mock sequencer response - set to a high block number
     let sequencer_response = json!({

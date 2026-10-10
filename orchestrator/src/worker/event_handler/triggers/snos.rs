@@ -4,7 +4,7 @@ use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
-use crate::types::jobs::types::JobType;
+use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::{
@@ -48,6 +48,17 @@ impl JobTrigger for SnosJobTrigger {
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
+        let created_queue = config
+            .database()
+            .get_job_queue_summary(JobType::SnosRun, JobStatus::Created, Some(ORCHESTRATOR_VERSION.to_string()))
+            .await?;
+        MetricsRecorder::record_job_queue_snapshot(
+            &JobType::SnosRun,
+            &JobStatus::Created,
+            created_queue.depth,
+            created_queue.oldest_created_at,
+        );
+
         // Get the target buffer size from config (configurable via env, defaults to 50)
         let snos_job_buffer_size = config.service_config().snos_job_buffer_size;
 
