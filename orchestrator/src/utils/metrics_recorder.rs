@@ -335,6 +335,27 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration_seconds, attributes);
     }
 
+    /// Record one durable database-backed queue snapshot.
+    pub fn record_job_queue_snapshot(
+        job_type: &JobType,
+        status: &JobStatus,
+        depth: u64,
+        oldest_created_at: Option<chrono::DateTime<Utc>>,
+    ) {
+        let now = Utc::now();
+        let oldest_age_seconds = oldest_created_at
+            .map(|created_at| (now - created_at).num_milliseconds().max(0) as f64 / 1_000.0)
+            .unwrap_or(0.0);
+        let attributes = [
+            KeyValue::new("operation_job_type", format!("{:?}", job_type)),
+            KeyValue::new("operation_job_status", status.to_string()),
+        ];
+
+        ORCHESTRATOR_METRICS.job_queue_depth.record(depth as f64, &attributes);
+        ORCHESTRATOR_METRICS.job_queue_oldest_age.record(oldest_age_seconds, &attributes);
+        ORCHESTRATOR_METRICS.job_queue_snapshot_timestamp.record(now.timestamp() as f64, &attributes);
+    }
+
     pub fn record_verification_time(job_type: &JobType, duration_ms: f64) {
         ORCHESTRATOR_METRICS
             .verification_time

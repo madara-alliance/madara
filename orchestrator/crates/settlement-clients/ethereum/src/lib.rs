@@ -42,6 +42,8 @@ use crate::error::SendTransactionError;
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpProvider};
 use lazy_static::lazy_static;
 use mockall::automock;
+use opentelemetry::global;
+use opentelemetry::metrics::Counter;
 use tokio::time::{sleep, Instant};
 #[cfg(not(feature = "testing"))]
 use tracing::warn;
@@ -190,6 +192,10 @@ lazy_static! {
         0 // precompute parameter: 0 for minimal memory usage
     )
     .expect("Error loading trusted setup file");
+    static ref TRANSACTION_UNDERPRICED_TOTAL: Counter<u64> = global::meter("crates.orchestrator.settlement.ethereum")
+        .u64_counter("settlement_transaction_underpriced_total")
+        .with_description("State update transactions rejected as underpriced")
+        .build();
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +235,10 @@ pub struct EthereumSettlementClient {
 
 impl EthereumSettlementClient {
     pub fn new_with_args(settlement_cfg: &EthereumSettlementValidatedArgs) -> Self {
+        // Establish a zero baseline so Prometheus `increase()` sees the first
+        // underpriced response instead of discovering the series at value one.
+        TRANSACTION_UNDERPRICED_TOTAL.add(0, &[]);
+
         let private_key = settlement_cfg.ethereum_private_key.clone();
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
         let wallet_address = signer.address();
@@ -267,6 +277,8 @@ impl EthereumSettlementClient {
         impersonate_account: Option<Address>,
         l2_state_update_max_fee_wei: u128,
     ) -> Self {
+        TRANSACTION_UNDERPRICED_TOTAL.add(0, &[]);
+
         let private_key = get_env_var_or_panic(ENV_PRIVATE_KEY);
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
         let wallet_address = signer.address();
@@ -433,6 +445,7 @@ impl SettlementClient for EthereumSettlementClient {
             let pending_transaction = match self.send_transaction(prepared_transaction.tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
+                    TRANSACTION_UNDERPRICED_TOTAL.add(1, &[]);
                     attempts.push(StateUpdateTxAttempt {
                         attempt_no,
                         tx_hash: None,
