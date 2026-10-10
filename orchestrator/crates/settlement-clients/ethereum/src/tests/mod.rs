@@ -216,6 +216,7 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 10,
+            ethereum_required_block_confirmations: 3,
             ethereum_tx_confirmation_timeout_secs: 300,
             ethereum_max_fee_bumps: 2,
             ethereum_l2_state_update_max_fee_wei: STATE_UPDATE_TEST_MAX_FEE_WEI,
@@ -302,6 +303,7 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 60u64,
+            ethereum_required_block_confirmations: 3,
             ethereum_tx_confirmation_timeout_secs: 300,
             ethereum_max_fee_bumps: 2,
             ethereum_l2_state_update_max_fee_wei: STATE_UPDATE_TEST_MAX_FEE_WEI,
@@ -380,6 +382,7 @@ mod settlement_client_tests {
             ))
             .expect("Invalid Starknet operator address"),
             ethereum_finality_retry_wait_in_secs: 60u64,
+            ethereum_required_block_confirmations: 3,
             ethereum_tx_confirmation_timeout_secs: 300,
             ethereum_max_fee_bumps: 2,
             ethereum_l2_state_update_max_fee_wei: crate::DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI,

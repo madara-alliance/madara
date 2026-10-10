@@ -61,7 +61,12 @@ pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
-const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
+pub const DEFAULT_REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
+
+/// Inclusion is depth zero; a head below the receipt block never satisfies the policy.
+fn has_required_confirmations(inclusion_block: u64, latest_block: u64, required: u64) -> bool {
+    latest_block.checked_sub(inclusion_block).is_some_and(|depth| depth >= required)
+}
 
 // Ethereum Gas Price Estimation
 // For EIP-4844 blob transactions, blobpool requires a 100% price bump (2x) to replace a stuck transaction.
@@ -204,6 +209,8 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub ethereum_finality_retry_wait_in_secs: u64,
 
+    pub ethereum_required_block_confirmations: u64,
+
     pub ethereum_tx_confirmation_timeout_secs: u64,
 
     pub ethereum_max_fee_bumps: u64,
@@ -221,6 +228,7 @@ pub struct EthereumSettlementClient {
     #[allow(unused)]
     impersonate_account: Option<Address>,
     tx_finality_retry_wait_in_seconds: u64,
+    required_block_confirmations: u64,
     tx_confirmation_timeout_seconds: u64,
     max_fee_bumps: u64,
     l2_state_update_max_fee_wei: u128,
@@ -252,6 +260,7 @@ impl EthereumSettlementClient {
             wallet_address,
             impersonate_account: None,
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
+            required_block_confirmations: settlement_cfg.ethereum_required_block_confirmations,
             tx_confirmation_timeout_seconds: settlement_cfg.ethereum_tx_confirmation_timeout_secs,
             max_fee_bumps: settlement_cfg.ethereum_max_fee_bumps,
             l2_state_update_max_fee_wei: settlement_cfg.ethereum_l2_state_update_max_fee_wei,
@@ -283,6 +292,7 @@ impl EthereumSettlementClient {
             wallet_address,
             impersonate_account,
             tx_finality_retry_wait_in_seconds: 10,
+            required_block_confirmations: DEFAULT_REQUIRED_BLOCK_CONFIRMATIONS,
             tx_confirmation_timeout_seconds: 300,
             max_fee_bumps: 2,
             l2_state_update_max_fee_wei,
@@ -648,8 +658,7 @@ impl SettlementClient for EthereumSettlementClient {
 
                 if let Some(block_number) = receipt.block_number {
                     let latest_block = self.provider.get_block_number().await?;
-                    let confirmations = latest_block.saturating_sub(block_number);
-                    if confirmations >= REQUIRED_BLOCK_CONFIRMATIONS {
+                    if has_required_confirmations(block_number, latest_block, self.required_block_confirmations) {
                         return Ok(Some(block_number));
                     }
                 }
@@ -694,8 +703,7 @@ impl EthereumSettlementClient {
 
                 if let Some(block_number) = receipt.block_number {
                     let latest_block = self.provider.get_block_number().await?;
-                    let confirmations = latest_block.saturating_sub(block_number);
-                    if confirmations >= REQUIRED_BLOCK_CONFIRMATIONS {
+                    if has_required_confirmations(block_number, latest_block, self.required_block_confirmations) {
                         return Ok(Some(block_number));
                     }
                 }
@@ -969,6 +977,26 @@ mod test_config {
         }
 
         txn_request
+    }
+}
+
+#[cfg(test)]
+mod confirmation_policy_tests {
+    use super::has_required_confirmations;
+
+    #[test]
+    fn waits_for_the_configured_number_of_additional_blocks() {
+        assert!(!has_required_confirmations(100, 102, 3));
+        assert!(has_required_confirmations(100, 103, 3));
+        assert!(!has_required_confirmations(100, 100, 1));
+        assert!(has_required_confirmations(100, 101, 1));
+        assert!(has_required_confirmations(100, 100, 0));
+    }
+
+    #[test]
+    fn head_below_inclusion_never_satisfies_confirmation_policy() {
+        assert!(!has_required_confirmations(100, 99, 0));
+        assert!(!has_required_confirmations(100, 99, 3));
     }
 }
 

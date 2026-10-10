@@ -81,6 +81,9 @@ impl TryFrom<RunCmd> for SettlementConfig {
                         .ok_or_else(|| {
                             OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
                         })?,
+                    ethereum_required_block_confirmations: run_cmd
+                        .ethereum_settlement_args
+                        .ethereum_required_block_confirmations,
                     ethereum_tx_confirmation_timeout_secs: run_cmd
                         .ethereum_settlement_args
                         .ethereum_tx_confirmation_timeout_secs,
