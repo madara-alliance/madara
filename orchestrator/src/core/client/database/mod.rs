@@ -12,6 +12,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use ::mongodb::bson::Document;
 use ::mongodb::options::FindOneAndUpdateOptions;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 pub use error::DatabaseError;
 use std::time::Instant;
 
@@ -38,6 +39,13 @@ pub struct AggregatorBatchDbQuery {
     pub limit: Option<i64>,
     pub orchestrator_version: Option<String>,
     pub sort: BatchIndexSort,
+}
+
+/// Durable aggregate of jobs waiting in a particular database queue.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct JobQueueSummary {
+    pub depth: u64,
+    pub oldest_created_at: Option<DateTime<Utc>>,
 }
 
 /// Trait defining database operations for the orchestrator
@@ -181,6 +189,14 @@ pub trait DatabaseClient: Send + Sync {
         limit: Option<i64>,
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+
+    /// Get the durable queue depth and oldest creation time for a job type/status.
+    async fn get_job_queue_summary(
+        &self,
+        job_type: JobType,
+        status: JobStatus,
+        orchestrator_version: Option<String>,
+    ) -> Result<JobQueueSummary, DatabaseError>;
 
     /// Get completed StateTransition jobs that haven't had their storage artifacts tagged yet
     ///

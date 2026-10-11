@@ -5,6 +5,7 @@ use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::global;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, ObservableGauge};
+use opentelemetry::KeyValue;
 use orchestrator_utils::metrics::lib::{
     register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument, Metrics,
 };
@@ -22,6 +23,8 @@ pub struct OrchestratorMetrics {
     pub db_calls_response_time: Gauge<f64>,
     // Queue Metrics
     pub job_queue_depth: Gauge<f64>,
+    pub job_queue_oldest_age: Gauge<f64>,
+    pub job_queue_snapshot_timestamp: Gauge<f64>,
     pub job_queue_wait_time: Gauge<f64>,
     pub job_scheduling_delay: Gauge<f64>,
     // Processing Pipeline Metrics
@@ -34,6 +37,7 @@ pub struct OrchestratorMetrics {
     pub proof_generation_time: Gauge<f64>,
     pub snos_job_processing_time: Histogram<f64>,
     pub snos_batch_blocks: Histogram<f64>,
+    pub snos_verified: Counter<f64>,
     pub snos_rpc_fallback_total: Counter<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
@@ -120,6 +124,21 @@ impl Metrics for OrchestratorMetrics {
             String::from(JOBS_COLLECTION),
         );
 
+        // Initialize the label sets used by no-progress alerts. Without a zero
+        // baseline, Prometheus can miss the first event emitted by a new pod.
+        for job_type in
+            ["SnosRun", "DataSubmission", "ProofCreation", "ProofRegistration", "StateTransition", "Aggregator"]
+        {
+            successful_job_operations.add(
+                0.0,
+                &[KeyValue::new("operation_job_type", job_type), KeyValue::new("operation_type", "create_job")],
+            );
+            successful_job_operations.add(
+                0.0,
+                &[KeyValue::new("operation_job_type", job_type), KeyValue::new("operation_job_status", "Completed")],
+            );
+        }
+
         let failed_jobs = register_counter_metric_instrument(
             &orchestrator_meter,
             "failed_jobs".to_string(),
@@ -154,6 +173,20 @@ impl Metrics for OrchestratorMetrics {
             "job_queue_depth".to_string(),
             "Number of jobs waiting in queue".to_string(),
             "jobs".to_string(),
+        );
+
+        let job_queue_oldest_age = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "job_queue_oldest_age".to_string(),
+            "Age of the oldest job in the durable queue snapshot".to_string(),
+            "s".to_string(),
+        );
+
+        let job_queue_snapshot_timestamp = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "job_queue_snapshot_timestamp".to_string(),
+            "Unix timestamp when the durable queue snapshot was collected".to_string(),
+            "s".to_string(),
         );
 
         let job_queue_wait_time = register_gauge_metric_instrument(
@@ -227,6 +260,16 @@ impl Metrics for OrchestratorMetrics {
             "Number of blocks included in closed SNOS batches".to_string(),
             "blocks".to_string(),
         );
+
+        // This becomes snos_verified_blocks_total in Prometheus. Initialize the
+        // series so the first completed batch has a baseline for rate/increase.
+        let snos_verified = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "snos_verified".to_string(),
+            "Cumulative number of blocks in successfully verified SNOS jobs".to_string(),
+            "blocks".to_string(),
+        );
+        snos_verified.add(0.0, &[]);
 
         let snos_rpc_fallback_total = register_counter_metric_instrument(
             &orchestrator_meter,
@@ -517,6 +560,8 @@ impl Metrics for OrchestratorMetrics {
             jobs_response_time,
             db_calls_response_time,
             job_queue_depth,
+            job_queue_oldest_age,
+            job_queue_snapshot_timestamp,
             job_queue_wait_time,
             job_scheduling_delay,
             job_retry_count,
@@ -527,6 +572,7 @@ impl Metrics for OrchestratorMetrics {
             proof_generation_time,
             snos_job_processing_time,
             snos_batch_blocks,
+            snos_verified,
             snos_rpc_fallback_total,
             settlement_time,
             jobs_per_minute,
