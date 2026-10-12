@@ -426,6 +426,7 @@ impl StateUpdateJobHandler {
     ///
     /// Kept separate from the `testing` feature's transaction-forcing shim so
     /// reconciliation remains directly testable under the CI feature set.
+    #[cfg_attr(feature = "testing", allow(dead_code))]
     pub(crate) async fn should_send_state_update_txn_from_chain(
         &self,
         config: &Arc<Config>,
