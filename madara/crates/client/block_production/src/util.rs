@@ -249,8 +249,10 @@ pub(crate) fn create_executor_with_block_n_min_10(
             .exec_constants_by_protocol_version(exec_ctx.protocol_version)
             .context("Failed to resolve execution constants for protocol version")?;
 
-        // Use to_block_context helper to create BlockContext (reuses existing logic)
-        let block_context = exec_ctx.to_block_context(chain_config, &exec_constants)?;
+        // Preserve the node-local permission and provider when restoring the saved chain configuration.
+        let mut block_context = exec_ctx.to_block_context(chain_config, &exec_constants)?;
+        block_context.use_committed_data = executor.block_context.use_committed_data;
+        block_context.committed_data_witnesses = Arc::clone(&executor.block_context.committed_data_witnesses);
         executor.block_context = Arc::new(block_context);
         // Override concurrency config as well
         executor.config.concurrency_config = chain_config.block_production_concurrency.blockifier_config();
@@ -309,6 +311,40 @@ mod tests {
         match expected {
             Some(expected) => assert_eq!(block_info.unwrap().starknet_version.to_string(), expected),
             None => assert!(block_info.is_err()),
+        }
+    }
+
+    #[rstest]
+    #[case::enabled(true)]
+    #[case::disabled(false)]
+    #[tokio::test]
+    async fn committed_data_saved_config_recovery_preserves_provider(#[case] use_committed_data: bool) {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let config = Arc::new(mp_chain_config::ChainConfig::madara_test());
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::clone(&config),
+            mc_db::MadaraBackendConfig { use_committed_data, ..Default::default() },
+        );
+        backend.set_l1_gas_quote_for_testing();
+        let tree = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
+        backend.import_committed_data_snapshot(tree.root(), tree.values().to_vec()).await.unwrap();
+        let ctx = create_execution_context(&backend, 0, 0, 0, UNIX_EPOCH).unwrap();
+        for saved in [None, Some(&config)] {
+            let executor = create_executor_with_block_n_min_10(
+                &backend,
+                &ctx,
+                LayeredStateAdapter::new(Arc::clone(&backend)).unwrap(),
+                |_| Ok(None),
+                saved,
+            )
+            .unwrap();
+            let value = executor.block_context.committed_data_witnesses.value(tree.root(), Felt::ZERO).unwrap();
+            assert_eq!(
+                (executor.block_context.use_committed_data, value),
+                (use_committed_data, Some(Felt::TWO)),
+                "saved configuration: {}",
+                saved.is_some()
+            );
         }
     }
 }

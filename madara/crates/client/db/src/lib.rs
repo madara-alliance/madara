@@ -453,6 +453,8 @@ pub const DEFAULT_COMMITTED_DATA_RETENTION_BLOCKS: u64 = 1_000;
 #[derive(Debug)]
 pub struct MadaraBackendConfig {
     /// Permit committed reads during account execution, independently of dataset ingestion.
+    /// L1 handlers must not read committed data, directly or through another contract;
+    /// their availability-failure semantics are unsupported.
     pub use_committed_data: bool,
     /// Node-local logical-byte quota for retained committed datasets.
     pub committed_data_max_storage_bytes: u64,

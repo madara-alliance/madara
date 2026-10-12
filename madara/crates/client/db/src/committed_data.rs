@@ -4,7 +4,7 @@ use blockifier::execution::syscalls::committed_data::{
     CommittedDataError, CommittedDataProvider, CommittedDataSet, CommittedDataWitness, MAX_COMMITTED_DATA_VALUES,
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Mutex,
 };
 use tokio::sync::Semaphore;
@@ -21,11 +21,17 @@ const PRUNE_ROOTS_PER_PASS: usize = 2;
 pub(crate) struct SnapshotCache {
     entries: Mutex<VecDeque<Arc<CommittedDataSet>>>,
     import: Arc<Semaphore>,
+    // Successful execution reads stay pinned until their block has settled and aged out.
+    recent_reads: Mutex<HashMap<Felt, u64>>,
 }
 
 impl Default for SnapshotCache {
     fn default() -> Self {
-        Self { entries: Mutex::new(VecDeque::new()), import: Arc::new(Semaphore::new(1)) }
+        Self {
+            entries: Mutex::new(VecDeque::new()),
+            import: Arc::new(Semaphore::new(1)),
+            recent_reads: Mutex::new(HashMap::new()),
+        }
     }
 }
 
@@ -84,9 +90,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     }
 
     /// Creates the shared execution provider; cold values are authenticated before returning.
+    /// Pins successful reads through settlement of the execution block, including runahead.
     /// The Cairo OS independently verifies witnesses during proving.
-    pub fn committed_data_provider(self: &Arc<Self>) -> Arc<dyn CommittedDataProvider> {
-        Arc::new(BackendCommittedData(Arc::clone(self)))
+    pub fn committed_data_provider(self: &Arc<Self>, block_number: u64) -> Arc<dyn CommittedDataProvider> {
+        Arc::new(BackendCommittedData(Arc::clone(self), block_number))
     }
 }
 
@@ -209,8 +216,8 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
         Ok(true)
     }
 
-    /// Reads the canonical latest (including executed preconfirmed state) Oracle storage roots.
-    /// This protects a previously retired root that is reused before its new publication settles.
+    /// Protects current slots and every publication in the internal preconfirmed suffix.
+    /// Intermediate roots must survive even if another transaction overwrites the same slot.
     fn current_committed_data_roots(self: &Arc<Self>) -> Result<HashSet<Felt>> {
         let keys = [
             Felt::from(starknet_api::abi::abi_utils::get_storage_var_address("committed_price_root", &[])),
@@ -222,6 +229,25 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
             for key in &keys {
                 if let Some(root) = state.get_contract_storage(oracle, key)?.filter(|root| *root != Felt::ZERO) {
                     roots.insert(root);
+                }
+            }
+        }
+        let head = self.chain_head_state();
+        if let Some(tip) = head.internal_preconfirmed_tip {
+            let start = head.confirmed_tip.map_or(0, |block| block.saturating_add(1));
+            for block in start..=tip {
+                let view = self
+                    .block_view_on_preconfirmed(block)
+                    .with_context(|| format!("Missing preconfirmed block {block} while protecting committed data"))?;
+                for tx in view.borrow_content().executed_transactions() {
+                    for event in tx.transaction.receipt.events() {
+                        if self.config.committed_data_oracle_addresses.contains(&event.from_address)
+                            && event.keys.first() == Some(&COMMITTED_ROOT_PUBLISHED_SELECTOR)
+                        {
+                            anyhow::ensure!(event.data.len() == 6, "Malformed CommittedRootPublished event");
+                            roots.extend(&event.data[..2]);
+                        }
+                    }
                 }
             }
         }
@@ -241,18 +267,18 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
         for oracle in &self.config.committed_data_oracle_addresses {
             let cursor = self.db.committed_data_lifecycle_cursor(*oracle)?;
             let next_block = cursor.next_block;
-            if next_block <= settled_tip {
-                let end_block = settled_tip.min(next_block.saturating_add(LIFECYCLE_SCAN_BLOCKS - 1));
+            if next_block <= local_tip {
+                let end_block = local_tip.min(next_block.saturating_add(LIFECYCLE_SCAN_BLOCKS - 1));
                 if let Err(error) = self.scan_committed_data_publications(*oracle, next_block, end_block) {
                     self.db.reset_committed_data_lifecycle()?;
                     return Err(error.context("Rebuilding committed-data lifecycle after an incomplete scan"));
                 }
-                more |= end_block < settled_tip;
+                more |= end_block < local_tip;
             }
         }
 
         // The active-root guard is authoritative only after every configured Oracle has been
-        // replayed through this settled tip. During initial catch-up a later publication could
+        // replayed through the local confirmed tip. During initial catch-up a later publication could
         // reactivate a root that an earlier partial scan currently considers retired.
         if more {
             return Ok(true);
@@ -265,25 +291,35 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
         // canonical guards between their final check and the bounded two-root deletion batch.
         let _projection_guard =
             self.head_projection_write_lock.lock().map_err(|_| anyhow::anyhow!("Head projection lock poisoned"))?;
-        if !self.committed_data_lifecycle_ready()? {
+        if self.latest_confirmed_block_n() != Some(local_tip) || !self.committed_data_lifecycle_ready()? {
             return Ok(true);
         }
-        let current_roots = self.current_committed_data_roots()?;
+        let mut current_roots = self.current_committed_data_roots()?;
+        // Lock order: head projection -> read pins -> storage writer -> cache entries.
+        // A successful value read cannot race between the guard and physical deletion.
+        let mut reads = self
+            .committed_data_cache
+            .recent_reads
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Committed-data read pins poisoned"))?;
+        reads.retain(|_, block| *block > cutoff);
+        current_roots.extend(reads.keys());
         let cutoff_hash = self
             .db
             .get_block_info(cutoff)?
             .with_context(|| format!("Committed-data prune cutoff block {cutoff} is unavailable"))?
             .block_hash;
-        let deleted = self.db.prune_committed_data(cutoff, cutoff_hash, PRUNE_ROOTS_PER_PASS, &current_roots)?;
+        let (deleted, more_candidates) =
+            self.db.prune_committed_data(cutoff, cutoff_hash, PRUNE_ROOTS_PER_PASS, &current_roots)?;
         for root in &deleted {
             self.committed_data_cache.remove(*root)?;
             tracing::info!(root = %root, cutoff, settled_tip, "Pruned retired committed-data dataset");
         }
-        Ok(more || deleted.len() == PRUNE_ROOTS_PER_PASS)
+        Ok(more || more_candidates)
     }
 
     /// Low-priority pruning worker. All RocksDB work runs on the blocking pool, errors only delay
-    /// pruning, and bounded passes yield between batches so sequencing never waits for retention.
+    /// pruning, and bounded passes yield between batches. Execution reads share the short pruning guard.
     pub async fn run_committed_data_pruner(self: Arc<Self>, mut ctx: mp_utils::service::ServiceContext) -> Result<()> {
         if !self.committed_data_pruning_enabled() {
             return Ok(());
@@ -335,7 +371,7 @@ impl MadaraBackend<crate::rocksdb::RocksDBStorage> {
     }
 }
 
-struct BackendCommittedData<D>(Arc<MadaraBackend<D>>);
+struct BackendCommittedData<D>(Arc<MadaraBackend<D>>, u64);
 impl<D> std::fmt::Debug for BackendCommittedData<D> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("BackendCommittedData")
@@ -343,15 +379,34 @@ impl<D> std::fmt::Debug for BackendCommittedData<D> {
 }
 impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
     fn value(&self, root: Felt, index: u32) -> std::result::Result<Option<Felt>, CommittedDataError> {
-        if let Some(tree) =
-            self.0.committed_data_cache.get(root).map_err(|error| CommittedDataError::Provider(error.to_string()))?
-        {
-            return Ok(tree.value(index));
-        }
-        self.0
-            .committed_data_witness(root, index)
-            .map(|witness| witness.map(|w| w.value))
-            .map_err(|error| CommittedDataError::Provider(error.to_string()))
+        let read = || -> Result<Option<Felt>> {
+            // ponytail: serialize reads with pruning; use per-root pins only if cold-read contention warrants it.
+            let mut pins =
+                if self.0.config.use_committed_data && !self.0.config.committed_data_oracle_addresses.is_empty() {
+                    Some(
+                        self.0
+                            .committed_data_cache
+                            .recent_reads
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Committed-data read pins poisoned"))?,
+                    )
+                } else {
+                    None
+                };
+            let value = if let Some(tree) = self.0.committed_data_cache.get(root)? {
+                tree.value(index)
+            } else {
+                self.0.committed_data_witness(root, index)?.map(|witness| witness.value)
+            };
+            if let (Some(pins), Some(_)) = (&mut pins, value) {
+                let head = self.0.chain_head_state();
+                let next = head.confirmed_tip.map_or(0, |block| block.saturating_add(1));
+                let block = next.max(self.1);
+                pins.entry(root).and_modify(|previous| *previous = (*previous).max(block)).or_insert(block);
+            }
+            Ok(value)
+        };
+        read().map_err(|error| CommittedDataError::Provider(error.to_string()))
     }
 }
 
@@ -562,16 +617,22 @@ mod tests {
             .db
             .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
             .unwrap()
+            .0
             .is_empty());
 
         for dataset in [&new_price, &new_funding] {
             backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
         }
         backend.db.record_committed_data_publication(oracle, 6_012, new_price.root(), new_funding.root()).unwrap();
-        assert!(backend.db.prune_committed_data(6_011, Felt::from(6_011_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend
+            .db
+            .prune_committed_data(6_011, Felt::from(6_011_u64), 8, &HashSet::new())
+            .unwrap()
+            .0
+            .is_empty());
         let current_roots = HashSet::from([old_price.root(), old_funding.root()]);
-        assert!(backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &current_roots).unwrap().is_empty());
-        let mut deleted = backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &HashSet::new()).unwrap();
+        assert!(backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &current_roots).unwrap().0.is_empty());
+        let mut deleted = backend.db.prune_committed_data(6_012, Felt::from(6_012_u64), 8, &HashSet::new()).unwrap().0;
         deleted.sort_unstable();
         let mut expected = vec![old_price.root(), old_funding.root()];
         expected.sort_unstable();
@@ -584,6 +645,7 @@ mod tests {
             .db
             .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
             .unwrap()
+            .0
             .is_empty());
     }
 
@@ -609,18 +671,19 @@ mod tests {
             .db
             .prune_committed_data(u64::MAX, Felt::from(u64::MAX), 8, &HashSet::new())
             .unwrap()
+            .0
             .is_empty());
 
         backend
             .db
             .record_committed_data_publication(second_oracle, 200, replacement.root(), replacement.root())
             .unwrap();
-        assert!(backend.db.prune_committed_data(249, Felt::from(249_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(249, Felt::from(249_u64), 8, &HashSet::new()).unwrap().0.is_empty());
         backend.db.write_committed_data_dataset(&shared, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 1_000).unwrap();
-        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().0.is_empty());
         assert!(backend.db.get_committed_data_count(shared.root()).unwrap().is_some());
         assert_eq!(
-            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap(),
+            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap().0,
             vec![shared.root()]
         );
     }
@@ -648,10 +711,10 @@ mod tests {
             .record_committed_data_publication(second_oracle, 200, replacement.root(), replacement.root())
             .unwrap();
 
-        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(999, Felt::from(999_u64), 8, &HashSet::new()).unwrap().0.is_empty());
         assert!(backend.db.get_committed_data_count(staged.root()).unwrap().is_some());
         assert_eq!(
-            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap(),
+            backend.db.prune_committed_data(1_000, Felt::from(1_000_u64), 8, &HashSet::new()).unwrap().0,
             vec![staged.root()]
         );
     }
@@ -663,10 +726,10 @@ mod tests {
         backend.db.write_committed_data_dataset(&dataset, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 10).unwrap();
         backend.db.write_committed_data_dataset(&dataset, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 20).unwrap();
 
-        assert!(backend.db.prune_committed_data(19, Felt::from(19_u64), 8, &HashSet::new()).unwrap().is_empty());
+        assert!(backend.db.prune_committed_data(19, Felt::from(19_u64), 8, &HashSet::new()).unwrap().0.is_empty());
         assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_some());
         assert_eq!(
-            backend.db.prune_committed_data(20, Felt::from(20_u64), 8, &HashSet::new()).unwrap(),
+            backend.db.prune_committed_data(20, Felt::from(20_u64), 8, &HashSet::new()).unwrap().0,
             vec![dataset.root()]
         );
         assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_none());
@@ -718,7 +781,10 @@ mod tests {
 
         let orphan = CommittedDataSet::new(vec![Felt::from(41_u64)]).unwrap();
         backend.db.write_committed_data_dataset(&orphan, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, 0).unwrap();
-        assert_eq!(backend.db.prune_committed_data(1, block_1_hash, 8, &HashSet::new()).unwrap(), vec![orphan.root()]);
+        assert_eq!(
+            backend.db.prune_committed_data(1, block_1_hash, 8, &HashSet::new()).unwrap().0,
+            vec![orphan.root()]
+        );
 
         backend.revert_to(&block_0_hash).unwrap();
         let error = backend.committed_data_pruning_pass(0).unwrap_err();
@@ -793,5 +859,234 @@ mod tests {
             handles.into_iter().map(|handle| usize::from(handle.join().unwrap())).sum::<usize>()
         });
         assert_eq!(successes, 1);
+    }
+
+    #[tokio::test]
+    async fn committed_data_unsettled_reuse_survives_later_rotation() {
+        use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
+        use mp_receipt::{Event, EventWithTransactionHash};
+        use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
+        let oracle = Felt::from(90_u64);
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig {
+                use_committed_data: true,
+                committed_data_retention_blocks: 1,
+                committed_data_oracle_addresses: vec![oracle],
+                ..Default::default()
+            },
+        );
+        let old = CommittedDataSet::new(vec![Felt::from(101_u64)]).unwrap();
+        let new = CommittedDataSet::new(vec![Felt::from(102_u64)]).unwrap();
+        for dataset in [&old, &new] {
+            backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
+        }
+        let keys = ["committed_price_root", "committed_funding_root"]
+            .map(|name| Felt::from(starknet_api::abi::abi_utils::get_storage_var_address(name, &[])));
+        // Blocks 0-2 are settled. Block 3 reuses old, block 4 rotates back to new.
+        for (number, root) in [old.root(), new.root(), new.root(), old.root(), new.root()].into_iter().enumerate() {
+            let state_diff = StateDiff {
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: oracle,
+                    storage_entries: keys.iter().map(|key| StorageEntry { key: *key, value: root }).collect(),
+                }],
+                deployed_contracts: if number == 0 {
+                    vec![DeployedContractItem { address: oracle, class_hash: Felt::ONE }]
+                } else {
+                    vec![]
+                },
+                ..Default::default()
+            };
+            let event = Event {
+                from_address: oracle,
+                keys: vec![COMMITTED_ROOT_PUBLISHED_SELECTOR],
+                data: vec![root, root, Felt::ONE, Felt::ONE, Felt::ONE, Felt::ONE],
+            };
+            let hash = Felt::from(number as u64 + 1);
+            let mut tx = crate::test_utils::l1_handler_tx_with_receipt(number as u64, hash);
+            tx.receipt.events_mut().push(event.clone());
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader { block_number: number as u64, ..Default::default() },
+                        state_diff,
+                        transactions: vec![tx],
+                        events: vec![EventWithTransactionHash { transaction_hash: hash, event }],
+                    },
+                    &[],
+                    false,
+                )
+                .unwrap();
+        }
+        assert_eq!(backend.current_committed_data_roots().unwrap(), HashSet::from([new.root()]));
+        assert_eq!(
+            backend
+                .db
+                .get_events(crate::storage::EventFilter {
+                    start_block: 0,
+                    start_event_index: 0,
+                    end_block: 4,
+                    from_address: Some(oracle),
+                    keys_pattern: Some(vec![vec![COMMITTED_ROOT_PUBLISHED_SELECTOR]]),
+                    max_events: 10,
+                })
+                .unwrap()
+                .len(),
+            5
+        );
+        backend.committed_data_pruning_pass(2).unwrap();
+        assert!(
+            backend.db.get_committed_data_witness(old.root(), 0).unwrap().is_some(),
+            "block 3 still needs the old root even though latest block 4 no longer stores it"
+        );
+        add_test_block(&backend, 5, vec![]);
+        backend.committed_data_pruning_pass(5).unwrap();
+        assert!(
+            backend.db.get_committed_data_count(old.root()).unwrap().is_none(),
+            "retired data becomes eligible once its last use has settled and aged out"
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_data_protected_prefix_does_not_starve_pruning() {
+        for retired in [false, true] {
+            let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+            let mut protected = HashSet::new();
+            for index in 0..33_u64 {
+                let dataset = CommittedDataSet::new(vec![Felt::from(index)]).unwrap();
+                backend.db.write_committed_data_dataset(&dataset, DEFAULT_COMMITTED_DATA_STORAGE_BYTES, index).unwrap();
+                if retired {
+                    backend
+                        .db
+                        .record_committed_data_publication(Felt::ONE, 100 + index * 2, dataset.root(), dataset.root())
+                        .unwrap();
+                    backend
+                        .db
+                        .record_committed_data_publication(Felt::ONE, 101 + index * 2, Felt::TWO, Felt::TWO)
+                        .unwrap();
+                }
+                if index < 32 {
+                    protected.insert(dataset.root());
+                }
+            }
+            let victim = CommittedDataSet::new(vec![Felt::from(32_u64)]).unwrap().root();
+            let (deleted, more) = backend.db.prune_committed_data(1000, Felt::ONE, 2, &protected).unwrap();
+            assert!(deleted.is_empty());
+            assert!(more, "a protected prefix must schedule another bounded pass");
+            let (deleted, more) = backend.db.prune_committed_data(1000, Felt::ONE, 2, &protected).unwrap();
+            assert_eq!(deleted, vec![victim]);
+            assert!(!more);
+            for root in &protected {
+                assert!(backend.db.get_committed_data_count(*root).unwrap().is_some());
+            }
+            // Complete a new sweep after protection ends; cursors must wrap, and deletion stays bounded.
+            let mut total = 0;
+            loop {
+                let (deleted, more) = backend.db.prune_committed_data(1000, Felt::ONE, 2, &HashSet::new()).unwrap();
+                assert!(deleted.len() <= 2);
+                total += deleted.len();
+                assert!(total <= 32);
+                if !more {
+                    break;
+                }
+            }
+            assert_eq!(total, 32);
+        }
+    }
+
+    #[tokio::test]
+    async fn committed_data_execution_read_pins_hot_and_cold_data_until_settlement() {
+        for hot in [false, true] {
+            let oracle = Felt::from(93_u64);
+            let backend = MadaraBackend::open_for_testing_with_config(
+                Arc::new(ChainConfig::madara_test()),
+                MadaraBackendConfig {
+                    use_committed_data: true,
+                    committed_data_retention_blocks: 1,
+                    committed_data_oracle_addresses: vec![oracle],
+                    ..Default::default()
+                },
+            );
+            let dataset = CommittedDataSet::new(vec![Felt::from(42_u64)]).unwrap();
+            backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
+            backend.db.record_committed_data_publication(oracle, 0, dataset.root(), dataset.root()).unwrap();
+            backend.db.record_committed_data_publication(oracle, 1, Felt::TWO, Felt::TWO).unwrap();
+            for block in 0..=2 {
+                add_test_block(&backend, block, vec![]);
+            }
+            if !hot {
+                backend.committed_data_cache.entries.lock().unwrap().clear();
+            }
+            // Execution can run ahead of both the confirmed and published preconfirmed tips.
+            let provider = backend.committed_data_provider(7);
+            assert_eq!(provider.value(dataset.root(), 0).unwrap(), Some(Felt::from(42_u64)));
+            backend.committed_data_pruning_pass(2).unwrap();
+            assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_some());
+            for block in 3..=7 {
+                add_test_block(&backend, block, vec![]);
+            }
+            backend.committed_data_pruning_pass(7).unwrap();
+            assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_some());
+            add_test_block(&backend, 8, vec![]);
+            backend.committed_data_pruning_pass(8).unwrap();
+            assert!(backend.db.get_committed_data_count(dataset.root()).unwrap().is_none());
+            assert_eq!(provider.value(dataset.root(), 0).unwrap(), None, "pruning must evict hot data too");
+        }
+    }
+
+    #[tokio::test]
+    async fn committed_data_internal_preconfirmed_rotations_keep_intermediate_roots() {
+        use crate::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
+        use mp_block::header::PreconfirmedHeader;
+        use mp_receipt::Event;
+        let oracle = Felt::from(94_u64);
+        let backend = MadaraBackend::open_for_testing_with_config(
+            Arc::new(ChainConfig::madara_test()),
+            MadaraBackendConfig {
+                use_committed_data: true,
+                committed_data_retention_blocks: 1,
+                committed_data_oracle_addresses: vec![oracle],
+                ..Default::default()
+            },
+        );
+        let dataset = CommittedDataSet::new(vec![Felt::from(43_u64)]).unwrap();
+        backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.unwrap();
+        backend.db.record_committed_data_publication(oracle, 0, dataset.root(), dataset.root()).unwrap();
+        backend.db.record_committed_data_publication(oracle, 1, Felt::TWO, Felt::TWO).unwrap();
+        for block in 0..=2 {
+            add_test_block(&backend, block, vec![]);
+        }
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 3, ..Default::default() }))
+            .unwrap();
+        let mut tx = crate::test_utils::l1_handler_tx_with_receipt(0, Felt::ONE);
+        for root in [dataset.root(), Felt::TWO] {
+            tx.receipt.events_mut().push(Event {
+                from_address: oracle,
+                keys: vec![COMMITTED_ROOT_PUBLISHED_SELECTOR],
+                data: vec![root, root, Felt::ONE, Felt::ONE, Felt::ONE, Felt::ONE],
+            });
+        }
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 4, ..Default::default() },
+                [PreconfirmedExecutedTransaction {
+                    transaction: tx,
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                    paid_fee_on_l1: None,
+                }],
+                [],
+            ))
+            .unwrap();
+        assert_eq!(backend.chain_head_state().external_preconfirmed_tip, Some(3));
+        assert_eq!(backend.chain_head_state().internal_preconfirmed_tip, Some(4));
+        backend.committed_data_cache.entries.lock().unwrap().clear();
+        backend.committed_data_pruning_pass(2).unwrap();
+        assert!(backend.db.get_committed_data_witness(dataset.root(), 0).unwrap().is_some());
     }
 }
