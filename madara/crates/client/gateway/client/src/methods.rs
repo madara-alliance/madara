@@ -75,7 +75,7 @@ impl GatewayProvider {
             let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
                 .add_uri_segment("get_preconfirmed_block")
                 .expect("Failed to add URI segment. This should not fail in prod.")
-                .with_block_id(&BlockId::Number(block_number));
+                .add_param(Cow::from("blockIdentifier"), block_number.to_string());
 
             request.send_get::<ProviderBlockPreConfirmed>().await
         })
