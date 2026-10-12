@@ -252,13 +252,14 @@ mod committed_data_tests {
         )
         .unwrap();
         let signed = ImportSignature { public_key, r: signature.r, s: signature.s };
-        assert!(validate_import_signatures(&[public_key], &chain, root, 3, &[signed.clone()]).is_ok());
+        assert!(validate_import_signatures(&[public_key], &chain, root, 3, std::slice::from_ref(&signed)).is_ok());
         assert!(validate_import_signatures(&[], &chain, root, 3, &[]).is_ok());
         assert!(validate_import_signatures(&[public_key], &chain, root, 3, &[]).is_err());
-        assert!(validate_import_signatures(&[Felt::ZERO], &chain, root, 3, &[signed.clone()]).is_err());
-        assert!(validate_import_signatures(&[public_key], &ChainId::Mainnet, root, 3, &[signed.clone()]).is_err());
-        assert!(validate_import_signatures(&[public_key], &chain, Felt::ONE, 3, &[signed.clone()]).is_err());
-        assert!(validate_import_signatures(&[public_key], &chain, root, 4, &[signed.clone()]).is_err());
+        assert!(validate_import_signatures(&[Felt::ZERO], &chain, root, 3, std::slice::from_ref(&signed)).is_err());
+        assert!(validate_import_signatures(&[public_key], &ChainId::Mainnet, root, 3, std::slice::from_ref(&signed))
+            .is_err());
+        assert!(validate_import_signatures(&[public_key], &chain, Felt::ONE, 3, std::slice::from_ref(&signed)).is_err());
+        assert!(validate_import_signatures(&[public_key], &chain, root, 4, std::slice::from_ref(&signed)).is_err());
         assert!(validate_import_signatures(&[public_key], &chain, root, 3, &[signed.clone(), signed.clone()]).is_err());
         assert!(validate_import_signatures(
             &[public_key],
