@@ -5,6 +5,7 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -37,6 +38,9 @@ use orchestrator_utils::layer::Layer;
 use tracing::{debug, error, info, warn, Span};
 
 pub struct JobHandlerService;
+
+const SHUTDOWN_RESTORE_MAX_ATTEMPTS: u8 = 3;
+const SHUTDOWN_RESTORE_RETRY_DELAY: Duration = Duration::from_millis(250);
 
 impl JobHandlerService {
     /// Creates the job in the DB in the created state and adds it to the process queue
@@ -140,6 +144,7 @@ impl JobHandlerService {
     /// * `VerificationFailed` -> `LockedForProcessing` -> `PendingVerification`
     /// * `PendingRetry` -> `LockedForProcessing` -> `PendingVerification`
     /// * `LockedForProcessing` -> `Failed` (on non-retryable SNOS processing error)
+    /// * `LockedForProcessing` -> original status and metadata (on orchestrator shutdown)
     /// * `LockedForProcessing` -> original status (on retryable SNOS processing error, or any
     ///   processing panic, or any non-SNOS processing failure; message is NACKed)
     ///
@@ -172,7 +177,14 @@ impl JobHandlerService {
         Self::process_job_with_shutdown(id, config, CancellationToken::new()).await
     }
 
-    pub async fn process_job_with_shutdown(
+    /// Processes a job while observing the worker's shutdown token.
+    ///
+    /// Cancellation drops the active handler future, restores the job to its exact pre-processing
+    /// status and metadata, and returns [`JobError::ShutdownInterrupted`] so the queue delivery is
+    /// released. If the durable restore fails, [`JobError::ShutdownRestoreFailed`] tells the worker
+    /// to leave the delivery pending for visibility-timeout recovery instead of immediately NACKing
+    /// a fresh `LockedForProcessing` row.
+    pub(crate) async fn process_job_with_shutdown(
         id: Uuid,
         config: Arc<Config>,
         shutdown_token: CancellationToken,
@@ -298,12 +310,13 @@ impl JobHandlerService {
 
         if shutdown_token.is_cancelled() {
             warn!(job_id = ?id, job_type = ?job.job_type, "Shutdown requested before processing lock was acquired");
-            return Err(Self::shutdown_processing_error(id));
+            return Err(JobError::ShutdownInterrupted { id });
         }
 
         // Save original status so retryable processing failures can restore the job to the
         // pre-processing state and let SQS own the retry lifecycle.
         let original_status = job.status.clone();
+        let original_metadata = job.metadata.clone();
 
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
@@ -364,12 +377,6 @@ impl JobHandlerService {
         let processing_result = match processing_result {
             ProcessingOutcome::Completed(result) => result,
             ProcessingOutcome::Shutdown => {
-                let reason = format!(
-                    "Processing attempt {} interrupted by orchestrator shutdown",
-                    job.metadata.common.process_attempt_no
-                );
-                let shutdown_error = Self::shutdown_processing_error(id);
-
                 warn!(
                     job_id = ?id,
                     job_type = ?job.job_type,
@@ -378,14 +385,9 @@ impl JobHandlerService {
                     "Shutdown requested while processing job, restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return Err(Self::reset_job_for_sqs_retry(
-                    &mut job,
-                    config.clone(),
-                    original_status,
-                    reason,
-                    shutdown_error,
-                )
-                .await);
+                return Err(
+                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await
+                );
             }
         };
 
@@ -531,8 +533,58 @@ impl JobHandlerService {
         Ok(())
     }
 
-    fn shutdown_processing_error(id: Uuid) -> JobError {
-        JobError::Other(OtherError::from(format!("Job {id} processing interrupted by orchestrator shutdown")))
+    async fn restore_job_after_shutdown(
+        job: &mut crate::types::jobs::job_item::JobItem,
+        config: Arc<Config>,
+        original_status: JobStatus,
+        original_metadata: JobMetadata,
+    ) -> JobError {
+        job.metadata = original_metadata;
+
+        for attempt in 1..=SHUTDOWN_RESTORE_MAX_ATTEMPTS {
+            match config
+                .database()
+                .update_job(
+                    job,
+                    JobItemUpdates::new()
+                        .update_status(original_status.clone())
+                        .update_metadata(job.metadata.clone())
+                        .build(),
+                )
+                .await
+            {
+                Ok(_) => {
+                    MetricsRecorder::record_job_state_transition(
+                        JobStatus::LockedForProcessing,
+                        original_status.clone(),
+                        &job.job_type,
+                    );
+                    MetricsRecorder::record_job_status(job, &original_status);
+                    return JobError::ShutdownInterrupted { id: job.id };
+                }
+                Err(error) if attempt < SHUTDOWN_RESTORE_MAX_ATTEMPTS => {
+                    warn!(
+                        job_id = ?job.id,
+                        attempt,
+                        max_attempts = SHUTDOWN_RESTORE_MAX_ATTEMPTS,
+                        error = ?error,
+                        "Failed to restore shutdown-interrupted job, retrying"
+                    );
+                    sleep(SHUTDOWN_RESTORE_RETRY_DELAY).await;
+                }
+                Err(source) => {
+                    error!(
+                        job_id = ?job.id,
+                        attempts = SHUTDOWN_RESTORE_MAX_ATTEMPTS,
+                        error = ?source,
+                        "Failed to restore shutdown-interrupted job; leaving delivery pending"
+                    );
+                    return JobError::ShutdownRestoreFailed { id: job.id, source };
+                }
+            }
+        }
+
+        unreachable!("shutdown restore loop always returns")
     }
 
     async fn reset_job_for_sqs_retry(
@@ -1079,5 +1131,47 @@ impl JobHandlerService {
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::StorageCleanup => Box::new(StorageCleanupTrigger),
         }
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use crate::core::client::database::{DatabaseError, MockDatabaseClient};
+    use crate::tests::config::TestConfigBuilder;
+    use crate::tests::utils::build_job_item;
+
+    #[tokio::test]
+    async fn failed_shutdown_restore_is_distinct_and_preserves_metadata() {
+        let original_job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+        let original_metadata = original_job.metadata.clone();
+        let expected_metadata = original_metadata.clone();
+
+        let mut database = MockDatabaseClient::new();
+        database
+            .expect_update_job()
+            .withf(move |_, updates| {
+                updates.status == Some(JobStatus::Created) && updates.metadata.as_ref() == Some(&expected_metadata)
+            })
+            .times(SHUTDOWN_RESTORE_MAX_ATTEMPTS as usize)
+            .returning(|_, _| Err(DatabaseError::UpdateFailed("simulated outage".to_string())));
+
+        let services = TestConfigBuilder::new().configure_database(database.into()).build().await;
+        let mut locked_job = original_job;
+        locked_job.status = JobStatus::LockedForProcessing;
+        locked_job.metadata.common.process_attempt_no = 1;
+        locked_job.metadata.common.process_retry_attempt_no = 1;
+        locked_job.metadata.common.process_started_at = Some(Utc::now());
+
+        let error = JobHandlerService::restore_job_after_shutdown(
+            &mut locked_job,
+            services.config,
+            JobStatus::Created,
+            original_metadata.clone(),
+        )
+        .await;
+
+        assert!(matches!(error, JobError::ShutdownRestoreFailed { .. }));
+        assert_eq!(locked_job.metadata, original_metadata);
     }
 }

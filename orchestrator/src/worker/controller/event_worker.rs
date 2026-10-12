@@ -313,7 +313,11 @@ impl EventWorker {
                 }
             }
 
-            nack_delivery_with_retry(message).await?;
+            if error.should_nack_delivery() {
+                nack_delivery_with_retry(message).await?;
+            } else {
+                warn!("Leaving delivery pending because the shutdown job restore was not durable");
+            }
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -408,9 +412,13 @@ impl EventWorker {
                                     error!("Failed to ACK priority message: {:?}", e);
                                 }
                             }
-                            Err(_) => {
-                                if let Err(e) = nack_delivery_with_retry(delivery).await {
-                                    error!("Failed to NACK priority message: {:?}", e);
+                            Err(error) => {
+                                if error.should_nack_delivery() {
+                                    if let Err(e) = nack_delivery_with_retry(delivery).await {
+                                        error!("Failed to NACK priority message: {:?}", e);
+                                    }
+                                } else {
+                                    warn!("Leaving priority delivery pending because the shutdown job restore was not durable");
                                 }
                             }
                         }

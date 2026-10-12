@@ -479,17 +479,11 @@ async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
 
     let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(restored_job.status, JobStatus::Created);
-    assert_eq!(restored_job.metadata.common.process_attempt_no, 1);
-    assert_eq!(restored_job.metadata.common.process_retry_attempt_no, 1);
+    assert_eq!(restored_job.metadata, job_item.metadata, "shutdown must not consume the job retry budget");
+    assert_eq!(restored_job.metadata.common.process_attempt_no, 0);
+    assert_eq!(restored_job.metadata.common.process_retry_attempt_no, 0);
     assert!(restored_job.metadata.common.process_started_at.is_none());
     assert!(restored_job.metadata.common.process_completed_at.is_none());
-
-    let failure_reason = restored_job.metadata.common.failure_reason.as_ref().unwrap();
-    assert!(
-        failure_reason.contains("interrupted by orchestrator shutdown"),
-        "failure_reason should record shutdown restore. Got: {}",
-        failure_reason
-    );
 }
 
 /// Tests that successful processing is not restored by a later shutdown signal.
