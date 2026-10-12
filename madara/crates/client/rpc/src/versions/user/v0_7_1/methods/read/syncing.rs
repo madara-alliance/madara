@@ -4,8 +4,6 @@ use anyhow::Context;
 use mp_convert::Felt;
 use mp_rpc::v0_7_1::{SyncStatus, SyncingStatus};
 
-const SYNC_THRESHOLD_BLOCKS: u64 = 6;
-
 /// Returns an object about the sync status, or false if the node is not syncing
 ///
 /// ### Arguments
@@ -29,7 +27,10 @@ pub fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     let current_block = starknet.backend.block_view_on_last_confirmed();
 
     // If the current block number is within the sync threshold, return NotSyncing. Else return Syncing with info
-    if current_block.as_ref().is_none_or(|view| highest_block_n <= view.block_number() + SYNC_THRESHOLD_BLOCKS) {
+    if current_block
+        .as_ref()
+        .is_none_or(|view| highest_block_n <= view.block_number().saturating_add(starknet.sync_threshold_blocks))
+    {
         return Ok(SyncingStatus::NotSyncing);
     }
 

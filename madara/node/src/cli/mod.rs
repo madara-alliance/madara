@@ -371,6 +371,16 @@ mod tests {
     }
 
     #[test]
+    fn rpc_sync_threshold_blocks_is_configurable() {
+        let default = RunCmd::parse_from(["madara", "--full", "--network", "sepolia"]);
+        let configured =
+            RunCmd::parse_from(["madara", "--full", "--network", "sepolia", "--rpc-sync-threshold-blocks", "50"]);
+
+        assert_eq!(default.rpc_params.rpc_sync_threshold_blocks, 6);
+        assert_eq!(configured.rpc_params.rpc_sync_threshold_blocks, 50);
+    }
+
+    #[test]
     fn full_node_can_disable_preconfirmed_reorgs_independently() {
         let run_cmd = RunCmd::parse_from(["madara", "--full", "--network", "sepolia", "--disable-reorg-preconfirmed"]);
 

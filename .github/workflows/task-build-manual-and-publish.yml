@@ -13,6 +13,11 @@ on:
         description: Dockerfile used to build the image
         required: true
         type: string
+      skip-cargo-check:
+        description: Skip workspace cargo check before building the image
+        required: false
+        default: false
+        type: boolean
       registry:
         description: Container registry domain
         required: false
@@ -68,6 +73,7 @@ jobs:
         run: yes | make artifacts
 
       - name: Run cargo check
+        if: ${{ !inputs.skip-cargo-check }}
         run: cargo check
 
       - name: Tags

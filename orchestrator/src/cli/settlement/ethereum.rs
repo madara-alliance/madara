@@ -1,5 +1,7 @@
 use clap::Args;
-use orchestrator_ethereum_settlement_client::DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI;
+use orchestrator_ethereum_settlement_client::{
+    DEFAULT_L2_STATE_UPDATE_MAX_FEE_WEI, DEFAULT_REQUIRED_BLOCK_CONFIRMATIONS,
+};
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
@@ -28,10 +30,23 @@ pub struct EthereumSettlementCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS", long)]
     pub starknet_operator_address: Option<String>,
 
-    /// The amount of time in seconds to wait for state update txns
-    /// Doesn't require an env variable
-    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS", long, default_value = "60")]
+    /// Seconds between L1 receipt/confirmation checks. This does not change the required confirmation depth.
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS",
+        long,
+        default_value = "60",
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
     pub ethereum_finality_retry_wait_in_secs: Option<u64>,
+
+    /// Additional L1 blocks required after the inclusion block. Zero accepts successful inclusion immediately.
+    /// This is a confirmation-depth policy, not Ethereum consensus finality.
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_ETHEREUM_REQUIRED_BLOCK_CONFIRMATIONS",
+        long,
+        default_value_t = DEFAULT_REQUIRED_BLOCK_CONFIRMATIONS
+    )]
+    pub ethereum_required_block_confirmations: u64,
 
     /// Maximum time to wait for a submitted Ethereum state-update transaction to finalize
     /// before submitting a same-nonce fee-bump replacement.
@@ -58,4 +73,52 @@ pub struct EthereumSettlementCliArgs {
     /// Mainnet uses blob proofs (pre-Fusaka), Sepolia uses cell proofs (post-Fusaka).
     #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_DISABLE_PEERDAS", long, default_value = "false")]
     pub disable_peerdas: bool,
+}
+
+#[cfg(test)]
+mod settlement_wait_tests {
+    use super::*;
+    use clap::{CommandFactory, FromArgMatches, Parser};
+
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        ethereum: EthereumSettlementCliArgs,
+    }
+
+    fn parse_without_env<const N: usize>(args: [&str; N]) -> clap::error::Result<TestCli> {
+        let matches = TestCli::command().mut_args(|arg| arg.env(None::<&'static str>)).try_get_matches_from(args)?;
+        TestCli::from_arg_matches(&matches)
+    }
+
+    #[test]
+    fn preserves_defaults_and_accepts_shorter_waits() {
+        let defaults = parse_without_env(["test"]).unwrap().ethereum;
+        assert_eq!(defaults.ethereum_finality_retry_wait_in_secs, Some(60));
+        assert_eq!(defaults.ethereum_required_block_confirmations, 3);
+        let configured = parse_without_env([
+            "test",
+            "--ethereum-finality-retry-wait-in-secs",
+            "5",
+            "--ethereum-required-block-confirmations",
+            "0",
+        ])
+        .unwrap()
+        .ethereum;
+        assert_eq!(configured.ethereum_finality_retry_wait_in_secs, Some(5));
+        assert_eq!(configured.ethereum_required_block_confirmations, 0);
+        assert!(parse_without_env(["test", "--ethereum-finality-retry-wait-in-secs", "0"]).is_err());
+    }
+
+    #[test]
+    fn exposes_both_wait_settings_through_env() {
+        let command = TestCli::command();
+        for (id, env) in [
+            ("ethereum_finality_retry_wait_in_secs", "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS"),
+            ("ethereum_required_block_confirmations", "MADARA_ORCHESTRATOR_ETHEREUM_REQUIRED_BLOCK_CONFIRMATIONS"),
+        ] {
+            let arg = command.get_arguments().find(|arg| arg.get_id() == id).unwrap();
+            assert_eq!(arg.get_env(), Some(std::ffi::OsStr::new(env)));
+        }
+    }
 }

@@ -854,6 +854,9 @@ use std::{
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
+/// Default number of blocks a node may lag behind its sync target before reporting that it is syncing.
+pub const DEFAULT_SYNC_THRESHOLD_BLOCKS: u64 = 6;
+
 #[derive(Debug, Default)]
 pub struct StarknetSubscriptionIdProvider {
     next: AtomicU64,
@@ -1030,6 +1033,7 @@ pub struct Starknet {
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
     pub(crate) committed_data_signers: Arc<[mp_convert::Felt]>,
+    pub(crate) sync_threshold_blocks: u64,
 }
 
 impl Starknet {
@@ -1056,6 +1060,7 @@ impl Starknet {
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
             committed_data_signers: Arc::from([]),
+            sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
         }
     }
 
@@ -1081,6 +1086,10 @@ impl Starknet {
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
         self.rpc_unsafe_enabled = value;
+    }
+
+    pub fn set_sync_threshold_blocks(&mut self, value: u64) {
+        self.sync_threshold_blocks = value;
     }
 
     pub fn set_tx_status_watcher(&mut self, watcher: Option<Arc<dyn TxStatusWatcher>>) {

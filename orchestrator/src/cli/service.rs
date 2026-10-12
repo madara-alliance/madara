@@ -36,6 +36,15 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
 
+    /// Delay before initial and repeated StateTransition verification messages (SQS supports 0..=900 seconds).
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_STATE_TRANSITION_VERIFICATION_DELAY_SECONDS",
+        long,
+        default_value = "60",
+        value_parser = clap::value_parser!(u64).range(0..=900)
+    )]
+    pub state_transition_verification_delay_seconds: u64,
+
     /// The maximum number of aggregator jobs to process concurrently.
     /// Relevant when the aggregator runs locally (SHARP / Mock paths).
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_AGGREGATOR_JOBS", long)]
