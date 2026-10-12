@@ -538,6 +538,40 @@ mod tests {
     use crate::rocksdb::RocksDBConfig;
 
     #[test]
+    fn historical_trie_reads_reverse_logs_between_snapshots() {
+        use bitvec::view::BitView;
+        use starknet_types_core::felt::Felt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let storage = RocksDBStorage::open(
+            directory.path(),
+            RocksDBConfig { snapshot_interval: 4, max_kept_snapshots: Some(5), ..Default::default() },
+        )
+        .unwrap();
+        let mut trie = storage.contract_trie();
+        let key = Felt::ONE.to_bytes_be();
+        let key = &key.view_bits::<bitvec::order::Msb0>()[5..];
+        let mut roots = Vec::new();
+        for block in 0..=8u64 {
+            if block == 7 {
+                trie.remove(b"test", key).unwrap();
+            } else {
+                trie.insert(b"test", key, &Felt::from(block + 1)).unwrap();
+            }
+            trie.commit(BasicId::new(block)).unwrap();
+            storage.snapshots.set_new_head(block);
+            roots.push(trie.root_hash(b"test").unwrap());
+        }
+        for block in [0, 4, 5, 6, 7, 8] {
+            let view = trie.get_transactional_state(BasicId::new(block), trie.get_config()).unwrap().unwrap();
+            assert_eq!(view.root_hash(b"test").unwrap(), roots[block as usize], "block {block}");
+            let expected = (block != 7).then(|| Felt::from(block + 1));
+            assert_eq!(view.get(b"test", key).unwrap(), expected, "block {block}");
+        }
+        assert_eq!(trie.root_hash(b"test").unwrap(), roots[8], "historical reads must not mutate the live trie");
+    }
+
+    #[test]
     fn trie_log_revision_valid_prefix_returns_revision() {
         let revision = 42u64.to_be_bytes();
 
