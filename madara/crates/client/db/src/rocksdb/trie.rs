@@ -548,11 +548,11 @@ mod tests {
             RocksDBConfig { snapshot_interval: 4, max_kept_snapshots: Some(5), ..Default::default() },
         )
         .unwrap();
-        let mut trie = storage.contract_trie();
         let key = Felt::ONE.to_bytes_be();
         let key = &key.view_bits::<bitvec::order::Msb0>()[5..];
         let mut roots = Vec::new();
         for block in 0..=8u64 {
+            let mut trie = storage.contract_trie();
             if block == 7 {
                 trie.remove(b"test", key).unwrap();
             } else {
@@ -562,6 +562,7 @@ mod tests {
             storage.snapshots.set_new_head(block);
             roots.push(trie.root_hash(b"test").unwrap());
         }
+        let trie = storage.contract_trie();
         for block in [0, 4, 5, 6, 7, 8] {
             let view = trie.get_transactional_state(BasicId::new(block), trie.get_config()).unwrap().unwrap();
             assert_eq!(view.root_hash(b"test").unwrap(), roots[block as usize], "block {block}");
@@ -569,6 +570,56 @@ mod tests {
             assert_eq!(view.get(b"test", key).unwrap(), expected, "block {block}");
         }
         assert_eq!(trie.root_hash(b"test").unwrap(), roots[8], "historical reads must not mutate the live trie");
+    }
+
+    #[test]
+    fn historical_trie_snapshots_match_each_block_of_a_sync_batch() {
+        use crate::MadaraStorageWrite;
+        use mp_chain_config::StarknetVersion;
+        use mp_state_update::{DeclaredClassItem, StateDiff};
+        use starknet_types_core::felt::Felt;
+
+        for interval in [1, 4] {
+            let directory = tempfile::tempdir().unwrap();
+            let storage = RocksDBStorage::open(
+                directory.path(),
+                RocksDBConfig { snapshot_interval: interval, max_kept_snapshots: Some(10), ..Default::default() },
+            )
+            .unwrap();
+            let diffs: Vec<_> = (0..=5u64)
+                .map(|block| StateDiff {
+                    declared_classes: vec![DeclaredClassItem {
+                        class_hash: Felt::from(block + 1),
+                        compiled_class_hash: Felt::from(block + 100),
+                    }],
+                    ..Default::default()
+                })
+                .collect();
+            let reference_dir = tempfile::tempdir().unwrap();
+            let reference = RocksDBStorage::open(reference_dir.path(), RocksDBConfig::default()).unwrap();
+            let mut roots = Vec::new();
+            for (block, diff) in diffs.iter().enumerate() {
+                reference.apply_to_global_trie(block as u64, [diff], StarknetVersion::V0_14_2).unwrap();
+                roots.push(
+                    reference.class_trie().root_hash(super::super::global_trie::bonsai_identifier::CLASS).unwrap(),
+                );
+            }
+            storage.apply_to_global_trie(0, &diffs, StarknetVersion::V0_14_2).unwrap();
+            // Sync computes the whole trie batch before publishing its confirmed blocks.
+            for block in 0..=5 {
+                storage.on_new_confirmed_head(block).unwrap();
+            }
+            let trie = storage.class_trie();
+            for (block, expected) in roots.iter().enumerate() {
+                let view =
+                    trie.get_transactional_state(BasicId::new(block as u64), trie.get_config()).unwrap().unwrap();
+                assert_eq!(
+                    view.root_hash(super::super::global_trie::bonsai_identifier::CLASS).unwrap(),
+                    *expected,
+                    "block {block}, snapshot interval {interval}"
+                );
+            }
+        }
     }
 
     #[test]

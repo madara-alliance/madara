@@ -181,6 +181,10 @@ pub fn apply_to_global_trie<'a>(
         let (contract_trie_root, contract_trie_timings) = contract_result?;
         let (class_trie_root, class_trie_timings) = class_result?;
 
+        // Sync publishes confirmed heads after the entire batch. Capture each trie's
+        // block boundary now, before a later block changes the underlying database.
+        backend.snapshots.set_new_head(block_n);
+
         // NOTE: We compute the state root inside the loop (rather than only after it) so that
         // the per-block timing metrics below include the cost of `calculate_state_root`.
         //
