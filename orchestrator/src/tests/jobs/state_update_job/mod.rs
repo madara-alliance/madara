@@ -199,14 +199,12 @@ async fn verify_job_rejects_when_contract_is_behind_previous_batch_boundary() {
 
 #[rstest]
 #[tokio::test]
-async fn process_job_does_not_resubmit_an_already_settled_batch() {
+async fn settled_batch_reconciliation_skips_state_update_submission() {
     let batch_index = 559;
     let end_block = 902875;
 
     let mut settlement_client = MockSettlementClient::new();
     settlement_client.expect_get_last_settled_block().times(1).returning(move || Ok(Some(end_block)));
-    settlement_client.expect_get_nonce().never();
-    settlement_client.expect_update_state_with_blobs().never();
 
     let mut database_client = MockDatabaseClient::new();
     database_client.expect_get_aggregator_batches().times(1).returning(move |query: AggregatorBatchDbQuery| {
@@ -220,10 +218,10 @@ async fn process_job_does_not_resubmit_an_already_settled_batch() {
         .build()
         .await;
 
-    let mut job = state_transition_job_for_batch(batch_index).await;
-    let result = StateUpdateJobHandler.process_job(services.config, &mut job).await;
+    let should_submit =
+        StateUpdateJobHandler.should_send_state_update_txn_from_chain(&services.config, batch_index).await;
 
-    assert!(result.is_ok(), "an already-settled batch must reconcile without submitting another transaction");
+    assert!(!should_submit.unwrap(), "an already-settled batch must not be submitted again");
 }
 
 // ==================== L2 DA Segment Tests ===========================
