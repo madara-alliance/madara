@@ -61,7 +61,7 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "get_preconfirmed_block",
 //!   "params": {
-//!     "blockNumber": 123,
+//!     "blockIdentifier": 123,
 //!   },
 //!   "id": 1
 //! }
