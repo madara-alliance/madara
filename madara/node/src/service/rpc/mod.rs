@@ -154,6 +154,7 @@ impl Service for RpcService {
                     addr,
                     batch_config: config.batch_config(),
                     max_connections: config.rpc_max_connections,
+                    max_concurrent_executions: config.rpc_max_concurrent_executions,
                     max_payload_in_mib: config.rpc_max_request_size,
                     max_payload_out_mib: config.rpc_max_response_size,
                     max_subs_per_conn: config.rpc_max_subscriptions_per_connection,

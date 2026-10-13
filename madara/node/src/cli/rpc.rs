@@ -17,6 +17,8 @@ pub const RPC_DEFAULT_MAX_REQUEST_SIZE_MIB: u32 = 15;
 pub const RPC_DEFAULT_MAX_RESPONSE_SIZE_MIB: u32 = 15;
 /// The default number of connection..
 pub const RPC_DEFAULT_MAX_CONNECTIONS: u32 = 100;
+/// The default number of execution-heavy RPCs that may run concurrently.
+pub const RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS: usize = 32;
 /// The default websocket peer inactivity timeout in seconds.
 pub const RPC_DEFAULT_WS_INACTIVE_TIMEOUT_SECS: u64 = 60 * 60;
 /// The default number of messages the RPC server
@@ -132,6 +134,16 @@ pub struct RpcParams {
     /// Maximum number of RPC server connections at a given time.
     #[arg(env = "MADARA_RPC_MAX_CONNECTIONS", long, value_name = "COUNT", default_value_t = RPC_DEFAULT_MAX_CONNECTIONS)]
     pub rpc_max_connections: u32,
+
+    /// Maximum number of execution-heavy RPC methods that may run concurrently.
+    #[arg(
+        env = "MADARA_RPC_MAX_CONCURRENT_EXECUTIONS",
+        long,
+        value_name = "COUNT",
+        default_value_t = RPC_DEFAULT_MAX_CONCURRENT_EXECUTIONS,
+        value_parser = clap::value_parser!(usize).range(1..)
+    )]
+    pub rpc_max_concurrent_executions: usize,
 
     /// Close websocket peers that do not respond to ping/pong activity within this many seconds.
     #[arg(

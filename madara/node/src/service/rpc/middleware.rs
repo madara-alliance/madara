@@ -4,9 +4,74 @@ use anyhow::Context;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
 use mp_chain_config::RpcVersion;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
+use tokio::sync::Semaphore;
 
 pub use super::metrics::Metrics;
+
+#[derive(Debug, Clone)]
+pub struct RpcExecutionLimiterLayer {
+    semaphore: Arc<Semaphore>,
+}
+
+impl RpcExecutionLimiterLayer {
+    pub fn new(semaphore: Arc<Semaphore>) -> Self {
+        Self { semaphore }
+    }
+}
+
+impl<S> tower::Layer<S> for RpcExecutionLimiterLayer {
+    type Service = RpcExecutionLimiterService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RpcExecutionLimiterService { inner, semaphore: Arc::clone(&self.semaphore) }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RpcExecutionLimiterService<S> {
+    inner: S,
+    semaphore: Arc<Semaphore>,
+}
+
+fn is_execution_method(method: &str) -> bool {
+    const EXECUTION_METHODS: &[&str] = &[
+        "call",
+        "estimateFee",
+        "estimateMessageFee",
+        "simulateTransactions",
+        "traceTransaction",
+        "traceBlockTransactions",
+        "addInvokeTransaction",
+        "addDeclareTransaction",
+        "addDeployAccountTransaction",
+        "addDeclareV0Transaction",
+    ];
+
+    EXECUTION_METHODS.contains(&method.rsplit('_').next().unwrap_or(method))
+}
+
+impl<'a, S> RpcServiceT<'a> for RpcExecutionLimiterService<S>
+where
+    S: Send + Sync + Clone + RpcServiceT<'a> + 'static,
+{
+    type Future = BoxFuture<'a, jsonrpsee::MethodResponse>;
+
+    fn call(&self, req: jsonrpsee::types::Request<'a>) -> Self::Future {
+        let inner = self.inner.clone();
+
+        if !is_execution_method(req.method_name()) {
+            return inner.call(req).boxed();
+        }
+
+        let semaphore = Arc::clone(&self.semaphore);
+        async move {
+            let _permit = semaphore.acquire_owned().await.expect("RPC execution semaphore should remain open");
+            inner.call(req).await
+        }
+        .boxed()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RpcMiddlewareLayerMetrics {
@@ -158,5 +223,29 @@ where
             inner.call(req).await
         }
         .boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_execution_method;
+
+    #[test]
+    fn execution_method_matching_covers_public_and_versioned_names() {
+        for method in [
+            "starknet_call",
+            "starknet_V0_10_0_call",
+            "starknet_estimateFee",
+            "starknet_V0_9_0_simulateTransactions",
+            "starknet_traceBlockTransactions",
+            "starknet_addInvokeTransaction",
+            "madara_addDeclareV0Transaction",
+        ] {
+            assert!(is_execution_method(method), "{method} should be limited");
+        }
+
+        for method in ["starknet_blockNumber", "starknet_getStorageAt", "rpc_methods"] {
+            assert!(!is_execution_method(method), "{method} should not be limited");
+        }
     }
 }
