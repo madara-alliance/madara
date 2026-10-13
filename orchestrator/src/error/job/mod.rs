@@ -118,6 +118,10 @@ pub enum JobError {
     #[error("Job {id} processing was interrupted by orchestrator shutdown")]
     ShutdownInterrupted { id: Uuid },
 
+    /// The database lock was restored, but synchronous handler code had not stopped yet.
+    #[error("Job {id} was restored during orchestrator shutdown while its handler was still stopping")]
+    ShutdownHandlerStillRunning { id: Uuid },
+
     /// Processing was interrupted, but the database lock could not be restored.
     #[error("Failed to restore job {id} after orchestrator shutdown: {source}")]
     ShutdownRestoreFailed {

@@ -29,7 +29,7 @@
 // interference between tests when they set expectations for the same JobType. The lock is held for
 // the entire test duration, which is safe because it's test-scoped and won't block production code.
 
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -85,6 +85,51 @@ use assert_matches::assert_matches;
 struct ShutdownBlockingJobHandler {
     started: TokioMutex<Option<oneshot::Sender<()>>>,
     release: TokioMutex<Option<oneshot::Receiver<()>>>,
+}
+
+struct NonYieldingShutdownBlockingJobHandler {
+    started: StdMutex<Option<oneshot::Sender<()>>>,
+    release: StdMutex<mpsc::Receiver<()>>,
+}
+
+#[async_trait]
+impl JobHandlerTrait for NonYieldingShutdownBlockingJobHandler {
+    async fn create_job(&self, _internal_id: u64, _metadata: JobMetadata) -> Result<JobItem, JobError> {
+        Err(JobError::Other("not implemented for test".to_string().into()))
+    }
+
+    async fn process_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<String, JobError> {
+        if let Some(started) = self.started.lock().unwrap().take() {
+            let _ = started.send(());
+        }
+
+        self.release.lock().unwrap().recv().expect("test should release synchronous handler");
+        Ok("0xbeef".to_string())
+    }
+
+    async fn verify_job(
+        &self,
+        _config: Arc<crate::core::config::Config>,
+        _job: &mut JobItem,
+    ) -> Result<JobVerificationStatus, JobError> {
+        Ok(JobVerificationStatus::Verified)
+    }
+
+    fn max_process_attempts(&self) -> u64 {
+        1
+    }
+
+    fn max_verification_attempts(&self) -> u64 {
+        1
+    }
+
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        1
+    }
 }
 
 #[async_trait]
@@ -486,6 +531,53 @@ async fn process_job_shutdown_restores_locked_job_for_sqs_retry() {
     assert!(restored_job.metadata.common.process_completed_at.is_none());
 }
 
+/// Tests that shutdown stays observable while a handler is executing synchronous, non-yielding work.
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[allow(clippy::await_holding_lock)]
+async fn process_job_shutdown_restores_job_during_non_yielding_processing() {
+    let _test_lock = acquire_test_lock();
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .build()
+        .await;
+    let db_client = services.config.database();
+
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    db_client.create_job(job_item.clone()).await.unwrap();
+
+    let (started_tx, started_rx) = oneshot::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(NonYieldingShutdownBlockingJobHandler {
+        started: StdMutex::new(Some(started_tx)),
+        release: StdMutex::new(release_rx),
+    }));
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
+
+    let shutdown_token = CancellationToken::new();
+    let process_handle = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+        job_item.id,
+        services.config.clone(),
+        shutdown_token.clone(),
+    ));
+
+    started_rx.await.expect("handler should start after job is locked");
+    shutdown_token.cancel();
+
+    let result = process_handle.await.unwrap();
+    assert_matches!(result, Err(JobError::ShutdownHandlerStillRunning { id }) if id == job_item.id);
+
+    let restored_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
+    assert_eq!(restored_job.status, JobStatus::Created);
+    assert_eq!(restored_job.metadata, job_item.metadata);
+
+    release_tx.send(()).expect("synchronous handler should still be running");
+}
+
 /// Tests that successful processing is not restored by a later shutdown signal.
 #[rstest]
 #[tokio::test]
@@ -503,22 +595,24 @@ async fn process_job_shutdown_does_not_restore_completed_processing() {
     let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
     db_client.create_job(job_item.clone()).await.unwrap();
 
+    let shutdown_token = CancellationToken::new();
+    let completion_shutdown_token = shutdown_token.clone();
     let mut job_handler = MockJobHandlerTrait::new();
     job_handler.expect_check_ready_to_process().times(1).returning(|_, _| Ok(()));
-    job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
+    job_handler.expect_process_job().times(1).returning(move |_, _| {
+        completion_shutdown_token.cancel();
+        Ok("0xbeef".to_string())
+    });
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
-    let shutdown_token = CancellationToken::new();
     let result =
         JobHandlerService::process_job_with_shutdown(job_item.id, services.config.clone(), shutdown_token.clone())
             .await;
     assert!(result.is_ok());
-
-    shutdown_token.cancel();
 
     let completed_processing_job = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(completed_processing_job.status, JobStatus::PendingVerification);

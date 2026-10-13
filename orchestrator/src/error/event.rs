@@ -72,10 +72,13 @@ pub enum EventSystemError {
 impl EventSystemError {
     /// Whether the queue delivery should be released immediately for retry.
     ///
-    /// A failed shutdown restore deliberately leaves the delivery pending so its visibility
-    /// timeout remains the fallback recovery path for the still-locked job.
+    /// A failed shutdown restore, or a synchronous handler that has not stopped yet, deliberately
+    /// leaves the delivery pending so its visibility timeout remains the safe recovery path.
     pub(crate) fn should_nack_delivery(&self) -> bool {
-        !matches!(self, Self::JobError(JobError::ShutdownRestoreFailed { .. }))
+        !matches!(
+            self,
+            Self::JobError(JobError::ShutdownRestoreFailed { .. } | JobError::ShutdownHandlerStillRunning { .. })
+        )
     }
 }
 
@@ -91,6 +94,8 @@ mod tests {
         });
 
         assert!(!error.should_nack_delivery());
+        assert!(!EventSystemError::JobError(JobError::ShutdownHandlerStillRunning { id: Uuid::nil() })
+            .should_nack_delivery());
         assert!(EventSystemError::JobError(JobError::ShutdownInterrupted { id: Uuid::nil() }).should_nack_delivery());
     }
 }

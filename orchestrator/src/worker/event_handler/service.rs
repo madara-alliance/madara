@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -41,6 +41,7 @@ pub struct JobHandlerService;
 
 const SHUTDOWN_RESTORE_MAX_ATTEMPTS: u8 = 3;
 const SHUTDOWN_RESTORE_RETRY_DELAY: Duration = Duration::from_millis(250);
+const SHUTDOWN_HANDLER_ABORT_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl JobHandlerService {
     /// Creates the job in the DB in the created state and adds it to the process queue
@@ -179,11 +180,13 @@ impl JobHandlerService {
 
     /// Processes a job while observing the worker's shutdown token.
     ///
-    /// Cancellation drops the active handler future, restores the job to its exact pre-processing
-    /// status and metadata, and returns [`JobError::ShutdownInterrupted`] so the queue delivery is
-    /// released. If the durable restore fails, [`JobError::ShutdownRestoreFailed`] tells the worker
-    /// to leave the delivery pending for visibility-timeout recovery instead of immediately NACKing
-    /// a fresh `LockedForProcessing` row.
+    /// The handler runs in its own task so cancellation remains observable while a handler is inside
+    /// synchronous SNOS or aggregation work. Cancellation aborts that task and restores the job to
+    /// its exact pre-processing status and metadata. A handler that stops promptly returns
+    /// [`JobError::ShutdownInterrupted`] so the queue delivery is released. If the handler is still
+    /// executing synchronous code, [`JobError::ShutdownHandlerStillRunning`] leaves the delivery
+    /// pending until its visibility timeout to prevent concurrent redelivery. A failed durable
+    /// restore similarly returns [`JobError::ShutdownRestoreFailed`] and leaves the delivery pending.
     pub(crate) async fn process_job_with_shutdown(
         id: Uuid,
         config: Arc<Config>,
@@ -362,32 +365,51 @@ impl JobHandlerService {
             Shutdown,
         }
 
-        let processing_result = {
-            let processing = AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind();
-            tokio::pin!(processing);
+        // Keep cancellation observable even when a handler polls synchronous CPU work without
+        // yielding (notably SNOS execution and local aggregation).
+        let processing_handler = Arc::clone(&job_handler);
+        let processing_config = config.clone();
+        let mut processing_job = job.clone();
+        let mut processing = tokio::spawn(async move {
+            let result = AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
+                .catch_unwind()
+                .await;
+            (result, processing_job)
+        });
 
-            tokio::select! {
-                biased;
+        let processing_result = tokio::select! {
+            biased;
 
-                result = &mut processing => ProcessingOutcome::Completed(result),
-                _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
-            }
+            result = &mut processing => ProcessingOutcome::Completed(result),
+            _ = shutdown_token.cancelled() => ProcessingOutcome::Shutdown,
         };
 
         let processing_result = match processing_result {
-            ProcessingOutcome::Completed(result) => result,
+            ProcessingOutcome::Completed(Ok((result, processed_job))) => {
+                job = processed_job;
+                result
+            }
+            ProcessingOutcome::Completed(Err(error)) => {
+                Ok(Err(JobError::Other(OtherError::from(format!("Job handler task failed: {error}")))))
+            }
             ProcessingOutcome::Shutdown => {
+                processing.abort();
+                let handler_stopped = timeout(SHUTDOWN_HANDLER_ABORT_TIMEOUT, &mut processing).await.is_ok();
                 warn!(
                     job_id = ?id,
                     job_type = ?job.job_type,
                     internal_id = %job.internal_id,
                     status = ?original_status,
+                    handler_stopped,
                     "Shutdown requested while processing job, restoring job state for SQS retry"
                 );
                 workload.finish_error();
-                return Err(
-                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await
-                );
+                let restore_error =
+                    Self::restore_job_after_shutdown(&mut job, config, original_status, original_metadata).await;
+                return Err(match (handler_stopped, restore_error) {
+                    (false, JobError::ShutdownInterrupted { id }) => JobError::ShutdownHandlerStillRunning { id },
+                    (_, error) => error,
+                });
             }
         };
 

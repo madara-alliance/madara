@@ -1,12 +1,15 @@
 use std::fs::read_to_string;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
 use crate::core::client::database::{AggregatorBatchDbQuery, MockDatabaseClient};
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
-use crate::tests::config::TestConfigBuilder;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
     get_batch_artifact_file, BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -18,6 +21,7 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
+use crate::worker::event_handler::service::JobHandlerService;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use httpmock::prelude::*;
@@ -27,6 +31,8 @@ use orchestrator_settlement_client_interface::{MockSettlementClient, StateUpdate
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 lazy_static! {
@@ -222,6 +228,124 @@ async fn settled_batch_reconciliation_skips_state_update_submission() {
         StateUpdateJobHandler.should_send_state_update_txn_from_chain(&services.config, batch_index).await;
 
     assert!(!should_submit.unwrap(), "an already-settled batch must not be submitted again");
+}
+
+/// A shutdown after broadcast restores the job without immediately redelivering it. On the next
+/// delivery, Ethereum's latest confirmed nonce is reused so the client deliberately replaces the
+/// still-pending transaction instead of creating a second state transition.
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[allow(clippy::await_holding_lock)]
+async fn shutdown_after_state_update_broadcast_retries_with_the_same_nonce() {
+    let _test_lock = acquire_test_lock();
+    let batch_index = 559;
+    let nonce = 42;
+    let program_output_path = format!("batch/{batch_index}/{PROGRAM_OUTPUT_FILE_NAME}");
+    let da_segment_path = format!("batch/{batch_index}/da_segment.json");
+
+    let (broadcast_tx, broadcast_rx) = oneshot::channel();
+    let broadcast_tx = Arc::new(Mutex::new(Some(broadcast_tx)));
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(release_rx));
+    let submissions = Arc::new(AtomicUsize::new(0));
+    let submitted_nonces = Arc::new(Mutex::new(Vec::new()));
+
+    let mut settlement_client = MockSettlementClient::new();
+    settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(902785)));
+    settlement_client.expect_get_nonce().times(2).returning(move || Ok(nonce));
+    settlement_client.expect_update_state_with_blobs().times(2).returning({
+        let broadcast_tx = Arc::clone(&broadcast_tx);
+        let release_rx = Arc::clone(&release_rx);
+        let submissions = Arc::clone(&submissions);
+        let submitted_nonces = Arc::clone(&submitted_nonces);
+        move |_, _, submitted_nonce| {
+            submitted_nonces.lock().unwrap().push(submitted_nonce);
+            if submissions.fetch_add(1, Ordering::SeqCst) == 0 {
+                if let Some(broadcast_tx) = broadcast_tx.lock().unwrap().take() {
+                    let _ = broadcast_tx.send(());
+                }
+                release_rx.lock().unwrap().recv().expect("test should release the pending transaction");
+                Ok(StateUpdateTxResult { tx_hash: "0xoriginal".to_string(), attempts: Vec::new() })
+            } else {
+                Ok(StateUpdateTxResult { tx_hash: "0xreplacement".to_string(), attempts: Vec::new() })
+            }
+        }
+    });
+
+    let serialized_program_output = bincode::serialize(&vec![[0_u8; 32]]).unwrap();
+    let mut storage_client = MockStorageClient::new();
+    storage_client
+        .expect_get_data()
+        .with(eq(program_output_path.clone()))
+        .times(2)
+        .returning(move |_| Ok(Bytes::from(serialized_program_output.clone())));
+    storage_client
+        .expect_get_data()
+        .with(eq(da_segment_path.clone()))
+        .times(2)
+        .returning(|_| Ok(Bytes::from_static(br#"["0x1"]"#)));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_storage_client(ConfigType::Mock(MockType::Storage(Box::new(storage_client))))
+        .configure_settlement_client(ConfigType::Mock(MockType::SettlementClient(Box::new(settlement_client))))
+        .build()
+        .await;
+    services
+        .config
+        .database()
+        .create_aggregator_batch(test_aggregator_batch(batch_index, 902786, 902875))
+        .await
+        .unwrap();
+
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            snos_output_path: None,
+            program_output_path: Some(program_output_path),
+            blob_data_path: None,
+            da_segment_path: Some(da_segment_path),
+            tx_hash: None,
+            tx_nonce: None,
+            tx_attempts: Vec::new(),
+            context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
+            storage_artifacts_tagged_at: None,
+        }),
+    };
+    let job = StateUpdateJobHandler.create_job(batch_index, metadata).await.unwrap();
+    services.config.database().create_job(job.clone()).await.unwrap();
+
+    let handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(StateUpdateJobHandler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().times(2).with(eq(JobType::StateTransition)).returning(move |_| Arc::clone(&handler));
+
+    let shutdown_token = CancellationToken::new();
+    let first_attempt = tokio::spawn(JobHandlerService::process_job_with_shutdown(
+        job.id,
+        services.config.clone(),
+        shutdown_token.clone(),
+    ));
+    broadcast_rx.await.expect("first state update transaction should be broadcast");
+    shutdown_token.cancel();
+
+    assert_matches!(
+        first_attempt.await.unwrap(),
+        Err(JobError::ShutdownHandlerStillRunning { id }) if id == job.id
+    );
+    let restored_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    assert_eq!(restored_job.status, JobStatus::Created);
+    assert_eq!(restored_job.metadata, job.metadata);
+
+    release_tx.send(()).expect("first state update attempt should still be waiting");
+    JobHandlerService::process_job(job.id, services.config.clone()).await.unwrap();
+
+    let retried_job = services.config.database().get_job_by_id(job.id).await.unwrap().unwrap();
+    let retried_metadata: StateUpdateMetadata = retried_job.metadata.specific.try_into().unwrap();
+    assert_eq!(retried_job.status, JobStatus::PendingVerification);
+    assert_eq!(retried_metadata.tx_hash.as_deref(), Some("0xreplacement"));
+    assert_eq!(retried_metadata.tx_nonce, Some(nonce));
+    assert_eq!(*submitted_nonces.lock().unwrap(), vec![nonce, nonce]);
 }
 
 // ==================== L2 DA Segment Tests ===========================
