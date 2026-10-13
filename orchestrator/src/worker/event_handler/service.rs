@@ -35,7 +35,7 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use orchestrator_utils::layer::Layer;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{debug, error, info, warn, Instrument, Span};
 
 pub struct JobHandlerService;
 
@@ -370,12 +370,15 @@ impl JobHandlerService {
         let processing_handler = Arc::clone(&job_handler);
         let processing_config = config.clone();
         let mut processing_job = job.clone();
-        let mut processing = tokio::spawn(async move {
-            let result = AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
-                .catch_unwind()
-                .await;
-            (result, processing_job)
-        });
+        let mut processing = tokio::spawn(
+            async move {
+                let result = AssertUnwindSafe(processing_handler.process_job(processing_config, &mut processing_job))
+                    .catch_unwind()
+                    .await;
+                (result, processing_job)
+            }
+            .in_current_span(),
+        );
 
         let processing_result = tokio::select! {
             biased;
