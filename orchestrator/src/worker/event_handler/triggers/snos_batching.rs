@@ -2,6 +2,7 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::utils::provider_retry::retry_provider_read;
 use crate::worker::event_handler::triggers::batching::replay_bounds;
 use crate::worker::event_handler::triggers::batching::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
@@ -228,8 +229,9 @@ impl SnosBatchingTrigger {
 
         // Get the latest block number from the sequencer
         let provider = config.madara_rpc_client();
-        let block_number_provider =
-            provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
+        let block_number_provider = retry_provider_read("madara_block_number", || provider.block_number())
+            .await
+            .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         // Calculate the first block to assign to SNOS batch
         let first_block = max(config.service_config().min_block_to_process, (last_processed_block + 1) as u64);
