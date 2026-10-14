@@ -62,7 +62,7 @@ impl TryFrom<RunCmd> for CloudProvider {
         if cmd.aws_config_args.aws {
             debug!("Initializing AWS configuration");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
-            let config = block_on(aws_cred.get_aws_config());
+            let config = block_on(aws_cred.get_aws_config()).map_err(OrchestratorCoreError::InvalidProvider)?;
             info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
         } else {
@@ -90,7 +90,7 @@ impl TryFrom<SetupCmd> for CloudProvider {
         if cmd.aws_config_args.aws {
             debug!("Initializing AWS configuration from setup command");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
-            let config = block_on(aws_cred.get_aws_config());
+            let config = block_on(aws_cred.get_aws_config()).map_err(OrchestratorCoreError::InvalidProvider)?;
             info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
         } else {
@@ -105,7 +105,7 @@ impl TryFrom<AWSCredentials> for CloudProvider {
 
     fn try_from(aws_cred: AWSCredentials) -> Result<Self, Self::Error> {
         debug!("Initializing AWS configuration from credentials");
-        let config = block_on(aws_cred.get_aws_config());
+        let config = block_on(aws_cred.get_aws_config()).map_err(OrchestratorCoreError::InvalidProvider)?;
         info!("Successfully created AWS configuration");
         Ok(CloudProvider::AWS(Box::new(config)))
     }
