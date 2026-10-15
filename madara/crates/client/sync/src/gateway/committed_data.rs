@@ -74,7 +74,10 @@ mod tests {
         use blockifier::execution::syscalls::committed_data::CommittedDataSet;
         use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
         use mp_chain_config::ChainConfig;
-        let values: Vec<_> = (0..4097_u32).map(Felt::from).collect();
+        let mut values: Vec<_> = (0..4097_u32).map(Felt::from).collect();
+        // Opaque felts, including encoded symbols and high-bit values, survive replication.
+        values[0] = Felt::from_hex_unchecked("0x4254432d5553442d505542"); // BTC-USD-PUB
+        values[4096] = Felt::from_hex_unchecked("0x700000000000000000000000000000000000000000000000000000000000001");
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
         let source = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         source.import_committed_data_snapshot(root, values.clone()).await.unwrap();
@@ -122,6 +125,7 @@ mod tests {
             for page in &pages {
                 page.assert_hits_async(1).await;
             }
+            assert_eq!(replica.committed_data_witness(root, 0).unwrap().unwrap().value, values[0]);
             assert_eq!(replica.committed_data_witness(root, 4096).unwrap().unwrap().value, values[4096]);
         }
         for page in &pages {
@@ -129,6 +133,7 @@ mod tests {
         } // Source no longer serves datasets.
         drop(source);
         let replica = open();
+        assert_eq!(replica.committed_data_witness(root, 0).unwrap().unwrap().value, values[0]);
         assert!(replica.committed_data_witness(root, 4096).unwrap().unwrap().verify());
         assert_eq!(replica.db.list_committed_data_roots(None).unwrap(), vec![root]);
     }
