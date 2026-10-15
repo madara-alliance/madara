@@ -8,9 +8,8 @@ impl MadaraStorageWrite for RocksDBStorage {
         &self,
         dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
         max_bytes: u64,
-        staged_at_block: u64,
     ) -> Result<()> {
-        self.store_committed_data_dataset(dataset, max_bytes, staged_at_block)
+        self.store_committed_data_dataset(dataset, max_bytes)
     }
 
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {

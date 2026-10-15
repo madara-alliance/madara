@@ -21,7 +21,6 @@ pub struct L1SyncConfig {
 pub struct L1SyncService {
     sync_worker_config: Option<SyncWorkerConfig>,
     client: Option<Arc<L1ClientImpl>>,
-    committed_data_pruner: Option<Arc<MadaraBackend>>,
 }
 
 impl L1SyncService {
@@ -67,12 +66,7 @@ impl L1SyncService {
         }
 
         if config.l1_sync_disabled {
-            if backend.committed_data_pruning_enabled() {
-                tracing::warn!(
-                    "Committed-data pruning is disabled because L1 sync is disabled; no settlement boundary is available"
-                );
-            }
-            return Ok(Self { sync_worker_config: None, client: None, committed_data_pruner: None });
+            return Ok(Self { sync_worker_config: None, client: None });
         }
 
         if config.unsafe_l1_handler_metadata_only {
@@ -115,10 +109,8 @@ impl L1SyncService {
             backend.set_last_l1_gas_quote(l1_gas_quote);
         }
 
-        let committed_data_pruner = backend.committed_data_pruning_enabled().then_some(backend);
         Ok(Self {
             client: Some(client.into()),
-            committed_data_pruner,
             sync_worker_config: Some(SyncWorkerConfig {
                 gas_provider_config,
                 l1_head_sender: sync_config.l1_head_snd,
@@ -142,16 +134,8 @@ impl L1SyncService {
 impl Service for L1SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if let Some((config, client)) = self.sync_worker_config.take().zip(self.client.clone()) {
-            let committed_data_pruner = self.committed_data_pruner.take();
             runner.service_loop(move |ctx| async move {
-                if let Some(backend) = committed_data_pruner {
-                    tokio::try_join!(
-                        backend.run_committed_data_pruner(ctx.clone()),
-                        client.run_sync_worker(ctx, config)
-                    )?;
-                } else {
-                    client.run_sync_worker(ctx, config).await?;
-                }
+                client.run_sync_worker(ctx, config).await?;
                 anyhow::Ok(())
             });
         } else {
