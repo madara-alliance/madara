@@ -46,7 +46,6 @@ mod blocks;
 mod classes;
 mod column;
 mod committed_data;
-pub(crate) use committed_data::CommittedDataLifecycleCursor;
 mod events;
 mod events_bloom_filter;
 pub(crate) mod external_outbox;
@@ -102,8 +101,8 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 pub(crate) struct RocksDBStorageInner {
     db: DB,
     global_opts: RocksDBOptions,
-    // ponytail: reuse the quota lock for the two restartable pruning cursors (retired, staged).
-    committed_data_write: std::sync::Mutex<[Option<Vec<u8>>; 2]>,
+    // Serializes the quota read/check/write across cloned storage handles.
+    committed_data_write: std::sync::Mutex<()>,
     writeopts: WriteOptions,
     config: RocksDBConfig,
 }
