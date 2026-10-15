@@ -1032,6 +1032,8 @@ pub struct Starknet {
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    /// Set only for a sequencer's private listener; runtime block-production status is checked too.
+    pub(crate) committed_data_transaction_submission: bool,
     pub(crate) sync_threshold_blocks: u64,
     pub(crate) committed_data_signers: Arc<[mp_convert::Felt]>,
 }
@@ -1059,6 +1061,7 @@ impl Starknet {
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            committed_data_transaction_submission: false,
             sync_threshold_blocks: DEFAULT_SYNC_THRESHOLD_BLOCKS,
             committed_data_signers: Arc::from([]),
         }
@@ -1066,6 +1069,11 @@ impl Starknet {
 
     pub fn set_pre_v0_9_preconfirmed_as_pending(&mut self, value: bool) {
         self.pre_v0_9_preconfirmed_as_pending = value;
+    }
+
+    /// Combined imports may submit transactions only when this RPC belongs to a sequencer.
+    pub fn set_committed_data_transaction_submission(&mut self, enabled: bool) {
+        self.committed_data_transaction_submission = enabled;
     }
 
     /// Sets the node-local ingestion allowlist; it is not a consensus or Oracle publication policy.
