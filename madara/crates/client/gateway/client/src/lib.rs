@@ -62,6 +62,7 @@
 //!   "method": "get_preconfirmed_block",
 //!   "params": {
 //!     "blockNumber": 123,
+//!     "blockIdentifier": 123,
 //!   },
 //!   "id": 1
 //! }

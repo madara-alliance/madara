@@ -244,7 +244,8 @@ impl GatewayMock {
         self.mock_server.mock(|when, then| {
             when.method("GET")
                 .path_contains("get_preconfirmed_block")
-                .query_param("blockNumber", block_number.to_string());
+                .query_param("blockNumber", block_number.to_string())
+                .query_param("blockIdentifier", block_number.to_string());
             then.status(200).header("content-type", "application/json").json_body(json!({
                 "status": "PRE_CONFIRMED",
                 "starknet_version": "0.13.2.1",
