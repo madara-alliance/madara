@@ -439,7 +439,11 @@ impl JobHandlerService {
             config.clone(),
             job.id,
             &job.job_type,
-            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+            Some(Duration::from_secs(
+                config
+                    .service_config()
+                    .verification_delay_seconds(&job.job_type, job_handler.verification_polling_delay_seconds()),
+            )),
         )
         .await
         .map_err(|e| {
@@ -764,7 +768,10 @@ impl JobHandlerService {
                         config.clone(),
                         job.id,
                         &job.job_type,
-                        Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+                        Some(Duration::from_secs(config.service_config().verification_delay_seconds(
+                            &job.job_type,
+                            job_handler.verification_polling_delay_seconds(),
+                        ))),
                     )
                     .await
                     .map_err(|e| {
