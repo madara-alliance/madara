@@ -2,7 +2,7 @@
 #![allow(clippy::borrow_interior_mutable_const)]
 
 use super::metrics::RpcMetrics;
-use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
+use super::middleware::{Metrics, RpcExecutionLimiterLayer, RpcMiddlewareLayerMetrics};
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
@@ -29,6 +29,7 @@ pub struct ServerConfig {
     pub cors: Option<Vec<String>>,
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
+    pub max_concurrent_executions: usize,
     pub max_subs_per_conn: u32,
     pub ws_inactive_timeout_secs: u64,
     pub max_payload_in_mib: u32,
@@ -64,6 +65,7 @@ pub async fn start_server(
         cors,
         rpc_version_default,
         max_connections,
+        max_concurrent_executions,
         max_subs_per_conn,
         ws_inactive_timeout_secs,
         max_payload_in_mib,
@@ -106,21 +108,25 @@ pub async fn start_server(
         metrics,
         service_builder: builder.to_service_builder(),
     };
+    let execution_semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent_executions));
     let ctx1 = ctx.clone();
 
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
         let ctx1 = ctx1.clone();
         let starknet = Arc::clone(&starknet);
+        let execution_semaphore = Arc::clone(&execution_semaphore);
 
         async move {
             let cfg = cfg.clone();
             let starknet = Arc::clone(&starknet);
+            let execution_semaphore = Arc::clone(&execution_semaphore);
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
                 let ctx1 = ctx1.clone();
                 let starknet = Arc::clone(&starknet);
+                let execution_semaphore = Arc::clone(&execution_semaphore);
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -131,7 +137,8 @@ pub async fn start_server(
                     .layer_fn(move |service| {
                         RpcMiddlewareServiceVersion::new(service, path.clone(), rpc_version_default)
                     })
-                    .layer(metrics_layer.clone());
+                    .layer(metrics_layer.clone())
+                    .layer(RpcExecutionLimiterLayer::new(execution_semaphore));
 
                 let mut svc = service_builder.set_rpc_middleware(rpc_middleware).build(methods, stop_handle);
 
