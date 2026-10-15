@@ -453,7 +453,7 @@ async fn main() -> anyhow::Result<()> {
         (Arc::clone(&gateway_client) as _, Arc::clone(&gateway_client) as _)
     };
 
-    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), mempool_submit_tx);
+    let tx_submit = MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx), Arc::clone(&mempool_submit_tx));
     let tx_lookup = MakeTransactionLookupSwitch::new(gateway_transaction_lookup, mempool_transaction_lookup);
     let validated_tx_submit =
         MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
@@ -480,8 +480,14 @@ async fn main() -> anyhow::Result<()> {
         service_mempool.mempool(),
     );
 
-    let service_rpc_committed_data =
-        RpcService::committed_data(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone(), tx_lookup.clone());
+    let service_rpc_committed_data = RpcService::committed_data(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        tx_lookup.clone(),
+        mempool_submit_tx,
+        run_cmd.is_sequencer(),
+    );
 
     // Feeder gateway
 

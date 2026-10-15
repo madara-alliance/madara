@@ -8,6 +8,7 @@ use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
 use mc_rpc::{rpc_api_admin, rpc_api_committed_data, rpc_api_user, Starknet};
+use mc_submit_tx::SubmitTransaction;
 use metrics::RpcMetrics;
 use mp_chain_config::RpcVersion;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -33,6 +34,8 @@ pub struct RpcService {
     tx_status_watcher: Option<Arc<Mempool>>,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
+    committed_data_transaction_submission: bool,
+    committed_data_local_submitter: Option<Arc<dyn SubmitTransaction>>,
     block_prod_handle: Option<BlockProductionHandle>,
     mempool: Option<Arc<Mempool>>,
 }
@@ -53,20 +56,26 @@ impl RpcService {
             tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::User,
+            committed_data_transaction_submission: false,
+            committed_data_local_submitter: None,
             block_prod_handle: None,
             mempool: None,
         }
     }
 
-    /// Creates an independently controlled listener exposing only committed-data ingestion.
+    /// Creates an independently controlled listener for dataset import and local-only submission.
     pub fn committed_data(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
         transaction_lookup_provider: MakeTransactionLookupSwitch,
+        local_submitter: Arc<dyn SubmitTransaction>,
+        is_sequencer: bool,
     ) -> Self {
         let mut service = Self::user(config, backend, submit_tx_provider, transaction_lookup_provider, None);
         service.rpc_type = RpcType::CommittedData;
+        service.committed_data_transaction_submission = is_sequencer;
+        service.committed_data_local_submitter = Some(local_submitter);
         service
     }
 
@@ -87,6 +96,8 @@ impl RpcService {
             tx_status_watcher,
             server_handle: None,
             rpc_type: RpcType::Admin,
+            committed_data_transaction_submission: false,
+            committed_data_local_submitter: None,
             block_prod_handle: Some(block_prod_handle),
             mempool: Some(mempool),
         }
@@ -102,6 +113,8 @@ impl Service for RpcService {
         let transaction_lookup_provider = self.transaction_lookup_provider.clone();
         let tx_status_watcher = self.tx_status_watcher.clone();
         let rpc_type = self.rpc_type.clone();
+        let committed_data_transaction_submission = self.committed_data_transaction_submission;
+        let committed_data_local_submitter = self.committed_data_local_submitter.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
 
@@ -113,7 +126,12 @@ impl Service for RpcService {
         let rpc_unsafe_enabled = self.config.rpc_unsafe;
 
         runner.service_loop(move |ctx| async move {
-            let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
+            // The private bundle endpoint must never forward a transaction to an upstream node
+            // after importing its dataset only into this node's RocksDB.
+            let submit_tx: Arc<dyn SubmitTransaction> = match committed_data_local_submitter {
+                Some(local) => local,
+                None => Arc::new(submit_tx_provider.make(ctx.clone())),
+            };
             let transaction_lookup = Arc::new(transaction_lookup_provider.make(ctx.clone()));
 
             let mut starknet = Starknet::new(
@@ -125,6 +143,7 @@ impl Service for RpcService {
                 ctx.clone(),
             );
             starknet.set_committed_data_signers(config.rpc_committed_data_signers.clone())?;
+            starknet.set_committed_data_transaction_submission(committed_data_transaction_submission);
             if let Some(mempool_watcher) = tx_status_watcher.clone() {
                 starknet.set_tx_status_watcher(Some(mempool_watcher.clone()));
                 starknet.set_new_transactions_watcher(Some(mempool_watcher));
@@ -169,7 +188,7 @@ impl Service for RpcService {
                     ),
                 };
                 let committed_data = matches!(rpc_type, RpcType::CommittedData);
-                // Keep the dedicated surface to its import method; no rpc_methods discovery endpoint.
+                // Keep the dedicated surface to its two methods; no rpc_methods discovery endpoint.
                 let methods = if committed_data { api_rpc } else { rpc_api_build("rpc", api_rpc) }.into();
 
                 ServerConfig {

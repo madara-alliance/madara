@@ -1,9 +1,11 @@
-//! Dataset ingestion for the opt-in Committed Data RPC listener.
-//! Dataset import is durable before success; on-chain publication remains a separate transaction.
+//! Dataset ingestion and signed transaction submission on the private Committed Data listener.
+//! Imports are durable before transaction admission. Rejected transactions can leave unused datasets.
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use m_proc_macros::versioned_rpc;
 use mp_convert::Felt;
+use mp_rpc::v0_10_2::BroadcastedTxn;
+use mp_utils::service::MadaraServiceId;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -72,6 +74,57 @@ pub struct ImportSignature {
     pub s: Felt,
 }
 
+/// One independently authenticated, immutable dataset to import before transaction submission.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommittedDataImport {
+    pub root: Felt,
+    pub values: CommittedDataValues,
+    #[serde(default)]
+    pub signatures: Vec<ImportSignature>,
+}
+
+/// At most four datasets are decoded for a single signed transaction.
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct CommittedDataImports(pub Vec<CommittedDataImport>);
+
+impl<'de> Deserialize<'de> for CommittedDataImports {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ImportsVisitor;
+        impl<'de> serde::de::Visitor<'de> for ImportsVisitor {
+            type Value = CommittedDataImports;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("1..=4 committed-data datasets")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut sequence: A) -> Result<Self::Value, A::Error> {
+                let mut datasets = Vec::with_capacity(4);
+                loop {
+                    if datasets.len() == 4 {
+                        if sequence.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                            return Err(serde::de::Error::custom("Too many committed-data datasets"));
+                        }
+                        break;
+                    }
+                    let Some(dataset) = sequence.next_element::<CommittedDataImport>()? else { break };
+                    datasets.push(dataset);
+                }
+                if datasets.is_empty() {
+                    return Err(serde::de::Error::custom("Empty committed-data dataset list"));
+                }
+                Ok(CommittedDataImports(datasets))
+            }
+        }
+        deserializer.deserialize_seq(ImportsVisitor)
+    }
+}
+
+/// Admission result only. Inclusion, execution and settlement must be checked separately.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ImportAndSubmitResult {
+    pub transaction_hash: Felt,
+}
+
 /// Canonical signing preimage: ASCII domain || chain-id felt (32 BE) || root (32 BE) || count (4 BE).
 /// Starknet Keccak produces a 250-bit message supported by Stark ECDSA. Replay of the same dataset
 /// is intentionally idempotent; there is no expiry or off-chain clock dependency.
@@ -123,6 +176,12 @@ fn validate_import_signatures(
     Ok(())
 }
 
+fn local_submission_ready(starknet: &Starknet) -> bool {
+    starknet.committed_data_transaction_submission
+        && starknet.ctx.service_status_actual(MadaraServiceId::BlockProduction).is_on()
+        && !starknet.ctx.service_status(MadaraServiceId::L2Sync).is_on()
+}
+
 /// Private dataset API. Mount only on the separately enabled committed-data listener.
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait CommittedDataRpcApi {
@@ -135,6 +194,16 @@ pub trait CommittedDataRpcApi {
         values: CommittedDataValues,
         signatures: Option<Vec<ImportSignature>>,
     ) -> RpcResult<()>;
+
+    /// Durably imports 1..=4 datasets, then submits any signed Starknet account transaction.
+    /// A multicall is encoded inside one INVOKE transaction. Dataset imports are not rolled back
+    /// if a later import or transaction fails; the endpoint does not wait for inclusion.
+    #[method(name = "importCommittedDataAndSubmitTransaction")]
+    async fn import_committed_data_and_submit_transaction(
+        &self,
+        datasets: CommittedDataImports,
+        transaction: BroadcastedTxn,
+    ) -> RpcResult<ImportAndSubmitResult>;
 }
 
 #[async_trait]
@@ -162,11 +231,220 @@ impl CommittedDataRpcApiV0_1_0Server for Starknet {
         self.backend.import_committed_data_snapshot(root, values).await.map_err(StarknetRpcApiError::from)?;
         Ok(())
     }
+
+    async fn import_committed_data_and_submit_transaction(
+        &self,
+        datasets: CommittedDataImports,
+        transaction: BroadcastedTxn,
+    ) -> RpcResult<ImportAndSubmitResult> {
+        if !local_submission_ready(self) {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32003,
+                "Combined submission requires active local block production",
+                None::<()>,
+            ));
+        }
+        if !(1..=4).contains(&datasets.0.len()) {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32602,
+                "Expected 1..=4 committed-data datasets",
+                None::<()>,
+            ));
+        }
+        // The transaction is deliberately submitted through the same validated path as public RPC.
+        // In particular, do not accept a query-only transaction as a publication request.
+        if transaction.is_query() {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32602,
+                "Query transactions cannot be submitted",
+                None::<()>,
+            ));
+        }
+        for dataset in datasets.0 {
+            self.import_committed_data_snapshot(dataset.root, dataset.values, Some(dataset.signatures)).await?;
+        }
+        // Catch a sequencer that entered catch-up while the (possibly large) imports were running.
+        if !local_submission_ready(self) {
+            return Err(jsonrpsee::types::ErrorObjectOwned::owned(
+                -32003,
+                "Combined submission requires active local block production",
+                None::<()>,
+            ));
+        }
+        let transaction_hash = match transaction {
+            BroadcastedTxn::Invoke(tx) => {
+                self.transaction_submitter
+                    .submit_invoke_transaction(tx)
+                    .await
+                    .map_err(StarknetRpcApiError::from)?
+                    .transaction_hash
+            }
+            BroadcastedTxn::Declare(tx) => {
+                self.transaction_submitter
+                    .submit_declare_transaction(tx)
+                    .await
+                    .map_err(StarknetRpcApiError::from)?
+                    .transaction_hash
+            }
+            BroadcastedTxn::DeployAccount(tx) => {
+                self.transaction_submitter
+                    .submit_deploy_account_transaction(tx)
+                    .await
+                    .map_err(StarknetRpcApiError::from)?
+                    .transaction_hash
+            }
+        };
+        Ok(ImportAndSubmitResult { transaction_hash })
+    }
 }
 
 #[cfg(test)]
 mod committed_data_tests {
     use super::*;
+    use mc_db::MadaraBackend;
+    use mc_devnet::{Call, DevnetPredeployedContract, Multicall, Selector};
+    use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
+    use mp_convert::ToFelt;
+    use mp_rpc::v0_10_2::{
+        AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+        ClassAndTxnHash, ContractAndTxnHash,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Account multicalls, including Oracle root + final-price calls, are one signed INVOKE.
+    /// Use two fee-token calls here so the RPC routing test does not depend on an Oracle fixture.
+    fn signed_two_call_tx(backend: &MadaraBackend, account: &DevnetPredeployedContract) -> BroadcastedTxn {
+        use mp_rpc::v0_9_0::{BroadcastedInvokeTxn as OldInvoke, BroadcastedTxn as OldTxn};
+        use mp_transactions::{validated::TxTimestamp, IntoStarknetApiExt};
+        let OldTxn::Invoke(OldInvoke::V3(mut tx)) =
+            crate::test_utils::devnet_transfer_tx(backend, account, Felt::ZERO, false)
+        else {
+            unreachable!("devnet transfer helper always constructs an invoke v3")
+        };
+        let call = || Call {
+            to: backend.chain_config().native_fee_token_address.to_felt(),
+            selector: Selector::from("transfer"),
+            calldata: vec![account.address, Felt::ONE, Felt::ZERO],
+        };
+        tx.calldata = Multicall::default().with(call()).with(call()).flatten().collect::<Vec<_>>().into();
+        let hash = OldTxn::Invoke(OldInvoke::V3(tx.clone()))
+            .into_validated_tx(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                TxTimestamp::now(),
+            )
+            .unwrap()
+            .hash;
+        let signature = account.secret.sign(&hash).unwrap();
+        tx.signature = vec![signature.r, signature.s].into();
+        serde_json::from_value(serde_json::to_value(OldTxn::Invoke(OldInvoke::V3(tx))).unwrap()).unwrap()
+    }
+
+    struct RecordingSubmitter {
+        attempts: AtomicUsize,
+        reject: bool,
+    }
+
+    #[async_trait]
+    impl SubmitTransaction for RecordingSubmitter {
+        async fn submit_declare_transaction(
+            &self,
+            _tx: BroadcastedDeclareTxn,
+        ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_deploy_account_transaction(
+            &self,
+            _tx: BroadcastedDeployAccountTxn,
+        ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            Err(SubmitTransactionError::Unsupported)
+        }
+
+        async fn submit_invoke_transaction(
+            &self,
+            _tx: BroadcastedInvokeTxn,
+        ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            if self.reject {
+                Err(SubmitTransactionError::Unsupported)
+            } else {
+                Ok(AddInvokeTransactionResult { transaction_hash: Felt::THREE })
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn combined_rpc_imports_before_invoke_and_does_not_submit_after_import_failure() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let (backend, mut starknet, keys) = crate::test_utils::rpc_test_setup_with_execution().await;
+        let submitter = Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: false });
+        starknet.transaction_submitter = submitter.clone();
+        let account = keys.0.first().unwrap();
+        let tx = signed_two_call_tx(&backend, account);
+        let values = vec![Felt::from(42_u32)];
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        let funding_values = vec![Felt::from(43_u32)];
+        let funding_root = CommittedDataSet::new(funding_values.clone()).unwrap().root();
+
+        let call = |funding_root, tx: &BroadcastedTxn| {
+            serde_json::json!({"jsonrpc":"2.0","id":1,
+                "method":"madara_V0_1_0_importCommittedDataAndSubmitTransaction",
+                "params":[[{"root":root,"values":values},
+                           {"root":funding_root,"values":funding_values}],tx]})
+            .to_string()
+        };
+        let module = crate::rpc_api_committed_data(&starknet).unwrap();
+        let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["error"]["code"], -32003);
+        assert!(backend.committed_data_witness(root, 0).unwrap().is_none());
+        starknet.committed_data_transaction_submission = true;
+        let module = crate::rpc_api_committed_data(&starknet).unwrap();
+        let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["error"]["code"], -32003);
+        assert!(backend.committed_data_witness(root, 0).unwrap().is_none());
+        starknet.ctx.service_remove(MadaraServiceId::L2Sync);
+        let (response, _) = module.raw_json_request(&call(Felt::ONE, &tx), 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert!(response.get("error").is_some(), "invalid second root must fail: {response}");
+        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(funding_root, 0).unwrap().is_none());
+        assert_eq!(submitter.attempts.load(Ordering::SeqCst), 0);
+
+        let (response, _) = module.raw_json_request(&call(funding_root, &tx), 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(response["result"]["transaction_hash"], serde_json::json!(Felt::THREE));
+        assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
+        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(funding_root, 0).unwrap().unwrap().verify());
+    }
+
+    #[tokio::test]
+    async fn rejected_submission_leaves_only_an_unused_durable_dataset() {
+        use blockifier::execution::syscalls::committed_data::CommittedDataSet;
+        let (backend, mut starknet, keys) = crate::test_utils::rpc_test_setup_with_execution().await;
+        starknet.ctx.service_remove(MadaraServiceId::L2Sync);
+        starknet.committed_data_transaction_submission = true;
+        let submitter = Arc::new(RecordingSubmitter { attempts: AtomicUsize::new(0), reject: true });
+        starknet.transaction_submitter = submitter.clone();
+        let tx = signed_two_call_tx(&backend, keys.0.first().unwrap());
+        let values = vec![Felt::from(99_u32)];
+        let root = CommittedDataSet::new(values.clone()).unwrap().root();
+        let module = crate::rpc_api_committed_data(&starknet).unwrap();
+        let request = serde_json::json!({"jsonrpc":"2.0","id":1,
+            "method":"madara_V0_1_0_importCommittedDataAndSubmitTransaction",
+            "params":[[{"root":root,"values":values}],tx]})
+        .to_string();
+        let (response, _) = module.raw_json_request(&request, 1).await.unwrap();
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert!(response.get("error").is_some(), "submission must fail: {response}");
+        assert_eq!(submitter.attempts.load(Ordering::SeqCst), 1);
+        assert!(backend.committed_data_witness(root, 0).unwrap().unwrap().verify());
+    }
 
     #[tokio::test]
     async fn dedicated_module_only_imports_without_admin_or_read_exposure() {
@@ -176,7 +454,10 @@ mod committed_data_tests {
         let module = rpc_api_committed_data(&starknet).unwrap();
         let mut names: Vec<_> = module.method_names().collect();
         names.sort_unstable();
-        assert_eq!(names, vec!["madara_V0_1_0_importCommittedDataSet"]);
+        assert_eq!(
+            names,
+            vec!["madara_V0_1_0_importCommittedDataAndSubmitTransaction", "madara_V0_1_0_importCommittedDataSet"]
+        );
         starknet.set_rpc_unsafe_enabled(true);
         for api in [rpc_api_user(&starknet).unwrap(), rpc_api_admin(&starknet).unwrap()] {
             for name in &names {
@@ -188,7 +469,7 @@ mod committed_data_tests {
         }
         let values = vec![Felt::from(2000_u32), Felt::from(3000_u32)];
         let root = CommittedDataSet::new(values.clone()).unwrap().root();
-        let req = serde_json::json!({"jsonrpc":"2.0","id":1,"method":names[0],"params":[root,values]}).to_string();
+        let req = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"madara_V0_1_0_importCommittedDataSet","params":[root,values]}).to_string();
         let (response, _) = module.raw_json_request(&req, 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(response.get("error").is_none(), "{response}");
@@ -197,7 +478,7 @@ mod committed_data_tests {
         let (response, _) = module.raw_json_request(&req, 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["error"]["code"], -32601);
-        let req = serde_json::json!({"jsonrpc":"2.0","id":3,"method":names[0],"params":[Felt::ONE,values]}).to_string();
+        let req = serde_json::json!({"jsonrpc":"2.0","id":3,"method":"madara_V0_1_0_importCommittedDataSet","params":[Felt::ONE,values]}).to_string();
         let (response, _) = module.raw_json_request(&req, 1).await.unwrap();
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert!(response.get("error").is_some(), "Root mismatch must not be acknowledged");
@@ -280,5 +561,9 @@ mod committed_data_tests {
         let count = blockifier::execution::syscalls::committed_data::MAX_COMMITTED_DATA_VALUES + 1;
         let encoded = format!("[{}]", std::iter::repeat_n("\"0x0\"", count).collect::<Vec<_>>().join(","));
         assert!(serde_json::from_str::<CommittedDataValues>(&encoded).is_err());
+        let item = serde_json::json!({"root":Felt::ONE,"values":[Felt::ONE]});
+        assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!([])).is_err());
+        assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!(vec![item.clone(); 4])).is_ok());
+        assert!(serde_json::from_value::<CommittedDataImports>(serde_json::json!(vec![item; 5])).is_err());
     }
 }
