@@ -101,14 +101,19 @@ impl Snapshots {
         );
     }
 
-    /// Called when a new block has been added in the database. This will make a snapshot
-    /// on top of the new block, and it will store that snapshot in the snapshot history every
-    /// `snapshot_interval` blocks.
+    /// Captures a fully committed trie boundary, retaining configured interval snapshots.
+    /// Delayed confirmed-head notifications from batched sync cannot move this head backward;
+    /// actual reorgs must use the explicit rewind methods.
     #[tracing::instrument(skip(self))]
     pub fn set_new_head(&self, block_n: u64) {
-        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
-
         let mut inner = self.inner.write().expect("Poisoned lock");
+        // Batched sync captures trie boundaries before publishing confirmed heads.
+        // Do not relabel the later trie state as an earlier confirmed block.
+        // Actual reorgs use rewind_to/rewind_to_empty explicitly.
+        if inner.head_block_n.is_some_and(|head| head > block_n) {
+            return;
+        }
+        let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
 
         if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && block_n % self.snapshot_interval == 0 {
             self.save_interval_snapshot_locked(&mut inner, block_n, Arc::clone(&snapshot));
