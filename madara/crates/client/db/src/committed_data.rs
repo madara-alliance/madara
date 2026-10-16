@@ -49,7 +49,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns an authenticated proof for an imported root and occupied index.
     ///
     /// Missing roots/unused leaves return `None`; out-of-range indices, corrupt records and
-    /// mismatched proofs return an error. Cold reads have fixed-height I/O and never rebuild
+    /// mismatched proofs return an error. Cold reads have depth-bounded I/O and never rebuild
     /// a tree. This is synchronous storage work; async callers must use a blocking worker.
     pub fn committed_data_witness(&self, root: Felt, index: u32) -> Result<Option<CommittedDataWitness>> {
         anyhow::ensure!((index as usize) < MAX_COMMITTED_DATA_VALUES, "Committed-data index out of range");
@@ -79,19 +79,20 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Rejects another admitted import before enqueuing blocking work. The permit stays with
     /// the worker if its async caller is cancelled; an accepted import may still complete.
     /// Success means a synchronous WAL write completed. Re-importing an identical dataset
-    /// repairs its pages without charging quota twice. This never publishes a root on-chain.
+    /// repairs its pages. This never publishes a root on-chain.
     ///
-    /// Returns an error for busy admission, invalid data/root, exhausted quota or storage failure.
+    /// Returns an error for busy admission, invalid data/root or storage failure.
     pub async fn import_committed_data_snapshot(self: &Arc<Self>, root: Felt, values: Vec<Felt>) -> Result<()> {
         let permit = Arc::clone(&self.committed_data_cache.import)
             .try_acquire_owned()
             .map_err(|_| anyhow::anyhow!("Committed-data import busy; retry import later"))?;
+        let imported_after_block = self.chain_head_state().confirmed_tip;
         let backend = Arc::clone(self);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let tree = Arc::new(CommittedDataSet::new(values)?);
-            anyhow::ensure!(tree.root() == root, "Imported committed-data root mismatch");
-            backend.db.write_committed_data_dataset(&tree, backend.config.committed_data_max_storage_bytes)?;
+            anyhow::ensure!(tree.root() == root, "Committed-data root does not match dataset");
+            backend.db.write_committed_data_dataset(&tree, imported_after_block)?;
             backend.committed_data_cache.insert(tree)
         })
         .await?
@@ -105,12 +106,12 @@ impl<D> std::fmt::Debug for BackendCommittedData<D> {
     }
 }
 impl<D: MadaraStorageRead> CommittedDataProvider for BackendCommittedData<D> {
-    fn value(&self, root: Felt, index: u32) -> std::result::Result<Option<Felt>, CommittedDataError> {
-        let read = || -> Result<Option<Felt>> {
+    fn value(&self, root: Felt, index: u32) -> std::result::Result<Option<(Felt, usize)>, CommittedDataError> {
+        let read = || -> Result<Option<(Felt, usize)>> {
             let value = if let Some(tree) = self.0.committed_data_cache.get(root)? {
-                tree.value(index)
+                tree.value(index).map(|value| (value, tree.height()))
             } else {
-                self.0.committed_data_witness(root, index)?.map(|witness| witness.value)
+                self.0.committed_data_witness(root, index)?.map(|witness| (witness.value, witness.siblings.len()))
             };
             Ok(value)
         };
@@ -186,7 +187,7 @@ mod tests {
         backend.import_committed_data_snapshot(root, values).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_pages_v2/".to_vec();
+        let mut key = b"committed_data_pages/".to_vec();
         key.extend_from_slice(&root.to_bytes_be());
         key.extend_from_slice(&[0, 0, 0, 0, 0]);
         // Correct encoding and length must not be confused with authentication.
@@ -212,7 +213,7 @@ mod tests {
         backend.import_committed_data_snapshot(root, values.clone()).await.unwrap();
         backend.committed_data_cache.entries.lock().unwrap().clear();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        let mut key = b"committed_data_pages_v2/".to_vec();
+        let mut key = b"committed_data_pages/".to_vec();
         key.extend_from_slice(&root.to_bytes_be());
         key.extend_from_slice(&[0, 0, 0, 0, 0]);
         backend.db.inner_db().put_cf(&cf, key, [0xff]).unwrap();
@@ -257,16 +258,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn committed_data_quota_is_durable_and_duplicate_imports_are_free() {
+    async fn committed_data_imports_accumulate_and_survive_reopen() {
         let directory = tempfile::TempDir::new().unwrap();
         let first = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
         let second = CommittedDataSet::new(vec![Felt::from(3_u32)]).unwrap();
-        // One paged dataset fits, two do not (including metadata and keys).
         let open = || {
             MadaraBackend::open_rocksdb(
                 directory.path(),
                 Arc::new(ChainConfig::madara_test()),
-                MadaraBackendConfig { committed_data_max_storage_bytes: 3000, ..Default::default() },
+                MadaraBackendConfig::default(),
                 RocksDBConfig::default(),
                 Arc::new(NativeConfig::default()),
             )
@@ -276,31 +276,37 @@ mod tests {
             let backend = open();
             backend.import_committed_data_snapshot(first.root(), first.values().to_vec()).await.unwrap();
             backend.import_committed_data_snapshot(first.root(), first.values().to_vec()).await.unwrap();
-            assert!(backend.import_committed_data_snapshot(second.root(), second.values().to_vec()).await.is_err());
-            assert!(backend.committed_data_witness(second.root(), 0).unwrap().is_none());
+            backend.import_committed_data_snapshot(second.root(), second.values().to_vec()).await.unwrap();
         }
         let backend = open();
-        assert!(backend.import_committed_data_snapshot(second.root(), second.values().to_vec()).await.is_err());
         assert!(backend.committed_data_witness(first.root(), 0).unwrap().unwrap().verify());
+        assert!(backend.committed_data_witness(second.root(), 0).unwrap().unwrap().verify());
+        let cf = backend.db.inner_db().cf_handle("meta").unwrap();
+        assert!(backend.db.inner_db().get_cf(&cf, b"committed_data_pages_usage").unwrap().is_none());
     }
 
     #[tokio::test]
-    async fn committed_data_legacy_storage_usage_still_counts_toward_quota() {
+    async fn committed_data_first_import_checkpoint_is_preserved_on_reimport() {
         let directory = tempfile::TempDir::new().unwrap();
         let backend = MadaraBackend::open_rocksdb(
             directory.path(),
             Arc::new(ChainConfig::madara_test()),
-            MadaraBackendConfig { committed_data_max_storage_bytes: 3000, ..Default::default() },
+            MadaraBackendConfig::default(),
             RocksDBConfig::default(),
             Arc::new(NativeConfig::default()),
         )
         .unwrap();
         let cf = backend.db.inner_db().cf_handle("meta").unwrap();
-        // Simulate retained v1 records already consuming the quota before migration.
-        backend.db.inner_db().put_cf(&cf, b"committed_data_pages_usage_v1", 3000_u64.to_be_bytes()).unwrap();
         let dataset = CommittedDataSet::new(vec![Felt::TWO]).unwrap();
-        assert!(backend.import_committed_data_snapshot(dataset.root(), dataset.values().to_vec()).await.is_err());
-        assert!(backend.committed_data_witness(dataset.root(), 0).unwrap().is_none());
+        backend.db.write_committed_data_dataset(&dataset, Some(42)).unwrap();
+        backend.db.write_committed_data_dataset(&dataset, Some(100)).unwrap();
+        let mut key = b"committed_data_pages/".to_vec();
+        key.extend_from_slice(&dataset.root().to_bytes_be());
+        key.extend_from_slice(&[u8::MAX, 0, 0, 0, 0]);
+        let metadata = backend.db.inner_db().get_cf(&cf, key).unwrap().unwrap();
+        assert_eq!(metadata.len(), 14);
+        assert_eq!(metadata[5], 1);
+        assert_eq!(u64::from_be_bytes(metadata[6..14].try_into().unwrap()), 42);
     }
 
     #[test]
@@ -316,7 +322,7 @@ mod tests {
         assert_eq!(cache.entries.lock().unwrap().len(), 2);
     }
     #[tokio::test]
-    async fn committed_data_concurrent_storage_writers_cannot_bypass_quota() {
+    async fn committed_data_concurrent_storage_writers_retain_both_roots() {
         let directory = tempfile::TempDir::new().unwrap();
         let backend = MadaraBackend::open_rocksdb(
             directory.path(),
@@ -337,12 +343,15 @@ mod tests {
                     let barrier = &barrier;
                     scope.spawn(move || {
                         barrier.wait();
-                        backend.db.write_committed_data_dataset(dataset, 3000).is_ok()
+                        backend.db.write_committed_data_dataset(dataset, None).is_ok()
                     })
                 })
                 .collect();
             handles.into_iter().map(|handle| usize::from(handle.join().unwrap())).sum::<usize>()
         });
-        assert_eq!(successes, 1);
+        assert_eq!(successes, 2);
+        for dataset in &datasets {
+            assert!(backend.committed_data_witness(dataset.root(), 0).unwrap().unwrap().verify());
+        }
     }
 }

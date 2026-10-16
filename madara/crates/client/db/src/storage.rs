@@ -216,12 +216,13 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
-    /// Durably persists an authenticated immutable dataset within the logical storage quota.
+    /// Durably persists an authenticated immutable dataset, including the local confirmed-head
+    /// checkpoint observed at import admission. This does not establish on-chain publication.
     /// Re-importing the same dataset must be idempotent; unsupported backends return an error.
     fn write_committed_data_dataset(
         &self,
         _dataset: &blockifier::execution::syscalls::committed_data::CommittedDataSet,
-        _max_bytes: u64,
+        _imported_after_block: Option<u64>,
     ) -> Result<()> {
         anyhow::bail!("Committed-data storage is unsupported by this backend")
     }

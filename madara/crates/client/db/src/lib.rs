@@ -445,16 +445,12 @@ pub struct ExecutionReadCacheConfig {
     pub max_memory_bytes: usize,
 }
 
-/// Default node-local logical-byte quota for retained committed datasets (16 GiB).
-pub const DEFAULT_COMMITTED_DATA_STORAGE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 #[derive(Debug)]
 pub struct MadaraBackendConfig {
     /// Permit committed reads during account execution, independently of dataset ingestion.
     /// L1 handlers must not read committed data, directly or through another contract;
     /// their availability-failure semantics are unsupported.
     pub use_committed_data: bool,
-    /// Node-local logical-byte quota for retained committed datasets.
-    pub committed_data_max_storage_bytes: u64,
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
@@ -471,7 +467,6 @@ impl Default for MadaraBackendConfig {
     fn default() -> Self {
         Self {
             use_committed_data: false,
-            committed_data_max_storage_bytes: DEFAULT_COMMITTED_DATA_STORAGE_BYTES,
             flush_every_n_blocks: None,
             save_preconfirmed: false,
             unsafe_starting_block: None,
