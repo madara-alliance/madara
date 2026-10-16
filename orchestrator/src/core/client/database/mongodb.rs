@@ -796,7 +796,8 @@ impl DatabaseClient for MongoDbClient {
         };
         let update = doc! {
             "$set": {
-                "metadata.common.process_started_at": Bson::DateTime(process_started_at.into()),
+                // CommonMetadata serializes this field with chrono::serde::ts_seconds_option.
+                "metadata.common.process_started_at": Bson::Int64(process_started_at.timestamp()),
                 "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into()),
             }
         };
