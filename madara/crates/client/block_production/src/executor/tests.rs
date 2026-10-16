@@ -156,15 +156,6 @@ struct L1HandlerSetup {
     contract_address: Felt,
 }
 
-impl L1HandlerSetup {
-    async fn shutdown(mut self) {
-        // Stop the native executor before the test runtime and RocksDB fixture are dropped.
-        self.handle.send_batch.take();
-        while tokio::time::timeout(Duration::from_secs(30), self.handle.replies.recv()).await.unwrap().is_some() {}
-        tokio::time::timeout(Duration::from_secs(30), self.handle.stop.recv()).await.unwrap().unwrap();
-    }
-}
-
 #[fixture]
 async fn l1_handler_setup(
     // long block time, no pending tick
@@ -284,7 +275,6 @@ async fn test_duplicate_l1_handler_same_batch(#[future] l1_handler_setup: L1Hand
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
-    setup.shutdown().await;
 }
 
 #[rstest::rstest]
@@ -345,7 +335,6 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
-    setup.shutdown().await;
 }
 
 #[rstest::rstest]
@@ -431,7 +420,6 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
-    setup.shutdown().await;
 }
 
 #[tokio::test]

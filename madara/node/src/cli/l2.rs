@@ -82,9 +82,9 @@ pub struct L2SyncParams {
 
     /// Sync Madara-specific bouncer weights and committed datasets from the feeder gateway.
     /// Requires a compatible Madara upstream; both extensions are enabled together.
-    #[arg(env = "MADARA_EXTRA_DATA_SYNC", long, default_value_t = false)]
+    #[arg(env = "MADARA_ADDITIONAL_DATA_SYNC", long, default_value_t = false)]
     #[serde(default)]
-    pub madara_extra_data_sync: bool,
+    pub madara_additional_data_sync: bool,
 
     /// Disable blockchain reorganization. When enabled, if a divergent state is discovered,
     /// the node will stop with an error instead of performing a reorg. This is useful for
@@ -142,17 +142,17 @@ mod committed_data_tests {
     #[test]
     fn committed_data_and_bouncer_sync_share_one_opt_in_setting() {
         let defaults = Args::try_parse_from(["test"]).unwrap();
-        assert!(!defaults.sync.madara_extra_data_sync);
-        let enabled = Args::try_parse_from(["test", "--madara-extra-data-sync"]).unwrap();
-        assert!(enabled.sync.madara_extra_data_sync);
-        let config =
-            mc_sync::gateway::ForwardSyncConfig::default().madara_extra_data_sync(enabled.sync.madara_extra_data_sync);
-        assert!(config.madara_extra_data_sync);
-        assert!(!config.madara_extra_data_sync(false).madara_extra_data_sync);
+        assert!(!defaults.sync.madara_additional_data_sync);
+        let enabled = Args::try_parse_from(["test", "--madara-additional-data-sync"]).unwrap();
+        assert!(enabled.sync.madara_additional_data_sync);
+        let config = mc_sync::gateway::ForwardSyncConfig::default()
+            .madara_additional_data_sync(enabled.sync.madara_additional_data_sync);
+        assert!(config.madara_additional_data_sync);
+        assert!(!config.madara_additional_data_sync(false).madara_additional_data_sync);
         assert!(Args::try_parse_from(["test", "--bouncer-config-sync-enable"]).is_err());
         assert!(Args::try_parse_from(["test", "--madara-sync-enable"]).is_err());
         let mut old = serde_json::to_value(enabled.sync).unwrap();
-        old.as_object_mut().unwrap().remove("madara_extra_data_sync");
-        assert!(!serde_json::from_value::<L2SyncParams>(old).unwrap().madara_extra_data_sync);
+        old.as_object_mut().unwrap().remove("madara_additional_data_sync");
+        assert!(!serde_json::from_value::<L2SyncParams>(old).unwrap().madara_additional_data_sync);
     }
 }
