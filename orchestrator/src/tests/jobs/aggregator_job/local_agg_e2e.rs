@@ -57,11 +57,10 @@ const SEPOLIA_STRK_FEE_TOKEN: &str = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd6
 const SNOS_PIE_FILES: [&str; 4] =
     ["snos_sepolia_8059997.zip", "snos_sepolia_8059998.zip", "snos_sepolia_8059999.zip", "snos_sepolia_8060000.zip"];
 
-/// Expected fact for the historical outputs wrapped with the pinned committed-data OS hash.
-/// Independently checked with cairo-lang's aggregator fact calculation. Replacing only the OS
-/// identity with the upstream hash reproduces the old fixture fact. This mock aggregation does
-/// not establish that these historical blocks were proved under the committed-data OS.
-const EXPECTED_AGG_FACT: &str = "0x66a41f241d4b9b440fd0c5459e7473e09b9f00306c5bafcdd40d9a97f17efa5d";
+/// Expected fact for these historical outputs under the currently pinned committed-data OS hash.
+/// This checks the local aggregator's fact calculation; it does not establish that these
+/// historical blocks were proved under the committed-data OS.
+const EXPECTED_AGG_FACT: &str = "0xb89aeeee5967181d88325d7cc59cd8e2db66510a0523ed1436e2ab907c72fe75";
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
